@@ -113,6 +113,31 @@ public sealed class SmallSystemLibrariesTests(GuestMemoryFixture fixture) : IDis
     }
 
     [Fact]
+    public void PvrServicesBridgeFollowsTheInitServerStateTheKernelSets()
+    {
+        const int Fault = -14;
+        GpuEs4 g = Module<GpuEs4>();
+        uint package = Alloc(0x1C), output = Alloc(8);
+        GuestMemory.W32(package, 0x1000 + 0x0C); // CONNECT_SERVICES
+        GuestMemory.W32(package + 4, 0x1C);
+        GuestMemory.W32(package + 16, output);
+        GuestMemory.W32(package + 20, 8);
+        Assert.Equal(0, I(g, "PVRSRVOpen"));
+        Assert.Equal(0, I(g, "PVRSRV_BridgeDispatchKM", 0u, package));
+        // the init server running: nothing but its own process gets through
+        Assert.Equal(0, I(g, "PVRSRVSetInitServerState", 0u, 1u));
+        Assert.Equal(Fault, I(g, "PVRSRV_BridgeDispatchKM", 0u, package));
+        // it ran and failed: refused
+        Assert.Equal(0, I(g, "PVRSRVSetInitServerState", 0u, 0u));
+        Assert.Equal(0, I(g, "PVRSRVSetInitServerState", 1u, 1u));
+        Assert.Equal(Fault, I(g, "PVRSRV_BridgeDispatchKM", 0u, package));
+        // it ran successfully: the calls get through again
+        Assert.Equal(0, I(g, "PVRSRVSetInitServerState", 2u, 1u));
+        Assert.Equal(0, I(g, "PVRSRV_BridgeDispatchKM", 0u, package));
+        Assert.Equal(0, I(g, "PVRSRVRelease"));
+    }
+
+    [Fact]
     public void GpuSignalWaitReturnsTheCounter()
     {
         GpuEs4 g = Module<GpuEs4>();
