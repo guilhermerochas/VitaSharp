@@ -3,9 +3,9 @@ using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 using Xunit;
+using static VitaSharp.Tests.HleHarness;
 using Mutex = VitaSharp.Core.Kernel.Mutex;
 using Semaphore = VitaSharp.Core.Kernel.Semaphore;
-using static VitaSharp.Tests.HleHarness;
 
 namespace VitaSharp.Tests;
 
