@@ -164,13 +164,13 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 
 | Kernel exports | Covered | Real | Default | Total | % |
 |---|---:|---:|---:|---:|---:|
-| All | 2,160 | 1,939 | 221 | 3,918 | 55.1% |
-| Imported | 1,182 | - | - | 2,062 | 57.3% |
+| All | 2,899 | 2,579 | 320 | 3,918 | 73.9% |
+| Imported | 1,569 | - | - | 2,062 | 76% |
 
 | Library | Implemented / total | % | Default | Imported |
 |---|---:|---:|---:|---:|
 | SceAVConfigForDriver | 6 / 6 | 100% | - | 2 / 2 |
-| SceAppMgrForDriver | 3 / 76 | 3.9% | - | 0 / 24 |
+| SceAppMgrForDriver | 76 / 76 | 100% | 6 | 24 / 24 |
 | SceAudioForDriver | 3 / 20 | 15% | - | 1 / 11 |
 | SceAudioInForDriver | 10 / 10 | 100% | - | 6 / 6 |
 | SceAvcodecForDriver | 23 / 105 | 21.9% | - | 0 / 1 |
@@ -185,7 +185,7 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 | SceCodecEngineWrapperForDriver | 0 / 50 | 0% | - | 0 / 47 |
 | SceCodecForDriver | 9 / 9 | 100% | 9 | 7 / 7 |
 | SceCompatForDriver | 1 / 1 | 100% | - | 1 / 1 |
-| SceCoredumpForDriver | 0 / 21 | 0% | - | 0 / 19 |
+| SceCoredumpForDriver | 21 / 21 | 100% | 3 | 19 / 19 |
 | SceCpuForDriver | 104 / 104 | 100% | - | 35 / 35 |
 | SceCpuForKernel | 39 / 39 | 100% | - | 6 / 6 |
 | SceCsiForDriver | 6 / 6 | 100% | 6 | 6 / 6 |
@@ -211,7 +211,7 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 | SceIftuForDriver | 8 / 9 | 88.8% | - | 8 / 9 |
 | SceIntrmgrForDriver | 23 / 23 | 100% | - | 13 / 13 |
 | SceIntrmgrForKernel | 5 / 21 | 23.8% | - | 1 / 12 |
-| SceIofilemgrForDriver | 54 / 148 | 36.4% | - | 28 / 96 |
+| SceIofilemgrForDriver | 148 / 148 | 100% | 17 | 96 / 96 |
 | SceKernelSuspendForDriver | 28 / 28 | 100% | - | 13 / 13 |
 | SceKernelUtilsForDriver | 56 / 57 | 98.2% | - | 32 / 33 |
 | SceLcdForDriver | 23 / 23 | 100% | 4 | 13 / 13 |
@@ -226,10 +226,10 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 | SceNpDrmForDriver | 3 / 26 | 11.5% | - | 3 / 20 |
 | SceOledForDriver | 21 / 21 | 100% | 2 | 12 / 12 |
 | ScePervasiveForDriver | 121 / 156 | 77.5% | 5 | 77 / 88 |
-| ScePfsFacadeForKernel | 0 / 6 | 0% | - | 0 / 6 |
-| ScePfsMgrForKernel | 0 / 14 | 0% | - | 0 / 11 |
+| ScePfsFacadeForKernel | 6 / 6 | 100% | - | 6 / 6 |
+| ScePfsMgrForKernel | 14 / 14 | 100% | - | 11 / 11 |
 | ScePmMgrForDriver | 2 / 2 | 100% | - | 1 / 1 |
-| ScePowerForDriver | 36 / 109 | 33% | - | 16 / 52 |
+| ScePowerForDriver | 109 / 109 | 100% | 2 | 52 / 52 |
 | SceProcEventForDriver | 3 / 3 | 100% | - | 3 / 3 |
 | SceProcessmgrForDriver | 10 / 46 | 21.7% | - | 7 / 32 |
 | SceProcessmgrForKernel | 3 / 60 | 5% | - | 0 / 30 |
@@ -260,20 +260,20 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 | SceSblSmSchedProxyForKernel | 16 / 16 | 100% | 2 | 9 / 9 |
 | SceSblSsMgrForDriver | 40 / 40 | 100% | 10 | 33 / 33 |
 | SceSblSsMgrForKernel | 5 / 5 | 100% | - | 5 / 5 |
-| SceSdifForDriver | 0 / 59 | 0% | - | 0 / 31 |
+| SceSdifForDriver | 59 / 59 | 100% | 34 | 31 / 31 |
 | SceSysclibForDriver | 51 / 51 | 100% | - | 31 / 31 |
 | SceSysconForDriver | 311 / 311 | 100% | 6 | 198 / 198 |
-| SceSysmemForDriver | 53 / 114 | 46.4% | - | 53 / 79 |
-| SceSysmemForKernel | 8 / 169 | 4.7% | - | 8 / 77 |
-| SceSysrootForDriver | 124 / 181 | 68.5% | - | 65 / 111 |
-| SceSysrootForKernel | 48 / 143 | 33.5% | - | 16 / 67 |
+| SceSysmemForDriver | 114 / 114 | 100% | 1 | 79 / 79 |
+| SceSysmemForKernel | 66 / 169 | 39% | 1 | 28 / 77 |
+| SceSysrootForDriver | 181 / 181 | 100% | 7 | 111 / 111 |
+| SceSysrootForKernel | 143 / 143 | 100% | - | 67 / 67 |
 | SceSystimerForDriver | 14 / 14 | 100% | - | 8 / 8 |
 | SceThreadmgrForDriver | 170 / 248 | 68.5% | - | 100 / 135 |
 | SceThreadmgrForKernel | 18 / 64 | 28.1% | - | 2 / 15 |
 | SceTouchForDriver | 29 / 29 | 100% | - | 9 / 9 |
 | SceUartForKernel | 4 / 4 | 100% | 3 | 1 / 1 |
-| SceUdcdForDriver | 3 / 47 | 6.3% | - | 2 / 33 |
-| SceUlobjMgrForDriver | 0 / 19 | 0% | - | 0 / 12 |
+| SceUdcdForDriver | 47 / 47 | 100% | 12 | 33 / 33 |
+| SceUlobjMgrForDriver | 19 / 19 | 100% | 14 | 12 / 12 |
 | SceUsbAudioForDriver | 5 / 5 | 100% | 3 | - |
 | SceUsbEtherRtlForDriver | 3 / 3 | 100% | 3 | - |
 | SceUsbMassForDriver | 6 / 6 | 100% | - | 6 / 6 |
@@ -282,7 +282,7 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 | SceUsbdForDriver | 21 / 21 | 100% | 12 | 20 / 20 |
 | SceUsbstorForDriver | 9 / 9 | 100% | - | 7 / 7 |
 | SceWlanBtForDriver | 4 / 4 | 100% | - | 2 / 2 |
-| SceZlibForDriver | 0 / 65 | 0% | - | 0 / 6 |
+| SceZlibForDriver | 65 / 65 | 100% | 2 | 6 / 6 |
 
 ## Per library (308)
 

@@ -230,6 +230,79 @@
 0x2163759A	sceAppMgrSetSystemImposeState2	AppMgrShell	SceAppMgr	vh
 0x5BCF6927	sceAppMgrSuspendBgAppByShell	AppMgrShell	SceAppMgr	vh
 0xECEC7F90	sceAppMgrSuspendUntilActivated	AppMgr	SceAppMgr	vh
+0x0813AFCA	SceAppMgrForDriver_0813AFCA	AppMgr	SceAppMgrForDriver	-
+0x0C5D65F1	SceAppMgrForDriver_0C5D65F1	AppMgrShell	SceAppMgrForDriver	-
+0x1574E1A4	SceAppMgrForDriver_1574E1A4	AppMgr	SceAppMgrForDriver	-	default
+0x1B6C2FED	SceAppMgrForDriver_1B6C2FED	AppMgrShell	SceAppMgrForDriver	-	default
+0x21BE167A	SceAppMgrForDriver_21BE167A	AppMgrShell	SceAppMgrForDriver	-
+0x29421DCD	SceAppMgrForDriver_29421DCD	AppMgrShell	SceAppMgrForDriver	-
+0x2FEACA9F	SceAppMgrForDriver_2FEACA9F	AppMgrShell	SceAppMgrForDriver	-
+0x30947DF4	SceAppMgrForDriver_30947DF4	AppMgr	SceAppMgrForDriver	-
+0x324DD34E	SceAppMgrForDriver_324DD34E	AppMgr	SceAppMgrForDriver	-	default
+0x3B4F305B	SceAppMgrForDriver_3B4F305B	AppMgr	SceAppMgrForDriver	-
+0x4FA62A46	SceAppMgrForDriver_4FA62A46	AppMgrShell	SceAppMgrForDriver	-
+0x504023C8	SceAppMgrForDriver_504023C8	AppMgr	SceAppMgrForDriver	-	default
+0x99AA37C1	SceAppMgrForDriver_99AA37C1	AppMgrShell	SceAppMgrForDriver	-
+0xC4924946	SceAppMgrForDriver_C4924946	AppMgrShell	SceAppMgrForDriver	-	default
+0xDC13160A	SceAppMgrForDriver_DC13160A	AppMgrShell	SceAppMgrForDriver	-
+0xDCADB9FE	SceAppMgrForDriver_DCADB9FE	AppMgr	SceAppMgrForDriver	-
+0xDD5BEEE3	SceAppMgrForDriver_DD5BEEE3	AppMgr	SceAppMgrForDriver	-
+0xE8DB7942	SceAppMgrForDriver_E8DB7942	AppMgr	SceAppMgrForDriver	-	default
+0xEBFE1BE2	SceAppMgrForDriver_EBFE1BE2	AppMgr	SceAppMgrForDriver	-
+0xEE6047CA	SceAppMgrForDriver_EE6047CA	AppMgrShell	SceAppMgrForDriver	-
+0xF3B1D42E	SceAppMgrForDriver_F3B1D42E	AppMgrShell	SceAppMgrForDriver	-
+0xF9A61E94	SceAppMgrForDriver_F9A61E94	AppMgrShell	SceAppMgrForDriver	-
+0x474AABDF	ksceAppMgrAcInstGetAcdirParam	VshBridge	SceAppMgrForDriver	-
+0xB1D3C287	ksceAppMgrAppDataMount	AppMgr	SceAppMgrForDriver	-
+0x5E311F71	ksceAppMgrAppDataMountById	AppMgr	SceAppMgrForDriver	-
+0xEF0C9533	ksceAppMgrAppMount	AppMgr	SceAppMgrForDriver	-
+0x12CE29F7	ksceAppMgrAppParamGetInt	SystemMisc	SceAppMgrForDriver	-
+0x1DE3B7C4	ksceAppMgrAppUmount	AppMgr	SceAppMgrForDriver	-
+0x5B1BE482	ksceAppMgrBgdlSetQueueStatus	VshBridge	SceAppMgrForDriver	-
+0x193784A9	ksceAppMgrCheckContentInstallPeriod	VshBridge	SceAppMgrForDriver	-
+0x0B1BEEE0	ksceAppMgrCheckPfsMounted	VshBridge	SceAppMgrForDriver	-
+0xEC408FEF	ksceAppMgrCloudDataClearMcId	VshBridge	SceAppMgrForDriver	-
+0xED87F191	ksceAppMgrCloudDataCreateHeader	VshBridge	SceAppMgrForDriver	-
+0xB3816B42	ksceAppMgrCloudDataDstCreateMount	VshBridge	SceAppMgrForDriver	-
+0x1286AF64	ksceAppMgrCloudDataGetMcId	VshBridge	SceAppMgrForDriver	-
+0x0B94BB90	ksceAppMgrCloudDataSetMcId	VshBridge	SceAppMgrForDriver	-
+0x2FAA6ABD	ksceAppMgrCloudDataSetupKey	VshBridge	SceAppMgrForDriver	-
+0x6D4D6FFE	ksceAppMgrCloudDataSrcMount	VshBridge	SceAppMgrForDriver	-
+0x55D48190	ksceAppMgrCloudDataVerifyHeader	VshBridge	SceAppMgrForDriver	-
+0x7554330F	ksceAppMgrDebugSettingNotifyUpdate	VshBridge	SceAppMgrForDriver	-
+0xFC89D33D	ksceAppMgrDestroyOtherAppByPid	AppMgrShell	SceAppMgrForDriver	-
+0x088670A6	ksceAppMgrDrmClose	AppMgr	SceAppMgrForDriver	-
+0xEA75D157	ksceAppMgrDrmOpen	AppMgr	SceAppMgrForDriver	-
+0x12FC3FA8	ksceAppMgrFakeSaveDataCreateMount	VshBridge	SceAppMgrForDriver	-
+0xCE356B2D	ksceAppMgrGameDataMount	AppMgr	SceAppMgrForDriver	-
+0xD2541B4A	ksceAppMgrGetBootParam	AppMgr	SceAppMgrForDriver	-
+0xE72D2A4A	ksceAppMgrGetPfsProcessStatus	VshBridge	SceAppMgrForDriver	-
+0xA888C2DC	ksceAppMgrIsExclusiveProcessRunning	VshBridge	SceAppMgrForDriver	-
+0xD80566DB	ksceAppMgrKillProcess	AppMgrShell	SceAppMgrForDriver	-
+0xB0A37065	ksceAppMgrLaunchAppByPath	AppMgr	SceAppMgrForDriver	-
+0x61B13981	ksceAppMgrLocalBackupGetOfflineId	VshBridge	SceAppMgrForDriver	-
+0x62E98C42	ksceAppMgrLocalBackupVerifyOfflineHeader	VshBridge	SceAppMgrForDriver	-
+0x13D54107	ksceAppMgrMmsMount	AppMgr	SceAppMgrForDriver	-
+0x43A35729	ksceAppMgrPhotoMount	AppMgr	SceAppMgrForDriver	-
+0xB53FB98E	ksceAppMgrRegisterPath	VshBridge	SceAppMgrForDriver	-
+0xE104C37E	ksceAppMgrSaveDataGetQuota	AppMgr	SceAppMgrForDriver	-
+0x9B3F7D66	ksceAppMgrSaveDataLocalBackupTargetGetList	VshBridge	SceAppMgrForDriver	-
+0xC4EF95BB	ksceAppMgrSaveDataLocalBackupTargetRemoveItem	VshBridge	SceAppMgrForDriver	-
+0xE73C9516	ksceAppMgrSaveDataMount	AppMgr	SceAppMgrForDriver	-
+0x6989B258	ksceAppMgrSaveDataNotifyBackupFinished	VshBridge	SceAppMgrForDriver	-
+0xE6F389B8	ksceAppMgrSaveDataSlotCreate	AppMgr	SceAppMgrForDriver	-
+0xB544F2A0	ksceAppMgrSaveDataSlotDelete	AppMgr	SceAppMgrForDriver	-
+0xD137D486	ksceAppMgrSaveDataSlotGetParam	AppMgr	SceAppMgrForDriver	-
+0xEC9D5A35	ksceAppMgrSaveDataSlotGetStatus	AppMgr	SceAppMgrForDriver	-
+0x2277F736	ksceAppMgrSaveDataSlotInit	AppMgr	SceAppMgrForDriver	-
+0x7E247E47	ksceAppMgrSaveDataSlotSetParam	AppMgr	SceAppMgrForDriver	-
+0x9ADB00FA	ksceAppMgrSaveDataSlotSetStatus	AppMgr	SceAppMgrForDriver	-
+0x2B080268	ksceAppMgrSaveDataUmount	AppMgr	SceAppMgrForDriver	-
+0xA9AA3A68	ksceAppMgrSystemParamDateTimeSetConf	VshBridge	SceAppMgrForDriver	-
+0xE977A833	ksceAppMgrTrophyMount	AppMgr	SceAppMgrForDriver	-
+0xA714BB35	ksceAppMgrUmount	AppMgr	SceAppMgrForDriver	-
+0x894BDCB8	ksceAppMgrUpdateRifInfo	VshBridge	SceAppMgrForDriver	-
+0x3A0A9B82	ksceAppMgrWorkDirMount	AppMgr	SceAppMgrForDriver	-
 0x9D6D8058	NID_9D6D8058	AppMgr	SceAppMgrUser	-	default
 0x5E86319A	_sceAppMgrGetAppState	SystemMisc	SceAppMgrUser	vh
 0x31EFA73A	sceAppMgrAcidDirSet	AppMgr	SceAppMgrUser	vh
@@ -1200,6 +1273,27 @@
 0x9C107CC9	SceCompatForVsh_9C107CC9	Compat	SceCompatForVsh	-
 0x031DC61E	sceCoredumpRegisterCoredumpHandler	SystemSoftware	SceCoredump	vh
 0x6037A2C3	sceCoredumpUnregisterCoredumpHandler	SystemSoftware	SceCoredump	vh
+0x097AA37D	SceCoredumpForDriver_097AA37D	VshBridge	SceCoredumpForDriver	-
+0x10863B61	SceCoredumpForDriver_10863B61	VshBridge	SceCoredumpForDriver	-
+0x12392973	SceCoredumpForDriver_12392973	VshBridge	SceCoredumpForDriver	-
+0x13EF8516	SceCoredumpForDriver_13EF8516	VshBridge	SceCoredumpForDriver	-
+0x340856F7	SceCoredumpForDriver_340856F7	VshBridge	SceCoredumpForDriver	-
+0xA7D214A7	SceCoredumpForDriver_A7D214A7	VshBridge	SceCoredumpForDriver	-	default
+0xD064F6DC	SceCoredumpForDriver_D064F6DC	VshBridge	SceCoredumpForDriver	-	default
+0xEF20949F	SceCoredumpForDriver_EF20949F	VshBridge	SceCoredumpForDriver	-	default
+0x2964AD0A	ksceCoredumpCafContextCreate	VshBridge	SceCoredumpForDriver	-
+0x95402BF3	ksceCoredumpCafContextDestroy	VshBridge	SceCoredumpForDriver	-
+0xE1BCBE8F	ksceCoredumpCafCreateIv	VshBridge	SceCoredumpForDriver	-
+0xC90F61AF	ksceCoredumpCafFinal	VshBridge	SceCoredumpForDriver	-
+0x65AA4991	ksceCoredumpCafHeaderFinal	VshBridge	SceCoredumpForDriver	-
+0x7C8120C5	ksceCoredumpCafHeaderInit	VshBridge	SceCoredumpForDriver	-
+0xAE2C2793	ksceCoredumpCafHeaderTransform	VshBridge	SceCoredumpForDriver	-
+0x9336009B	ksceCoredumpCafInit	VshBridge	SceCoredumpForDriver	-
+0xDF17420A	ksceCoredumpCafSegmentFinal	VshBridge	SceCoredumpForDriver	-
+0x07185515	ksceCoredumpCafSegmentInit	VshBridge	SceCoredumpForDriver	-
+0xFB7AEBFE	ksceCoredumpCafSegmentTransform	VshBridge	SceCoredumpForDriver	-
+0x0C10313F	ksceCoredumpCreateDump	VshBridge	SceCoredumpForDriver	-
+0xAD070837	ksceCoredumpDeleteCrashReportCaf	VshBridge	SceCoredumpForDriver	-
 0xDF335DCF	sceCoredumpWriteUserData	SystemSoftware	SceCoredumpNounlink	vh
 0x2704CFEE	sceKernelGetCpuId	SysMem	SceCpu	vh
 0xE813EBB2	SceCpuForDriver_E813EBB2	SysmemKernel	SceCpuForDriver	-
@@ -2762,16 +2856,39 @@
 0x7E1367CB	sceIoSyncByFdAsync	IoFileMgr	SceIofilemgr	vh
 0x34EFD876	sceIoWrite	IoFileMgr	SceIofilemgr	vh
 0xE0D63D2A	sceIoWriteAsync	IoFileMgr	SceIofilemgr	vh
+0x03F6A684	SceIofilemgrForDriver_03F6A684	IoFileMgr	SceIofilemgrForDriver	-
+0x12F8D58E	SceIofilemgrForDriver_12F8D58E	IoFileMgr	SceIofilemgrForDriver	-
+0x15C17487	SceIofilemgrForDriver_15C17487	IoFileMgr	SceIofilemgrForDriver	-
+0x2EFDFA12	SceIofilemgrForDriver_2EFDFA12	IoFileMgr	SceIofilemgrForDriver	-
+0x3675ECB9	SceIofilemgrForDriver_3675ECB9	IoFileMgr	SceIofilemgrForDriver	-
+0x39ABDB9E	SceIofilemgrForDriver_39ABDB9E	IoFileMgr	SceIofilemgrForDriver	-
+0x3A79FAC9	SceIofilemgrForDriver_3A79FAC9	IoFileMgr	SceIofilemgrForDriver	-
+0x5B7E5AB8	SceIofilemgrForDriver_5B7E5AB8	IoFileMgr	SceIofilemgrForDriver	-	default
+0x6BEEDDB4	SceIofilemgrForDriver_6BEEDDB4	IoFileMgr	SceIofilemgrForDriver	-
+0x8F0DE34D	SceIofilemgrForDriver_8F0DE34D	IoFileMgr	SceIofilemgrForDriver	-
+0x9FCDCE62	SceIofilemgrForDriver_9FCDCE62	IoFileMgr	SceIofilemgrForDriver	-
+0xA39A9CA7	SceIofilemgrForDriver_A39A9CA7	IoFileMgr	SceIofilemgrForDriver	-	default
+0xAC0E9AAA	SceIofilemgrForDriver_AC0E9AAA	IoFileMgr	SceIofilemgrForDriver	-
+0xB499287E	SceIofilemgrForDriver_B499287E	IoFileMgr	SceIofilemgrForDriver	-
+0xC722DF35	SceIofilemgrForDriver_C722DF35	IoFileMgr	SceIofilemgrForDriver	-
+0xCCE94599	SceIofilemgrForDriver_CCE94599	IoFileMgr	SceIofilemgrForDriver	-
+0xDD46CD63	SceIofilemgrForDriver_DD46CD63	IoFileMgr	SceIofilemgrForDriver	-	default
+0xF4F8C59A	SceIofilemgrForDriver_F4F8C59A	IoFileMgr	SceIofilemgrForDriver	-
 0x6D59658D	ksceIoCancel	KernelTwins	SceIofilemgrForDriver	-
 0x7D42B8DC	ksceIoChstat	KernelTwins	SceIofilemgrForDriver	-
 0x7EC442BF	ksceIoChstatAsync	KernelTwins	SceIofilemgrForDriver	-
 0xDF57A75F	ksceIoChstatByFd	KernelTwins	SceIofilemgrForDriver	-
 0xEC974400	ksceIoChstatByFdAsync	KernelTwins	SceIofilemgrForDriver	-
 0x1F98BD50	ksceIoChstatForVshbridge	IoFileMgr	SceIofilemgrForDriver	-
+0x40B933C7	ksceIoClearErrorEvent	IoFileMgr	SceIofilemgrForDriver	-
 0xF99DD8A3	ksceIoClose	IoFileMgr	SceIofilemgrForDriver	-
 0x11C57CC6	ksceIoCloseAsync	KernelTwins	SceIofilemgrForDriver	-
+0x3C0343DB	ksceIoCreateErrorEvent	IoFileMgr	SceIofilemgrForDriver	-
+0x2DFA192F	ksceIoCreateMountEvent	IoFileMgr	SceIofilemgrForDriver	-
 0x19C81DD6	ksceIoDclose	KernelTwins	SceIofilemgrForDriver	-
 0xC08F199F	ksceIoDcloseAsync	KernelTwins	SceIofilemgrForDriver	-
+0xC6158F8D	ksceIoDeleteErrorEvent	IoFileMgr	SceIofilemgrForDriver	-
+0x43DB0AE4	ksceIoDeleteMountEvent	IoFileMgr	SceIofilemgrForDriver	-
 0x16882FC4	ksceIoDevctl	KernelTwins	SceIofilemgrForDriver	-
 0xA9302946	ksceIoDevctlAsync	KernelTwins	SceIofilemgrForDriver	-
 0x463B25CC	ksceIoDopen	KernelTwins	SceIofilemgrForDriver	-
@@ -2780,6 +2897,12 @@
 0x5982B0E3	ksceIoDreadAsync	KernelTwins	SceIofilemgrForDriver	-
 0x03051B02	ksceIoDreadForVshbridge	IoFileMgr	SceIofilemgrForDriver	-
 0x16336A0D	ksceIoFlock	IoFileMgr	SceIofilemgrForDriver	-
+0xA1EF2648	ksceIoGetFileInfo	IoFileMgr	SceIofilemgrForDriver	-
+0xDCF75F6D	ksceIoGetGUIDFdListForDebugger	IoFileMgr	SceIofilemgrForDriver	-
+0x9C220246	ksceIoGetMediaType	IoFileMgr	SceIofilemgrForDriver	-
+0x0D493274	ksceIoGetPUIDFdListForDebugger	IoFileMgr	SceIofilemgrForDriver	-
+0xCE397158	ksceIoGetProcessDefaultPriorityForSystem	IoFileMgr	SceIofilemgrForDriver	-
+0x44EDCE57	ksceIoGetRemoteKPLSData	IoFileMgr	SceIofilemgrForDriver	-
 0x6D0FEDB6	ksceIoGetThreadDefaultPriorityForSystem	KernelTwins	SceIofilemgrForDriver	-
 0x75C96D25	ksceIoGetstat	KernelTwins	SceIofilemgrForDriver	-
 0x94A5304A	ksceIoGetstatAsync	KernelTwins	SceIofilemgrForDriver	-
@@ -2792,6 +2915,7 @@
 0x541BAABD	ksceIoLseekAsync	KernelTwins	SceIofilemgrForDriver	-
 0x7F710B25	ksceIoMkdir	KernelTwins	SceIofilemgrForDriver	-
 0x27003443	ksceIoMkdirAsync	KernelTwins	SceIofilemgrForDriver	-
+0xD070BC48	ksceIoMount	IoFileMgr	SceIofilemgrForDriver	-
 0x75192972	ksceIoOpen	IoFileMgr	SceIofilemgrForDriver	-
 0x451001DE	ksceIoOpenAsync	KernelTwins	SceIofilemgrForDriver	-
 0xC3D34965	ksceIoOpenForPid	IoFileMgr	SceIofilemgrForDriver	-
@@ -2808,14 +2932,78 @@
 0x1CC9C634	ksceIoRmdir	KernelTwins	SceIofilemgrForDriver	-
 0xF5B0B36C	ksceIoRmdirAsync	KernelTwins	SceIofilemgrForDriver	-
 0xCFAECF18	ksceIoSetPathMappingFunction	IoFileMgr	SceIofilemgrForDriver	-
+0xABE65071	ksceIoSetProcessDefaultPriorityForSystem	IoFileMgr	SceIofilemgrForDriver	-
 0x3F0FF9D5	ksceIoSetThreadDefaultPriorityForSystem	KernelTwins	SceIofilemgrForDriver	-
 0xDDF78594	ksceIoSync	KernelTwins	SceIofilemgrForDriver	-
 0x4F9EA8B0	ksceIoSyncAsync	KernelTwins	SceIofilemgrForDriver	-
 0x338DCD68	ksceIoSyncByFd	KernelTwins	SceIofilemgrForDriver	-
 0x43170575	ksceIoSyncByFd2	IoFileMgr	SceIofilemgrForDriver	-
 0x041209CF	ksceIoSyncByFdAsync	KernelTwins	SceIofilemgrForDriver	-
+0x20574100	ksceIoUmount	IoFileMgr	SceIofilemgrForDriver	-
 0x21EE91F0	ksceIoWrite	KernelTwins	SceIofilemgrForDriver	-
 0xA1BD13D0	ksceIoWriteAsync	KernelTwins	SceIofilemgrForDriver	-
+0x673D2FCD	ksceVfsAddVfs	IoFileMgr	SceIofilemgrForDriver	-
+0x9CBFA725	ksceVfsDeleteVfs	IoFileMgr	SceIofilemgrForDriver	-
+0xF7DAC0F5	ksceVfsOpDecodePathElem	IoFileMgr	SceIofilemgrForDriver	-
+0xB07B307D	ksceVfsOpDevctl	IoFileMgr	SceIofilemgrForDriver	-
+0x1974FA92	ksceVopChstat	IoFileMgr	SceIofilemgrForDriver	-
+0x0F7E1718	ksceVopCleanup	IoFileMgr	SceIofilemgrForDriver	-
+0x40944C2E	ksceVopClose	IoFileMgr	SceIofilemgrForDriver	-
+0x9E347C7D	ksceVopCreate	IoFileMgr	SceIofilemgrForDriver	-
+0x1350F5C7	ksceVopDclose	IoFileMgr	SceIofilemgrForDriver	-
+0x00C9C2DD	ksceVopDopen	IoFileMgr	SceIofilemgrForDriver	-
+0x77584C8F	ksceVopDread	IoFileMgr	SceIofilemgrForDriver	-
+0x082AFD7F	ksceVopFchstat	IoFileMgr	SceIofilemgrForDriver	-
+0x1DBCBB01	ksceVopFgetstat	IoFileMgr	SceIofilemgrForDriver	-
+0x50A63ACF	ksceVopGetstat	IoFileMgr	SceIofilemgrForDriver	-
+0x8FB94521	ksceVopInactive	IoFileMgr	SceIofilemgrForDriver	-
+0x333C904D	ksceVopIoctl	IoFileMgr	SceIofilemgrForDriver	-
+0x942AA61F	ksceVopLink	IoFileMgr	SceIofilemgrForDriver	-
+0xA5A6A55C	ksceVopLookup	IoFileMgr	SceIofilemgrForDriver	-
+0xB2B13818	ksceVopLseek	IoFileMgr	SceIofilemgrForDriver	-
+0x2F3F8C70	ksceVopMkdir	IoFileMgr	SceIofilemgrForDriver	-
+0x76B79BEC	ksceVopOpen	IoFileMgr	SceIofilemgrForDriver	-
+0xABBC80E3	ksceVopPread	IoFileMgr	SceIofilemgrForDriver	-
+0xA53C040D	ksceVopPwrite	IoFileMgr	SceIofilemgrForDriver	-
+0x570388A5	ksceVopRead	IoFileMgr	SceIofilemgrForDriver	-
+0xDC1E7EE4	ksceVopRemove	IoFileMgr	SceIofilemgrForDriver	-
+0x36A794C7	ksceVopRename	IoFileMgr	SceIofilemgrForDriver	-
+0x1D551105	ksceVopRmdir	IoFileMgr	SceIofilemgrForDriver	-
+0x9CD96406	ksceVopSync	IoFileMgr	SceIofilemgrForDriver	-
+0x0D8A806E	ksceVopUnlink	IoFileMgr	SceIofilemgrForDriver	-
+0xF53399BC	ksceVopWhiteout	IoFileMgr	SceIofilemgrForDriver	-
+0x9A68378D	ksceVopWrite	IoFileMgr	SceIofilemgrForDriver	-
+0xEEAE8B51	ksceVopZerofill	IoFileMgr	SceIofilemgrForDriver	-
+0xBBAC1751	kvfsAllocateFile	IoFileMgr	SceIofilemgrForDriver	-
+0xCDF3EF52	kvfsAllocateFileDummy	IoFileMgr	SceIofilemgrForDriver	-
+0xA7020B0D	kvfsBuffCacheCtl	IoFileMgr	SceIofilemgrForDriver	-
+0xD6AB5E4B	kvfsBuffCacheFree	IoFileMgr	SceIofilemgrForDriver	-
+0xBCE4865B	kvfsChstat	IoFileMgr	SceIofilemgrForDriver	-	default
+0x7517FE29	kvfsChstatByFd	IoFileMgr	SceIofilemgrForDriver	-	default
+0x1AE14011	kvfsClose	IoFileMgr	SceIofilemgrForDriver	-	default
+0xC85E33A2	kvfsFreeFile	IoFileMgr	SceIofilemgrForDriver	-
+0x21D57633	kvfsFreeVnode	IoFileMgr	SceIofilemgrForDriver	-
+0xB987450D	kvfsGetMntInfo	IoFileMgr	SceIofilemgrForDriver	-
+0xC20C621C	kvfsGetMntList	IoFileMgr	SceIofilemgrForDriver	-
+0xD60B5C63	kvfsGetNewVnode	IoFileMgr	SceIofilemgrForDriver	-
+0xAA253B68	kvfsGetVnodeName	IoFileMgr	SceIofilemgrForDriver	-
+0xC1DD4317	kvfsIoctl	IoFileMgr	SceIofilemgrForDriver	-	default
+0xC468B5EF	kvfsIsLockedMnt	IoFileMgr	SceIofilemgrForDriver	-
+0xC3AE93A2	kvfsIsOwnerVnode	IoFileMgr	SceIofilemgrForDriver	-
+0x6B3CA9F7	kvfsLockMnt	IoFileMgr	SceIofilemgrForDriver	-
+0xAA45010B	kvfsLockVnode	IoFileMgr	SceIofilemgrForDriver	-
+0xB62DE9A6	kvfsMount	IoFileMgr	SceIofilemgrForDriver	-	default
+0xFEEE44A9	kvfsMountForPFS	IoFileMgr	SceIofilemgrForDriver	-	default
+0x0E518FA9	kvfsOpen	IoFileMgr	SceIofilemgrForDriver	-	default
+0x0B54F9E0	kvfsPread	IoFileMgr	SceIofilemgrForDriver	-	default
+0xE5DEA6B7	kvfsPwrite	IoFileMgr	SceIofilemgrForDriver	-	default
+0x809892C1	kvfsRead	IoFileMgr	SceIofilemgrForDriver	-	default
+0x69A7E076	kvfsRmdev	IoFileMgr	SceIofilemgrForDriver	-	default
+0x9C7E7B76	kvfsUmount	IoFileMgr	SceIofilemgrForDriver	-	default
+0xD220539D	kvfsUmountForPFS	IoFileMgr	SceIofilemgrForDriver	-	default
+0xDC2D8BCE	kvfsUnlockMnt	IoFileMgr	SceIofilemgrForDriver	-
+0x6048F245	kvfsUnlockVnode	IoFileMgr	SceIofilemgrForDriver	-
+0x8598ADC3	kvfsWrite	IoFileMgr	SceIofilemgrForDriver	-	default
 0x4E255C31	_ZN4IPMI6Client6Config24estimateClientMemorySizeEv	ShellUtil	SceIpmi	-
 0x9DA48DB6	sceJpegArmCreateSplitDecoder	Jpeg	SceJpegArm	vh
 0xA4ABFCE3	sceJpegArmDecodeMJpeg	Jpeg	SceJpegArm	vh
@@ -9284,6 +9472,26 @@
 0xA7CE7DCC	kscePervasiveUartResetDisable	PervasiveKernel	ScePervasiveForDriver	-
 0x788B6C61	kscePervasiveUartResetEnable	PervasiveKernel	ScePervasiveForDriver	-
 0x8BAB45F8	kscePervasiveUartSetBaudrate	PervasiveKernel	ScePervasiveForDriver	-
+0x04352D52	ScePfsFacadeForKernel_04352D52	IoFileMgr	ScePfsFacadeForKernel	-
+0x4238D2D2	ScePfsFacadeForKernel_4238D2D2	IoFileMgr	ScePfsFacadeForKernel	-
+0x58E643C5	ScePfsFacadeForKernel_58E643C5	IoFileMgr	ScePfsFacadeForKernel	-
+0x7F9F4E49	ScePfsFacadeForKernel_7F9F4E49	IoFileMgr	ScePfsFacadeForKernel	-
+0xBD5B21F6	ScePfsFacadeForKernel_BD5B21F6	IoFileMgr	ScePfsFacadeForKernel	-
+0xCB622FFE	ScePfsFacadeForKernel_CB622FFE	IoFileMgr	ScePfsFacadeForKernel	-
+0x27FB7618	ScePfsMgrForKernel_27FB7618	IoFileMgr	ScePfsMgrForKernel	-
+0x4C148288	ScePfsMgrForKernel_4C148288	IoFileMgr	ScePfsMgrForKernel	-
+0x7E4B76E6	ScePfsMgrForKernel_7E4B76E6	IoFileMgr	ScePfsMgrForKernel	-
+0x806D2EA1	ScePfsMgrForKernel_806D2EA1	IoFileMgr	ScePfsMgrForKernel	-
+0xE9D672AB	ScePfsMgrForKernel_E9D672AB	IoFileMgr	ScePfsMgrForKernel	-
+0x8CDA249A	kscePfsAcidDirApprove	IoFileMgr	ScePfsMgrForKernel	-
+0x4A4A8243	kscePfsAcidDirMount	IoFileMgr	ScePfsMgrForKernel	-
+0xB0CC0A1A	kscePfsAcidDirSet	IoFileMgr	ScePfsMgrForKernel	-
+0x00C8AF80	kscePfsAcidDirUnmount	IoFileMgr	ScePfsMgrForKernel	-
+0xD8D0FEE5	kscePfsApprove	IoFileMgr	ScePfsMgrForKernel	-
+0x2D67D8CA	kscePfsDisapprove	IoFileMgr	ScePfsMgrForKernel	-
+0xA772209C	kscePfsMount	IoFileMgr	ScePfsMgrForKernel	-
+0x2D48AEA2	kscePfsMount2	IoFileMgr	ScePfsMgrForKernel	-
+0x680BC384	kscePfsUnmount	IoFileMgr	ScePfsMgrForKernel	-
 0x4A7293E9	sceFontClose	Pgf	ScePgf	vh
 0x07EE1733	sceFontDoneLib	Pgf	ScePgf	vh
 0x51061D87	sceFontFindFont	Pgf	ScePgf	vh
@@ -9363,8 +9571,81 @@
 0xB11EF149	scePowerSetIdleTimerCount	SystemMisc	ScePower	vh
 0x4D695C1F	scePowerSetUsingWireless	SystemMisc	ScePower	vh
 0xDFA8BAF8	scePowerUnregisterCallback	SystemMisc	ScePower	vh
+0x06AF03DB	ScePowerForDriver_06AF03DB	PowerKernel	ScePowerForDriver	-
+0x0D56C601	ScePowerForDriver_0D56C601	PowerKernel	ScePowerForDriver	-
+0x0D80B917	ScePowerForDriver_0D80B917	PowerKernel	ScePowerForDriver	-
+0x2784A6BD	ScePowerForDriver_2784A6BD	PowerKernel	ScePowerForDriver	-
+0x2B51FE2F	ScePowerForDriver_2B51FE2F	PowerKernel	ScePowerForDriver	-
+0x38415146	ScePowerForDriver_38415146	PowerKernel	ScePowerForDriver	-
+0x394DE492	ScePowerForDriver_394DE492	PowerKernel	ScePowerForDriver	-
+0x4159E0D9	ScePowerForDriver_4159E0D9	PowerKernel	ScePowerForDriver	-
+0x4A69163A	ScePowerForDriver_4A69163A	PowerKernel	ScePowerForDriver	-
+0x5210A6FE	ScePowerForDriver_5210A6FE	PowerKernel	ScePowerForDriver	-
+0x627A89C6	ScePowerForDriver_627A89C6	PowerKernel	ScePowerForDriver	-
+0x660D5AB4	ScePowerForDriver_660D5AB4	PowerKernel	ScePowerForDriver	-
+0x661D670D	ScePowerForDriver_661D670D	PowerKernel	ScePowerForDriver	-
+0x711C68DF	ScePowerForDriver_711C68DF	PowerKernel	ScePowerForDriver	-
+0x8C0D2051	ScePowerForDriver_8C0D2051	PowerKernel	ScePowerForDriver	-
+0x991BDEAF	ScePowerForDriver_991BDEAF	PowerKernel	ScePowerForDriver	-
+0xB24263F0	ScePowerForDriver_B24263F0	PowerKernel	ScePowerForDriver	-
+0xC62B6164	ScePowerForDriver_C62B6164	PowerKernel	ScePowerForDriver	-
+0xC715F4F0	ScePowerForDriver_C715F4F0	PowerKernel	ScePowerForDriver	-
+0xD516D446	ScePowerForDriver_D516D446	PowerKernel	ScePowerForDriver	-
+0xF535D928	ScePowerForDriver_F535D928	PowerKernel	ScePowerForDriver	-
+0xFB5C3C75	ScePowerForDriver_FB5C3C75	PowerKernel	ScePowerForDriver	-
+0xFE35B73D	ScePowerForDriver_FE35B73D	PowerKernel	ScePowerForDriver	-
+0x90285886	kscePowerBatteryDisableUsbCharging	PowerKernel	ScePowerForDriver	-
+0x733F973B	kscePowerBatteryEnableUsbCharging	PowerKernel	ScePowerForDriver	-
+0x166922EC	kscePowerBatteryForbidCharging	PowerKernel	ScePowerForDriver	-
+0xDD3D4DAC	kscePowerBatteryPermitCharging	PowerKernel	ScePowerForDriver	-
+0xE4E3C316	kscePowerBatterySetUsbStatus	PowerKernel	ScePowerForDriver	-
+0xACC857A4	kscePowerBatteryStopUsbCharging	PowerKernel	ScePowerForDriver	-
+0x3951AF53	kscePowerEncodeUBattery	PowerKernel	ScePowerForDriver	-	default
+0x2E9000F7	kscePowerGetArmClockFrequencyProc	PowerKernel	ScePowerForDriver	-
+0x2777A517	kscePowerGetBusClockFrequencyProc	PowerKernel	ScePowerForDriver	-
+0x668F01D4	kscePowerGetCameraBusClockFrequency	PowerKernel	ScePowerForDriver	-
+0xCBCC11CC	kscePowerGetCompatClockFrequency	PowerKernel	ScePowerForDriver	-
+0xD8759B55	kscePowerGetDisplayMaxBrightness	PowerKernel	ScePowerForDriver	-
+0xF1E14EA9	kscePowerGetDmac5ClockFrequency	PowerKernel	ScePowerForDriver	-
+0x475BCC82	kscePowerGetGpuClockFrequencyInternal	PowerKernel	ScePowerForDriver	-
+0x642E0AF2	kscePowerGetGpuClockFrequencyProc	PowerKernel	ScePowerForDriver	-
+0x62C5406C	kscePowerGetGpuXbarClockFrequencyProc	PowerKernel	ScePowerForDriver	-
+0xEDC13FE5	kscePowerGetIdleTimer	PowerKernel	ScePowerForDriver	-
+0x165CE085	kscePowerGetPowerSwMode	PowerKernel	ScePowerForDriver	-
+0x0074EF9B	kscePowerGetResumeCount	PowerKernel	ScePowerForDriver	-
 0xC63DACD5	kscePowerGetSysClockFrequency	ProcessmgrKernel	ScePowerForDriver	-
+0x64641E6A	kscePowerGetVeneziaClockFrequency	PowerKernel	ScePowerForDriver	-
+0x0E58FCDF	kscePowerGetVipClockFrequency	PowerKernel	ScePowerForDriver	-
+0x9F26222A	kscePowerGetWakeupFactor	PowerKernel	ScePowerForDriver	-
+0x08951418	kscePowerRequestHibernate	PowerKernel	ScePowerForDriver	-
+0x02DB1035	kscePowerRequestResume	PowerKernel	ScePowerForDriver	-
+0x8921A7A0	kscePowerRequestShutdown	PowerKernel	ScePowerForDriver	-
+0x2875994B	kscePowerRequestSoftReset	PowerKernel	ScePowerForDriver	-	default
+0x86CB5218	kscePowerSetArmClockFrequencyProc	PowerKernel	ScePowerForDriver	-
+0x0C6973B8	kscePowerSetBatteryFakeStatus	PowerKernel	ScePowerForDriver	-
+0x20A33D58	kscePowerSetBusClockFrequencyProc	PowerKernel	ScePowerForDriver	-
+0xA6FF5997	kscePowerSetCallbackState	PowerKernel	ScePowerForDriver	-
+0xC743E392	kscePowerSetCameraBusClockFrequency	PowerKernel	ScePowerForDriver	-
+0xFFC84E69	kscePowerSetCompatClockFrequency	PowerKernel	ScePowerForDriver	-
+0x43D5CE1D	kscePowerSetDisplayBrightness	PowerKernel	ScePowerForDriver	-
+0x77027B6B	kscePowerSetDisplayMaxBrightness	PowerKernel	ScePowerForDriver	-
+0xA902CDDF	kscePowerSetDmac5ClockFrequency	PowerKernel	ScePowerForDriver	-
+0x264C24FC	kscePowerSetGpuClockFrequencyInternal	PowerKernel	ScePowerForDriver	-
+0xB104EFE2	kscePowerSetGpuClockFrequencyProc	PowerKernel	ScePowerForDriver	-
+0x8D18F728	kscePowerSetGpuXbarClockFrequencyProc	PowerKernel	ScePowerForDriver	-
+0x1BA2FCAE	kscePowerSetIdleCallback	PowerKernel	ScePowerForDriver	-
+0x6BC26FC7	kscePowerSetIdleTimer	PowerKernel	ScePowerForDriver	-
+0xC1853BA7	kscePowerSetPowerSwMode	PowerKernel	ScePowerForDriver	-
+0x0CD21B1F	kscePowerSetPowerSwMode2	PowerKernel	ScePowerForDriver	-
+0x0856FD0A	kscePowerSetProcessIdleCallback	PowerKernel	ScePowerForDriver	-
+0xCF8F0529	kscePowerSetPsButtonPushTime	PowerKernel	ScePowerForDriver	-
+0x675A84ED	kscePowerSetStandbyButtonPushTime	PowerKernel	ScePowerForDriver	-
 0x0E333BEC	kscePowerSetSysClockFrequency	ProcessmgrKernel	ScePowerForDriver	-
+0x621BD8FD	kscePowerSetVeneziaClockFrequency	PowerKernel	ScePowerForDriver	-
+0xE5573571	kscePowerSetVipClockFrequency	PowerKernel	ScePowerForDriver	-
+0xEFD3C963	kscePowerTick	PowerKernel	ScePowerForDriver	-
+0x6D2CA84B	kscePowerWlanActivate	PowerKernel	ScePowerForDriver	-
+0x23BB0A60	kscePowerWlanDeactivate	PowerKernel	ScePowerForDriver	-
 0x414CC813	ksceKernelInvokeProcEventHandler	ProcessmgrKernel	SceProcEventForDriver	-
 0x2A43912D	ksceKernelRegisterProcEventHandler	ProcessmgrKernel	SceProcEventForDriver	-
 0x3DED57CC	ksceKernelUnregisterProcEventHandler	ProcessmgrKernel	SceProcEventForDriver	-
@@ -10193,6 +10474,65 @@
 0xBAE9E534	sceScreenShotGetParam	ScreenShot	SceScreenShot	vh
 0x7061665B	sceScreenShotSetOverlayImage	ScreenShot	SceScreenShot	vh
 0x05DB59C7	sceScreenShotSetParam	ScreenShot	SceScreenShot	vh
+0x01E8EB6C	SceSdifForDriver_01E8EB6C	SystemServicesVsh	SceSdifForDriver	-	default
+0x0203ECDC	SceSdifForDriver_0203ECDC	SystemServicesVsh	SceSdifForDriver	-	default
+0x0C66E36F	SceSdifForDriver_0C66E36F	SystemServicesVsh	SceSdifForDriver	-	default
+0x0EB0EF86	SceSdifForDriver_0EB0EF86	SystemServicesVsh	SceSdifForDriver	-
+0x0F157F49	SceSdifForDriver_0F157F49	SystemServicesVsh	SceSdifForDriver	-	default
+0x180E7395	SceSdifForDriver_180E7395	SystemServicesVsh	SceSdifForDriver	-	default
+0x1847B18C	SceSdifForDriver_1847B18C	SystemServicesVsh	SceSdifForDriver	-	default
+0x235AD556	SceSdifForDriver_235AD556	SystemServicesVsh	SceSdifForDriver	-
+0x3428884D	SceSdifForDriver_3428884D	SystemServicesVsh	SceSdifForDriver	-	default
+0x35BA9DF8	SceSdifForDriver_35BA9DF8	SystemServicesVsh	SceSdifForDriver	-
+0x3B6AB29E	SceSdifForDriver_3B6AB29E	SystemServicesVsh	SceSdifForDriver	-	default
+0x3C4CDC8B	SceSdifForDriver_3C4CDC8B	SystemServicesVsh	SceSdifForDriver	-	default
+0x3DF7E207	SceSdifForDriver_3DF7E207	SystemServicesVsh	SceSdifForDriver	-
+0x475D8E45	SceSdifForDriver_475D8E45	SystemServicesVsh	SceSdifForDriver	-
+0x53518827	SceSdifForDriver_53518827	SystemServicesVsh	SceSdifForDriver	-
+0x53962379	SceSdifForDriver_53962379	SystemServicesVsh	SceSdifForDriver	-
+0x55BAEB2D	SceSdifForDriver_55BAEB2D	SystemServicesVsh	SceSdifForDriver	-	default
+0x5BAC6E70	SceSdifForDriver_5BAC6E70	SystemServicesVsh	SceSdifForDriver	-	default
+0x5D65E66B	SceSdifForDriver_5D65E66B	SystemServicesVsh	SceSdifForDriver	-	default
+0x60642F49	SceSdifForDriver_60642F49	SystemServicesVsh	SceSdifForDriver	-	default
+0x6CC8E28D	SceSdifForDriver_6CC8E28D	SystemServicesVsh	SceSdifForDriver	-
+0x733BC373	SceSdifForDriver_733BC373	SystemServicesVsh	SceSdifForDriver	-	default
+0x763F1075	SceSdifForDriver_763F1075	SystemServicesVsh	SceSdifForDriver	-	default
+0x76D2B87B	SceSdifForDriver_76D2B87B	SystemServicesVsh	SceSdifForDriver	-
+0x849E3216	SceSdifForDriver_849E3216	SystemServicesVsh	SceSdifForDriver	-	default
+0x855C95E1	SceSdifForDriver_855C95E1	SystemServicesVsh	SceSdifForDriver	-	default
+0x995748EA	SceSdifForDriver_995748EA	SystemServicesVsh	SceSdifForDriver	-	default
+0xAABAA0F0	SceSdifForDriver_AABAA0F0	SystemServicesVsh	SceSdifForDriver	-	default
+0xAB0222F2	SceSdifForDriver_AB0222F2	SystemServicesVsh	SceSdifForDriver	-
+0xAF702FE7	SceSdifForDriver_AF702FE7	SystemServicesVsh	SceSdifForDriver	-	default
+0xB05EFF68	SceSdifForDriver_B05EFF68	SystemServicesVsh	SceSdifForDriver	-
+0xB32776C7	SceSdifForDriver_B32776C7	SystemServicesVsh	SceSdifForDriver	-	default
+0xB83F7518	SceSdifForDriver_B83F7518	SystemServicesVsh	SceSdifForDriver	-
+0xBC45C83D	SceSdifForDriver_BC45C83D	SystemServicesVsh	SceSdifForDriver	-	default
+0xD0F78D9B	SceSdifForDriver_D0F78D9B	SystemServicesVsh	SceSdifForDriver	-	default
+0xD3C1E2B6	SceSdifForDriver_D3C1E2B6	SystemServicesVsh	SceSdifForDriver	-	default
+0xDECE963B	SceSdifForDriver_DECE963B	SystemServicesVsh	SceSdifForDriver	-	default
+0xE091BA2E	SceSdifForDriver_E091BA2E	SystemServicesVsh	SceSdifForDriver	-
+0xE5E5F42E	SceSdifForDriver_E5E5F42E	SystemServicesVsh	SceSdifForDriver	-
+0xE80293EF	SceSdifForDriver_E80293EF	SystemServicesVsh	SceSdifForDriver	-	default
+0xF1A24EDD	SceSdifForDriver_F1A24EDD	SystemServicesVsh	SceSdifForDriver	-	default
+0xFE6F3E7B	SceSdifForDriver_FE6F3E7B	SystemServicesVsh	SceSdifForDriver	-	default
+0x23A4EF01	ksceSdifGetCID	SystemServicesVsh	SceSdifForDriver	-
+0x36A2B01B	ksceSdifGetCardInsertState1	SystemServicesVsh	SceSdifForDriver	-
+0xFD9E5CFA	ksceSdifGetCardInsertState2	SystemServicesVsh	SceSdifForDriver	-
+0xDC8F52F8	ksceSdifGetSdContextGlobal	SystemServicesVsh	SceSdifForDriver	-
+0x6A71987F	ksceSdifGetSdContextPartValidateMmc	SystemServicesVsh	SceSdifForDriver	-
+0xB9EA5B1E	ksceSdifGetSdContextPartValidateSd	SystemServicesVsh	SceSdifForDriver	-
+0x6A8235FC	ksceSdifGetSdContextPartValidateSdio	SystemServicesVsh	SceSdifForDriver	-
+0x22C82E79	ksceSdifInitializeMmcDevice	SystemServicesVsh	SceSdifForDriver	-
+0xC1271539	ksceSdifInitializeSdDevice	SystemServicesVsh	SceSdifForDriver	-
+0x29A71E7F	ksceSdifMemoryCardDisableSlowMode	SystemServicesVsh	SceSdifForDriver	-
+0xF37CF8E5	ksceSdifMemoryCardEnableSlowMode	SystemServicesVsh	SceSdifForDriver	-
+0x134E06C4	ksceSdifReadCmd56	SystemServicesVsh	SceSdifForDriver	-	default
+0x6F8D529B	ksceSdifReadSectorMmc	SystemServicesVsh	SceSdifForDriver	-	default
+0xB9593652	ksceSdifReadSectorSd	SystemServicesVsh	SceSdifForDriver	-	default
+0xB0996641	ksceSdifWriteCmd56	SystemServicesVsh	SceSdifForDriver	-	default
+0x175543D2	ksceSdifWriteSectorMmc	SystemServicesVsh	SceSdifForDriver	-	default
+0xE0781171	ksceSdifWriteSectorSd	SystemServicesVsh	SceSdifForDriver	-	default
 0x45B246B7	NID_45B246B7	FirmwareConstants	SceSensMe	-
 0x90E815D2	NID_90E815D2	FirmwareConstants	SceSensMe	-
 0xB358E1B6	_sceSharedFbOpen	SharedFb	SceSharedFb	vh
@@ -11077,69 +11417,188 @@
 0x8EB8DFBB	sceKernelOpenMemBlock	SysMem	SceSysmem	vh
 0x9CA3EB2B	sceKernelOpenVMDomain	SysMem	SceSysmem	vh
 0x19D2A81A	sceKernelSyncVMDomain	SysMem	SceSysmem	vh
+0x13805CA8	SceSysmemForDriver_13805CA8	SysmemKernel	SceSysmemForDriver	-
+0x16713BE8	SceSysmemForDriver_16713BE8	SysmemKernel	SceSysmemForDriver	-
+0x1EFC96EA	SceSysmemForDriver_1EFC96EA	SysmemKernel	SceSysmemForDriver	-
+0x4C584B29	SceSysmemForDriver_4C584B29	SysmemKernel	SceSysmemForDriver	-
+0x64DBE472	SceSysmemForDriver_64DBE472	SysmemKernel	SceSysmemForDriver	-
+0x6C76AD89	SceSysmemForDriver_6C76AD89	SysmemKernel	SceSysmemForDriver	-
+0x856FA2E3	SceSysmemForDriver_856FA2E3	SysmemKernel	SceSysmemForDriver	-
+0x89475192	SceSysmemForDriver_89475192	SysmemKernel	SceSysmemForDriver	-	default
+0x8C43B052	SceSysmemForDriver_8C43B052	SysmemKernel	SceSysmemForDriver	-
+0x987EE587	SceSysmemForDriver_987EE587	SysmemKernel	SceSysmemForDriver	-
+0xA7C0D1FC	SceSysmemForDriver_A7C0D1FC	SysmemKernel	SceSysmemForDriver	-
+0xC50A9C0D	SceSysmemForDriver_C50A9C0D	SysmemKernel	SceSysmemForDriver	-
+0xC9928F5E	SceSysmemForDriver_C9928F5E	SysmemKernel	SceSysmemForDriver	-
+0xCB0F3A33	SceSysmemForDriver_CB0F3A33	SysmemKernel	SceSysmemForDriver	-
 0x047D32F2	ksceGUIDClose	SysmemKernel	SceSysmemForDriver	-
 0x0F5C84B7	ksceGUIDReferObject	SysmemKernel	SceSysmemForDriver	-
 0x00ED6C14	ksceGUIDReferObjectWithClass	SysmemKernel	SceSysmemForDriver	-
 0x77066FD1	ksceGUIDReferObjectWithClassLevel	SysmemKernel	SceSysmemForDriver	-
 0x149885C4	ksceGUIDReleaseObject	SysmemKernel	SceSysmemForDriver	-
+0x65419BD3	ksceKernelAddressSpaceVAtoPABySW	SysmemKernel	SceSysmemForDriver	-
 0x7B4CB60A	ksceKernelAllocHeapMemory	SysmemKernel	SceSysmemForDriver	-
+0x7750CEA7	ksceKernelAllocHeapMemoryFromGlobalHeap	SysmemKernel	SceSysmemForDriver	-
+0x0B4ED16A	ksceKernelAllocHeapMemoryFromGlobalHeapWithOpt	SysmemKernel	SceSysmemForDriver	-
+0xB415B5A8	ksceKernelAllocHeapMemoryWithOpt1	SysmemKernel	SceSysmemForDriver	-
 0x49D4DD9B	ksceKernelAllocHeapMemoryWithOption	SysmemKernel	SceSysmemForDriver	-
 0xC94850C9	ksceKernelAllocMemBlock	SysmemKernel	SceSysmemForDriver	-
+0xD44F464D	ksceKernelAllocMemBlockWithInfo	SysmemKernel	SceSysmemForDriver	-
 0x61317102	ksceKernelCreateClass	SysmemKernel	SceSysmemForDriver	-
 0x9328E0E8	ksceKernelCreateHeap	SysmemKernel	SceSysmemForDriver	-
 0x56A13E90	ksceKernelCreateUidObj2	SysmemKernel	SceSysmemForDriver	-
+0x89A44858	ksceKernelCreateUidObjForUid	SysmemKernel	SceSysmemForDriver	-
 0xCED1547B	ksceKernelCreateUserUidForClass	SysmemKernel	SceSysmemForDriver	-
+0x513B9DDD	ksceKernelCreateUserUidForName	SysmemKernel	SceSysmemForDriver	-
+0x8DA0BCA5	ksceKernelCreateUserUidForNameWithClass	SysmemKernel	SceSysmemForDriver	-
 0xD6437637	ksceKernelDeleteHeap	SysmemKernel	SceSysmemForDriver	-
 0x9C78064C	ksceKernelFindMemBlock	SysmemKernel	SceSysmemForDriver	-
 0x8A1742F6	ksceKernelFindMemBlockByAddr	SysmemKernel	SceSysmemForDriver	-
+0xF3BBE2E1	ksceKernelFindMemBlockByAddrForDefaultSize	SysmemKernel	SceSysmemForDriver	-
 0x857F1D5A	ksceKernelFindMemBlockByAddrForPid	SysmemKernel	SceSysmemForDriver	-
 0x9F6E45E3	ksceKernelFindMemBlockForPid	SysmemKernel	SceSysmemForDriver	-
+0xBDA6E42B	ksceKernelFirstDifferentBlock32User	SysmemKernel	SceSysmemForDriver	-
+0xBB3B02C2	ksceKernelFirstDifferentBlock64User	SysmemKernel	SceSysmemForDriver	-
+0xE83855FD	ksceKernelFirstDifferentBlock64UserForPid	SysmemKernel	SceSysmemForDriver	-
 0x8334454F	ksceKernelFirstDifferentIntUserForPid	SysmemKernel	SceSysmemForDriver	-
 0x3EBCE343	ksceKernelFreeHeapMemory	SysmemKernel	SceSysmemForDriver	-
+0xFB817A59	ksceKernelFreeHeapMemoryFromGlobalHeap	SysmemKernel	SceSysmemForDriver	-
 0x009E1C61	ksceKernelFreeMemBlock	SysmemKernel	SceSysmemForDriver	-
 0x0FC24464	ksceKernelGUIDGetObject	SysmemKernel	SceSysmemForDriver	-
 0xE9728A12	ksceKernelGetClassForPidForUid	SysmemKernel	SceSysmemForDriver	-
 0xC74B0152	ksceKernelGetClassForUid	SysmemKernel	SceSysmemForDriver	-
 0xA841EDDA	ksceKernelGetMemBlockBase	SysmemKernel	SceSysmemForDriver	-
 0x0B1FD5C3	ksceKernelGetMemBlockMappedBase	SysmemKernel	SceSysmemForDriver	-
+0x98C15666	ksceKernelGetMemBlockPARange	SysmemKernel	SceSysmemForDriver	-
+0x19A51AC7	ksceKernelGetMemBlockPaddrListForUid	SysmemKernel	SceSysmemForDriver	-
 0xB81CF0A3	ksceKernelGetMemBlockVBase	SysmemKernel	SceSysmemForDriver	-
+0x09896EB7	ksceKernelGetNameForPidByUid	SysmemKernel	SceSysmemForDriver	-
 0xA78755EB	ksceKernelGetNameForUid	SysmemKernel	SceSysmemForDriver	-
 0xE655852F	ksceKernelGetNameForUid2	SysmemKernel	SceSysmemForDriver	-
 0xFE6D7FAE	ksceKernelGetObjectForPidForUid	SysmemKernel	SceSysmemForDriver	-
+0xF6DB54BA	ksceKernelGetObjectForUidForAttr	SysmemKernel	SceSysmemForDriver	-
 0x72A98D17	ksceKernelGetObjectForUidForClassTree	SysmemKernel	SceSysmemForDriver	-
+0x08A8A7E8	ksceKernelGetPaddrListForLargePage	SysmemKernel	SceSysmemForDriver	-
+0x16844CE6	ksceKernelGetPaddrListForSmallPage	SysmemKernel	SceSysmemForDriver	-
 0xAE36C775	ksceKernelGetPaddrPair	SysmemKernel	SceSysmemForDriver	-
+0x32257A24	ksceKernelGetPaddrPairForLargePage	SysmemKernel	SceSysmemForDriver	-
+0xB3575090	ksceKernelGetPaddrPairForSmallPage	SysmemKernel	SceSysmemForDriver	-
+0x0AAA4FDD	ksceKernelGetPhysicalMemoryType	SysmemKernel	SceSysmemForDriver	-
 0x2ECF7944	ksceKernelGetPidContext	SysmemKernel	SceSysmemForDriver	-
 0x85336A1C	ksceKernelGetUidClass	SysmemKernel	SceSysmemForDriver	-
+0xF4AD89D8	ksceKernelIsPaddrWithinSameSectionForUid	SysmemKernel	SceSysmemForDriver	-
+0x184172B1	ksceKernelKernelUidForUserUidForClass	SysmemKernel	SceSysmemForDriver	-
 0x58D21746	ksceKernelMapBlockUserVisible	SysmemKernel	SceSysmemForDriver	-
+0x04059C4B	ksceKernelMapBlockUserVisibleWithFlag	SysmemKernel	SceSysmemForDriver	-
+0x7D4F8B5F	ksceKernelMapUserBlock	SysmemKernel	SceSysmemForDriver	-
 0xF50BDC0C	ksceKernelMemBlockDecRefCounterAndReleaseUid	SysmemKernel	SceSysmemForDriver	-
+0x24A99FFF	ksceKernelMemBlockGetInfoEx	SysmemKernel	SceSysmemForDriver	-
+0xA73CFFEF	ksceKernelMemBlockGetInfoExForVisibilityLevel	SysmemKernel	SceSysmemForDriver	-
+0x78337B62	ksceKernelMemBlockGetSomeSize	SysmemKernel	SceSysmemForDriver	-
 0xEAF3849B	ksceKernelMemBlockIncRefCounterAndReleaseUid	SysmemKernel	SceSysmemForDriver	-
+0x00575B00	ksceKernelMemBlockRelease	SysmemKernel	SceSysmemForDriver	-
+0x20C811FA	ksceKernelMemBlockType2Memtype	SysmemKernel	SceSysmemForDriver	-
+0x6A0792A3	ksceKernelMemBlockTypeGetPrivileges	SysmemKernel	SceSysmemForDriver	-
+0x75C70DE0	ksceKernelMemRangeRelease	SysmemKernel	SceSysmemForDriver	-
+0xA8525B06	ksceKernelMemRangeReleaseForPid	SysmemKernel	SceSysmemForDriver	-
+0x22CBE925	ksceKernelMemRangeReleaseWithPerm	SysmemKernel	SceSysmemForDriver	-
+0x59A4402F	ksceKernelMemRangeRetain	SysmemKernel	SceSysmemForDriver	-
+0x659586BF	ksceKernelMemRangeRetainForPid	SysmemKernel	SceSysmemForDriver	-
+0xBC0A1D60	ksceKernelMemRangeRetainWithPerm	SysmemKernel	SceSysmemForDriver	-
 0x6D88EF8A	ksceKernelMemcpyKernelToUser	SysmemKernel	SceSysmemForDriver	-
 0x6B825479	ksceKernelMemcpyKernelToUserForPid	SysmemKernel	SceSysmemForDriver	-
+0xFED82F2D	ksceKernelMemcpyKernelToUserForPidUnchecked	SysmemKernel	SceSysmemForDriver	-
 0xBC996A7A	ksceKernelMemcpyUserToKernel	SysmemKernel	SceSysmemForDriver	-
 0x605275F8	ksceKernelMemcpyUserToKernelForPid	SysmemKernel	SceSysmemForDriver	-
 0x1BD44DD5	ksceKernelMemcpyUserToUser	SysmemKernel	SceSysmemForDriver	-
+0x8E086C33	ksceKernelMemcpyUserToUserForPid	SysmemKernel	SceSysmemForDriver	-
 0xD76E7452	ksceKernelOpenUidForName	SysmemKernel	SceSysmemForDriver	-
 0x61A67D32	ksceKernelProcModeVAtoPA	SysmemKernel	SceSysmemForDriver	-
+0x0091D74D	ksceKernelProcUserMap	SysmemKernel	SceSysmemForDriver	-
+0xDFE2C8CB	ksceKernelRemapBlock	SysmemKernel	SceSysmemForDriver	-
+0x12624884	ksceKernelSetNameForPidForUid	SysmemKernel	SceSysmemForDriver	-
 0x4CFA4100	ksceKernelSetObjectForUid	SysmemKernel	SceSysmemForDriver	-
 0x80BD6FEB	ksceKernelStrncpyKernelToUser	SysmemKernel	SceSysmemForDriver	-
 0x75AAF178	ksceKernelStrncpyUserForPid	SysmemKernel	SceSysmemForDriver	-
 0xDB3EC244	ksceKernelStrncpyUserToKernel	SysmemKernel	SceSysmemForDriver	-
 0xB429D419	ksceKernelStrnlenUser	SysmemKernel	SceSysmemForDriver	-
+0x9929EB07	ksceKernelStrnlenUserForPid	SysmemKernel	SceSysmemForDriver	-
+0x2D711589	ksceKernelSwitchPidContext	SysmemKernel	SceSysmemForDriver	-
+0xFFCD9B60	ksceKernelUnmapMemBlock	SysmemKernel	SceSysmemForDriver	-
+0x278BC201	ksceKernelUserMap	SysmemKernel	SceSysmemForDriver	-
 0xE68BEEBD	ksceKernelVARangeToPAVector	SysmemKernel	SceSysmemForDriver	-
 0x8D160E65	ksceKernelVAtoPA	SysmemKernel	SceSysmemForDriver	-
 0x84A4AF5E	kscePUIDClose	SysmemKernel	SceSysmemForDriver	-
 0xBF209859	kscePUIDOpenByGUID	SysmemKernel	SceSysmemForDriver	-
 0x45D22597	kscePUIDtoGUID	SysmemKernel	SceSysmemForDriver	-
+0x03A2CAF0	SceSysmemForKernel_03A2CAF0	SysmemKernel	SceSysmemForKernel	-
+0x0B36F7F9	SceSysmemForKernel_0B36F7F9	SysmemKernel	SceSysmemForKernel	-
+0x17F12DCE	SceSysmemForKernel_17F12DCE	SysmemKernel	SceSysmemForKernel	-
+0x188C8742	SceSysmemForKernel_188C8742	SysmemKernel	SceSysmemForKernel	-
+0x1DE4953F	SceSysmemForKernel_1DE4953F	SysmemKernel	SceSysmemForKernel	-
+0x1F84FE44	SceSysmemForKernel_1F84FE44	SysmemKernel	SceSysmemForKernel	-
+0x201E970B	SceSysmemForKernel_201E970B	SysmemKernel	SceSysmemForKernel	-
+0x2C15615F	SceSysmemForKernel_2C15615F	SysmemKernel	SceSysmemForKernel	-
+0x2C7B8D65	SceSysmemForKernel_2C7B8D65	SysmemKernel	SceSysmemForKernel	-
+0x2CFD8C9A	SceSysmemForKernel_2CFD8C9A	SysmemKernel	SceSysmemForKernel	-
+0x31FA81B5	SceSysmemForKernel_31FA81B5	SysmemKernel	SceSysmemForKernel	-
+0x320E907F	SceSysmemForKernel_320E907F	SysmemKernel	SceSysmemForKernel	-
 0x368F1C36	SceSysmemForKernel_368F1C36	SysmemKernel	SceSysmemForKernel	-
+0x3753C584	SceSysmemForKernel_3753C584	SysmemKernel	SceSysmemForKernel	-
+0x39D5A3B7	SceSysmemForKernel_39D5A3B7	SysmemKernel	SceSysmemForKernel	-
+0x42834422	SceSysmemForKernel_42834422	SysmemKernel	SceSysmemForKernel	-
+0x46DF8C8A	SceSysmemForKernel_46DF8C8A	SysmemKernel	SceSysmemForKernel	-
+0x48D2E408	SceSysmemForKernel_48D2E408	SysmemKernel	SceSysmemForKernel	-
+0x4E6D8BC3	SceSysmemForKernel_4E6D8BC3	SysmemKernel	SceSysmemForKernel	-	default
+0x50980298	SceSysmemForKernel_50980298	SysmemKernel	SceSysmemForKernel	-
+0x5FD15C6E	SceSysmemForKernel_5FD15C6E	SysmemKernel	SceSysmemForKernel	-
+0x62800A6B	SceSysmemForKernel_62800A6B	SysmemKernel	SceSysmemForKernel	-
+0x666C878F	SceSysmemForKernel_666C878F	SysmemKernel	SceSysmemForKernel	-
+0x6D563733	SceSysmemForKernel_6D563733	SysmemKernel	SceSysmemForKernel	-
+0x6DBDA03B	SceSysmemForKernel_6DBDA03B	SysmemKernel	SceSysmemForKernel	-
+0x6E82D5A0	SceSysmemForKernel_6E82D5A0	SysmemKernel	SceSysmemForKernel	-
+0x797C858B	SceSysmemForKernel_797C858B	SysmemKernel	SceSysmemForKernel	-
+0x7F7D5C4A	SceSysmemForKernel_7F7D5C4A	SysmemKernel	SceSysmemForKernel	-
+0x811C452B	SceSysmemForKernel_811C452B	SysmemKernel	SceSysmemForKernel	-
+0x8450BFF7	SceSysmemForKernel_8450BFF7	SysmemKernel	SceSysmemForKernel	-
+0x8F0B5536	SceSysmemForKernel_8F0B5536	SysmemKernel	SceSysmemForKernel	-
+0x93D0A183	SceSysmemForKernel_93D0A183	SysmemKernel	SceSysmemForKernel	-
+0x96BD47D1	SceSysmemForKernel_96BD47D1	SysmemKernel	SceSysmemForKernel	-
+0x9C23DFF7	SceSysmemForKernel_9C23DFF7	SysmemKernel	SceSysmemForKernel	-
+0xB591E49F	SceSysmemForKernel_B591E49F	SysmemKernel	SceSysmemForKernel	-
+0xBA441FD0	SceSysmemForKernel_BA441FD0	SysmemKernel	SceSysmemForKernel	-
+0xBD42A0FC	SceSysmemForKernel_BD42A0FC	SysmemKernel	SceSysmemForKernel	-
+0xBDE00106	SceSysmemForKernel_BDE00106	SysmemKernel	SceSysmemForKernel	-
+0xC3F9607E	SceSysmemForKernel_C3F9607E	SysmemKernel	SceSysmemForKernel	-
+0xCE561224	SceSysmemForKernel_CE561224	SysmemKernel	SceSysmemForKernel	-
+0xCF3C3F7A	SceSysmemForKernel_CF3C3F7A	SysmemKernel	SceSysmemForKernel	-
+0xDBEACE2C	SceSysmemForKernel_DBEACE2C	SysmemKernel	SceSysmemForKernel	-
+0xDCEF10B2	SceSysmemForKernel_DCEF10B2	SysmemKernel	SceSysmemForKernel	-
+0xE8CC2166	SceSysmemForKernel_E8CC2166	SysmemKernel	SceSysmemForKernel	-
+0xEC90AA11	SceSysmemForKernel_EC90AA11	SysmemKernel	SceSysmemForKernel	-
+0xF3DB2D71	SceSysmemForKernel_F3DB2D71	SysmemKernel	SceSysmemForKernel	-
+0xF49C0BE8	SceSysmemForKernel_F49C0BE8	SysmemKernel	SceSysmemForKernel	-
+0xF57A97A0	SceSysmemForKernel_F57A97A0	SysmemKernel	SceSysmemForKernel	-
 0xFA6C098C	SceSysmemForKernel_FA6C098C	SysmemKernel	SceSysmemForKernel	-
+0x0E43E113	ksceGUIDGetObjectWithClass	SysmemKernel	SceSysmemForKernel	-
+0x6D26B066	ksceGUIDKernelCreateWithAttr	SysmemKernel	SceSysmemForKernel	-
 0xDF0288D7	ksceGUIDKernelCreateWithOpt	SysmemKernel	SceSysmemForKernel	-
 0xFB6390CE	ksceGUIDKernelCreateWithOpt	SysmemKernel	SceSysmemForKernel	-
+0x89D33DF0	ksceGUIDOpenByGUID	SysmemKernel	SceSysmemForKernel	-
+0x73C38695	ksceKernelAddressSpaceUnmap	SysmemKernel	SceSysmemForKernel	-
 0x85571907	ksceKernelAlloc	SysmemKernel	SceSysmemForKernel	-
+0x6DB46017	ksceKernelAllocPartitionMemBlock	SysmemKernel	SceSysmemForKernel	-
 0x499A9FFF	ksceKernelCopyToUserDomain	SysmemKernel	SceSysmemForKernel	-
 0x5EF1DAAF	ksceKernelCopyToUserTextDomain	SysmemKernel	SceSysmemForKernel	-
+0x7D87F706	ksceKernelFindClassByName	SysmemKernel	SceSysmemForKernel	-
 0x4233C16D	ksceKernelFree	SysmemKernel	SceSysmemForKernel	-
+0xD44FE44B	ksceKernelGetMemBlockType	SysmemKernel	SceSysmemForKernel	-
+0xE4193EB6	ksceKernelGetUIDDLinkClass	SysmemKernel	SceSysmemForKernel	-
+0x7C878E94	ksceKernelGetUIDHeapClass	SysmemKernel	SceSysmemForKernel	-
+0x86681B64	ksceKernelGetUIDMemBlockClass	SysmemKernel	SceSysmemForKernel	-
 0x2995558D	ksceKernelProcCopyToUserRx	SysmemKernel	SceSysmemForKernel	-
 0x30931572	ksceKernelProcCopyToUserRx	SysmemKernel	SceSysmemForKernel	-
+0x8EE8B917	ksceKernelReallocHeapMemory	SysmemKernel	SceSysmemForKernel	-
 0x53099B7A	sceSysmoduleIsLoaded	SystemMisc	SceSysmodule	vh
 0x09A4AF1D	sceSysmoduleIsLoadedInternal	SystemMisc	SceSysmodule	vh
 0x79A0160A	sceSysmoduleLoadModule	SystemMisc	SceSysmodule	vh
@@ -11152,32 +11611,43 @@
 0x06436EF0	SceSysrootForDriver_06436EF0	SysmemKernel	SceSysrootForDriver	-
 0x0A52A59C	SceSysrootForDriver_0A52A59C	SysmemKernel	SceSysrootForDriver	-
 0x0ECD711E	SceSysrootForDriver_0ECD711E	SysmemKernel	SceSysrootForDriver	-
+0x0F59B369	SceSysrootForDriver_0F59B369	SysmemKernel	SceSysrootForDriver	-
 0x10788257	SceSysrootForDriver_10788257	SysmemKernel	SceSysrootForDriver	-
 0x1160FCA1	SceSysrootForDriver_1160FCA1	SysmemKernel	SceSysrootForDriver	-
 0x1434D90E	SceSysrootForDriver_1434D90E	SysmemKernel	SceSysrootForDriver	-
 0x17DD213C	SceSysrootForDriver_17DD213C	SysmemKernel	SceSysrootForDriver	-
 0x1834D482	SceSysrootForDriver_1834D482	SysmemKernel	SceSysrootForDriver	-
 0x1B3FA457	SceSysrootForDriver_1B3FA457	SysmemKernel	SceSysrootForDriver	-
+0x1BA0C6C1	SceSysrootForDriver_1BA0C6C1	SysmemKernel	SceSysrootForDriver	-
 0x1D61C837	SceSysrootForDriver_1D61C837	SysmemKernel	SceSysrootForDriver	-
 0x1FFD2AFA	SceSysrootForDriver_1FFD2AFA	SysmemKernel	SceSysrootForDriver	-
+0x217B2871	SceSysrootForDriver_217B2871	SysmemKernel	SceSysrootForDriver	-
 0x246AAAB3	SceSysrootForDriver_246AAAB3	SysmemKernel	SceSysrootForDriver	-
+0x26AA237C	SceSysrootForDriver_26AA237C	SysmemKernel	SceSysrootForDriver	-
 0x273EAE53	SceSysrootForDriver_273EAE53	SysmemKernel	SceSysrootForDriver	-
 0x2816A813	SceSysrootForDriver_2816A813	SysmemKernel	SceSysrootForDriver	-
+0x2A5DBD38	SceSysrootForDriver_2A5DBD38	SysmemKernel	SceSysrootForDriver	-	default
 0x2BE874EF	SceSysrootForDriver_2BE874EF	SysmemKernel	SceSysrootForDriver	-
 0x2C9E7797	SceSysrootForDriver_2C9E7797	SysmemKernel	SceSysrootForDriver	-
 0x34281746	SceSysrootForDriver_34281746	SysmemKernel	SceSysrootForDriver	-
+0x35875119	SceSysrootForDriver_35875119	SysmemKernel	SceSysrootForDriver	-
 0x39F1FD07	SceSysrootForDriver_39F1FD07	SysmemKernel	SceSysrootForDriver	-
 0x39F9C968	SceSysrootForDriver_39F9C968	SysmemKernel	SceSysrootForDriver	-
 0x3AE319DA	SceSysrootForDriver_3AE319DA	SysmemKernel	SceSysrootForDriver	-
 0x3B19B06B	SceSysrootForDriver_3B19B06B	SysmemKernel	SceSysrootForDriver	-
 0x400B9793	SceSysrootForDriver_400B9793	SysmemKernel	SceSysrootForDriver	-
 0x421EFC96	SceSysrootForDriver_421EFC96	SysmemKernel	SceSysrootForDriver	-
+0x44EA3197	SceSysrootForDriver_44EA3197	SysmemKernel	SceSysrootForDriver	-	default
 0x47F19DD3	SceSysrootForDriver_47F19DD3	SysmemKernel	SceSysrootForDriver	-
 0x483EF108	SceSysrootForDriver_483EF108	SysmemKernel	SceSysrootForDriver	-
 0x49843C16	SceSysrootForDriver_49843C16	SysmemKernel	SceSysrootForDriver	-
+0x4D98B15B	SceSysrootForDriver_4D98B15B	SysmemKernel	SceSysrootForDriver	-
 0x51F9C118	SceSysrootForDriver_51F9C118	SysmemKernel	SceSysrootForDriver	-
 0x525B24C5	SceSysrootForDriver_525B24C5	SysmemKernel	SceSysrootForDriver	-
 0x5458BF6D	SceSysrootForDriver_5458BF6D	SysmemKernel	SceSysrootForDriver	-
+0x56C4C949	SceSysrootForDriver_56C4C949	SysmemKernel	SceSysrootForDriver	-
+0x56D85EB0	SceSysrootForDriver_56D85EB0	SysmemKernel	SceSysrootForDriver	-
+0x579CC758	SceSysrootForDriver_579CC758	SysmemKernel	SceSysrootForDriver	-
 0x582616EC	SceSysrootForDriver_582616EC	SysmemKernel	SceSysrootForDriver	-
 0x591BB490	SceSysrootForDriver_591BB490	SysmemKernel	SceSysrootForDriver	-
 0x5A4A7F7E	SceSysrootForDriver_5A4A7F7E	SysmemKernel	SceSysrootForDriver	-
@@ -11187,18 +11657,32 @@
 0x631141E2	SceSysrootForDriver_631141E2	SysmemKernel	SceSysrootForDriver	-
 0x65F3D598	SceSysrootForDriver_65F3D598	SysmemKernel	SceSysrootForDriver	-
 0x6655F48C	SceSysrootForDriver_6655F48C	SysmemKernel	SceSysrootForDriver	-
+0x6E0BC27C	SceSysrootForDriver_6E0BC27C	SysmemKernel	SceSysrootForDriver	-	default
 0x709799BB	SceSysrootForDriver_709799BB	SysmemKernel	SceSysrootForDriver	-
+0x70A60BBA	SceSysrootForDriver_70A60BBA	SysmemKernel	SceSysrootForDriver	-
 0x70AD47A9	SceSysrootForDriver_70AD47A9	SysmemKernel	SceSysrootForDriver	-
+0x778D0966	SceSysrootForDriver_778D0966	SysmemKernel	SceSysrootForDriver	-
+0x79458ACB	SceSysrootForDriver_79458ACB	SysmemKernel	SceSysrootForDriver	-
+0x7998F5B5	SceSysrootForDriver_7998F5B5	SysmemKernel	SceSysrootForDriver	-
 0x7AAC4EE7	SceSysrootForDriver_7AAC4EE7	SysmemKernel	SceSysrootForDriver	-
 0x7B4A377C	SceSysrootForDriver_7B4A377C	SysmemKernel	SceSysrootForDriver	-
 0x7C0BE393	SceSysrootForDriver_7C0BE393	SysmemKernel	SceSysrootForDriver	-
+0x7C2C10E2	SceSysrootForDriver_7C2C10E2	SysmemKernel	SceSysrootForDriver	-
+0x80FBC69D	SceSysrootForDriver_80FBC69D	SysmemKernel	SceSysrootForDriver	-
+0x8A760856	SceSysrootForDriver_8A760856	SysmemKernel	SceSysrootForDriver	-	default
+0x8B8F1D01	SceSysrootForDriver_8B8F1D01	SysmemKernel	SceSysrootForDriver	-	default
+0x8CD02748	SceSysrootForDriver_8CD02748	SysmemKernel	SceSysrootForDriver	-	default
 0x9421B223	SceSysrootForDriver_9421B223	SysmemKernel	SceSysrootForDriver	-
 0x951C7943	SceSysrootForDriver_951C7943	SysmemKernel	SceSysrootForDriver	-
+0x97E2FB77	SceSysrootForDriver_97E2FB77	SysmemKernel	SceSysrootForDriver	-
+0x9A486846	SceSysrootForDriver_9A486846	SysmemKernel	SceSysrootForDriver	-
 0x9AF075D4	SceSysrootForDriver_9AF075D4	SysmemKernel	SceSysrootForDriver	-
 0x9BF782CA	SceSysrootForDriver_9BF782CA	SysmemKernel	SceSysrootForDriver	-
 0x9CDE3623	SceSysrootForDriver_9CDE3623	SysmemKernel	SceSysrootForDriver	-
 0x9DCD0894	SceSysrootForDriver_9DCD0894	SysmemKernel	SceSysrootForDriver	-
 0x9E96D990	SceSysrootForDriver_9E96D990	SysmemKernel	SceSysrootForDriver	-
+0x9EC02A41	SceSysrootForDriver_9EC02A41	SysmemKernel	SceSysrootForDriver	-
+0xA12C9950	SceSysrootForDriver_A12C9950	SysmemKernel	SceSysrootForDriver	-
 0xA6A0A038	SceSysrootForDriver_A6A0A038	SysmemKernel	SceSysrootForDriver	-
 0xA7A01DF0	SceSysrootForDriver_A7A01DF0	SysmemKernel	SceSysrootForDriver	-
 0xA85FF3B2	SceSysrootForDriver_A85FF3B2	SysmemKernel	SceSysrootForDriver	-
@@ -11207,29 +11691,48 @@
 0xBFD8F2A2	SceSysrootForDriver_BFD8F2A2	SysmemKernel	SceSysrootForDriver	-
 0xC94C76FA	SceSysrootForDriver_C94C76FA	SysmemKernel	SceSysrootForDriver	-
 0xCAE820B2	SceSysrootForDriver_CAE820B2	SysmemKernel	SceSysrootForDriver	-
+0xD03741B8	SceSysrootForDriver_D03741B8	SysmemKernel	SceSysrootForDriver	-
+0xD04C7723	SceSysrootForDriver_D04C7723	SysmemKernel	SceSysrootForDriver	-
 0xD1E54BF4	SceSysrootForDriver_D1E54BF4	SysmemKernel	SceSysrootForDriver	-
 0xD2423D6B	SceSysrootForDriver_D2423D6B	SysmemKernel	SceSysrootForDriver	-
 0xD56A2F3E	SceSysrootForDriver_D56A2F3E	SysmemKernel	SceSysrootForDriver	-
+0xD75D4F37	SceSysrootForDriver_D75D4F37	SysmemKernel	SceSysrootForDriver	-
+0xD86BD6DC	SceSysrootForDriver_D86BD6DC	SysmemKernel	SceSysrootForDriver	-	default
 0xDABD4A47	SceSysrootForDriver_DABD4A47	SysmemKernel	SceSysrootForDriver	-
 0xDC651D22	SceSysrootForDriver_DC651D22	SysmemKernel	SceSysrootForDriver	-
 0xE06C14FD	SceSysrootForDriver_E06C14FD	SysmemKernel	SceSysrootForDriver	-
+0xE2515A08	SceSysrootForDriver_E2515A08	SysmemKernel	SceSysrootForDriver	-
+0xE25D2FD5	SceSysrootForDriver_E25D2FD5	SysmemKernel	SceSysrootForDriver	-
+0xE2E88E3E	SceSysrootForDriver_E2E88E3E	SysmemKernel	SceSysrootForDriver	-
+0xE384DD93	SceSysrootForDriver_E384DD93	SysmemKernel	SceSysrootForDriver	-
 0xE541959B	SceSysrootForDriver_E541959B	SysmemKernel	SceSysrootForDriver	-
+0xE8EBF179	SceSysrootForDriver_E8EBF179	SysmemKernel	SceSysrootForDriver	-
 0xE9B4221F	SceSysrootForDriver_E9B4221F	SysmemKernel	SceSysrootForDriver	-
 0xEB19AAF6	SceSysrootForDriver_EB19AAF6	SysmemKernel	SceSysrootForDriver	-
 0xED22CF8F	SceSysrootForDriver_ED22CF8F	SysmemKernel	SceSysrootForDriver	-
 0xED688AEE	SceSysrootForDriver_ED688AEE	SysmemKernel	SceSysrootForDriver	-
+0xEE934615	SceSysrootForDriver_EE934615	SysmemKernel	SceSysrootForDriver	-
+0xEEF091A7	SceSysrootForDriver_EEF091A7	SysmemKernel	SceSysrootForDriver	-
+0xF0C91CD3	SceSysrootForDriver_F0C91CD3	SysmemKernel	SceSysrootForDriver	-
 0xF404026C	SceSysrootForDriver_F404026C	SysmemKernel	SceSysrootForDriver	-
 0xF804F761	SceSysrootForDriver_F804F761	SysmemKernel	SceSysrootForDriver	-
 0xFF2DD7AB	SceSysrootForDriver_FF2DD7AB	SysmemKernel	SceSysrootForDriver	-
+0x93CD44CD	ksceKernelInvokeInitCallback	SysmemKernel	SceSysrootForDriver	-
 0x8AA268D6	ksceKernelSysrootCheckModelCapability	SysmemKernel	SceSysrootForDriver	-
+0xCD8CD242	ksceKernelSysrootCoredumpTrigger	SysmemKernel	SceSysrootForDriver	-
 0x05093E7B	ksceKernelSysrootGetShellPid	SysmemKernel	SceSysrootForDriver	-
 0x67AAB627	ksceKernelSysrootGetSystemSwVersion	SysmemKernel	SceSysrootForDriver	-
 0xDD473B05	ksceKernelSysrootRegisterCoredumpTrigger	SysmemKernel	SceSysrootForDriver	-
 0x3276086B	ksceKernelSysrootSetGetSystemSwVersionFunc	SysmemKernel	SceSysrootForDriver	-
 0x0F07C3FC	ksceKernelSysrootSetProcessHandler	SysmemKernel	SceSysrootForDriver	-
+0x46E72428	ksceSysrootGetHardwareFlags	SysmemKernel	SceSysrootForDriver	-
+0x930B1342	ksceSysrootGetHardwareInfo	SysmemKernel	SceSysrootForDriver	-
+0xA43599E9	ksceSysrootUtMgrHasNpTestFlag	SysmemKernel	SceSysrootForDriver	-
+0xEE5D6CE9	ksceSysrootUtMgrSetNpTestFlag	SysmemKernel	SceSysrootForDriver	-
 0x20D2A0DF	SceSysrootForDriver_20D2A0DF	SysmemKernel	SceSysrootForKernel	-
 0x27D30DB2	SceSysrootForDriver_27D30DB2	SysmemKernel	SceSysrootForKernel	-
 0x2D6B2A79	SceSysrootForDriver_2D6B2A79	SysmemKernel	SceSysrootForKernel	-
+0x377895EB	SceSysrootForDriver_377895EB	SysmemKernel	SceSysrootForKernel	-
 0x38751FB7	SceSysrootForDriver_38751FB7	SysmemKernel	SceSysrootForKernel	-
 0x3F76D531	SceSysrootForDriver_3F76D531	SysmemKernel	SceSysrootForKernel	-
 0x40F28DC6	SceSysrootForDriver_40F28DC6	SysmemKernel	SceSysrootForKernel	-
@@ -11242,6 +11745,7 @@
 0x6D44F190	SceSysrootForDriver_6D44F190	SysmemKernel	SceSysrootForKernel	-
 0x73522F65	SceSysrootForDriver_73522F65	SysmemKernel	SceSysrootForKernel	-
 0x77CF3FBD	SceSysrootForDriver_77CF3FBD	SysmemKernel	SceSysrootForKernel	-
+0x7918D44E	SceSysrootForDriver_7918D44E	SysmemKernel	SceSysrootForKernel	-
 0x82FC6405	SceSysrootForDriver_82FC6405	SysmemKernel	SceSysrootForKernel	-
 0x8498E23F	SceSysrootForDriver_8498E23F	SysmemKernel	SceSysrootForKernel	-
 0x84C0BE05	SceSysrootForDriver_84C0BE05	SysmemKernel	SceSysrootForKernel	-
@@ -11253,6 +11757,7 @@
 0xA799F22A	SceSysrootForDriver_A799F22A	SysmemKernel	SceSysrootForKernel	-
 0xA9510EFE	SceSysrootForDriver_A9510EFE	SysmemKernel	SceSysrootForKernel	-
 0xAA8D34EE	SceSysrootForDriver_AA8D34EE	SysmemKernel	SceSysrootForKernel	-
+0xAE7A8F1D	SceSysrootForDriver_AE7A8F1D	SysmemKernel	SceSysrootForKernel	-
 0xB27B7530	SceSysrootForDriver_B27B7530	SysmemKernel	SceSysrootForKernel	-
 0xB501E861	SceSysrootForDriver_B501E861	SysmemKernel	SceSysrootForKernel	-
 0xC5EAF5F7	SceSysrootForDriver_C5EAF5F7	SysmemKernel	SceSysrootForKernel	-
@@ -11266,15 +11771,107 @@
 0xD02281A8	SceSysrootForDriver_D02281A8	SysmemKernel	SceSysrootForKernel	-
 0xD4457D4F	SceSysrootForDriver_D4457D4F	SysmemKernel	SceSysrootForKernel	-
 0xD7207203	SceSysrootForDriver_D7207203	SysmemKernel	SceSysrootForKernel	-
+0xE4EA1960	SceSysrootForDriver_E4EA1960	SysmemKernel	SceSysrootForKernel	-
 0xECADF8C3	SceSysrootForDriver_ECADF8C3	SysmemKernel	SceSysrootForKernel	-
 0xF2BC9E1D	SceSysrootForDriver_F2BC9E1D	SysmemKernel	SceSysrootForKernel	-
 0xF4340469	SceSysrootForDriver_F4340469	SysmemKernel	SceSysrootForKernel	-
+0x06182D59	SceSysrootForKernel_06182D59	SysmemKernel	SceSysrootForKernel	-
+0x085C2BCB	SceSysrootForKernel_085C2BCB	SysmemKernel	SceSysrootForKernel	-
+0x0A12227B	SceSysrootForKernel_0A12227B	SysmemKernel	SceSysrootForKernel	-
+0x0DF574A9	SceSysrootForKernel_0DF574A9	SysmemKernel	SceSysrootForKernel	-
+0x0EB5D7CD	SceSysrootForKernel_0EB5D7CD	SysmemKernel	SceSysrootForKernel	-
+0x0F2F2B4E	SceSysrootForKernel_0F2F2B4E	SysmemKernel	SceSysrootForKernel	-
+0x118657C6	SceSysrootForKernel_118657C6	SysmemKernel	SceSysrootForKernel	-
+0x1247A825	SceSysrootForKernel_1247A825	SysmemKernel	SceSysrootForKernel	-
+0x14D81797	SceSysrootForKernel_14D81797	SysmemKernel	SceSysrootForKernel	-
+0x1D84C4D4	SceSysrootForKernel_1D84C4D4	SysmemKernel	SceSysrootForKernel	-
+0x1D8DB3A5	SceSysrootForKernel_1D8DB3A5	SysmemKernel	SceSysrootForKernel	-
+0x21F5790B	SceSysrootForKernel_21F5790B	SysmemKernel	SceSysrootForKernel	-
+0x26458702	SceSysrootForKernel_26458702	SysmemKernel	SceSysrootForKernel	-
+0x2A03DFA1	SceSysrootForKernel_2A03DFA1	SysmemKernel	SceSysrootForKernel	-
+0x2F75C1DC	SceSysrootForKernel_2F75C1DC	SysmemKernel	SceSysrootForKernel	-
+0x340575CB	SceSysrootForKernel_340575CB	SysmemKernel	SceSysrootForKernel	-
+0x403B509E	SceSysrootForKernel_403B509E	SysmemKernel	SceSysrootForKernel	-
+0x41636522	SceSysrootForKernel_41636522	SysmemKernel	SceSysrootForKernel	-
+0x491CE8DF	SceSysrootForKernel_491CE8DF	SysmemKernel	SceSysrootForKernel	-
+0x4F57A13F	SceSysrootForKernel_4F57A13F	SysmemKernel	SceSysrootForKernel	-
+0x59B76D23	SceSysrootForKernel_59B76D23	SysmemKernel	SceSysrootForKernel	-
+0x5B5EBFB1	SceSysrootForKernel_5B5EBFB1	SysmemKernel	SceSysrootForKernel	-
+0x5F2CE289	SceSysrootForKernel_5F2CE289	SysmemKernel	SceSysrootForKernel	-
+0x611F17A4	SceSysrootForKernel_611F17A4	SysmemKernel	SceSysrootForKernel	-
+0x642123EB	SceSysrootForKernel_642123EB	SysmemKernel	SceSysrootForKernel	-
+0x6D111FA7	SceSysrootForKernel_6D111FA7	SysmemKernel	SceSysrootForKernel	-
+0x7334F1E8	SceSysrootForKernel_7334F1E8	SysmemKernel	SceSysrootForKernel	-
+0x733C243E	SceSysrootForKernel_733C243E	SysmemKernel	SceSysrootForKernel	-
+0x73601453	SceSysrootForKernel_73601453	SysmemKernel	SceSysrootForKernel	-
+0x7385CADE	SceSysrootForKernel_7385CADE	SysmemKernel	SceSysrootForKernel	-
+0x7968F091	SceSysrootForKernel_7968F091	SysmemKernel	SceSysrootForKernel	-
+0x7A7E7C0C	SceSysrootForKernel_7A7E7C0C	SysmemKernel	SceSysrootForKernel	-
+0x8E4B61F1	SceSysrootForKernel_8E4B61F1	SysmemKernel	SceSysrootForKernel	-
+0x9139E22B	SceSysrootForKernel_9139E22B	SysmemKernel	SceSysrootForKernel	-
+0x9991B1AF	SceSysrootForKernel_9991B1AF	SysmemKernel	SceSysrootForKernel	-
+0xA84676E3	SceSysrootForKernel_A84676E3	SysmemKernel	SceSysrootForKernel	-
+0xAB3CC7D0	SceSysrootForKernel_AB3CC7D0	SysmemKernel	SceSysrootForKernel	-
+0xAD74BEB3	SceSysrootForKernel_AD74BEB3	SysmemKernel	SceSysrootForKernel	-
+0xAE2132FD	SceSysrootForKernel_AE2132FD	SysmemKernel	SceSysrootForKernel	-
+0xAE55B7CC	SceSysrootForKernel_AE55B7CC	SysmemKernel	SceSysrootForKernel	-
+0xB171CC2D	SceSysrootForKernel_B171CC2D	SysmemKernel	SceSysrootForKernel	-
+0xB39CD708	SceSysrootForKernel_B39CD708	SysmemKernel	SceSysrootForKernel	-
+0xBBFD2E3C	SceSysrootForKernel_BBFD2E3C	SysmemKernel	SceSysrootForKernel	-
+0xBE1EF51C	SceSysrootForKernel_BE1EF51C	SysmemKernel	SceSysrootForKernel	-
+0xBF82931F	SceSysrootForKernel_BF82931F	SysmemKernel	SceSysrootForKernel	-
+0xCA8D1A2B	SceSysrootForKernel_CA8D1A2B	SysmemKernel	SceSysrootForKernel	-
+0xCBD377B7	SceSysrootForKernel_CBD377B7	SysmemKernel	SceSysrootForKernel	-
+0xCC119171	SceSysrootForKernel_CC119171	SysmemKernel	SceSysrootForKernel	-
+0xCC893F37	SceSysrootForKernel_CC893F37	SysmemKernel	SceSysrootForKernel	-
+0xCD8B5D37	SceSysrootForKernel_CD8B5D37	SysmemKernel	SceSysrootForKernel	-
 0xD29BCA77	SceSysrootForKernel_D29BCA77	SysmemKernel	SceSysrootForKernel	-
+0xD441DC34	SceSysrootForKernel_D441DC34	SysmemKernel	SceSysrootForKernel	-
+0xDADFF828	SceSysrootForKernel_DADFF828	SysmemKernel	SceSysrootForKernel	-
+0xDD7821AA	SceSysrootForKernel_DD7821AA	SysmemKernel	SceSysrootForKernel	-
+0xE20F6FC8	SceSysrootForKernel_E20F6FC8	SysmemKernel	SceSysrootForKernel	-
+0xEEB867C0	SceSysrootForKernel_EEB867C0	SysmemKernel	SceSysrootForKernel	-
+0xFBB91741	SceSysrootForKernel_FBB91741	SysmemKernel	SceSysrootForKernel	-
+0xFF44A7BA	SceSysrootForKernel_FF44A7BA	SysmemKernel	SceSysrootForKernel	-
+0xFFD6E24D	SceSysrootForKernel_FFD6E24D	SysmemKernel	SceSysrootForKernel	-
+0xD351EBC8	ksceKernelAllocHeapMemory2	SysmemKernel	SceSysrootForKernel	-
+0xD7198963	ksceKernelIsColdBoot	SysmemKernel	SceSysrootForKernel	-
+0x3ACACD22	ksceKernelSysrootAppMgrSpawnProcess	SysmemKernel	SceSysrootForKernel	-
+0xF8769E86	ksceKernelSysrootCheckRemapCodeForUser	SysmemKernel	SceSysrootForKernel	-
 0x256B2394	ksceKernelSysrootDbgpSuspendProcessAndWaitResume	SysmemKernel	SceSysrootForKernel	-
 0x63EBB05B	ksceKernelSysrootGetCurrentAddressSpaceCB	SysmemKernel	SceSysrootForKernel	-
+0xB4C24588	ksceKernelSysrootGetCurrentUIDEntryHeapCB	SysmemKernel	SceSysrootForKernel	-
+0x9DB56D1F	ksceKernelSysrootGetKblParam	SysmemKernel	SceSysrootForKernel	-
+0x37EC12BB	ksceKernelSysrootGetModulePrivate	SysmemKernel	SceSysrootForKernel	-
+0x88DE85EF	ksceKernelSysrootGetPUIDEntryHeap	SysmemKernel	SceSysrootForKernel	-
 0xEC3124A3	ksceKernelSysrootGetProcessTitleId	SysmemKernel	SceSysrootForKernel	-
+0xC8C8C321	ksceKernelSysrootGetSharedMemory	SysmemKernel	SceSysrootForKernel	-
+0x5C426B19	ksceKernelSysrootGetStatus	SysmemKernel	SceSysrootForKernel	-
+0x20009397	ksceKernelSysrootGetThreadAccessLevel	SysmemKernel	SceSysrootForKernel	-
+0xCC85905B	ksceKernelSysrootGetVbaseResetVector	SysmemKernel	SceSysrootForKernel	-
+0xF6A6D205	ksceKernelSysrootIofilemgrStart	SysmemKernel	SceSysrootForKernel	-
+0x7FC7A163	ksceKernelSysrootIsUserModeThread	SysmemKernel	SceSysrootForKernel	-
+0x62E8F511	ksceKernelSysrootProcessmgrStart2	SysmemKernel	SceSysrootForKernel	-
 0x3999F917	ksceKernelSysrootRegisterDbgpHandler	SysmemKernel	SceSysrootForKernel	-
+0x36916C30	ksceKernelSysrootSetSysroot	SysmemKernel	SceSysrootForKernel	-
 0x7B7ED1E9	ksceKernelSysrootUnregisterDbgpHandler	SysmemKernel	SceSysrootForKernel	-
+0xD3872270	ksceSysrootGetFactorySystemSwVersion	SysmemKernel	SceSysrootForKernel	-
+0xFF9F80FF	ksceSysrootGetModuleInfoForPid	SysmemKernel	SceSysrootForKernel	-
+0x0B79E220	ksceSysrootGetNidName	SysmemKernel	SceSysrootForKernel	-
+0x4F0A4066	ksceSysrootGetSelfAuthInfo	SysmemKernel	SceSysrootForKernel	-
+0xF10AB792	ksceSysrootGetSelfInfo	SysmemKernel	SceSysrootForKernel	-
+0x84783B71	ksceSysrootGetSessionId	SysmemKernel	SceSysrootForKernel	-
+0x3E455842	ksceSysrootGetSysroot	SysmemKernel	SceSysrootForKernel	-
+0x2F97041A	ksceSysrootGetWakeupFactor	SysmemKernel	SceSysrootForKernel	-
+0x4373AC96	ksceSysrootIsBsodReboot	SysmemKernel	SceSysrootForKernel	-
+0x89D19090	ksceSysrootIsExternalBootMode	SysmemKernel	SceSysrootForKernel	-
+0x834439A7	ksceSysrootIsSafeMode	SysmemKernel	SceSysrootForKernel	-
+0x7B7F8171	ksceSysrootIsSdCardMode	SysmemKernel	SceSysrootForKernel	-
+0xB0E1FC67	ksceSysrootIsUpdateMode	SysmemKernel	SceSysrootForKernel	-
+0x79C9AE10	ksceSysrootIsUsbEnumWakeup	SysmemKernel	SceSysrootForKernel	-
+0x71DB83A2	ksceSysrootRegisterLicMgrGetLicenseStatus	SysmemKernel	SceSysrootForKernel	-
+0x55392965	ksceSysrootUseExternalStorage	SysmemKernel	SceSysrootForKernel	-
+0x50FE3B4D	ksceSysrootUseInternalStorage	SysmemKernel	SceSysrootForKernel	-
 0xC3367370	sceSystemGestureCreateTouchRecognizer	SystemGesture	SceSystemGesture	vh
 0xB3875104	sceSystemGestureFinalizePrimitiveTouchRecognizer	SystemGesture	SceSystemGesture	vh
 0xE0577765	sceSystemGestureGetPrimitiveTouchEventByIndex	SystemGesture	SceSystemGesture	vh
@@ -11762,14 +12359,77 @@
 0xC3FBA889	sceUdcdUnregisterCallback	MtpIf	SceUdcd	vh
 0x59EFFAF1	sceUdcdWaitState	MtpIf	SceUdcd	vh
 0xF1A3690B	sceUdcd_F1A3690B	MtpIf	SceUdcd	-
-0xFBEA3703	ksceUdcdGetDeviceInfo	KernelTwins	SceUdcdForDriver	-
-0xC0CA5DDB	ksceUdcdGetDrvState	KernelTwins	SceUdcdForDriver	-
-0xD03017C0	ksceUdcdWaitState	KernelTwins	SceUdcdForDriver	-
+0x03781649	SceUdcdForDriver_03781649	SystemServicesVsh	SceUdcdForDriver	-	default
+0x1A5A3851	SceUdcdForDriver_1A5A3851	SystemServicesVsh	SceUdcdForDriver	-
+0x28BFEC45	SceUdcdForDriver_28BFEC45	SystemServicesVsh	SceUdcdForDriver	-
+0x2A234CAF	SceUdcdForDriver_2A234CAF	SystemServicesVsh	SceUdcdForDriver	-	default
+0x2D91F8C3	SceUdcdForDriver_2D91F8C3	SystemServicesVsh	SceUdcdForDriver	-
+0x78BF2A28	SceUdcdForDriver_78BF2A28	SystemServicesVsh	SceUdcdForDriver	-
+0x9E7F7EFE	SceUdcdForDriver_9E7F7EFE	SystemServicesVsh	SceUdcdForDriver	-
+0xAA5FD90E	SceUdcdForDriver_AA5FD90E	SystemServicesVsh	SceUdcdForDriver	-	default
+0xB1454F11	SceUdcdForDriver_B1454F11	SystemServicesVsh	SceUdcdForDriver	-
+0xB1C2EA5A	SceUdcdForDriver_B1C2EA5A	SystemServicesVsh	SceUdcdForDriver	-
+0xD01CFD22	SceUdcdForDriver_D01CFD22	SystemServicesVsh	SceUdcdForDriver	-
+0xDB7EF7AB	SceUdcdForDriver_DB7EF7AB	SystemServicesVsh	SceUdcdForDriver	-
+0xE4F32EDA	SceUdcdForDriver_E4F32EDA	SystemServicesVsh	SceUdcdForDriver	-
+0xE9E75C49	SceUdcdForDriver_E9E75C49	SystemServicesVsh	SceUdcdForDriver	-	default
+0xEBB1E86B	SceUdcdForDriver_EBB1E86B	SystemServicesVsh	SceUdcdForDriver	-
+0x4FDEA423	ksceUdcdActivate	SystemServicesVsh	SceUdcdForDriver	-
+0x9119247B	ksceUdcdActivateInternal	SystemServicesVsh	SceUdcdForDriver	-
+0x9F53D64D	ksceUdcdClearFIFO	SystemServicesVsh	SceUdcdForDriver	-	default
+0xA35F3BAF	ksceUdcdClearFIFOInternal	SystemServicesVsh	SceUdcdForDriver	-	default
+0x8AE87657	ksceUdcdDeactivate	SystemServicesVsh	SceUdcdForDriver	-
+0xFDC10F93	ksceUdcdDeactivateInternal	SystemServicesVsh	SceUdcdForDriver	-
+0xFBEA3703	ksceUdcdGetDeviceInfo	SystemServicesVsh	SceUdcdForDriver	-
+0x45EB0177	ksceUdcdGetDeviceInfoInternal	SystemServicesVsh	SceUdcdForDriver	-
+0xE054B5E4	ksceUdcdGetDeviceState	SystemServicesVsh	SceUdcdForDriver	-
+0x409DD196	ksceUdcdGetDeviceStateInternal	SystemServicesVsh	SceUdcdForDriver	-
+0xC0CA5DDB	ksceUdcdGetDrvState	SystemServicesVsh	SceUdcdForDriver	-
+0x512F77BC	ksceUdcdGetDrvStateInternal	SystemServicesVsh	SceUdcdForDriver	-
+0x4E55244D	ksceUdcdRegister	SystemServicesVsh	SceUdcdForDriver	-
+0x64675918	ksceUdcdRegisterInternal	SystemServicesVsh	SceUdcdForDriver	-
+0x38787672	ksceUdcdReqCancelAll	SystemServicesVsh	SceUdcdForDriver	-
+0xC60A74B2	ksceUdcdReqRecv	SystemServicesVsh	SceUdcdForDriver	-	default
+0x175E6179	ksceUdcdReqRecvInternal	SystemServicesVsh	SceUdcdForDriver	-	default
+0x1ED0E89E	ksceUdcdReqSend	SystemServicesVsh	SceUdcdForDriver	-	default
+0x2E3E622A	ksceUdcdReqSendInternal	SystemServicesVsh	SceUdcdForDriver	-	default
+0x34079250	ksceUdcdStall	SystemServicesVsh	SceUdcdForDriver	-	default
+0x9B44DF29	ksceUdcdStallInternal	SystemServicesVsh	SceUdcdForDriver	-	default
+0x9FD733EA	ksceUdcdStart	SystemServicesVsh	SceUdcdForDriver	-
+0x360E95B9	ksceUdcdStartCurrentInternal	SystemServicesVsh	SceUdcdForDriver	-
+0x90F8BCAE	ksceUdcdStartInternal	SystemServicesVsh	SceUdcdForDriver	-
+0x1494293B	ksceUdcdStop	SystemServicesVsh	SceUdcdForDriver	-
+0x0F3595AE	ksceUdcdStopCurrentInternal	SystemServicesVsh	SceUdcdForDriver	-
+0x150FD3BB	ksceUdcdStopInternal	SystemServicesVsh	SceUdcdForDriver	-
+0x0DECE532	ksceUdcdUnregister	SystemServicesVsh	SceUdcdForDriver	-
+0x6CCD152E	ksceUdcdUnregisterInternal	SystemServicesVsh	SceUdcdForDriver	-
+0x1C684884	ksceUdcdWaitBusInitialized	SystemServicesVsh	SceUdcdForDriver	-
+0xD03017C0	ksceUdcdWaitState	SystemServicesVsh	SceUdcdForDriver	-
+0x7AD0C8D1	ksceUdcdWaitStateInternal	SystemServicesVsh	SceUdcdForDriver	-
 0xD7F0F610	SceUlobjDbg_D7F0F610	DebugPerf	SceUlobjDbg	-
 0xF9C0F5DA	SceUlobjDbg_F9C0F5DA	DebugPerf	SceUlobjDbg	-
 0x50F2F2AA	_sceUlobjMgrRegisterLibultProtocolRevision	DebugPerf	SceUlobjMgr	vh
 0x08769991	_sceUlobjMgrStartSupportingUserlevelObject	DebugPerf	SceUlobjMgr	vh
 0xEF09284B	_sceUlobjMgrStopSupportingUserlevelObject	DebugPerf	SceUlobjMgr	vh
+0x0C29AFEC	SceUlobjMgrForDriver_0C29AFEC	DebugPerf	SceUlobjMgrForDriver	-	default
+0x332F2E58	SceUlobjMgrForDriver_332F2E58	DebugPerf	SceUlobjMgrForDriver	-
+0x362C9488	SceUlobjMgrForDriver_362C9488	DebugPerf	SceUlobjMgrForDriver	-	default
+0x3685D4FB	SceUlobjMgrForDriver_3685D4FB	DebugPerf	SceUlobjMgrForDriver	-	default
+0x3D6E2EF3	SceUlobjMgrForDriver_3D6E2EF3	DebugPerf	SceUlobjMgrForDriver	-	default
+0x525A9BDB	SceUlobjMgrForDriver_525A9BDB	DebugPerf	SceUlobjMgrForDriver	-	default
+0x5D7A7925	SceUlobjMgrForDriver_5D7A7925	DebugPerf	SceUlobjMgrForDriver	-	default
+0x6BCB4568	SceUlobjMgrForDriver_6BCB4568	DebugPerf	SceUlobjMgrForDriver	-	default
+0x6D2C8928	SceUlobjMgrForDriver_6D2C8928	DebugPerf	SceUlobjMgrForDriver	-	default
+0x6F868221	SceUlobjMgrForDriver_6F868221	DebugPerf	SceUlobjMgrForDriver	-
+0x74B9199C	SceUlobjMgrForDriver_74B9199C	DebugPerf	SceUlobjMgrForDriver	-	default
+0x8E200387	SceUlobjMgrForDriver_8E200387	DebugPerf	SceUlobjMgrForDriver	-	default
+0xA48A5B3C	SceUlobjMgrForDriver_A48A5B3C	DebugPerf	SceUlobjMgrForDriver	-
+0xA90A564C	SceUlobjMgrForDriver_A90A564C	DebugPerf	SceUlobjMgrForDriver	-
+0xADAAA961	SceUlobjMgrForDriver_ADAAA961	DebugPerf	SceUlobjMgrForDriver	-	default
+0xB978DB70	SceUlobjMgrForDriver_B978DB70	DebugPerf	SceUlobjMgrForDriver	-	default
+0xBB11EB2F	SceUlobjMgrForDriver_BB11EB2F	DebugPerf	SceUlobjMgrForDriver	-
+0xCDAD91AD	SceUlobjMgrForDriver_CDAD91AD	DebugPerf	SceUlobjMgrForDriver	-	default
+0xFFC8C811	SceUlobjMgrForDriver_FFC8C811	DebugPerf	SceUlobjMgrForDriver	-	default
 0xD76A156C	_sceUltConditionVariableCreate	Ult	SceUlt	vh
 0x0603FCC1	_sceUltConditionVariableOptParamInitialize	Ult	SceUlt	vh
 0x5AFEC7A1	_sceUltMutexCreate	Ult	SceUlt	vh
@@ -12567,6 +13227,71 @@
 0xA7FDE9DC	ksceWlanBtDetachMonitor	SystemServicesVsh	SceWlanBtForDriver	-
 0x0FC89113	ksceWlanBtGetConfiguration	SystemServicesVsh	SceWlanBtForDriver	-
 0x4C96C3B7	ksceWlanBtSetConfiguration	SystemServicesVsh	SceWlanBtForDriver	-
+0x00561385	SceZlibForDriver_00561385	SystemServicesVsh	SceZlibForDriver	-
+0x05F712FE	SceZlibForDriver_05F712FE	SystemServicesVsh	SceZlibForDriver	-
+0x0BDDF66A	SceZlibForDriver_0BDDF66A	SystemServicesVsh	SceZlibForDriver	-
+0x0FA805A3	SceZlibForDriver_0FA805A3	SystemServicesVsh	SceZlibForDriver	-	default
+0x134E91EA	SceZlibForDriver_134E91EA	SystemServicesVsh	SceZlibForDriver	-
+0x1C344E27	SceZlibForDriver_1C344E27	SystemServicesVsh	SceZlibForDriver	-	default
+0x1E135CC1	SceZlibForDriver_1E135CC1	SystemServicesVsh	SceZlibForDriver	-
+0x20A122F8	SceZlibForDriver_20A122F8	SystemServicesVsh	SceZlibForDriver	-
+0x211D25F5	SceZlibForDriver_211D25F5	SystemServicesVsh	SceZlibForDriver	-
+0x21A03034	SceZlibForDriver_21A03034	SystemServicesVsh	SceZlibForDriver	-
+0x25F28DA7	SceZlibForDriver_25F28DA7	SystemServicesVsh	SceZlibForDriver	-
+0x3252D28C	SceZlibForDriver_3252D28C	SystemServicesVsh	SceZlibForDriver	-
+0x3370B9AD	SceZlibForDriver_3370B9AD	SystemServicesVsh	SceZlibForDriver	-
+0x35E0108C	SceZlibForDriver_35E0108C	SystemServicesVsh	SceZlibForDriver	-
+0x3B4466F4	SceZlibForDriver_3B4466F4	SystemServicesVsh	SceZlibForDriver	-
+0x3F33F55F	SceZlibForDriver_3F33F55F	SystemServicesVsh	SceZlibForDriver	-
+0x408311E8	SceZlibForDriver_408311E8	SystemServicesVsh	SceZlibForDriver	-
+0x44DA19D2	SceZlibForDriver_44DA19D2	SystemServicesVsh	SceZlibForDriver	-
+0x4C27A382	SceZlibForDriver_4C27A382	SystemServicesVsh	SceZlibForDriver	-
+0x4CB63BCD	SceZlibForDriver_4CB63BCD	SystemServicesVsh	SceZlibForDriver	-
+0x4EE6C080	SceZlibForDriver_4EE6C080	SystemServicesVsh	SceZlibForDriver	-
+0x517BC5F7	SceZlibForDriver_517BC5F7	SystemServicesVsh	SceZlibForDriver	-
+0x520CAA7F	SceZlibForDriver_520CAA7F	SystemServicesVsh	SceZlibForDriver	-
+0x5377643A	SceZlibForDriver_5377643A	SystemServicesVsh	SceZlibForDriver	-
+0x5492B3F2	SceZlibForDriver_5492B3F2	SystemServicesVsh	SceZlibForDriver	-
+0x5A0078D6	SceZlibForDriver_5A0078D6	SystemServicesVsh	SceZlibForDriver	-
+0x5B718E55	SceZlibForDriver_5B718E55	SystemServicesVsh	SceZlibForDriver	-
+0x67A085C4	SceZlibForDriver_67A085C4	SystemServicesVsh	SceZlibForDriver	-
+0x68CFEA45	SceZlibForDriver_68CFEA45	SystemServicesVsh	SceZlibForDriver	-
+0x6ED5B677	SceZlibForDriver_6ED5B677	SystemServicesVsh	SceZlibForDriver	-
+0x7048F14C	SceZlibForDriver_7048F14C	SystemServicesVsh	SceZlibForDriver	-
+0x723495A5	SceZlibForDriver_723495A5	SystemServicesVsh	SceZlibForDriver	-
+0x7993ADAB	SceZlibForDriver_7993ADAB	SystemServicesVsh	SceZlibForDriver	-
+0x7B16DBD6	SceZlibForDriver_7B16DBD6	SystemServicesVsh	SceZlibForDriver	-
+0x7C40CC39	SceZlibForDriver_7C40CC39	SystemServicesVsh	SceZlibForDriver	-
+0x7E823337	SceZlibForDriver_7E823337	SystemServicesVsh	SceZlibForDriver	-
+0x81D0667B	SceZlibForDriver_81D0667B	SystemServicesVsh	SceZlibForDriver	-
+0x82167CD9	SceZlibForDriver_82167CD9	SystemServicesVsh	SceZlibForDriver	-
+0x834CC4A2	SceZlibForDriver_834CC4A2	SystemServicesVsh	SceZlibForDriver	-
+0x86FF6C8B	SceZlibForDriver_86FF6C8B	SystemServicesVsh	SceZlibForDriver	-
+0x89A13883	SceZlibForDriver_89A13883	SystemServicesVsh	SceZlibForDriver	-
+0x89B30588	SceZlibForDriver_89B30588	SystemServicesVsh	SceZlibForDriver	-
+0x9030BAE4	SceZlibForDriver_9030BAE4	SystemServicesVsh	SceZlibForDriver	-
+0x904AA7AE	SceZlibForDriver_904AA7AE	SystemServicesVsh	SceZlibForDriver	-
+0x93168F72	SceZlibForDriver_93168F72	SystemServicesVsh	SceZlibForDriver	-
+0x938F34FA	SceZlibForDriver_938F34FA	SystemServicesVsh	SceZlibForDriver	-
+0x98619620	SceZlibForDriver_98619620	SystemServicesVsh	SceZlibForDriver	-
+0xA1E7E8B3	SceZlibForDriver_A1E7E8B3	SystemServicesVsh	SceZlibForDriver	-
+0xA5D70E95	SceZlibForDriver_A5D70E95	SystemServicesVsh	SceZlibForDriver	-
+0xAC2F8437	SceZlibForDriver_AC2F8437	SystemServicesVsh	SceZlibForDriver	-
+0xAD23EEBB	SceZlibForDriver_AD23EEBB	SystemServicesVsh	SceZlibForDriver	-
+0xB03E109B	SceZlibForDriver_B03E109B	SystemServicesVsh	SceZlibForDriver	-
+0xBC022D38	SceZlibForDriver_BC022D38	SystemServicesVsh	SceZlibForDriver	-
+0xBE5CE88A	SceZlibForDriver_BE5CE88A	SystemServicesVsh	SceZlibForDriver	-
+0xD4A85178	SceZlibForDriver_D4A85178	SystemServicesVsh	SceZlibForDriver	-
+0xD9BDC778	SceZlibForDriver_D9BDC778	SystemServicesVsh	SceZlibForDriver	-
+0xE0CE06C0	SceZlibForDriver_E0CE06C0	SystemServicesVsh	SceZlibForDriver	-
+0xE2DF5A8B	SceZlibForDriver_E2DF5A8B	SystemServicesVsh	SceZlibForDriver	-
+0xE323828B	SceZlibForDriver_E323828B	SystemServicesVsh	SceZlibForDriver	-
+0xE4F34A68	SceZlibForDriver_E4F34A68	SystemServicesVsh	SceZlibForDriver	-
+0xE6EB524C	SceZlibForDriver_E6EB524C	SystemServicesVsh	SceZlibForDriver	-
+0xE859D60F	SceZlibForDriver_E859D60F	SystemServicesVsh	SceZlibForDriver	-
+0xE94663DD	SceZlibForDriver_E94663DD	SystemServicesVsh	SceZlibForDriver	-
+0xEEC6D267	SceZlibForDriver_EEC6D267	SystemServicesVsh	SceZlibForDriver	-
+0xF2D8FC1A	SceZlibForDriver_F2D8FC1A	SystemServicesVsh	SceZlibForDriver	-
 0x014C52D8	NID_014C52D8	FirmwareConstants	ScebXCe	-
 0x20AFD256	NID_20AFD256	FirmwareConstants	ScebXCe	-
 0x240BA578	NID_240BA578	FirmwareConstants	ScebXCe	-
