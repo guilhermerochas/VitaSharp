@@ -71,6 +71,9 @@ public sealed partial class SystemServicesVsh
     [ThreadStatic]
     static int t_intrDepth;
 
+    /// <summary>An interrupt handler runs on this host thread (what ksceKernelIsIntrAllowedInCurrentContext answers).</summary>
+    internal static bool InInterrupt => t_intrDepth > 0;
+
     static uint IntrSubKey(uint line, uint sub) => (line << 16) | sub;
 
     /// <summary>The target CPU mask of a target word (the mask in bits 0..3, or in bits 16..19), or -1.</summary>
@@ -821,6 +824,11 @@ public sealed partial class SystemServicesVsh
         if (SystimerOfLine(line) >= 0)
         {
             SystimerExpire(line, raisedUs);
+        }
+        else if (line == ThreadmgrTimerLine)
+        {
+            // the thread manager's SceLT5 timer reached the earliest alarm
+            IntrRaise(line);
         }
     }
 

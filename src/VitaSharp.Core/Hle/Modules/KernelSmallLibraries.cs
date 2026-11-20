@@ -136,7 +136,7 @@ public sealed partial class SystemServicesVsh
     /// <summary>ksceKernelCheckDipsw (SceDipswForDriver 0xA98FC2FD)(bit): the bit, no check (kernel callers pass bits
     /// below 0x100).</summary>
     [Hle(Nid = 0xA98FC2FD, Library = "SceDipswForDriver")]
-    int ksceKernelCheckDipsw(uint bit)
+    internal int ksceKernelCheckDipsw(uint bit)
     {
         return (int)((DipswWord((bit & 0xFF) >> 5) >> (int)(bit & 31)) & 1);
     }

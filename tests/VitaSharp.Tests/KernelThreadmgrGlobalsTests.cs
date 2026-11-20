@@ -50,14 +50,14 @@ public sealed class KernelThreadmgrGlobalsTests(GuestMemoryFixture fixture) : ID
         }
     }
 
-    private uint Globals() => (uint)Call(Threadmgr, "NID_19440C83");
+    private uint Globals() => (uint)Invoke(Threadmgr, "NID_19440C83")!;
 
     [Fact]
     public void DebuggerHandlerSlotsTakeOneHandlerEachAndCheckTheirRange()
     {
         uint globals = Globals();
         Assert.NotEqual(0u, globals);
-        Assert.Equal(globals, (uint)Call(Threadmgr, "NID_19440C83"));
+        Assert.Equal(globals, (uint)Invoke(Threadmgr, "NID_19440C83")!);
         Assert.Equal(0, Call(Threadmgr, "NID_6C2E3A49", 1u, 7u, 0x81001235u));
         Assert.Equal(0x81001235u, GuestMemory.R32(globals + 0x239C + (8 + 7) * 4));
         // a taken slot keeps its handler
