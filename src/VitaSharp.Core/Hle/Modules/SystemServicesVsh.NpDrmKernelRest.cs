@@ -106,7 +106,7 @@ public sealed partial class SystemServicesVsh
         BinaryPrimitives.WriteUInt32LittleEndian(block, flag);
         BinaryPrimitives.WriteUInt32LittleEndian(block[4..], 0);
         BinaryPrimitives.WriteUInt64LittleEndian(block[8..], accountId);
-        using Aes aes = Aes.Create();
+        using var aes = Aes.Create();
         aes.Key = key;
         Span<byte> encrypted = stackalloc byte[0x10];
         aes.EncryptEcb(block, encrypted, PaddingMode.None);
