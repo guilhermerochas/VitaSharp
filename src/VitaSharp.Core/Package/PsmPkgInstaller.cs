@@ -47,6 +47,11 @@ public static class PsmPkgInstaller
         return System.Text.Encoding.ASCII.GetString(rif.Slice(RifContentIdOffset, 36)).TrimEnd('\0');
     }
 
+    /// <summary>The name of a PSM license in RO/License: the file the PSM runtime opens, scePsmDrmGetRifName of the
+    /// unit's account (the registry's /CONFIG/NP/account_id; the AES name of the SceNpDrm installed under
+    /// <paramref name="fsRoot"/>); null without the installed firmware.</summary>
+    public static string? LicenseFileName(string fsRoot) => Hle.Modules.SystemServicesVsh.PsmLicenseFileName(fsRoot);
+
     /// <summary>The folder of an installed PSM title.</summary>
     public static string TitleRoot(string ux0Root, string titleId) => Io.FirmwareLayout.PsmTitles.OnDevice(ux0Root, titleId);
 
@@ -101,7 +106,11 @@ public static class PsmPkgInstaller
 
             string licenseDir = Path.Combine(ro, Io.FirmwareLayout.PsmLicense);
             Directory.CreateDirectory(licenseDir);
-            File.WriteAllBytes(Path.Combine(licenseDir, PkgInstaller.AccountRifName), license);
+            // the name the runtime opens (scePsmDrmGetRifName of the unit's account); without the installed
+            // firmware it cannot be computed and the fixed name stays (PsmLicenseNameMigration renames it later)
+            string fsRoot = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(ux0Root)))!;
+            string licenseName = LicenseFileName(fsRoot) ?? PkgInstaller.AccountRifName;
+            File.WriteAllBytes(Path.Combine(licenseDir, licenseName), license);
             PrepareOwnRuntime(ux0Root, titleId, log);
 
             string rw = Path.Combine(root, Io.FirmwareLayout.PsmWritable);

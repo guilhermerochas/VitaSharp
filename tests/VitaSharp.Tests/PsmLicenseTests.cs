@@ -30,7 +30,7 @@ public sealed class PsmLicenseTests(GuestMemoryFixture fixture) : IDisposable
     private static byte[] License(bool signed, string contentId = ContentId)
     {
         byte[] rif = new byte[PsmLicense.Size];
-        BitConverter.GetBytes(0x0123456789ABCDEFUL).CopyTo(rif, 0x10);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64BigEndian(rif.AsSpan(0x10), 0x0123456789ABCDEFUL); // big-endian, as the module reads it
         Encoding.ASCII.GetBytes(contentId).CopyTo(rif, 0x50);
         for (int i = 0; i < 0x20; i++)
         {

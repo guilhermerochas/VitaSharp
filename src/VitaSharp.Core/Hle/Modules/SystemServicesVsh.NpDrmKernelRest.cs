@@ -49,13 +49,16 @@ public sealed partial class SystemServicesVsh
             return account;
         }
 
-        byte[]? stored = Firmware.Registry.For(Emu.Options.FsRoot).Get("/CONFIG/NP", "account_id");
-        return stored is { Length: >= 8 } ? BinaryPrimitives.ReadUInt64LittleEndian(stored) : 0;
+        return RegistryAccountId(Emu.Options.FsRoot);
     }
 
     /// <summary>The license name key of a SceNpDrm module ELF: 16 bytes of its first segment when it is FW 3.74's
     /// module (<paramref name="moduleNid"/>), else null.</summary>
-    internal static byte[]? RifNameKeyFrom(byte[] elf, uint moduleNid)
+    internal static byte[]? RifNameKeyFrom(byte[] elf, uint moduleNid) => NpDrmModuleBytes(elf, moduleNid, RifNameKeyOffset, 0x10);
+
+    /// <summary><paramref name="size"/> bytes at <paramref name="segmentOffset"/> of the first segment of FW 3.74's
+    /// SceNpDrm ELF (<paramref name="moduleNid"/>), else null.</summary>
+    static byte[]? NpDrmModuleBytes(byte[] elf, uint moduleNid, uint segmentOffset, int size)
     {
         if (moduleNid != NpDrm374ModuleNid || elf.Length < 0x34)
         {
@@ -70,23 +73,43 @@ public sealed partial class SystemServicesVsh
 
         uint offset = BinaryPrimitives.ReadUInt32LittleEndian(elf.AsSpan((int)programHeaders + 4));
         uint fileSize = BinaryPrimitives.ReadUInt32LittleEndian(elf.AsSpan((int)programHeaders + 0x10));
-        if (RifNameKeyOffset + 0x10 > fileSize || offset + RifNameKeyOffset + 0x10 > elf.Length)
+        if (segmentOffset + size > fileSize || offset + segmentOffset + size > elf.Length)
         {
             return null;
         }
 
-        return elf.AsSpan((int)(offset + RifNameKeyOffset), 0x10).ToArray();
+        return elf.AsSpan((int)(offset + segmentOffset), size).ToArray();
     }
 
-    byte[]? RifNameKey()
+    byte[]? RifNameKey() => RifNameKeyFor(Emu.Options.FsRoot);
+
+    /// <summary>The license name key of the SceNpDrm installed under <paramref name="fsRoot"/>, or null.</summary>
+    internal static byte[]? RifNameKeyFor(string fsRoot)
     {
-        if (Firmware.FirmwareKernelImage.For(Emu.Options.FsRoot).Named("SceNpDrm") is not { } module)
+        if (Firmware.FirmwareKernelImage.For(fsRoot).Named("SceNpDrm") is not { } module)
         {
             return null;
         }
 
         return RifNameKeyFrom(module.Elf, module.Image.ModuleNid);
     }
+
+    /// <summary>The unit's account in the registry, /CONFIG/NP/account_id (8 bytes, little-endian), 0 without one; the
+    /// account the PSM runtime names its license by. The runtime's libpsm (PCSI00011 2.01) reads it with
+    /// sceRegMgrSystemParamGetBin(0x450F32) and opens RO/License/&lt;scePsmDrmGetRifName(that account)&gt;; for a
+    /// license from the store it is also the license's account, which scePsmDrmGetRifNameForInstall requires to be the
+    /// activation's.</summary>
+    internal static ulong RegistryAccountId(string fsRoot)
+    {
+        byte[]? stored = Firmware.Registry.For(fsRoot).Get("/CONFIG/NP", "account_id");
+        return stored is { Length: >= 8 } ? BinaryPrimitives.ReadUInt64LittleEndian(stored) : 0;
+    }
+
+    /// <summary>The file name the PSM runtime opens in a title's RO/License (scePsmDrmGetRifName of the unit's account,
+    /// <see cref="RegistryAccountId"/>), with the SceNpDrm installed under <paramref name="fsRoot"/>; null without
+    /// it.</summary>
+    internal static string? PsmLicenseFileName(string fsRoot) =>
+        RifFileName(RifNameKeyFor(fsRoot), 0, RegistryAccountId(fsRoot));
 
     /// <summary>The license file name for <paramref name="flag"/> and <paramref name="accountId"/>, or null when the
     /// firmware's key is not available.</summary>
@@ -463,17 +486,78 @@ public sealed partial class SystemServicesVsh
         return size < 0x90 ? NPDRM_ERR_BAD_DATA : KERNEL_ERR_UNSUP;
     }
 
-    /// <summary>The PSP eboot signatures (__sce_ebootpbp) of the PSP emulator: made and checked by the secure
-    /// processor with the unit's keys. ksceNpDrmEbootSigGenPsp/Ps1/MultiDisc (path, sha, sig, swVersion),
-    /// ksceNpDrmEbootSigConvert, ksceNpDrmPspEbootSigGen, ksceNpDrmEbootSigVerify and ksceNpDrmPspEbootVerify (path,
-    /// sig, ...): a NULL path or signature 0x80870001, then not supported.</summary>
-    [Hle("ksceNpDrmEbootSigGenPsp", Nid = 0x90B1A6D3, Library = "SceNpDrmForDriver", Default = true)]
-    [Hle("ksceNpDrmEbootSigGenPs1", Nid = 0x6D9223E1, Library = "SceNpDrmForDriver", Default = true)]
-    [Hle("ksceNpDrmEbootSigGenMultiDisc", Nid = 0x39A7A666, Library = "SceNpDrmForDriver", Default = true)]
+    /// <summary>SceNpDrmForDriver's library NID (the user bridges call its exports through their entries).</summary>
+    internal const uint NpDrmForDriverNid = 0xD84DC44A;
+
+    /// <summary>The kernel's "no such file" of the eboot's stat.</summary>
+    const int NPDRM_ERR_NO_FILE = unchecked((int)0x80010002);
+
+    /// <summary>The PSP eboot signatures (__sce_ebootpbp) of the PSP emulator. On the console the module stats and
+    /// reads the eboot and has the secure processor sign (SceSblGcAuthMgrDrmBB) the request with the unit's own key:
+    /// an integrity signature bound to the unit, made for any eboot (the license of a PSP title is checked
+    /// elsewhere, by its rif). The emulated unit's key is <see cref="Package.PspEbootSignature"/>: the signature the
+    /// package installer writes, so what the shell and the PSP emulator check is the same thing. ksceNpDrmEbootSigGenPsp
+    /// / Ps1 (path, const void *sha256 0x20, void *signature 0x200, int swVersion) and GenMultiDisc (path, const void
+    /// *discinfo 0x100, ...): a NULL argument 0x80870001, an eboot that is not there the stat's error, else 0 and the
+    /// signature.</summary>
+    int EbootSigGen(uint path, uint hash, uint signature, int hashSize, int kind)
+    {
+        if (path == 0 || hash == 0 || signature == 0)
+        {
+            return NPDRM_ERR_INVALID;
+        }
+
+        string eboot = GuestMemory.ReadCString(path, 0x100);
+        if (Emu.Vfs.Resolve(eboot) is not { } host || !File.Exists(host))
+        {
+            return NPDRM_ERR_NO_FILE;
+        }
+
+        byte[] made = Package.PspEbootSignature.Create(eboot, GuestMemory.ReadSpan(hash, hashSize), kind);
+        made.CopyTo(GuestMemory.Span(signature, made.Length));
+        return 0;
+    }
+
+    [Hle("ksceNpDrmEbootSigGenPsp", Nid = 0x90B1A6D3, Library = "SceNpDrmForDriver")]
+    internal int ksceNpDrmEbootSigGenPsp(uint path, uint hash, uint signature, int swVersion) =>
+        EbootSigGen(path, hash, signature, 0x20, Package.PspEbootSignature.KindPsp);
+
+    [Hle("ksceNpDrmEbootSigGenPs1", Nid = 0x6D9223E1, Library = "SceNpDrmForDriver")]
+    internal int ksceNpDrmEbootSigGenPs1(uint path, uint hash, uint signature, int swVersion) =>
+        EbootSigGen(path, hash, signature, 0x20, Package.PspEbootSignature.KindPs1);
+
+    [Hle("ksceNpDrmEbootSigGenMultiDisc", Nid = 0x39A7A666, Library = "SceNpDrmForDriver")]
+    internal int ksceNpDrmEbootSigGenMultiDisc(uint path, uint discInfo, uint signature, int swVersion) =>
+        EbootSigGen(path, discInfo, signature, 0x100, Package.PspEbootSignature.KindMultiDisc);
+
+    /// <summary>ksceNpDrmEbootSigVerify (path, const void *signature 0x200) and ksceNpDrmPspEbootVerify (path, const
+    /// void *signature 0x100): 0 when the signature is the unit's for that eboot, 0x80870005 when it is not; a NULL
+    /// argument 0x80870001.</summary>
+    int EbootSigVerify(uint path, uint signature, int size)
+    {
+        if (path == 0 || signature == 0)
+        {
+            return NPDRM_ERR_INVALID;
+        }
+
+        Span<byte> read = stackalloc byte[Package.PspEbootSignature.Size];
+        read.Clear();
+        GuestMemory.ReadSpan(signature, size).CopyTo(read);
+        string eboot = GuestMemory.ReadCString(path, 0x100);
+        return Package.PspEbootSignature.Verify(eboot, read) > 0 ? 0 : NPDRM_ERR_BAD_DATA;
+    }
+
+    [Hle("ksceNpDrmEbootSigVerify", Nid = 0x7A319692, Library = "SceNpDrmForDriver")]
+    internal int ksceNpDrmEbootSigVerify(uint path, uint signature) => EbootSigVerify(path, signature, 0x200);
+
+    [Hle("ksceNpDrmPspEbootVerify", Nid = 0xB6CA3A2C, Library = "SceNpDrmForDriver")]
+    internal int ksceNpDrmPspEbootVerify(uint path, uint signature) => EbootSigVerify(path, signature, 0x100);
+
+    /// <summary>ksceNpDrmEbootSigConvert and ksceNpDrmPspEbootSigGen (path, ...): the conversion of an old
+    /// signature and the PSP-format one are the secure processor's own formats, which the emulated unit's signature
+    /// does not model: a NULL path or argument 0x80870001, then not supported.</summary>
     [Hle("ksceNpDrmEbootSigConvert", Nid = 0xA29B75F9, Library = "SceNpDrmForDriver", Default = true)]
     [Hle("ksceNpDrmPspEbootSigGen", Nid = 0xEF387FC4, Library = "SceNpDrmForDriver", Default = true)]
-    [Hle("ksceNpDrmEbootSigVerify", Nid = 0x7A319692, Library = "SceNpDrmForDriver", Default = true)]
-    [Hle("ksceNpDrmPspEbootVerify", Nid = 0xB6CA3A2C, Library = "SceNpDrmForDriver", Default = true)]
     int ksceNpDrmEbootSignature(uint path, uint first, uint signature) =>
         path == 0 || first == 0 ? NPDRM_ERR_INVALID : KERNEL_ERR_UNSUP;
 }

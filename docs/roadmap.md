@@ -3130,6 +3130,13 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   mono_bridge abre os arquivos com a chave da licença de RO/License (sem licença: 0x80870005). Falta: a ativação PSM
   (scePsmDrmGetActInfo) depende do act.dat e do processador de segurança e continua recusada; com ela recusada o
   runtime mostra 0x808F04FF e para antes de abrir o conteúdo. Decisão do lead/usuário: como tratar a ativação.
+  Feito (fix/psm3): a licença fica em RO/License com o nome que o runtime abre (libpsm 2.01:
+  scePsmDrmGetRifName da conta do registro /CONFIG/NP/account_id), no instalador e na migração das gravadas com o nome
+  fixo; scePsmDrmGetRifNameForInstall com a checagem do módulo (assinatura RSA, cabeçalho, ativação). Falta, revalidado
+  contra o SceNpDrm 3.74: kscePsmDrmGetRifInfo tem 5 argumentos (início e fim em ponteiros separados) e devolve os
+  tempos da licença (big-endian, ms) como ticks do SceRtc (v*1000 + 0xDCBFFEFF2BC000; 0 vira 0x7FFFFFFFFFFFFFFF), e
+  não preenche nada de uma licença que falha a assinatura com 0x808F0104 (a do formato dos plugins de licença);
+  kscePsmDrmGetRifKey sem ativação carregada responde 0x808F0106 antes de ler a licença.
 - [ ] [P3][P] Ao apagar um item da lista (biblioteca de jogos do launcher), a rolagem volta para o topo (pedido do
   usuário, 17/11/2026): manter a posição da rolagem onde estava, com o foco no item seguinte ao apagado; o mesmo nas
   outras listas com apagar (saves, capturas) e no app Android quando ele voltar

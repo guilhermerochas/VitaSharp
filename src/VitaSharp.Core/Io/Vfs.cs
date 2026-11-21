@@ -31,6 +31,8 @@ public sealed class Vfs
         Package.LicenseMigration.Run(fsRoot);
         // a Unity PSM title's own runtime where earlier versions left it (RO/runtime) goes where the console keeps it
         Package.PsmLayoutMigration.Run(fsRoot, Util.Log.Info);
+        // PSM licenses stored by earlier versions under the fixed name get the firmware's name (once)
+        Package.PsmLicenseNameMigration.Run(fsRoot, Util.Log.Info);
         // the game card: gro0 (the card's read-only application) and grw0 (its writable area) exist only while a card
         // is in the slot. With them always mounted the shell's game card promoter saw a card (sceIoGetstat("gro0:")
         // succeeded), found no gro0:app and reported "Could not install. (C0-11274-5)" (0x80AF5022) at every boot.

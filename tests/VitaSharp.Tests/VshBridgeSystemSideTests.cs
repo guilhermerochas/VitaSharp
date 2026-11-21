@@ -3,6 +3,7 @@ using VitaSharp.Core;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
+using VitaSharp.Core.Package;
 using Xunit;
 
 namespace VitaSharp.Tests;
@@ -107,27 +108,62 @@ public sealed class VshBridgeSystemSideTests(GuestMemoryFixture fixture) : IDisp
         Assert.Equal(VitaSharp.Core.Kernel.SceError.UNKNOWN_UID, Call(vsh, "vshCoredumpCafContextDestroy", ctx));
     }
 
+    /// <summary>The user eboot signatures go through the kernel's (SceVshBridge 3.74 copies the option block in and
+    /// calls ksceNpDrmEbootSigGen*/Verify): the signature is the emulated unit's integrity signature, the one the
+    /// package installer writes; the check answers 0 or 0x80870005; the option block is input (its first word the
+    /// software version), never written.</summary>
     [Fact]
     public void EbootSignaturesVerifyOnlyTheirEboot()
     {
         VshBridge vsh = Module<VshBridge>();
-        uint path = Str("ux0:pspemu/PSP/GAME/NPUZ00001/EBOOT.PBP"), sha = Alloc(0x20), sig = Alloc(0x200), sw = Alloc(4);
+        const string Eboot = "ux0:pspemu/PSP/GAME/NPUZ00001/EBOOT.PBP";
+        string host = Emu().Vfs.Resolve(Eboot, forWrite: true)!;
+        Directory.CreateDirectory(Path.GetDirectoryName(host)!);
+        File.WriteAllBytes(host, [0x00, 0x50, 0x42, 0x50]);
+        uint path = Str(Eboot), sha = Alloc(0x20), sig = Alloc(0x200), opt = Alloc(0x10);
+        GuestMemory.W32(opt, 0x03600000);
+        byte[] hash = new byte[0x20];
         for (uint i = 0; i < 0x20; i++)
         {
-            GuestMemory.Write(sha + i, (byte)(i * 7));
+            hash[i] = (byte)(i * 7);
+            GuestMemory.Write(sha + i, hash[i]);
         }
 
-        Assert.Equal(0, Call(vsh, "_vshNpDrmEbootSigGenPsp", path, sha, sig, sw));
-        Assert.Equal(0x03740011u, GuestMemory.R32(sw));
-        Assert.Equal(1, Call(vsh, "_vshNpDrmEbootSigVerify", path, sig, 0u, 0u));
-        // SceNpDrm 3.74 answers a signature that does not verify (another eboot's, or no NPUMDSIG magic) with
-        // 0x80870005, its "data does not verify" code; 0x80870003 is the license checks' "needs activation" answer
-        const int NpDrmBadData = unchecked((int)0x80870005);
-        Assert.Equal(NpDrmBadData, Call(vsh, "_vshNpDrmEbootSigVerify", Str("ux0:other/EBOOT2.PBP"), sig, 0u, 0u));
-        Assert.Equal(NpDrmBadData, Call(vsh, "_vshNpDrmPspEbootVerify", Str("ux0:other/EBOOT2.PBP"), sig, 0u, 0u));
+        Assert.Equal(VitaSharp.Core.Kernel.SceError.ILLEGAL_ADDR, Call(vsh, "_vshNpDrmEbootSigGenPsp", path, sha, sig, 0u));
+        Assert.Equal(0, Call(vsh, "_vshNpDrmEbootSigGenPsp", path, sha, sig, opt));
+        Assert.Equal(0x03600000u, GuestMemory.R32(opt));
+        Assert.Equal(PspEbootSignature.Create("EBOOT.PBP", hash, PspEbootSignature.KindPsp), GuestMemory.ReadSpan(sig, 0x200).ToArray());
+        Assert.Equal(0, Call(vsh, "_vshNpDrmEbootSigVerify", path, sig, opt));
+        Assert.Equal(0, Call(vsh, "_vshNpDrmPspEbootVerify", path, sig, opt));
+        const int NpDrmInvalid = unchecked((int)0x80870001), NpDrmBadData = unchecked((int)0x80870005);
+        Assert.Equal(NpDrmBadData, Call(vsh, "_vshNpDrmEbootSigVerify", Str("ux0:other/EBOOT2.PBP"), sig, opt));
+        Assert.Equal(NpDrmBadData, Call(vsh, "_vshNpDrmPspEbootVerify", Str("ux0:other/EBOOT2.PBP"), sig, opt));
+        Assert.Equal(NpDrmInvalid, Call(vsh, "_vshNpDrmEbootSigVerify", path, 0u, opt));
+        // an eboot that is not there: the kernel's stat answers
+        Assert.Equal(unchecked((int)0x80010002), Call(vsh, "_vshNpDrmEbootSigGenPs1", Str("ux0:pspemu/none/EBOOT.PBP"), sha, sig, opt));
+        Assert.Equal(new byte[0x200], GuestMemory.ReadSpan(sig, 0x200).ToArray());
+        Assert.Equal(0, Call(vsh, "_vshNpDrmEbootSigGenPs1", path, sha, sig, opt));
+        Assert.Equal(0, Call(vsh, "_vshNpDrmEbootSigVerify", path, sig, opt));
         GuestMemory.Write(sig, (byte)'X');
-        Assert.Equal(NpDrmBadData, Call(vsh, "_vshNpDrmEbootSigVerify", path, sig, 0u, 0u));
-        Assert.Equal(NpDrmBadData, Call(vsh, "_vshNpDrmPspEbootVerify", path, sig, 0u, 0u));
+        Assert.Equal(NpDrmBadData, Call(vsh, "_vshNpDrmEbootSigVerify", path, sig, opt));
+        Assert.Equal(NpDrmBadData, Call(vsh, "_vshNpDrmPspEbootVerify", path, sig, opt));
+    }
+
+    /// <summary>The signature the package installer writes for an eboot passes the kernel's check the shell and the
+    /// PSP emulator make (one signature model for both).</summary>
+    [Fact]
+    public void The_installer_signature_passes_the_kernel_check()
+    {
+        SystemServicesVsh services = Module<SystemServicesVsh>();
+        byte[] hash = new byte[0x20];
+        hash[3] = 9;
+        uint sig = Alloc(0x200);
+        PspEbootSignature.Create("EBOOT.PBP", hash, PspEbootSignature.KindPs1).CopyTo(GuestMemory.Span(sig, 0x200));
+        uint path = Str("ux0:pspemu/PSP/GAME/SLUS00001/EBOOT.PBP");
+        Assert.Equal(0, Call(services, "ksceNpDrmEbootSigVerify", path, sig));
+        hash[3] = 8;
+        PspEbootSignature.Create("EBOOT.PBP", hash, PspEbootSignature.KindPs1).AsSpan(0x30, 0x20).CopyTo(GuestMemory.Span(sig + 0x30, 0x20));
+        Assert.Equal(unchecked((int)0x80870005), Call(services, "ksceNpDrmEbootSigVerify", path, sig));
     }
 
     [Fact]

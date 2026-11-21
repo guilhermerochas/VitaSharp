@@ -159,8 +159,18 @@ public sealed partial class RegMgr : HleModule
             return language;
         }
 
-        // the keys that follow the system settings: what the system software wrote to the system registry
-        if (key.Type == KeyType.Int && !key.Writable && Firmware.Registry.For(FsRoot).TryGetWrittenInt(key.Path, out int sys)) return sys;
+        // the keys that follow the system settings: what the system software wrote to the system registry (the
+        // account a PSN sign-in stored in /CONFIG/NP/account_id, which the PSM runtime names its license by)
+        if (key.Type == KeyType.Int && !key.Writable && Firmware.Registry.For(FsRoot).TryGetWrittenInt(key.Path, out int sys))
+        {
+            return sys;
+        }
+
+        if (IsBytes(key.Type) && !key.Writable && Firmware.Registry.For(FsRoot).TryGetWritten(key.Path, out byte[]? bytes))
+        {
+            return bytes;
+        }
+
         lock (_lock) return Written().TryGetValue(id, out var v) ? v : key.Default();
     }
 

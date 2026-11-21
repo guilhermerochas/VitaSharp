@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using VitaSharp.Core.Memory;
 
 namespace VitaSharp.Core.Hle.Modules;
@@ -23,6 +24,105 @@ public sealed partial class SystemServicesVsh
     const string PsmActData = "tm0:psmdrm/act.dat";
 
     bool PsmActivationExists() => Emu.Vfs.Resolve(PsmActData) is { } host && File.Exists(host);
+
+    /// <summary>ScePsmDrm: a license whose signature does not verify (0x808F0104), with a bad header (0x808F0105), of
+    /// another account than the activation's (0x808F0108) or bound to another activation (0x808F0109).</summary>
+    const int PSMDRM_ERR_SIGNATURE = unchecked((int)0x808F0104);
+    const int PSMDRM_ERR_BAD_LICENSE = unchecked((int)0x808F0105);
+    const int PSMDRM_ERR_OTHER_ACCOUNT = unchecked((int)0x808F0108);
+    const int PSMDRM_ERR_OTHER_ACTIVATION = unchecked((int)0x808F0109);
+
+    /// <summary>Where a PSM license (0x400 bytes, big-endian fields) keeps its account, and its activation digest.</summary>
+    const int PsmLicenseAccountOffset = 0x10, PsmLicenseActivationDigestOffset = 0x30;
+
+    /// <summary>The part of a PSM license its signature covers, and the signature (RSA-2048, big-endian) after it.</summary>
+    const int PsmLicenseSignedSize = 0x300, PsmLicenseSignatureSize = 0x100;
+
+    /// <summary>Where FW 3.74's SceNpDrm keeps the public key it checks PSM licenses with (its key 5: a 2048-bit
+    /// modulus in little-endian words, exponent 65537), in its first segment.</summary>
+    const uint PsmLicenseModulusOffset = 0x10064;
+
+    /// <summary>The PSM license modulus of the SceNpDrm installed under <paramref name="fsRoot"/> (little-endian), or
+    /// null.</summary>
+    internal static byte[]? PsmLicenseModulusFor(string fsRoot)
+    {
+        if (Firmware.FirmwareKernelImage.For(fsRoot).Named("SceNpDrm") is not { } module)
+        {
+            return null;
+        }
+
+        return NpDrmModuleBytes(module.Elf, module.Image.ModuleNid, PsmLicenseModulusOffset, PsmLicenseSignatureSize);
+    }
+
+    /// <summary>The module's signature check of a PSM license: RSA-2048 PKCS#1 v1.5 of the SHA-256 of its first 0x300
+    /// bytes, the signature at +0x300, against <paramref name="modulusLittleEndian"/> with exponent 65537.</summary>
+    internal static bool PsmLicenseSignatureValid(ReadOnlySpan<byte> license, ReadOnlySpan<byte> modulusLittleEndian)
+    {
+        byte[] modulus = modulusLittleEndian.ToArray();
+        Array.Reverse(modulus);
+        using RSA rsa = RSA.Create();
+        rsa.ImportParameters(new RSAParameters { Modulus = modulus, Exponent = [1, 0, 1] });
+        return rsa.VerifyData(license[..PsmLicenseSignedSize],
+            license.Slice(PsmLicenseSignedSize, PsmLicenseSignatureSize), HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+    }
+
+    /// <summary>
+    /// scePsmDrmGetRifNameForInstall's check of a license (SceNpDrm 3.74, the module's internal function behind the
+    /// syscall), in its order: the signature (0x808F0104, nothing else checked), the header ("PSM-RIF\0", version 1,
+    /// the reserved words zero, start not after the end: 0x808F0105), then the activation: the license's account must
+    /// be the loaded activation's (0x808F0108) and its digest the activation's (0x808F0109). The activation is loaded
+    /// and decrypted by the secure processor: with activation data on the unit that part is not available
+    /// (0x80020004); without it the module has none loaded (account 0, digest zero) and answers as it does then.
+    /// <paramref name="modulus"/> null (no installed firmware): not available. On 0, <paramref name="accountId"/> is
+    /// the license's account, which names the file.
+    /// </summary>
+    internal static int PsmLicenseInstallCheck(ReadOnlySpan<byte> license, byte[]? modulus, bool activationExists,
+        out ulong accountId)
+    {
+        accountId = 0;
+        if (modulus == null)
+        {
+            return KERNEL_ERR_UNSUP;
+        }
+
+        if (!PsmLicenseSignatureValid(license, modulus))
+        {
+            return PSMDRM_ERR_SIGNATURE;
+        }
+
+        ulong start = System.Buffers.Binary.BinaryPrimitives.ReadUInt64BigEndian(license[0x20..]);
+        ulong end = System.Buffers.Binary.BinaryPrimitives.ReadUInt64BigEndian(license[0x28..]);
+        bool header = license[..8].SequenceEqual("PSM-RIF\0"u8)
+            && System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(license[8..]) == 1
+            && System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(license[0x18..]) == 0
+            && System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(license[0x1C..]) == 0
+            && start <= end
+            && System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(license[0xC..]) == 0;
+        if (!header)
+        {
+            return PSMDRM_ERR_BAD_LICENSE;
+        }
+
+        if (activationExists)
+        {
+            return KERNEL_ERR_UNSUP;
+        }
+
+        ulong account = System.Buffers.Binary.BinaryPrimitives.ReadUInt64BigEndian(license[PsmLicenseAccountOffset..]);
+        if (account != 0)
+        {
+            return PSMDRM_ERR_OTHER_ACCOUNT;
+        }
+
+        if (license.Slice(PsmLicenseActivationDigestOffset, 0x20).IndexOfAnyExcept((byte)0) >= 0)
+        {
+            return PSMDRM_ERR_OTHER_ACTIVATION;
+        }
+
+        accountId = account;
+        return 0;
+    }
 
     /// <summary>
     /// kscePsmDrmGetRifKey (const ScePsmDrmLicense *license, ScePsmDrmKeySet *keydata, int *versionFlag,
@@ -58,8 +158,8 @@ public sealed partial class SystemServicesVsh
     }
 
     /// <summary>kscePsmDrmGetRifInfo (const ScePsmDrmLicense *license, char contentId[0x30], SceUInt64 *accountId,
-    /// ScePsmDrmGetRifInfoOpt *times): the plain fields of a PSM license (content ID +0x50, account ID +0x10, times
-    /// +0x20/+0x28); NULL license 0x808F0101.</summary>
+    /// ScePsmDrmGetRifInfoOpt *times): the plain fields of a PSM license (content ID +0x50, account ID +0x10
+    /// big-endian, as the module reads it, times +0x20/+0x28); NULL license 0x808F0101.</summary>
     [Hle("kscePsmDrmGetRifInfo", Nid = 0x984F9017, Library = "ScePsmDrmForDriver")]
     int kscePsmDrmGetRifInfo(uint license, uint contentId, uint accountId, uint times)
     {
@@ -76,7 +176,7 @@ public sealed partial class SystemServicesVsh
 
         if (accountId != 0)
         {
-            GuestMemory.Write(accountId, System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(rif[0x10..]));
+            GuestMemory.Write(accountId, System.Buffers.Binary.BinaryPrimitives.ReadUInt64BigEndian(rif[PsmLicenseAccountOffset..]));
         }
 
         if (times != 0)
