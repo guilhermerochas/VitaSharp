@@ -84,7 +84,13 @@ public sealed class PsmRifNameForInstallTests(GuestMemoryFixture fixture) : IDis
         Assert.Equal(BadLicense, Check(License(0, l => l[0] = (byte)'X'), true, out _));
         Assert.Equal(BadLicense, Check(License(0, l => BinaryPrimitives.WriteUInt32BigEndian(l.AsSpan(8), 2)), true, out _));
         Assert.Equal(BadLicense, Check(License(0, l => l[0xC] = 1), true, out _));
-        Assert.Equal(BadLicense, Check(License(0, l => l[0x18] = 1), true, out _));
+        // the word at +0x18 answers as a license bound to another activation, before the rest of the header
+        Assert.Equal(OtherActivation, Check(License(0, l => l[0x18] = 1), true, out _));
+        Assert.Equal(OtherActivation, Check(License(0, l =>
+        {
+            l[0x1B] = 1;
+            l[0x1C] = 1;
+        }), true, out _));
         Assert.Equal(BadLicense, Check(License(0, l => l[0x1F] = 1), true, out _));
         Assert.Equal(BadLicense, Check(License(0, l => BinaryPrimitives.WriteUInt64BigEndian(l.AsSpan(0x20), 3000)), true, out _));
         // start equal to the end is accepted

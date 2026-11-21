@@ -117,57 +117,65 @@ public sealed partial class SystemServicesVsh
     [Hle("_sceNpDrmPackageTransform", Default = true)]
     int NpDrmSecure(uint a) => a == 0 ? NPDRM_ERR_INVALID : KERNEL_ERR_UNSUP;
 
-    /// <summary>Writes a license's start and expiration times through a {start, end} pointer pair (either may be NULL):
-    /// the license's own times, a zero expiration meaning none (0x7FFFFFFFFFFFFFFF, the firmware's "no expiration").</summary>
-    static void WriteLicenseTimes(ReadOnlySpan<byte> license, uint times)
-    {
-        ulong start = System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(license[0x20..]);
-        ulong end = System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(license[0x28..]);
-        if (GuestMemory.R32(times) is var startOut and not 0)
-        {
-            GuestMemory.Write(startOut, start);
-        }
-
-        if (GuestMemory.R32(times + 4) is var endOut and not 0)
-        {
-            GuestMemory.Write(endOut, end == 0 ? 0x7FFFFFFFFFFFFFFFUL : end);
-        }
-    }
-
     /// <summary>
-    /// (const ScePsmDrmLicense *license, ScePsmDrmKeySet *keydata, int *versionFlag, ScePsmDrmExpireTime *times): the key
-    /// set of a PSM license (0x200 bytes: HMAC key, AES content key, signature), which the PSM runtime opens its PSSE
-    /// files with (<see cref="Package.PsseFile"/>). The runtime passes the license it read from its title's
-    /// RO/License folder. A signed license (from the store) has its key set encrypted for the account's activation and
-    /// only the security processor opens it: refused as the other secure calls (0x80020004). A license with no
-    /// signature carries the key set in clear (<see cref="Package.PsmLicense"/>): copied out as it is, as VitaSharp
-    /// reads a PS Vita license's klicensee. The syscall calls kscePsmDrmGetRifKey, through its export entry.
+    /// (const ScePsmDrmLicense *license, ScePsmDrmKeySet *keydata, int *versionFlag, SceRtcTick *startTime,
+    /// SceRtcTick *expirationTime): the key set of a PSM license (0x200 bytes: HMAC key, AES content key, signature),
+    /// which the PSM runtime opens its PSSE files with (<see cref="Package.PsseFile"/>). The syscall (SceNpDrm 3.74)
+    /// serves only the PSM runtime (ksceSblACMgrIsPSMRuntime of the caller, else 0x80010058) and passes its five
+    /// arguments to kscePsmDrmGetRifKey as they are, through its export entry: a kernel plugin that hooks the export
+    /// (a license plugin) answers instead, as on the console.
     /// </summary>
     [Hle("scePsmDrmGetRifKey")]
-    int PsmDrmGetRifKey(uint license, uint keydata, uint versionFlag, uint times)
+    int PsmDrmGetRifKey(uint license, uint keydata, uint versionFlag, uint startTime, uint expirationTime)
     {
-        if (license == 0 || keydata == 0 || times == 0)
+        if (ksceSblACMgrIsPSMRuntime(0) == 0)
         {
-            return NPDRM_ERR_INVALID;
+            return PSMDRM_ERR_NOT_PSM_RUNTIME;
         }
 
-        return ThroughPsmDrmExport(0x8C8CFD01, () => kscePsmDrmGetRifKey(license, keydata, versionFlag, times),
-            license, keydata, versionFlag, times);
+        return ThroughPsmDrmExport(0x8C8CFD01,
+            () => kscePsmDrmGetRifKey(license, keydata, versionFlag, startTime, expirationTime),
+            license, keydata, versionFlag, startTime, expirationTime);
     }
 
-    /// <summary>(const ScePsmDrmLicense *license, char contentId[0x30], SceUInt64 *accountId, ScePsmDrmGetRifInfoOpt *opt):
-    /// the plain fields of a PSM license: its content ID (0x50), account ID (0x10) and times (0x20/0x28).</summary>
+    /// <summary>The content key (16 bytes) of <paramref name="license"/> as the PSM runtime gets it: the license and a
+    /// key set buffer in the process's memory, given to scePsmDrmGetRifKey (<see cref="PsmDrmGetRifKey"/>: the PSM
+    /// runtime check, the kernel export with its hooks, the activation); null unless it answers 0.</summary>
+    internal byte[]? PsmContentKey(ReadOnlySpan<byte> license)
+    {
+        GuestMemory memory = Emu.Memory;
+        uint buffer = memory.Alloc(Package.PsmLicense.Size + Package.PsmLicense.KeySetSize, "PSM license key query", MemoryRegion.User, 16);
+        if (buffer == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            uint keys = buffer + Package.PsmLicense.Size;
+            license[..Package.PsmLicense.Size].CopyTo(GuestMemory.Span(buffer, Package.PsmLicense.Size));
+            GuestMemory.Fill(keys, 0, Package.PsmLicense.KeySetSize);
+            if (PsmDrmGetRifKey(buffer, keys, 0, 0, 0) != 0)
+            {
+                return null;
+            }
+
+            const uint ContentKeyInKeySet = Package.PsmLicense.ContentKeyOffset - Package.PsmLicense.KeySetOffset;
+            return GuestMemory.ReadSpan(keys + ContentKeyInKeySet, 16).ToArray();
+        }
+        finally
+        {
+            memory.Free(buffer);
+        }
+    }
+
+    /// <summary>(const ScePsmDrmLicense *license, char contentId[0x30], SceUInt64 *accountId, SceRtcTick *startTime,
+    /// SceRtcTick *expirationTime): the syscall passes its five arguments to kscePsmDrmGetRifInfo as they are
+    /// (SceNpDrm 3.74), through its export entry; the checks and the fields are the kernel function's.</summary>
     [Hle("scePsmDrmGetRifInfo")]
-    int PsmDrmGetRifInfo(uint license, uint contentId, uint accountId, uint opt)
-    {
-        if (license == 0 || opt == 0)
-        {
-            return NPDRM_ERR_INVALID;
-        }
-
-        return ThroughPsmDrmExport(0x984F9017, () => kscePsmDrmGetRifInfo(license, contentId, accountId, opt),
-            license, contentId, accountId, opt);
-    }
+    int PsmDrmGetRifInfo(uint license, uint contentId, uint accountId, uint startTime, uint expirationTime) =>
+        ThroughPsmDrmExport(0x984F9017, () => kscePsmDrmGetRifInfo(license, contentId, accountId, startTime, expirationTime),
+            license, contentId, accountId, startTime, expirationTime);
 
     /// <summary>
     /// (const void *rif, SceSize size, int checkSign, void *outs[10]): the fields of a license file. The library call has

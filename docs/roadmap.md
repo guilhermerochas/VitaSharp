@@ -3132,11 +3132,14 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   runtime mostra 0x808F04FF e para antes de abrir o conteúdo. Decisão do lead/usuário: como tratar a ativação.
   Feito (fix/psm3): a licença fica em RO/License com o nome que o runtime abre (libpsm 2.01:
   scePsmDrmGetRifName da conta do registro /CONFIG/NP/account_id), no instalador e na migração das gravadas com o nome
-  fixo; scePsmDrmGetRifNameForInstall com a checagem do módulo (assinatura RSA, cabeçalho, ativação). Falta, revalidado
-  contra o SceNpDrm 3.74: kscePsmDrmGetRifInfo tem 5 argumentos (início e fim em ponteiros separados) e devolve os
-  tempos da licença (big-endian, ms) como ticks do SceRtc (v*1000 + 0xDCBFFEFF2BC000; 0 vira 0x7FFFFFFFFFFFFFFF), e
-  não preenche nada de uma licença que falha a assinatura com 0x808F0104 (a do formato dos plugins de licença);
-  kscePsmDrmGetRifKey sem ativação carregada responde 0x808F0106 antes de ler a licença.
+  fixo; scePsmDrmGetRifNameForInstall com a checagem do módulo (assinatura RSA, cabeçalho, ativação). Feito (fix/psm4),
+  revalidado contra o SceNpDrm 3.74: scePsmDrmGetRifInfo/kscePsmDrmGetRifInfo com os 5 argumentos do módulo, a
+  checagem da licença como resposta, nada preenchido com 0x808F0104 e os tempos como ticks do SceRtc;
+  scePsmDrmGetRifKey/kscePsmDrmGetRifKey como o firmware (só o runtime de PSM, 0x80010058; sem ativação 0x808F0106
+  antes de ler a licença; a chave é do processador seguro), de modo que a chave de uma licença sem assinatura só vem
+  de um plugin de kernel que faz hook da exportação; a palavra +0x18 da licença responde 0x808F0109; o leitor
+  pss_crypto_* do HLE da mono_bridge pede a chave a scePsmDrmGetRifKey (mesmas checagens, ativação e hooks), sem ler
+  a licença por fora.
 - [ ] [P3][P] Ao apagar um item da lista (biblioteca de jogos do launcher), a rolagem volta para o topo (pedido do
   usuário, 17/11/2026): manter a posição da rolagem onde estava, com o foco no item seguinte ao apagado; o mesmo nas
   outras listas com apagar (saves, capturas) e no app Android quando ele voltar

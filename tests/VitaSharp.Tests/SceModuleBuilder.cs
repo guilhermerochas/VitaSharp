@@ -23,6 +23,7 @@ public sealed class SceModuleBuilder(string name)
     private uint _codeMemSize = Size;
     private uint _dataMemSize;
     private uint _moduleNid = 0x12345678;
+    private readonly List<(int Offset, byte[] Bytes)> _payloads = [];
 
     /// <summary>module_info's module NID (+0x34; a firmware module's names its firmware build).</summary>
     public SceModuleBuilder ModuleNid(uint nid)
@@ -38,6 +39,19 @@ public sealed class SceModuleBuilder(string name)
     {
         _codeMemSize = Math.Max(codeMemSize, Size);
         _dataMemSize = dataMemSize;
+        return this;
+    }
+
+    /// <summary>Data at <paramref name="segmentOffset"/> of the code segment, past the builder's own area (from 0x1000):
+    /// the segment's file part grows to hold it, as a firmware module keeps its keys in its first segment.</summary>
+    public SceModuleBuilder Payload(int segmentOffset, byte[] bytes)
+    {
+        if (segmentOffset < Size)
+        {
+            throw new ArgumentOutOfRangeException(nameof(segmentOffset), "the builder's own area ends at 0x1000");
+        }
+
+        _payloads.Add((segmentOffset, bytes));
         return this;
     }
 
@@ -105,7 +119,18 @@ public sealed class SceModuleBuilder(string name)
 
     public byte[] Build()
     {
-        byte[] seg = new byte[Size];
+        int segmentSize = Size;
+        foreach ((int Offset, byte[] Bytes) payload in _payloads)
+        {
+            segmentSize = Math.Max(segmentSize, (payload.Offset + payload.Bytes.Length + 0xFFF) & ~0xFFF);
+        }
+
+        byte[] seg = new byte[segmentSize];
+        foreach ((int Offset, byte[] Bytes) payload in _payloads)
+        {
+            payload.Bytes.CopyTo(seg, payload.Offset);
+        }
+
         var relocs = new List<(uint Offset, uint Value)>();
         void W16(int at, ushort v) => BinaryPrimitives.WriteUInt16LittleEndian(seg.AsSpan(at), v);
         void W32(int at, uint v) => BinaryPrimitives.WriteUInt32LittleEndian(seg.AsSpan(at), v);
@@ -247,7 +272,7 @@ public sealed class SceModuleBuilder(string name)
         }
 
         const int SegOffset = 0x100;
-        byte[] elf = new byte[SegOffset + Size + rela.Length];
+        byte[] elf = new byte[SegOffset + segmentSize + rela.Length];
         Span<byte> h = elf;
         h[0] = 0x7F;
         h[1] = (byte)'E';
@@ -274,18 +299,18 @@ public sealed class SceModuleBuilder(string name)
             BinaryPrimitives.WriteUInt32LittleEndian(h[(at + 28)..], 0x10);
         }
 
-        Ph(h, 0x34, 1, SegOffset, Size, _codeMemSize, 7);
+        Ph(h, 0x34, 1, SegOffset, (uint)segmentSize, Math.Max(_codeMemSize, (uint)segmentSize), 7);
         int relaHeader = 0x54;
         if (_dataMemSize != 0)
         {
-            Ph(h, 0x54, 1, (uint)(SegOffset + Size), 0, _dataMemSize, 6);
+            Ph(h, 0x54, 1, (uint)(SegOffset + segmentSize), 0, _dataMemSize, 6);
             relaHeader = 0x74;
         }
 
-        Ph(h, relaHeader, 0x60000000, (uint)(SegOffset + Size), (uint)rela.Length, (uint)rela.Length, 0);
+        Ph(h, relaHeader, 0x60000000, (uint)(SegOffset + segmentSize), (uint)rela.Length, (uint)rela.Length, 0);
 
         seg.CopyTo(elf, SegOffset);
-        rela.CopyTo(elf, SegOffset + Size);
+        rela.CopyTo(elf, SegOffset + segmentSize);
         return elf;
     }
 

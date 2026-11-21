@@ -6,9 +6,10 @@ namespace VitaSharp.Core.Hle.Modules;
 // ScePsmDrmForDriver (bootimage SceNpDrm 3.74, read in the module, study only): the PlayStation Mobile licenses and
 // activation of the kernel. The user library's scePsmDrm* syscalls copy their arguments into the kernel and call these
 // exports, so here the user calls go through the export entries the kernel shows (FirmwareKernelModules.Call): a
-// kernel plugin that hooks one of them sees the user's call, as on the console. The licenses are read as the
-// emulator's PSM support reads an installed license (Package.PsmLicense: the key set of an unsigned license is in
-// clear; a signed one's key set is encrypted for the account's activation and only the secure processor opens it).
+// kernel plugin that hooks one of them sees the user's call, as on the console. The licenses are checked as the module
+// checks them (signature with the module's key read from the installed firmware, header, activation); a license's
+// key set is encrypted for the account's activation and only the secure processor opens it, so the key set is given
+// only by a kernel plugin that hooks kscePsmDrmGetRifKey (a license plugin), as on the console.
 // The PSM activation data (tm0:psmdrm/act.dat) is verified and decrypted by the secure side: reading or writing it
 // answers "not supported" after the checks, and without it the module's "not activated" (0x808F0106).
 public sealed partial class SystemServicesVsh
@@ -19,6 +20,9 @@ public sealed partial class SystemServicesVsh
     /// <summary>ScePsmDrm: a NULL argument (0x808F0101); no PSM activation (0x808F0106).</summary>
     const int PSMDRM_ERR_INVALID = unchecked((int)0x808F0101);
     const int PSMDRM_ERR_NOT_ACTIVATED = unchecked((int)0x808F0106);
+
+    /// <summary>scePsmDrmGetRifKey's syscall from a caller that is not the PSM runtime (0x80010058).</summary>
+    const int PSMDRM_ERR_NOT_PSM_RUNTIME = unchecked((int)0x80010058);
 
     /// <summary>The PSM activation data of the unit.</summary>
     const string PsmActData = "tm0:psmdrm/act.dat";
@@ -69,9 +73,11 @@ public sealed partial class SystemServicesVsh
 
     /// <summary>
     /// scePsmDrmGetRifNameForInstall's check of a license (SceNpDrm 3.74, the module's internal function behind the
-    /// syscall), in its order: the signature (0x808F0104, nothing else checked), the header ("PSM-RIF\0", version 1,
-    /// the reserved words zero, start not after the end: 0x808F0105), then the activation: the license's account must
-    /// be the loaded activation's (0x808F0108) and its digest the activation's (0x808F0109). The activation is loaded
+    /// syscall; kscePsmDrmGetRifInfo and kscePsmDrmGetRifKey check the same way), in its order: the signature
+    /// (0x808F0104, nothing else checked), the header ("PSM-RIF\0", version 1: 0x808F0105), the word at +0x18 (not
+    /// zero: 0x808F0109, the module's answer for a license bound to another activation), the words at +0x1C and +0xC
+    /// zero and the start not after the end (0x808F0105), then the activation: the license's account must be the
+    /// loaded activation's (0x808F0108) and its digest the activation's (0x808F0109). The activation is loaded
     /// and decrypted by the secure processor: with activation data on the unit that part is not available
     /// (0x80020004); without it the module has none loaded (account 0, digest zero) and answers as it does then.
     /// <paramref name="modulus"/> null (no installed firmware): not available. On 0, <paramref name="accountId"/> is
@@ -91,12 +97,19 @@ public sealed partial class SystemServicesVsh
             return PSMDRM_ERR_SIGNATURE;
         }
 
+        if (!PsmLicenseHasMagic(license) || System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(license[8..]) != 1)
+        {
+            return PSMDRM_ERR_BAD_LICENSE;
+        }
+
+        if (System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(license[0x18..]) != 0)
+        {
+            return PSMDRM_ERR_OTHER_ACTIVATION;
+        }
+
         ulong start = System.Buffers.Binary.BinaryPrimitives.ReadUInt64BigEndian(license[0x20..]);
         ulong end = System.Buffers.Binary.BinaryPrimitives.ReadUInt64BigEndian(license[0x28..]);
-        bool header = license[..8].SequenceEqual("PSM-RIF\0"u8)
-            && System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(license[8..]) == 1
-            && System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(license[0x18..]) == 0
-            && System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(license[0x1C..]) == 0
+        bool header = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(license[0x1C..]) == 0
             && start <= end
             && System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(license[0xC..]) == 0;
         if (!header)
@@ -126,42 +139,45 @@ public sealed partial class SystemServicesVsh
 
     /// <summary>
     /// kscePsmDrmGetRifKey (const ScePsmDrmLicense *license, ScePsmDrmKeySet *keydata, int *versionFlag,
-    /// ScePsmDrmExpireTime *times): the key set of a PSM license: an unsigned license's key set (in clear) is copied
-    /// out with its times; a signed one's needs the secure processor. NULL license or key set 0x808F0101.
+    /// SceRtcTick *startTime, SceRtcTick *expirationTime), as SceNpDrm 3.74 answers: NULL license or key set
+    /// 0x808F0101; no PSM activation loaded 0x808F0106, before the license is read; then the license's check
+    /// (<see cref="PsmLicenseInstallCheck"/>: signature, header, activation), whose error is the answer with nothing
+    /// written. A license that passes has its key set decrypted with the activation's keys and its times bounded by the
+    /// activation's, which is the secure processor's work (the activation is decrypted there): not available. Nothing
+    /// is written but by a kernel plugin that hooks the export.
     /// </summary>
     [Hle("kscePsmDrmGetRifKey", Nid = 0x8C8CFD01, Library = "ScePsmDrmForDriver")]
-    int kscePsmDrmGetRifKey(uint license, uint keydata, uint versionFlag, uint times)
+    int kscePsmDrmGetRifKey(uint license, uint keydata, uint versionFlag, uint startTime, uint expirationTime)
     {
         if (license == 0 || keydata == 0)
         {
             return PSMDRM_ERR_INVALID;
         }
 
+        if (!PsmActivationExists())
+        {
+            return PSMDRM_ERR_NOT_ACTIVATED;
+        }
+
         ReadOnlySpan<byte> rif = GuestMemory.ReadSpan(license, Package.PsmLicense.Size);
-        if (!Package.PsmLicense.KeySetInClear(rif))
-        {
-            return KERNEL_ERR_UNSUP;
-        }
-
-        rif.Slice(Package.PsmLicense.KeySetOffset, Package.PsmLicense.KeySetSize).CopyTo(GuestMemory.Span(keydata, Package.PsmLicense.KeySetSize));
-        if (versionFlag != 0)
-        {
-            GuestMemory.W32(versionFlag, 0);
-        }
-
-        if (times != 0)
-        {
-            WriteLicenseTimes(rif, times);
-        }
-
-        return 0;
+        int check = PsmLicenseInstallCheck(rif, PsmLicenseModulusFor(Emu.Options.FsRoot), activationExists: true, out _);
+        return check != 0 ? check : KERNEL_ERR_UNSUP;
     }
 
-    /// <summary>kscePsmDrmGetRifInfo (const ScePsmDrmLicense *license, char contentId[0x30], SceUInt64 *accountId,
-    /// ScePsmDrmGetRifInfoOpt *times): the plain fields of a PSM license (content ID +0x50, account ID +0x10
-    /// big-endian, as the module reads it, times +0x20/+0x28); NULL license 0x808F0101.</summary>
+    /// <summary>A PSM license's magic, "PSM-RIF\0" (the module compares it with strncmp(license, "PSM-RIF", 8)).</summary>
+    static bool PsmLicenseHasMagic(ReadOnlySpan<byte> license) => license[..8].SequenceEqual("PSM-RIF\0"u8);
+
+    /// <summary>
+    /// kscePsmDrmGetRifInfo (const ScePsmDrmLicense *license, char contentId[0x30], SceUInt64 *accountId,
+    /// SceRtcTick *startTime, SceRtcTick *expirationTime), as SceNpDrm 3.74 answers: NULL license 0x808F0101; the
+    /// license is checked as for its installation (<see cref="PsmLicenseInstallCheck"/>) and that check is the answer.
+    /// A license whose signature does not verify (0x808F0104: a license plugin's, with no signature) gets nothing
+    /// written; on any other answer a license with the "PSM-RIF" magic has its fields written to the non-NULL
+    /// outputs: the content ID (+0x50), the account (+0x10, big-endian) and the start (+0x20) and expiration (+0x28)
+    /// times, milliseconds since 1970 (big-endian) given as SceRtcTicks, 0 as "never" (0x7FFFFFFFFFFFFFFF).
+    /// </summary>
     [Hle("kscePsmDrmGetRifInfo", Nid = 0x984F9017, Library = "ScePsmDrmForDriver")]
-    int kscePsmDrmGetRifInfo(uint license, uint contentId, uint accountId, uint times)
+    int kscePsmDrmGetRifInfo(uint license, uint contentId, uint accountId, uint startTime, uint expirationTime)
     {
         if (license == 0)
         {
@@ -169,6 +185,12 @@ public sealed partial class SystemServicesVsh
         }
 
         ReadOnlySpan<byte> rif = GuestMemory.ReadSpan(license, Package.PsmLicense.Size);
+        int check = PsmLicenseInstallCheck(rif, PsmLicenseModulusFor(Emu.Options.FsRoot), PsmActivationExists(), out _);
+        if (check == PSMDRM_ERR_SIGNATURE || !PsmLicenseHasMagic(rif))
+        {
+            return check;
+        }
+
         if (contentId != 0)
         {
             rif.Slice(0x50, 0x30).CopyTo(GuestMemory.Span(contentId, 0x30));
@@ -179,12 +201,17 @@ public sealed partial class SystemServicesVsh
             GuestMemory.Write(accountId, System.Buffers.Binary.BinaryPrimitives.ReadUInt64BigEndian(rif[PsmLicenseAccountOffset..]));
         }
 
-        if (times != 0)
+        if (startTime != 0)
         {
-            WriteLicenseTimes(rif, times);
+            GuestMemory.Write(startTime, RifTime(rif, 0x20, RtcTickNever));
         }
 
-        return 0;
+        if (expirationTime != 0)
+        {
+            GuestMemory.Write(expirationTime, RifTime(rif, 0x28, RtcTickNever));
+        }
+
+        return check;
     }
 
     /// <summary>kscePsmDrmGetActInfo (5 outputs): the PSM activation's fields: without activation data 0x808F0106; its
