@@ -1818,10 +1818,12 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(SceError.WAIT_CANCEL, got);
             Assert.Equal(0u, GuestMemory.R32(ns));
             Assert.Equal(1u, GuestMemory.R32(nr));
-            // the pipe as an event object: OUT while there is room, IN once there is data
+            // the pipe as an event object (threadmgr 3.74's event core): the send and the receive above left IN and OUT
+            // set (sticky edges, no auto reset), until sceKernelClearEvent
             uint pat = _h.Word(0);
             Assert.Equal(0, Call(Tm, "sceKernelPollEvent", p, MsgPipe.EventIn | MsgPipe.EventOut, new Ptr<uint>(pat), new Ptr<ulong>(0)));
-            Assert.Equal(MsgPipe.EventOut, GuestMemory.R32(pat));
+            Assert.Equal(MsgPipe.EventIn | MsgPipe.EventOut, GuestMemory.R32(pat));
+            Assert.Equal(0, Call(Tm, "sceKernelClearEvent", p, 0u));
             Assert.Equal(SceError.EVENT_COND, Call(Tm, "sceKernelPollEvent", p, MsgPipe.EventIn, new Ptr<uint>(pat), new Ptr<ulong>(0)));
             Call(Tm, "sceKernelSendMsgPipe", p, src, 2u, 0u, new Ptr<uint>(0), new Ptr<uint>(0));
             Assert.Equal(0, Call(Tm, "sceKernelWaitEvent", p, MsgPipe.EventIn, new Ptr<uint>(pat), new Ptr<ulong>(0), new Ptr<uint>(_h.Word(1000))));

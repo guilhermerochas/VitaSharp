@@ -186,8 +186,8 @@ public sealed class MultiEventWaitInterleavingTests(GuestMemoryFixture fixture) 
         });
     }
 
-    /// <summary>A message pipe in the call is read as the level its single waits read: the send that makes bytes
-    /// receivable ends the call with IN, without waiting for a poll.</summary>
+    /// <summary>A message pipe in the call is queued in the pipe's event core: the send ends the call with IN inside
+    /// it, with the user data { result 0, the 4 bytes moved }.</summary>
     [Fact]
     public void APipeSendEndsTheCall()
     {
@@ -199,7 +199,7 @@ public sealed class MultiEventWaitInterleavingTests(GuestMemoryFixture fixture) 
             Assert.Equal(0, Call(Tm, "sceKernelSendMsgPipe", pipe, _h.Alloc(4), 4u, MsgPipe.WaitAll, new Ptr<uint>(0), new Ptr<uint>(0)));
             _h.Join(call.Run, 5_000);
             Assert.Equal(1, call.Returned);
-            Assert.Equal((pipe, 0, MsgPipe.EventIn, 0UL), Entry(call.Results, 0));
+            Assert.Equal((pipe, 0, MsgPipe.EventIn, 4UL << 32), Entry(call.Results, 0));
             Assert.Equal(0, Simple(a).NumWaiters); // its place in the other queue went away
         });
     }

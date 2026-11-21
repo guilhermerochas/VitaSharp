@@ -10,7 +10,7 @@ namespace VitaSharp.Core.Kernel;
 /// event's set (0x8101dcf8, which simple events, message pipes and timers all go through) notifies them, under the
 /// object's lock, with a notify argument (0x8101cfcc).
 /// </summary>
-public abstract class EventObject : KernelObject
+public abstract partial class EventObject : KernelObject
 {
     /// <summary>One callback registered to the event, and the notifier ID it gets (the event's UID as the caller
     /// named it).</summary>
@@ -21,40 +21,6 @@ public abstract class EventObject : KernelObject
 
     /// <summary>The registered callbacks of a loaded state, as (callback UID, notifier ID), until every object exists.</summary>
     private List<(int CallbackUid, int NotifyId)>? _loadedRegistrations;
-
-    /// <summary>The sceKernelWaitMultipleEvents calls that read this event's state as a level (a pipe, a timer, an I/O
-    /// operation; a simple event queues them instead).</summary>
-    private List<MultiEventWait>? _watchers;
-
-    internal void Watch(MultiEventWait multi)
-    {
-        lock (this)
-        {
-            (_watchers ??= new List<MultiEventWait>()).Add(multi);
-        }
-    }
-
-    internal void Unwatch(MultiEventWait multi)
-    {
-        lock (this)
-        {
-            _watchers?.Remove(multi);
-        }
-    }
-
-    /// <summary>The event's state changed: the calls that read it look again (the caller holds the object's lock).</summary>
-    internal void PokeWatchers()
-    {
-        if (_watchers == null)
-        {
-            return;
-        }
-
-        foreach (MultiEventWait multi in _watchers)
-        {
-            multi.Poke();
-        }
-    }
 
     /// <summary>sceKernelRegisterCallbackToEvent (threadmgr 3.74, 0x8100cfcc): adds <paramref name="callback"/> to the
     /// event's list, after the registrations of callbacks with a lower or equal UID.</summary>
@@ -162,8 +128,7 @@ public abstract class EventObject : KernelObject
     }
 
     /// <summary>The event set of <see cref="SetOrPulseWithNotify"/> on this object's event (the caller holds the lock).
-    /// A message pipe or an asynchronous I/O operation keeps no user bits here: their waits look at their own state
-    /// bits, so only the notification is seen (see the roadmap's sync item).</summary>
+    /// A message pipe or an asynchronous I/O operation sets the bits in its event core.</summary>
     protected virtual void SetForNotify(uint setPattern, ulong userData, bool pulse)
     {
     }

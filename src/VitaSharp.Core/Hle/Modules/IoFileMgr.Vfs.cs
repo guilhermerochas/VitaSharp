@@ -16,9 +16,9 @@ namespace VitaSharp.Core.Hle.Modules;
 // rename 0x40, pread 0x48, pwrite 0x4C, inactive 0x50, link 0x54, unlink 0x58, sync 0x5C, fgetstat 0x60, fchstat
 // 0x64, whiteout 0x68, cleanup 0x6C, zerofill 0x70); a NULL entry is 0x80010030, a NULL vnode 0x80010016.
 // The emulator's own devices (ux0:, app0:, savedata0:...) are served from host folders by IoFileMgr, not by guest
-// drivers: a driver's registration, its vnodes, files and locks work, and its operations run through ksceVop*, but
-// mounting a guest file system on a path (vfsMount, the PFS mounts, removing a block device) is not wired into the
-// emulator's path resolution and answers 0x80010030 (the operation is not supported) after its argument checks.
+// drivers. A driver's registration, its vnodes, files and locks work, its operations run through ksceVop*, and a file
+// system it mounts with vfsMount serves the I/O on its paths (IoFileMgr.VfsMount.cs); the PFS overlay mounts of a guest
+// driver and removing a block device answer 0x80010030 (the operation is not supported) after their argument checks.
 public sealed partial class IoFileMgr
 {
     const int VFS_ERR_PERM = unchecked((int)0x80010001);
@@ -330,20 +330,6 @@ public sealed partial class IoFileMgr
         return argument == 0 ? VFS_ERR_INVAL : VFS_ERR_UNSUP;
     }
 
-    /// <summary>vfsMount(param): mounts a registered driver on a path.</summary>
-    [Hle(Nid = 0xB62DE9A6, Library = "SceIofilemgrForDriver", Default = true)]
-    int vfsMount(uint param)
-    {
-        return VfsMountRequest(param);
-    }
-
-    /// <summary>vfsUmount(param): unmounts it.</summary>
-    [Hle(Nid = 0x9C7E7B76, Library = "SceIofilemgrForDriver", Default = true)]
-    int vfsUmount(uint param)
-    {
-        return VfsMountRequest(param);
-    }
-
     /// <summary>vfsMountForPFS(?, path, param): the PFS overlay mount.</summary>
     [Hle(Nid = 0xFEEE44A9, Library = "SceIofilemgrForDriver", Default = true)]
     int vfsMountForPFS(uint unused, uint path, uint param)
@@ -482,6 +468,43 @@ public sealed partial class IoFileMgr
         return VfsCallOp(GuestMemory.R32(vnode + 0x40), offset, words);
     }
 
+    /// <summary>
+    /// The read / write family (0x570388A5 and its neighbours): the driver's op gets { vnode, file, buffer, size[,
+    /// offset] } and returns the byte count or an error; the wrapper writes that into *result and returns 0 or the
+    /// error. A NULL vnode 0x80010016, a NULL op 0x80010030 (nothing written); a size of 0 writes 0 without the op.
+    /// </summary>
+    static int VopTransfer(uint vnode, uint offset, ReadOnlySpan<uint> words, uint size, uint result)
+    {
+        if (vnode == 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        uint table = GuestMemory.R32(vnode + 0x40);
+        if (table == 0 || GuestMemory.R32(table + offset) == 0)
+        {
+            return VFS_ERR_UNSUP;
+        }
+
+        if (size == 0)
+        {
+            if (result != 0)
+            {
+                GuestMemory.W32(result, 0);
+            }
+
+            return 0;
+        }
+
+        int count = VfsCallOp(table, offset, words);
+        if (result != 0)
+        {
+            GuestMemory.W32(result, (uint)count);
+        }
+
+        return Math.Min(count, 0);
+    }
+
     /// <summary>ksceVopOpen(vnode, path, flags, file): op 0.</summary>
     [Hle(Nid = 0x76B79BEC, Library = "SceIofilemgrForDriver")]
     int ksceVopOpen(uint vnode, uint path, uint flags, uint file)
@@ -514,14 +537,14 @@ public sealed partial class IoFileMgr
     [Hle(Nid = 0x570388A5, Library = "SceIofilemgrForDriver")]
     int ksceVopRead(uint vnode, uint file, uint buffer, uint size, uint result)
     {
-        return VopCall(vnode, 0x10, [vnode, file, buffer, size, result]);
+        return VopTransfer(vnode, 0x10, [vnode, file, buffer, size], size, result);
     }
 
     /// <summary>ksceVopWrite(vnode, file, buffer, size, result): op 0x14.</summary>
     [Hle(Nid = 0x9A68378D, Library = "SceIofilemgrForDriver")]
     int ksceVopWrite(uint vnode, uint file, uint buffer, uint size, uint result)
     {
-        return VopCall(vnode, 0x14, [vnode, file, buffer, size, result]);
+        return VopTransfer(vnode, 0x14, [vnode, file, buffer, size], size, result);
     }
 
     /// <summary>ksceVopLseek(vnode, file, offset (64-bit), whence): op 0x18 with { vnode, file, offset, whence }.</summary>
@@ -605,14 +628,14 @@ public sealed partial class IoFileMgr
     [Hle(Nid = 0xABBC80E3, Library = "SceIofilemgrForDriver")]
     int ksceVopPread(uint vnode, uint file, uint buffer, uint size, uint offsetLow, uint offsetHigh, uint result)
     {
-        return VopCall(vnode, 0x48, [vnode, file, buffer, size, offsetLow, offsetHigh, result]);
+        return VopTransfer(vnode, 0x48, [vnode, file, buffer, size, offsetLow, offsetHigh], size, result);
     }
 
     /// <summary>ksceVopPwrite(vnode, file, buffer, size, offset (64-bit), result): op 0x4C.</summary>
     [Hle(Nid = 0xA53C040D, Library = "SceIofilemgrForDriver")]
     int ksceVopPwrite(uint vnode, uint file, uint buffer, uint size, uint offsetLow, uint offsetHigh, uint result)
     {
-        return VopCall(vnode, 0x4C, [vnode, file, buffer, size, offsetLow, offsetHigh, result]);
+        return VopTransfer(vnode, 0x4C, [vnode, file, buffer, size, offsetLow, offsetHigh], size, result);
     }
 
     /// <summary>ksceVopInactive(vnode): op 0x50.</summary>

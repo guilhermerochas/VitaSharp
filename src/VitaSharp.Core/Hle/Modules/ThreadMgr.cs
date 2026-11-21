@@ -1629,6 +1629,16 @@ public sealed partial class ThreadMgr : HleModule
     {
         if (Event(uid) is { } e) return e.Clear(keepPattern);
         if (Timer(uid) is { } t) return t.Clear(keepPattern);
+        if (Obj<MsgPipe>(uid) is { } p)
+        {
+            return p.ClearEvent(keepPattern);
+        }
+
+        if (Obj<IoAsyncOp>(uid) is { } op)
+        {
+            return op.ClearEvent(keepPattern);
+        }
+
         return SceError.UNKNOWN_EVENT_ID;
     }
 
@@ -1638,8 +1648,16 @@ public sealed partial class ThreadMgr : HleModule
     {
         if (Event(uid) is { } e) return e.Wait(Self, waitPattern, resultPattern, userData, timeout);
         if (Timer(uid) is { } t) return t.Wait(Self, waitPattern, resultPattern, userData, timeout);
-        if (Obj<MsgPipe>(uid) is { } p) { userData.TrySet(0); return p.WaitEvent(waitPattern, resultPattern, timeout); }
-        if (Obj<IoAsyncOp>(uid) is { } op) return op.WaitEvent(waitPattern, resultPattern, userData, timeout);
+        if (Obj<MsgPipe>(uid) is { } p)
+        {
+            return p.WaitCoreEvent(Self, waitPattern, resultPattern, userData, timeout);
+        }
+
+        if (Obj<IoAsyncOp>(uid) is { } op)
+        {
+            return op.WaitCoreEvent(Self, waitPattern, resultPattern, userData, timeout);
+        }
+
         return SceError.UNKNOWN_EVENT_ID;
     }
 
@@ -1648,8 +1666,16 @@ public sealed partial class ThreadMgr : HleModule
     {
         if (Event(uid) is { } e) return e.Poll(waitPattern, resultPattern, userData);
         if (Timer(uid) is { } t) return t.Poll(waitPattern, resultPattern, userData);
-        if (Obj<MsgPipe>(uid) is { } p) { userData.TrySet(0); return p.PollEvent(waitPattern, resultPattern); }
-        if (Obj<IoAsyncOp>(uid) is { } op) return op.PollEvent(waitPattern, resultPattern, userData);
+        if (Obj<MsgPipe>(uid) is { } p)
+        {
+            return p.PollCoreEvent(waitPattern, resultPattern, userData);
+        }
+
+        if (Obj<IoAsyncOp>(uid) is { } op)
+        {
+            return op.PollCoreEvent(waitPattern, resultPattern, userData);
+        }
+
         return SceError.UNKNOWN_EVENT_ID;
     }
 
@@ -1666,8 +1692,10 @@ public sealed partial class ThreadMgr : HleModule
     /// returns once anything is in, AND once every event is; the return value is the number of results written (0
     /// without a results array), WAIT_TIMEOUT when the time runs out first (the results so far stay). A timer queues
     /// the call as a simple event does (its fire, in guest time, takes it there). Message pipes and asynchronous I/O
-    /// operations are still read as a level, looked at again whenever they change (the firmware queues the call in
-    /// them too: a pipe's IN taken by another receiver before the call looks is missed here; see the roadmap).
+    /// operations go through the event core of their class (<see cref="EventObject"/>): their sticky bits match at
+    /// once, else the call is queued there and the pipe's send / receive (the operation's end) hands it the bits, user
+    /// data { result, bytes } of a pipe, inside that call: an IN another receiver drains right after is still seen. A
+    /// deleted pipe ends its event with WAIT_DELETE (or DELETE when the pattern asks for it).
     /// </summary>
     [Hle("sceKernelWaitMultipleEvents", Cost = HleCost.SchedulerWait)]
     [Hle("sceKernelWaitMultipleEventsCB", Cost = HleCost.SchedulerWait, CallbackWait = true)]
@@ -1692,9 +1720,7 @@ public sealed partial class ThreadMgr : HleModule
         var multi = new MultiEventWait((int)count, (mode & 1) != 0, self);
         var queued = new List<SimpleEvent>();
         var queuedTimers = new List<TimerObject>();
-        var levels = new List<(EventObject Event, int Index, int Uid, uint Pattern)>();
-        // the results array is the caller's until the call returns: its last entry holds what a level poll reads
-        uint scratch = results == 0 || count == 0 ? 0 : results + (count - 1) * 0x18;
+        var queuedCores = new List<EventObject>();
         int code = SceError.OK;
         try
         {
@@ -1719,9 +1745,15 @@ public sealed partial class ThreadMgr : HleModule
                         }
 
                         break;
-                    case EventObject level:
-                        levels.Add((level, i, uid, pattern));
-                        level.Watch(multi);
+                    case MsgPipe or IoAsyncOp:
+                        // the event core every event-class object has: taken at once when it matches, else queued
+                        // there, the object's set taking the call inside it
+                        var core = (EventObject)K.Objects.Get<KernelObject>(uid)!;
+                        if (core.AttachCoreMulti(multi, i, pattern))
+                        {
+                            queuedCores.Add(core);
+                        }
+
                         break;
                     default:
                         multi.Record(i, uid, SceError.UNKNOWN_EVENT_ID, EventBits.Error, 0);
@@ -1733,13 +1765,6 @@ public sealed partial class ThreadMgr : HleModule
             while (true)
             {
                 int seen = multi.Changes;
-                foreach ((EventObject level, int index, int uid, uint pattern) in levels)
-                {
-                    if (!multi.IsDone(index) && PollLevel(level, pattern, scratch, out uint bits, out ulong userData))
-                    {
-                        multi.Record(index, uid, SceError.OK, bits, userData);
-                    }
-                }
                 if (multi.Complete)
                 {
                     break;
@@ -1778,9 +1803,9 @@ public sealed partial class ThreadMgr : HleModule
             {
                 timer.DetachMulti(multi);
             }
-            foreach ((EventObject level, _, _, _) in levels)
+            foreach (EventObject core in queuedCores)
             {
-                level.Unwatch(multi);
+                core.DetachCoreMulti(multi);
             }
         }
         int written = 0;
@@ -1803,34 +1828,6 @@ public sealed partial class ThreadMgr : HleModule
 
     /// <summary>Guest microseconds since <paramref name="start"/>, as the waits' timeouts count them.</summary>
     static long MultiElapsedUs(long start) => (long)((GuestClock.Ticks - start) * 1_000_000 / System.Diagnostics.Stopwatch.Frequency * TimeScale.Wait);
-
-    /// <summary>One level-triggered event of <see cref="sceKernelWaitMultipleEvents"/> (a pipe, an I/O operation): taken when its state matches <paramref name="pattern"/> (a zero pattern never does), its bits and user
-    /// data read through <paramref name="scratch"/> (a guest entry; 0: not read).</summary>
-    static bool PollLevel(EventObject level, uint pattern, uint scratch, out uint bits, out ulong userData)
-    {
-        var result = new Ptr<uint>(scratch == 0 ? 0 : scratch + 8);
-        var data = new Ptr<ulong>(scratch == 0 ? 0 : scratch + 16);
-        int r = level switch
-        {
-            MsgPipe pipe => pattern == 0 ? SceError.EVENT_COND : pipe.PollEvent(pattern, result),
-            IoAsyncOp op => pattern == 0 ? SceError.EVENT_COND : op.PollEvent(pattern, result, data),
-            _ => SceError.EVENT_COND,
-        };
-        bits = 0;
-        userData = 0;
-        if (r == SceError.EVENT_COND)
-        {
-            return false;
-        }
-
-        if (r == SceError.OK && scratch != 0)
-        {
-            bits = GuestMemory.R32(scratch + 8);
-            userData = level is MsgPipe ? 0 : GuestMemory.Read<ulong>(scratch + 16);
-        }
-
-        return true; // a poll that fails otherwise (the object went away) ends that event's wait as a match does
-    }
 
     [Hle]
     int sceKernelCancelEvent(int uid, Ptr<uint> numWait)

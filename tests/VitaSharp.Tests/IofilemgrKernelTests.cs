@@ -125,7 +125,7 @@ public sealed class IofilemgrKernelTests(GuestMemoryFixture fixture) : IDisposab
         Assert.Equal(Inval, Call(Io, "vfsFreeVnode", vnode));
 
         Assert.Equal(Inval, Call(Io, "vfsMount", 0u));
-        Assert.Equal(Unsup, Call(Io, "vfsMount", mount));
+        Assert.Equal(Inval, Call(Io, "vfsMount", mount)); // no root path
     }
 
     [Fact]
