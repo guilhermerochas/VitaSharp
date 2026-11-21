@@ -1,6 +1,7 @@
 using VitaSharp.Core.Firmware;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Loader;
+using VitaSharp.Core.Loader.Self;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Package;
 using Xunit;
@@ -21,7 +22,8 @@ public sealed class PsmDrmKernelTests : IDisposable
     private const uint PsmDrmForDriver = 0x9F4924F2, GetRifKey = 0x8C8CFD01, GetRifInfo = 0x984F9017;
     private const uint LdrPcMinus4 = 0xE51FF004;
     private const int Unsupported = unchecked((int)0x80020004), Invalid = unchecked((int)0x808F0101);
-    private const int NotActivated = unchecked((int)0x808F0106);
+    private const int NotActivated = unchecked((int)0x808F0106), NotPsmRuntime = unchecked((int)0x80010058);
+    private const uint LdrR0SpThenBxLr = 0xE59D0000, BxLr = 0xE12FFF1E;
 
     private readonly HleHarness _harness;
 
@@ -46,10 +48,13 @@ public sealed class PsmDrmKernelTests : IDisposable
     private SystemServicesVsh Services => _harness.Module<SystemServicesVsh>();
 
     /// <summary>Loads a kernel plugin with one function answering <paramref name="answer"/>; returns its address.</summary>
-    private uint LoadHookPlugin(byte answer)
+    private uint LoadHookPlugin(byte answer) => LoadHookPlugin(b => b.ReturnConstant(answer));
+
+    /// <summary>Loads a kernel plugin with the function <paramref name="function"/> adds; returns its address.</summary>
+    private uint LoadHookPlugin(Func<SceModuleBuilder, int> function)
     {
         SceModuleBuilder hooker = new SceModuleBuilder("PsmHookPlugin").Start(0);
-        int hook = hooker.ReturnConstant(answer);
+        int hook = function(hooker);
         string dir = Path.Combine(_harness.Root, "ur0", "tai");
         Directory.CreateDirectory(dir);
         File.WriteAllBytes(Path.Combine(dir, "psmhook.skprx"), hooker.Build());
@@ -57,7 +62,7 @@ public sealed class PsmDrmKernelTests : IDisposable
         List<string> results = _harness.Emu.LoadPlugins();
         Assert.Contains(": loaded and started (", Assert.Single(results));
         LoadedModule loaded = HleHarness.KernelModules(_harness.Emu).Values.Single(m => m.Path == "ur0:tai/psmhook.skprx");
-        return SceModuleBuilder.FunctionAddress(loaded.Segments[0].Address, hook);
+        return hooker.AddressOf(loaded.Segments[0].Address, hook);
     }
 
     /// <summary>Writes a jump to <paramref name="hook"/> over an export entry, as kernel code does.</summary>
@@ -84,6 +89,10 @@ public sealed class PsmDrmKernelTests : IDisposable
         return (license, keys, times);
     }
 
+    /// <summary>The caller is the PSM runtime (the only program scePsmDrmGetRifKey serves).</summary>
+    private void AsPsmRuntime() =>
+        _harness.Emu.Access = new ProgramAccess(ProgramAccess.PsmRuntimeAuthorityId, new byte[ProgramAccess.CapabilitySize], false);
+
     private int UserCallOnGuest(string name, params object[] args)
     {
         int result = 0;
@@ -97,7 +106,9 @@ public sealed class PsmDrmKernelTests : IDisposable
         LoadHookPlugin(0x55);
         (uint license, uint keys, uint times) = SignedLicense();
         Assert.False(_harness.Emu.FirmwareKernel.IsPatched(PsmDrmForDriver, GetRifKey));
-        Assert.Equal(Unsupported, UserCallOnGuest("PsmDrmGetRifKey", license, keys, 0u, times));
+        Assert.Equal(NotPsmRuntime, UserCallOnGuest("PsmDrmGetRifKey", license, keys, 0u, times, 0u));
+        AsPsmRuntime();
+        Assert.Equal(NotActivated, UserCallOnGuest("PsmDrmGetRifKey", license, keys, 0u, times, 0u));
     }
 
     [Fact]
@@ -107,20 +118,23 @@ public sealed class PsmDrmKernelTests : IDisposable
         WriteJump(_harness.Emu.FirmwareKernel.EntryOf(PsmDrmForDriver, GetRifKey), hook);
         Assert.True(_harness.Emu.FirmwareKernel.IsPatched(PsmDrmForDriver, GetRifKey));
         (uint license, uint keys, uint times) = SignedLicense();
-        Assert.Equal(0x55, UserCallOnGuest("PsmDrmGetRifKey", license, keys, 0u, times));
-        // the other export is not hooked: the firmware's answer
+        AsPsmRuntime();
+        // the hook decides, before the firmware's activation check (none here)
+        Assert.Equal(0x55, UserCallOnGuest("PsmDrmGetRifKey", license, keys, 0u, times, 0u));
+        // the other export is not hooked: the firmware's answer (this synthetic module has no license key)
         uint content = _harness.Alloc(0x30);
-        Assert.Equal(0, UserCallOnGuest("PsmDrmGetRifInfo", license, content, 0u, times));
+        Assert.Equal(Unsupported, UserCallOnGuest("PsmDrmGetRifInfo", license, content, 0u, 0u, 0u));
     }
 
     [Fact]
     public void The_kernel_functions_follow_the_firmware()
     {
         (uint license, uint keys, uint times) = SignedLicense();
-        Assert.Equal(Invalid, Call(Services, "kscePsmDrmGetRifKey", 0u, keys, 0u, times));
-        Assert.Equal(Unsupported, Call(Services, "kscePsmDrmGetRifKey", license, keys, 0u, times));
+        Assert.Equal(Invalid, Call(Services, "kscePsmDrmGetRifKey", 0u, keys, 0u, times, 0u));
+        Assert.Equal(Invalid, Call(Services, "kscePsmDrmGetRifKey", license, 0u, 0u, times, 0u));
+        Assert.Equal(NotActivated, Call(Services, "kscePsmDrmGetRifKey", license, keys, 0u, times, 0u));
         Assert.Equal(new byte[PsmLicense.KeySetSize], GuestMemory.ReadSpan(keys, PsmLicense.KeySetSize).ToArray());
-        Assert.Equal(Invalid, Call(Services, "kscePsmDrmGetRifInfo", 0u, 0u, 0u, 0u));
+        Assert.Equal(Invalid, Call(Services, "kscePsmDrmGetRifInfo", 0u, 0u, 0u, 0u, 0u));
         Assert.Equal(NotActivated, Call(Services, "kscePsmDrmGetActInfo", _harness.Alloc(8)));
         Assert.Equal(NotActivated, Call(Services, "kscePsmDrmReadActData"));
         Assert.Equal(Invalid, Call(Services, "kscePsmDrmWriteActData", 0u, 0u));
@@ -130,5 +144,20 @@ public sealed class PsmDrmKernelTests : IDisposable
         Assert.Equal(0u, GuestMemory.R32(account));
         // the user call of the removal goes to the kernel export (no twin of it forwards back)
         Assert.Equal(0, UserCallOnGuest("PsmDrmRemoveActData", account));
+    }
+
+    /// <summary>The syscalls pass all five arguments to the export (the fifth on the stack): a hook that answers its
+    /// fifth argument sees the expiration time pointer of both calls.</summary>
+    [Fact]
+    public void The_fifth_argument_reaches_the_hooked_export()
+    {
+        uint hook = LoadHookPlugin(b => b.Arm(LdrR0SpThenBxLr, BxLr));
+        WriteJump(_harness.Emu.FirmwareKernel.EntryOf(PsmDrmForDriver, GetRifKey), hook);
+        WriteJump(_harness.Emu.FirmwareKernel.EntryOf(PsmDrmForDriver, GetRifInfo), hook);
+        AsPsmRuntime();
+        (uint license, uint keys, uint times) = SignedLicense();
+        uint expiration = _harness.Alloc(8);
+        Assert.Equal((int)expiration, UserCallOnGuest("PsmDrmGetRifKey", license, keys, 0u, times, expiration));
+        Assert.Equal((int)expiration, UserCallOnGuest("PsmDrmGetRifInfo", license, 0u, 0u, times, expiration));
     }
 }

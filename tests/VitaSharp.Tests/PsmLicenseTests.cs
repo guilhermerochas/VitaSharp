@@ -1,5 +1,6 @@
 using System.Text;
 using VitaSharp.Core.Hle.Modules;
+using VitaSharp.Core.Loader.Self;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Package;
 using Xunit;
@@ -17,7 +18,8 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class PsmLicenseTests(GuestMemoryFixture fixture) : IDisposable
 {
-    private const int Unsupported = unchecked((int)0x80020004), Invalid = unchecked((int)0x80870001);
+    private const int Unsupported = unchecked((int)0x80020004), KernelInvalid = unchecked((int)0x808F0101);
+    private const int NotActivated = unchecked((int)0x808F0106), NotPsmRuntime = unchecked((int)0x80010058);
     private const string ContentId = "EP0000-NPXX99998_00-0000000000000001";
 
     private readonly HleHarness _harness = new(fixture, "psmlicense");
@@ -47,47 +49,51 @@ public sealed class PsmLicenseTests(GuestMemoryFixture fixture) : IDisposable
         return rif;
     }
 
+    /// <summary>scePsmDrmGetRifKey follows SceNpDrm 3.74: only the PSM runtime may call it (0x80010058), and without a
+    /// PSM activation loaded the kernel answers 0x808F0106 before it reads the license, whatever the license: the key
+    /// set of a license plugin's license (in clear) is not handed out by the firmware, only by the plugin's hook.</summary>
     [Fact]
-    public void GetRifKeyGivesTheKeySetOfALicenseThatCarriesItInClear()
+    public void GetRifKeyNeedsThePsmRuntimeAndAnActivation()
     {
         SystemServicesVsh drm = _harness.Module<SystemServicesVsh>();
-        byte[] rif = License(signed: false);
         uint license = _harness.Alloc(PsmLicense.Size), keys = _harness.Alloc(PsmLicense.KeySetSize);
-        uint times = _harness.Alloc(0x10), start = _harness.Alloc(8), end = _harness.Alloc(8), version = _harness.Alloc(4);
-        rif.CopyTo(GuestMemory.Span(license, rif.Length));
-        GuestMemory.W32(times, start);
-        GuestMemory.W32(times + 4, end);
+        uint start = _harness.Alloc(8), end = _harness.Alloc(8), version = _harness.Alloc(4);
+        License(signed: false).CopyTo(GuestMemory.Span(license, PsmLicense.Size));
         GuestMemory.W32(version, 0xFFFFFFFF);
 
-        Assert.Equal(0, Call(drm, "PsmDrmGetRifKey", license, keys, version, times));
+        Assert.Equal(NotPsmRuntime, Call(drm, "PsmDrmGetRifKey", license, keys, version, start, end));
+        _harness.Emu.Access = new ProgramAccess(ProgramAccess.PsmRuntimeAuthorityId, new byte[ProgramAccess.CapabilitySize], false);
+        foreach (bool signed in new[] { false, true })
+        {
+            License(signed).CopyTo(GuestMemory.Span(license, PsmLicense.Size));
+            Assert.Equal(NotActivated, Call(drm, "PsmDrmGetRifKey", license, keys, version, start, end));
+            Assert.Equal(new byte[PsmLicense.KeySetSize], GuestMemory.ReadSpan(keys, PsmLicense.KeySetSize).ToArray());
+            Assert.Equal(0xFFFFFFFFu, GuestMemory.R32(version));
+        }
 
-        Assert.Equal(rif.AsSpan(PsmLicense.KeySetOffset, PsmLicense.KeySetSize).ToArray(), GuestMemory.ReadSpan(keys, PsmLicense.KeySetSize).ToArray());
-        Assert.Equal(0u, GuestMemory.R32(version));
-        Assert.Equal(0UL, GuestMemory.Read<ulong>(start));
-        Assert.Equal(0x7FFFFFFFFFFFFFFFUL, GuestMemory.Read<ulong>(end)); // no expiration in the license
-        // its plain fields
-        uint content = _harness.Alloc(0x30), account = _harness.Alloc(8);
-        Assert.Equal(0, Call(drm, "PsmDrmGetRifInfo", license, content, account, times));
-        Assert.Equal(ContentId, GuestMemory.ReadCString(content, 0x30));
-        Assert.Equal(0x0123456789ABCDEFUL, GuestMemory.Read<ulong>(account));
+        // the kernel's NULL checks come first; NULL times are allowed
+        Assert.Equal(KernelInvalid, Call(drm, "PsmDrmGetRifKey", 0u, keys, 0u, 0u, 0u));
+        Assert.Equal(KernelInvalid, Call(drm, "PsmDrmGetRifKey", license, 0u, 0u, 0u, 0u));
+        Assert.Equal(NotActivated, Call(drm, "PsmDrmGetRifKey", license, keys, 0u, 0u, 0u));
+        // the content key of a license in clear is still what the emulator's own PSSE reader uses
+        Assert.Null(PsmLicense.ContentKey(License(signed: true)));
+        Assert.Equal(s_contentKey, PsmLicense.ContentKey(License(signed: false)));
     }
 
+    /// <summary>With activation data on the unit the license is checked (here no firmware: not available) and the
+    /// key set stays the secure processor's.</summary>
     [Fact]
-    public void GetRifKeyRefusesASignedLicenseAndMissingArguments()
+    public void GetRifKeyWithAnActivationLeavesTheKeySetToTheSecureProcessor()
     {
         SystemServicesVsh drm = _harness.Module<SystemServicesVsh>();
-        byte[] rif = License(signed: true);
-        uint license = _harness.Alloc(PsmLicense.Size), keys = _harness.Alloc(PsmLicense.KeySetSize), times = _harness.Alloc(0x10);
-        rif.CopyTo(GuestMemory.Span(license, rif.Length));
-
-        // the store's key set is encrypted for the account's activation: only the security processor opens it
-        Assert.Equal(Unsupported, Call(drm, "PsmDrmGetRifKey", license, keys, 0u, times));
-        Assert.Equal(0u, GuestMemory.R32(keys + PsmLicense.ContentKeyOffset - PsmLicense.KeySetOffset));
-        Assert.Equal(Invalid, Call(drm, "PsmDrmGetRifKey", 0u, keys, 0u, times));
-        Assert.Equal(Invalid, Call(drm, "PsmDrmGetRifKey", license, 0u, 0u, times));
-        Assert.Equal(Invalid, Call(drm, "PsmDrmGetRifKey", license, keys, 0u, 0u));
-        Assert.Null(PsmLicense.ContentKey(rif));
-        Assert.Equal(s_contentKey, PsmLicense.ContentKey(License(signed: false)));
+        _harness.Emu.Access = new ProgramAccess(ProgramAccess.PsmRuntimeAuthorityId, new byte[ProgramAccess.CapabilitySize], false);
+        string act = _harness.Emu.Vfs.Resolve("tm0:psmdrm/act.dat")!;
+        Directory.CreateDirectory(Path.GetDirectoryName(act)!);
+        File.WriteAllBytes(act, new byte[0x400]);
+        uint license = _harness.Alloc(PsmLicense.Size), keys = _harness.Alloc(PsmLicense.KeySetSize);
+        License(signed: false).CopyTo(GuestMemory.Span(license, PsmLicense.Size));
+        Assert.Equal(Unsupported, Call(drm, "PsmDrmGetRifKey", license, keys, 0u, 0u, 0u));
+        Assert.Equal(new byte[PsmLicense.KeySetSize], GuestMemory.ReadSpan(keys, PsmLicense.KeySetSize).ToArray());
     }
 
     /// <summary>A file of more than 0x80000 bytes crosses a signature block; the last block is a partial one.</summary>
