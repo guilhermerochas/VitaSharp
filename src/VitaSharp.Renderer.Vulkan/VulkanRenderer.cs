@@ -850,9 +850,10 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         /// <summary>Internal resolution scale (VulkanRenderer.ResScale.cs): <see cref="Width"/>/<see cref="Height"/>
         /// are the image's size, guest size times this.</summary>
         public float Scale = 1f;
-        /// <summary>Last used by a supersampled scene: SsScale texels per surface sample, not one
-        /// (<see cref="SeedLoadedDepth"/> copies only between images of the same layout).</summary>
-        public bool Supersampled;
+        /// <summary>Image texels per sample of the guest's depth surface, horizontally and vertically, of a one-sample
+        /// image as its last scene used it (<see cref="DepthTexelsPerSample"/>; <see cref="SeedLoadedDepth"/> copies
+        /// only between images of the same layout and resamples between the others).</summary>
+        public float TexelsPerSampleX = 1f, TexelsPerSampleY = 1f;
     }
 
     private readonly Dictionary<(uint, uint, uint, uint), RenderTarget> _renderTargets = new();
@@ -1388,12 +1389,14 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             _depth.TwoXAsFour = true;
         }
 
+        (float texelsPerSampleX, float texelsPerSampleY) = DepthTexelsPerSample(beginSceneCommand.Multisample, _multisampled, _supersampled, _msaaNoDownscale);
         if (beginSceneCommand.Depth is { ForceLoad: true } && s_seedDepth)
         {
-            SeedLoadedDepth(_depth, _supersampled);
+            SeedLoadedDepth(_depth, texelsPerSampleX, texelsPerSampleY);
         }
 
-        _depth.Supersampled = _supersampled;
+        _depth.TexelsPerSampleX = texelsPerSampleX;
+        _depth.TexelsPerSampleY = texelsPerSampleY;
         _depth.LastScene = _sceneSerial;
         _depth.LastUsedFrame = _depth.LastTouchedFrame = FrameCount;
         if (beginSceneCommand.Depth is { ForceStore: true })
@@ -1420,14 +1423,52 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     /// already existed from the menus, so the HUD scene of every fight loaded the menus' stale stencil instead of the
     /// 720x408 scene's, and the bars were missing until a change of the internal resolution recreated the images.
     /// A multisampled image whose surface was last rendered by a one-sample scene gets that scene's texels packed into
-    /// its samples (<see cref="PackDepthSamples"/>): an image copy cannot change the sample count.
+    /// its samples (<see cref="PackDepthSamples"/>): an image copy cannot change the sample count. A one-sample image
+    /// whose texels map to the surface's samples another way than the newest image's (<see cref="DepthTexelsPerSample"/>:
+    /// a 4X scene emulated with one sample or supersampled, or a forced-stored multisampled scene) is resampled from it
+    /// (<see cref="ResampleDepth"/>).
     /// </summary>
     private static readonly bool s_seedDepth = Environment.GetEnvironmentVariable(Core.Util.EnvVars.DepthSeed) != "0";
 
-    private void SeedLoadedDepth(DepthTarget dt, bool supersampled)
+    /// <summary>
+    /// Image texels per sample of the guest's depth surface for a one-sample depth image of a scene. The depth surface
+    /// of an MSAA scene is sample-sized (2x2 samples per pixel for 4X, 1x2 for 2X), so the image of a one-sample scene,
+    /// of an MSAA scene without downscale (rendered at 2x into the samples) and of a supersampled 4X scene has one
+    /// texel per sample; a supersampled 2X scene (2x2 texels per pixel) has two per sample horizontally; an MSAA scene
+    /// emulated with one sample (MSAA off, or no supersampling for its format) has one texel per pixel, half a texel
+    /// per sample. Real multisampled images hold the samples themselves (<see cref="DepthPackable"/>).
+    /// </summary>
+    public static (float X, float Y) DepthTexelsPerSample(uint gxmMultisample, bool multisampled, bool supersampled, bool noDownscale)
+    {
+        if (gxmMultisample == 0 || multisampled || noDownscale)
+        {
+            return (1f, 1f);
+        }
+
+        bool fourX = gxmMultisample != 1;
+        if (supersampled)
+        {
+            return fourX ? (1f, 1f) : (2f, 1f);
+        }
+
+        return fourX ? (0.5f, 0.5f) : (1f, 0.5f);
+    }
+
+    /// <summary>
+    /// Whether a one-sample depth image whose texels map to the surface as (<paramref name="dstTexelsX"/>,
+    /// <paramref name="dstTexelsY"/>) per sample (<see cref="DepthTexelsPerSample"/>) takes the newer content of another
+    /// image of the same surface by resampling: a one-sample image of another mapping, or a multisampled image that
+    /// stored its samples (SCE_GXM_DEPTH_STENCIL_FORCE_STORE; its samples unpacked are one texel per sample).
+    /// </summary>
+    public static bool DepthResamplable(float dstTexelsX, float dstTexelsY, SampleCountFlags src, bool srcForceStored, float srcTexelsX, float srcTexelsY) =>
+        src == SampleCountFlags.Count1Bit ? srcTexelsX != dstTexelsX || srcTexelsY != dstTexelsY : srcForceStored;
+
+    private void SeedLoadedDepth(DepthTarget dt, float texelsPerSampleX, float texelsPerSampleY)
     {
         DepthTarget? src = null;
         DepthTarget? single = null;
+        DepthTarget? resample = null;
+        bool multisampled = dt.Samples != SampleCountFlags.Count1Bit;
         foreach (DepthTarget depthTarget in _depthTargets.Values)
         {
             if (depthTarget == dt || depthTarget.LastScene == 0 || depthTarget.Address != dt.Address || depthTarget.StencilAddress != dt.StencilAddress
@@ -1436,23 +1477,38 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 continue;
             }
 
-            if (depthTarget.Samples == dt.Samples && depthTarget.Supersampled == supersampled)
+            bool sameLayout = depthTarget.Samples == dt.Samples
+                && (multisampled || (depthTarget.TexelsPerSampleX == texelsPerSampleX && depthTarget.TexelsPerSampleY == texelsPerSampleY));
+            if (sameLayout)
             {
                 if (src == null || depthTarget.LastScene > src.LastScene)
                 {
                     src = depthTarget;
                 }
             }
-            else if (DepthPackable(dt.Samples, supersampled, depthTarget.Samples, depthTarget.Supersampled) && (single == null || depthTarget.LastScene > single.LastScene))
+            else if (multisampled)
             {
-                single = depthTarget;
+                bool packable = DepthPackable(dt.Samples, false, depthTarget.Samples, false)
+                    && depthTarget.TexelsPerSampleX == 1f && depthTarget.TexelsPerSampleY == 1f;
+                if (packable && (single == null || depthTarget.LastScene > single.LastScene))
+                {
+                    single = depthTarget;
+                }
+            }
+            else if (DepthResamplable(texelsPerSampleX, texelsPerSampleY, depthTarget.Samples, depthTarget.ForceStored, depthTarget.TexelsPerSampleX, depthTarget.TexelsPerSampleY)
+                && (resample == null || depthTarget.LastScene > resample.LastScene))
+            {
+                resample = depthTarget;
             }
         }
 
         bool fresh = dt.LastScene == 0;
+        long newestOwn = Math.Max(src?.LastScene ?? 0, dt.LastScene);
         // a multisampled scene loading what a one-sample scene stored last: its samples are packed from that depth
-        DepthTarget? pack = single != null && single.LastScene > Math.Max(src?.LastScene ?? 0, dt.LastScene) ? single : null;
-        if (!fresh && pack == null && (src == null || src.LastScene < dt.LastScene))
+        DepthTarget? pack = single != null && single.LastScene > newestOwn ? single : null;
+        // a one-sample image of another sample mapping loading what another image stored last: resampled from it
+        DepthTarget? convert = resample != null && resample.LastScene > newestOwn ? resample : null;
+        if (!fresh && pack == null && convert == null && (src == null || src.LastScene < dt.LastScene))
         {
             return; // this image holds the surface's newest content
         }
@@ -1477,6 +1533,15 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             Barrier(dt.Image, ImageLayout.TransferDstOptimal, ImageLayout.DepthStencilAttachmentOptimal, DepthStencilAspect, PipelineStageFlags.TransferBit, tests,
                 AccessFlags.TransferWriteBit, attRw);
             PackDepthSamples(dt, pack);
+            dt.Version++;
+            return;
+        }
+
+        if (convert != null)
+        {
+            Barrier(dt.Image, ImageLayout.TransferDstOptimal, ImageLayout.DepthStencilAttachmentOptimal, DepthStencilAspect, PipelineStageFlags.TransferBit, tests,
+                AccessFlags.TransferWriteBit, attRw);
+            ResampleDepth(dt, texelsPerSampleX, texelsPerSampleY, convert);
             dt.Version++;
             return;
         }

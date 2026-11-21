@@ -383,7 +383,8 @@ void main() {
     /// takes its samples from a one-sample image of the same surface (<paramref name="src"/>): the depth surface is
     /// sample-sized, so what a one-sample scene stored is what the multisampled scene's tiles load, texel (x, y) into
     /// sample (x&amp;1, y&amp;1) of pixel (x/2, y/2) (4X) or the upper / lower sample of pixel (x, y/2) (2X), the
-    /// inverse of <see cref="UnpackedDepthTexture"/>. Supersampled images hold more texels per sample and are not packed.
+    /// inverse of <see cref="UnpackedDepthTexture"/>. Supersampled images are packed only when they hold one texel per
+    /// sample (<see cref="DepthTexelsPerSample"/>: a supersampled 4X scene); the caller checks that and passes false.
     /// </summary>
     public static bool DepthPackable(SampleCountFlags dst, bool dstSupersampled, SampleCountFlags src, bool srcSupersampled) =>
         dst != SampleCountFlags.Count1Bit && src == SampleCountFlags.Count1Bit && !dstSupersampled && !srcSupersampled;
@@ -491,11 +492,20 @@ void main() {
 
         EnsureLoadLayout();
         ShaderModule fragmentShader = CompileBuiltin(DepthPackFs(layout, sample), false);
+        Pipeline pipeline = CreateDepthPassPipeline(fragmentShader, samples, 1u << sample);
+        _depthPackPipelines[(layout, sample)] = (pipeline, fragmentShader);
+        return pipeline;
+    }
+
+    /// <summary>A full-screen pass over a depth/stencil attachment of <paramref name="samples"/> samples
+    /// (<see cref="DepthPackPass"/>) that writes the depth <paramref name="fragmentShader"/> outputs into the samples of
+    /// <paramref name="sampleMask"/> (stencil kept).</summary>
+    private Pipeline CreateDepthPassPipeline(ShaderModule fragmentShader, SampleCountFlags samples, uint sampleMask)
+    {
         byte* entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
         PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
         stages[0] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = _msLoadVs, PName = entry };
         stages[1] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = fragmentShader, PName = entry };
-        uint sampleMask = 1u << sample;
         PipelineVertexInputStateCreateInfo vertexInput = new() { SType = StructureType.PipelineVertexInputStateCreateInfo };
         PipelineInputAssemblyStateCreateInfo inputAssembly = new() { SType = StructureType.PipelineInputAssemblyStateCreateInfo, Topology = PrimitiveTopology.TriangleList };
         PipelineViewportStateCreateInfo viewportState = new() { SType = StructureType.PipelineViewportStateCreateInfo, ViewportCount = 1, ScissorCount = 1 };
@@ -522,7 +532,6 @@ void main() {
             Layout = _msLoadLayout,
         };
         _vk.CreateGraphicsPipelines(_dev, _vkPipelineCache, 1, in pipelineInfo, null, out Pipeline pipeline).Ok("depth pack pipeline");
-        _depthPackPipelines[(layout, sample)] = (pipeline, fragmentShader);
         return pipeline;
     }
 
@@ -535,6 +544,127 @@ void main() {
         }
 
         _depthPackPipelines.Clear();
+        foreach ((Pipeline pipeline, ShaderModule fragmentShader) in _depthResamplePipelines.Values)
+        {
+            _vk.DestroyPipeline(_dev, pipeline, null);
+            _vk.DestroyShaderModule(_dev, fragmentShader, null);
+        }
+
+        _depthResamplePipelines.Clear();
+    }
+
+    // ------------------------------------------------------------------ one-sample depth of another sample mapping
+
+    /// <summary>The resample pass's fragment shader: destination texel p takes the source texel under its centre,
+    /// <paramref name="ratioX"/> x <paramref name="ratioY"/> source texels per destination texel.</summary>
+    public static string DepthResampleFs(float ratioX, float ratioY) => FormattableString.Invariant($$"""
+#version 450
+layout(set = 0, binding = 0) uniform sampler2D src;
+void main() {
+    ivec2 p = ivec2(gl_FragCoord.xy * vec2({{ratioX:0.0###}}, {{ratioY:0.0###}}));
+    gl_FragDepth = texelFetch(src, min(p, textureSize(src, 0) - 1), 0).r;
+}
+""");
+
+    private readonly Dictionary<(float, float), (Pipeline Pipeline, ShaderModule Fs)> _depthResamplePipelines = new();
+    private long _statDepthResamples;
+
+    /// <summary>
+    /// Fills the one-sample depth image <paramref name="target"/>, whose texels map to the guest's sample-sized depth
+    /// surface as (<paramref name="texelsPerSampleX"/>, <paramref name="texelsPerSampleY"/>) per sample
+    /// (<see cref="DepthTexelsPerSample"/>), from the newer image <paramref name="source"/> of the same surface: a
+    /// one-sample image of another mapping, or the unpacked samples of a forced-stored multisampled image (one texel
+    /// per sample). One full-screen draw writes each texel the source's depth at the same place of the surface; the
+    /// stencil keeps the image's content, as in <see cref="PackDepthSamples"/>. Metal Gear Solid 3 HD's 4X effects scene
+    /// (cockpit glass, propeller blur) tests GREATER_EQUAL against the depth a one-sample 768x480 scene stored: with MSAA
+    /// off its 360x224 one-sample image copied the top-left quarter of the 768x480 one, and supersampled (720x448) it
+    /// did not load it at all.
+    /// </summary>
+    private void ResampleDepth(DepthTarget target, float texelsPerSampleX, float texelsPerSampleY, DepthTarget source)
+    {
+        float sourceTexelsX = 1f, sourceTexelsY = 1f;
+        ImageView sourceView;
+        ImageLayout sourceLayout;
+        if (source.Samples != SampleCountFlags.Count1Bit)
+        {
+            // the unpacked samples: one texel per sample (guest size for UnpackedDepthTexture, which scales it)
+            int unpackLayout = UnpackLayout(source);
+            uint guestWidth = (uint)MathF.Round((unpackLayout == 0 ? source.Width * 2 : source.Width) / source.Scale);
+            uint guestHeight = (uint)MathF.Round(source.Height * 2 / source.Scale);
+            (sourceView, sourceLayout) = UnpackedDepthTexture(source, guestWidth, guestHeight);
+        }
+        else
+        {
+            sourceTexelsX = source.TexelsPerSampleX;
+            sourceTexelsY = source.TexelsPerSampleY;
+            uint guestWidth = (uint)MathF.Round(source.Width / source.Scale);
+            uint guestHeight = (uint)MathF.Round(source.Height / source.Scale);
+            (sourceView, sourceLayout) = DepthTexture(source, guestWidth, guestHeight);
+        }
+
+        DepthTex sourceTexture = _depthTextures[source];
+        float ratioX = sourceTexelsX / texelsPerSampleX;
+        float ratioY = sourceTexelsY / texelsPerSampleY;
+        uint width = Math.Min(target.Width, (uint)(sourceTexture.W / ratioX));
+        uint height = Math.Min(target.Height, (uint)(sourceTexture.H / ratioY));
+        if (width == 0 || height == 0)
+        {
+            return;
+        }
+
+        if (_statDepthResamples++ == 0)
+        {
+            Log.Info($"[gpu] depth surface 0x{target.Address:X8} is loaded by a scene whose depth image maps the surface's samples another way: resampled ({ratioX}x{ratioY} source texels per texel)");
+        }
+
+        EndRendering();
+        // everything earlier that tested or sampled the image finishes before the pass overwrites it
+        Barrier(target.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilAttachmentOptimal, ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
+            PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit | PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,
+            AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit);
+        CommandBuffer commandBuffer = Cmd;
+        DescriptorSet descriptorSet = AllocSet(EnsureLoadLayout());
+        DescriptorImageInfo imageInfo = new(_dummySampler, sourceView, sourceLayout);
+        WriteDescriptorSet writeDescriptor = new() { SType = StructureType.WriteDescriptorSet, DstSet = descriptorSet, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &imageInfo };
+        _vk.UpdateDescriptorSets(_dev, 1, &writeDescriptor, 0, null);
+        RenderPass renderPass = DepthPackPass(SampleCountFlags.Count1Bit);
+        RenderPassBeginInfo renderPassBegin = new()
+        {
+            SType = StructureType.RenderPassBeginInfo,
+            RenderPass = renderPass,
+            Framebuffer = TransientFramebuffer(renderPass, new Extent2D(target.Width, target.Height), target.View),
+            RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(width, height)),
+        };
+        DevStampOp();
+        _vk.CmdBeginRenderPass(commandBuffer, in renderPassBegin, SubpassContents.Inline);
+        Viewport viewport = new(0, 0, width, height, 0, 1);
+        Rect2D scissor = new(new Offset2D(0, 0), new Extent2D(width, height));
+        _vk.CmdSetViewport(commandBuffer, 0, 1, in viewport);
+        _vk.CmdSetScissor(commandBuffer, 0, 1, in scissor);
+        _vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, DepthResamplePipeline(ratioX, ratioY));
+        _vk.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Graphics, _msLoadLayout, 0, 1, &descriptorSet, 0, null);
+        _vk.CmdDraw(commandBuffer, 3, 1, 0, 0);
+        _vk.CmdEndRenderPass(commandBuffer);
+        _boundPipeline = default;
+        target.LastTouchedFrame = source.LastTouchedFrame = FrameCount;
+        // the scene's renderings test against the resampled depth
+        Barrier(target.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilAttachmentOptimal, ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
+            PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,
+            AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit);
+    }
+
+    private Pipeline DepthResamplePipeline(float ratioX, float ratioY)
+    {
+        if (_depthResamplePipelines.TryGetValue((ratioX, ratioY), out (Pipeline Pipeline, ShaderModule Fs) existing))
+        {
+            return existing.Pipeline;
+        }
+
+        EnsureLoadLayout();
+        ShaderModule fragmentShader = CompileBuiltin(DepthResampleFs(ratioX, ratioY), false);
+        Pipeline pipeline = CreateDepthPassPipeline(fragmentShader, SampleCountFlags.Count1Bit, 1u);
+        _depthResamplePipelines[(ratioX, ratioY)] = (pipeline, fragmentShader);
+        return pipeline;
     }
 
     // ------------------------------------------------------------------ stencil planes sampled as U8 textures
