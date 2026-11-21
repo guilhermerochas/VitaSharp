@@ -133,8 +133,18 @@ public static class EmulationPause
     }
 
     /// <summary>A host timestamp that stands still while the emulation is paused (Stopwatch ticks): statistics measured
-    /// in host time (audio output gaps) do not count the pause.</summary>
-    public static long ActiveHostTicks => Stopwatch.GetTimestamp() - PausedHostTicks;
+    /// in host time (audio output gaps) do not count the pause. Exactly still: while paused it is the moment the pause
+    /// began, not two clock readings whose gap (the thread preempted between them) would leak into it.</summary>
+    public static long ActiveHostTicks
+    {
+        get
+        {
+            lock (s_lock)
+            {
+                return (s_paused ? s_pausedSince : Stopwatch.GetTimestamp()) - s_pausedTotal;
+            }
+        }
+    }
 
     /// <summary>
     /// Blocks the calling thread while the emulation is paused (host-side waits on the guest clock: the clock is frozen,
