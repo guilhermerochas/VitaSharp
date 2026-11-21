@@ -277,10 +277,32 @@ public sealed partial class Net
     {
         lock (_netLock)
         {
+            if (Sock(s) == null)
+            {
+                return NetErr(EBADF);
+            }
+
+            if (optval == 0 || optlen < 4)
+            {
+                return NetErr(EINVAL);
+            }
+
+            return SetSocketOption(s, level, optname, GuestMemory.ReadSpan(optval, (int)Math.Min(optlen, 256u)).ToArray());
+        }
+    }
+
+    /// <summary>Sets an option of socket <paramref name="s"/> from <paramref name="bytes"/> (at least 4 bytes; also the
+    /// kernel's own sockets, whose option values are not in guest memory).</summary>
+    int SetSocketOption(int s, int level, int optname, byte[] bytes)
+    {
+        lock (_netLock)
+        {
             var so = Sock(s);
-            if (so == null) return NetErr(EBADF);
-            if (optval == 0 || optlen < 4) return NetErr(EINVAL);
-            var bytes = GuestMemory.Span(optval, (int)Math.Min(optlen, 256u)).ToArray();
+            if (so == null)
+            {
+                return NetErr(EBADF);
+            }
+
             if (level == SOL_SOCKET)
             {
                 uint v = BinaryPrimitives.ReadUInt32LittleEndian(bytes);
