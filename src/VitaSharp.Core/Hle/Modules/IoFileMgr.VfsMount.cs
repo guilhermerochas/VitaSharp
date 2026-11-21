@@ -367,8 +367,15 @@ public sealed partial class IoFileMgr
             return VFS_ERR_NOENT;
         }
 
+        uint flags = GuestMemory.R32(param + 4);
+        if (GuestMemory.R32(mount.Mount + 0x60) > 0 && (flags & 3) == 0)
+        {
+            // a descriptor still open on the mount holds a reference to it: only a forced unmount goes on
+            return VFS_ERR_BUSY;
+        }
+
         GuestMemory.W32(mount.Mount + 0x48, MountStateUnmounting);
-        int result = VfsOpCall(mount.Mount, 0x04, [mount.Mount, GuestMemory.R32(param + 4)]);
+        int result = VfsOpCall(mount.Mount, 0x04, [mount.Mount, flags]);
         if (result < 0)
         {
             GuestMemory.W32(mount.Mount + 0x48, 1);
@@ -385,9 +392,55 @@ public sealed partial class IoFileMgr
             }
         }
 
-        vfsFreeVnode(mount.Root);
-        FreeMount(mount.Mount, mount.Driver);
+        if (FlushMountVnodes(mount))
+        {
+            FreeMount(mount.Mount, mount.Driver);
+        }
+        else
+        {
+            // vnodes still referenced (a forced unmount over open descriptors): the mount block stays for them
+            ReleaseVfsDriver(mount.Driver);
+        }
+
         return 0;
+    }
+
+    /// <summary>
+    /// The end of an unmount (0x81006e90, then 0x81003bcc / 0x8100aa50 once the mount has no reference left): the root
+    /// vnode, then every vnode still on the mount's list (+0x54) that no one references, gets the driver's inactive op
+    /// (0x50) and is freed. False when some vnode is still referenced (it stays, and so does the mount block).
+    /// </summary>
+    bool FlushMountVnodes(GuestMount mount)
+    {
+        bool flushed = true;
+        if (GuestMemory.R32(mount.Root + 0x58) == 0)
+        {
+            ksceVopInactive(mount.Root);
+            vfsFreeVnode(mount.Root);
+        }
+        else
+        {
+            flushed = false;
+        }
+
+        uint vnode = GuestMemory.R32(mount.Mount + 0x54);
+        while (vnode != 0)
+        {
+            uint next = GuestMemory.R32(vnode + 0x54);
+            if (GuestMemory.R32(vnode + 0x58) == 0)
+            {
+                ksceVopInactive(vnode);
+                vfsFreeVnode(vnode);
+            }
+            else
+            {
+                flushed = false;
+            }
+
+            vnode = next;
+        }
+
+        return flushed;
     }
 
     /// <summary>"/host/", "host" and "/host" name the same root.</summary>
@@ -404,6 +457,22 @@ public sealed partial class IoFileMgr
             foreach (GuestMount mount in _guestMounts)
             {
                 if (mount.RootPath == rootPath)
+                {
+                    return mount;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    GuestMount? FindMountByBlock(uint block)
+    {
+        lock (_guestMounts)
+        {
+            foreach (GuestMount mount in _guestMounts)
+            {
+                if (mount.Mount == block)
                 {
                     return mount;
                 }
@@ -504,18 +573,22 @@ public sealed partial class IoFileMgr
             }
         }
 
+        // the walk holds a reference to the vnode it is at: the root's, then the one each lookup returns with
+        // (the one before is dropped), and the vnode it ends at keeps it for the caller (0x81004bb8)
+        HoldVnode(vnode);
         int walk = parentOnly ? elements.Count - 1 : elements.Count;
         for (int i = 0; i < walk; i++)
         {
             path.Element(elements[i].Start, elements[i].Length);
             GuestMemory.W32(path.VnodeOut, 0);
             int result = ksceVopLookup(vnode, path.VnodeOut, path.VfsPath, 0);
+            uint next = result < 0 ? 0 : GuestMemory.R32(path.VnodeOut);
+            ReleaseVnode(vnode);
             if (result < 0)
             {
                 return result;
             }
 
-            uint next = GuestMemory.R32(path.VnodeOut);
             if (next == 0)
             {
                 return VFS_ERR_NOENT;
@@ -561,6 +634,8 @@ public sealed partial class IoFileMgr
             result = ksceVopLookup(directory, path.VnodeOut, path.VfsPath, 0);
             if (result >= 0 && (flags & O_CREAT) != 0 && (flags & O_EXCL) != 0)
             {
+                ReleaseVnode(GuestMemory.R32(path.VnodeOut));
+                ReleaseVnode(directory);
                 return SceError.IO_EEXIST;
             }
 
@@ -570,6 +645,7 @@ public sealed partial class IoFileMgr
                 result = ksceVopCreate(directory, path.VnodeOut, path.VfsPath, (uint)flags, (uint)mode);
             }
 
+            ReleaseVnode(directory);
             if (result < 0)
             {
                 return result;
@@ -581,6 +657,7 @@ public sealed partial class IoFileMgr
         uint file = GuestAllocateFile(vnode, path);
         if (file == 0)
         {
+            ReleaseVnode(vnode);
             return VFS_ERR_NOMEM;
         }
 
@@ -588,9 +665,12 @@ public sealed partial class IoFileMgr
         if (result < 0)
         {
             vfsFreeFile(vnode, file);
+            ReleaseVnode(vnode);
             return result;
         }
 
+        // the open file keeps its vnode's reference and one of the mount (+0x60) until it is closed
+        HoldMount(mount.Mount);
         int fd = Interlocked.Increment(ref _nextFd);
         _files[fd] = new OpenFile { VitaPath = vitaPath, GuestVnode = vnode, GuestFile = file };
         NoteGuestDescriptor(fd, false, vnode, file);
@@ -602,7 +682,24 @@ public sealed partial class IoFileMgr
         int result = ksceVopClose(file.GuestVnode, file.GuestFile);
         ForgetGuestDescriptor(file.GuestFile);
         vfsFreeFile(file.GuestVnode, file.GuestFile);
+        ReleaseOpenVnode(file.GuestVnode);
         return result;
+    }
+
+    static void HoldMount(uint mount)
+    {
+        GuestMemory.W32(mount + 0x60, GuestMemory.R32(mount + 0x60) + 1);
+    }
+
+    /// <summary>A closed descriptor drops its vnode's reference and its mount's.</summary>
+    static void ReleaseOpenVnode(uint vnode)
+    {
+        uint mount = GuestMemory.R32(vnode + 0x4C);
+        ReleaseVnode(vnode);
+        if (mount != 0 && GuestMemory.R32(mount + 0x60) > 0)
+        {
+            GuestMemory.W32(mount + 0x60, GuestMemory.R32(mount + 0x60) - 1);
+        }
     }
 
     int GuestTransfer(OpenFile file, uint offset, uint buffer, uint size)
@@ -639,6 +736,7 @@ public sealed partial class IoFileMgr
         uint file = GuestAllocateFile(vnode, path);
         if (file == 0)
         {
+            ReleaseVnode(vnode);
             return VFS_ERR_NOMEM;
         }
 
@@ -646,9 +744,11 @@ public sealed partial class IoFileMgr
         if (result < 0)
         {
             vfsFreeFile(vnode, file);
+            ReleaseVnode(vnode);
             return result;
         }
 
+        HoldMount(mount.Mount);
         int fd = Interlocked.Increment(ref _nextFd);
         _dirs[fd] = new OpenDir { Entries = [], GuestVnode = vnode, GuestFile = file };
         NoteGuestDescriptor(fd, true, vnode, file);
@@ -660,6 +760,7 @@ public sealed partial class IoFileMgr
         int result = ksceVopDclose(directory.GuestVnode, directory.GuestFile);
         ForgetGuestDescriptor(directory.GuestFile);
         vfsFreeFile(directory.GuestVnode, directory.GuestFile);
+        ReleaseOpenVnode(directory.GuestVnode);
         return result;
     }
 
@@ -667,7 +768,14 @@ public sealed partial class IoFileMgr
     {
         using var path = new GuestPathBlock(this, fullPath);
         int result = GuestWalk(mount, path, fullPath, parentOnly: false, out uint vnode, out _);
-        return result < 0 ? result : ksceVopGetstat(vnode, path.VfsPath, stat);
+        if (result < 0)
+        {
+            return result;
+        }
+
+        result = ksceVopGetstat(vnode, path.VfsPath, stat);
+        ReleaseVnode(vnode);
+        return result;
     }
 
     int GuestMkdir(GuestMount mount, string fullPath, int mode)
@@ -681,11 +789,19 @@ public sealed partial class IoFileMgr
 
         if (lastStart < 0)
         {
+            ReleaseVnode(directory);
             return SceError.IO_EEXIST;
         }
 
         GuestMemory.W32(path.VnodeOut, 0);
-        return ksceVopMkdir(directory, path.VnodeOut, path.VfsPath, (uint)mode);
+        result = ksceVopMkdir(directory, path.VnodeOut, path.VfsPath, (uint)mode);
+        if (result >= 0)
+        {
+            ReleaseVnode(GuestMemory.R32(path.VnodeOut));
+        }
+
+        ReleaseVnode(directory);
+        return result;
     }
 
     /// <summary>remove (vop 0x20) or rmdir (vop 0x28): the target looked up in its directory first.</summary>
@@ -700,6 +816,7 @@ public sealed partial class IoFileMgr
 
         if (lastStart < 0)
         {
+            ReleaseVnode(directory);
             return VFS_ERR_BUSY;
         }
 
@@ -707,12 +824,16 @@ public sealed partial class IoFileMgr
         result = ksceVopLookup(directory, path.VnodeOut, path.VfsPath, 0);
         if (result < 0)
         {
+            ReleaseVnode(directory);
             return result;
         }
 
         uint target = GuestMemory.R32(path.VnodeOut);
-        return directoryToo
+        result = directoryToo
             ? ksceVopRmdir(directory, target, path.VfsPath, 0)
             : ksceVopRemove(directory, target, path.VfsPath, 0);
+        ReleaseVnode(target);
+        ReleaseVnode(directory);
+        return result;
     }
 }
