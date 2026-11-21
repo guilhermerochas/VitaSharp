@@ -231,6 +231,91 @@ public unsafe class CpuDispatchBenchmarks
 }
 
 /// <summary>
+/// The cost of the data abort guards (<see cref="DataAborts"/>) on memory-heavy guest code: a loop of loads, an add and
+/// stores over 4,096 words, in each backend, with the guards off (no data abort handler: the code every session runs)
+/// and on (a data abort handler is registered, e.g. a kernel plugin's). Off must cost nothing; on is the price of the
+/// guard (one mapping-table byte and a branch per access).
+/// </summary>
+public unsafe class CpuDataAbortGuardBenchmarks
+{
+    private static readonly uint[] s_loop =
+    [
+        0xE3A00000, // 00 mov r0, #0
+        0xE3A01000, // 04 mov r1, #0
+        0xE7943101, // 08 loop: ldr r3, [r4, r1, lsl #2]
+        0xE0800003, // 0C add r0, r0, r3
+        0xE7850101, // 10 str r0, [r5, r1, lsl #2]
+        0xE2811001, // 14 add r1, r1, #1
+        0xE3510A01, // 18 cmp r1, #0x1000
+        0xBAFFFFF9, // 1C blt loop
+        0xEF000042, // 20 svc #0x42
+        0xEAFFFFFE, // 24 b .
+    ];
+
+    [Params("interp", "il", "native")] public string Backend = "native";
+
+    [Params(false, true)] public bool Guards;
+
+    private GuestMemory? _memory;
+    private CpuCore? _core;
+    private long _oldRate;
+
+    [GlobalSetup]
+    public void Setup()
+    {
+        _memory = GuestCode.Map();
+        GuestCode.Write(GuestCode.CodeBase, s_loop);
+        _oldRate = CpuCore.InstructionsPerSecond;
+        CpuCore.InstructionsPerSecond = 0;
+        NativeX64Compiler.Instance.HotInstructions = 1;
+        IlJitCompiler.Instance.HotInstructions = 1;
+        Jit.Enabled = true;
+        if (!Jit.Select(Backend))
+        {
+            throw new InvalidOperationException($"backend {Backend} is not supported here");
+        }
+
+        var cache = new BlockCache();
+        if (Guards)
+        {
+            cache.ArmDataAborts();
+        }
+
+        _core = new CpuCore(cache);
+        for (int i = 0; i < 8; i++)
+        {
+            RunLoop();
+            Jit.WaitIdle(TimeSpan.FromSeconds(60));
+        }
+    }
+
+    [GlobalCleanup]
+    public void Cleanup()
+    {
+        _core?.Dispose();
+        _memory?.Dispose();
+        CpuCore.InstructionsPerSecond = _oldRate;
+    }
+
+    [Benchmark]
+    public uint RunLoop()
+    {
+        CpuState* s = _core!.State;
+        s->R[15] = GuestCode.CodeBase;
+        s->Thumb = 0;
+        s->R[4] = GuestCode.DataBase;
+        s->R[5] = GuestCode.DataBase + 0x8000;
+        s->R[13] = GuestCode.DataBase + 0xF000;
+        if (_core.Run() != ExitReason.Svc)
+        {
+            throw new InvalidOperationException("the loop did not reach its svc");
+        }
+
+        return s->R[0];
+    }
+}
+
+/// <summary>
 /// What every HLE call adds to the CPU ledger (<see cref="CpuCore.ChargeInstructions"/>) with pacing on: the charge,
 /// its share of the pacing window and the window check. 4,096 calls per operation, outside <see cref="CpuCore.Run"/>
 /// (no pacing check runs, so nothing sleeps).

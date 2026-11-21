@@ -60,9 +60,9 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         Check(uc_mem_write(_unicorn, CalloutStub, &ret, 4), "write stub");
         Check(uc_mem_write(_unicorn, ReturnStub, &brk, 4), "write stub");
         Check(uc_mem_write(_unicorn, FakeStub, &ret, 4), "write stub");
-        // guest address space incl. the dirty-page table right below it
-        ulong gb = (ulong)GuestMemory.Base - DirtyPages.TableBytes;
-        MapRange(gb, 0x1_0001_0000UL + DirtyPages.TableBytes, UC_PROT_ALL);
+        // guest address space incl. the dirty-page and page mapping tables right below it
+        ulong gb = (ulong)GuestMemory.Base - GuestMemory.MappedTableOffset;
+        MapRange(gb, 0x1_0001_0000UL + GuestMemory.MappedTableOffset, UC_PROT_ALL);
         ExecutableMemory code = NativeRuntime.Instance.Code;
         MapRange((ulong)code.ExecBase, ExecutableMemory.ReserveSize, UC_PROT_READ | UC_PROT_EXEC);
         _stack = (byte*)NativeMemory.AlignedAlloc(StackSize, 4096);

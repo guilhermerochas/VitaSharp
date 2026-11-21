@@ -83,7 +83,42 @@ public static unsafe class BlockBuilder
         return d;
     }
 
-    public static Block Build(uint pc, bool thumb)
+    /// <summary>
+    /// The IT state (CPSR.IT, as <see cref="CpuState.ITState"/>) the Thumb instruction at <paramref name="pc"/> of
+    /// <paramref name="b"/> executes in: 0 outside IT blocks and in ARM code.
+    /// </summary>
+    public static uint ItStateAt(Block b, uint pc)
+    {
+        if (!b.Thumb)
+        {
+            return 0;
+        }
+
+        uint itState = 0;
+        foreach (ref readonly DecodedInst d in b.Insts.AsSpan())
+        {
+            if (d.Address == pc)
+            {
+                return itState;
+            }
+
+            if ((itState & 0xF) != 0)
+            {
+                itState = (itState & 7) == 0 ? 0 : (itState & 0xE0) | ((itState << 1) & 0x1F);
+            }
+
+            if (d.Op == Op.Thumb_It)
+            {
+                itState = d.Raw & 0xFFu;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>Decodes the block at <paramref name="pc"/>; a Thumb block can start inside an IT block, in IT state
+    /// <paramref name="itState"/> (the return from an exception taken there).</summary>
+    public static Block Build(uint pc, bool thumb, uint itState = 0)
     {
         var list = new List<DecodedInst>(16);
         uint addr = pc;
@@ -112,7 +147,6 @@ public static unsafe class BlockBuilder
         }
         else
         {
-            uint itState = 0;
             while (true)
             {
                 if (addr != pc && CpuCore.Probes is { } pt && pt.Contains(addr) && (itState & 0xF) == 0)
@@ -257,6 +291,33 @@ public sealed unsafe class BlockCache
 {
     private readonly ConcurrentDictionary<ulong, Block> _blocks = new();
     private nint _dispatch;
+    private volatile bool _dataAbortGuards;
+
+    /// <summary>
+    /// The process's system has a data abort handler (<see cref="DataAborts"/>): guest accesses check the page mapping,
+    /// and the code translated for this cache carries the guards. Switching it on drops every translated block.
+    /// </summary>
+    public bool DataAbortGuards => _dataAbortGuards;
+
+    /// <summary>Switches <see cref="DataAbortGuards"/> on; true the first time (the blocks were dropped).</summary>
+    public bool ArmDataAborts()
+    {
+        if (_dataAbortGuards)
+        {
+            return false;
+        }
+
+        _dataAbortGuards = true;
+        Invalidate(0, uint.MaxValue);
+        return true;
+    }
+
+    /// <summary>Tests: the guards off again (the blocks translated with them are dropped).</summary>
+    internal void DisarmDataAbortsForTests()
+    {
+        _dataAbortGuards = false;
+        Invalidate(0, uint.MaxValue);
+    }
 
     /// <summary>The process's address space: where blocks are decoded from by threads outside it (the JIT workers,
     /// <see cref="GetFromAnyThread"/>). Null: the calling thread's.</summary>

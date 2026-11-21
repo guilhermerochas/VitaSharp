@@ -1149,6 +1149,7 @@ internal static unsafe partial class A32
         uint start = U ? (P ? baseVal + 4 : baseVal) : (P ? baseVal - 4 * count : baseVal - 4 * count + 4);
         uint newBase = U ? baseVal + 4 * count : baseVal - 4 * count;
         uint addr = start;
+
         if (L)
         {
             if (W)
@@ -1219,6 +1220,13 @@ internal static unsafe partial class A32
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void ExclusiveCore(CpuState* state, uint op, bool load, uint addr, uint rt, uint rd, uint rt2)
     {
+        DataAborts.Check(state, addr, op switch
+        {
+            0 => 4u,
+            1 => 8u,
+            2 => 1u,
+            _ => 2u,
+        }, !load);
         if (load)
         {
             ReserveExclusive(state, addr);
@@ -1283,6 +1291,7 @@ internal static unsafe partial class A32
         }
         else
         {
+            DataAborts.Check(state, addr, 4, true);
             state->R[rt] = Interlocked.Exchange(ref *(uint*)Mem.Ptr(state, addr), state->R[rt2]);
             Mem.MarkDirty(state, addr);
         }

@@ -832,6 +832,25 @@ public sealed unsafe partial class X64Emitter
             case IrOp.Fence:
                 a.mfence();
                 return;
+            case IrOp.PageMapped:
+            {
+                // the mapping-table byte of the page (DataAborts), below the dirty table: [r15 + (A >> 12) - offset]
+                int d = Def(x.D, RCX);
+                if (IsConst(x.A, out uint constant))
+                {
+                    a.movzx(s_g32[d], __byte_ptr[r15 + (int)(constant >> 12) - (int)Memory.GuestMemory.MappedTableOffset]);
+                }
+                else
+                {
+                    int s = Use(x.A, RAX);
+                    a.mov(s_g32[d], s_g32[s]);
+                    a.shr(s_g32[d], 12);
+                    a.movzx(s_g32[d], __byte_ptr[r15 + s_g64[d] - (int)Memory.GuestMemory.MappedTableOffset]);
+                }
+
+                Commit(x.D, d);
+                return;
+            }
             case IrOp.FpOp:
                 FpOp(x, rt);
                 return;

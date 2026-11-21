@@ -28,11 +28,22 @@ internal static unsafe class Mem
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)] public static byte* Ptr(CpuState* s, uint a) => s->MemBase + a;
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static byte R8(CpuState* s, uint a) => s->MemBase[a];
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static ushort R16(CpuState* s, uint a) => Unsafe.ReadUnaligned<ushort>(s->MemBase + a);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static byte R8(CpuState* s, uint a)
+    {
+        DataAborts.Check(s, a, 1, false);
+        return s->MemBase[a];
+    }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ushort R16(CpuState* s, uint a)
+    {
+        DataAborts.Check(s, a, 2, false);
+        return Unsafe.ReadUnaligned<ushort>(s->MemBase + a);
+    }
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static uint R32(CpuState* s, uint a)
     {
+        DataAborts.Check(s, a, 4, false);
         if (WriteWatch.Enabled && a - WriteWatch.ReadLo + 3 < WriteWatch.ReadSpan + 3)
         {
             WriteWatch.ReadHit(a, 4);
@@ -43,6 +54,7 @@ internal static unsafe class Mem
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong R64(CpuState* s, uint a)
     {
+        DataAborts.Check(s, a, 8, false);
         if (WriteWatch.Enabled && a - WriteWatch.ReadLo + 7 < WriteWatch.ReadSpan + 7)
         {
             WriteWatch.ReadHit(a, 8);
@@ -53,6 +65,7 @@ internal static unsafe class Mem
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void W8(CpuState* s, uint a, uint v)
     {
+        DataAborts.Check(s, a, 1, true);
         if (WriteWatch.Enabled && a - WriteWatch.Lo < WriteWatch.Span)
         {
             WriteWatch.Hit(a, 1, v);
@@ -64,6 +77,7 @@ internal static unsafe class Mem
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void W16(CpuState* s, uint a, uint v)
     {
+        DataAborts.Check(s, a, 2, true);
         if (WriteWatch.Enabled && a - WriteWatch.Lo + 1 < WriteWatch.Span + 1)
         {
             WriteWatch.Hit(a, 2, v);
@@ -75,6 +89,7 @@ internal static unsafe class Mem
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void W32(CpuState* s, uint a, uint v)
     {
+        DataAborts.Check(s, a, 4, true);
         if (WriteWatch.Enabled && a - WriteWatch.Lo + 3 < WriteWatch.Span + 3)
         {
             WriteWatch.Hit(a, 4, v);
@@ -86,6 +101,7 @@ internal static unsafe class Mem
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void W64(CpuState* s, uint a, ulong v)
     {
+        DataAborts.Check(s, a, 8, true);
         if (WriteWatch.Enabled && a - WriteWatch.Lo + 7 < WriteWatch.Span + 7)
         {
             WriteWatch.Hit(a, 8, v);

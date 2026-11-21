@@ -42,6 +42,20 @@ public sealed unsafe partial class GuestMemory : IDisposable
     /// </summary>
     private const ulong DirtyTableBytes = DirtyPages.TableBytes;
 
+    /// <summary>
+    /// The page mapping table (<see cref="Cpu.DataAborts"/>): one byte per 4 KB guest page right below the dirty table,
+    /// nonzero while the page can be accessed (it belongs to a block, or a data abort no handler took was let through).
+    /// Generated code reaches it from the guest base register like the dirty table.
+    /// </summary>
+    internal const ulong MappedTableBytes = DirtyPages.Pages;
+
+    /// <summary>Offset of the mapping table below guest address 0.</summary>
+    internal const ulong MappedTableOffset = DirtyTableBytes + MappedTableBytes;
+
+    /// <summary>Mapping table values: a page of a block; a page a data abort nobody handled let through (it reads zeros,
+    /// as without handlers).</summary>
+    internal const byte PageMapped = 1, PageTolerated = 2;
+
     // the current thread's space base (null = the first process's): read by every static accessor
     [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
     [ThreadStatic] internal static byte* t_base;
@@ -140,7 +154,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
     /// Null when that mapping fails.</summary>
     private AddressSpace? NewSpace(bool views)
     {
-        nuint total = unchecked((nuint)(ReserveSize + DirtyTableBytes));
+        nuint total = unchecked((nuint)(ReserveSize + MappedTableOffset));
         byte* reservation;
         bool lazy;
         (nint, nuint, bool)[] parts;
@@ -148,8 +162,8 @@ public sealed unsafe partial class GuestMemory : IDisposable
         {
             ReadOnlySpan<HostVirtualMemory.View> v =
             [
-                new((nuint)(DirtyTableBytes + KernelStart), KernelEnd - KernelStart, _kernelMemory),
-                new((nuint)(DirtyTableBytes + CdramStart), CdramEnd - CdramStart, _cdramMemory),
+                new((nuint)(MappedTableOffset + KernelStart), KernelEnd - KernelStart, _kernelMemory),
+                new((nuint)(MappedTableOffset + CdramStart), CdramEnd - CdramStart, _cdramMemory),
             ];
             reservation = HostVirtualMemory.ReserveWithViews(total, v, out lazy, out parts);
             if (reservation == null)
@@ -162,14 +176,15 @@ public sealed unsafe partial class GuestMemory : IDisposable
             reservation = HostVirtualMemory.Reserve(total, out lazy);
             parts = [((nint)reservation, total, false)];
         }
-        HostVirtualMemory.Commit(reservation, (nuint)DirtyTableBytes);
-        byte* @base = reservation + DirtyTableBytes;
+        HostVirtualMemory.Commit(reservation, (nuint)MappedTableOffset);
+        byte* @base = reservation + MappedTableOffset;
         if (!lazy)
         {
             HostVirtualMemory.InstallLazyCommitHandler(@base, ReserveSize);
         }
 
         var space = new AddressSpace(@base, parts, views);
+        CopySharedMapping(space);
         _spaces.Add(space);
         _spaceSnapshot = _spaces.ToArray();
         return space;
@@ -567,6 +582,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
         }
 
         SetMapped(shared ? _sharedMapped : space._mappedPages, addr, size, true);
+        MarkPages(shared ? null : space, addr, size, PageMapped);
         DirtyPages.MarkRange(space.Base, addr, size);
         var block = new Block(addr, size, name, region, Kernel.ProcessScope.CurrentPid, shared ? null : space);
         if (shared)
@@ -673,6 +689,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
             }
 
             SetMapped(shared ? _sharedMapped : space._mappedPages, b.Address, b.Size, false);
+            MarkPages(shared ? null : space, b.Address, b.Size, 0);
             DirtyPages.MarkRange(space.Base, b.Address, b.Size);
             if (b.Region == MemoryRegion.Fixed)
             {
@@ -810,6 +827,61 @@ public sealed unsafe partial class GuestMemory : IDisposable
             {
                 w &= ~(1UL << (int)(p & 63));
             }
+        }
+    }
+
+    /// <summary>The mapping table of the space whose guest base is <paramref name="spaceBase"/>.</summary>
+    internal static byte* MappedTable(byte* spaceBase) => spaceBase - MappedTableOffset;
+
+    /// <summary>
+    /// Sets the mapping-table bytes of the pages of [<paramref name="addr"/>, + <paramref name="size"/>) to
+    /// <paramref name="value"/> in <paramref name="space"/>, or in every space for a shared region (null), like the
+    /// bitmaps of <see cref="SetMapped"/>.
+    /// </summary>
+    private void MarkPages(AddressSpace? space, uint addr, uint size, byte value)
+    {
+        if (size == 0)
+        {
+            return;
+        }
+
+        ulong first = addr / PageSize, end = ((ulong)addr + size + PageSize - 1) / PageSize;
+        if (space != null)
+        {
+            new Span<byte>(MappedTable(space.Base) + first, (int)(end - first)).Fill(value);
+            return;
+        }
+
+        foreach (AddressSpace each in _spaces)
+        {
+            new Span<byte>(MappedTable(each.Base) + first, (int)(end - first)).Fill(value);
+        }
+    }
+
+    /// <summary>A new space gets the shared regions' mapping (they are the same memory in every space).</summary>
+    private void CopySharedMapping(AddressSpace space)
+    {
+        byte* table = MappedTable(space.Base);
+        for (ulong p = 0; p < DirtyPages.Pages; p++)
+        {
+            if ((_sharedMapped[p >> 6] & (1UL << (int)(p & 63))) != 0)
+            {
+                table[p] = PageMapped;
+            }
+        }
+    }
+
+    /// <summary>
+    /// A data abort on <paramref name="addr"/> that no handler took: its page is let through in the space whose guest
+    /// base is <paramref name="spaceBase"/>, so the access runs again as it does with no handler registered (the page
+    /// reads zeros) until a block maps or frees it.
+    /// </summary>
+    internal static void TolerateFault(byte* spaceBase, uint addr)
+    {
+        byte* entry = MappedTable(spaceBase) + (addr >> 12);
+        if (*entry == 0)
+        {
+            *entry = PageTolerated;
         }
     }
 

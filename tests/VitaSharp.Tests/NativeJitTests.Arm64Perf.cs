@@ -84,12 +84,18 @@ public sealed unsafe partial class NativeJitTests
     /// returns host instructions per loop iteration in the linked run, static words, and whether the state matched the
     /// interpreter.
     /// </summary>
-    private (double PerIter, int Words, string Diff) MeasureLoop(Arm64Sandbox sb, bool thumb, string words, int iterations)
+    private (double PerIter, int Words, string Diff) MeasureLoop(Arm64Sandbox sb, bool thumb, string words, int iterations, bool guards = false)
     {
         Span<byte> code = GuestMemory.Span(CodeBase, 0x1000);
         code.Clear();
         GuestBytes(thumb, words).CopyTo(code);
-        Block b = BlockBuilder.Build(CodeBase, thumb);
+        var cache = new BlockCache();
+        if (guards)
+        {
+            cache.ArmDataAborts(); // the data abort guards (a data abort handler is registered)
+        }
+
+        Block b = cache.Get(CodeBase, thumb);
         // the loop's own block is its only known successor (the code after the loop is never decoded)
         CompiledBlock cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs, successors: (pc, t) => pc == b.Start && t == thumb ? b : null)!;
         var info = (NativeCodeInfo)cb.Tag!;

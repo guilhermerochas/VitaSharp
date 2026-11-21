@@ -252,6 +252,11 @@ public sealed unsafe partial class GuestThread
     /// while the emulation is paused).</summary>
     internal void StartRestored()
     {
+        if (_emu != null && ExceptionManager(ExceptionDataAbort, out _) is { } manager && manager.ExceptionHandlers(ExceptionDataAbort).Count > 0)
+        {
+            ArmDataAborts(_emu); // the restored system has a data abort handler
+        }
+
         lock (WaitLock)
         {
             Status = ThreadStatus.Running;

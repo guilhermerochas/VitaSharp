@@ -216,6 +216,10 @@ public static class EnvVars
     /// <summary>=file: the native backends write one line per generated block (host address, size, guest pc, code
     /// bytes) for attributing CPU-profiler samples in the code arena (Cpu/Native/NativeCodeMap).</summary>
     public const string NativeMap = "VITASHARP_NATIVE_MAP";
+    /// <summary>Measurement of the data abort guards (Cpu/DataAborts.cs): =1 every process checks its guest accesses from
+    /// the start, as when a kernel module registered a data abort handler (the guards' cost on any title); =0 they are
+    /// never switched on, also when a handler is registered (unmapped accesses read zeros, as before).</summary>
+    public const string DataAbortGuards = "VITASHARP_DATA_ABORT_GUARDS";
     /// <summary>=off: ARM64 code leaves native code for every HLE call (SVC) instead of calling the HLE dispatch from it
     /// (Cpu/Native/ArmFrontend.HleCallouts).</summary>
     public const string NativeHleCallout = "VITASHARP_NATIVE_HLE_CALLOUT";

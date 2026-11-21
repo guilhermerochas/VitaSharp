@@ -29,6 +29,24 @@ public sealed unsafe class IrBuilder
     private int _deferBranch = -1;
 
     private static readonly uint s_thumbOffset = (uint)StateLayout.Of(nameof(CpuState.Thumb));
+    private static readonly uint s_svcPcOffset = (uint)StateLayout.Of(nameof(CpuState.SvcPc));
+    private static readonly uint s_exitOffset = (uint)StateLayout.Of(nameof(CpuState.Exit));
+    private static readonly uint s_abortAddrOffset = (uint)StateLayout.Of(nameof(CpuState.AbortAddr));
+    private static readonly uint s_abortStatusOffset = (uint)StateLayout.Of(nameof(CpuState.AbortStatus));
+
+    /// <summary>
+    /// Data aborts are armed (<see cref="DataAborts"/>): every guest access gets a guard (<see cref="Guard"/>). Set
+    /// by the frontend for each translation; off, the IR is exactly what it always was.
+    /// </summary>
+    public bool AbortGuards;
+
+    // the cache at the start of the instruction being translated (MarkInstruction): what a data abort exit stores
+    private readonly int[] _instVal = new int[Slots];
+    private readonly bool[] _instDirty = new bool[Slots];
+    private uint _instPc;
+    // the instruction's guest accesses so far, and where the last one is (FinishInstruction guards it)
+    private int _instAccesses, _instLastAt, _instLastAddr;
+    private bool _instLastWrite;
 
     public IrBuilder(uint startPc, bool thumb) => Reset(startPc, thumb);
 
@@ -557,16 +575,122 @@ public sealed unsafe class IrBuilder
         return (i.D, i.D2);
     }
 
+    // ------------------------------------------------------------------ data aborts
+
+    /// <summary>
+    /// The instruction at <paramref name="pc"/> starts (after its condition region opened): with
+    /// <see cref="AbortGuards"/>, remembers the cache, which holds the guest state as it was before the instruction.
+    /// </summary>
+    public void MarkInstruction(uint pc)
+    {
+        if (!AbortGuards)
+        {
+            return;
+        }
+
+        Array.Copy(_val, _instVal, Slots);
+        Array.Copy(_dirty, _instDirty, Slots);
+        _instPc = pc;
+        _instAccesses = 0;
+    }
+
+    /// <summary>
+    /// The instruction marked last is translated. One with several accesses (LDM/STM, VLDM/VSTM, LDRD/STRD, VLDn/VSTn)
+    /// had only its first access guarded: its accesses span less than a page from the first one, so a second guard on
+    /// the last access, put right before it, covers the only other page they can touch. Its exit reports the start of
+    /// that page, the first address there an ascending access sequence touches.
+    /// </summary>
+    public void FinishInstruction()
+    {
+        if (!AbortGuards || _instAccesses < 2)
+        {
+            return;
+        }
+
+        List<IrInst> insts = Block.Insts;
+        int end = insts.Count;
+        int pageStart = Block.NewTemp();
+        Emit(new IrInst(IrOp.And) { D = pageStart, A = _instLastAddr, B = Const(~0xFFFu) });
+        EmitGuard(_instLastAddr, pageStart, _instLastWrite);
+        int count = insts.Count - end;
+        // move the new ops from the end to just before the last access
+        IrInst[] guard = insts.GetRange(end, count).ToArray();
+        insts.RemoveRange(end, count);
+        insts.InsertRange(_instLastAt, guard);
+    }
+
+    /// <summary>
+    /// With <see cref="AbortGuards"/>: before an access at <paramref name="addr"/>, tests the page's mapping-table
+    /// byte and, when it is zero, leaves the block with <see cref="ExitReason.DataAbort"/> at the instruction and the
+    /// guest state as it was before it (the slots dirty then are stored on that path only: the cache of the path that
+    /// goes on is untouched). The common path costs the byte load and a branch.
+    /// </summary>
+    private void Guard(int addr, bool write)
+    {
+        if (!AbortGuards || _instAccesses++ > 0)
+        {
+            return; // a later access of the same instruction: FinishInstruction guards the last one
+        }
+
+        EmitGuard(addr, addr, write);
+    }
+
+    /// <summary>Records the IR position of an access the instruction just emitted (<see cref="FinishInstruction"/>).</summary>
+    private void Accessed(int addr, bool write)
+    {
+        if (AbortGuards)
+        {
+            _instLastAt = Block.Insts.Count - 1;
+            _instLastAddr = addr;
+            _instLastWrite = write;
+        }
+    }
+
+    /// <summary>The guard of an access at <paramref name="addr"/>: <paramref name="reported"/> is the fault address its
+    /// exit stores.</summary>
+    private void EmitGuard(int addr, int reported, bool write)
+    {
+        int mapped = Block.NewTemp();
+        Emit(new IrInst(IrOp.PageMapped) { D = mapped, A = addr });
+        int ok = NewLabel();
+        Emit(new IrInst(IrOp.BranchIf) { A = mapped, Imm = 1, Imm2 = (uint)ok });
+        for (int s = 0; s < Slots; s++)
+        {
+            if (s != 15 && _instDirty[s])
+            {
+                Emit(Store(s, _instVal[s]));
+            }
+        }
+
+        int pc = Const(_instPc);
+        Emit(Store(15, pc));
+        Emit(new IrInst(IrOp.StoreState) { A = pc, Imm = s_svcPcOffset });
+        Emit(new IrInst(IrOp.StoreState) { A = reported, Imm = s_abortAddrOffset });
+        Emit(new IrInst(IrOp.StoreState) { A = Const(DataAborts.TranslationFault | (write ? DataAborts.WriteNotRead : 0)), Imm = s_abortStatusOffset });
+        Emit(new IrInst(IrOp.StoreState) { A = Const((uint)ExitReason.DataAbort), Imm = s_exitOffset });
+        Emit(DynamicExitOperands
+            ? new IrInst(IrOp.ExitDynamic) { Imm = 1, A = pc, B = Const(Block.Thumb ? 1u : 0u) }
+            : new IrInst(IrOp.ExitDynamic) { Imm = 1 });
+        Emit(new IrInst(IrOp.Label) { Imm = (uint)ok });
+    }
+
     // ------------------------------------------------------------------ memory
 
     public int Load(IrOp op, int addr)
     {
+        Guard(addr, write: false);
         int t = Block.NewTemp();
         Emit(new IrInst(op) { D = t, A = addr });
+        Accessed(addr, write: false);
         return t;
     }
 
-    public void Store(IrOp op, int addr, int value) => Emit(new IrInst(op) { A = addr, B = value });
+    public void Store(IrOp op, int addr, int value)
+    {
+        Guard(addr, write: true);
+        Emit(new IrInst(op) { A = addr, B = value });
+        Accessed(addr, write: true);
+    }
 
     public void VecOp(VecKind kind, bool q, uint size, uint dOff, uint nOff, uint mOff, VecFlags flags = 0, uint aux = 0, uint ins = 0)
         => Emit(new IrInst(IrOp.VecOp)
@@ -577,19 +701,37 @@ public sealed unsafe class IrBuilder
             Imm4 = dOff | (nOff << 8) | (mOff << 16),
         });
 
-    public void VecLdSt(int addr, uint layout, uint vd) => Emit(new IrInst(IrOp.VecLdSt) { A = addr, Imm = layout, Imm4 = vd });
+    public void VecLdSt(int addr, uint layout, uint vd, bool write)
+    {
+        Guard(addr, write);
+        Emit(new IrInst(IrOp.VecLdSt) { A = addr, Imm = layout, Imm4 = vd });
+        Accessed(addr, write);
+    }
 
-    public void LoadD(int addr, uint stateOff) => Emit(new IrInst(IrOp.LoadD) { A = addr, Imm = stateOff });
-    public void StoreD(int addr, uint stateOff) => Emit(new IrInst(IrOp.StoreD) { A = addr, Imm = stateOff });
+    public void LoadD(int addr, uint stateOff)
+    {
+        Guard(addr, write: false);
+        Emit(new IrInst(IrOp.LoadD) { A = addr, Imm = stateOff });
+        Accessed(addr, write: false);
+    }
+
+    public void StoreD(int addr, uint stateOff)
+    {
+        Guard(addr, write: true);
+        Emit(new IrInst(IrOp.StoreD) { A = addr, Imm = stateOff });
+        Accessed(addr, write: true);
+    }
 
     public int LoadExclusive(int addr)
     {
+        Guard(addr, write: false);
         int t = Block.NewTemp();
         Emit(new IrInst(IrOp.LdrEx) { D = t, A = addr });
         return t;
     }
     public int StoreExclusive(int addr, int value)
     {
+        Guard(addr, write: true);
         int t = Block.NewTemp();
         Emit(new IrInst(IrOp.StrEx) { D = t, A = addr, B = value });
         return t;
@@ -598,6 +740,7 @@ public sealed unsafe class IrBuilder
     /// <summary>LDREXD: D = low word, D2 = high word (Imm = 1 selects the doubleword form).</summary>
     public (int Lo, int Hi) LoadExclusiveDual(int addr)
     {
+        Guard(addr, write: false);
         int lo = Block.NewTemp(), hi = Block.NewTemp();
         Emit(new IrInst(IrOp.LdrEx) { D = lo, D2 = hi, A = addr, Imm = 1 });
         return (lo, hi);
@@ -606,6 +749,7 @@ public sealed unsafe class IrBuilder
     /// <summary>STREXD of B (low) and C (high); D = 0 on success, 1 on failure.</summary>
     public int StoreExclusiveDual(int addr, int lo, int hi)
     {
+        Guard(addr, write: true);
         int t = Block.NewTemp();
         Emit(new IrInst(IrOp.StrEx) { D = t, A = addr, B = lo, C = hi, Imm = 1 });
         return t;

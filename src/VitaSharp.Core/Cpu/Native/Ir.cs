@@ -48,6 +48,7 @@ public enum IrOp : byte
     StoreD,       // state offset Imm (8 bytes) -> guest address A (like Mem.W64)
     LdrEx,        // D = word at guest address A, arming the exclusive monitor (interpreter generation-counter protocol)
     StrEx,        // exclusive store of B to address A; D = 0 on success, 1 on failure
+    PageMapped,   // D = the mapping-table byte of the page of guest address A (nonzero: no data abort, DataAborts)
     // ---- control
     Label,        // Imm = label id
     CondBranch,   // if ARM condition Imm does NOT hold on (A=N, B=Z, C=C, E=V) goto label Imm2
