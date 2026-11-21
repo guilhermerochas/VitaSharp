@@ -85,16 +85,6 @@ public sealed partial class SystemServicesVsh : HleModule
     /// Modules are loaded only on request here: accepted.</summary>
     [Hle] int sceKernelInhibitLoadingModule(int what, int flags) => 0;
 
-    /// <summary>(char name[0x30], u64 aid): the name of the fixed license file (the one a game card or a shared license
-    /// uses), the same for every account: "6488b73b912a753a492e2714e9b38bc7.rif" (Vita3K, NoNpDrm).</summary>
-    [Hle]
-    int _sceNpDrmGetFixedRifName(uint name)
-    {
-        if (name == 0) return unchecked((int)0x80870001);
-        GuestMemory.Fill(name, 0, 0x30);
-        GuestMemory.WriteCString(name, "6488b73b912a753a492e2714e9b38bc7.rif", 0x30);
-        return 0;
-    }
     /// <summary>(SceUID cb, int): USB host attach/detach events; nothing is ever plugged in.</summary>
     [Hle] int sceUsbdRegisterCallback(int cb, int a) => 0;
     /// <summary>(SceUID cb): HID keyboard enumeration / input hints; no keyboard is attached.</summary>

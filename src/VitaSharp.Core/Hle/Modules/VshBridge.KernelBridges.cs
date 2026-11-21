@@ -978,77 +978,74 @@ public sealed partial class VshBridge
     /// the emulated licenses are not bound to an account (see vshNpDrmIsLooseAccountBind), nothing to update.</summary>
     [Hle] int vshNpDrmUpdateAccountId(uint accountId) => 0;
 
-    /// <summary>The PSP emulator's eboot signature (__sce_ebootpbp), made the same way as the package installer makes it
-    /// (<see cref="Package.PspEbootSignature"/>).</summary>
-    static byte[] EbootSignature(string path, ReadOnlySpan<byte> sha256, int kind) => Package.PspEbootSignature.Create(path, sha256, kind);
-
-    int EbootSigGen(uint path, uint sha, uint sig, uint swVersion, int shaSize, int kind)
+    /// <summary>A user eboot signature request as SceVshBridge 3.74 makes it: the option block (0x10 bytes, its first
+    /// word the software version the signature records) and the path (under 0x100 bytes) copied in, the signature
+    /// buffer zeroed and copied out whatever the kernel answers; the kernel export (SceNpDrmForDriver, through its
+    /// entry, so a kernel plugin that hooked it sees the call) makes the signature.</summary>
+    int EbootSigGen(uint path, uint hash, uint signature, uint options, uint nid, Func<int> direct)
     {
-        var p = UserPath(path, 0x100);
-        if (p == null)
-        {
-            return ERR_TOO_BIG;
-        }
-
-        if (sha == 0 || sig == 0)
+        if (options == 0)
         {
             return ERR_BAD_ADDR;
         }
 
-        EbootSignature(p, GuestMemory.ReadSpan(sha, shaSize), kind).CopyTo(GuestMemory.Span(sig, 0x200));
-        if (swVersion != 0)
-        {
-            GuestMemory.W32(swVersion, 0x03740011);
-        }
-
-        return 0;
-    }
-
-    /// <summary>(const char *path, const void *sha256 0x20, void *sig 0x200, int *swVersion): sign a PSP eboot.</summary>
-    [Hle] int _vshNpDrmEbootSigGenPsp(uint path, uint sha, uint sig, uint sw) => EbootSigGen(path, sha, sig, sw, 0x20, 1);
-    /// <summary>(... same, a PS1 eboot).</summary>
-    [Hle] int _vshNpDrmEbootSigGenPs1(uint path, uint sha, uint sig, uint sw) => EbootSigGen(path, sha, sig, sw, 0x20, 2);
-    /// <summary>(const char *path, const void *sceDiscinfo 0x100, void *sig 0x200, int *swVersion): a multi-disc PS1 eboot.</summary>
-    [Hle] int _vshNpDrmEbootSigGenMultiDisc(uint path, uint discinfo, uint sig, uint sw) => EbootSigGen(path, discinfo, sig, sw, 0x100, 3);
-
-    int EbootSigCheck(uint path, uint sig, uint header)
-    {
-        var p = UserPath(path, 0x100);
-        if (p == null)
+        if (UserPath(path, 0x100) == null)
         {
             return ERR_TOO_BIG;
         }
 
-        if (sig == 0)
+        if (signature != 0)
+        {
+            GuestMemory.Fill(signature, 0, 0x200);
+        }
+
+        return (int)Emu.FirmwareKernel.Call(SystemServicesVsh.NpDrmForDriverNid, nid, () => (uint)direct(), path, hash,
+            signature, GuestMemory.R32(options));
+    }
+
+    /// <summary>(const char *path, const void *sha256 0x20, void *sig 0x200, const opt *0x10 {swVersion}): signs a PSP
+    /// eboot with ksceNpDrmEbootSigGenPsp.</summary>
+    [Hle]
+    int _vshNpDrmEbootSigGenPsp(uint path, uint sha, uint sig, uint opt) =>
+        EbootSigGen(path, sha, sig, opt, 0x90B1A6D3, () => KernelServices.ksceNpDrmEbootSigGenPsp(path, sha, sig, (int)GuestMemory.R32(opt)));
+
+    /// <summary>(... same, a PS1 eboot: ksceNpDrmEbootSigGenPs1).</summary>
+    [Hle]
+    int _vshNpDrmEbootSigGenPs1(uint path, uint sha, uint sig, uint opt) =>
+        EbootSigGen(path, sha, sig, opt, 0x6D9223E1, () => KernelServices.ksceNpDrmEbootSigGenPs1(path, sha, sig, (int)GuestMemory.R32(opt)));
+
+    /// <summary>(const char *path, const void *sceDiscinfo 0x100, void *sig 0x200, const opt *): a multi-disc PS1
+    /// eboot (ksceNpDrmEbootSigGenMultiDisc).</summary>
+    [Hle]
+    int _vshNpDrmEbootSigGenMultiDisc(uint path, uint discinfo, uint sig, uint opt) =>
+        EbootSigGen(path, discinfo, sig, opt, 0x39A7A666, () => KernelServices.ksceNpDrmEbootSigGenMultiDisc(path, discinfo, sig, (int)GuestMemory.R32(opt)));
+
+    /// <summary>A user eboot signature check: the option block (8 bytes) and the path copied in, then the kernel
+    /// export's answer (0, or 0x80870005 for a signature that is not the unit's for that eboot).</summary>
+    int EbootSigCheck(uint path, uint signature, uint options, uint nid, Func<int> direct)
+    {
+        if (options == 0)
         {
             return ERR_BAD_ADDR;
         }
 
-        var s = GuestMemory.ReadSpan(sig, 0x200);
-        if (!s[..8].SequenceEqual("NPUMDSIG"u8))
+        if (UserPath(path, 0x100) == null)
         {
-            return NPDRM_ERR_BAD_DATA; // not a signature EbootSigGen made: SceNpDrm 3.74 answers 0x80870005
+            return ERR_TOO_BIG;
         }
 
-        var expect = EbootSignature(p, s.Slice(0x30, s[8] == 3 ? 0x100 : 0x20), s[8]);
-        if (!s.Slice(0x10, 0x20).SequenceEqual(expect.AsSpan(0x10, 0x20)))
-        {
-            return NPDRM_ERR_BAD_DATA;
-        }
-
-        if (header != 0)
-        {
-            GuestMemory.W32(header, 0);
-        }
-
-        return s[8];
+        return (int)Emu.FirmwareKernel.Call(SystemServicesVsh.NpDrmForDriverNid, nid, () => (uint)direct(), path, signature);
     }
 
-    /// <summary>(const char *path, const char *sig 0x200, char **header, opt): checks a signature EbootSigGen made;
-    /// returns the eboot kind (1 PSP, 2 PS1, 3 multi-disc).</summary>
-    [Hle] int _vshNpDrmEbootSigVerify(uint path, uint sig, uint header, uint opt) => EbootSigCheck(path, sig, header);
-    /// <summary>(const char *path, const char *sig 0x100, char **header, opt): the PSP eboot check of the PSP emulator.</summary>
-    [Hle] int _vshNpDrmPspEbootVerify(uint path, uint sig, uint header, uint opt) => EbootSigCheck(path, sig, header);
+    /// <summary>(const char *path, const void *sig 0x200, const opt *8): ksceNpDrmEbootSigVerify.</summary>
+    [Hle]
+    int _vshNpDrmEbootSigVerify(uint path, uint sig, uint opt) =>
+        EbootSigCheck(path, sig, opt, 0x7A319692, () => KernelServices.ksceNpDrmEbootSigVerify(path, sig));
+
+    /// <summary>(const char *path, const void *sig 0x100, const opt *8): ksceNpDrmPspEbootVerify.</summary>
+    [Hle]
+    int _vshNpDrmPspEbootVerify(uint path, uint sig, uint opt) =>
+        EbootSigCheck(path, sig, opt, 0xB6CA3A2C, () => KernelServices.ksceNpDrmPspEbootVerify(path, sig));
 
     /// <summary>(const SceUInt8 rif[0x200], const void *doc, SceSize docSize, const opt *0x10: documentKey,
     /// size &lt;= 0x200): the key of a PSP game manual (DOCUMENT.DAT) from its license. PSP licenses are not
