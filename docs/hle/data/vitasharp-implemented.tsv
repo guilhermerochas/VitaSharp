@@ -6000,7 +6000,7 @@
 0x30DF2E82	SceMagicGateForDriver_30DF2E82	SystemServicesVsh	SceMagicGateForDriver	-	default
 0x3270BEE6	SceMagicGateForDriver_3270BEE6	SystemServicesVsh	SceMagicGateForDriver	-	default
 0x38AE3ACA	SceMagicGateForDriver_38AE3ACA	SystemServicesVsh	SceMagicGateForDriver	-
-0x3EDD73EB	SceMagicGateForDriver_3EDD73EB	SystemServicesVsh	SceMagicGateForDriver	-	default
+0x3EDD73EB	SceMagicGateForDriver_3EDD73EB	SystemServicesVsh	SceMagicGateForDriver	-
 0x42A9D74E	SceMagicGateForDriver_42A9D74E	SystemServicesVsh	SceMagicGateForDriver	-	default
 0x43518F19	SceMagicGateForDriver_43518F19	SystemServicesVsh	SceMagicGateForDriver	-
 0x465A7B76	SceMagicGateForDriver_465A7B76	SystemServicesVsh	SceMagicGateForDriver	-	default
@@ -7727,16 +7727,16 @@
 0x4458812B	_sceNpDrmCheckDrmReset	SystemServicesVsh	SceNpDrm	vh	default
 0xE935B0FC	_sceNpDrmGetFixedRifName	SystemServicesVsh	SceNpDrm	vh
 0xE8343660	_sceNpDrmGetRifInfo	SystemServicesVsh	SceNpDrm	vh
-0xB8C5DA7C	_sceNpDrmGetRifName	SystemServicesVsh	SceNpDrm	vh	default
-0xD312424D	_sceNpDrmGetRifNameForInstall	SystemServicesVsh	SceNpDrm	vh	default
+0xB8C5DA7C	_sceNpDrmGetRifName	SystemServicesVsh	SceNpDrm	vh
+0xD312424D	_sceNpDrmGetRifNameForInstall	SystemServicesVsh	SceNpDrm	vh
 0x2523F57F	_sceNpDrmPresetRifProvisionalFlag	SystemServicesVsh	SceNpDrm	vh	default
 0x507D06A6	_sceNpDrmRemoveActData	SystemServicesVsh	SceNpDrm	vh	default
 0x9265B350	ksceNpDrmCheckActData	SystemServicesVsh	SceNpDrmForDriver	-
 0xA29B75F9	ksceNpDrmEbootSigConvert	SystemServicesVsh	SceNpDrmForDriver	-	default
-0x39A7A666	ksceNpDrmEbootSigGenMultiDisc	SystemServicesVsh	SceNpDrmForDriver	-	default
-0x6D9223E1	ksceNpDrmEbootSigGenPs1	SystemServicesVsh	SceNpDrmForDriver	-	default
-0x90B1A6D3	ksceNpDrmEbootSigGenPsp	SystemServicesVsh	SceNpDrmForDriver	-	default
-0x7A319692	ksceNpDrmEbootSigVerify	SystemServicesVsh	SceNpDrmForDriver	-	default
+0x39A7A666	ksceNpDrmEbootSigGenMultiDisc	SystemServicesVsh	SceNpDrmForDriver	-
+0x6D9223E1	ksceNpDrmEbootSigGenPs1	SystemServicesVsh	SceNpDrmForDriver	-
+0x90B1A6D3	ksceNpDrmEbootSigGenPsp	SystemServicesVsh	SceNpDrmForDriver	-
+0x7A319692	ksceNpDrmEbootSigVerify	SystemServicesVsh	SceNpDrmForDriver	-
 0x5D73448C	ksceNpDrmGetFixedRifName	SystemServicesVsh	SceNpDrmForDriver	-
 0x4E321BDE	ksceNpDrmGetLegacyDocKey	SystemServicesVsh	SceNpDrmForDriver	-	default
 0xDB406EAE	ksceNpDrmGetRifInfo	SystemServicesVsh	SceNpDrmForDriver	-
@@ -7748,7 +7748,7 @@
 0x3BFD2850	ksceNpDrmPackageSetGameExist	SystemServicesVsh	SceNpDrmForDriver	-
 0xC070FE89	ksceNpDrmPresetRifProvisionalFlag	SystemServicesVsh	SceNpDrmForDriver	-	default
 0xEF387FC4	ksceNpDrmPspEbootSigGen	SystemServicesVsh	SceNpDrmForDriver	-	default
-0xB6CA3A2C	ksceNpDrmPspEbootVerify	SystemServicesVsh	SceNpDrmForDriver	-	default
+0xB6CA3A2C	ksceNpDrmPspEbootVerify	SystemServicesVsh	SceNpDrmForDriver	-
 0xD91C3BCE	ksceNpDrmReadActData	SystemServicesVsh	SceNpDrmForDriver	-
 0x8B85A509	ksceNpDrmRemoveActData	SystemServicesVsh	SceNpDrmForDriver	-
 0x116FC0D6	ksceNpDrmUpdateAccountId	SystemServicesVsh	SceNpDrmForDriver	-
@@ -10296,8 +10296,8 @@
 0xA89653B3	scePsmDrmGetActInfo	SystemServicesVsh	ScePsmDrm	vh	default
 0xE31A6220	scePsmDrmGetRifInfo	SystemServicesVsh	ScePsmDrm	vh
 0x207A2C53	scePsmDrmGetRifKey	SystemServicesVsh	ScePsmDrm	vh
-0x3E881391	scePsmDrmGetRifName	SystemServicesVsh	ScePsmDrm	vh	default
-0x0D6470DA	scePsmDrmGetRifNameForInstall	SystemServicesVsh	ScePsmDrm	vh	default
+0x3E881391	scePsmDrmGetRifName	SystemServicesVsh	ScePsmDrm	vh
+0x0D6470DA	scePsmDrmGetRifNameForInstall	SystemServicesVsh	ScePsmDrm	vh
 0x0E193CBB	scePsmDrmRemoveActData	SystemServicesVsh	ScePsmDrm	vh
 0xB09003A7	kscePsmDrmGetActInfo	SystemServicesVsh	ScePsmDrmForDriver	-	default
 0x984F9017	kscePsmDrmGetRifInfo	SystemServicesVsh	ScePsmDrmForDriver	-
@@ -11111,8 +11111,8 @@
 0x4FF2682F	ksceSblPostSsMgrGetExpireDate	SystemServicesVsh	SceSblPostSsMgrForDriver	-
 0xDDA6FA6D	ksceSblPostSsMgrVerifyKeystone	SystemServicesVsh	SceSblPostSsMgrForDriver	-	default
 0xF86F1452	ksceSblPostSsMgrVerifyKeystoneWithPasscode	SystemServicesVsh	SceSblPostSsMgrForDriver	-	default
-0x07BAD056	ksceSblRSA2048CreateSignature	SystemServicesVsh	SceSblPostSsMgrForDriver	-	default
-0x3DB69911	ksceSblRSA2048VerifySignature	SystemServicesVsh	SceSblPostSsMgrForDriver	-	default
+0x07BAD056	ksceSblRSA2048CreateSignature	SystemServicesVsh	SceSblPostSsMgrForDriver	-
+0x3DB69911	ksceSblRSA2048VerifySignature	SystemServicesVsh	SceSblPostSsMgrForDriver	-
 0xDE5150FE	ksceSblRtcMgrGetCpRtcLogical	KernelTwins	SceSblPostSsMgrForDriver	-	default
 0x942010A0	ksceSblRtcMgrGetCpRtcPhysical	SystemServicesVsh	SceSblPostSsMgrForDriver	-	default
 0xDC68EE5C	ksceSblRtcMgrSetCpRtcLogical	KernelTwins	SceSblPostSsMgrForDriver	-	default
