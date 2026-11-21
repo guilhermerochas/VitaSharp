@@ -422,6 +422,9 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
             Block pointed = cache.Get(code + 0x600, false);
             Assert.True(pointed.Ahead);
             Assert.Equal(Jit.AheadPending, pointed.JitState);
+            // the rest of the running function comes first (Running); the functions it points to, after (Frontier)
+            Assert.Equal((byte)CodePrecompiler.Priority.Running, cache.Get(code + 0x460, false).AheadPriority);
+            Assert.Equal((byte)CodePrecompiler.Priority.Frontier, pointed.AheadPriority);
             codeCache.Stop();
         });
     }

@@ -28,6 +28,8 @@ public sealed unsafe class Block
     public volatile bool Invalidated;
     /// <summary>Translated before it ran (<see cref="Jit.CompileAheadOne"/>), not because it got hot.</summary>
     public bool Ahead;
+    /// <summary>The <see cref="CodePrecompiler.Priority"/> whose work translated the block ahead (statistics).</summary>
+    public byte AheadPriority;
     /// <summary>When the block's compiled code was first used (a process-wide sequence number; 0: not yet): the code
     /// cache keeps the blocks in this order, so the next boot translates what the game needs first, first.</summary>
     public long FirstUse;
