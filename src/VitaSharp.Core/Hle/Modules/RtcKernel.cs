@@ -253,7 +253,7 @@ public sealed class RtcKernel : HleModule, ISnapshotTimers
         {
             Clocks.AlarmTick = value;
             Clocks.AlarmFlag = flag;
-            Chip.StatusWord &= ~(1u << AlarmBit);
+            Chip.SetStatusBit(AlarmBit, false);
         }
 
         if (value != 0)
@@ -472,7 +472,7 @@ public sealed class RtcKernel : HleModule, ISnapshotTimers
             {
                 left = Step(clocks.AlarmTick, ClockTick(clocks, RtcClocks.Main), ref _alarmFor, ref _alarmRang, left, () =>
                 {
-                    owner.Chip.StatusWord |= 1u << AlarmBit;
+                    owner.Chip.SetStatusBit(AlarmBit, true);
                     owner.NotifyCallback(clocks.AlarmCallback, 1);
                 });
                 left = Step(clocks.SecureAlarmTick, ClockTick(clocks, RtcClocks.Secure), ref _secureFor, ref _secureRang, left, () =>

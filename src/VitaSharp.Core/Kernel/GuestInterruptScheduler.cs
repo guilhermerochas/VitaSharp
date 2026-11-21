@@ -22,6 +22,13 @@ public sealed class GuestInterruptScheduler(Emulator emulator, Action<uint, ulon
     /// <summary>The GIC's interrupt lines (0..15 software, 16..255 the devices).</summary>
     public const int Lines = 256;
 
+    /// <summary>The HLE drivers' own interrupts after the lines (<see cref="Lines"/> + n): a driver's handler the
+    /// emulated hardware does not raise as a GIC line (a GPIO sub-interrupt, the vblank sub-interrupt), timed the same way.</summary>
+    public const int HleSources = 8;
+
+    /// <summary>Every source: the lines, then the HLE interrupts.</summary>
+    public const int Sources = Lines + HleSources;
+
     /// <summary>The most periods of one line fired at once after the hand-over came late.</summary>
     public const int MaxCatchUp = 64;
 
@@ -38,7 +45,7 @@ public sealed class GuestInterruptScheduler(Emulator emulator, Action<uint, ulon
 
     private static ulong[] CreateDeadlines()
     {
-        ulong[] deadlines = new ulong[Lines];
+        ulong[] deadlines = new ulong[Sources];
         Array.Fill(deadlines, NotArmed);
         return deadlines;
     }
@@ -95,7 +102,7 @@ public sealed class GuestInterruptScheduler(Emulator emulator, Action<uint, ulon
     /// earlier time).</summary>
     public void Arm(uint line, ulong deadlineUs)
     {
-        if (line >= Lines || deadlineUs == NotArmed)
+        if (line >= Sources || deadlineUs == NotArmed)
         {
             return;
         }
@@ -128,7 +135,7 @@ public sealed class GuestInterruptScheduler(Emulator emulator, Action<uint, ulon
     /// <summary>The line no longer fires (the device stopped counting).</summary>
     public void Disarm(uint line)
     {
-        if (line >= Lines)
+        if (line >= Sources)
         {
             return;
         }
@@ -184,7 +191,7 @@ public sealed class GuestInterruptScheduler(Emulator emulator, Action<uint, ulon
     public int DispatchDue(ulong nowUs)
     {
         int fired = 0;
-        Span<int> perLine = stackalloc int[Lines];
+        Span<int> perLine = stackalloc int[Sources];
         perLine.Clear();
         while (true)
         {
@@ -216,7 +223,7 @@ public sealed class GuestInterruptScheduler(Emulator emulator, Action<uint, ulon
             return false;
         }
 
-        for (int index = 0; index < Lines; index++)
+        for (int index = 0; index < Sources; index++)
         {
             ulong armed = _deadlines[index];
             if (armed <= nowUs && armed < best && perLine[index] < MaxCatchUp)

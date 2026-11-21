@@ -280,6 +280,46 @@ public sealed partial class SysconChip
     public bool AcAdapter
     {
         get => (StatusByte & StatusAcAdapter) != 0;
-        set => StatusByte = value ? (byte)(StatusByte | StatusAcAdapter) : (byte)(StatusByte & ~StatusAcAdapter);
+        set => SetStatusByte(value ? (byte)(StatusByte | StatusAcAdapter) : (byte)(StatusByte & ~StatusAcAdapter));
+    }
+
+    /// <summary>The chip raises its event interrupt (SceSyscon's GPIO line): called after a change of the event bits or
+    /// of the status byte, on the thread that made it (SceSysconForDriver's handlers then run on the interrupt
+    /// thread).</summary>
+    [SnapshotIgnore]
+    public Action? EventRaised;
+
+    /// <summary>Sets or clears event bit <paramref name="bit"/> of <see cref="StatusWord"/>; a change raises the chip's
+    /// event.</summary>
+    public void SetStatusBit(int bit, bool on)
+    {
+        bool changed;
+        lock (_lock)
+        {
+            uint before = StatusWord;
+            StatusWord = on ? before | 1u << bit : before & ~(1u << bit);
+            changed = StatusWord != before;
+        }
+
+        if (changed)
+        {
+            EventRaised?.Invoke();
+        }
+    }
+
+    /// <summary>Replaces the status byte; a change raises the chip's event.</summary>
+    public void SetStatusByte(byte value)
+    {
+        bool changed;
+        lock (_lock)
+        {
+            changed = StatusByte != value;
+            StatusByte = value;
+        }
+
+        if (changed)
+        {
+            EventRaised?.Invoke();
+        }
     }
 }

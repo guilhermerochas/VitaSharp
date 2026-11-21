@@ -6,8 +6,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// The parts of the FW 3.74 SceSyscon kernel module (syscon.skprx; decompiled, study only) that do not talk to the
 /// syscon chip: the event handler registrations (a table of (callback, argument) per event number that the module's
 /// interrupt handler calls when the chip reports the event: low battery, thermal alert, alarm, ...), the debug
-/// handlers and the module's flags. The chip itself (ksceSysconCmdExec and the commands built on it) is not modelled
-/// yet, so no event is raised here: the registrations are kept as the firmware keeps them.
+/// handlers and the module's flags. The handlers are called when the chip changes (SysconKernel.Events.cs).
 /// </summary>
 public sealed partial class SysconKernel : HleModule
 {
@@ -40,6 +39,7 @@ public sealed partial class SysconKernel : HleModule
             _eventHandlers[index * 2 + 1] = argument;
         }
 
+        StartChipEvents();
         return 0;
     }
 
