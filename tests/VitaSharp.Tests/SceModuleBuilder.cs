@@ -15,7 +15,7 @@ public sealed class SceModuleBuilder(string name)
     private const int CodeAt = 0x0, InfoAt = 0x400, ExportsAt = 0x500, ImportsAt = 0x700, StubsAt = 0x900, DataAt = 0xA00, ArmAt = 0xC00, Size = 0x1000;
 
     private readonly List<(string Name, uint Nid, ushort Attr, List<(uint Nid, int Function)> Functions)> _exports = [];
-    private readonly List<(string Name, uint Nid, uint[] Functions)> _imports = [];
+    private readonly List<(string Name, uint Nid, ushort Attr, uint[] Functions)> _imports = [];
     private readonly List<ushort[]> _code = [];
     private readonly Dictionary<int, (int Offset, uint[] Words)> _arm = [];
     private int _armUsed;
@@ -92,7 +92,14 @@ public sealed class SceModuleBuilder(string name)
 
     public SceModuleBuilder Import(string library, uint libNid, params uint[] functions)
     {
-        _imports.Add((library, libNid, functions));
+        _imports.Add((library, libNid, 0, functions));
+        return this;
+    }
+
+    /// <summary>An imported library the module does without (SCE_LIBRARY_ATTR_WEAK_IMPORT, 0x0008).</summary>
+    public SceModuleBuilder WeakImport(string library, uint libNid, params uint[] functions)
+    {
+        _imports.Add((library, libNid, 0x0008, functions));
         return this;
     }
 
@@ -194,7 +201,7 @@ public sealed class SceModuleBuilder(string name)
 
         // imports (0x34-byte entries) and their stubs (16 bytes each, rewritten by the linker)
         int imp0 = ImportsAt, stub = StubsAt;
-        foreach ((string Name, uint Nid, uint[] Functions) lib in _imports)
+        foreach ((string Name, uint Nid, ushort Attr, uint[] Functions) lib in _imports)
         {
             uint nids = (uint)data;
             data += lib.Functions.Length * 4;
@@ -209,6 +216,7 @@ public sealed class SceModuleBuilder(string name)
 
             W16(imp0, 0x34);
             W16(imp0 + 2, 1);
+            W16(imp0 + 4, lib.Attr);
             W16(imp0 + 6, (ushort)lib.Functions.Length);
             W32(imp0 + 0x10, lib.Nid);
             Ptr(imp0 + 0x14, Str(lib.Name));
