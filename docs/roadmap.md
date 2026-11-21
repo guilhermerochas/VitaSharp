@@ -3570,14 +3570,20 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
     `replay-gpu --compare` contra a main nos 24 dumps de `captures` e `gpudumps`: só os dois do PCSE00020 mudam; no
     PCSE00333_20261108_194141 29 de 1080 quadros diferem em até 0,05% dos pixels (ruído do replay: o dump não tem cena
     MSAA nem leitura de profundidade, o caminho alterado não roda).
-  - **(1) vidro da cabine (vista externa "Flying over Pakistan"): causa achada, falta corrigir.** Os vidros e o borrão
-    das hélices são desenhados na cena 4X 360x224 com teste de profundidade (função GREATER_EQUAL) contra a
-    profundidade que ela carrega (load=True) da cena de 1 amostra. `SeedLoadedDepth` só copia de alvos com o mesmo
-    número de amostras, então a cena 4X testa contra a própria profundidade do quadro anterior (ou zero): vidros da
-    direita saem com a textura pontilhada azul opaca e o da esquerda sem o reflexo claro do Vita. Correção proposta:
-    ao carregar a profundidade numa cena 4X (2X) cujo conteúdo mais novo está num alvo de 1 amostra no mesmo endereço,
-    empacotar os texels nas amostras (amostra (x&1, y&1) do pixel (x/2, y/2) = texel (x, y); o inverso de
-    `UnpackedDepthTexture`), com um passe de tela cheia por amostra.
+  - **(1) vidro da cabine (vista externa "Flying over Pakistan"): em andamento (correção feita, ainda não confirmada).**
+    Os vidros e o borrão das hélices são desenhados na cena 4X 360x224 com teste GREATER_EQUAL contra a profundidade
+    que ela carrega da cena de 1 amostra 768x480 (superfície de profundidade em amostras: amostra (x&1, y&1) do pixel
+    (x/2, y/2) = texel (x, y)). MSAA nativo (o modo do usuário: sem opção por jogo, padrão `native`): o empacotamento
+    dos texels nas amostras já existe desde 2f785aca (`PackDepthSamples`). fix/mgs3g fecha os outros caminhos do
+    `SeedLoadedDepth`: com MSAA `ss` a imagem 720x448 (1 texel por amostra) não carregava nada (só copiava entre
+    imagens supersampled) e com MSAA `off` (opção do Android) a imagem 360x224 copiava o quarto superior esquerdo da
+    768x480; agora cada imagem de 1 amostra guarda quantos texels tem por amostra (`DepthTexelsPerSample`) e, quando o
+    conteúdo mais novo da superfície está noutra imagem, copia (mesmo mapeamento) ou reamostra (`ResampleDepth`, também
+    a partir das amostras de uma cena multisampled com FORCE_STORE, o sentido inverso). Testes
+    `RendererSurfaceReuseTests.FourXSceneLoadsTheDepthAOneSampleSceneStored` (native/ss/off x LESS/GREATER_EQUAL) e
+    `OneSampleSceneLoadsTheDepthAForceStored4XSceneStored`. Se no MSAA nativo o vidro continuar errado, a causa não
+    é a profundidade carregada: falta uma captura "Gravar tudo" do trecho (as de 10/11 foram apagadas) para olhar o
+    stencil (o empacotamento não copia stencil: sem VK_EXT_shader_stencil_export) e o shader do vidro.
   - Ainda aparecem triângulos soltos de um quadro (faixas azuladas finas, ex. quadros 2725 e 2898 do replay).
   - **(3) trava: correção feita (fix/mgs-endframe-2), ainda não validada pelo usuário; a trava do "End Frame Event" sumiu nos boots de teste (main 15 de 21, correção 0 de 21), mas sob carga pesada ainda aparecem outras travas (ver o fim do item).** Reproduz no boot carregando o
     `state_start.vss` da captura 214218 (o boot vai direto ao MGS3.self): 4 de 5 boots param entre os quadros 4 e 36
