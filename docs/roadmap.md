@@ -511,7 +511,9 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
       função vem do `.ARM.exidx`, que só serve como índice de funções, não é traduzido inteiro). Um bloco pré-compilado
       só é publicado (dispatcher, tabela de saídas indiretas, links) quando o guest chega nele pela 1ª vez
       (`Jit.ActivateAhead`, que também alarga a fronteira); é assim que o cache sabe o que rodou. Módulos carregados com
-      o jogo rodando entram em segundo plano do mesmo jeito. Teto: 64 MiB de código pré-compilado na arena (256 MiB).      Android: o mesmo modelo, tudo em segundo plano (`PrecompileCodeWaits = false`) até a tela do jogo ter a barra.    - Invalidação: os blocos pré-compilados são blocos normais do cache do processo; escrita em código
+      o jogo rodando entram em segundo plano do mesmo jeito. Teto: 128 MiB de código pré-compilado na arena (256 MiB).
+      Android: o mesmo modelo, tudo em segundo plano (`PrecompileCodeWaits = false`) até a tela do jogo ter a barra.
+    - Invalidação: os blocos pré-compilados são blocos normais do cache do processo; escrita em código
       (DirtyPages/`InvalidateCode`), carga/descarga de módulo e save state continuam derrubando a tradução.
     - UI: a mesma barra do "Precompilar shaders" no launcher, com o texto "Precompilando código ARM: x de y" (linhas
       `[precompile] progress <feito> <total> code`) e o mesmo "Cancelar"; opção "Precompilar código ARM" em
@@ -548,6 +550,42 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
       na 2ª, só o stub de trap do kernel (fora de qualquer módulo e da região HLE). A arena cresceu ~8 MB com as
       funções inteiras. Falta: medir no AC3L e no celular; para a 1ª sessão chegar a ~0, traduzir antes do boot as
       funções apontadas pelas tabelas de dados (custa arena; medir) ou guardar os bytes de máquina (parte 3).
+    - Feito (feat/aot3, 21/11/2026), medido no Native AOT (headless, 4 núcleos 0xF0, BelowNormal; base = release
+      antes, com a máquina livre; os jogos não chegam sempre ao mesmo ponto em 5800/4500 quadros, então compare a
+      cobertura): (1) prioridade `Running` antes da fronteira: o resto da função que o jogo está rodando vem antes dos
+      callees e das funções apontadas; (2) referências de executável sem relocações (o eboot do Killzone é de endereço
+      fixo e não tem nenhuma): a fronteira lê da própria função as palavras do literal pool e os pares MOVW/MOVT (Thumb
+      e ARM), e a tabela de ponteiros para onde eles apontam (`ModuleCodeMap.PointersOfFunction`); (3) fronteira de 1
+      chamada (era 3) e teto de pré-compilação de metade da arena (128 MiB, era 64): o AC3L roda ~150k blocos
+      distintos (~48 MiB) nos primeiros minutos; (4) com cache, a etapa de boot espera só os primeiros 65.536 blocos
+      gravados (na ordem de uso), o resto segue na mesma prioridade com o jogo começando; (5) diagnóstico no fim da
+      sessão: por que cada bloco compilado no jogo não foi pré-compilado, em que décimo da sessão ele rodou e, por
+      prioridade, blocos traduzidos/que rodaram/MB.
+      Killzone `kz_idle` 1ª sessão: base 1.127 blocos / 86 ms no jogo, 95,9%, etapa 0,7 s, arena 29 MB; aot3 1.079 /
+      57 ms, 97,3% (com 47% mais blocos executados no trecho), etapa 0,7 s, 35,4 MB. 2ª sessão aot3: 2 blocos / 0 ms,
+      100,0%, etapa 0,6 s, 32,7 MB.
+      AC3L (PCSE00053, boot + menus, 4500 quadros) 1ª sessão: base 44.294 blocos / 7,9 s no jogo, 63,4%, etapa 1,1 s,
+      arena no teto de 64 MB; aot3 15.407 / 2,4 s, 89,6%, etapa 1,2 s, 128 MB (teto). 2ª sessão: base (com carga)
+      4.022 / 211 ms, 97,0%, etapa 1,9 s; aot3 195 / 7 ms, 99,9%, etapa 1,1 s (esperando o cache inteiro: 2,4 s e 43
+      blocos).
+      Medido e descartado: (a) traduzir antes do boot todas as funções das tabelas de ponteiros alinhadas de
+      .data/.rodata que apontam para inícios de função do exidx — no Killzone são 30.881 funções = 140k blocos / 42 MB
+      dos quais só 2,8% rodam; a arena enche e a fronteira para (3.823 blocos no jogo); por profundidade e em segundo
+      plano não muda a conta. Teto separado para o trabalho especulativo (Flow): com 12 MB o Killzone perde 5,5k blocos
+      do começo do jogo (1.304 no jogo). Varredura linear do resto das funções que rodam (o código depois de B/POP/BX):
+      896 contra 898 blocos, sem ganho. Eficiência por prioridade (blocos que rodam/traduzidos), Killzone: Running
+      52%, Frontier 43%, Flow 19%; AC3L: Running 47%, Frontier 30%, Flow 30%.
+      Sobra: Killzone ~1.000 blocos na 1ª sessão (~57 ms; a meta de ≲10 ms não foi atingida), quase todos em funções já
+      em pré-compilação, logo depois de B/POP/BX/BL (alvos de saltos calculados que a análise não vê) e na 2ª metade da
+      sessão; AC3L 1ª sessão 15k blocos, porque a arena de 128 MiB enche (a Frontier traduz 202k blocos dos quais 30%
+      rodam). Falta: restringir a fronteira ao que tende a rodar (ex.: só a função chamada, sem o resto dela, até ela
+      rodar; o resto das funções dos blocos do cache na 2ª sessão: 140k blocos, 5% rodam), e medir no celular.
+    - Parte 3 (bytes de máquina) avaliada e não feita agora: só reduz a etapa de boot das sessões com cache (0,6 s no
+      Killzone, 1,1 s no AC3L, já ≤ ~1 s) e não muda nada na 1ª sessão, que é o que sobra. Custo: tabela de relocações
+      nos 3 codificadores (x64 Iced, x64 fast-encode, ARM64) para ~7 tipos de endereço absoluto (slots de link de cada
+      saída, contador de tier-up, Epilogue/Callout, tabela de dispatch e `CodeBase`, base dos contadores exclusivos,
+      literais do pool do ARM64) e guardar as dependências de vizinhos (`_deadIn`/`_deps` dos stores mortos) com a
+      validação delas ao carregar.
     - Fica para depois (parte 3): guardar os bytes de máquina traduzidos. O código nativo não é relocável hoje
       (endereços absolutos de slots de link, stubs Epilogue/Callout, tabela de dispatch, pool de constantes, contador de
       tier-up; superblocos e stores mortos dependem dos vizinhos já executados): precisa de uma tabela de relocações
