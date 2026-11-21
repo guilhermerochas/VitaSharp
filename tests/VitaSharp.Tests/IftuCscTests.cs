@@ -20,7 +20,7 @@ public sealed class IftuCscTests(GuestMemoryFixture fixture) : IDisposable
     private const uint Rgbx8888 = 0x20, Bgrx8888 = 0x10, Rgb565 = 0x2, Rgba1010102 = 0x80, Nv12 = 0x10000, Yuv420 = 0x20000;
 
     /// <summary>SceAvcodec's BT.601 limited range YCbCr to RGB block (its table, post offsets 0x40/0x202).</summary>
-    private static readonly uint[] Bt601 = [0x40, 0x202, 0x3FF, 0, 0, 0, 0x254, 0, 0x331, 0x254, 0xF38, 0xE60, 0x254, 0x408, 0];
+    private static readonly uint[] s_bt601 = [0x40, 0x202, 0x3FF, 0, 0, 0, 0x254, 0, 0x331, 0x254, 0xF38, 0xE60, 0x254, 0x408, 0];
 
     private readonly HleHarness _harness = new(fixture, "iftucsc");
 
@@ -158,8 +158,8 @@ public sealed class IftuCscTests(GuestMemoryFixture fixture) : IDisposable
 
         foreach ((uint source, uint parameters) in new[]
         {
-            (PlaneState(Yuv420, Width, Height, y, cb, cr), Params(1, 0, Block(Bt601))),
-            (PlaneState(Nv12, Width, Height, y, interleaved), Params(1, 0, Block(Bt601))),
+            (PlaneState(Yuv420, Width, Height, y, cb, cr), Params(1, 0, Block(s_bt601))),
+            (PlaneState(Nv12, Width, Height, y, interleaved), Params(1, 0, Block(s_bt601))),
         })
         {
             uint output = _harness.Alloc(Width * Height * 4);
