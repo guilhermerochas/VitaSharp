@@ -20,6 +20,12 @@ public sealed class LoadedModule
     public Dictionary<int, (uint Flags, uint MemSz, uint FileSz)> SegmentFlags = new();
     public List<(string Library, uint LibNid, uint[] FuncNids)> Imports = new();
     public List<(string Library, uint LibNid, uint[] FuncNids, uint[] VarNids)> Exports = new();
+    /// <summary>The module's export entries in table order, each with whether the library database has it (a library
+    /// without AUTO_EXPORT waits for ksceKernelRegisterLibary).</summary>
+    public List<ExportLibrary> ExportLibraries = new();
+    /// <summary>The attributes of the module's import entries by library NID (one entry not weak makes the library's
+    /// import not weak).</summary>
+    public Dictionary<uint, ushort> ImportAttributes = new();
     /// <summary>A kernel module: loaded in the kernel region by the kernel loader (<see cref="ModuleLoader.Load"/> with
     /// kernel set). Only its syscall-exported libraries are visible to user modules; it imports only kernel exports.</summary>
     public bool IsKernel;
@@ -35,6 +41,29 @@ public sealed class LoadedModule
     public List<(uint Site, uint Value)> AbsoluteRelocations = new();
 
     public override string ToString() => $"{Name} uid={Uid:X} start={StartEntry:X8}";
+}
+
+/// <summary>One export entry (0x20 bytes) of a module: the library and whether it is in the library database.</summary>
+public sealed class ExportLibrary
+{
+    /// <summary>The library entry attribute: the module's own entry (module_start, module_info...), never a library of
+    /// the database (SCE_LIBRARY_ATTR_MAIN_EXPORT).</summary>
+    public const ushort MainExportAttr = 0x8000;
+
+    /// <summary>The library entry attribute: registered when the module loads (SCE_LIBRARY_ATTR_AUTO_EXPORT).</summary>
+    public const ushort AutoExportAttr = 0x0001;
+
+    /// <summary>The import entry attribute: the importer does without the library (SCE_LIBRARY_ATTR_WEAK_IMPORT).</summary>
+    public const ushort WeakImportAttr = 0x0008;
+
+    public uint EntryAddress;
+    public ushort Attributes;
+    public uint LibNid;
+    public uint[] Nids = [];
+    public uint[] Entries = [];
+    public int FuncCount;
+    public ExportScope Scope;
+    public bool Registered;
 }
 
 /// <summary>Resolves imports that no loaded module exports (i.e. HLE functions/variables).</summary>
@@ -526,6 +555,119 @@ public sealed class Linker(IImportResolver importResolver)
         return false;
     }
 
+    /// <summary>The address an import stub jumps to (a MOVW/MOVT jump stub), or false for an HLE stub.</summary>
+    private static bool TryJumpTarget(uint stub, out uint target)
+    {
+        uint w0 = GuestMemory.R32(stub);
+        uint w1 = GuestMemory.R32(stub + 4);
+        if ((w0 & 0xFFF0F000) != 0xE300C000 || (w1 & 0xFFF0F000) != 0xE340C000)
+        {
+            target = 0;
+            return false;
+        }
+
+        target = ((w0 >> 4) & 0xF000) | (w0 & 0xFFF) | ((((w1 >> 4) & 0xF000) | (w1 & 0xFFF)) << 16);
+        return true;
+    }
+
+    /// <summary>
+    /// Takes one exported library out of the symbol table (ksceKernelReleaseLibary): its functions and variables stop
+    /// being exports, and every import stub that jumped into one of its functions binds again to the next provider
+    /// (another library exporting the NID) or back to the HLE; variable imports go to an HLE variable when one exists.
+    /// Returns the number of function stubs rebound.
+    /// </summary>
+    public int UnregisterLibrary(uint libNid, uint[] nids, uint[] entries, int funcCount)
+    {
+        int rebound = 0;
+        var removed = new List<(uint LibNid, uint Nid)>();
+        lock (_lock)
+        {
+            var removedTargets = new HashSet<uint>();
+            for (int i = 0; i < funcCount; i++)
+            {
+                uint nid = nids[i];
+                if (!_funcExportsByLib.TryGetValue((libNid, nid), out uint address) || address != entries[i])
+                {
+                    continue;
+                }
+
+                _funcExportsByLib.Remove((libNid, nid));
+                _funcExportScopesByLib.Remove((libNid, nid));
+                removed.Add((libNid, nid));
+                removedTargets.Add(address);
+                if (_funcExports.TryGetValue(nid, out uint any) && any == address)
+                {
+                    _funcExports.Remove(nid);
+                    _funcExportScopes.Remove(nid);
+                    foreach (KeyValuePair<(uint lib, uint nid), uint> other in _funcExportsByLib)
+                    {
+                        if (other.Key.nid == nid)
+                        {
+                            _funcExports[nid] = other.Value;
+                            _funcExportScopes[nid] = _funcExportScopesByLib[other.Key];
+                            break;
+                        }
+                    }
+                }
+            }
+
+            foreach ((uint nid, uint bindingLib, string? libName, uint stub, bool kernel) in _funcBindings)
+            {
+                if (!TryJumpTarget(stub, out uint target) || !removedTargets.Contains(target))
+                {
+                    continue;
+                }
+
+                if (TryFindExport(nid, bindingLib, kernel, out uint next))
+                {
+                    WriteJumpStub(stub, next);
+                }
+                else
+                {
+                    BindHle(stub, nid, bindingLib, libName);
+                }
+
+                InvalidateCode?.Invoke(stub, 12);
+                rebound++;
+            }
+
+            for (int i = funcCount; i < nids.Length; i++)
+            {
+                uint nid = nids[i];
+                if (!_varExports.TryGetValue(nid, out uint address) || address != entries[i])
+                {
+                    continue;
+                }
+
+                _varExports.Remove(nid);
+                uint hleVariable = importResolver.GetHleVariable(nid);
+                foreach ((uint bnid, byte[]? relocs, Dictionary<int, SegmentInfo>? segs) in _varBindings)
+                {
+                    if (bnid != nid || relocs.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    if (hleVariable != 0)
+                    {
+                        RelocateVariable(relocs, segs, hleVariable);
+                    }
+                    else
+                    {
+                        Log?.Invoke($"Variable import NID {nid:X8} pointed into a released library");
+                    }
+                }
+            }
+        }
+
+        if (removed.Count > 0)
+        {
+            ExportsChanged?.Invoke(removed);
+        }
+
+        return rebound;
+    }
+
     /// <summary>
     /// Undoes what loading <paramref name="loadedModule"/> did to the symbol table (sceKernelUnloadModule): drops its exports and
     /// its own import bindings, then rebinds every other module's import that pointed into it to the next provider
@@ -770,7 +912,30 @@ public static class ModuleLoader
             m.Exports.Add((GuestMemory.ReadCString(libName), libNid, nids[..nfunc], nids[nfunc..]));
             m.ExportedFunctionEntries.AddRange(entries[..nfunc]);
             ExportScope scope = !kernel ? ExportScope.User : (attr & Linker.SyscallExportAttr) != 0 && syscallsForUsers ? ExportScope.Syscall : ExportScope.Kernel;
-            linker.RegisterExports(m, libNid, nids, entries, nfunc, scope);
+            var library = new ExportLibrary
+            {
+                EntryAddress = p,
+                Attributes = attr,
+                LibNid = libNid,
+                Nids = nids,
+                Entries = entries,
+                FuncCount = nfunc,
+                Scope = scope,
+            };
+            m.ExportLibraries.Add(library);
+
+            // The module manager registers at load only the libraries marked AUTO_EXPORT (modulemgr 3.74); the others
+            // wait for ksceKernelRegisterLibary. The main entry is no library: its module_start / module_stop /
+            // module_info are read here.
+            if ((attr & ExportLibrary.MainExportAttr) != 0)
+            {
+                linker.RegisterExports(m, libNid, nids, entries, nfunc, scope);
+            }
+            else if ((attr & ExportLibrary.AutoExportAttr) != 0)
+            {
+                linker.RegisterExports(m, libNid, nids, entries, nfunc, scope);
+                library.Registered = true;
+            }
             if (size == 0)
             {
                 break;
@@ -804,6 +969,12 @@ public static class ModuleLoader
                 varEntries = U32LE(im, 0x28);
             }
             string lib = GuestMemory.ReadCString(libName);
+            ushort importAttr = U16LE(im, 4);
+            if (!m.ImportAttributes.TryGetValue(libNid, out ushort known) || (known & ExportLibrary.WeakImportAttr) != 0)
+            {
+                m.ImportAttributes[libNid] = importAttr;
+            }
+
             uint[] fn = nfunc > 0 ? GuestMemory.Span<uint>(funcNids, nfunc).ToArray() : [];
             uint[] fe = nfunc > 0 ? GuestMemory.Span<uint>(funcEntries, nfunc).ToArray() : [];
             for (int i = 0; i < nfunc; i++)
