@@ -82,6 +82,8 @@ SceLibKernel/SceIofilemgr (HLE).
     passa é decifrado com as chaves da ativação e os tempos limitados aos dela (trabalho do processador seguro:
     0x80020004). O VitaSharp não entrega a chave por conta própria: um título de PSM só abre com um plugin de kernel
     que faz hook de `kscePsmDrmGetRifKey` carregado (opção "Ativar Plugins do Kernel"), como no console.
+  - O leitor de arquivos PSSE do runtime (`pss_crypto_open`, HLE da mono_bridge) pega a licença do conteúdo em
+    `RO/License` e pede a chave a `scePsmDrmGetRifKey`, como o runtime faz no console: sem a chave dela, 0x80870005.
 - **Nome da licença.** O libpsm 2.01 lê a conta do registro (`sceRegMgrSystemParamGetBin(0x450F32)`,
   `/CONFIG/NP/account_id`, 0 sem conta), pede `scePsmDrmGetRifName(conta)` e abre `RO/License/<nome>`; o nome é a
   cifra AES (chave do SceNpDrm) de {flag 0, conta}. O instalador de PSM grava a licença com esse nome e a migração

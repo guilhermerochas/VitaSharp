@@ -138,6 +138,37 @@ public sealed partial class SystemServicesVsh
             license, keydata, versionFlag, startTime, expirationTime);
     }
 
+    /// <summary>The content key (16 bytes) of <paramref name="license"/> as the PSM runtime gets it: the license and a
+    /// key set buffer in the process's memory, given to scePsmDrmGetRifKey (<see cref="PsmDrmGetRifKey"/>: the PSM
+    /// runtime check, the kernel export with its hooks, the activation); null unless it answers 0.</summary>
+    internal byte[]? PsmContentKey(ReadOnlySpan<byte> license)
+    {
+        GuestMemory memory = Emu.Memory;
+        uint buffer = memory.Alloc(Package.PsmLicense.Size + Package.PsmLicense.KeySetSize, "PSM license key query", MemoryRegion.User, 16);
+        if (buffer == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            uint keys = buffer + Package.PsmLicense.Size;
+            license[..Package.PsmLicense.Size].CopyTo(GuestMemory.Span(buffer, Package.PsmLicense.Size));
+            GuestMemory.Fill(keys, 0, Package.PsmLicense.KeySetSize);
+            if (PsmDrmGetRifKey(buffer, keys, 0, 0, 0) != 0)
+            {
+                return null;
+            }
+
+            const uint ContentKeyInKeySet = Package.PsmLicense.ContentKeyOffset - Package.PsmLicense.KeySetOffset;
+            return GuestMemory.ReadSpan(keys + ContentKeyInKeySet, 16).ToArray();
+        }
+        finally
+        {
+            memory.Free(buffer);
+        }
+    }
+
     /// <summary>(const ScePsmDrmLicense *license, char contentId[0x30], SceUInt64 *accountId, SceRtcTick *startTime,
     /// SceRtcTick *expirationTime): the syscall passes its five arguments to kscePsmDrmGetRifInfo as they are
     /// (SceNpDrm 3.74), through its export entry; the checks and the fields are the kernel function's.</summary>

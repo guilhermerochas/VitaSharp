@@ -75,9 +75,8 @@ public sealed class PsmLicenseTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(KernelInvalid, Call(drm, "PsmDrmGetRifKey", 0u, keys, 0u, 0u, 0u));
         Assert.Equal(KernelInvalid, Call(drm, "PsmDrmGetRifKey", license, 0u, 0u, 0u, 0u));
         Assert.Equal(NotActivated, Call(drm, "PsmDrmGetRifKey", license, keys, 0u, 0u, 0u));
-        // the content key of a license in clear is still what the emulator's own PSSE reader uses
-        Assert.Null(PsmLicense.ContentKey(License(signed: true)));
-        Assert.Equal(s_contentKey, PsmLicense.ContentKey(License(signed: false)));
+        // the runtime's PSSE reader asks the same call: no content key
+        Assert.Null(drm.PsmContentKey(License(signed: false)));
     }
 
     /// <summary>With activation data on the unit the license is checked (here no firmware: not available) and the
@@ -119,19 +118,18 @@ public sealed class PsmLicenseTests(GuestMemoryFixture fixture) : IDisposable
     }
 
     [Fact]
-    public void TheContentKeyIsFoundInTheTitlesInstalledLicenses()
+    public void TheLicenseOfTheContentIsFoundInTheTitlesInstalledLicenses()
     {
         string fs = Path.Combine(Path.GetTempPath(), "vitasharp-psmlicense-" + Guid.NewGuid().ToString("N"));
         try
         {
             string dir = VitaSharp.Core.Io.FirmwareLayout.PsmTitles.Host(fs, "NPXX99998", VitaSharp.Core.Io.FirmwareLayout.PsmReadOnly, VitaSharp.Core.Io.FirmwareLayout.PsmLicense);
-            Assert.Null(PsmLicense.FindContentKey(fs, "NPXX99998", ContentId)); // nothing installed: no license
+            Assert.Null(PsmLicense.FindLicense(fs, "NPXX99998", ContentId)); // nothing installed: no license
             Directory.CreateDirectory(dir);
             File.WriteAllBytes(Path.Combine(dir, "other.rif"), License(signed: false, "EP0000-NPXX99997_00-0000000000000001"));
+            Assert.Null(PsmLicense.FindLicense(fs, "NPXX99998", ContentId)); // another content's
             File.WriteAllBytes(Path.Combine(dir, "signed.rif"), License(signed: true));
-            Assert.Null(PsmLicense.FindContentKey(fs, "NPXX99998", ContentId)); // another content's, and a signed one
-            File.WriteAllBytes(Path.Combine(dir, PkgInstaller.AccountRifName), License(signed: false));
-            Assert.Equal(s_contentKey, PsmLicense.FindContentKey(fs, "NPXX99998", ContentId));
+            Assert.Equal(License(signed: true), PsmLicense.FindLicense(fs, "NPXX99998", ContentId));
         }
         finally
         {

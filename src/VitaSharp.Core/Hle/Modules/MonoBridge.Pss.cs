@@ -264,8 +264,8 @@ public sealed unsafe partial class MonoBridge
     /// <summary>
     /// pss_crypto_open(path): the program's file opened for reading; its descriptor or an error. A PSSE file (the
     /// title's protected files, RO/Application/psse.list) is opened with the content key of the title's installed
-    /// license (<see cref="Package.PsmLicense.FindContentKey"/>, as scePsmDrmGetRifKey gives it): without a usable
-    /// license, 0x80870005 (no license); any other file reads as it is.
+    /// license as scePsmDrmGetRifKey gives it (<see cref="OpenPsse"/>): without it, 0x80870005 (no license); any
+    /// other file reads as it is.
     /// </summary>
     [Hle("pss_crypto_open", Library = Lib)]
     int PssCryptoOpen(uint path)
@@ -284,12 +284,11 @@ public sealed unsafe partial class MonoBridge
         }
 
         string? titleId = Emu.Hle.Modules.OfType<AppMgr>().FirstOrDefault()?.PsmTitleId;
-        byte[]? key = titleId != null ? Package.PsmLicense.FindContentKey(Emu.Options.FsRoot, titleId, Package.PsseFile.ContentId(file)) : null;
-        byte[]? plain = key != null ? Package.PsseFile.Decrypt(file, key) : null;
+        byte[]? plain = OpenPsse(file, titleId);
         if (plain == null)
         {
             Io.sceIoClose(fd);
-            Log.WarnOnce("pss-crypto-license", $"pss_crypto_open: {guest} is protected and no installed license of {(titleId ?? "the PSM title")} opens it");
+            Log.WarnOnce("pss-crypto-license", $"pss_crypto_open: {guest} is protected and scePsmDrmGetRifKey gives no key for it from the licenses of {(titleId ?? "the PSM title")}");
             return NPDRM_ERR_NO_LICENSE;
         }
 
@@ -299,6 +298,21 @@ public sealed unsafe partial class MonoBridge
         }
 
         return fd;
+    }
+
+    /// <summary>The plain bytes of the PSSE file <paramref name="file"/> of PSM title <paramref name="titleId"/>, or
+    /// null: the title's installed license of the file's content (<see cref="Package.PsmLicense.FindLicense"/>) is
+    /// given to scePsmDrmGetRifKey, the call the runtime makes on the console (the same checks, activation and kernel
+    /// hooks: <see cref="SystemServicesVsh.PsmContentKey"/>), and the file opens with the content key it gives.</summary>
+    internal byte[]? OpenPsse(byte[] file, string? titleId)
+    {
+        if (titleId == null || Package.PsmLicense.FindLicense(Emu.Options.FsRoot, titleId, Package.PsseFile.ContentId(file)) is not { } license)
+        {
+            return null;
+        }
+
+        byte[]? key = Emu.Hle.Modules.OfType<SystemServicesVsh>().First().PsmContentKey(license);
+        return key != null ? Package.PsseFile.Decrypt(file, key) : null;
     }
 
     [Hle("pss_crypto_close", Library = Lib)]

@@ -160,4 +160,48 @@ public sealed class PsmDrmKernelTests : IDisposable
         Assert.Equal((int)expiration, UserCallOnGuest("PsmDrmGetRifKey", license, keys, 0u, times, expiration));
         Assert.Equal((int)expiration, UserCallOnGuest("PsmDrmGetRifInfo", license, 0u, 0u, times, expiration));
     }
+
+    /// <summary>The runtime's PSSE reader (pss_crypto_open) takes its content key from scePsmDrmGetRifKey, as on the
+    /// console: without activation and hook nothing opens the file; a kernel plugin hook on the export that writes the
+    /// key set opens it.</summary>
+    [Fact]
+    public void The_psse_reader_gets_its_key_through_GetRifKey_and_its_hooks()
+    {
+        const string ContentId = "EP0000-NPXX99998_00-0000000000000001";
+        byte[] contentKey = Enumerable.Range(0x40, 16).Select(i => (byte)i).ToArray();
+        byte[] plain = Enumerable.Range(0, 0x9000).Select(i => (byte)(i * 7)).ToArray();
+        byte[] file = PsseFile.Encrypt(plain, contentKey, ContentId, new byte[16]);
+        byte[] license = new byte[PsmLicense.Size];
+        System.Text.Encoding.ASCII.GetBytes(ContentId).CopyTo(license, 0x50);
+        contentKey.CopyTo(license, PsmLicense.ContentKeyOffset); // in clear, as a license plugin's: still not read by the emulator
+        string dir = VitaSharp.Core.Io.FirmwareLayout.PsmTitles.Host(_harness.Root, "NPXX99998",
+            VitaSharp.Core.Io.FirmwareLayout.PsmReadOnly, VitaSharp.Core.Io.FirmwareLayout.PsmLicense);
+        Directory.CreateDirectory(dir);
+        File.WriteAllBytes(Path.Combine(dir, "license.rif"), license);
+        AsPsmRuntime();
+        MonoBridge bridge = _harness.Module<MonoBridge>();
+
+        byte[]? opened = [];
+        _harness.OnGuest(_ => opened = bridge.OpenPsse(file, "NPXX99998"));
+        Assert.Null(opened);
+
+        // add r1, r1, #0x20 (the content key in the key set); four ldr/str of the key words; return 0
+        uint[] words = new uint[15];
+        words[0] = 0xE2811020;
+        for (int i = 0; i < 4; i++)
+        {
+            int ldrAt = 1 + i * 2, literalAt = 11 + i;
+            words[ldrAt] = 0xE59F2000 | (uint)(literalAt * 4 - (ldrAt * 4 + 8));
+            words[ldrAt + 1] = 0xE5812000 | (uint)(i * 4);
+            words[literalAt] = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(contentKey.AsSpan(i * 4));
+        }
+
+        words[9] = 0xE3A00000;
+        words[10] = BxLr;
+        uint hook = LoadHookPlugin(b => b.Arm(words));
+        WriteJump(_harness.Emu.FirmwareKernel.EntryOf(PsmDrmForDriver, GetRifKey), hook);
+        _harness.OnGuest(_ => opened = bridge.OpenPsse(file, "NPXX99998"));
+        Assert.Equal(plain, opened);
+        Assert.Null(bridge.OpenPsse(file, null));
+    }
 }

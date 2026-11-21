@@ -144,31 +144,19 @@ public static class PsseFile
 /// <summary>
 /// A PlayStation Mobile license (.rif, 0x400 bytes; vita-headers ScePsmDrmLicense): account ID at 0x10, start and
 /// expiration times at 0x20/0x28, content ID at 0x50, the key set (0x200 bytes) at 0x100, the signature area (0x100
-/// bytes) at 0x300. A license the PSN store issued is signed and its key set is encrypted for the account's activation:
-/// only the security processor opens it (scePsmDrmGetRifKey's job on the console), which the emulated unit does not
-/// have. A license whose signature area is empty was written on a unit with the key set already opened (the form the
-/// user installs from their own console): its key set is read as it is, as VitaSharp reads the klicensee of a PS Vita
-/// license.
+/// bytes) at 0x300. The key set is given only by scePsmDrmGetRifKey (on the console, with the PSM activation and the
+/// secure processor; a kernel plugin that hooks the export may answer instead): nothing here reads it.
 /// </summary>
 public static class PsmLicense
 {
     public const int Size = 0x400, KeySetOffset = 0x100, KeySetSize = 0x200, ContentKeyOffset = KeySetOffset + 0x20;
-    private const int SignatureOffset = 0x300;
-
-    /// <summary>Whether the license's key set is readable without the security processor (no signature).</summary>
-    public static bool KeySetInClear(ReadOnlySpan<byte> license) =>
-        license.Length >= Size && license.Slice(SignatureOffset, Size - SignatureOffset).IndexOfAnyExcept((byte)0) < 0;
-
-    /// <summary>The title's content key (16 bytes) from a license with its key set in clear; null otherwise.</summary>
-    public static byte[]? ContentKey(ReadOnlySpan<byte> license) =>
-        KeySetInClear(license) ? license.Slice(ContentKeyOffset, 16).ToArray() : null;
 
     public static string ContentId(ReadOnlySpan<byte> license) => PsmPkgInstaller.LicenseContentId(license);
 
-    /// <summary>The content key of <paramref name="contentId"/> from the licenses installed for PSM title
-    /// <paramref name="titleId"/> (ux0:psm/&lt;id&gt;/RO/License/*.rif, where the console keeps them); null when no
-    /// license for that content with its key set in clear is installed.</summary>
-    public static byte[]? FindContentKey(string fsRoot, string titleId, string contentId)
+    /// <summary>The license of <paramref name="contentId"/> among those installed for PSM title
+    /// <paramref name="titleId"/> (ux0:psm/&lt;id&gt;/RO/License/*.rif, where the console keeps them), the first by
+    /// name; null when none is installed.</summary>
+    public static byte[]? FindLicense(string fsRoot, string titleId, string contentId)
     {
         string dir = Io.Vfs.ResolveCaseInsensitive(Io.FirmwareLayout.PsmTitles.Host(fsRoot, titleId, Io.FirmwareLayout.PsmReadOnly), Io.FirmwareLayout.PsmLicense);
         if (!Directory.Exists(dir))
@@ -179,11 +167,12 @@ public static class PsmLicense
         foreach (string file in Directory.GetFiles(dir, "*.rif").Order(StringComparer.OrdinalIgnoreCase))
         {
             byte[] license = File.ReadAllBytes(file);
-            if (ContentId(license) == contentId && ContentKey(license) is { } key)
+            if (license.Length >= Size && ContentId(license) == contentId)
             {
-                return key;
+                return license;
             }
         }
+
         return null;
     }
 }

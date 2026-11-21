@@ -3137,9 +3137,9 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   checagem da licença como resposta, nada preenchido com 0x808F0104 e os tempos como ticks do SceRtc;
   scePsmDrmGetRifKey/kscePsmDrmGetRifKey como o firmware (só o runtime de PSM, 0x80010058; sem ativação 0x808F0106
   antes de ler a licença; a chave é do processador seguro), de modo que a chave de uma licença sem assinatura só vem
-  de um plugin de kernel que faz hook da exportação; a palavra +0x18 da licença responde 0x808F0109. Falta: o leitor
-  pss_crypto_* do HLE da mono_bridge lê a chave da licença de RO/License direto (Package.PsmLicense.FindContentKey),
-  sem passar por scePsmDrmGetRifKey.
+  de um plugin de kernel que faz hook da exportação; a palavra +0x18 da licença responde 0x808F0109; o leitor
+  pss_crypto_* do HLE da mono_bridge pede a chave a scePsmDrmGetRifKey (mesmas checagens, ativação e hooks), sem ler
+  a licença por fora.
 - [ ] [P3][P] Ao apagar um item da lista (biblioteca de jogos do launcher), a rolagem volta para o topo (pedido do
   usuário, 17/11/2026): manter a posição da rolagem onde estava, com o foco no item seguinte ao apagado; o mesmo nas
   outras listas com apagar (saves, capturas) e no app Android quando ele voltar
