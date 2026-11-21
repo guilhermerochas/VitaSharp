@@ -104,7 +104,7 @@ public sealed partial class ThreadmgrKernel : IServiceThreadOwner
     {
         if (!IsWorkWorker(thread))
         {
-            return false;
+            return AdoptProcessWorker(thread);
         }
 
         lock (_workTasks)
@@ -129,7 +129,7 @@ public sealed partial class ThreadmgrKernel : IServiceThreadOwner
         {
             if (!ReferenceEquals(thread, _workWorker))
             {
-                return false;
+                return ReleaseProcessWorker(thread);
             }
 
             _workWorker = null;
