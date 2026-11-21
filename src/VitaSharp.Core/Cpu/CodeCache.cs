@@ -180,6 +180,7 @@ public sealed class CodeCache
         _code = code;
         _configurationKey = configurationKey ?? CodeCacheFile.ConfigurationKey;
         code.FirstUse = OnFirstUse;
+        code.FirstRun = OnFirstUse;
     }
 
     /// <summary>A block's compiled code ran for the first time: the runs widen their frontier around it.</summary>
@@ -407,6 +408,11 @@ public sealed class CodeCache
             _code.FirstUse = null;
         }
 
+        if (_code.FirstRun == OnFirstUse)
+        {
+            _code.FirstRun = null;
+        }
+
         foreach (CodePrecompiler run in runs)
         {
             run.Stop();
@@ -555,7 +561,7 @@ public sealed class CodeCache
                 unfoundKinds[kind] = unfoundKinds.GetValueOrDefault(kind) + 1;
                 if (unfoundLines.Count < samples)
                 {
-                    unfoundLines.Add($"{block.Start:X8} {(block.Thumb ? "T" : "A")} {kind}");
+                    unfoundLines.Add($"{block.Start:X8} {(block.Thumb ? "T" : "A")} {kind}{TableContext(Array.Find(unfoundMaps, map => map.InCode(block.Start)), block, kind)}");
                 }
             }
 
@@ -702,6 +708,49 @@ public sealed class CodeCache
         uint end = map.FunctionEnd(function);
         string computed = ComputedBranchesIn(function, Math.Min(end, block.Start + 0x400), block.Thumb);
         return computed.Length > 0 ? "after " + computed : "direct branch";
+    }
+
+    /// <summary>For a block after a table branch (diagnostics): the halfwords before the last TBB/TBH of its function
+    /// that precedes it, and the table branch itself, to see how the table's bound is set.</summary>
+    private static string TableContext(ModuleCodeMap? map, Block block, string kind)
+    {
+        if (map == null || !block.Thumb || !kind.Contains("TB", StringComparison.Ordinal))
+        {
+            return "";
+        }
+
+        using AddressSpace.Activation activation = AddressSpace.Use(block.Owner?.Space ?? AddressSpace.Current);
+        uint at = map.FunctionContaining(block.Start);
+        uint table = 0;
+        while (at + 4 <= block.Start && GuestMemory.IsMapped(at + 3))
+        {
+            ushort first = GuestMemory.Read<ushort>(at);
+            if (Decoder.IsThumb32(first))
+            {
+                if ((first & 0xFFF0) == 0xE8D0 && (GuestMemory.Read<ushort>(at + 2) & 0xFFE0) == 0xF000)
+                {
+                    table = at;
+                }
+
+                at += 4;
+                continue;
+            }
+
+            at += 2;
+        }
+
+        if (table == 0 || !GuestMemory.IsMapped(table - 24))
+        {
+            return "";
+        }
+
+        var words = new System.Text.StringBuilder(" [");
+        for (uint half = table - 24; half < table + 4; half += 2)
+        {
+            words.Append(GuestMemory.Read<ushort>(half).ToString("X4")).Append(half + 2 == table ? " | " : " ");
+        }
+
+        return words.Append($"at {table:X8}]").ToString();
     }
 
     /// <summary>The computed branches other than returns in [start, end) decoded linearly (diagnostics).</summary>

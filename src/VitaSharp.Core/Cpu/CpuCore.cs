@@ -859,6 +859,10 @@ public sealed unsafe class CpuCore : IDisposable
                     {
                         Jit.Enqueue(b);
                     }
+                    else if (b.ExecCount == 1 && b.JitState == 0 && _cache.FirstRun is { } firstRun)
+                    {
+                        firstRun(b); // racy on purpose: a second call only repeats the frontier's dedup
+                    }
                     else if (b.JitState == Jit.AheadPending)
                     {
                         Jit.ActivateAhead(b); // translated in the background after this core last looked it up

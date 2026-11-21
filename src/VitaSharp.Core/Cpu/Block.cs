@@ -429,9 +429,15 @@ public sealed unsafe class BlockCache
         _blocks.Clear();
     }
 
-    /// <summary>A block left the cache: native exits linked to it must go back through the dispatcher.</summary>
+    /// <summary>A block left the cache: native exits linked to it must go back through the dispatcher. A block
+    /// translated ahead that never ran gives its code back to the arena at once (it was never published).</summary>
     private static void Retire(Block b)
     {
+        if (b.JitState == Jit.AheadPending && Jit.EvictAhead(b))
+        {
+            return;
+        }
+
         if (b.NativeEntry != 0)
         {
             Native.NativeRuntime.Unlink(b);
@@ -450,4 +456,9 @@ public sealed unsafe class BlockCache
     /// <summary>Called once per block when its compiled code is first used (<see cref="Jit.ActivateAhead"/>, or the JIT
     /// compiled it because it got hot): the ARM code precompilation widens its frontier there.</summary>
     public Action<Block>? FirstUse;
+
+    /// <summary>Called when the interpreter runs a block for the first time (code no translation covered yet, which
+    /// may never get hot: an interpreted block calls and jumps to code that will): the precompilation widens its
+    /// frontier there too, without waiting for the block to be compiled.</summary>
+    public Action<Block>? FirstRun;
 }

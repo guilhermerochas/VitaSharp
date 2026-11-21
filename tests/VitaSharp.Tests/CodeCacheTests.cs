@@ -741,6 +741,61 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
     }
 
     [Fact]
+    public void CodeTheGameRunsOnlyInterpretedStillOpensTheFrontier()
+    {
+        if (!NativeHost)
+        {
+            return;
+        }
+
+        // F runs once (interpreted: it never gets hot), reached through a register; the rest of F must still be
+        // translated before the game gets there, as when F is compiled
+        uint code = fixture.Memory.Alloc(0x1000, "codecache first run");
+        GuestMemory.W32(code + 0x00, 0xE3A00000); // mov r0, #0
+        GuestMemory.W32(code + 0x04, 0xE1A00000); // nop (r2 = F)
+        GuestMemory.W32(code + 0x08, 0xE12FFF32); // blx r2
+        GuestMemory.W32(code + 0x0C, 0xEF000002); // svc #2
+        GuestMemory.W32(code + 0x10, 0xE12FFF1E); // bx lr
+        GuestMemory.W32(code + 0x400, 0xE3500000); // F: cmp r0, #0
+        GuestMemory.W32(code + 0x404, 0x1A000001); //    bne rare
+        GuestMemory.W32(code + 0x408, 0xE2800005); //    add r0, r0, #5
+        GuestMemory.W32(code + 0x40C, 0xE12FFF1E); //    bx lr
+        GuestMemory.W32(code + 0x410, 0xE2800009); // rare: add r0, r0, #9
+        GuestMemory.W32(code + 0x414, 0xE12FFF1E); //    bx lr
+        LoadedModule module = ModuleWithData(code, fixture.Memory.Alloc(0x1000, "codecache first run data"), 15, 0x000, 0x400);
+        WithNative(() =>
+        {
+            var cache = new BlockCache();
+            var codeCache = new CodeCache(null, cache);
+            codeCache.ModuleLoaded(module);
+            codeCache.PrecompilePending(null, CancellationToken.None, workers: 2);
+            CodePrecompiler run = Assert.Single(codeCache.Runs);
+            Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+            Assert.DoesNotContain(code + 0x410, Translated(cache));
+            using var core = new CpuCore(cache);
+            core.State->R[2] = code + 0x400;
+            Assert.Equal(5u, Run(core, code));
+            Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+            Assert.True(cache.TryGet(code + 0x400, false, out Block? first) && first!.JitState != 2); // not compiled
+            Block rare = cache.Get(code + 0x410, false);
+            Assert.True(rare.Ahead);
+            Assert.Equal(Jit.AheadPending, rare.JitState);
+            codeCache.Stop();
+        });
+    }
+
+    [Fact]
+    public void WorkAroundRunningCodeIsTakenNewestFirst()
+    {
+        // the code the game reached last is the code it runs next (Ryujinx's translator queue is a stack for the same
+        // reason); the recorded blocks keep the order they first ran in, and the flow stays breadth first
+        Assert.True(CodePrecompiler.NewestFirst(CodePrecompiler.Priority.Running));
+        Assert.True(CodePrecompiler.NewestFirst(CodePrecompiler.Priority.Frontier));
+        Assert.False(CodePrecompiler.NewestFirst(CodePrecompiler.Priority.Cached));
+        Assert.False(CodePrecompiler.NewestFirst(CodePrecompiler.Priority.Flow));
+    }
+
+    [Fact]
     public void TheBootStepWaitsForTheFirstRecordedBlocksOnly()
     {
         // with a code cache, the first BootCachedBlocks recorded blocks (in the order they first ran) are enough to
@@ -867,8 +922,14 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
 
             // the game writes another addend into func (the emulator drops the translations of the written range)
             GuestMemory.W32(code + 0x20, 0xE2800007);
+            long speculative = Volatile.Read(ref Jit.SpeculativeBytes);
+            long evicted = Volatile.Read(ref Jit.EvictedBlocks);
             cache.Invalidate(code + 0x20, 4);
             Assert.True(func.Invalidated);
+            // never published: its code goes back to the arena and leaves the speculative budget at once
+            Assert.Null(func.Code);
+            Assert.True(Volatile.Read(ref Jit.SpeculativeBytes) < speculative);
+            Assert.True(Volatile.Read(ref Jit.EvictedBlocks) > evicted);
             using var core = new CpuCore(cache);
             Assert.Equal(700u, Run(core, code));
             codeCache.Stop();

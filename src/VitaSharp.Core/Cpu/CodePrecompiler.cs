@@ -64,7 +64,28 @@ public sealed class CodePrecompiler
     private readonly ConcurrentDictionary<uint, byte> _expandedFunctions = new();
     private readonly HashSet<uint> _recordedFunctions = [];
     private readonly ConcurrentDictionary<ulong, byte> _seen = new();
-    private readonly ConcurrentQueue<(uint Pc, bool Thumb, int Depth)>[] _queues = [new(), new(), new(), new()];
+    /// <summary>The work of each priority. The cached blocks keep the order they first ran in and the flow is breadth
+    /// first (both queues); the work around running code (<see cref="Priority.Running"/>, <see cref="Priority.Frontier"/>)
+    /// is newest first (stacks), like Ryujinx's translator queue of rejit requests (a stack: the code the guest reached
+    /// last is the code it runs next). Measured in Killzone: Mercenary (first session): with a queue, 974 of the 1,102
+    /// blocks the JIT compiled while the game ran had been queued here, behind older work, when the game reached them.</summary>
+    private readonly IProducerConsumerCollection<(uint Pc, bool Thumb, int Depth)>[] _queues = NewQueues();
+
+    /// <summary>Whether the work of <paramref name="priority"/> is taken newest first (see <see cref="_queues"/>).</summary>
+    public static bool NewestFirst(Priority priority) => priority is Priority.Running or Priority.Frontier;
+
+    private static IProducerConsumerCollection<(uint Pc, bool Thumb, int Depth)>[] NewQueues()
+    {
+        var queues = new IProducerConsumerCollection<(uint Pc, bool Thumb, int Depth)>[Levels];
+        for (int i = 0; i < Levels; i++)
+        {
+            queues[i] = NewestFirst((Priority)i)
+                ? new ConcurrentStack<(uint Pc, bool Thumb, int Depth)>()
+                : new ConcurrentQueue<(uint Pc, bool Thumb, int Depth)>();
+        }
+
+        return queues;
+    }
     private readonly ConcurrentQueue<Block> _executed = new();
     private readonly int[] _outstanding = new int[Levels + 1]; // queued or being worked on, per priority (+ executed blocks)
     private readonly SemaphoreSlim _work = new(0);
@@ -124,7 +145,7 @@ public sealed class CodePrecompiler
 
         Interlocked.Increment(ref _outstanding[(int)priority]);
         Interlocked.Increment(ref _known);
-        _queues[(int)priority].Enqueue((target.Pc, target.Thumb, depth));
+        _queues[(int)priority].TryAdd((target.Pc, target.Thumb, depth));
         _work.Release();
         return true;
     }
@@ -297,7 +318,7 @@ public sealed class CodePrecompiler
     {
         for (level = 0; level < Levels; level++)
         {
-            if (_queues[level].TryDequeue(out target))
+            if (_queues[level].TryTake(out target))
             {
                 return true;
             }
