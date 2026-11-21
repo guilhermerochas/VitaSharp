@@ -16,7 +16,49 @@ internal static class KernelSnapshot
     internal const string Thread = "thread", Sema = "sema", Evf = "evf", Mtx = "mutex", Cond = "cond", Pipe = "msgpipe",
         Rw = "rwlock", Cb = "callback", Timer = "timer", SEvent = "simpleevent", ThEvent = "threadevent",
         Block = "memblock", Async = "ioasync", Process = "process", App = "app", Module = "module", Data = "kerneldata",
-        PluginHook = "pluginhook", PluginInjection = "plugininject";
+        PluginHook = "pluginhook", PluginInjection = "plugininject", UltRecord = "ult";
+
+    /// <summary>The record kind of each type of kernel object the table can hold (the first entry the type is or derives
+    /// from). Every concrete KernelObject has one (KernelSnapshotCoverageTests), except the ones marked
+    /// <see cref="NeverInObjectTableAttribute"/>.</summary>
+    private static readonly (Type Type, string Kind)[] s_kinds =
+    [
+        (typeof(GuestThread), Thread),
+        (typeof(Semaphore), Sema),
+        (typeof(EventFlag), Evf),
+        (typeof(Mutex), Mtx),
+        (typeof(CondVar), Cond),
+        (typeof(MsgPipe), Pipe),
+        (typeof(RwLock), Rw),
+        (typeof(Callback), Cb),
+        (typeof(TimerObject), Timer),
+        (typeof(SimpleEvent), SEvent),
+        (typeof(ThreadEventHandler), ThEvent),
+        (typeof(MemBlock), Block),
+        (typeof(IoAsyncOp), Async),
+        (typeof(ProcessObject), Process),
+        (typeof(AppObject), App),
+        (typeof(ModuleObject), Module),
+        (typeof(KernelData), Data),
+        (typeof(PluginFramework.HookPatch), PluginHook),
+        (typeof(PluginFramework.Injection), PluginInjection),
+        (typeof(Ult.UltObject), UltRecord),
+    ];
+
+    /// <summary>The record kind objects of <paramref name="type"/> are saved as, or null when save states do not hold
+    /// them.</summary>
+    internal static string? KindOf(Type type)
+    {
+        foreach ((Type known, string kind) in s_kinds)
+        {
+            if (known.IsAssignableFrom(type))
+            {
+                return kind;
+            }
+        }
+
+        return null;
+    }
 
     public static SnapshotWriter Save(Emulator emu, Dictionary<GuestThread, GuestThread.SafeKind> kinds)
     {
@@ -27,29 +69,8 @@ internal static class KernelSnapshot
         w.Write(all.Count);
         foreach (KernelObject kernelObject in all)
         {
-            string kind = kernelObject switch
-            {
-                GuestThread => Thread,
-                Semaphore => Sema,
-                EventFlag => Evf,
-                Mutex => Mtx,
-                CondVar => Cond,
-                MsgPipe => Pipe,
-                RwLock => Rw,
-                Callback => Cb,
-                TimerObject => Timer,
-                SimpleEvent => SEvent,
-                ThreadEventHandler => ThEvent,
-                MemBlock => Block,
-                IoAsyncOp => Async,
-                ProcessObject => Process,
-                AppObject => App,
-                ModuleObject => Module,
-                KernelData => Data,
-                PluginFramework.HookPatch => PluginHook,
-                PluginFramework.Injection => PluginInjection,
-                _ => throw new SnapshotException($"kernel object {kernelObject.Name} ({kernelObject.GetType().Name}) is not supported by save states yet"),
-            };
+            string kind = KindOf(kernelObject.GetType())
+                ?? throw new SnapshotException($"kernel object {kernelObject.Name} ({kernelObject.GetType().Name}) is not supported by save states yet");
             w.Write(kind);
             w.Write(kernelObject.Uid);
             w.Write(kernelObject.Name);
@@ -128,6 +149,9 @@ internal static class KernelSnapshot
                     break;
                 case PluginFramework.Injection injection:
                     injection.Save(w);
+                    break;
+                case Ult.UltObject ultObject:
+                    ultObject.Save(w);
                     break;
                 case ModuleObject mo:
                     w.Write(mo.Module.Path);
@@ -308,6 +332,9 @@ internal static class KernelSnapshot
                 case PluginInjection:
                     o = PluginFramework.Injection.Load(b, name);
                     break;
+                case UltRecord:
+                    o = Ult.LoadObject(b, name);
+                    break;
                 case Process or App:
                     o = current.FirstOrDefault(x => x.Uid == uid && (kind == Process ? x is ProcessObject : x is AppObject))
                         ?? throw new SnapshotException($"the {kind} record 0x{uid:X} differs from this session's");
@@ -394,6 +421,9 @@ internal static class KernelSnapshot
                     break;
                 case EventObject e:
                     e.ResolveRegistrations(table);
+                    break;
+                case Ult.UltObject ultObject:
+                    ultObject.Resolve(table);
                     break;
             }
         }

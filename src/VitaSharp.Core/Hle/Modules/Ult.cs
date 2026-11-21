@@ -34,7 +34,8 @@ public sealed partial class Ult : HleModule
     const uint Tag = 0x48544C55, DeadTag = 0x44544C55; // "ULTH" live, "ULTD" destroyed
     const uint TagOffset = 0x20;
 
-    abstract class UltObject : KernelObject
+    /// <summary>An SceUlt object (save states: Ult.Snapshot.cs).</summary>
+    internal abstract partial class UltObject : KernelObject
     {
         public uint Address;
         public bool Destroyed;
@@ -43,15 +44,72 @@ public sealed partial class Ult : HleModule
         public int Users;
     }
 
-    sealed class WaitingPool : UltObject { public uint NumThreads, NumSync; }
-    sealed class DataPool : UltObject { public uint NumData, DataSize, NumQueues, UsedData; public WaitingPool? Waiting; }
-    sealed class UQueue : UltObject { public uint DataSize; public DataPool Pool = null!; public WaitingPool Waiting = null!; public readonly Queue<byte[]> Items = new(); }
-    sealed class UMutex : UltObject { public GuestThread? Owner; public int Count; public bool Recursive; public WaitingPool Waiting = null!; }
-    sealed class UCond : UltObject { public long Sequence; public UMutex Mutex = null!; }
-    sealed class USema : UltObject { public int Count; public WaitingPool Waiting = null!; }
-    sealed class URwLock : UltObject { public int Readers; public GuestThread? Writer; public WaitingPool Waiting = null!; }
-    sealed class Runtime : UltObject { public uint MaxUlthreads, Workers; public int Live; }
-    sealed class Ulthread : UltObject { public GuestThread Thread = null!; public Runtime Runtime = null!; }
+    sealed partial class WaitingPool : UltObject
+    {
+        public uint NumThreads;
+        public uint NumSync;
+    }
+
+    sealed partial class DataPool : UltObject
+    {
+        public uint NumData;
+        public uint DataSize;
+        public uint NumQueues;
+        public uint UsedData;
+        public WaitingPool? Waiting;
+    }
+
+    sealed partial class UQueue : UltObject
+    {
+        public uint DataSize;
+        public DataPool Pool = null!;
+        public WaitingPool Waiting = null!;
+        public readonly Queue<byte[]> Items = new();
+    }
+
+    sealed partial class UMutex : UltObject
+    {
+        public GuestThread? Owner;
+        public int Count;
+        public bool Recursive;
+        public WaitingPool Waiting = null!;
+    }
+
+    sealed partial class UCond : UltObject
+    {
+        public long Sequence;
+        public UMutex Mutex = null!;
+        /// <summary>The threads waiting for the signal (counted in <see cref="UltObject.Users"/> too).</summary>
+        public int SignalWaiters;
+    }
+
+    sealed partial class USema : UltObject
+    {
+        public int Count;
+        public WaitingPool Waiting = null!;
+    }
+
+    sealed partial class URwLock : UltObject
+    {
+        public int Readers;
+        public GuestThread? Writer;
+        public WaitingPool Waiting = null!;
+    }
+
+    sealed partial class Runtime : UltObject
+    {
+        public uint MaxUlthreads;
+        public uint Workers;
+        public int Live;
+    }
+
+    sealed partial class Ulthread : UltObject
+    {
+        public GuestThread Thread = null!;
+        public Runtime Runtime = null!;
+    }
+
+
 
     readonly ConditionalWeakTable<GuestThread, Ulthread> _byThread = new();
 
@@ -349,38 +407,108 @@ public sealed partial class Ult : HleModule
 
     /// <summary>The mutex is bound at creation (libult: Create(cv, name, mutex, opt), Wait(cv)). Wait releases it (all
     /// recursion levels), waits for a signal, then takes it back; the caller must own it (else PERMISSION).</summary>
+    /// <remarks>A wait reissued by a state load (its record in <see cref="_condWaits"/>) does not release the mutex
+    /// again: it released it before the save; it waits for the signal unless the signal had come, then takes the mutex
+    /// back.</remarks>
     [Hle(Cost = HleCost.SchedulerWait)]
     int sceUltConditionVariableWait(uint cv)
     {
-        if (Find<UCond>(cv, out int e) is not { } c) return e;
-        var m = c.Mutex;
-        var self = Self;
+        if (Find<UCond>(cv, out int e) is not { } c)
+        {
+            return e;
+        }
+
+        UMutex m = c.Mutex;
+        GuestThread self = Self;
         int depth;
-        lock (m.Lock)
+        bool signalled = false;
+        bool reissued = TakeCondReissue(self, c, out CondWait saved);
+        if (reissued)
         {
-            if (m.Owner == null || m.Owner != self) return ERR_PERMISSION;
-            depth = m.Count;
+            depth = saved.Depth;
+            signalled = saved.Signalled;
         }
-        lock (c.Lock)
+        else
         {
-            long seq = c.Sequence;
-            Interlocked.Increment(ref c.Users);
-            lock (m.Lock) { m.Owner = null; m.Count = 0; Monitor.PulseAll(m.Lock); }
-            int r = WaitFor(c, () => c.Sequence != seq, c.WaitDescription);
-            Interlocked.Decrement(ref c.Users);
-            if (r < 0 && r != ERR_STATE) return r;
-        }
-        lock (m.Lock)
-        {
-            if (m.Owner != null)
+            lock (m.Lock)
             {
-                int r = WaitFor(m, () => m.Owner == null, m.WaitDescription);
-                if (r < 0) return r;
+                if (m.Owner == null || m.Owner != self)
+                {
+                    return ERR_PERMISSION;
+                }
+
+                depth = m.Count;
             }
-            m.Owner = self;
-            m.Count = depth;
         }
-        return 0;
+
+        try
+        {
+            if (!signalled)
+            {
+                lock (c.Lock)
+                {
+                    long seq = c.Sequence;
+                    Interlocked.Increment(ref c.Users);
+                    Interlocked.Increment(ref c.SignalWaiters);
+                    SetCondWait(self, new CondWait(c.Uid, depth, false));
+                    if (!reissued)
+                    {
+                        lock (m.Lock)
+                        {
+                            m.Owner = null;
+                            m.Count = 0;
+                            Monitor.PulseAll(m.Lock);
+                        }
+                    }
+
+                    int r = WaitFor(c, () => c.Sequence != seq, c.WaitDescription);
+                    Interlocked.Decrement(ref c.SignalWaiters);
+                    Interlocked.Decrement(ref c.Users);
+                    if (r < 0 && r != ERR_STATE)
+                    {
+                        return r;
+                    }
+
+                    SetCondWait(self, new CondWait(c.Uid, depth, true));
+                }
+            }
+            else
+            {
+                SetCondWait(self, new CondWait(c.Uid, depth, true));
+            }
+
+            lock (m.Lock)
+            {
+                if (m.Owner != null)
+                {
+                    int r = WaitFor(m, () => m.Owner == null, m.WaitDescription);
+                    if (r < 0)
+                    {
+                        return r;
+                    }
+                }
+
+                m.Owner = self;
+                m.Count = depth;
+            }
+
+            return 0;
+        }
+        finally
+        {
+            lock (_condWaits)
+            {
+                _condWaits.Remove(self.Uid);
+            }
+        }
+    }
+
+    void SetCondWait(GuestThread thread, CondWait wait)
+    {
+        lock (_condWaits)
+        {
+            _condWaits[thread.Uid] = wait;
+        }
     }
 
     int Signal(uint cv)

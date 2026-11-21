@@ -266,6 +266,7 @@ public sealed partial class ThreadmgrKernel
     }
 
     /// <summary>Stands for a UID without an object in the class checks.</summary>
+    [NeverInObjectTable]
     sealed class NotAnObject : KernelObject
     {
         public static readonly NotAnObject Instance = new();
