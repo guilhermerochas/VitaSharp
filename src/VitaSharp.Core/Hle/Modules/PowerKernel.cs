@@ -11,10 +11,9 @@ namespace VitaSharp.Core.Hle.Modules;
 /// the requests) are bound to SystemMisc's ScePower functions, which read the same state.
 /// <para>What is not emulated: the clock generators and voltages (a clock set is checked, rounded to the steps the
 /// module uses and kept, the emulated hardware runs as it does), the power sequences (a soft reset is logged; a
-/// shutdown or hibernation turns the system off) and the idle timers' callbacks (their times are kept and answered,
-/// the callbacks are not called yet).</para>
+/// shutdown or hibernation turns the system off). The idle timers' callbacks run at their times (PowerKernel.Idle.cs).</para>
 /// </summary>
-public sealed class PowerKernel : HleModule
+public sealed partial class PowerKernel : HleModule
 {
     /// <summary>ScePower: an argument out of range; a slot already taken.</summary>
     const int POWER_ERR_INVALID = unchecked((int)0x802B0000), POWER_ERR_BUSY = unchecked((int)0x802B0001);
@@ -800,8 +799,11 @@ public sealed class PowerKernel : HleModule
             State.IdleCallback[slot] = callback;
             State.IdleArgument[slot] = argument;
             State.IdleShareMask[slot] = 0;
+            State.IdleTickPending[slot] = false;
+            State.IdleState[slot] = IdleNotChecked;
         }
 
+        ArmIdleCheck();
         context.Return(0);
     }
 
@@ -831,6 +833,7 @@ public sealed class PowerKernel : HleModule
             }
         }
 
+        ArmIdleCheck();
         context.Return(0);
     }
 
@@ -870,13 +873,14 @@ public sealed class PowerKernel : HleModule
             }
         }
 
+        ArmIdleCheck();
         context.Return(0);
     }
 
     Dictionary<int, long> ProcessIdleTable => State.ProcessIdleTimeUs;
 
-    /// <summary>NID_C715F4F0(pid): the system: idle timer 0 is running and not stopped; a process: it set an idle
-    /// time.</summary>
+    /// <summary>NID_C715F4F0(pid): the system: idle timer 0 is idle (it fired, or was not checked yet, and no tick came
+    /// since); a process: it set an idle time.</summary>
     [Hle(Nid = 0xC715F4F0, Library = "ScePowerForDriver")]
     int NID_C715F4F0(int pid)
     {
@@ -884,7 +888,7 @@ public sealed class PowerKernel : HleModule
         {
             lock (State)
             {
-                return State.IdleCallback[0] != 0 && State.IdleTimeoutUs[0] != 0 ? 1 : 0;
+                return !State.IdleTickPending[0] && State.IdleState[0] != IdleCounting ? 1 : 0;
             }
         }
 
@@ -942,7 +946,7 @@ public sealed class PowerKernel : HleModule
         return 0;
     }
 
-    /// <summary>NID_660D5AB4(slot): a slot with a time is marked expired for the power thread. 0.</summary>
+    /// <summary>NID_660D5AB4(slot): a slot with a time fires at the next check, whatever its time. 0.</summary>
     [Hle(Nid = 0x660D5AB4, Library = "ScePowerForDriver")]
     int NID_660D5AB4(uint slot)
     {
@@ -955,21 +959,33 @@ public sealed class PowerKernel : HleModule
         {
             if (State.IdleTimeoutUs[slot] != 0)
             {
-                State.IdleStartUs[slot] = NowUs - State.IdleTimeoutUs[slot];
+                State.IdleState[slot] = IdleForced;
             }
         }
 
+        ArmIdleCheck();
         return 0;
     }
 
     /// <summary>kscePowerTick(type): the user did something: the idle timers in <paramref name="type"/> (and the
-    /// slots that share their time) start over; 0 restarts all of them. 0.</summary>
+    /// slots that share their time) start over, once per check (a slot with a tick pending keeps its start); 0
+    /// restarts every slot without flag 0x200. The next check tells a fired slot's callback (elapsed 0). 0.</summary>
     [Hle(Nid = 0xEFD3C963, Library = "ScePowerForDriver")]
     int kscePowerTick(uint type)
     {
         lock (State)
         {
-            uint slots = type == 0 ? 0xFFu : type;
+            uint slots = type;
+            if (type == 0)
+            {
+                for (int slot = 0; slot < ScePowerState.IdleTimerCount; slot++)
+                {
+                    if ((State.IdleFlags[slot] & IdleFlagNotAll) == 0)
+                    {
+                        slots |= 1u << slot;
+                    }
+                }
+            }
             uint shared = 0;
             for (int slot = 0; slot < ScePowerState.IdleTimerCount; slot++)
             {
@@ -983,13 +999,15 @@ public sealed class PowerKernel : HleModule
             long now = NowUs;
             for (int slot = 0; slot < ScePowerState.IdleTimerCount; slot++)
             {
-                if ((slots >> slot & 1) != 0)
+                if ((slots >> slot & 1) != 0 && !State.IdleTickPending[slot])
                 {
+                    State.IdleTickPending[slot] = true;
                     State.IdleStartUs[slot] = now;
                 }
             }
         }
 
+        ArmIdleCheck();
         return 0;
     }
 }

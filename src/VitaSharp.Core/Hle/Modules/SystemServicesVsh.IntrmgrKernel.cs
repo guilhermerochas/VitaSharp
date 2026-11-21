@@ -821,7 +821,11 @@ public sealed partial class SystemServicesVsh
     /// <summary>The scheduler's call when a device line's time came: the device re-arms and raises it.</summary>
     void IntrExpire(uint line, ulong raisedUs)
     {
-        if (SystimerOfLine(line) >= 0)
+        if (line >= IntrLines)
+        {
+            IntrRunHle(line);
+        }
+        else if (SystimerOfLine(line) >= 0)
         {
             SystimerExpire(line, raisedUs);
         }

@@ -160,6 +160,14 @@ public sealed partial class ScePowerState
     [SnapshotMissing]
     public readonly uint[] IdleShareMask = new uint[IdleTimerCount];
 
+    /// <summary>Each idle timer's flags in the power module's vblank check (+0x1E, +0x1F of the slot): a tick came since
+    /// the last check; 0xFF not checked yet, 0 counting, 1 fired, 2 to fire at the next check (NID_660D5AB4).</summary>
+    [SnapshotMissing]
+    public readonly bool[] IdleTickPending = new bool[IdleTimerCount];
+
+    [SnapshotMissing]
+    public readonly byte[] IdleState = new byte[IdleTimerCount];
+
     /// <summary>The process idle callback (kscePowerSetProcessIdleCallback) and its argument.</summary>
     [SnapshotMissing]
     public uint ProcessIdleCallback;

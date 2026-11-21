@@ -20,10 +20,28 @@ namespace VitaSharp.Core.Hle.Modules;
 // calls the driver's handler (id, argument). A word timer without an interval raises its line when it wraps, and the
 // handler adds 2^32 to the offset, so the count with the offset keeps going past 32 bits; a long-range timer without
 // an interval raises nothing. The raises are timed in guest time by the interrupt scheduler (GuestInterruptScheduler)
-// and delivered through SceIntrmgr. Not timed again after a state load: a timer counting at the save raises its line
-// once it is started again.
-public sealed partial class SystemServicesVsh
+// and delivered through SceIntrmgr. A state load drops the running session's arms and arms each counting timer's
+// line again for its next raise after the loaded guest time (the timers' saved settings and start times decide it).
+public sealed partial class SystemServicesVsh : ISnapshotTimers
 {
+    /// <summary>A state load: the device lines armed in the running session no longer fire.</summary>
+    void ISnapshotTimers.ClearTimers()
+    {
+        _intrScheduler?.DisarmAll();
+    }
+
+    /// <summary>A state load: every counting timer of the loaded state raises its line at its time again.</summary>
+    void ISnapshotTimers.RearmTimers()
+    {
+        lock (_systimers)
+        {
+            for (int index = 0; index < SystimerTimers; index++)
+            {
+                SystimerArm(index);
+            }
+        }
+    }
+
     /// <summary>SceSystimer: a kind or setting out of range (0x80020005).</summary>
     const int SYSTIMER_ERR_INVALID_ARGUMENT = unchecked((int)0x80020005);
 

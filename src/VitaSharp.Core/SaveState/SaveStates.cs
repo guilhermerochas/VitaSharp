@@ -1417,8 +1417,39 @@ public static class SaveStates
         }
 
         LoadKernelModules(emu, sections, layouts, positional);
+        RearmTimers(emu, processes);
         Scheduler.Reset();
         return restored;
+    }
+
+    /// <summary>The guest-time sources of the loaded state armed again (<see cref="ISnapshotTimers"/>): first every
+    /// module's arms of the running session dropped, then every module's loaded schedule armed.</summary>
+    private static void RearmTimers(Emulator emu, List<Emulator> processes)
+    {
+        var owners = new List<(Emulator Process, ISnapshotTimers Timers)>();
+        IEnumerable<Emulator> all = emu.Vita.KernelProcess is { } kernelProcess ? processes.Append(kernelProcess) : processes;
+        foreach (Emulator process in all.Distinct())
+        {
+            foreach (HleModule hleModule in process.Hle.Modules)
+            {
+                if (hleModule is ISnapshotTimers timers)
+                {
+                    owners.Add((process, timers));
+                }
+            }
+        }
+
+        foreach ((Emulator process, ISnapshotTimers timers) in owners)
+        {
+            using Kernel.ProcessScope.Scope scope = Kernel.ProcessScope.Enter(process);
+            timers.ClearTimers();
+        }
+
+        foreach ((Emulator process, ISnapshotTimers timers) in owners)
+        {
+            using Kernel.ProcessScope.Scope scope = Kernel.ProcessScope.Enter(process);
+            timers.RearmTimers();
+        }
     }
 
     /// <summary>

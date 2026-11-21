@@ -2,6 +2,11 @@ using System.Collections.Concurrent;
 
 namespace VitaSharp.Core.Kernel;
 
+/// <summary>A <see cref="KernelObject"/> type that is never registered in an object table (a stand-in the HLE code
+/// compares against): save states need no record for it.</summary>
+[AttributeUsage(AttributeTargets.Class, Inherited = false)]
+public sealed class NeverInObjectTableAttribute : Attribute;
+
 public abstract class KernelObject
 {
     public int Uid { get; internal set; }

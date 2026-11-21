@@ -78,6 +78,49 @@ public sealed partial class SystemServicesVsh
     /// <summary>No alarm left: the thread manager's timer line no longer fires.</summary>
     internal void DisarmThreadmgrTimer() => _intrScheduler?.Disarm(ThreadmgrTimerLine);
 
+    /// <summary>The HLE drivers' interrupts (<see cref="GuestInterruptScheduler.HleSources"/>): SceSyscon's (the chip's
+    /// GPIO sub-interrupt, "SceSysconCmdclr", line 0xF8 sub 4 in the firmware) and ScePower's vblank check (the vblank
+    /// sub-interrupt, "ScePowerVblank", line 8 sub 0x1A).</summary>
+    internal const uint HleInterruptSyscon = GuestInterruptScheduler.Lines, HleInterruptPowerVblank = GuestInterruptScheduler.Lines + 1;
+
+    /// <summary>The body each HLE interrupt runs (on the interrupt thread, in interrupt context).</summary>
+    [SnapshotIgnore]
+    readonly Action<GuestThread>?[] _intrHleBodies = new Action<GuestThread>?[GuestInterruptScheduler.HleSources];
+
+    /// <summary>Arms an HLE driver's interrupt for guest microsecond <paramref name="deadlineUs"/> of this process's
+    /// time (<see cref="IntrNowUs"/>): <paramref name="body"/> runs then on the interrupt thread in interrupt context.</summary>
+    internal void ArmHleInterrupt(uint source, ulong deadlineUs, Action<GuestThread> body)
+    {
+        _intrHleBodies[source - GuestInterruptScheduler.Lines] = body;
+        IntrScheduler.Arm(source, deadlineUs);
+    }
+
+    /// <summary>The HLE driver's interrupt no longer fires.</summary>
+    internal void DisarmHleInterrupt(uint source) => _intrScheduler?.Disarm(source);
+
+    /// <summary>Guest time as the interrupt scheduler counts it.</summary>
+    internal ulong IntrNowUs => Emu.Kernel.ProcessTimeUs;
+
+    /// <summary>The scheduler's call for an HLE interrupt: its body in interrupt context on the calling thread.</summary>
+    void IntrRunHle(uint source)
+    {
+        Action<GuestThread>? body = _intrHleBodies[source - GuestInterruptScheduler.Lines];
+        if (body == null || GuestThread.Current is not { } thread)
+        {
+            return;
+        }
+
+        t_intrDepth++;
+        try
+        {
+            body(thread);
+        }
+        finally
+        {
+            t_intrDepth--;
+        }
+    }
+
     uint IntrWordAddress(uint firmwareAddress) => IntrData() + (firmwareAddress - IntrDataBase);
 
     /// <summary>NID_01911612(core, n): the top of interrupt stack <paramref name="n"/> (1-16) of core 0-3; 0 otherwise.</summary>

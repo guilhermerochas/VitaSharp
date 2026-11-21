@@ -24,12 +24,18 @@ public sealed partial class ThreadmgrKernel
     /// worker took it).</summary>
     const string WorkTaskKind = "worktask";
 
-    /// <summary>Wakes the worker when a task comes.</summary>
+    /// <summary>Guards the worker's creation.</summary>
     [SnapshotIgnore]
     readonly object _workTasks = new();
 
     [SnapshotIgnore]
     GuestThread? _workWorker;
+
+    /// <summary>The worker's wake-ups (tests: an idle worker sleeps until a task, a load or a stop wakes it).</summary>
+    [SnapshotIgnore]
+    int _workWakeups;
+
+    internal int WorkWakeups => Volatile.Read(ref _workWakeups);
 
     /// <summary>The tasks run so far (tests).</summary>
     [SnapshotIgnore]
@@ -54,6 +60,15 @@ public sealed partial class ThreadmgrKernel
             uid = K.Objects.Register(task);
         }
 
+        WakeWorkWorker();
+        return uid;
+    }
+
+    /// <summary>A task is waiting (enqueued, or restored by a state load): the worker is made, or woken. The signal goes
+    /// through the worker thread's wait lock, which a stop request pulses too, so the worker needs no timed look.</summary>
+    void WakeWorkWorker()
+    {
+        GuestThread worker;
         lock (_workTasks)
         {
             if (_workWorker == null)
@@ -61,10 +76,13 @@ public sealed partial class ThreadmgrKernel
                 StartWorkWorker();
             }
 
-            Monitor.PulseAll(_workTasks);
+            worker = _workWorker!;
         }
 
-        return uid;
+        lock (worker.WaitLock)
+        {
+            Monitor.PulseAll(worker.WaitLock);
+        }
     }
 
     void StartWorkWorker()
@@ -85,12 +103,18 @@ public sealed partial class ThreadmgrKernel
             KernelData? task;
             using (Scheduler.Block())
             {
-                lock (_workTasks)
+                lock (self.WaitLock)
                 {
                     task = OldestWorkTask();
                     if (task == null)
                     {
-                        Monitor.Wait(_workTasks, 50);
+                        if (!self.Core.StopRequested)
+                        {
+                            // no timeout: a task (WakeWorkWorker) or the stop request (RequestStop) pulses this lock
+                            Monitor.Wait(self.WaitLock);
+                            Interlocked.Increment(ref _workWakeups);
+                        }
+
                         continue;
                     }
 
@@ -109,6 +133,16 @@ public sealed partial class ThreadmgrKernel
                 Interlocked.Increment(ref _workTasksRun);
                 WorkTaskFinished(task.Uid);
             }
+        }
+    }
+
+    /// <summary>A state load: the tasks waiting in the loaded object table are run (the worker sleeps until signalled,
+    /// and the load put them there without an enqueue).</summary>
+    void RunLoadedWorkTasks()
+    {
+        if (OldestWorkTask() != null)
+        {
+            WakeWorkWorker();
         }
     }
 

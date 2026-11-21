@@ -219,12 +219,15 @@ public sealed unsafe class KernelPowerTests(GuestMemoryFixture fixture) : IDispo
         {
             var context = new HleContext { Cpu = cpu, Emu = _harness.Emu };
             uint stack = _harness.Alloc(0x10);
+            // the callback runs once a tick comes (the check tells it the user is back): a function that returns
+            uint callback = _harness.Alloc(4);
+            GuestMemory.W32(callback, 0xE12FFF1E); // bx lr
             cpu->R[0] = 1;
             cpu->R[1] = 0;
             cpu->R[2] = 5_000_000;
             cpu->R[3] = 0;
             cpu->R[13] = stack;
-            GuestMemory.W32(stack, 0x81000001);
+            GuestMemory.W32(stack, callback);
             GuestMemory.W32(stack + 4, 0x1234);
             Invoke(Power, "kscePowerSetIdleCallback", context);
             Assert.Equal(0u, cpu->R[0]);

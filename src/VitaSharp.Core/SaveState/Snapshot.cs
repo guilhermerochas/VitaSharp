@@ -24,6 +24,24 @@ public interface ISnapshotState
 }
 
 /// <summary>
+/// An HLE module with sources in the guest-time scheduler (<see cref="Kernel.TimerDispatcher"/>: interrupt lines,
+/// alarms). What it has scheduled is part of its saved state (a counting timer, a pending alarm, with their guest
+/// times), not of the scheduler: after every module's state is loaded, a load first calls <see cref="ClearTimers"/>
+/// on every module (the running session's arms go), then <see cref="RearmTimers"/> (each module arms again, at their
+/// guest times, the sources its loaded state has scheduled), so the order of the modules does not matter.
+/// </summary>
+public interface ISnapshotTimers
+{
+    /// <summary>Drops every arm of the running session this module made (default: none to drop).</summary>
+    void ClearTimers()
+    {
+    }
+
+    /// <summary>Arms what the loaded state has scheduled.</summary>
+    void RearmTimers();
+}
+
+/// <summary>
 /// Generates <see cref="ISnapshotState"/> for a partial class from its instance fields (VitaSharp.Core.Generators
 /// SnapshotGenerator): primitives, enums, strings, arrays, List/Dictionary/HashSet/Queue of those, kernel objects (by
 /// UID) and other [GenerateSnapshot] or <see cref="ISnapshotState"/> types. Fields of other types are a compile error
