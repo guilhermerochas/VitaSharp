@@ -868,9 +868,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   e a variante input-fetch de MSAA, nunca o do passe de fetch de uma cena de 1 amostra. Agora monta (teste
   `RendererPathsTests.DrawPrefetchBuildsTheFetchPassOfEachDrawBeforeItRuns`). Replay frio do PCSA00029 (2x
   alternado): pipelines no thread da GPU 8 → 0, quadros >= 4 ms 1 → 0, pior 20 → 0 ms. Outros dumps, replay frio
-  com a opção desligada → ligada: PCSE00053 50 → 1 (o que sobra é 1 de integer view, 0,1-0,2 ms, sem quadro
-  >= 4 ms; próximo passo, se pesar: o prefetch de draw prever também a view inteira, como a criação do programa já
-  faz), quadros >= 4 ms 1 → 0 (pior 2.862 → 0,2 ms); GTAVCECTY 1 → 0 (pior 200 → 0 ms); PCSE01023 0 → 0 (pior 38 →
+  com a opção desligada → ligada: PCSE00053 50 → 1 (o que sobrava era 1 de integer view, 0,1-0,2 ms, sem quadro
+  >= 4 ms; feito em perf/uber3, 21/11/2026: era um draw de saída inteira, G-buffer numa superfície F32F32 pela view
+  R32G32Uint, com texturas de outra classe que a prevista na criação do programa, e o prefetch de draw, que vê as
+  texturas exatas, pulava todo pipeline de integer view; agora monta como o draw, `RawAttachmentFormat` da superfície
+  prevista, também ligando por biblioteca quando ela está ligada; teste
+  `RendererPathsTests.DrawPrefetchBuildsTheIntegerViewOfEachRawDrawBeforeItRuns`, U8x4/F16x4/F16x2/F32x2/F32, MSAA
+  4x, com e sem a criação do programa e com bibliotecas; replay frio, integer view no thread da GPU: PCSE00053 1 → 0
+  com a opção ligada e 37 → 0 desligada, PCSA00029 desligada 9 → 0, GTAVCECTY e PCSE01023 0 → 0; ficam fora, por
+  serem outra família, os pipelines internos de shader fixo e a variante `VITASHARP_FLOAT_BITS_JOIN`, desligada por
+  padrão), quadros >= 4 ms 1 → 0 (pior 2.862 → 0,2 ms); GTAVCECTY 1 → 0 (pior 200 → 0 ms); PCSE01023 0 → 0 (pior 38 →
   0 ms). Teto (feito): um programa novo só é montado para as 8 superfícies usadas mais recentemente (cada BeginScene
   renova a sua; `VulkanRendererOptions.ProgramLoadSurfaces`) e cada carregamento (termina depois de 30 presents sem
   programa criado) enfileira no máximo 256 pipelines de combinações além da previsão principal

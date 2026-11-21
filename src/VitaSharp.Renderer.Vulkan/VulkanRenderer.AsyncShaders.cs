@@ -381,8 +381,12 @@ public sealed unsafe partial class VulkanRenderer
         Format attach = predictedScene.Attach;
         if (fsM.Gen.RawColorBits != 0 && predictedScene.HasColor)
         {
-            // integer views: as the draw does (Draw: RawAttachmentFormat); draw-predicted ones stay with the GPU thread
-            attach = j.ProgramLoad ? RawAttachmentFormat(predictedScene.RtFormat, fsM.Gen.RawColorBits) : Format.Undefined;
+            // integer views: as the draw does (Draw: RawAttachmentFormat, from the surface format the prediction shares
+            // with GetRenderTarget), for program load and the draw prefetch alike; the draw prefetch, which sees the
+            // draw's exact textures, used to leave them to the GPU thread (a cold replay of a dump with raw G-buffer
+            // outputs on an F32F32 surface: 37 built there without program load, 1 with it, its textures of another
+            // class than the program-load prediction)
+            attach = RawAttachmentFormat(predictedScene.RtFormat, fsM.Gen.RawColorBits);
             if (attach == Format.Undefined || !_core.SupportsUnblendedColorAttachment(attach)
                 || ms && (_core.ImageSampleCounts(attach, ImageUsageFlags.ColorAttachmentBit) & predictedScene.Samples) == 0)
             {
