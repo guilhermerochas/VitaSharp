@@ -56,7 +56,14 @@ public sealed unsafe class KernelThreadmgrProcessTests(GuestMemoryFixture fixtur
         GuestThread thread = _harness.Emu.Kernel.Objects.Get<GuestThread>(worker)!;
         Assert.StartsWith("tworker: ", thread.Name);
         Assert.Equal(process + 0x30, GuestMemory.R32(process + 0x30));
-        Until(() => thread.Status != ThreadStatus.Dormant || thread.CurrentWaitSync != null, "the worker started");
+        // the worker waits on its flag (threadmgr 3.74: bits 0x80000001, OR and clear, 16 ms at a time); a wait the
+        // flag refuses would end it at once
+        Until(() => thread.CurrentWaitSync != null, "the worker waits on its flag");
+        Assert.Equal(ThreadStatus.Waiting, thread.Status);
+        // bit 0 (the debug handler request) wakes it and it waits again
+        Assert.Equal(0, Call(_harness.Module<ThreadMgr>(), "sceKernelSetEventFlag", flag, 1u));
+        Until(() => thread.CurrentWaitSync != null && _harness.Emu.Kernel.Objects.Get<EventFlag>(flag)!.Pattern == 0, "the worker waits again");
+        Assert.NotEqual(ThreadStatus.Dormant, thread.Status);
         Invoke(Threadmgr, "NID_5A23A1BE", process);
         Assert.Null(_harness.Emu.Kernel.Objects.Get<EventFlag>(flag));
         Assert.Null(_harness.Emu.Kernel.Objects.Get<GuestThread>(worker));

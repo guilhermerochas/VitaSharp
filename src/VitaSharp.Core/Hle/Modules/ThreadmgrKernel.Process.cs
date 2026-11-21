@@ -70,16 +70,33 @@ public sealed partial class ThreadmgrKernel
         return worker.Start(0, 0) < 0 ? -1 : 0;
     }
 
-    /// <summary>The process's worker: waits on its event flag until bit 31 (the end NID_5A23A1BE sets) comes.</summary>
+    /// <summary>The process worker's wake bits: bit 31 ends it (NID_5A23A1BE), bit 0 asks for the process's debug
+    /// handler (none in VitaSharp).</summary>
+    const uint WorkerEndBit = 0x80000000, WorkerHandlerBit = 1;
+
+    /// <summary>The process worker's wait (threadmgr 3.74 processWorkerThread): 16 ms at most per wait.</summary>
+    const uint WorkerWaitUs = 16000;
+
+    /// <summary>The process's worker (threadmgr 3.74 processWorkerThread): waits on its event flag for bit 31 or bit 0
+    /// (OR, clearing the pattern) at most 16 ms at a time; a timeout waits again, bit 31 or any other error ends
+    /// it.</summary>
     void ProcessWorker(GuestThread self, int flag)
     {
-        uint result = Emu.Memory.Alloc(4, "kernel:tworker-result");
+        uint words = Emu.Memory.Alloc(8, "kernel:tworker-wait");
         try
         {
             while (!self.Core.StopRequested)
             {
-                int wait = UserThreadmgr.sceKernelWaitEventFlag(flag, 0x80000000, 0x11, new Ptr<uint>(result), default);
-                if (wait < 0 || (GuestMemory.R32(result) & 0x80000000) != 0)
+                GuestMemory.W32(words, 0);
+                GuestMemory.W32(words + 4, WorkerWaitUs);
+                int wait = UserThreadmgr.sceKernelWaitEventFlag(flag, WorkerEndBit | WorkerHandlerBit, EventFlag.WaitOr | EventFlag.WaitClear,
+                    new Ptr<uint>(words), new Ptr<uint>(words + 4));
+                if (wait == SceError.WAIT_TIMEOUT)
+                {
+                    continue;
+                }
+
+                if (wait < 0 || (GuestMemory.R32(words) & WorkerEndBit) != 0)
                 {
                     return;
                 }
@@ -87,7 +104,7 @@ public sealed partial class ThreadmgrKernel
         }
         finally
         {
-            Emu.Memory.Free(result);
+            Emu.Memory.Free(words);
         }
     }
 
