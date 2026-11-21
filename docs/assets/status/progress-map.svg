@@ -319,7 +319,7 @@
 <g><title>SceVideodecRecoveryPointUser: 1/1 (100%)</title><rect x="982.4" y="606.3" width="6.4" height="4.4" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
 <g><title>mail_api_for_local: 1/1 (100%)</title><rect x="982.4" y="610.7" width="6.4" height="4.4" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
 <g><title>mail_api_for_local_libc: 1/1 (100%)</title><rect x="988.8" y="606.3" width="3.2" height="8.8" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
-<text x="12" y="635.1" font-size="13" font-weight="600" fill="#e6edf3">Kernel (114 libraries): 99.8% covered (3,913/3,918)</text>
+<text x="12" y="635.1" font-size="13" font-weight="600" fill="#e6edf3">Kernel (114 libraries): 100% covered (3,918/3,918)</text>
 <g><title>SceSysconForDriver: 311/311 (100%), 6 default</title><rect x="8" y="641.1" width="185.8" height="189.5" fill="#298e29" stroke="#0d1117" stroke-width="1"/><text x="11" y="656.1" font-size="13" fill="#ffffff">SysconForDriver</text><text x="11" y="672.1" font-size="11" fill="#ffffff" fill-opacity=".8">100%</text></g>
 <g><title>SceThreadmgrForDriver: 248/248 (100%)</title><rect x="8" y="830.6" width="185.8" height="151.1" fill="#298e29" stroke="#0d1117" stroke-width="1"/><text x="11" y="845.6" font-size="13" fill="#ffffff">ThreadmgrForDriver</text><text x="11" y="861.6" font-size="11" fill="#ffffff" fill-opacity=".8">100%</text></g>
 <g><title>SceSysrootForDriver: 181/181 (100%), 7 default</title><rect x="8" y="981.7" width="185.8" height="110.3" fill="#298e29" stroke="#0d1117" stroke-width="1"/><text x="11" y="996.7" font-size="13" fill="#ffffff">SysrootForDriver</text><text x="11" y="1012.7" font-size="11" fill="#ffffff" fill-opacity=".8">100%</text></g>
@@ -371,7 +371,7 @@
 <g><title>SceUsbdForDriver: 21/21 (100%), 12 default</title><rect x="726.3" y="884.2" width="44.1" height="53.9" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
 <g><title>SceAudioForDriver: 20/20 (100%)</title><rect x="726.3" y="938.1" width="44.1" height="51.3" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
 <g><title>SceFios2KernelForDriver: 20/20 (100%)</title><rect x="726.3" y="989.4" width="44.1" height="51.3" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
-<g><title>SceNetPsForDriver: 17/20 (85%)</title><rect x="726.3" y="1040.7" width="44.1" height="51.3" fill="#488e29" stroke="#0d1117" stroke-width="1"/></g>
+<g><title>SceNetPsForDriver: 20/20 (100%)</title><rect x="726.3" y="1040.7" width="44.1" height="51.3" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
 <g><title>SceSblGcAuthMgrDrmBBForDriver: 20/20 (100%), 18 default</title><rect x="770.4" y="830.3" width="49.2" height="46" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
 <g><title>SceUlobjMgrForDriver: 19/19 (100%), 14 default</title><rect x="819.7" y="830.3" width="46.8" height="46" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
 <g><title>SceDebugForKernel: 17/17 (100%)</title><rect x="866.4" y="830.3" width="41.9" height="46" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
@@ -383,7 +383,7 @@
 <g><title>SceSblSmSchedProxyForKernel: 16/16 (100%), 2 default</title><rect x="770.4" y="1009.5" width="42.5" height="42.6" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
 <g><title>SceDmacmgrForDriver: 15/15 (100%)</title><rect x="770.4" y="1052.1" width="42.5" height="39.9" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
 <g><title>SceDsiForDriver: 15/15 (100%), 4 default</title><rect x="812.9" y="876.3" width="46.3" height="36.7" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
-<g><title>SceModulemgrForDriver: 13/15 (86.6%)</title><rect x="859.3" y="876.3" width="46.3" height="36.7" fill="#448e29" stroke="#0d1117" stroke-width="1"/></g>
+<g><title>SceModulemgrForDriver: 15/15 (100%)</title><rect x="859.3" y="876.3" width="46.3" height="36.7" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
 <g><title>SceClockgenForDriver: 14/14 (100%), 1 default</title><rect x="905.6" y="876.3" width="43.2" height="36.7" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
 <g><title>ScePfsMgrForKernel: 14/14 (100%)</title><rect x="948.8" y="876.3" width="43.2" height="36.7" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
 <g><title>SceSblMgKeyMgrForDriver: 14/14 (100%), 13 default</title><rect x="812.9" y="913" width="41.1" height="38.5" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>

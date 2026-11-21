@@ -164,8 +164,8 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 
 | Kernel exports | Covered | Real | Default | Total | % |
 |---|---:|---:|---:|---:|---:|
-| All | 3,913 | 3,394 | 519 | 3,918 | 99.8% |
-| Imported | 2,060 | - | - | 2,062 | 99.9% |
+| All | 3,918 | 3,399 | 519 | 3,918 | 100% |
+| Imported | 2,062 | - | - | 2,062 | 100% |
 
 | Library | Implemented / total | % | Default | Imported |
 |---|---:|---:|---:|---:|
@@ -217,12 +217,12 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 | SceLcdForDriver | 23 / 23 | 100% | 4 | 13 / 13 |
 | SceLedForDriver | 1 / 1 | 100% | 1 | 1 / 1 |
 | SceMagicGateForDriver | 48 / 48 | 100% | 35 | 37 / 37 |
-| SceModulemgrForDriver | 13 / 15 | 86.6% | - | 13 / 13 |
+| SceModulemgrForDriver | 15 / 15 | 100% | - | 13 / 13 |
 | SceModulemgrForKernel | 48 / 48 | 100% | - | 24 / 24 |
 | SceMotionDevForDriver | 23 / 23 | 100% | 9 | 9 / 9 |
 | SceMsifForDriver | 12 / 12 | 100% | 4 | 8 / 8 |
 | SceMtpIfForDriver | 17 / 17 | 100% | 12 | 11 / 11 |
-| SceNetPsForDriver | 17 / 20 | 85% | - | 1 / 3 |
+| SceNetPsForDriver | 20 / 20 | 100% | - | 3 / 3 |
 | SceNpDrmForDriver | 26 / 26 | 100% | 12 | 20 / 20 |
 | SceOledForDriver | 21 / 21 | 100% | 2 | 12 / 12 |
 | ScePervasiveForDriver | 156 / 156 | 100% | 5 | 88 / 88 |

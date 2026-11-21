@@ -6131,6 +6131,8 @@
 0x189BFBBB	ksceKernelLoadStartModule	ModulemgrKernel	SceModulemgrForDriver	-
 0x9D953C22	ksceKernelLoadStartModuleForPid	ModulemgrKernel	SceModulemgrForDriver	-
 0xE2ADEF8D	ksceKernelLoadStartSharedModuleForPid	ModulemgrKernel	SceModulemgrForDriver	-
+0x861638AD	ksceKernelRegisterLibary	ModulemgrKernel	SceModulemgrForDriver	-
+0x0975B104	ksceKernelReleaseLibary	ModulemgrKernel	SceModulemgrForDriver	-
 0xBBE1771C	ksceKernelSearchModuleByName	ModulemgrKernel	SceModulemgrForDriver	-
 0x0675B682	ksceKernelStartModule	ModulemgrKernel	SceModulemgrForDriver	-
 0x100DAEB9	ksceKernelStopModule	ModulemgrKernel	SceModulemgrForDriver	-
@@ -6845,10 +6847,13 @@
 0x235DE96C	sceNetInternal_235DE96C	Net	SceNetInternal	-
 0x7493FB0C	sceNetInternal_7493FB0C	Net	SceNetInternal	-
 0xDE8DD55E	sceNetInternal_DE8DD55E	Net	SceNetInternal	-
-0x8C4346CA	SceNetPsForDriver_8C4346CA	SystemServicesVsh	SceNetPsForDriver	-
-0xC000CA8F	SceNetPsForDriver_C000CA8F	SystemServicesVsh	SceNetPsForDriver	-
-0xE41C0794	SceNetPsForDriver_E41C0794	SystemServicesVsh	SceNetPsForDriver	-
-0xF5788FF8	SceNetPsForDriver_F5788FF8	SystemServicesVsh	SceNetPsForDriver	-
+0x1ABF937D	SceNetPsForDriver_1ABF937D	Net	SceNetPsForDriver	-
+0x3D4A1D74	SceNetPsForDriver_3D4A1D74	Net	SceNetPsForDriver	-
+0x83A12CCC	SceNetPsForDriver_83A12CCC	Net	SceNetPsForDriver	-
+0x8C4346CA	SceNetPsForDriver_8C4346CA	Net	SceNetPsForDriver	-
+0xC000CA8F	SceNetPsForDriver_C000CA8F	Net	SceNetPsForDriver	-
+0xE41C0794	SceNetPsForDriver_E41C0794	Net	SceNetPsForDriver	-
+0xF5788FF8	SceNetPsForDriver_F5788FF8	Net	SceNetPsForDriver	-
 0x880A5423	ksceNetAccept	KernelTwins	SceNetPsForDriver	-
 0x84AB650F	ksceNetBind	KernelTwins	SceNetPsForDriver	-
 0x21F4428D	ksceNetClose	Net	SceNetPsForDriver	-

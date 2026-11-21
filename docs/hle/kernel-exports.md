@@ -137,13 +137,13 @@ syscall (o que o código de usuário chama) ficam no censo do usuário (`progres
 | SceKernelUtilsForDriver | SceSysmem (0x496AD8B4) | 57 | 57 | 57 | 0 | 0 | 0 | 14 |
 | SceLcdForDriver | SceLcd (0xFA916D71) | 23 | 23 | 19 | 4 | 0 | 0 | 15 |
 | SceLedForDriver | ScePower (0x282C1323) | 1 | 1 | 0 | 1 | 0 | 0 | 0 |
-| SceMagicGateForDriver | SceMagicGate (0x4EA9847A) | 48 | 0 | 13 | 35 | 0 | 0 | 48 |
-| SceModulemgrForDriver | SceKernelModulemgr (0xD4A60A52) | 15 | 13 | 13 | 0 | 2 | 0 | 0 |
+| SceMagicGateForDriver | SceMagicGate (0x4EA9847A) | 48 | 48 | 13 | 35 | 0 | 0 | 48 |
+| SceModulemgrForDriver | SceKernelModulemgr (0xD4A60A52) | 15 | 13 | 15 | 0 | 0 | 0 | 0 |
 | SceModulemgrForKernel | SceKernelModulemgr (0x92C9FFC2) | 48 | 48 | 48 | 0 | 0 | 0 | 5 |
 | SceMotionDevForDriver | SceMotionDev (0xA501409A) | 23 | 23 | 14 | 9 | 0 | 0 | 12 |
 | SceMsifForDriver | SceMsif (0xB706084A) | 12 | 12 | 8 | 4 | 0 | 0 | 6 |
 | SceMtpIfForDriver | SceMtpIfDriver (0x73309DFE) | 17 | 17 | 5 | 12 | 0 | 0 | 17 |
-| SceNetPsForDriver | SceNetPs (0xB2A5C920) | 20 | 17 | 17 | 0 | 3 | 2 | 7 |
+| SceNetPsForDriver | SceNetPs (0xB2A5C920) | 20 | 17 | 20 | 0 | 0 | 0 | 7 |
 | SceNpDrmForDriver | SceNpDrm (0xD84DC44A) | 26 | 26 | 14 | 12 | 0 | 0 | 0 |
 | SceOledForDriver | SceOled (0x60C7478A) | 21 | 21 | 19 | 2 | 0 | 0 | 13 |
 | ScePervasiveForDriver | SceLowio (0xE692C727) | 156 | 156 | 151 | 5 | 0 | 0 | 131 |
@@ -154,7 +154,7 @@ syscall (o que o código de usuário chama) ficam no censo do usuário (`progres
 | SceProcEventForDriver | SceSysmem (0x887F19D0) | 3 | 3 | 3 | 0 | 0 | 0 | 0 |
 | SceProcessmgrForDriver | SceProcessmgr (0x746EC971) | 46 | 46 | 46 | 0 | 0 | 0 | 35 |
 | SceProcessmgrForKernel | SceProcessmgr (0xEB1F8EF7) | 60 | 60 | 60 | 0 | 0 | 0 | 49 |
-| ScePsmDrmForDriver | SceNpDrm (0x9F4924F2) | 6 | 1 | 3 | 3 | 0 | 0 | 0 |
+| ScePsmDrmForDriver | SceNpDrm (0x9F4924F2) | 6 | 6 | 3 | 3 | 0 | 0 | 0 |
 | ScePwmForDriver | SceLowio (0xECEAE2D0) | 5 | 5 | 5 | 0 | 0 | 0 | 5 |
 | SceQafMgrForDriver | SceSysmem (0x4E29D3B6) | 25 | 25 | 25 | 0 | 0 | 0 | 14 |
 | SceRegMgrForDebugger | SceRegistryMgr (0xCC88EAB1) | 9 | 9 | 9 | 0 | 0 | 0 | 9 |
@@ -168,13 +168,13 @@ syscall (o que o código de usuário chama) ficam no censo do usuário (`progres
 | SceSblAuthMgrForDriver | SceSblAuthMgr (0x4EB2B1BB) | 3 | 3 | 0 | 3 | 0 | 0 | 0 |
 | SceSblAuthMgrForKernel | SceSblAuthMgr (0x7ABF5135) | 9 | 9 | 3 | 6 | 0 | 0 | 1 |
 | SceSblFwLoaderForDriver | SceSblPostSsMgr (0x6FE424E4) | 3 | 3 | 2 | 1 | 0 | 0 | 0 |
-| SceSblGcAuthMgrDrmBBForDriver | SceSblGcAuthMgr (0x1926B182) | 20 | 0 | 2 | 18 | 0 | 0 | 17 |
+| SceSblGcAuthMgrDrmBBForDriver | SceSblGcAuthMgr (0x1926B182) | 20 | 20 | 2 | 18 | 0 | 0 | 17 |
 | SceSblGcAuthMgrGcAuthForDriver | SceSblGcAuthMgr (0xC6627F5E) | 1 | 1 | 0 | 1 | 0 | 0 | 0 |
-| SceSblGcAuthMgrMlnpsnlForDriver | SceSblGcAuthMgr (0x29ED0109) | 2 | 0 | 0 | 2 | 0 | 0 | 1 |
+| SceSblGcAuthMgrMlnpsnlForDriver | SceSblGcAuthMgr (0x29ED0109) | 2 | 2 | 0 | 2 | 0 | 0 | 1 |
 | SceSblGcAuthMgrMsSaveBBForDriver | SceSblGcAuthMgr (0x5032E8D4) | 6 | 6 | 2 | 4 | 0 | 0 | 6 |
 | SceSblGcAuthMgrPkgForDriver | SceSblGcAuthMgr (0x082FBA7D) | 1 | 1 | 0 | 1 | 0 | 0 | 0 |
 | SceSblGcAuthMgrPsmactForDriver | SceSblGcAuthMgr (0x1C53F37D) | 1 | 1 | 0 | 1 | 0 | 0 | 1 |
-| SceSblGcAuthMgrSclkForDriver | SceSblGcAuthMgr (0xF24F760D) | 2 | 0 | 0 | 2 | 0 | 0 | 2 |
+| SceSblGcAuthMgrSclkForDriver | SceSblGcAuthMgr (0xF24F760D) | 2 | 2 | 0 | 2 | 0 | 0 | 2 |
 | SceSblMgKeyMgrForDriver | SceSblMgKeyMgr (0xE1856C6D) | 14 | 14 | 1 | 13 | 0 | 0 | 14 |
 | SceSblPostSsMgrForDriver | SceSblPostSsMgr (0x2254E1B2) | 44 | 44 | 5 | 39 | 0 | 0 | 0 |
 | SceSblSmCommForKernel | SceSblSsSmComm (0xCD3C89B6) | 4 | 4 | 2 | 2 | 0 | 0 | 0 |
@@ -204,5 +204,5 @@ syscall (o que o código de usuário chama) ficam no censo do usuário (`progres
 | SceUsbstorForDriver | SceUsbstorDriver (0x5D01DDE4) | 9 | 9 | 9 | 0 | 0 | 0 | 9 |
 | SceWlanBtForDriver | SceWlanBt (0xFD94FCE9) | 4 | 4 | 4 | 0 | 0 | 0 | 0 |
 | SceZlibForDriver | SceSblPostSsMgr (0xE241534E) | 65 | 65 | 63 | 2 | 0 | 0 | 65 |
-| **Total** | | **3918** | **3836** | **3394** | **519** | **5** | **2** | **2037** |
+| **Total** | | **3918** | **3913** | **3399** | **519** | **0** | **0** | **2037** |
 
