@@ -320,6 +320,8 @@ public sealed partial class MsgPipe
             w.Write(_headPartial);
             // added 19/11/2026: the callbacks registered to the pipe (older states load with none)
             SaveRegistrations(w);
+            w.Write(CorePattern);
+            w.Write(CoreUserData);
         }
     }
 
@@ -382,6 +384,20 @@ public sealed partial class MsgPipe
         }
         _headPartial = !r.AtEnd && r.ReadBool();
         LoadRegistrations(r);
+        // added 21/11/2026: the pipe's event pattern and user data; a state of a build before it read the pipe's
+        // state as a level ([SnapshotMissing] for this hand-written record: IN and "can receive" while bytes wait)
+        if (r.AtEnd)
+        {
+            CorePattern = _held > 0 ? EventIn | EventReceivable : 0;
+            CoreUserData = 0;
+        }
+        else
+        {
+            CorePattern = r.ReadUInt32();
+            CoreUserData = r.ReadUInt64();
+        }
+
+        CoreDeleted = _deleted;
     }
 
     /// <summary>A restored DONT_WAIT request's end: nothing to count.</summary>

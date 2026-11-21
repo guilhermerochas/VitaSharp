@@ -330,12 +330,8 @@ public sealed partial class ThreadmgrKernel
                 }
 
                 return 0;
-            case IoAsyncOp operation:
-                lock (operation)
-                {
-                    GuestMemory.W32(pattern, operation.Pattern);
-                }
-
+            case IoAsyncOp or MsgPipe:
+                GuestMemory.W32(pattern, ((EventObject)K.Objects.Get<KernelObject>(uid)!).EventPattern);
                 return 0;
             default:
                 return SceError.UNKNOWN_EVENT_ID;
@@ -364,13 +360,8 @@ public sealed partial class ThreadmgrKernel
                 }
 
                 return 0;
-            case IoAsyncOp operation:
-                lock (operation)
-                {
-                    operation.Pattern = pattern;
-                    operation.UserData = userData;
-                }
-
+            case IoAsyncOp or MsgPipe:
+                ((EventObject)K.Objects.Get<KernelObject>(uid)!).WriteEventCore(pattern, userData);
                 return 0;
             default:
                 return SceError.UNKNOWN_EVENT_ID;
@@ -384,7 +375,7 @@ public sealed partial class ThreadmgrKernel
     int NID_B7DF3EDF(int uid, uint pattern, uint userDataLow, uint userDataHigh, uint notifyArg)
     {
         KernelObject? o = K.Objects.Get<KernelObject>(uid);
-        if (o is not (SimpleEvent or IoAsyncOp))
+        if (o is not (SimpleEvent or IoAsyncOp or MsgPipe))
         {
             return SceError.UNKNOWN_EVENT_ID;
         }
@@ -400,15 +391,7 @@ public sealed partial class ThreadmgrKernel
             return simple.SetOrPulse(pattern, userData, false);
         }
 
-        var operation = (IoAsyncOp)o;
-        lock (operation)
-        {
-            operation.Pattern |= pattern;
-            operation.UserData = userData;
-            Monitor.PulseAll(operation);
-            operation.PokeWatchers();
-        }
-
+        ((EventObject)o).KernelSetEvent(pattern, userData, (int)notifyArg);
         return 0;
     }
 }

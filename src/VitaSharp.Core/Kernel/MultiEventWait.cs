@@ -8,9 +8,8 @@ namespace VitaSharp.Core.Kernel;
 /// reaches it there hands it that event's bits and user data inside the set, applying the auto reset as it does for a
 /// single waiter, and appends a result in the order the events fired; a cancel or a delete appends that event's error.
 /// The call ends at the first result in OR mode and once every event has one in AND mode; an event reached after an OR
-/// call already ended is not taken. The other event objects (message pipes, timers, asynchronous I/O operations) keep
-/// their state as a level the waiter reads (their single waits read it the same way): they wake it when they change,
-/// and it looks at them again.
+/// call already ended is not taken. Timers, message pipes and asynchronous I/O operations queue it the same way (the
+/// timer's fire, the pipe's send and receive, the operation's end take it inside their set).
 /// </summary>
 public sealed class MultiEventWait
 {
