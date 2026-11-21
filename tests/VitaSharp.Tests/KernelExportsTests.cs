@@ -480,7 +480,8 @@ public sealed class KernelExportsTests(GuestMemoryFixture fixture) : IDisposable
     public void AccessControlAndClock()
     {
         Assert.Equal(0, Call(Procmgr, "ksceSblACMgrIsSystemProgram", 0));
-        Assert.Equal(1, Call(Procmgr, "ksceSblACMgrIsSystemProgram", KernelSpace.KernelPid));
+        // The kernel process answers by its own self auth info (capability 0x80: bit 1 clear), as acmgr.skprx 3.74 does.
+        Assert.Equal(0, Call(Procmgr, "ksceSblACMgrIsSystemProgram", KernelSpace.KernelPid));
         Assert.True(Call(Procmgr, "kscePowerGetSysClockFrequency") > 0);
         Assert.Equal(SystemMisc.POWER_ERROR_INVALID_VALUE, Call(Procmgr, "kscePowerSetSysClockFrequency", 501));
         long before = VitaSharp.Core.Cpu.CpuCore.InstructionsPerSecond;

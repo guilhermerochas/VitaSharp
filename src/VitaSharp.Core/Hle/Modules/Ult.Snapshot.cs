@@ -23,8 +23,15 @@ public sealed partial class Ult
     readonly Dictionary<int, CondWait> _condWaits = new();
 
     /// <summary>The saved part of a reissued condition wait of <paramref name="thread"/> on <paramref name="cond"/>.</summary>
-    bool TakeCondReissue(GuestThread thread, UCond cond, out CondWait wait)
+    bool TakeCondReissue(GuestThread? thread, UCond cond, out CondWait wait)
     {
+        if (thread is null)
+        {
+            // A call from outside a guest thread (a host test or service caller) has no saved wait to go on with.
+            wait = default;
+            return false;
+        }
+
         lock (_condWaits)
         {
             if (_condWaits.TryGetValue(thread.Uid, out wait) && wait.Cond == cond.Uid)
