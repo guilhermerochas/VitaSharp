@@ -46,6 +46,47 @@ public interface IPcmSink : IDisposable
 public delegate IPcmSink? PcmSinkFactory(int channels);
 
 /// <summary>
+/// The clock that paces the guest while no output device is open (<see cref="BufferedPcmStream"/>). The default is
+/// <see cref="GuestPacingClock"/>, the guest clock as the desktop's sceAudioOutOutput paces a port without a host
+/// stream: it follows the emulation's pause, speed and turbo mode, never the host's wall clock by itself. Tests pass a
+/// clock they move themselves.
+/// </summary>
+public interface IPcmPacingClock
+{
+    /// <summary>The clock's reading, in seconds.</summary>
+    double Seconds { get; }
+
+    /// <summary>No pacing at all (turbo mode): grains return at once.</summary>
+    bool SkipPacing { get; }
+
+    /// <summary>Waits on <paramref name="gate"/> (held by the caller; released while waiting, so Resume/Dispose can
+    /// pulse it) for at most <paramref name="seconds"/> of this clock's time. May return early; the caller reads
+    /// <see cref="Seconds"/> again.</summary>
+    void Wait(object gate, double seconds);
+}
+
+/// <summary>The guest clock (<see cref="GuestClock"/>) as the pacing clock of a stream without a device.</summary>
+public sealed class GuestPacingClock : IPcmPacingClock
+{
+    public static readonly GuestPacingClock Instance = new();
+
+    private GuestPacingClock() { }
+
+    public double Seconds => GuestClock.Seconds;
+
+    public bool SkipPacing => GuestClock.Turbo;
+
+    public void Wait(object gate, double seconds)
+    {
+        // guest seconds to host time at the current speed; at most 0.5 s per wait so a stopped clock (emulation
+        // paused) is looked at again
+        double speed = GuestClock.Speed > 0 ? GuestClock.Speed : 1.0;
+        double hostSeconds = Math.Clamp(seconds / speed, 0.001, 0.5);
+        Monitor.Wait(gate, TimeSpan.FromSeconds(hostSeconds));
+    }
+}
+
+/// <summary>
 /// The buffering policy of the desktop OpenAL backend (src/VitaSharp.Desktop/Host/OpenAlAudio.cs), applied to a
 /// device whose period is <c>FramesPerBurst</c>: up to <see cref="Capacity"/> grains queued before the guest blocks
 /// (two device periods plus two grains, never fewer than four), playback (re)starting once <see cref="StartGrains"/>
@@ -97,9 +138,12 @@ public sealed class BufferedPcmStream : IAudioStream
     private int _xrunsSeen, _underruns, _reopens;
     private long _primedFrames;
     private double _nextReopenAt;
-    // pacing while no device is open
+    // retrying a missing device: host time (the device's availability is the host's)
     private readonly Stopwatch _clock = Stopwatch.StartNew();
+    // pacing while no device is open: guest time, from the first grain of each stretch without a device
+    private readonly IPcmPacingClock _pacingClock;
     private double _paceAt;
+    private bool _pacing;
 
     public int Rate { get; }
     public int Channels { get; }
@@ -108,10 +152,13 @@ public sealed class BufferedPcmStream : IAudioStream
     /// <param name="stopRequested">Whether the submitting thread is being stopped (a save state load, the end of the
     /// emulation): a grain waiting for room while the device is paused is dropped then. By default the stop request of
     /// the calling guest thread, as the desktop's OpenAL stream checks it.</param>
+    /// <param name="pacingClock">The clock that paces the guest while no device is open; by default the guest clock
+    /// (<see cref="GuestPacingClock"/>).</param>
     public BufferedPcmStream(PcmSinkFactory factory, int rate, int channels, int grain, Action<BufferedPcmStream>? closed = null,
-        Func<bool>? stopRequested = null)
+        Func<bool>? stopRequested = null, IPcmPacingClock? pacingClock = null)
     {
         _factory = factory;
+        _pacingClock = pacingClock ?? GuestPacingClock.Instance;
         _closed = closed;
         _stopRequested = stopRequested ?? (() => VitaSharp.Core.Kernel.GuestThread.Current?.Core.StopRequested == true);
         Rate = rate;
@@ -163,6 +210,7 @@ public sealed class BufferedPcmStream : IAudioStream
         _xrunsSeen = pcmSink.XRunCount;
         _started = false;
         _primedFrames = 0;
+        _pacing = false; // a later stretch without a device paces from its own first grain
         _sink = pcmSink;
         Log.Info($"Audio: {Describe()}");
     }
@@ -407,20 +455,34 @@ public sealed class BufferedPcmStream : IAudioStream
         return pcmSink.Write(_silence.AsSpan(0, n), 0);
     }
 
-    /// <summary>No device: sleep for the grain's duration so the guest keeps its pace.</summary>
+    /// <summary>No device: the grain returns when the guest clock reaches its end, so the guest keeps the pace the
+    /// Vita's output gives it. The schedule starts at the first grain without a device (not when the stream was made:
+    /// the time before the first grain is no credit for a burst) and restarts after a gap of more than 0.1 s.</summary>
     private void Pace(int frames)
     {
-        double now = _clock.Elapsed.TotalSeconds;
-        if (_paceAt < now - 0.1)
+        if (_pacingClock.SkipPacing)
+        {
+            return;
+        }
+
+        double now = _pacingClock.Seconds;
+        if (!_pacing || _paceAt < now - 0.1)
         {
             _paceAt = now;
+            _pacing = true;
         }
 
         _paceAt += (double)frames / Rate;
-        double wait = _paceAt - now;
-        if (wait > 0)
+        // the wait can end early (a pulse, a coarse timer): wait again for the rest
+        while (!_disposed && !_stopRequested())
         {
-            Monitor.Wait(_lock, TimeSpan.FromSeconds(Math.Min(wait, 0.5)));
+            double rest = _paceAt - _pacingClock.Seconds;
+            if (rest <= 0)
+            {
+                break;
+            }
+
+            _pacingClock.Wait(_lock, rest);
         }
     }
 
