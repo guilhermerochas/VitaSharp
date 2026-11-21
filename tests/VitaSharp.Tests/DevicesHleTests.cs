@@ -214,12 +214,18 @@ public sealed class DevicesHleTests(GuestMemoryFixture fixture)
     [Fact]
     public void PowerAndSulpha()
     {
-        var m = new SystemMisc();
+        // scePower reads the battery through the system's syscon chip: the module runs in a whole system
+        using var harness = new HleHarness(fixture, "devices-power");
+        SystemMisc m = harness.Module<SystemMisc>();
         Assert.Equal(0, Call(m, "scePowerGetUsingWireless"));
         Assert.Equal(0, Call(m, "scePowerSetUsingWireless", 1));
         Assert.Equal(1, Call(m, "scePowerGetUsingWireless"));
         Assert.Equal(unchecked((int)0x802B0000), Call(m, "scePowerSetUsingWireless", 2));
+        // the chip's battery: a charged 3.7 V cell at 4150 mV, the value the call answers
+        Assert.Equal(4150, harness.Emu.Vita.Syscon.Battery.Voltage);
         Assert.Equal(4150, Call(m, "scePowerGetBatteryVolt"));
+        harness.Emu.Vita.Syscon.Battery.Voltage = 3900;
+        Assert.Equal(3900, Call(m, "scePowerGetBatteryVolt"));
 
         var n = new Ngs();
         uint cfg = fixture.Memory.Alloc(0x10, "sulpha");

@@ -1,3 +1,4 @@
+using System.Reflection;
 using VitaSharp.Core.Hle;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Loader;
@@ -146,14 +147,18 @@ public sealed class HleCostTests : IDisposable
     /// <summary>Every callback variant of a wait is declared one: in the firmware's NID database a "CB" export is the
     /// callback-processing twin of the wait without the suffix (sceKernelWaitSema / sceKernelWaitSemaCB), so the twin
     /// is the reference here; a wait that forgot the declaration would never run its callbacks. Exports whose NID merely
-    /// ends in the hex digits C, B (NID_9967EBCB, sceNpCommerce2_984036CB) have no twin and are no wait.</summary>
+    /// ends in the hex digits C, B (NID_9967EBCB, sceNpCommerce2_984036CB) have no twin and are no wait. An unnamed
+    /// export (NID_xxxxxxxx) declares its twin (<see cref="HleAttribute.CallbackTwinOf"/>): an implemented wait that is
+    /// not itself a callback wait.</summary>
     [Fact]
     public void EveryCallbackTwinOfAWaitIsDeclared()
     {
         HleRegistry hle = _harness.Emu.Hle;
         var missing = new List<string>();
         var stray = new List<string>();
+        var badTwins = new List<string>();
         int twins = 0;
+        Dictionary<uint, uint> declaredTwins = DeclaredCallbackTwins();
         foreach (NidInfo info in NidDatabase.All)
         {
             if (!hle.Implements(info.Nid))
@@ -164,6 +169,17 @@ public sealed class HleCostTests : IDisposable
             HleFunction function = hle.GetFunction(hle.GetHleFunctionIndex(info.Nid, 0, info.Library));
             bool hasWaitTwin = function.Name.EndsWith("CB", StringComparison.Ordinal)
                 && NidDatabase.LookupName(function.Name[..^2]).Any(n => hle.Implements(n.Nid));
+            if (declaredTwins.TryGetValue(info.Nid, out uint twin))
+            {
+                bool twinIsAWait = twin != info.Nid && hle.Implements(twin)
+                    && !hle.GetFunction(hle.GetHleFunctionIndex(twin, 0, NidDatabase.Lookup(twin)?.Library ?? "")).IsCallbackWait;
+                if (!twinIsAWait || !function.IsCallbackWait)
+                {
+                    badTwins.Add(function.Name);
+                }
+
+                hasWaitTwin |= twinIsAWait;
+            }
             if (hasWaitTwin)
             {
                 twins++;
@@ -180,7 +196,30 @@ public sealed class HleCostTests : IDisposable
         }
         Assert.Empty(missing);
         Assert.Empty(stray);
+        Assert.Empty(badTwins);
         Assert.True(twins > 30, $"only {twins} callback twins");
+    }
+
+    /// <summary>The <see cref="HleAttribute.CallbackTwinOf"/> declarations of every HLE module, by NID.</summary>
+    private static Dictionary<uint, uint> DeclaredCallbackTwins()
+    {
+        var twins = new Dictionary<uint, uint>();
+        foreach (HleModuleEntry entry in HleBindings.Modules)
+        {
+            foreach (System.Reflection.MethodInfo method in entry.Type.GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static
+                | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic))
+            {
+                foreach (HleAttribute attribute in method.GetCustomAttributes<HleAttribute>())
+                {
+                    if (attribute.CallbackTwinOf != 0 && attribute.Nid != 0)
+                    {
+                        twins[attribute.Nid] = attribute.CallbackTwinOf;
+                    }
+                }
+            }
+        }
+
+        return twins;
     }
 
     /// <summary>The name decides nothing: a function registered without a declaration is a kernel entry and no

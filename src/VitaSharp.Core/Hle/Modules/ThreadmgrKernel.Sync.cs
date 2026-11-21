@@ -60,7 +60,7 @@ public sealed partial class ThreadmgrKernel
     void NID_3F5E1D56(HleContext context) => RunExport(context, UserLockReadRWLock);
 
     /// <summary>NID_CFA2FFAF(uid, timeout): locks an RW lock for reading, running callbacks while it waits.</summary>
-    [Hle(Nid = 0xCFA2FFAF, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true)]
+    [Hle(Nid = 0xCFA2FFAF, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true, CallbackTwinOf = 0x3F5E1D56)]
     void NID_CFA2FFAF(HleContext context) => RunExport(context, UserLockReadRWLockCB);
 
     /// <summary>NID_A64B00F6(uid, timeout): locks an RW lock for writing.</summary>
@@ -68,11 +68,11 @@ public sealed partial class ThreadmgrKernel
     void NID_A64B00F6(HleContext context) => RunExport(context, UserLockWriteRWLock);
 
     /// <summary>NID_54566860(uid, timeout): locks an RW lock for writing, running callbacks while it waits.</summary>
-    [Hle(Nid = 0x54566860, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true)]
+    [Hle(Nid = 0x54566860, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true, CallbackTwinOf = 0xA64B00F6)]
     void NID_54566860(HleContext context) => RunExport(context, UserLockWriteRWLockCB);
 
     /// <summary>NID_F55E4D86(uid, count, timeout): waits on a semaphore, running callbacks while it waits.</summary>
-    [Hle(Nid = 0xF55E4D86, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true)]
+    [Hle(Nid = 0xF55E4D86, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true, CallbackTwinOf = 0x3C8B55A9)]
     void NID_F55E4D86(HleContext context) => RunExport(context, UserWaitSemaCB);
 
     /// <summary>NID_EFD7439D(uid, count, timeout): waits on a semaphore.</summary>
@@ -105,7 +105,7 @@ public sealed partial class ThreadmgrKernel
     void NID_36F8E58A(HleContext context) => WaitMultiple(context, UserWaitMultipleEvents);
 
     /// <summary>NID_8C48E53B(events, count, mode, results, timeout): the same, running callbacks while it waits.</summary>
-    [Hle(Nid = 0x8C48E53B, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true)]
+    [Hle(Nid = 0x8C48E53B, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true, CallbackTwinOf = 0x36F8E58A)]
     void NID_8C48E53B(HleContext context) => WaitMultiple(context, UserWaitMultipleEventsCB);
 
     void WaitMultiple(HleContext context, uint nid)
