@@ -611,6 +611,31 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `build/android-perf-run.sh`, Killzone na escada, F1 corrida, fps de vazão real). Hoje: .NET 10.0.9, Android em
   NativeAOT (experimental no 10; ver se fica estável/maduro na versão nova e se as três correções de build do NativeAOT
   ainda são precisas). Só trocar se ganhar de forma estável nos dois
+  21/11/2026 (perf/net11, sobre release/20261117): `-p:VitaSharpDotnet=net11.0` troca o TFM de todos os projetos (o
+  padrão continua net10.0); SDK 11.0.100 GA fora do repo (`%LOCALAPPDATA%\VitaSharpTools\dotnet11`, o exe net11 roda
+  com `DOTNET_ROOT` apontando para ele). Desktop compila nos dois com 0 avisos. Medida no mesmo commit, sem janela,
+  pinado em 0xF0, ABBA, cada execução esperando CPU <= 40% (segunda série; a primeira, com a máquina carregada, deu o
+  mesmo empate com mais ruído): replay-gpu de 146 quadros (PCSE00053, CPU do processo) net10 9,1/7,3/7,3 s x net11
+  8,5/7,3/8,0 s; Uncharted boot 2400 quadros 15,2/15,4 x 15,7/15,4 ms de CPU por quadro; Killzone boot 2400 quadros
+  11,8/10,7 x 9,9/11,6 ms; alocação por quadro (KZ ~260 KB, UC ~400 KB), contagem de GCs e pausa iguais; pico de
+  memória do processo igual (+-3%: KZ ~920 MB, UC ~1000 MB, replay ~700 MB). Microbenchmarks (BenchmarkDotNet em
+  processo, `--inProcess`, CPUs 4-7, ordem 11 10 10 11, melhor das duas de cada; o 0.15.2 não reconhece o .NET 11 fora
+  do processo e o ClrMD do DisassemblyDiagnoser falha nele, então as medianas saem do log): CpuDispatch RunLoop il
+  86 x 87 µs, interp 230 x 222 µs, native 27,5 x 26,3 µs; CpuHleCharge 7,7 x 7,5 µs; Decode 151 x 164 ns; CompileIl
+  2,36 x 2,65 ms; CompileNativeX64 11,1 x 11,6 µs; LwMutex lock/unlock 98 x 120 ns, try-lock 75 x 93 ns; Mutex
+  88,6 x 88,6 ns; Sema 60,7 x 58,7 ns (net11 x net10; a variação entre execuções iguais chegou a 1,7x com a máquina
+  dividida). Para medir o .NET 11 fora do processo, o BenchmarkDotNet precisa subir para uma versão que conheça o
+  net11.0. Conclusão: no desktop o .NET 11 empata com o .NET 10 (as melhorias
+  do JIT 11 — devirtualização de métodos genéricos virtuais, mais eliminação de bounds check, escape analysis de
+  enumeradores, Monitor mais rápido — não aparecem no custo por quadro do emulador, que é dominado pelo código ARM
+  gerado e pelo renderer). Android: o .NET 11 tira o Mono (NETSDK1242), então `mono-jit` (padrão do Debug),
+  `mono-aot` e `mono-aot-llvm` deixam de existir; ele exige a API 37 (platforms android-37.x no SDK e no CI); o
+  NativeAOT continua experimental (XA1040), e o CoreCLR no Android ganha tiered/R2R/PGO, mas ainda não foi medido no
+  celular. Trocar o padrão exige: TFM, `setup-dotnet 11.0.x` nos jobs do CI (Windows/Linux/macOS/Android), o workload
+  e a API 37 no job Android, o Debug do Android em `coreclr`, as opções mono fora do csproj e da documentação,
+  e a validação no Killzone no celular (NativeAOT net10 x NativeAOT net11 x CoreCLR net11). Sem ganho no desktop, a
+  troca fica parada até a série no celular mostrar ganho do NativeAOT ou do CoreCLR 11 (a próxima entrega deste item);
+  o fim do suporte do .NET 10 (LTS, nov/2028) não força pressa.
 - [x] Resolução interna maior, no estilo do PCSX2 (pedido do usuário, 07/11/2026), no desktop: "Resolução interna" por
   jogo no painel do jogo do launcher (1x nativa padrão, 2x, 3x, 4x; `--res-scale=2|3|4`, `VITASHARP_RES_SCALE`),
   estendendo `VulkanRenderer.ResScale.cs` a fatores inteiros acima de 1. Acima do nativo, texturas de stencil e as

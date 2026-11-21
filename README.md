@@ -461,6 +461,10 @@ What `dotnet test tests/VitaSharp.Tests` needs per system; a test whose requirem
   Google APIs image and the `android-x64` build). `build/android-media-parity.sh` (or `.ps1`) records the trace on the
   device; `VITASHARP_ANDROID_MEDIA_TRACE=<trace> dotnet test tests/VitaSharp.Tests --filter MediaParityTests` compares
   it with the desktop's (skipped without the variable). `SYNC=0` (`-Sync 0`) records the old MediaCodec timing.
+- .NET 11 (optional, for comparisons; the default and the CI stay on .NET 10): `-p:VitaSharpDotnet=net11.0` builds
+  every project against .NET 11 on any system. It needs the .NET 11 SDK (and, for Android, its `maui-android` workload
+  and the Android API 37 platform; .NET 11 has no Mono, so only `VitaSharpAndroidRuntime=coreclr` or `nativeaot`
+  build). An SDK installed outside the default location runs the desktop app with `DOTNET_ROOT` set to it.
 
 ## Releases
 
