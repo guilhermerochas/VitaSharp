@@ -244,8 +244,14 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   só de esperas simples e múltiplas servida dentro do set (um IN levado por outro receptor é visto); sceKernelClearEvent,
   Set/PulseEventWithNotifyCallback e os sets/leituras de kernel (0xB7DF3EDF, 0x0C6BCB8C, 0x25AB8F6B) em pipe e
   operação; delete encerra a espera com WAIT_DELETE (OK com DELETE pedido). O padrão entra no save state (estados
-  antigos carregam IN e 0x10000 se há bytes). Falta: a espera CB do WaitMultipleEvents roda os callbacks sem sair das
-  filas (o firmware sai pela notificação e volta ao fim de cada fila; um set durante os callbacks iria aos de trás).
+  antigos carregam IN e 0x10000 se há bytes).
+  Espera CB do WaitMultipleEvents (21/11/2026, kernK, `CallbackWaitInterleavingTests` com o caso "multi" e
+  `AMultipleEventsCbCallKeepsItsResultsAcrossTheCallbacks`, conferido no threadmgr 3.74: laço 0x8101ed4c, saída das
+  filas 0x8101d7a4, set 0x8101dcf8): a notificação encerra o sono e, a partir dela, o set que alcança o lugar da
+  chamada numa fila não lhe entrega nada e tira o lugar (o set só entrega a uma espera múltipla cujo thread ainda
+  dorme), então vai aos de trás; a chamada sai de todas as filas, roda os callbacks e refaz a primeira passada só nos
+  eventos ainda sem resultado, entrando no fim das filas, com o mesmo prazo; callbacks notificados antes da espera
+  rodam antes da primeira passada. Era bug (os callbacks rodavam com a chamada ainda nas filas), corrigido.
 - [ ] [P3][G] **Contratos do escalonador e do ritmo da CPU:** quem roda primeiro por prioridade e afinidade, quanto tempo de
   guest passa por chamada HLE e por espera, o que acorda quem; uma mudança de desempenho que altere a ordem entre
   threads quebra um teste.
@@ -2068,10 +2074,24 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   mount, set_root e devctl 0x3802 do driver, referência ao driver) e o roteamento das chamadas de E/S do caminho do
   ponto de montagem (assign name "x0:" ou root path) para o lookup a partir do vnode raiz e as vops do driver; o I/O
   do driver no dispositivo de bloco vai às pastas do host; ksceVopRead/Write/Pread/Pwrite com o contrato do firmware
-  ({vp, file, buf, size[, offset]}, contagem em *result, retorno 0 ou o erro). Faltam: cache de vnodes com inactive e
-  contagem de referências como o firmware, vfsGetMntInfo/vfsGetMntList das montagens de guest, lseek de 64 bits na
-  volta da vop, montagens PFS de driver de guest (vfsMountForPFS) e ver as pastas do host como vnodes para um driver
-  empilhado (tipo 1 sobre ux0:).
+  ({vp, file, buf, size[, offset]}, contagem em *result, retorno 0 ou o erro).
+  Vnodes, listas de montagem, lseek e PFS (21/11/2026, kernK, `IoVfsMountTests`, conferido no iofilemgr 3.74:
+  vfsGetNewVnode 0x8100bca8, vfsFreeVnode 0x8100aa10 / 0x8100a9d8, vfsUmount 0x81006e90, fim da montagem 0x81003bcc /
+  0x8100aa50, ksceVopLseek 0x8100e938, vfsGetMntList 0x81009b6c, vfsGetMntInfo 0x81009c18, vfsMountForPFS 0x8101960c
+  e a thread de pedidos 0x810182e8 / 0x810184b8): cada vnode novo entra no início da lista da montagem (+0x54, número
+  em +0x58); o caminho segura a referência que o lookup devolve e a solta depois da chamada; o descritor aberto
+  segura a do vnode e uma da montagem (+0x60); vnode sem referência fica na lista (cache) sem inactive; vfsUmount
+  com descritor aberto é 0x80010010 sem força (flags 1/2) e, no fim, inactive (op 0x50) e libera a raiz e todo vnode
+  sem referência (os referenciados ficam, e o bloco da montagem com eles). ksceVopLseek confere whence e posição
+  (0x80010016) e devolve os 64 bits do driver (r0:r1). vfsGetMntList(list, max, *count) e vfsGetMntInfo(mount, info)
+  com os campos do firmware para as montagens de guest. vfsMountForPFS/vfsUmountForPFS(param, 0, 0) rodam
+  vfsMount/vfsUmount (2º ou 3º argumento não nulo é 0x80010016; antes a checagem era a inversa e a resposta
+  0x80010030). Eram bugs, corrigidos. Faltam: (1) ver as pastas do host como vnodes para um driver empilhado (tipo 1
+  sobre ux0:, o vnode coberto em +0x40 com uma tabela de vops do próprio IoFileMgr sobre as pastas do host); (2) o
+  objeto de arquivo do VitaSharp não segue o do firmware (no 3.74 vfsAllocateFile devolve um descritor e o arquivo
+  tem o vnode em +0x18, a posição em +8 e o estado em +0x10, conferido por 0x8100ada4): drivers que leem esses
+  campos veem outra coisa; (3) reciclar vnodes do cache quando o pool acaba (0x81007934) e o lock de vnode com
+  espera como o firmware (0x8100a7b0).
 - [ ] [P3][G] Modelo do chip syscon para o SceSysconForDriver (311 exportações, 198 importadas pelos módulos de kernel do
   FW 3.74). 117 delas montam um pacote (comando de 16 bits, tamanho, dados) e chamam ksceSysconCmdExec/CmdExecAsync; o
   syscon.skprx decompilado está em `fw374\decomp\os0__kd__syscon.skprx.c` (só estudo). Fazer: um modelo C# do chip (os

@@ -17,8 +17,8 @@ namespace VitaSharp.Core.Hle.Modules;
 // 0x64, whiteout 0x68, cleanup 0x6C, zerofill 0x70); a NULL entry is 0x80010030, a NULL vnode 0x80010016.
 // The emulator's own devices (ux0:, app0:, savedata0:...) are served from host folders by IoFileMgr, not by guest
 // drivers. A driver's registration, its vnodes, files and locks work, its operations run through ksceVop*, and a file
-// system it mounts with vfsMount serves the I/O on its paths (IoFileMgr.VfsMount.cs); the PFS overlay mounts of a guest
-// driver and removing a block device answer 0x80010030 (the operation is not supported) after their argument checks.
+// system it mounts with vfsMount (or vfsMountForPFS) serves the I/O on its paths (IoFileMgr.VfsMount.cs); removing a
+// block device answers 0x80010030 (the operation is not supported) after its argument check.
 public sealed partial class IoFileMgr
 {
     const int VFS_ERR_PERM = unchecked((int)0x80010001);
@@ -141,6 +141,10 @@ public sealed partial class IoFileMgr
         {
             GuestMemory.W32(vnode + 0x6C, GuestMemory.R32(mount + 0x44));
             GuestMemory.W32(vnode + 0xD0, (uint)(int)GuestMemory.Read<short>(mount + 0x4E));
+            // the mount's vnode list (0x8100bca8): +0x54 the newest vnode, +0x58 their number, vnode +0x54 the next
+            GuestMemory.W32(vnode + 0x54, GuestMemory.R32(mount + 0x54));
+            GuestMemory.W32(mount + 0x54, vnode);
+            GuestMemory.W32(mount + 0x58, GuestMemory.R32(mount + 0x58) + 1);
         }
 
         lock (_vfsObjects)
@@ -152,11 +156,80 @@ public sealed partial class IoFileMgr
         return 0;
     }
 
-    /// <summary>vfsFreeVnode(vnode): returns it; 0.</summary>
+    /// <summary>vfsFreeVnode(vnode): takes it off its mount's vnode list (0x8100a9d8) and returns it; 0.</summary>
     [Hle(Nid = 0x21D57633, Library = "SceIofilemgrForDriver")]
     int vfsFreeVnode(uint vnode)
     {
+        bool known;
+        lock (_vfsObjects)
+        {
+            known = _vfsObjects.TryGetValue(vnode, out int kind) && kind == 1;
+        }
+
+        if (known)
+        {
+            UnlinkMountVnode(GuestMemory.R32(vnode + 0x4C), vnode);
+        }
+
         return VfsFree(vnode, 1);
+    }
+
+    /// <summary>Takes <paramref name="vnode"/> off the vnode list of <paramref name="mount"/> (+0x54, its number at
+    /// +0x58), as 0x8100a9d8 does.</summary>
+    static void UnlinkMountVnode(uint mount, uint vnode)
+    {
+        if (mount == 0 || GuestMemory.R32(mount + 0x54) == 0)
+        {
+            return;
+        }
+
+        uint at = GuestMemory.R32(mount + 0x54);
+        if (at == vnode)
+        {
+            GuestMemory.W32(mount + 0x54, GuestMemory.R32(vnode + 0x54));
+        }
+        else
+        {
+            while (at != 0 && GuestMemory.R32(at + 0x54) != vnode)
+            {
+                at = GuestMemory.R32(at + 0x54);
+            }
+
+            if (at == 0)
+            {
+                return;
+            }
+
+            GuestMemory.W32(at + 0x54, GuestMemory.R32(vnode + 0x54));
+        }
+
+        GuestMemory.W32(vnode + 0x54, 0);
+        GuestMemory.W32(mount + 0x58, GuestMemory.R32(mount + 0x58) - 1);
+    }
+
+    /// <summary>One more reference to a vnode (+0x58).</summary>
+    static void HoldVnode(uint vnode)
+    {
+        if (vnode != 0)
+        {
+            GuestMemory.W32(vnode + 0x58, GuestMemory.R32(vnode + 0x58) + 1);
+        }
+    }
+
+    /// <summary>A reference dropped (+0x58; the I/O manager's `vnode->refs--` after a lookup's use). A vnode left
+    /// with none stays on its mount's list, cached for the next lookup, until the unmount inactivates it.</summary>
+    static void ReleaseVnode(uint vnode)
+    {
+        if (vnode == 0)
+        {
+            return;
+        }
+
+        uint references = GuestMemory.R32(vnode + 0x58);
+        if (references > 0)
+        {
+            GuestMemory.W32(vnode + 0x58, references - 1);
+        }
     }
 
     int VfsFree(uint address, int kind)
@@ -303,24 +376,130 @@ public sealed partial class IoFileMgr
         return 0;
     }
 
-    /// <summary>vfsGetMntInfo(path, info): the mount behind a path: the emulator's devices are not guest mounts
-    /// (0x80010002).</summary>
+    /// <summary>The size of one vfsGetMntList entry.</summary>
+    const uint MntListEntrySize = 0x34;
+
+    /// <summary>
+    /// vfsGetMntInfo(mount, info) as iofilemgr 3.74 has it (0x81009c18): a mount block that is not in the mount list
+    /// is 0x80010002; otherwise the info block gets the mount's fields: +0 the mount, +4 the misc block's +0x10, +8 the
+    /// assign name (0x20 bytes), +0x28 mount+0x64, +0x2C its state (+0x48), +0x30 its flags (+0x50), +0x34 its fs type
+    /// (+0x4C), +0x38 the mount, +0x3C the covered vnode (+0x40), +0x40 the default ops (+0x44), +0x44 the references
+    /// (+0x60), +0x48..+0x54 mount+0x58 / +0x54 / +0x70 / +0x74, +0x58 / +0x5C mount+0xC0 / its data (+0xC4), +0x60..+0x70
+    /// the block at +0xC8 (its address, then its first four words), +0x74..+0x80 the block at +0xCC (its address, its
+    /// +4 and what its +8 and +0xC point to), +0x84 the address of mount+0x7C, +0x88 the root path (0x400 bytes),
+    /// +0x488 the misc block, and its strings at +4, +8 and +0xC (0x40 bytes each, empty when NULL). Only the guest
+    /// mounts are in the list: the emulator's own devices are served from host folders, not by mount blocks.
+    /// </summary>
     [Hle(Nid = 0xB987450D, Library = "SceIofilemgrForDriver")]
-    int vfsGetMntInfo(uint path, uint info)
+    int vfsGetMntInfo(uint mount, uint info)
     {
-        return VFS_ERR_NOENT;
+        GuestMount? found = FindMountByBlock(mount);
+        if (found == null || info == 0)
+        {
+            return VFS_ERR_NOENT;
+        }
+
+        uint misc = GuestMemory.R32(mount + 0x7C);
+        uint extra = GuestMemory.R32(mount + 0xCC);
+        uint driverBlock = GuestMemory.R32(mount + 0xC8);
+        GuestMemory.W32(info + 0x00, mount);
+        GuestMemory.W32(info + 0x04, misc == 0 ? 0 : GuestMemory.R32(misc + 0x10));
+        CopyGuestString(info + 0x08, misc == 0 ? 0 : GuestMemory.R32(misc), 0x20);
+        GuestMemory.W32(info + 0x28, GuestMemory.R32(mount + 0x64));
+        GuestMemory.W32(info + 0x2C, GuestMemory.R32(mount + 0x48));
+        GuestMemory.W32(info + 0x30, GuestMemory.R32(mount + 0x50));
+        GuestMemory.W32(info + 0x34, GuestMemory.R32(mount + 0x4C));
+        GuestMemory.W32(info + 0x38, mount);
+        GuestMemory.W32(info + 0x3C, GuestMemory.R32(mount + 0x40));
+        GuestMemory.W32(info + 0x40, GuestMemory.R32(mount + 0x44));
+        GuestMemory.W32(info + 0x44, GuestMemory.R32(mount + 0x60));
+        GuestMemory.W32(info + 0x48, GuestMemory.R32(mount + 0x58));
+        GuestMemory.W32(info + 0x4C, GuestMemory.R32(mount + 0x54));
+        GuestMemory.W32(info + 0x50, GuestMemory.R32(mount + 0x70));
+        GuestMemory.W32(info + 0x54, GuestMemory.R32(mount + 0x74));
+        GuestMemory.W32(info + 0x58, GuestMemory.R32(mount + 0xC0));
+        GuestMemory.W32(info + 0x5C, GuestMemory.R32(mount + 0xC4));
+        GuestMemory.W32(info + 0x60, driverBlock);
+        for (uint word = 0; word < 4; word++)
+        {
+            GuestMemory.W32(info + 0x64 + word * 4, driverBlock == 0 ? 0 : GuestMemory.R32(driverBlock + word * 4));
+        }
+
+        GuestMemory.W32(info + 0x74, extra);
+        GuestMemory.W32(info + 0x78, extra == 0 ? 0 : GuestMemory.R32(extra + 4));
+        GuestMemory.W32(info + 0x7C, DereferenceOrZero(extra == 0 ? 0 : GuestMemory.R32(extra + 8)));
+        GuestMemory.W32(info + 0x80, DereferenceOrZero(extra == 0 ? 0 : GuestMemory.R32(extra + 0xC)));
+        GuestMemory.W32(info + 0x84, mount + 0x7C);
+        CopyGuestString(info + 0x88, mount + 0x80, 0x400);
+        GuestMemory.W32(info + 0x488, misc);
+        CopyGuestString(info + 0x48C, misc == 0 ? 0 : GuestMemory.R32(misc + 4), 0x40);
+        CopyGuestString(info + 0x4CC, misc == 0 ? 0 : GuestMemory.R32(misc + 8), 0x40);
+        CopyGuestString(info + 0x50C, misc == 0 ? 0 : GuestMemory.R32(misc + 0xC), 0x40);
+        return 0;
     }
 
-    /// <summary>vfsGetMntList(list, count): the guest mounts: none (count 0); 0.</summary>
+    /// <summary>
+    /// vfsGetMntList(list, max, count out) as iofilemgr 3.74 has it (0x81009b6c): a NULL list returns the number of
+    /// mounts; otherwise up to <paramref name="max"/> entries of 0x34 bytes, in the list's order ({ +0 the mount, +4 the
+    /// misc block's +0x10 (-1 for a device file system, fs type 3), +8 the assign name (0x20 bytes), +0x28 mount+0x64,
+    /// +0x2C 1 for a device file system, +0x30 the driver's data (+0xC4) }), the number written in *count, and 0.
+    /// </summary>
     [Hle(Nid = 0xC20C621C, Library = "SceIofilemgrForDriver")]
-    int vfsGetMntList(uint list, uint count)
+    int vfsGetMntList(uint list, uint max, uint count)
     {
+        uint[] mounts;
+        lock (_guestMounts)
+        {
+            mounts = new uint[_guestMounts.Count];
+            for (int i = 0; i < mounts.Length; i++)
+            {
+                mounts[i] = _guestMounts[i].Mount;
+            }
+        }
+
+        if (list == 0)
+        {
+            return mounts.Length;
+        }
+
+        int written = 0;
+        if ((int)max > 0)
+        {
+            while (written < mounts.Length && written < (int)max)
+            {
+                uint mount = mounts[written];
+                uint entry = list + (uint)written * MntListEntrySize;
+                uint misc = GuestMemory.R32(mount + 0x7C);
+                bool deviceFileSystem = (GuestMemory.R32(mount + 0x4C) & 0xFF) == 3;
+                GuestMemory.W32(entry, mount);
+                GuestMemory.W32(entry + 4, deviceFileSystem ? 0xFFFFFFFF : misc == 0 ? 0 : GuestMemory.R32(misc + 0x10));
+                CopyGuestString(entry + 8, misc == 0 ? 0 : GuestMemory.R32(misc), 0x20);
+                GuestMemory.W32(entry + 0x28, GuestMemory.R32(mount + 0x64));
+                GuestMemory.W32(entry + 0x2C, deviceFileSystem ? 1u : 0u);
+                GuestMemory.W32(entry + 0x30, GuestMemory.R32(mount + 0xC4));
+                written++;
+            }
+        }
+
         if (count != 0)
         {
-            GuestMemory.W32(count, 0);
+            GuestMemory.W32(count, (uint)written);
         }
 
         return 0;
+    }
+
+    /// <summary>strncpy: the string at <paramref name="source"/> (NULL: empty) and zeros up to <paramref name="size"/>.</summary>
+    static void CopyGuestString(uint destination, uint source, uint size)
+    {
+        string text = source == 0 ? "" : GuestMemory.ReadCString(source, (int)size);
+        GuestMemory.Fill(destination, 0, size);
+        GuestMemory.WriteCString(destination, text, (int)size);
+    }
+
+    static uint DereferenceOrZero(uint address)
+    {
+        return address == 0 ? 0 : GuestMemory.R32(address);
     }
 
     /// <summary>A mount request of a guest file system: NULL 0x80010016; not wired into the emulator's paths
@@ -330,18 +509,34 @@ public sealed partial class IoFileMgr
         return argument == 0 ? VFS_ERR_INVAL : VFS_ERR_UNSUP;
     }
 
-    /// <summary>vfsMountForPFS(?, path, param): the PFS overlay mount.</summary>
-    [Hle(Nid = 0xFEEE44A9, Library = "SceIofilemgrForDriver", Default = true)]
-    int vfsMountForPFS(uint unused, uint path, uint param)
+    /// <summary>
+    /// vfsMountForPFS(param, 0, 0) as iofilemgr 3.74 has it (0x8101960c): a second or third argument that is not 0 is
+    /// 0x80010016; otherwise the I/O manager's request thread (request kind 3, 0x810182e8) copies the SceVfsMountParam
+    /// (8 words) and runs vfsMount on it in the caller's process, and its result is the call's. Here vfsMount runs on
+    /// the calling thread (the request thread only serialises the mounts; the guest sees the same result).
+    /// </summary>
+    [Hle(Nid = 0xFEEE44A9, Library = "SceIofilemgrForDriver")]
+    int vfsMountForPFS(uint param, uint second, uint third)
     {
-        return path == 0 || param == 0 ? VFS_ERR_INVAL : VFS_ERR_UNSUP;
+        if (second != 0 || third != 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        return vfsMount(param);
     }
 
-    /// <summary>vfsUmountForPFS(?, path, param): its undo.</summary>
-    [Hle(Nid = 0xD220539D, Library = "SceIofilemgrForDriver", Default = true)]
-    int vfsUmountForPFS(uint unused, uint path, uint param)
+    /// <summary>vfsUmountForPFS(param { path, flags }, 0, 0): the same checks, then vfsUmount through the request
+    /// thread (request kind 4, 0x810184b8).</summary>
+    [Hle(Nid = 0xD220539D, Library = "SceIofilemgrForDriver")]
+    int vfsUmountForPFS(uint param, uint second, uint third)
     {
-        return path == 0 || param == 0 ? VFS_ERR_INVAL : VFS_ERR_UNSUP;
+        if (second != 0 || third != 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        return vfsUmount(param);
     }
 
     /// <summary>vfsRmdev(param): removes a block device's mounts.</summary>
@@ -547,11 +742,52 @@ public sealed partial class IoFileMgr
         return VopTransfer(vnode, 0x14, [vnode, file, buffer, size], size, result);
     }
 
-    /// <summary>ksceVopLseek(vnode, file, offset (64-bit), whence): op 0x18 with { vnode, file, offset, whence }.</summary>
+    /// <summary>
+    /// ksceVopLseek(vnode, file, offset (64-bit, r2:r3), whence) as iofilemgr 3.74 has it (0x8100e938): the position
+    /// it asks for (from 0, the file's position at +8 for SEEK_CUR, the vnode's size at +0x80 for SEEK_END) is checked
+    /// first: another whence, a negative position or the largest one is 0x80010016; then op 0x18 with { vnode, file,
+    /// offset (64-bit at +8), whence (+0x10) }, whose 64-bit result (r0:r1, the new position or an error) is the
+    /// call's. A NULL op 0x80010030.
+    /// </summary>
     [Hle(Nid = 0xB2B13818, Library = "SceIofilemgrForDriver")]
-    int ksceVopLseek(uint vnode, uint file, uint offsetLow, uint offsetHigh, uint whence)
+    long ksceVopLseek(uint vnode, uint file, uint offsetLow, uint offsetHigh, uint whence)
     {
-        return VopCall(vnode, 0x18, [vnode, file, offsetLow, offsetHigh, whence]);
+        if (vnode == 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        long offset = (long)(((ulong)offsetHigh << 32) | offsetLow);
+        long origin;
+        switch (whence)
+        {
+            case 0:
+                origin = 0;
+                break;
+            case 1:
+                origin = file == 0 ? 0 : GuestMemory.Read<long>(file + 8);
+                break;
+            case 2:
+                origin = GuestMemory.Read<long>(vnode + 0x80);
+                break;
+            default:
+                return VFS_ERR_INVAL;
+        }
+
+        long position = unchecked(origin + offset);
+        if (position < 0 || position == long.MaxValue)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        uint table = GuestMemory.R32(vnode + 0x40);
+        if (table == 0 || GuestMemory.R32(table + 0x18) == 0 || GuestThread.Current is not { } thread)
+        {
+            return VFS_ERR_UNSUP;
+        }
+
+        uint low = (uint)VfsCallOp(table, 0x18, [vnode, file, offsetLow, offsetHigh, whence]);
+        return (long)(((ulong)thread.LastCallR1 << 32) | low);
     }
 
     /// <summary>ksceVopIoctl(vnode, file, command, input, inputSize, output, outputSize): op 0x1C.</summary>

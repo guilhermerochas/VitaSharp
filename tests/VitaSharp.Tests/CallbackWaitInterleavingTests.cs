@@ -53,6 +53,19 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
         public Action After = static () => { };
     }
 
+    /// <summary>The syscall form of sceKernelWaitMultipleEventsCB in OR mode on <paramref name="uid"/>'s EventBit,
+    /// without a results array (it returns 0 when the event came), with a timeout word (0: none).</summary>
+    private int MultiCbWait(GuestThread thread, int uid, uint timeout)
+    {
+        uint events = _h.Alloc(8);
+        GuestMemory.W32(events, (uint)uid);
+        GuestMemory.W32(events + 4, EventBit);
+        uint opt = _h.Alloc(8);
+        GuestMemory.W32(opt, 0);
+        GuestMemory.W32(opt + 4, timeout);
+        return (int)thread.DispatchForTest("_sceKernelWaitMultipleEventsCB", events, 1u, 1u, opt);
+    }
+
     private Subject Make(string kind)
     {
         switch (kind)
@@ -183,6 +196,21 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
                     After = () => Assert.Equal(0, Call(Tm, "sceKernelUnlockWriteRWLock", uid)),
                 };
             }
+            case "multi":
+            {
+                // sceKernelWaitMultipleEventsCB on one simple event (0x8102cc4c / 0x8101ed4c): the notify ends its
+                // sleep, it leaves the event's queue, and after the callbacks its next pass joins the queue again
+                int uid = Call(Tm, "sceKernelCreateSimpleEvent", _h.Str("cb-multi"), EventBits.AttrAutoReset, 0u, 0u);
+                SimpleEvent simpleEvent = _h.Emu.Kernel.Objects.Get<SimpleEvent>(uid)!;
+                return new Subject
+                {
+                    Sync = simpleEvent,
+                    CbWait = (th, timeout) => MultiCbWait(th, uid, timeout),
+                    PlainWait = () => Call(Tm, "sceKernelWaitEvent", uid, EventBit, new Ptr<uint>(0), new Ptr<ulong>(0), new Ptr<uint>(0)),
+                    Give = () => Assert.Equal(0, Call(Tm, "sceKernelSetEvent", uid, EventBit, 0UL)),
+                    Waiters = () => simpleEvent.NumWaiters,
+                };
+            }
             default:
             {
                 int uid = Call(Tm, "sceKernelCreateSimpleEvent", _h.Str("cb-event"), EventBits.AttrAutoReset, 0u, 0u);
@@ -219,6 +247,7 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
     [InlineData("msgpipe")]
     [InlineData("rwlock")]
     [InlineData("event")]
+    [InlineData("multi")]
     public void ANotifiedCbWaiterLeavesTheQueueAndJoinsItAgainAtTheEnd(string kind)
     {
         bool callbackRan = false;
@@ -257,7 +286,9 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
             lock (subject.Sync)
             {
                 Assert.Equal(0, Call(Tm, "sceKernelNotifyCallback", callback, 0));
-                Assert.Equal(1, subject.Waiters()); // off the queue inside the notify
+                // off the queue inside the notify; a multiple-events call's place stays until the call leaves its
+                // queues itself (0x8101d7a4), but a set no longer hands it anything (0x8101dcf8)
+                Assert.Equal(kind == "multi" ? 2 : 1, subject.Waiters());
                 subject.Give!();
             }
             Until(() => Volatile.Read(ref otherDone) || Volatile.Read(ref notifiedDone), "a wait to end");
@@ -286,6 +317,7 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
     [InlineData("msgpipe")]
     [InlineData("rwlock")]
     [InlineData("event")]
+    [InlineData("multi")]
     public void ACallbackInTheMiddleDoesNotRestartTheTimeout(string kind)
     {
         const uint LimitUs = 50_000;
@@ -340,6 +372,7 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
     [Theory]
     [InlineData("sema")]
     [InlineData("event")]
+    [InlineData("multi")]
     public void CallbacksNotifiedBeforeTheWaitRunBeforeItLooksAtTheObject(string kind)
     {
         int uid = 0;
@@ -374,6 +407,10 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
                 {
                     result = (int)th.DispatchForTest("_sceKernelWaitSemaCB", (uint)uid, 1u, 0u);
                 }
+                else if (kind == "multi")
+                {
+                    result = MultiCbWait(th, uid, 0);
+                }
                 else
                 {
                     uint opt = _h.Alloc(8);
@@ -397,6 +434,61 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
             }
             _h.Join(waiter, 5_000);
             Assert.Equal(0, result);
+        });
+    }
+
+    /// <summary>
+    /// An AND-mode sceKernelWaitMultipleEventsCB keeps the results it had across the callbacks (threadmgr 3.74 keeps
+    /// the events' done bits in the call): its pass after the callbacks queues it again only on the events still
+    /// without a result, so a later set of an event it already took stays in that event, and the call returns both
+    /// results in the order the events fired.
+    /// </summary>
+    [Fact]
+    public void AMultipleEventsCbCallKeepsItsResultsAcrossTheCallbacks()
+    {
+        bool callbackRan = false;
+        uint stub = Stub("cbwait:multi-and", _ =>
+        {
+            Volatile.Write(ref callbackRan, true);
+            return 0;
+        });
+        _h.OnGuest(main =>
+        {
+            int first = Call(Tm, "sceKernelCreateSimpleEvent", _h.Str("cb-multi-a"), EventBits.AttrAutoReset, 0u, 0u);
+            int second = Call(Tm, "sceKernelCreateSimpleEvent", _h.Str("cb-multi-b"), EventBits.AttrAutoReset, 0u, 0u);
+            SimpleEvent firstEvent = _h.Emu.Kernel.Objects.Get<SimpleEvent>(first)!;
+            SimpleEvent secondEvent = _h.Emu.Kernel.Objects.Get<SimpleEvent>(second)!;
+            uint events = _h.Alloc(16);
+            GuestMemory.W32(events, (uint)first);
+            GuestMemory.W32(events + 4, EventBit);
+            GuestMemory.W32(events + 8, (uint)second);
+            GuestMemory.W32(events + 12, EventBit);
+            uint results = _h.Alloc(2 * 0x18);
+            uint opt = _h.Alloc(8);
+            GuestMemory.W32(opt, results);
+            GuestMemory.W32(opt + 4, 0);
+            int callback = 0;
+            int returned = 1;
+            GuestRun waiter = _h.Start(th =>
+            {
+                callback = Call(Tm, "sceKernelCreateCallback", "cb-multi-and", 0u, stub, 0u);
+                returned = (int)th.DispatchForTest("_sceKernelWaitMultipleEventsCB", events, 2u, 2u, opt);
+            }, "cb-multi-and");
+            Until(() => waiter.Thread.Status == ThreadStatus.Waiting && firstEvent.NumWaiters == 1 && secondEvent.NumWaiters == 1, "the AND wait in both queues");
+            Assert.Equal(0, Call(Tm, "sceKernelSetEvent", first, EventBit, 5UL));
+            Assert.Equal(0, firstEvent.NumWaiters);
+            Assert.Equal(0, Call(Tm, "sceKernelNotifyCallback", callback, 0));
+            Until(() => Volatile.Read(ref callbackRan) && secondEvent.NumWaiters == 1 && waiter.Thread.Status == ThreadStatus.Waiting, "the pass after the callback");
+            Assert.Equal(0, firstEvent.NumWaiters); // the event it already took is not waited for again
+            Assert.Equal(0, Call(Tm, "sceKernelSetEvent", first, EventBit, 6UL));
+            Assert.Equal(EventBit, firstEvent.Pattern & EventBit); // nobody took it
+            Assert.Equal(0, Call(Tm, "sceKernelSetEvent", second, EventBit, 7UL));
+            _h.Join(waiter, 5_000);
+            Assert.Equal(2, returned);
+            Assert.Equal((uint)first, GuestMemory.R32(results));
+            Assert.Equal(5UL, GuestMemory.Read<ulong>(results + 16));
+            Assert.Equal((uint)second, GuestMemory.R32(results + 0x18));
+            Assert.Equal(7UL, GuestMemory.Read<ulong>(results + 0x18 + 16));
         });
     }
 
