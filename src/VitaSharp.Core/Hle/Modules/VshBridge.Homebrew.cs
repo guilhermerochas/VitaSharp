@@ -1,5 +1,4 @@
 using VitaSharp.Core.Kernel;
-using VitaSharp.Core.Memory;
 
 namespace VitaSharp.Core.Hle.Modules;
 
@@ -13,21 +12,19 @@ public sealed partial class VshBridge
     int _vshSblGetSystemSwVersion(uint data) => SystemMisc.WriteSystemSwVersion(data);
 
     /// <summary>
-    /// _vshKernelSearchModuleByName(name, int buf[2]): the uid of a loaded module (user or kernel, such as a kernel
-    /// plugin of the plugin configuration) by name, else SCE_KERNEL_ERROR_MODULEMGR_NO_MOD.
+    /// _vshKernelSearchModuleByName(name, int buf[2]): ksceKernelSearchModuleByName for the shell, the UID of the kernel
+    /// module of that name (a kernel plugin of the plugin configuration, such as the one an so_loader port checks
+    /// for), on the kernel process's list; 0x8002D082 when none.
     /// </summary>
     [Hle]
     int _vshKernelSearchModuleByName(uint namePtr, uint buf)
     {
-        if (namePtr == 0) return SceError.ILLEGAL_ADDR;
-        string name = GuestMemory.ReadCString(namePtr, 0x100);
-        var m = K.Modules.Values.OrderBy(x => x.Uid).FirstOrDefault(x => x.Name == name);
-        if (m != null)
+        if (namePtr == 0)
         {
-            return m.Uid;
+            return SceError.ILLEGAL_ADDR;
         }
 
-        return SceError.MODULEMGR_NO_MOD;
+        return ModulemgrKernel.SearchKernelModuleByName(Emu, namePtr);
     }
 
 }

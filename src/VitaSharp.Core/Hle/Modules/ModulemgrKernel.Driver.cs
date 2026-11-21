@@ -17,10 +17,15 @@ public sealed partial class ModulemgrKernel
     /// <summary>ksceKernelSearchModuleByName(const char *name): the UID of the kernel module of that name;
     /// 0x8002D082 when none.</summary>
     [Hle(Nid = 0xBBE1771C, Library = "SceModulemgrForDriver")]
-    int ksceKernelSearchModuleByName(uint name)
+    int ksceKernelSearchModuleByName(uint name) => SearchKernelModuleByName(Emu, name);
+
+    /// <summary>The UID of the kernel module named by the string at <paramref name="name"/> (compared over 0x1A
+    /// characters) on the kernel process's list, which every caller's system shares; 0x8002D082 when none. Also what
+    /// SceVshBridge's _vshKernelSearchModuleByName answers.</summary>
+    internal static int SearchKernelModuleByName(Emulator caller, uint name)
     {
         string wanted = GuestMemory.ReadCString(name, ModuleNameCompare);
-        if (ModulesOf(KernelSpace.KernelPid) is { } modules)
+        if (KernelSpace.ModulesOf(caller, KernelSpace.KernelPid) is { } modules)
         {
             foreach (LoadedModule module in modules)
             {
