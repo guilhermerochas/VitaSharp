@@ -20,7 +20,7 @@ namespace VitaSharp.Core.Hle.Modules;
 // context on the interrupt thread when it is enabled, else stays pending until it is enabled (then taken)
 // or cleared. The lines the firmware's drivers register at boot (the Systimer's twelve) are registered before the first
 // call that looks at a line. Interrupt context is per thread (the core taking the interrupt).
-public sealed partial class SystemServicesVsh
+public sealed partial class SystemServicesVsh : IServiceThreadOwner
 {
     const int INTR_ERR_IN_INTERRUPT = unchecked((int)0x80027101);
     const int INTR_ERR_CODE = unchecked((int)0x80027102);
@@ -790,6 +790,19 @@ public sealed partial class SystemServicesVsh
     HleGuestStubs? _intrStubs;
 
     GuestInterruptScheduler IntrScheduler => _intrScheduler ??= new GuestInterruptScheduler(Emu, IntrExpire);
+
+    /// <summary>Save states: the interrupt thread of the state, when this session has not made one yet, is the device
+    /// lines' scheduler's (<see cref="GuestInterruptScheduler.AdoptThread"/>).</summary>
+    bool IServiceThreadOwner.AdoptServiceThread(GuestThread thread)
+    {
+        return thread.Name == GuestInterruptScheduler.ThreadName && IntrScheduler.AdoptThread(thread);
+    }
+
+    /// <summary>Save states: the interrupt thread made after the save is let go.</summary>
+    bool IServiceThreadOwner.ReleaseServiceThread(GuestThread thread)
+    {
+        return _intrScheduler != null && _intrScheduler.ReleaseThread(thread);
+    }
 
     HleGuestStubs IntrStubs => _intrStubs ??= new HleGuestStubs(this, "SceIntrmgr");
 

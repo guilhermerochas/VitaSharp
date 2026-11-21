@@ -83,7 +83,10 @@ after a LoadExec; render targets the game reads back before drawing are black fo
 window's Vulkan instance, device, surface and swapchain, `VulkanRendererOptions.KeepDevice`, on by default for every
 front-end: recreating them per load crashed NVIDIA and lost the device on Mali at the second recreation), translated code dropped,
 memory blocks and contents restored, HLE function table, kernel objects (new threads with their saved registers;
-module service threads kept and given their saved UIDs), modules, guest clock (exactly the saved time), then the
+module service threads kept and given their saved UIDs; one the state has and this session does not run yet is
+taken back by its owner from the saved record, and one this session made after the save is let go and stops,
+`IServiceThreadOwner`: the kernel's global work queue worker, the interrupt thread), modules (with which export
+entries are in the library database: what kernel modules registered or released after loading), guest clock (exactly the saved time), then the
 threads start. The loaded modules must be the saved ones at the same addresses: a game that loads modules late
 refuses a state from a different point with a message (restart the game and load again).
 

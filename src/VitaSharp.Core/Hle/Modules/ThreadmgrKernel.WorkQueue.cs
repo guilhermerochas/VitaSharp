@@ -15,7 +15,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// a kernel data object of the kernel process (its function and argument), so the queue is part of the object table a
 /// save state keeps: the worker takes the oldest one (the lowest UID) each time.
 /// </summary>
-public sealed partial class ThreadmgrKernel
+public sealed partial class ThreadmgrKernel : IServiceThreadOwner
 {
     /// <summary>The UID of the system's global work queue (fixed by the firmware).</summary>
     const int GlobalWorkQueue = 0x10023;
@@ -23,6 +23,9 @@ public sealed partial class ThreadmgrKernel
     /// <summary>The kind of the kernel data object of a work task (Address the function, Aux its argument, Size 1 once the
     /// worker took it).</summary>
     const string WorkTaskKind = "worktask";
+
+    /// <summary>The worker thread's name.</summary>
+    const string WorkWorkerName = "SceKernelGlobalWorkQueue";
 
     /// <summary>Guards the worker's creation.</summary>
     [SnapshotIgnore]
@@ -88,11 +91,59 @@ public sealed partial class ThreadmgrKernel
     void StartWorkWorker()
     {
         Emulator kernel = Emu.Vita.KernelProcess ?? Emu;
-        GuestThread worker = kernel.Kernel.CreateThread("SceKernelGlobalWorkQueue", 0, 0x10000100, 0x4000, 0, 0);
+        GuestThread worker = kernel.Kernel.CreateThread(WorkWorkerName, 0, 0x10000100, 0x4000, 0, 0);
         worker.KernelMode = true;
         worker.HostBody = RunWorkTasks;
         _workWorker = worker;
         worker.Start(0, 0);
+    }
+
+    /// <summary>Save states (<see cref="IServiceThreadOwner"/>): the saved worker this session does not run is this
+    /// module's again (the kernel's instance, where the worker lives), with its saved UID.</summary>
+    bool IServiceThreadOwner.AdoptServiceThread(GuestThread thread)
+    {
+        if (!IsWorkWorker(thread))
+        {
+            return false;
+        }
+
+        lock (_workTasks)
+        {
+            if (_workWorker != null && _workWorker.IsLive)
+            {
+                return false;
+            }
+
+            thread.KernelMode = true;
+            thread.HostBody = RunWorkTasks;
+            _workWorker = thread;
+        }
+
+        return true;
+    }
+
+    /// <summary>Save states: a worker the loaded state does not have is forgotten (the next task makes a new one).</summary>
+    bool IServiceThreadOwner.ReleaseServiceThread(GuestThread thread)
+    {
+        lock (_workTasks)
+        {
+            if (!ReferenceEquals(thread, _workWorker))
+            {
+                return false;
+            }
+
+            _workWorker = null;
+        }
+
+        return true;
+    }
+
+    /// <summary>The worker's thread, held by this module when it is the kernel's instance. Matched by name: the name is
+    /// the fixed one the worker is made with, and it is how a save state names a service thread (IServiceThreadOwner).</summary>
+    bool IsWorkWorker(GuestThread thread)
+    {
+        Emulator kernel = Emu.Vita.KernelProcess ?? Emu;
+        return ReferenceEquals(Emu, kernel) && ReferenceEquals(thread.Process, kernel) && thread.Name == WorkWorkerName;
     }
 
     /// <summary>The worker: takes the tasks in order and calls each function with its argument.</summary>
@@ -105,6 +156,13 @@ public sealed partial class ThreadmgrKernel
             {
                 lock (self.WaitLock)
                 {
+                    // a worker a state load let go (ReleaseServiceThread) takes no more tasks: the loaded table's are
+                    // the next worker's
+                    if (self.Core.StopRequested)
+                    {
+                        break;
+                    }
+
                     task = OldestWorkTask();
                     if (task == null)
                     {

@@ -2759,6 +2759,18 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
       entram no estado (registro com o pid do kernel, voltam para o processo do kernel; o modo kernel da thread vai
       junto, opcional no fim do registro) e os módulos HLE dele em seções `kernel.hle:`; estados antigos carregam como
       antes. Teste: `SaveStateKernelThreadTests`.
+    - [x] (21/11/2026, fix/ss3) save states com plugin de kernel ativo, o que faltava: (1) threads de serviço do HLE
+      (threads do host como threads do guest: o worker da work queue global do kernel, a thread de interrupção) seguem
+      o estado: no load, a que o estado tem e a sessão não tem volta pelo dono com o UID salvo (`IServiceThreadOwner`),
+      e a que a sessão criou depois do save é solta e para (antes ficava viva fora da tabela de objetos e o load
+      inverso era recusado); (2) o banco de bibliotecas (`ksceKernelRegisterLibary`/`ReleaseLibary` depois do load do
+      módulo) vai no registro do módulo (anexado; estados antigos mantêm o da sessão) e o load acerta a tabela do
+      linker sem reescrever stubs (a memória do estado já tem os vínculos). Varredura do resto: hooks, injeções,
+      handlers de exceção e módulos já estavam no estado; nenhum módulo HLE de kernel fica sem save state. Testes:
+      `SaveStatePluginTests.ALibraryAKernelPluginRegisteredIsInTheDatabaseAsSaved`, `...TheWorkQueuesWorkerFollowsTheState`,
+      `...AKernelPluginsStateIsTheSavedOneAfterALoad`.
+    - [ ] as outras threads de serviço (fila de display do GXM, callbacks do Np, tworker de processo) só são casadas
+      pelo nome com as da sessão: um estado que tem uma delas não carrega numa sessão que ainda não a criou.
     - [x] (16/11/2026, feat/kernel-proc-switch) eventos switch do processmgr do FW 3.74: 0x11 quando um processo de
       aplicativo (tipo 0x1000000) é suspenso, 0x10 quando volta, com param {0x14, pid, estado 3/2, 0, tipo}, na entrada
       switch do handler. Teste: `KernelProcessEventTests.AHandlerHearsAnApplicationSwitchedOutAndIn`.

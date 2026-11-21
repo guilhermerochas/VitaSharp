@@ -1,3 +1,4 @@
+using VitaSharp.Core.Hle;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Loader;
@@ -156,6 +157,18 @@ internal static class KernelSnapshot
                 case ModuleObject mo:
                     w.Write(mo.Module.Path);
                     w.Write(mo.Module.Segments.TryGetValue(0, out SegmentInfo seg) ? seg.Address : 0);
+                    // appended, read only when present: which of its export entries are in the library database
+                    // (ksceKernelRegisterLibary / ksceKernelReleaseLibary change them after the load); a state of a
+                    // build before it keeps the running session's
+                    lock (mo.Module)
+                    {
+                        w.Write(mo.Module.ExportLibraries.Count);
+                        foreach (ExportLibrary library in mo.Module.ExportLibraries)
+                        {
+                            w.Write(library.Registered);
+                        }
+                    }
+
                     break;
             }
             w.EndBlock(at);
@@ -184,6 +197,54 @@ internal static class KernelSnapshot
         return emu;
     }
 
+    /// <summary>The modules that own service threads (<see cref="IServiceThreadOwner"/>), the kernel process's first.</summary>
+    private static List<IServiceThreadOwner> ServiceThreadOwners(Emulator emu)
+    {
+        var owners = new List<IServiceThreadOwner>();
+        IEnumerable<Emulator> processes = emu.Vita.KernelProcess is { } kernelProcess
+            ? emu.Vita.ProcessesAndKernel.Prepend(emu).Prepend(kernelProcess)
+            : emu.Vita.ProcessesAndKernel.Prepend(emu);
+        var seen = new HashSet<Emulator>();
+        foreach (Emulator process in processes)
+        {
+            if (!seen.Add(process))
+            {
+                continue;
+            }
+
+            foreach (HleModule hleModule in process.Hle.Modules)
+            {
+                if (hleModule is IServiceThreadOwner owner)
+                {
+                    owners.Add(owner);
+                }
+            }
+        }
+
+        return owners;
+    }
+
+    /// <summary>Puts each export entry of <paramref name="module"/> in or out of the library database as the state has
+    /// it (<see cref="Linker.RestoreLibraryRegistration"/>).</summary>
+    private static void RestoreLibraries(Linker linker, LoadedModule module, bool[] registered)
+    {
+        for (int i = 0; i < registered.Length; i++)
+        {
+            ExportLibrary library = module.ExportLibraries[i];
+            lock (module)
+            {
+                if (library.Registered == registered[i])
+                {
+                    continue;
+                }
+
+                library.Registered = registered[i];
+            }
+
+            linker.RestoreLibraryRegistration(library, registered[i]);
+        }
+    }
+
     /// <summary>Replaces the object table; returns the restored live threads, to start once everything else is loaded.</summary>
     public static List<GuestThread> Load(Emulator emu, SnapshotReader r)
     {
@@ -205,6 +266,8 @@ internal static class KernelSnapshot
         var condGiveBack = new List<(GuestThread T, int Mutex, int Count)>();
         var modulesSeen = new HashSet<ModuleObject>();
         var hostKept = new HashSet<GuestThread>();
+        List<IServiceThreadOwner> owners = ServiceThreadOwners(emu);
+        var libraryRegistrations = new List<(ModuleObject Module, bool[] Registered)>();
         for (int i = 0; i < n; i++)
         {
             string kind = r.ReadStringNotNull();
@@ -224,12 +287,26 @@ internal static class KernelSnapshot
                     if (k == GuestThread.SafeKind.HostBody)
                     {
                         // a module's service thread: the running session's own one carries on under the saved UID
-                        GuestThread host = current.OfType<GuestThread>().FirstOrDefault(x => x.HostBody != null && x.Name == t.Name && !hostKept.Contains(x))
-                            ?? throw new SnapshotException($"the service thread '{t.Name}' does not exist in this session yet; let the game start further, then load the state");
-                        t.Dispose();
-                        hostKept.Add(host);
-                        host.Rekey(uid);
-                        o = host;
+                        GuestThread? host = current.OfType<GuestThread>().FirstOrDefault(x => x.HostBody != null && x.IsLive && x.Name == t.Name && !hostKept.Contains(x));
+                        if (host != null)
+                        {
+                            t.Dispose();
+                            hostKept.Add(host);
+                            host.Rekey(uid);
+                            o = host;
+                            break;
+                        }
+
+                        // not running here (made after the moment this session is at): its owner takes the saved record
+                        // back, and it starts with the restored threads
+                        if (owners.FirstOrDefault(serviceOwner => serviceOwner.AdoptServiceThread(t)) == null)
+                        {
+                            t.Dispose();
+                            throw new SnapshotException($"the service thread '{t.Name}' does not exist in this session yet; let the game start further, then load the state");
+                        }
+
+                        live.Add(t);
+                        o = t;
                         break;
                     }
                     if (k is GuestThread.SafeKind.Parked or GuestThread.SafeKind.Reissue)
@@ -350,6 +427,22 @@ internal static class KernelSnapshot
                         && (x.Module.Segments.TryGetValue(0, out SegmentInfo segmentInfo) ? segmentInfo.Address : 0) == seg0)
                         ?? throw new SnapshotException($"module {name} ({path}) is not loaded the same way in this session; restart the game and load the state again");
                     modulesSeen.Add(mo);
+                    if (!b.AtEnd)
+                    {
+                        bool[] registered = new bool[b.ReadInt32()];
+                        for (int library = 0; library < registered.Length; library++)
+                        {
+                            registered[library] = b.ReadBool();
+                        }
+
+                        if (registered.Length != mo.Module.ExportLibraries.Count)
+                        {
+                            throw new SnapshotException($"module {name} ({path}) has {mo.Module.ExportLibraries.Count} export entries here, the state {registered.Length}");
+                        }
+
+                        libraryRegistrations.Add((mo, registered));
+                    }
+
                     o = mo;
                     break;
                 }
@@ -387,6 +480,17 @@ internal static class KernelSnapshot
             }
         }
 
+        // the running session's service threads that the state does not have (made after the save) go: their owners
+        // make new ones when they need them, as from the saved moment
+        foreach (KernelObject o in current)
+        {
+            if (o is GuestThread { HostBody: not null, IsLive: true } service && !hostKept.Contains(service)
+                && owners.FirstOrDefault(serviceOwner => serviceOwner.ReleaseServiceThread(service)) != null)
+            {
+                service.RequestStop();
+            }
+        }
+
         // the kernel process's record stays (a state saved before the kernel was one process for the whole system has
         // none: its kernel modules were the process's)
         if (emu.Vita.KernelProcess is { } kernelProcess && table.Get<ProcessObject>(KernelSpace.KernelPid) == null)
@@ -408,6 +512,13 @@ internal static class KernelSnapshot
             mo.Module.Uid = mo.Uid;
             Emulator holder = mo.Module.IsKernel ? kernelModules : moduleProcess.GetValueOrDefault(mo.Module) ?? emu;
             holder.Kernel.Modules[mo.Uid] = mo.Module;
+        }
+
+        // the library database as saved: the entries registered or released after the modules loaded
+        foreach ((ModuleObject mo, bool[] registered) in libraryRegistrations)
+        {
+            Emulator holder = mo.Module.IsKernel ? kernelModules : moduleProcess.GetValueOrDefault(mo.Module) ?? emu;
+            RestoreLibraries(holder.Linker, mo.Module, registered);
         }
         foreach (KernelObject o in objects)
         {

@@ -530,6 +530,92 @@ public sealed class Linker(IImportResolver importResolver)
         }
     }
 
+    /// <summary>
+    /// After a save state load: puts one exported library in or out of the symbol table as the saved session had it
+    /// (ksceKernelRegisterLibary / ksceKernelReleaseLibary after the module loaded), without binding any import stub or
+    /// relocating any variable import: the state's memory holds the bindings the saved session made. Imports bound from
+    /// now on see the library as the saved session did.
+    /// </summary>
+    public void RestoreLibraryRegistration(ExportLibrary library, bool registered)
+    {
+        lock (_lock)
+        {
+            for (int i = 0; i < library.Nids.Length; i++)
+            {
+                uint nid = library.Nids[i];
+                uint address = library.Entries[i];
+                if (i < library.FuncCount)
+                {
+                    if (nid is NidModuleStart or NidModuleStop or NidModuleExit)
+                    {
+                        continue;
+                    }
+
+                    if (registered)
+                    {
+                        if (_funcExports.TryAdd(nid, address))
+                        {
+                            _funcExportScopes[nid] = library.Scope;
+                        }
+
+                        _funcExportsByLib[(library.LibNid, nid)] = address;
+                        _funcExportScopesByLib[(library.LibNid, nid)] = library.Scope;
+                    }
+                    else
+                    {
+                        RemoveFunctionExport(library.LibNid, nid, address);
+                    }
+
+                    continue;
+                }
+
+                if (nid is NidProcessParam or NidModuleInfo or NidSyslib)
+                {
+                    continue;
+                }
+
+                if (registered)
+                {
+                    _varExports[nid] = address;
+                }
+                else if (_varExports.TryGetValue(nid, out uint exported) && exported == address)
+                {
+                    _varExports.Remove(nid);
+                }
+            }
+        }
+    }
+
+    /// <summary>Takes one library's export of <paramref name="nid"/> out of the tables (the caller holds the lock); the
+    /// function's export by any library goes to the next library exporting it. False when the library did not export
+    /// it at <paramref name="address"/>.</summary>
+    private bool RemoveFunctionExport(uint libNid, uint nid, uint address)
+    {
+        if (!_funcExportsByLib.TryGetValue((libNid, nid), out uint exported) || exported != address)
+        {
+            return false;
+        }
+
+        _funcExportsByLib.Remove((libNid, nid));
+        _funcExportScopesByLib.Remove((libNid, nid));
+        if (_funcExports.TryGetValue(nid, out uint any) && any == address)
+        {
+            _funcExports.Remove(nid);
+            _funcExportScopes.Remove(nid);
+            foreach (KeyValuePair<(uint lib, uint nid), uint> other in _funcExportsByLib)
+            {
+                if (other.Key.nid == nid)
+                {
+                    _funcExports[nid] = other.Value;
+                    _funcExportScopes[nid] = _funcExportScopesByLib[other.Key];
+                    break;
+                }
+            }
+        }
+
+        return true;
+    }
+
     /// <summary>Points an earlier variable import at <paramref name="address"/> again and drops the translated code of
     /// the words it rewrote (the importer's MOVW/MOVT pairs may be code that already ran).</summary>
     private void RelocateVariable(byte[] relocs, Dictionary<int, SegmentInfo> segs, uint address)
@@ -586,29 +672,13 @@ public sealed class Linker(IImportResolver importResolver)
             for (int i = 0; i < funcCount; i++)
             {
                 uint nid = nids[i];
-                if (!_funcExportsByLib.TryGetValue((libNid, nid), out uint address) || address != entries[i])
+                if (!RemoveFunctionExport(libNid, nid, entries[i]))
                 {
                     continue;
                 }
 
-                _funcExportsByLib.Remove((libNid, nid));
-                _funcExportScopesByLib.Remove((libNid, nid));
                 removed.Add((libNid, nid));
-                removedTargets.Add(address);
-                if (_funcExports.TryGetValue(nid, out uint any) && any == address)
-                {
-                    _funcExports.Remove(nid);
-                    _funcExportScopes.Remove(nid);
-                    foreach (KeyValuePair<(uint lib, uint nid), uint> other in _funcExportsByLib)
-                    {
-                        if (other.Key.nid == nid)
-                        {
-                            _funcExports[nid] = other.Value;
-                            _funcExportScopes[nid] = _funcExportScopesByLib[other.Key];
-                            break;
-                        }
-                    }
-                }
+                removedTargets.Add(entries[i]);
             }
 
             foreach ((uint nid, uint bindingLib, string? libName, uint stub, bool kernel) in _funcBindings)
