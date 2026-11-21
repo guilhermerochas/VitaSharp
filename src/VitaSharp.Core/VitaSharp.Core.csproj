@@ -3,7 +3,7 @@
   <!-- Platform-agnostic emulator core: no windowing, no graphics API, no OS specifics.
        Desktop and (future) Android front-ends plug into it through the interfaces in Host/. -->
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>$(VitaSharpDotnet)</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
