@@ -511,6 +511,67 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
         });
     }
 
+    /// <summary>An ARM BL at <paramref name="at"/> to <paramref name="target"/>.</summary>
+    private static void Bl(uint at, uint target) => GuestMemory.W32(at, 0xEB000000 | (((target - (at + 8)) >> 2) & 0xFFFFFF));
+
+    [Fact]
+    public void TheFrontierTranslatesTheFunctionsARunningFunctionCallsButNotTheirCallees()
+    {
+        if (!NativeHost)
+        {
+            return;
+        }
+
+        uint code = fixture.Memory.Alloc(0x1000, "codecache frontier depth code");
+        uint data = fixture.Memory.Alloc(0x1000, "codecache frontier depth data");
+        GuestMemory.W32(code + 0x00, 0xE3A00000); // mov r0, #0
+        GuestMemory.W32(code + 0x04, 0xE1A00000); // nop (r2 = F)
+        GuestMemory.W32(code + 0x08, 0xE12FFF32); // blx r2
+        GuestMemory.W32(code + 0x0C, 0xEF000002); // svc #2
+        GuestMemory.W32(code + 0x10, 0xE12FFF1E); // bx lr
+        GuestMemory.W32(code + 0x400, 0xE3500000); // F: cmp r0, #0
+        GuestMemory.W32(code + 0x404, 0x1A000001); //    bne rare
+        GuestMemory.W32(code + 0x408, 0xE2800005); //    add r0, r0, #5
+        GuestMemory.W32(code + 0x40C, 0xE12FFF1E); //    bx lr
+        GuestMemory.W32(code + 0x410, 0xE92D4010); // rare: push {r4, lr} (never runs)
+        Bl(code + 0x414, code + 0x500); //                  bl G
+        GuestMemory.W32(code + 0x418, 0xE8BD8010); //    pop {r4, pc}
+        GuestMemory.W32(code + 0x500, 0xE92D4010); // G: push {r4, lr}
+        Bl(code + 0x504, code + 0x600); //                  bl H
+        GuestMemory.W32(code + 0x508, 0xE8BD8010); //    pop {r4, pc}
+        GuestMemory.W32(code + 0x600, 0xE2800001); // H: add r0, r0, #1
+        GuestMemory.W32(code + 0x604, 0xE12FFF1E); //    bx lr
+        LoadedModule module = ModuleWithData(code, data, 12, 0x000, 0x400, 0x500, 0x600);
+        WithNative(() =>
+        {
+            var cache = new BlockCache();
+            var codeCache = new CodeCache(null, cache);
+            codeCache.ModuleLoaded(module);
+            codeCache.PrecompilePending(null, CancellationToken.None, workers: 2);
+            CodePrecompiler run = Assert.Single(codeCache.Runs);
+            Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+            using var core = new CpuCore(cache);
+            core.State->R[2] = code + 0x400;
+            for (int i = 0; i < 2 * Jit.MinExecutions; i++)
+            {
+                Assert.Equal(5u, Run(core, code));
+            }
+
+            Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)));
+            Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+            HashSet<uint> translated = Translated(cache);
+            // the rest of F, and G, which F calls (MaxFrontierDepth calls away)
+            Assert.Contains(code + 0x410, translated);
+            Assert.Contains(code + 0x500, translated);
+            Assert.Equal(1, CodePrecompiler.MaxFrontierDepth);
+            Assert.Equal(VitaSharp.Core.Cpu.Native.ExecutableMemory.ReserveSize / 2, Jit.AheadBudget); // what runs of a large game fits
+            // not H, which only G calls: a function two calls away from running code seldom runs soon, and translating
+            // it cost more arena than it saved (Assassin's Creed III: Liberation)
+            Assert.DoesNotContain(code + 0x600, translated);
+            codeCache.Stop();
+        });
+    }
+
     [Fact]
     public void TheFlowTranslatesTheCasesOfASwitch()
     {

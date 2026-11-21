@@ -36,8 +36,11 @@ public sealed class CodePrecompiler
 
     private const int Levels = 4;
 
-    /// <summary>How many calls away from executed code the frontier goes.</summary>
-    public const int MaxFrontierDepth = 3;
+    /// <summary>How many calls away from executed code the frontier goes: the functions a running function calls,
+    /// not their callees. Measured in Assassin's Creed III: Liberation (first session, 128 MiB budget): 3 calls deep
+    /// the frontier translated 258k blocks of which 26% ran and the budget ran out (23.8k blocks compiled while the
+    /// game ran); 1 call deep, 13.2k.</summary>
+    public const int MaxFrontierDepth = 1;
 
     /// <summary>Statistics so far.</summary>
     public readonly record struct Result(int Translated, int Visited, int Found, bool Cancelled, bool ArenaLimit);
