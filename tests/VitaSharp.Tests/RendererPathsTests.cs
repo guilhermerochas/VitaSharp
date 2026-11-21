@@ -693,6 +693,84 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
         }
     }
 
+    /// <summary>
+    /// A fragment program with an integer output writes raw bits through an integer view of the surface (R32G32Uint on
+    /// F32F32, R16G16B16A16Uint on F16x4, R8G8B8A8Uint on U8x4...), a pipeline of its own attachment format. The draw
+    /// prefetch sees the draw's textures and the predicted surface and builds that pipeline on the shader workers, as
+    /// program load does; it used to leave it to the GPU thread, so a first session built every integer-view pipeline
+    /// there (the cold replay of a dump with raw G-buffer outputs on an F32F32 surface: 37 without program load, and with
+    /// it the one whose textures were of another class than the program-load prediction). Covered: every surface format
+    /// with an integer view, signed and unsigned outputs, a multisampled surface, textures of the predicted class and of
+    /// another one, program load on and off, and pipeline libraries (the pipeline linked ahead instead of built).
+    /// </summary>
+    [SoftwareVulkanTheory]
+    [InlineData(0x00000000u, (byte)ParamTypeU32, (byte)1, (ushort)0, false, false)] // U8U8U8U8 -> R8G8B8A8Uint
+    [InlineData(0x01000000u, (byte)ParamTypeU32, (byte)2, (ushort)0, false, false)] // F16F16F16F16 -> R16G16B16A16Uint
+    [InlineData(0x00800000u, (byte)ParamTypeS32, (byte)1, (ushort)0, false, false)] // F16F16 -> R16G16Uint
+    [InlineData(0x11000000u, (byte)ParamTypeU32, (byte)2, (ushort)0, false, false)] // F32F32 -> R32G32Uint (the G-buffer case)
+    [InlineData(0x11000000u, (byte)ParamTypeU32, (byte)2, (ushort)0, true, false)]  // the same with program load on
+    [InlineData(0x10800000u, (byte)ParamTypeS32, (byte)1, (ushort)0, false, false)] // F32 -> R32Uint
+    [InlineData(0x00000000u, (byte)ParamTypeU32, (byte)1, (ushort)2, false, false)] // U8U8U8U8, 4x MSAA downscaled
+    [InlineData(0x11000000u, (byte)ParamTypeU32, (byte)2, (ushort)0, false, true)]  // F32F32 with pipeline libraries (linked ahead)
+    public void DrawPrefetchBuildsTheIntegerViewOfEachRawDrawBeforeItRuns(uint colorFormat, byte outputType, byte components, ushort multisample, bool programLoad, bool pipelineLibrary)
+    {
+        using IDisposable driver = SoftwareVulkan.Use();
+        string cache = Path.Combine(Path.GetTempPath(), "vitasharp-rawprefetch-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var r = new VulkanRenderer(new VulkanRendererOptions
+            {
+                VSync = false,
+                AsyncShaders = true,
+                AsyncPipelines = true,
+                CompileOnProgramLoad = programLoad,
+                PipelineLibrary = pipelineLibrary,
+                ShaderCacheDir = cache,
+            });
+            int gpuPipelines = -1, integerView = -1, raw = -1;
+            using var h = new HleHarness(fx, "rawprefetch");
+            try
+            {
+                h.Emu.Gpu.Backend = new PrefetchedFirstBackend(r);
+                r.BeginTitle("PCSA00083");
+                var w = new RendererTextureTests.Workload(h, multisample, colorFormat, scaleMode: multisample != 0 ? 1u : 0u);
+                uint fragmentProgram = w.CreateRawProgram((Core.Gxm.Shader.ParamType)outputType, components);
+                foreach (Core.Gxm.TexBase format in new[] { Core.Gxm.TexBase.U8U8U8U8, Core.Gxm.TexBase.F16F16F16F16, Core.Gxm.TexBase.UBC3 })
+                {
+                    int index = Enumerable.Range(0, w.Textures.Count).First(i => w.TextureFormats[i] == format && !w.CubeTextures.Contains(w.Textures[i]));
+                    w.RunWith(fragmentProgram, w.Textures[index]);
+                }
+
+                h.Emu.Gpu.WaitIdle();
+                int[] kinds = (int[])typeof(VulkanRenderer).GetField("_statGpuPipelineKinds", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(r)!;
+                (gpuPipelines, integerView) = (Stat(r, "_statGpuPipelines"), kinds[2]);
+                raw = Stat(r, "_statPipelinesPrefetched") + r.ProgramLoadStats.PipelinesBuilt + r.PipelineStats.LinkedInBackground;
+                w.Terminate();
+            }
+            finally
+            {
+                h.Emu.Gpu.WaitIdle();
+                h.Emu.Gpu.Backend = null;
+                r.Dispose();
+            }
+
+            Assert.Equal((0, 0), (integerView, gpuPipelines));
+            Assert.True(raw >= 1, $"{raw} pipelines built ahead");
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(cache, true);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    private const byte ParamTypeU32 = (byte)Core.Gxm.Shader.ParamType.U32;
+    private const byte ParamTypeS32 = (byte)Core.Gxm.Shader.ParamType.S32;
+
     [SoftwareVulkanFact]
     public void CancelledShaderCacheLoadLetsTheGameStartAndTheRestBuildsInTheBackground()
     {

@@ -197,6 +197,34 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
             return GuestMemory.R32(fp);
         }
 
+        /// <summary>Registers and creates a texture-sampling fragment program declaring an <paramref name="output"/> x
+        /// <paramref name="components"/> output: with an integer type its draws write raw bits through the surface's
+        /// integer view (as a G-buffer pass packing its words).</summary>
+        public uint CreateRawProgram(ParamType output, byte components)
+        {
+            uint id = _h.Word(0), fp = _h.Word(0);
+            Assert.Equal(0, Call(_g, "sceGxmShaderPatcherRegisterProgram", _patcher, Copy(_h, SamplingFragmentGxp(output: output, outputComponents: components)), new Ptr<uint>(id)));
+            Assert.Equal(0, Call(_g, "sceGxmShaderPatcherCreateFragmentProgram", _patcher, GuestMemory.R32(id), 0u, 0u, 0u, _vertexGxp, new Ptr<uint>(fp)));
+            return GuestMemory.R32(fp);
+        }
+
+        /// <summary>One scene drawing the whole surface once with <paramref name="fragmentProgram"/> and
+        /// <paramref name="texture"/> on unit 3, and a present.</summary>
+        public void RunWith(uint fragmentProgram, uint texture)
+        {
+            Assert.Equal(0, Call(_g, "sceGxmBeginScene", Ctx, 0u, Rt, 0u, 0u, 0u, Color, 0u));
+            Invoke(_g, "sceGxmSetVertexProgram", Ctx, Vp);
+            Invoke(_g, "sceGxmSetFragmentProgram", Ctx, fragmentProgram);
+            Invoke(_g, "sceGxmSetFrontDepthFunc", Ctx, 0x00E00000u); // ALWAYS
+            Invoke(_g, "sceGxmSetCullMode", Ctx, 0u);
+            Assert.Equal(0, Call(_g, "sceGxmSetVertexStream", Ctx, 0u, Verts));
+            Assert.Equal(0, Call(_g, "sceGxmSetFragmentTexture", Ctx, 3u, texture));
+            Assert.Equal(0, Call(_g, "sceGxmDraw", Ctx, 0u, 0u, Idx, 3u));
+            Assert.Equal(0, Call(_g, "sceGxmEndScene", Ctx, 0u, 0u));
+            _h.Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(Data, W, W, H, DisplayPixelFormat.A8B8G8R8) });
+            Assert.Equal(0, Call(_g, "sceGxmFinish", Ctx));
+        }
+
         public void Terminate() => Call(_g, "sceGxmTerminate");
     }
 
@@ -235,7 +263,9 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
     /// through unit 3 (a fragment varying descriptor, as stripped programs have), stored as F32 in pa0-pa3, and its
     /// output is pa0-pa3 as F32x4: the draw shows the texture.</summary>
     /// <param name="fragColor">the program also reads the surface colour (programmable blending)</param>
-    internal static byte[] SamplingFragmentGxp(bool cube = false, bool fragColor = false)
+    /// <param name="output">the declared output type (an integer type: raw bits through the surface's integer view)</param>
+    /// <param name="outputComponents">the declared output components</param>
+    internal static byte[] SamplingFragmentGxp(bool cube = false, bool fragColor = false, ParamType output = ParamType.F32, byte outputComponents = 4)
     {
         byte[] d = new byte[0x200];
         void W32(int o, uint v) => System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(o), v);
@@ -243,8 +273,8 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
         W32(8, (uint)d.Length);
         W32(0x14, GxpProgram.FlagFragment | (fragColor ? GxpProgram.FlagFragColorUsed : 0));
         W32(0x2C, 0x100 - 0x2C);    // varyings at 0x100
-        d[0x100 + 10] = (byte)ParamType.F32;
-        d[0x100 + 11] = 4;          // output: F32x4 from pa0
+        d[0x100 + 10] = (byte)output;
+        d[0x100 + 11] = outputComponents; // output: F32x4 from pa0 by default
         d[0x100 + 12] = 1;          // one varying descriptor
         W32(0x110, 0x20);           // descriptors at 0x130
         W32(0x130, 0xF000);         // no attribute input, texture coordinate 0
