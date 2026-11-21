@@ -28,6 +28,10 @@ public sealed unsafe partial class VulkanRenderer
         public ImageView View;
         public ImageMemoryPool.Allocation Mem;
         public long Order;
+        /// <summary>Where the content was read from: guest address, bytes and <see cref="Texture.SpaceId"/> (its
+        /// process's end releases it, VulkanRenderer.ProcessEnd.cs).</summary>
+        public uint Address, Bytes;
+        public int SpaceId;
     }
 
     private readonly Dictionary<ContentKey, KeptImage> _contentCache = new();
@@ -50,7 +54,7 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Keeps an image the texture stops showing under its content <paramref name="hash"/> (0: unknown content,
     /// the image goes); evicts the oldest kept images over the budget.</summary>
-    private void KeepContent(TexKey key, ulong hash, Image image, ImageView view, ImageMemoryPool.Allocation mem, uint bytes)
+    private void KeepContent(TexKey key, ulong hash, Image image, ImageView view, ImageMemoryPool.Allocation mem, uint bytes, int spaceId)
     {
         ContentKey contentKey = ContentKeyOf(key, hash);
         if (hash == 0 || bytes > ContentCacheMaxTexture || _contentCache.ContainsKey(contentKey))
@@ -58,7 +62,7 @@ public sealed unsafe partial class VulkanRenderer
             ReleaseImage(image, view, mem, now: false);
             return;
         }
-        _contentCache[contentKey] = new KeptImage { Image = image, View = view, Mem = mem, Order = ++_contentOrder };
+        _contentCache[contentKey] = new KeptImage { Image = image, View = view, Mem = mem, Order = ++_contentOrder, Address = key.Data, Bytes = bytes, SpaceId = spaceId };
         _contentCacheBytes += mem.Size;
         while (_contentCacheBytes > ContentCacheBudget && _contentCache.Count > 0)
         {

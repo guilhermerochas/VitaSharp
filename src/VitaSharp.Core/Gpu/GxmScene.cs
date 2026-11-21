@@ -47,6 +47,10 @@ public sealed class ProcessEndedCommand : GpuCommand
 {
     /// <summary>The process had a scene open in the GPU queue's interleaved mode, which the backend must close.</summary>
     public bool HadOpenScene;
+    /// <summary>The blocks the process held in the shared regions (CDRAM, kernel memory), freed with it: what the
+    /// backend made of that memory (surfaces, textures, vertex copies) goes too, whichever process used it last. Its
+    /// private memory is <see cref="GpuCommand.Space"/>.</summary>
+    public (uint Address, uint Size)[] SharedMemory = [];
 }
 
 public sealed class PresentCommand : GpuCommand

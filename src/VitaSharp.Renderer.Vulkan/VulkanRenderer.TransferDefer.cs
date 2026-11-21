@@ -49,6 +49,8 @@ public sealed unsafe partial class VulkanRenderer
         /// <summary>Bumped at every GPU transfer into the image (mip levels copied from it refresh on a change).</summary>
         public long Version;
         public long LastUsedFrame;
+        /// <summary><see cref="Texture.SpaceId"/> of the destination memory (its process's end releases the image).</summary>
+        public int SpaceId;
         /// <summary>The sampled view and what it was made for.</summary>
         public ImageView SampledView;
         public ComponentMapping SampledSwizzle;
@@ -260,7 +262,7 @@ public sealed unsafe partial class VulkanRenderer
                 EvictTransferImages();
             }
 
-            dst = new TransferImage { Width = w, Height = h, Format = format };
+            dst = new TransferImage { Width = w, Height = h, Format = format, SpaceId = SpaceIdOf(transfer.DstAddress) };
             (dst.Image, dst.View, dst.Mem) = CreateImage(MemCat.Region, w, h, format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit,
                 ImageAspectFlags.ColorBit, mutable: true);
             _xferImages[transfer.DstAddress] = dst;
