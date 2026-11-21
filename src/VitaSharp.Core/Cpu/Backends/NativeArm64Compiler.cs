@@ -130,7 +130,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         byte[] bytes = arm64Emitter.Assemble(0);
         long encode = Stopwatch.GetTimestamp() - t3;
         int size = bytes.Length;
-        byte* code = rt.Code.Place(bytes);
+        byte* code = rt.Code.Place(bytes, Jit.ReuseFreedCode);
         Interlocked.Add(ref NativeX64Compiler.CodeBytes, size); // one counter for both native backends (Report)
         if (stubs.PatchLinks)
         {

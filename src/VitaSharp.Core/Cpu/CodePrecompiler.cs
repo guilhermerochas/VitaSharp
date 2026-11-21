@@ -54,7 +54,7 @@ public sealed class CodePrecompiler
         doneUpTo || (waitFor == Priority.Cached && done >= BootCachedBlocks);
 
     /// <summary>Statistics so far.</summary>
-    public readonly record struct Result(int Translated, int Visited, int Found, bool Cancelled, bool ArenaLimit);
+    public readonly record struct Result(int Translated, int Visited, int Found, bool Cancelled, bool ArenaLimit, int Evicted = 0);
 
     private readonly BlockCache _cache;
     private readonly AddressSpace? _space;
@@ -62,13 +62,14 @@ public sealed class CodePrecompiler
     private readonly Func<uint, uint>? _functionStart;
     private readonly Action<uint, List<(uint Pc, bool Thumb)>>? _pointersOf;
     private readonly ConcurrentDictionary<uint, byte> _expandedFunctions = new();
+    private readonly HashSet<uint> _recordedFunctions = [];
     private readonly ConcurrentDictionary<ulong, byte> _seen = new();
     private readonly ConcurrentQueue<(uint Pc, bool Thumb, int Depth)>[] _queues = [new(), new(), new(), new()];
     private readonly ConcurrentQueue<Block> _executed = new();
     private readonly int[] _outstanding = new int[Levels + 1]; // queued or being worked on, per priority (+ executed blocks)
     private readonly SemaphoreSlim _work = new(0);
     private readonly CancellationTokenSource _stop = new();
-    private int _known, _done, _translated, _found, _arenaLimit, _foreground;
+    private int _known, _done, _translated, _found, _arenaLimit, _foreground, _evicted;
 
     /// <summary>Background threads that keep translating after <see cref="Run"/> returns.</summary>
     public static int BackgroundWorkers => Math.Clamp(Environment.ProcessorCount / 4, 1, 3);
@@ -84,7 +85,7 @@ public sealed class CodePrecompiler
     }
 
     public Result Statistics => new(Volatile.Read(ref _translated), Volatile.Read(ref _done), Volatile.Read(ref _found), _stop.IsCancellationRequested,
-        Volatile.Read(ref _arenaLimit) != 0);
+        Volatile.Read(ref _arenaLimit) != 0, Volatile.Read(ref _evicted));
 
     /// <summary>Whether every queue is empty and nothing is being worked on.</summary>
     public bool Finished
@@ -102,6 +103,10 @@ public sealed class CodePrecompiler
             return true;
         }
     }
+
+    /// <summary>Whether the block at (<paramref name="pc"/>, <paramref name="thumb"/>) was queued by this run
+    /// (diagnostics: the analysis found it).</summary>
+    public bool Queued(uint pc, bool thumb) => _seen.ContainsKey(pc | (thumb ? 1ul << 32 : 0));
 
     /// <summary>Stops the background translation (process end); blocks already translated stay.</summary>
     public void Stop()
@@ -154,6 +159,14 @@ public sealed class CodePrecompiler
         Action<uint, List<(uint Pc, bool Thumb)>>? pointersOf = null)
     {
         var run = new CodePrecompiler(cache, space, follow, functionStart, pointersOf);
+        foreach (((uint Pc, bool Thumb) target, Priority priority) in seeds)
+        {
+            if (priority == Priority.Cached && functionStart?.Invoke(target.Pc) is { } function and not 0)
+            {
+                run._recordedFunctions.Add(function); // read-only once the threads start
+            }
+        }
+
         foreach (((uint Pc, bool Thumb) target, Priority priority) in seeds)
         {
             if (priority != Priority.Index)
@@ -234,6 +247,7 @@ public sealed class CodePrecompiler
         using AddressSpace.Activation activation = AddressSpace.Use(_space);
         var exits = new List<(uint Pc, bool Thumb)>();
         Jit.StaticExits = exits;
+        Jit.ReuseFreedCode = true;
         while (!_stop.IsCancellationRequested && (stays || Volatile.Read(ref _foreground) != 0))
         {
             if (_executed.TryDequeue(out Block? executed))
@@ -276,6 +290,7 @@ public sealed class CodePrecompiler
         }
 
         Jit.StaticExits = null;
+        Jit.ReuseFreedCode = false;
     }
 
     private bool TryTake(out (uint Pc, bool Thumb, int Depth) target, out int level)
@@ -294,6 +309,8 @@ public sealed class CodePrecompiler
 
     private void Translate((uint Pc, bool Thumb, int Depth) target, int level, List<(uint Pc, bool Thumb)> exits)
     {
+        bool speculative = level != (int)Priority.Cached;
+        MakeRoom();
         if (!Jit.ArenaHasRoomForAhead())
         {
             Volatile.Write(ref _arenaLimit, 1);
@@ -302,18 +319,28 @@ public sealed class CodePrecompiler
 
         exits.Clear();
         Block block = _cache.Get(target.Pc, target.Thumb);
-        if (Jit.CompileAheadOne(block))
+        if (Jit.CompileAheadOne(block, (byte)level, speculative))
         {
-            block.AheadPriority = (byte)level;
             Interlocked.Increment(ref _translated);
+            if (level == (int)Priority.Flow)
+            {
+                s_speculativeFlow.Push((block, this));
+            }
+            else if (speculative)
+            {
+                s_speculativeFrontier.Enqueue((block, this));
+            }
         }
         else if (_follow != null)
         {
             StaticExitsOf(block, exits); // compiled already (an earlier priority, or the game): its exits still count
         }
 
-        if (_follow == null)
+        if (_follow == null || !speculative || InRecordedFunction(block, (Priority)level))
         {
+            // the code cache says which blocks of these functions ran (all of a function's paths are seldom taken: in
+            // Assassin's Creed III: Liberation the rest of the recorded functions was 140k blocks, of which 5% ran);
+            // the frontier only reaches past them from what this session runs (ExpandNow), one block at a time
             return;
         }
 
@@ -329,6 +356,11 @@ public sealed class CodePrecompiler
         exits.Clear();
         StaticExitsOf(block, exits);
         Follow(block, exits, Priority.Frontier, 0, Priority.Running);
+        if (InRecordedFunction(block, Priority.Running))
+        {
+            return; // narrow: its successors only (Translate)
+        }
+
         // the rest of the function it is in (the exception index names the function starts)
         if (_functionStart?.Invoke(block.Start) is not { } start || start == 0)
         {
@@ -352,6 +384,42 @@ public sealed class CodePrecompiler
                 {
                     Interlocked.Increment(ref _found);
                 }
+            }
+        }
+    }
+
+    /// <summary>Whether the code cache recorded blocks of the function <paramref name="block"/> is in (frontier work
+    /// only: the flow from the entry points is not narrowed).</summary>
+    private bool InRecordedFunction(Block block, Priority level) =>
+        level != Priority.Flow && _recordedFunctions.Count > 0 && _functionStart != null && _recordedFunctions.Contains(_functionStart(block.Start));
+
+    /// <summary>The speculative blocks every run translated so far (<see cref="MakeRoom"/>; the arena is one per
+    /// process, and so is its budget): the flow from the entry points, newest on top, and the frontier, oldest first.</summary>
+    private static readonly ConcurrentStack<(Block Block, CodePrecompiler Run)> s_speculativeFlow = new();
+    private static readonly ConcurrentQueue<(Block Block, CodePrecompiler Run)> s_speculativeFrontier = new();
+
+    /// <summary>
+    /// Keeps the speculative code waiting to run within <see cref="Jit.SpeculativeBudget"/> (and all the code
+    /// translated ahead within <see cref="Jit.AheadBudget"/>) by evicting speculative blocks the guest has not run;
+    /// what ran is never evicted (it is skipped: running publishes a block, which takes it out of the guesses). The
+    /// weakest guesses go first: the flow from the entry points, the deepest first (the code farthest from where the
+    /// game starts; in Killzone: Mercenary 19% of the flow ran, 43% of the frontier), then the frontier, the oldest
+    /// first (code next to what the game ran long ago and has not needed since; how an LRU cache evicts, without
+    /// bookkeeping on every use). An evicted block is translated again if the frontier reaches it later.
+    /// </summary>
+    private static void MakeRoom()
+    {
+        while (Volatile.Read(ref Jit.SpeculativeBytes) > Jit.SpeculativeBudget || !Jit.ArenaHasRoomForAhead())
+        {
+            if (!s_speculativeFlow.TryPop(out (Block Block, CodePrecompiler Run) guess) && !s_speculativeFrontier.TryDequeue(out guess))
+            {
+                return;
+            }
+
+            if (Jit.EvictAhead(guess.Block))
+            {
+                guess.Run._seen.TryRemove(guess.Block.Start | (guess.Block.Thumb ? 1ul << 32 : 0), out _);
+                Interlocked.Increment(ref guess.Run._evicted);
             }
         }
     }

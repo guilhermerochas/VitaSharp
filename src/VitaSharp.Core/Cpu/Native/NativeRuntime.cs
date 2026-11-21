@@ -22,6 +22,9 @@ public sealed unsafe partial class NativeRuntime
     private static NativeRuntime? s_instance;
     private static readonly object s_initLock = new();
 
+    /// <summary>Whether <see cref="Instance"/> exists already (diagnostics that must not create it).</summary>
+    public static bool IsCreated => Volatile.Read(ref s_instance) != null;
+
     public static NativeRuntime Instance
     {
         get
@@ -507,15 +510,31 @@ public sealed unsafe partial class NativeRuntime
 
     // ------------------------------------------------------------------ crash diagnostics
 
-    private readonly List<(nint Entry, int Size, Block Block)> _blocks = new();
+    private readonly Dictionary<nint, (int Size, Block Block)> _blocks = new();
 
     /// <summary>Remembers which guest block owns a code range (crash reports).</summary>
     public void Register(nint entry, int size, Block b)
     {
         lock (_blocks)
         {
-            _blocks.Add((entry, size, b));
+            _blocks[entry] = (size, b);
         }
+    }
+
+    /// <summary>
+    /// Gives back the code of a block that was never published and never will be (a block translated ahead that the
+    /// precompilation evicted, <see cref="Jit.EvictAhead"/>): no exit links to it and the dispatcher never chose it, so
+    /// no thread can be inside it. Its arena range is reused by later placements (<see cref="ExecutableMemory.Free"/>).
+    /// Its link slots stay allocated (a few words, never linked: its exits never ran).
+    /// </summary>
+    public void Release(nint entry, int size)
+    {
+        lock (_blocks)
+        {
+            _blocks.Remove(entry);
+        }
+
+        Code.Free((byte*)entry, size);
     }
 
     [LibraryImport("kernel32.dll")]
@@ -563,7 +582,7 @@ public sealed unsafe partial class NativeRuntime
             string where = "?";
             lock (s_instance._blocks)
             {
-                foreach ((nint e, int size, Block? b) in s_instance._blocks)
+                foreach ((nint e, (int size, Block? b)) in s_instance._blocks)
                 {
                     if (rip >= (ulong)e && rip < (ulong)e + (ulong)size)
                     {
