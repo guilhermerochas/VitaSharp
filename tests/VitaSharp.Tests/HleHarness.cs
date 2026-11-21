@@ -120,7 +120,9 @@ public sealed class HleHarness : IDisposable
         return run;
     }
 
-    public void Join(GuestRun run, int timeoutMs = 30_000)
+    /// <summary>Waits for <paramref name="run"/> to end. The limit only guards against a hang (2 min, as <see cref="Until"/>):
+    /// a thread that must end is waited for, never timed on the host's clock.</summary>
+    public void Join(GuestRun run, int timeoutMs = 120_000)
     {
         Assert.True(run.Thread.WaitForExit(timeoutMs), $"guest thread '{run.Thread.Name}' did not finish");
         if (run.Failure != null)

@@ -267,8 +267,8 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
             Assert.Equal(0, otherResult);
             release.Set();
             subject.Give();
-            _h.Join(other, 5_000);
-            _h.Join(notified, 5_000);
+            _h.Join(other);
+            _h.Join(notified);
             Assert.Equal(0, notifiedResult);
         });
     }
@@ -322,7 +322,7 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
                 Assert.Equal(1, subject.Waiters()); // a microsecond before the original deadline it still waits
                 clock.Advance(1);
             }
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal(SceError.WAIT_TIMEOUT, result);
             Assert.Equal(0u, GuestMemory.R32(timeout));
             if (kind is "mutex" or "lwmutex" or "lwmutex-syscall" or "rwlock")
@@ -395,7 +395,7 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
             {
                 Assert.Equal(0, Call(Tm, "sceKernelSetEvent", uid, EventBit, 0UL));
             }
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal(0, result);
         });
     }
@@ -442,7 +442,7 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
                 Assert.Equal(1, rwLock.WriteWaiters);
                 clock.Advance(1);
             }
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal(SceError.WAIT_TIMEOUT, result);
             Assert.Equal(0, Call(Tm, "sceKernelUnlockReadRWLock", uid));
         });
@@ -634,7 +634,7 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
             Assert.Equal((uint)uid, ranWith);
             Assert.Equal(0x77u, argument);
             Assert.Equal(0, Call(Tm, "sceKernelSetEvent", uid, 0x02000000u, 0UL));
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal(0, result);
         });
     }

@@ -20,6 +20,10 @@ public static class Wait
     /// sync object's lock.</summary>
     public static void WakeLatency() => Latency();
 
+    /// <summary>Tests: serves a wake-up latency in place of the host sleep (null: the sleep), so a test decides when the
+    /// latency ends instead of measuring how long a call took on the host's clock.</summary>
+    internal static Action? LatencyForTest { get; set; }
+
     private static void Latency()
     {
         if (SyscallLatencyUs <= 0 || GuestClock.Turbo)
@@ -28,6 +32,12 @@ public static class Wait
         }
 
         Interlocked.Increment(ref Latencies);
+        if (LatencyForTest is { } served)
+        {
+            served();
+            return;
+        }
+
         PreciseSleep.Until(System.Diagnostics.Stopwatch.GetTimestamp() + SyscallLatencyUs * System.Diagnostics.Stopwatch.Frequency / 1_000_000);
     }
 

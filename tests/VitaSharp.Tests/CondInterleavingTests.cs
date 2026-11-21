@@ -90,7 +90,7 @@ public sealed class CondInterleavingTests(GuestMemoryFixture fixture) : IDisposa
 
             foreach (GuestRun waiter in waiters)
             {
-                _h.Join(waiter, 5_000);
+                _h.Join(waiter);
             }
 
             Assert.Equal([0, 0, 0], results);
@@ -136,8 +136,8 @@ public sealed class CondInterleavingTests(GuestMemoryFixture fixture) : IDisposa
                 Assert.Equal(0, Waiting(main, cond));
                 clock.Advance(LimitUs * 2); // the released thread runs past its own deadline
             }
-            _h.Join(late, 5_000);
-            _h.Join(next, 5_000);
+            _h.Join(late);
+            _h.Join(next);
             Assert.Equal([SceError.WAIT_TIMEOUT, 0], results);
             Assert.Equal(0u, GuestMemory.R32(lateTimeout));
             Assert.Equal(LimitUs * 2 - LimitUs - BeforeSignalUs, GuestMemory.R32(nextTimeout));
@@ -201,8 +201,8 @@ public sealed class CondInterleavingTests(GuestMemoryFixture fixture) : IDisposa
                     Assert.Equal(0u, main.DispatchForTest("sceKernelDeleteCond", (uint)cond));
                 }
             }
-            _h.Join(runs[0], 5_000);
-            _h.Join(runs[1], 5_000);
+            _h.Join(runs[0]);
+            _h.Join(runs[1]);
             int expected = light ? SceError.WAIT_DELETE_LW_COND : SceError.WAIT_DELETE_COND;
             Assert.Equal([expected, expected], results);
             Assert.Equal((0, 0, null), mutexObject.Info()); // nobody took the mutex back
@@ -239,7 +239,7 @@ public sealed class CondInterleavingTests(GuestMemoryFixture fixture) : IDisposa
             Until(() => waiter.Thread.Status == ThreadStatus.Waiting && waiter.Thread.CurrentWaitSync is CondVar, "the cond wait");
             Assert.Equal((1, 0, waiter.Thread), Mtx(mutex).Info()); // still held by the waiter, by 1
             Assert.Equal(0, Call(Tm, "sceKernelSignalCond", cond));
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal(0, result);
             Assert.Equal((2, 0, waiter.Thread), after);
         });
@@ -267,16 +267,16 @@ public sealed class CondInterleavingTests(GuestMemoryFixture fixture) : IDisposa
             Until(() => other.Thread.Status == ThreadStatus.Waiting, "the other wait");
             Assert.Equal(SceError.ILLEGAL_THREAD_ID, Call(Tm, "sceKernelSignalCondTo", cond, other.Thread.Uid));
             Assert.Equal(0, Call(Tm, "sceKernelSignalSema", gate, 1));
-            _h.Join(other, 5_000);
+            _h.Join(other);
             lock (Cond(cond))
             {
                 Assert.Equal(0u, main.DispatchForTest("sceKernelSignalCondTo", (uint)cond, (uint)second.Thread.Uid));
                 Assert.Equal(1, Waiting(main, cond));
             }
-            _h.Join(second, 5_000);
+            _h.Join(second);
             Assert.Equal(ThreadStatus.Waiting, first.Thread.Status);
             Assert.Equal(0, Call(Tm, "sceKernelSignalCondAll", cond));
-            _h.Join(first, 5_000);
+            _h.Join(first);
             Assert.Equal([0, 0], results);
             Assert.Equal([1, 0], order);
         });

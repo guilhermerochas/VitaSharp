@@ -219,8 +219,8 @@ public sealed class CallbackInterleavingTests(GuestMemoryFixture fixture) : IDis
             Assert.Equal(0x1u, GuestMemory.R32(otherBits));
             Assert.Equal(0u, flag.Pattern);
             Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", flagUid, 0x1u));
-            _h.Join(notified, 5_000);
-            _h.Join(other, 5_000);
+            _h.Join(notified);
+            _h.Join(other);
             Assert.Equal(0, notifiedResult);
             Assert.Equal(0x1u, GuestMemory.R32(notifiedBits));
             Assert.Equal(0u, flag.Pattern);
@@ -260,7 +260,7 @@ public sealed class CallbackInterleavingTests(GuestMemoryFixture fixture) : IDis
                 Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", uid, 0x1u));
                 Assert.Equal(0, Call(Tm, "sceKernelNotifyCallback", callback, 0));
             }
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal(0, result);
             Assert.Equal(1, ranBeforeReturn);
             Assert.Equal(0, waiter.Thread.PendingCallbacks);
@@ -310,7 +310,7 @@ public sealed class CallbackInterleavingTests(GuestMemoryFixture fixture) : IDis
             Assert.Equal(SceError.EVF_COND, ownPoll);
             Assert.Equal(SceError.EVF_MULTI, Call(Tm, "sceKernelPollEventFlag", flagUid, 0x2u, EventFlag.WaitAnd, new Ptr<uint>(0)));
             Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", flagUid, 0x1u));
-            _h.Join(owner, 5_000);
+            _h.Join(owner);
             Assert.Equal(0, result);
             Assert.Equal(0, Call(Tm, "sceKernelPollEventFlag", flagUid, 0x1u, EventFlag.WaitAnd, new Ptr<uint>(0))); // the wait ended: free again
         });
@@ -353,7 +353,7 @@ public sealed class CallbackInterleavingTests(GuestMemoryFixture fixture) : IDis
                 Assert.Equal(1, flag.Waiters); // a microsecond before the original deadline it still waits
                 clock.Advance(1);
             }
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal(SceError.WAIT_TIMEOUT, result);
             Assert.Equal(0u, GuestMemory.R32(timeout));
         });

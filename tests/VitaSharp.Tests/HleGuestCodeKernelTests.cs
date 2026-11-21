@@ -375,7 +375,7 @@ public sealed unsafe class HleGuestCodeKernelTests(GuestMemoryFixture fixture)
                     Assert.Null(tryRoutine.Call(work, 1, 0, t));
                     Assert.Equal(Core.Kernel.SceError.LW_MUTEX_FAILED_TO_OWN, HleHarness.Call(tm, "sceKernelTryLockLwMutex", work, 1));
                 }
-                harness.Join(waiter, 5_000);
+                harness.Join(waiter);
                 Assert.Equal(0, result);
                 Assert.Equal(0u, GuestMemory.R32(work)); // the waiter's unlock with nobody queued freed it
                 Assert.Equal(0u, tryRoutine.Call(work, 1, 0, t));

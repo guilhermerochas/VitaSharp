@@ -75,7 +75,7 @@ public sealed class EventFlagInterleavingTests(GuestMemoryFixture fixture) : IDi
                 Assert.Equal(multi ? 0x2u : 0xDEADBEEFu, GuestMemory.R32(outBits));
                 Assert.Equal(multi ? 0u : 0x2u, Flag(uid).Pattern);
                 Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", uid, 0x1u));
-                _h.Join(waiter, 5_000);
+                _h.Join(waiter);
                 Assert.Equal(0, waitResult);
             }
         });
@@ -140,9 +140,9 @@ public sealed class EventFlagInterleavingTests(GuestMemoryFixture fixture) : IDi
             Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", uid, 0x1u));
             Assert.Equal(0x2u, flag.Pattern); // the second waiter took bit 0 inside this set
             Assert.Equal(0, Call(Tm, "sceKernelDelayThread", 1000u)); // main blocks: the held threads go on
-            _h.Join(first, 5_000);
-            _h.Join(or, 5_000);
-            _h.Join(second, 5_000);
+            _h.Join(first);
+            _h.Join(or);
+            _h.Join(second);
             Assert.Equal(0, secondResult);
             Assert.Equal(0x3u, GuestMemory.R32(secondBits));
         });
@@ -179,7 +179,7 @@ public sealed class EventFlagInterleavingTests(GuestMemoryFixture fixture) : IDi
             }
             foreach (GuestRun waiter in waiters)
             {
-                _h.Join(waiter, 5_000);
+                _h.Join(waiter);
             }
 
             Assert.Equal(2u, GuestMemory.R32(numWait));
@@ -209,7 +209,7 @@ public sealed class EventFlagInterleavingTests(GuestMemoryFixture fixture) : IDi
                 Assert.Equal(0u, main.DispatchForTest("sceKernelDeleteEventFlag", (uint)uid));
                 Assert.Equal(unchecked((uint)SceError.UNKNOWN_EVF_ID), main.DispatchForTest("sceKernelSetEventFlag", (uint)uid, 0x1u));
             }
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal(SceError.WAIT_DELETE, result);
             Assert.Equal(0x6u, GuestMemory.R32(outBits));
             Assert.Equal(SceError.UNKNOWN_EVF_ID, Call(Tm, "sceKernelPollEventFlag", uid, 0x1u, 0u, new Ptr<uint>(0)));
@@ -242,7 +242,7 @@ public sealed class EventFlagInterleavingTests(GuestMemoryFixture fixture) : IDi
                 clock.Advance(LimitUs);
                 Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", uid, 0x1u));
             }
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal(SceError.WAIT_TIMEOUT, result);
             Assert.Equal(0u, GuestMemory.R32(timeout));
             Assert.Equal(0x8u, GuestMemory.R32(outBits));
@@ -274,7 +274,7 @@ public sealed class EventFlagInterleavingTests(GuestMemoryFixture fixture) : IDi
                 Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", uid, 0x3u));
                 clock.Advance(LimitUs); // the waiter's thread runs past its deadline
             }
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal(0, result);
             Assert.Equal(LimitUs - BeforeSetUs, GuestMemory.R32(timeout)); // the time left when the set woke it
             Assert.Equal(0x3u, GuestMemory.R32(outBits));

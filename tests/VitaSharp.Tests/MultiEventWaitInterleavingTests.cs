@@ -84,7 +84,7 @@ public sealed class MultiEventWaitInterleavingTests(GuestMemoryFixture fixture) 
             int a = Event("multi-pulse", autoReset: false);
             MultiCall call = StartMulti([(a, BitA)], or: true, queuedOn: a);
             Assert.Equal(0, Call(Tm, "sceKernelPulseEvent", a, BitA, 7UL));
-            _h.Join(call.Run, 5_000);
+            _h.Join(call.Run);
             Assert.Equal(1, call.Returned);
             Assert.Equal((a, 0, BitA, 7UL), Entry(call.Results, 0));
             Assert.Equal(EventBits.Create, Simple(a).Pattern);
@@ -109,11 +109,11 @@ public sealed class MultiEventWaitInterleavingTests(GuestMemoryFixture fixture) 
                 Assert.Equal(0, Call(Tm, "sceKernelSetEvent", a, BitA, 1UL));
                 Assert.Equal(1, simple.NumWaiters); // the single waiter still waits
             }
-            _h.Join(call.Run, 5_000);
+            _h.Join(call.Run);
             Assert.Equal(1, call.Returned);
             Assert.Equal((a, 0, BitA, 1UL), Entry(call.Results, 0));
             Assert.Equal(0, Call(Tm, "sceKernelSetEvent", a, BitA, 2UL));
-            _h.Join(singleRun, 5_000);
+            _h.Join(singleRun);
             Assert.Equal(0, single);
         });
     }
@@ -135,7 +135,7 @@ public sealed class MultiEventWaitInterleavingTests(GuestMemoryFixture fixture) 
                     Assert.Equal(0, Call(Tm, "sceKernelSetEvent", a, BitA, 1UL));
                 }
             }
-            _h.Join(call.Run, 5_000);
+            _h.Join(call.Run);
             Assert.Equal(2, call.Returned);
             Assert.Equal((b, 0, BitB, 2UL), Entry(call.Results, 0));
             Assert.Equal((a, 0, BitA, 1UL), Entry(call.Results, 1));
@@ -160,7 +160,7 @@ public sealed class MultiEventWaitInterleavingTests(GuestMemoryFixture fixture) 
                     Assert.Equal(0, Call(Tm, "sceKernelSetEvent", a, BitA, 1UL));
                 }
             }
-            _h.Join(call.Run, 5_000);
+            _h.Join(call.Run);
             Assert.Equal(1, call.Returned);
             Assert.Equal((b, 0, BitB, 2UL), Entry(call.Results, 0));
             Assert.Equal(EventBits.Create | BitA, Simple(a).Pattern); // a's bit stayed
@@ -180,7 +180,7 @@ public sealed class MultiEventWaitInterleavingTests(GuestMemoryFixture fixture) 
             uint numWait = _h.Word(9);
             Assert.Equal(0, Call(Tm, "sceKernelCancelEvent", a, new Ptr<uint>(numWait)));
             Assert.Equal(1u, GuestMemory.R32(numWait));
-            _h.Join(call.Run, 5_000);
+            _h.Join(call.Run);
             Assert.Equal(1, call.Returned);
             Assert.Equal((a, SceError.WAIT_CANCEL, EventBits.Error, 0UL), Entry(call.Results, 0));
         });
@@ -197,7 +197,7 @@ public sealed class MultiEventWaitInterleavingTests(GuestMemoryFixture fixture) 
             int a = Event("multi-pipe-a", autoReset: false);
             MultiCall call = StartMulti([(a, BitA), (pipe, MsgPipe.EventIn)], or: true, queuedOn: a);
             Assert.Equal(0, Call(Tm, "sceKernelSendMsgPipe", pipe, _h.Alloc(4), 4u, MsgPipe.WaitAll, new Ptr<uint>(0), new Ptr<uint>(0)));
-            _h.Join(call.Run, 5_000);
+            _h.Join(call.Run);
             Assert.Equal(1, call.Returned);
             Assert.Equal((pipe, 0, MsgPipe.EventIn, 4UL << 32), Entry(call.Results, 0));
             Assert.Equal(0, Simple(a).NumWaiters); // its place in the other queue went away
