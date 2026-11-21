@@ -618,6 +618,26 @@ public sealed unsafe partial class GuestMemory : IDisposable
         return owned.Sum(b => (long)b.Size);
     }
 
+    /// <summary>The blocks process <paramref name="pid"/> allocated in the shared regions (CDRAM, kernel memory), as
+    /// (address, size): the memory that goes with it when it ends although every address space maps it (the GPU's
+    /// caches of that memory go too).</summary>
+    public (uint Address, uint Size)[] SharedBlocksOwnedBy(int pid)
+    {
+        lock (_lock)
+        {
+            var owned = new List<(uint Address, uint Size)>();
+            foreach (Block block in _shared.Values)
+            {
+                if (block.Owner == pid)
+                {
+                    owned.Add((block.Address, block.Size));
+                }
+            }
+
+            return [.. owned];
+        }
+    }
+
     private IEnumerable<Block> AllBlocks()
     {
         foreach (Block b in _shared.Values)

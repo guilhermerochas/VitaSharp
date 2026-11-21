@@ -823,7 +823,8 @@ public sealed class Emulator : IDisposable
 
         Vita.Unregister(this);
         Parent?._children.Remove(this);
-        Gpu.ReleaseScene(Pid);
+        // what the GPU made of its memory goes with it: its address space and the CDRAM blocks it held (freed below)
+        Gpu.ReleaseScene(Pid, Space, Memory.SharedBlocksOwnedBy(Pid));
         // the kernel modules stay: they are the kernel process's, which outlives every process
         int objects = Vita.Objects.RemoveOwnedBy(Pid);
 

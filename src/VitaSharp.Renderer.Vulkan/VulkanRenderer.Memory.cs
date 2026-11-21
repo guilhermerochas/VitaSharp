@@ -410,7 +410,7 @@ public sealed unsafe partial class VulkanRenderer
                 _evTextures++;
                 _evTextureBytes += (long)t.Mem.Size;
                 BumpTexEpoch(0);
-                KeepContent(k, t.Hash, t.Image, t.View, t.Mem, t.DataSize);
+                KeepContent(k, t.Hash, t.Image, t.View, t.Mem, t.DataSize, t.SpaceId);
             }
             else
             {

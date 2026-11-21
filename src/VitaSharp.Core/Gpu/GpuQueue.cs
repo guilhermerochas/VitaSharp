@@ -295,18 +295,22 @@ public sealed class GpuQueue : IDisposable
     }
 
     /// <summary>A process ended: the backend drops what it holds of it (and the scene it left open), and a process that
-    /// ends with a scene open gives the GPU back.</summary>
-    public void ReleaseScene(int pid)
+    /// ends with a scene open gives the GPU back. <paramref name="space"/> is the process's address space (default: the
+    /// caller's) and <paramref name="sharedMemory"/> the CDRAM and kernel blocks it held, still allocated: the backend
+    /// runs the command before the memory goes and drops what it made of both.</summary>
+    public void ReleaseScene(int pid, AddressSpace? space = null, (uint Address, uint Size)[]? sharedMemory = null)
     {
+        space ??= AddressSpace.Current;
+        sharedMemory ??= [];
         if (InterleaveScenes)
         {
             // the backend drops the scene the process left open (its suspended renderings name surfaces of its memory)
             bool open = _openScenes.TryRemove(pid, out _);
-            Enqueue(new ProcessEndedCommand { Pid = pid, Space = AddressSpace.Current, HadOpenScene = open });
+            Enqueue(new ProcessEndedCommand { Pid = pid, Space = space, HadOpenScene = open, SharedMemory = sharedMemory });
             return;
         }
 
-        Enqueue(new ProcessEndedCommand { Pid = pid, Space = AddressSpace.Current });
+        Enqueue(new ProcessEndedCommand { Pid = pid, Space = space, SharedMemory = sharedMemory });
         lock (_sceneLock)
         {
             if (_sceneOwner != pid)

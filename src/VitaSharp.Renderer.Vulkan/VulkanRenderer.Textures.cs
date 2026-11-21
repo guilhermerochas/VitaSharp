@@ -1063,7 +1063,7 @@ public sealed unsafe partial class VulkanRenderer
                 }
                 else
                 {
-                    KeepContent(key, oldHash, tex.Image, tex.View, tex.Mem, total);
+                    KeepContent(key, oldHash, tex.Image, tex.View, tex.Mem, total, tex.SpaceId);
                 }
 
                 (tex.Image, tex.View, tex.Mem) = cached;
@@ -1075,7 +1075,7 @@ public sealed unsafe partial class VulkanRenderer
             {
                 // a texture whose contents keep changing: its current image is kept for that content, the new content
                 // goes into a new image
-                KeepContent(key, oldHash, tex.Image, tex.View, tex.Mem, total);
+                KeepContent(key, oldHash, tex.Image, tex.View, tex.Mem, total, tex.SpaceId);
                 (tex.Image, tex.View, tex.Mem) = NewTextureImage();
                 tex.Changes++;
                 BumpTexEpoch(0);
