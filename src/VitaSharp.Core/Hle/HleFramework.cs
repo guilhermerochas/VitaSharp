@@ -32,6 +32,10 @@ public sealed class HleAttribute(string? name = null) : Attribute
     /// sceKernelWaitSemaCB, sceDisplayWaitVblankStartCB...): the thread runs its notified callbacks before and while it
     /// waits.</summary>
     public bool CallbackWait { get; init; }
+
+    /// <summary>For a callback wait the NID database has no name for (an unnamed kernel export): the NID of the wait
+    /// it is the callback-processing twin of (the named ones pair by their "CB" suffix).</summary>
+    public uint CallbackTwinOf { get; init; }
 }
 
 /// <summary>

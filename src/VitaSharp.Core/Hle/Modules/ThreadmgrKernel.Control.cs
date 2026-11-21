@@ -272,7 +272,7 @@ public sealed partial class ThreadmgrKernel
     int NID_12FC0FAB(int uid, Ptr<uint> timeout) => WaitWorkTask(uid, timeout);
 
     /// <summary>NID_B247EC4B(uid, timeout): the same, running callbacks while it waits.</summary>
-    [Hle(Nid = 0xB247EC4B, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true)]
+    [Hle(Nid = 0xB247EC4B, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true, CallbackTwinOf = 0x12FC0FAB)]
     int NID_B247EC4B(int uid, Ptr<uint> timeout) => WaitWorkTask(uid, timeout);
 
     int WaitWorkTask(int uid, Ptr<uint> timeout)
@@ -310,7 +310,7 @@ public sealed partial class ThreadmgrKernel
     int NID_154F2C2A(int queue, Ptr<uint> timeout) => WaitWorkQueue(queue, timeout);
 
     /// <summary>NID_48C06CD6(queue, timeout): the same, running callbacks while it waits.</summary>
-    [Hle(Nid = 0x48C06CD6, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true)]
+    [Hle(Nid = 0x48C06CD6, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true, CallbackTwinOf = 0x154F2C2A)]
     int NID_48C06CD6(int queue, Ptr<uint> timeout) => WaitWorkQueue(queue, timeout);
 
     int WaitWorkQueue(int queue, Ptr<uint> timeout)
@@ -495,7 +495,7 @@ public sealed partial class ThreadmgrKernel
     void NID_E9A99C50(HleContext context) => DelayWithLeft(context, 0x4B675D05);
 
     /// <summary>NID_2B60B793(usec, int *left): the same, running callbacks while it waits.</summary>
-    [Hle(Nid = 0x2B60B793, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true)]
+    [Hle(Nid = 0x2B60B793, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true, CallbackTwinOf = 0xE9A99C50)]
     void NID_2B60B793(HleContext context) => DelayWithLeft(context, 0x9C0180E1);
 
     unsafe void DelayWithLeft(HleContext context, uint nid)
@@ -532,7 +532,7 @@ public sealed partial class ThreadmgrKernel
     int NID_392599F1(int thid, Ptr<uint> timeout) => WaitSuspended(thid, timeout);
 
     /// <summary>NID_614BF2BE(thid, timeout): the same, running callbacks while it waits.</summary>
-    [Hle(Nid = 0x614BF2BE, Library = "SceThreadmgrForKernel", Cost = HleCost.SchedulerWait, CallbackWait = true)]
+    [Hle(Nid = 0x614BF2BE, Library = "SceThreadmgrForKernel", Cost = HleCost.SchedulerWait, CallbackWait = true, CallbackTwinOf = 0x392599F1)]
     int NID_614BF2BE(int thid, Ptr<uint> timeout) => WaitSuspended(thid, timeout);
 
     int WaitSuspended(int thid, Ptr<uint> timeout)

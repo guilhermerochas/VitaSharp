@@ -65,7 +65,7 @@ public sealed partial class ThreadmgrKernel
     void NID_F5074173(HleContext context) => RunExport(context, 0x0CA71EA2);
 
     /// <summary>NID_E6D80698(uid, buf, size, mode, result, timeout): the same, running callbacks while it waits.</summary>
-    [Hle(Nid = 0xE6D80698, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true)]
+    [Hle(Nid = 0xE6D80698, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true, CallbackTwinOf = 0xF5074173)]
     void NID_E6D80698(HleContext context) => RunExport(context, 0xA5CA74AC);
 
     /// <summary>NID_85F4DC8C(uid, buf, size, mode, result): send one buffer without waiting.</summary>
@@ -77,7 +77,7 @@ public sealed partial class ThreadmgrKernel
     void NID_2F9F75AA(HleContext context) => RunExport(context, 0x4E81DD5C);
 
     /// <summary>NID_D0262C55(uid, buf, size, mode, result, timeout): the same, running callbacks while it waits.</summary>
-    [Hle(Nid = 0xD0262C55, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true)]
+    [Hle(Nid = 0xD0262C55, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true, CallbackTwinOf = 0x2F9F75AA)]
     void NID_D0262C55(HleContext context) => RunExport(context, 0x33AF829B);
 
     /// <summary>NID_2E95B628(uid, buf, size, mode, result): receive into one buffer without waiting.</summary>
@@ -86,7 +86,7 @@ public sealed partial class ThreadmgrKernel
 
     /// <summary>NID_2FC0FFF6(uid, vector, count, mode, result, timeout): the vector send that runs callbacks while it
     /// waits (the user sceKernelSendMsgPipeVectorCB; NID_E6D80698 calls it with one entry).</summary>
-    [Hle(Nid = 0x2FC0FFF6, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true)]
+    [Hle(Nid = 0x2FC0FFF6, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true, CallbackTwinOf = 0x67DD3BAD)]
     void NID_2FC0FFF6(HleContext context) => RunExport(context, 0x9C6F7F79);
 
     // ------------------------------------------------------------------ threads
