@@ -11,11 +11,11 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 
 | Group | Covered | Real | Default | LLE | Total | % |
 |---|---:|---:|---:|---:|---:|---:|
-| Games imports | 2,220 | 2,213 | 7 | 0 | 2,220 | 100% |
-| System imports | 7,270 | 6,882 | 388 | 0 | 7,270 | 100% |
+| Games imports | 2,220 | 2,215 | 5 | 0 | 2,220 | 100% |
+| System imports | 7,270 | 6,884 | 386 | 0 | 7,270 | 100% |
 | General | 9,916 | 9,537 | 379 | 0 | 9,916 | 100% |
-| All firmware 3.74 exports | 19,406 | 5,141 | 774 | 13,491 | 19,406 | 100% |
-| VitaSDK user functions | 7,006 | 4,510 | 372 | 2,124 | 7,006 | 100% |
+| All firmware 3.74 exports | 19,406 | 5,145 | 770 | 13,491 | 19,406 | 100% |
+| VitaSDK user functions | 7,006 | 4,514 | 368 | 2,124 | 7,006 | 100% |
 
 ## Libraries provided by LLE
 
@@ -164,7 +164,7 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 
 | Kernel exports | Covered | Real | Default | Total | % |
 |---|---:|---:|---:|---:|---:|
-| All | 3,918 | 3,399 | 519 | 3,918 | 100% |
+| All | 3,918 | 3,407 | 511 | 3,918 | 100% |
 | Imported | 2,062 | - | - | 2,062 | 100% |
 
 | Library | Implemented / total | % | Default | Imported |
@@ -216,14 +216,14 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 | SceKernelUtilsForDriver | 57 / 57 | 100% | - | 33 / 33 |
 | SceLcdForDriver | 23 / 23 | 100% | 4 | 13 / 13 |
 | SceLedForDriver | 1 / 1 | 100% | 1 | 1 / 1 |
-| SceMagicGateForDriver | 48 / 48 | 100% | 35 | 37 / 37 |
+| SceMagicGateForDriver | 48 / 48 | 100% | 34 | 37 / 37 |
 | SceModulemgrForDriver | 15 / 15 | 100% | - | 13 / 13 |
 | SceModulemgrForKernel | 48 / 48 | 100% | - | 24 / 24 |
 | SceMotionDevForDriver | 23 / 23 | 100% | 9 | 9 / 9 |
 | SceMsifForDriver | 12 / 12 | 100% | 4 | 8 / 8 |
 | SceMtpIfForDriver | 17 / 17 | 100% | 12 | 11 / 11 |
 | SceNetPsForDriver | 20 / 20 | 100% | - | 3 / 3 |
-| SceNpDrmForDriver | 26 / 26 | 100% | 12 | 20 / 20 |
+| SceNpDrmForDriver | 26 / 26 | 100% | 7 | 20 / 20 |
 | SceOledForDriver | 21 / 21 | 100% | 2 | 12 / 12 |
 | ScePervasiveForDriver | 156 / 156 | 100% | 5 | 88 / 88 |
 | ScePfsFacadeForKernel | 6 / 6 | 100% | - | 6 / 6 |
@@ -255,7 +255,7 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 | SceSblGcAuthMgrPsmactForDriver | 1 / 1 | 100% | 1 | 1 / 1 |
 | SceSblGcAuthMgrSclkForDriver | 2 / 2 | 100% | 2 | - |
 | SceSblMgKeyMgrForDriver | 14 / 14 | 100% | 13 | 2 / 2 |
-| SceSblPostSsMgrForDriver | 44 / 44 | 100% | 39 | 25 / 25 |
+| SceSblPostSsMgrForDriver | 44 / 44 | 100% | 37 | 25 / 25 |
 | SceSblSmCommForKernel | 4 / 4 | 100% | 2 | 4 / 4 |
 | SceSblSmSchedProxyForKernel | 16 / 16 | 100% | 2 | 9 / 9 |
 | SceSblSsMgrForDriver | 40 / 40 | 100% | 10 | 33 / 33 |
@@ -460,7 +460,7 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 | SceNpCommerce2 | `vs0:sys/external/np_commerce2.suprx` | 502 / 502 | 100% | - | 41 / 41 | 391 / 391 |
 | SceNpCommon | `vs0:sys/external/np_common.suprx` | 71 / 71 | 100% | - | 14 / 14 | 50 / 50 |
 | SceNpCommonPs4 | `vs0:sys/external/np_common_ps4.suprx` | 713 / 713 | 100% | - | - | 246 / 246 |
-| SceNpDrm | `os0:kd/bootimage.skprx/SceNpDrm` | 8 / 8 | 100% | 6 | - | 8 / 8 |
+| SceNpDrm | `os0:kd/bootimage.skprx/SceNpDrm` | 8 / 8 | 100% | 4 | - | 8 / 8 |
 | SceNpDrmPackage | `os0:kd/bootimage.skprx/SceNpDrm` | 16 / 16 | 100% | 3 | - | 16 / 16 |
 | SceNpFriendPrivacyLevel | `vs0:sys/external/np_friend_privacylevel.suprx` | 16 / 16 | 100% | - | - | 8 / 8 |
 | SceNpGriefReport | `vs0:vsh/common/np_grief_report.suprx` | 18 / 18 | 100% | - | - | 14 / 14 |
@@ -503,7 +503,7 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 | ScePower | `os0:kd/bootimage.skprx/ScePower` | 42 / 42 | 100% | - | 20 / 20 | 11 / 11 |
 | SceProcessmgr | `os0:kd/processmgr.skprx` | 31 / 31 | 100% | - | 12 / 12 | 17 / 17 |
 | ScePromoterUtil | `vs0:sys/external/libScePromoterUtil.suprx` | 26 / 26 | 100% | - | 8 / 8 | 13 / 13 |
-| ScePsmDrm | `os0:kd/bootimage.skprx/SceNpDrm` | 6 / 6 | 100% | 3 | 6 / 6 | - |
+| ScePsmDrm | `os0:kd/bootimage.skprx/SceNpDrm` | 6 / 6 | 100% | 1 | 6 / 6 | - |
 | ScePsp2Compat | `vs0:data/external/webcore/ScePsp2Compat.suprx` | 1047 / 1047 | 100% | - | - | 537 / 537 |
 | ScePspnetAdhoc | `vs0:sys/external/pspnet_adhoc.suprx` | 32 / 32 | 100% | 2 | 11 / 11 | 3 / 3 |
 | ScePvf | `vs0:sys/external/libpvf.suprx` | 43 / 43 | 100% | - | 22 / 22 | 2 / 2 |

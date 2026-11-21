@@ -1,5 +1,5 @@
 # HLE status per firmware library, written by VitaSharp.Desktop hle-coverage --status (build/hle-status.ps1)
-# firmware=3.74 games=64 vitasdk=7006/7006 vitasdk_default=372 vitasdk_lle=2124
+# firmware=3.74 games=64 vitasdk=7006/7006 vitasdk_default=368 vitasdk_lle=2124
 library	module	total	impl	games	games_impl	system	system_impl	default	games_default	system_default	lle
 SceAACPromoter	vs0:vsh/common/mms/AACPromoter.suprx	4	4	0	0	0	0	0	0	0	4
 SceAVConfig	os0:kd/bootimage.skprx/SceAVConfig	34	34	0	0	31	31	0	0	0	0
@@ -173,7 +173,7 @@ SceNpBasic	vs0:sys/external/np_basic.suprx	41	41	25	25	4	4	6	0	0	0
 SceNpCommerce2	vs0:sys/external/np_commerce2.suprx	502	502	41	41	391	391	0	0	0	0
 SceNpCommon	vs0:sys/external/np_common.suprx	71	71	14	14	50	50	0	0	0	0
 SceNpCommonPs4	vs0:sys/external/np_common_ps4.suprx	713	713	0	0	246	246	0	0	0	713
-SceNpDrm	os0:kd/bootimage.skprx/SceNpDrm	8	8	0	0	8	8	6	0	6	0
+SceNpDrm	os0:kd/bootimage.skprx/SceNpDrm	8	8	0	0	8	8	4	0	4	0
 SceNpDrmPackage	os0:kd/bootimage.skprx/SceNpDrm	16	16	0	0	16	16	3	0	3	0
 SceNpFriendPrivacyLevel	vs0:sys/external/np_friend_privacylevel.suprx	16	16	0	0	8	8	0	0	0	16
 SceNpGriefReport	vs0:vsh/common/np_grief_report.suprx	18	18	0	0	14	14	0	0	0	18
@@ -216,7 +216,7 @@ ScePngPromoter	vs0:vsh/common/mms/png_promoter.suprx	3	3	0	0	0	0	0	0	0	3
 ScePower	os0:kd/bootimage.skprx/ScePower	42	42	20	20	11	11	0	0	0	0
 SceProcessmgr	os0:kd/processmgr.skprx	31	31	12	12	17	17	0	0	0	0
 ScePromoterUtil	vs0:sys/external/libScePromoterUtil.suprx	26	26	8	8	13	13	0	0	0	26
-ScePsmDrm	os0:kd/bootimage.skprx/SceNpDrm	6	6	6	6	0	0	3	3	0	0
+ScePsmDrm	os0:kd/bootimage.skprx/SceNpDrm	6	6	6	6	0	0	1	1	0	0
 ScePsp2Compat	vs0:data/external/webcore/ScePsp2Compat.suprx	1047	1047	0	0	537	537	0	0	0	1047
 ScePspnetAdhoc	vs0:sys/external/pspnet_adhoc.suprx	32	32	11	11	3	3	2	0	1	0
 ScePvf	vs0:sys/external/libpvf.suprx	43	43	22	22	2	2	0	0	0	0

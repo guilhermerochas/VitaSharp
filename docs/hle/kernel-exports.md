@@ -137,14 +137,14 @@ syscall (o que o código de usuário chama) ficam no censo do usuário (`progres
 | SceKernelUtilsForDriver | SceSysmem (0x496AD8B4) | 57 | 57 | 57 | 0 | 0 | 0 | 14 |
 | SceLcdForDriver | SceLcd (0xFA916D71) | 23 | 23 | 19 | 4 | 0 | 0 | 15 |
 | SceLedForDriver | ScePower (0x282C1323) | 1 | 1 | 0 | 1 | 0 | 0 | 0 |
-| SceMagicGateForDriver | SceMagicGate (0x4EA9847A) | 48 | 48 | 13 | 35 | 0 | 0 | 48 |
-| SceModulemgrForDriver | SceKernelModulemgr (0xD4A60A52) | 15 | 13 | 15 | 0 | 0 | 0 | 0 |
+| SceMagicGateForDriver | SceMagicGate (0x4EA9847A) | 48 | 48 | 14 | 34 | 0 | 0 | 48 |
+| SceModulemgrForDriver | SceKernelModulemgr (0xD4A60A52) | 15 | 15 | 15 | 0 | 0 | 0 | 0 |
 | SceModulemgrForKernel | SceKernelModulemgr (0x92C9FFC2) | 48 | 48 | 48 | 0 | 0 | 0 | 5 |
 | SceMotionDevForDriver | SceMotionDev (0xA501409A) | 23 | 23 | 14 | 9 | 0 | 0 | 12 |
 | SceMsifForDriver | SceMsif (0xB706084A) | 12 | 12 | 8 | 4 | 0 | 0 | 6 |
 | SceMtpIfForDriver | SceMtpIfDriver (0x73309DFE) | 17 | 17 | 5 | 12 | 0 | 0 | 17 |
-| SceNetPsForDriver | SceNetPs (0xB2A5C920) | 20 | 17 | 20 | 0 | 0 | 0 | 7 |
-| SceNpDrmForDriver | SceNpDrm (0xD84DC44A) | 26 | 26 | 14 | 12 | 0 | 0 | 0 |
+| SceNetPsForDriver | SceNetPs (0xB2A5C920) | 20 | 20 | 20 | 0 | 0 | 0 | 7 |
+| SceNpDrmForDriver | SceNpDrm (0xD84DC44A) | 26 | 26 | 19 | 7 | 0 | 0 | 0 |
 | SceOledForDriver | SceOled (0x60C7478A) | 21 | 21 | 19 | 2 | 0 | 0 | 13 |
 | ScePervasiveForDriver | SceLowio (0xE692C727) | 156 | 156 | 151 | 5 | 0 | 0 | 131 |
 | ScePfsFacadeForKernel | ScePfsMgr (0xC26DC7BD) | 6 | 6 | 6 | 0 | 0 | 0 | 6 |
@@ -176,7 +176,7 @@ syscall (o que o código de usuário chama) ficam no censo do usuário (`progres
 | SceSblGcAuthMgrPsmactForDriver | SceSblGcAuthMgr (0x1C53F37D) | 1 | 1 | 0 | 1 | 0 | 0 | 1 |
 | SceSblGcAuthMgrSclkForDriver | SceSblGcAuthMgr (0xF24F760D) | 2 | 2 | 0 | 2 | 0 | 0 | 2 |
 | SceSblMgKeyMgrForDriver | SceSblMgKeyMgr (0xE1856C6D) | 14 | 14 | 1 | 13 | 0 | 0 | 14 |
-| SceSblPostSsMgrForDriver | SceSblPostSsMgr (0x2254E1B2) | 44 | 44 | 5 | 39 | 0 | 0 | 0 |
+| SceSblPostSsMgrForDriver | SceSblPostSsMgr (0x2254E1B2) | 44 | 44 | 7 | 37 | 0 | 0 | 0 |
 | SceSblSmCommForKernel | SceSblSsSmComm (0xCD3C89B6) | 4 | 4 | 2 | 2 | 0 | 0 | 0 |
 | SceSblSmSchedProxyForKernel | SceSblSmschedProxy (0x15F25C84) | 16 | 16 | 14 | 2 | 0 | 0 | 2 |
 | SceSblSsMgrForDriver | SceSblSsMgr (0x61E9428D) | 40 | 40 | 30 | 10 | 0 | 0 | 3 |
@@ -204,5 +204,5 @@ syscall (o que o código de usuário chama) ficam no censo do usuário (`progres
 | SceUsbstorForDriver | SceUsbstorDriver (0x5D01DDE4) | 9 | 9 | 9 | 0 | 0 | 0 | 9 |
 | SceWlanBtForDriver | SceWlanBt (0xFD94FCE9) | 4 | 4 | 4 | 0 | 0 | 0 | 0 |
 | SceZlibForDriver | SceSblPostSsMgr (0xE241534E) | 65 | 65 | 63 | 2 | 0 | 0 | 65 |
-| **Total** | | **3918** | **3913** | **3399** | **519** | **0** | **0** | **2037** |
+| **Total** | | **3918** | **3918** | **3407** | **511** | **0** | **0** | **2037** |
 
