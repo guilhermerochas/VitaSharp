@@ -90,6 +90,51 @@ public sealed class MagicGateKernelTests(GuestMemoryFixture fixture) : IDisposab
         Assert.Equal(Slot, Call(Services, "MagicGateSlotReady", 3));
     }
 
+    /// <summary>A key file tm0:/drm/magicgate/ibd&lt;reader&gt;&lt;slot&gt;.dat; its host path.</summary>
+    private string KeyFile(int reader, int slot)
+    {
+        string host = _harness.Emu.Vfs.Resolve($"tm0:drm/magicgate/ibd{reader:D3}{slot:D2}.dat", forWrite: true)!;
+        Directory.CreateDirectory(Path.GetDirectoryName(host)!);
+        File.WriteAllBytes(host, [1]);
+        return host;
+    }
+
+    [Fact]
+    public void Clearing_a_slot_removes_its_key_files_of_readers_0_to_3()
+    {
+        string slot5Reader0 = KeyFile(0, 5), slot5Reader3 = KeyFile(3, 5), slot6Reader0 = KeyFile(0, 6);
+        string slot5Reader4 = KeyFile(4, 5);
+
+        Assert.Equal(unchecked((int)0x80501000), Call(Services, "MagicGateClearSlot", 0u, 0x21u));
+        Assert.Equal(unchecked((int)0x80501000), Call(Services, "MagicGateClearSlot", 0u, 0xFFFFFFFEu));
+        Assert.True(File.Exists(slot5Reader0));
+        Assert.Equal(0, Call(Services, "MagicGateClearSlot", 0u, 5u));
+        Assert.False(File.Exists(slot5Reader0));
+        Assert.False(File.Exists(slot5Reader3));
+        Assert.True(File.Exists(slot6Reader0));
+        Assert.True(File.Exists(slot5Reader4));
+        Assert.Equal(0, Call(Services, "MagicGateClearSlot", 0u, 0x20u));
+        Assert.Equal(0, Call(Services, "MagicGateClearSlot", 0u, 0xFFFFFFFFu));
+        Assert.False(File.Exists(slot6Reader0));
+        Assert.True(File.Exists(slot5Reader4));
+        Assert.Equal(NotStarted, Call(Services, "MagicGateNotStarted"));
+    }
+
+    [Fact]
+    public void Resetting_a_reader_removes_its_key_files()
+    {
+        string reader1 = KeyFile(1, 31), reader2 = KeyFile(2, 0), reader4 = KeyFile(4, 7);
+
+        Assert.Equal(0, Call(Services, "MagicGateResetReader", 0u, 1u));
+        Assert.False(File.Exists(reader1));
+        Assert.True(File.Exists(reader2));
+        Assert.Equal(0, Call(Services, "MagicGateResetReader", 0u, 0xFFFFFFFFu));
+        Assert.False(File.Exists(reader2));
+        Assert.True(File.Exists(reader4));
+        Assert.Equal(0, Call(Services, "MagicGateResetReader", 0u, 4u));
+        Assert.False(File.Exists(reader4));
+    }
+
     [Fact]
     public void Ciphers_and_messages_check_their_sizes_then_refuse()
     {

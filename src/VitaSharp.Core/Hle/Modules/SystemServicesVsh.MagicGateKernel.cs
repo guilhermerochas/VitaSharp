@@ -82,15 +82,72 @@ public sealed partial class SystemServicesVsh
     [Hle("NID_8E2E577E", Nid = 0x8E2E577E, Library = "SceMagicGateForDriver")]
     int MagicGateBookkeeping() => 0;
 
-    /// <summary>(int, int reader): resets a reader 0..4 (or all with -1): 0; another index 0x80501000.</summary>
+    /// <summary>The key files of a reader slot the module keeps: tm0:/drm/magicgate/ibd&lt;reader, 3 digits&gt;&lt;slot, 2
+    /// digits&gt;.dat.</summary>
+    const string MgKeyFileFormat = "tm0:drm/magicgate/ibd{0:D3}{1:D2}.dat";
+
+    /// <summary>Removes the key files of <paramref name="reader"/> for the slots <paramref name="firstSlot"/> to
+    /// <paramref name="lastSlot"/> (the module names a slot by its low 5 bits), as the module does with ksceIoRemove;
+    /// a file that is not there is not an error.</summary>
+    void MagicGateRemoveKeyFiles(uint reader, uint firstSlot, uint lastSlot)
+    {
+        for (uint slot = firstSlot; slot <= lastSlot; slot++)
+        {
+            string path = string.Format(System.Globalization.CultureInfo.InvariantCulture, MgKeyFileFormat,
+                reader & 0xFF, slot & 0x1F);
+            if (Emu.Vfs.Resolve(path, forWrite: true) is { } host && File.Exists(host))
+            {
+                File.Delete(host);
+            }
+        }
+    }
+
+    /// <summary>(int, int reader): resets a reader 0..4 (its key files of slots 0..31 removed), or with -1 readers
+    /// 0..3 (and the module reloads its key table: empty, no session): 0; another index 0x80501000.</summary>
     [Hle("NID_8E87BA88", Nid = 0x8E87BA88, Library = "SceMagicGateForDriver")]
-    int MagicGateResetReader(uint unused, uint reader) => reader != 0xFFFFFFFF && reader >= 5 ? MG_ERR_READER : 0;
+    int MagicGateResetReader(uint unused, uint reader)
+    {
+        if (reader != 0xFFFFFFFF && reader >= 5)
+        {
+            return MG_ERR_READER;
+        }
+
+        uint first = reader == 0xFFFFFFFF ? 0 : reader;
+        uint last = reader == 0xFFFFFFFF ? 3 : reader;
+        for (uint index = first; index <= last; index++)
+        {
+            MagicGateRemoveKeyFiles(index, 0, 0x1F);
+        }
+
+        return 0;
+    }
+
+    /// <summary>(int, int slot): clears slot -1..0x20 (-1 every slot 0..31) of readers 0..3 (their key files removed)
+    /// and the module reloads its key table (empty, no session): 0; another slot 0x80501000.</summary>
+    [Hle("NID_3EDD73EB", Nid = 0x3EDD73EB, Library = "SceMagicGateForDriver")]
+    int MagicGateClearSlot(uint unused, uint slot)
+    {
+        if (slot + 1 >= 0x22)
+        {
+            return MG_ERR_READER;
+        }
+
+        uint first = slot == 0xFFFFFFFF ? 0 : slot;
+        uint last = slot == 0xFFFFFFFF ? 0x1F : slot;
+        for (uint reader = 0; reader < 4; reader++)
+        {
+            MagicGateRemoveKeyFiles(reader, first, last);
+        }
+
+        return 0;
+    }
 
     /// <summary>(): starts the authentication session with the MagicGate medium: there is none.</summary>
     [Hle("NID_30DF2E82", Nid = 0x30DF2E82, Library = "SceMagicGateForDriver", Default = true)]
     int MagicGateStart() => KERNEL_ERR_UNSUP;
 
-    /// <summary>The session's queries (its keys, its state): no session was started: 0x80505005.</summary>
+    /// <summary>The session's queries (its keys, its state; E62B8A67 (int, void *out 0x20, int index)): no session
+    /// was started (only 30DF2E82 starts one), which the module answers before any argument check: 0x80505005.</summary>
     [Hle("NID_D819D5C6", Nid = 0xD819D5C6, Library = "SceMagicGateForDriver", Default = true)]
     [Hle("NID_E62B8A67", Nid = 0xE62B8A67, Library = "SceMagicGateForDriver", Default = true)]
     int MagicGateNotStarted() => MG_ERR_NOT_STARTED;
@@ -141,7 +198,6 @@ public sealed partial class SystemServicesVsh
     [Hle("NID_FEF11D84", Nid = 0xFEF11D84, Library = "SceMagicGateForDriver", Default = true)]
     [Hle("NID_1BCE34AD", Nid = 0x1BCE34AD, Library = "SceMagicGateForDriver", Default = true)]
     [Hle("NID_75B445DA", Nid = 0x75B445DA, Library = "SceMagicGateForDriver", Default = true)]
-    [Hle("NID_3EDD73EB", Nid = 0x3EDD73EB, Library = "SceMagicGateForDriver", Default = true)]
     int MagicGateSecure() => KERNEL_ERR_UNSUP;
 
     // ------------------------------------------------------------------ the module's constant data
