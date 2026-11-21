@@ -36,7 +36,7 @@ Por módulo (2.01): `eboot.bin` 122 imports, `libc` 56, `libfios2` 66, `libmono_
 | ScePsmDrm | 0xA89653B3 | scePsmDrmGetActInfo | idem | default | HLE (PSM-B) |
 | ScePsmDrm | 0x207A2C53 | scePsmDrmGetRifKey | idem | default | HLE (PSM-B; aparelho sem ativação de PSM) |
 | ScePsmDrm | 0x0E193CBB | scePsmDrmRemoveActData | idem | default | HLE (PSM-B) |
-| ScePsmDrm | 0x3E881391, 0x0D6470DA | scePsmDrmGetRifName(ForInstall) | idem | default | default (o nome é o id da conta cifrado com uma chave do módulo) |
+| ScePsmDrm | 0x3E881391, 0x0D6470DA | scePsmDrmGetRifName(ForInstall) | idem | default | HLE (nome AES do SceNpDrm; ForInstall com a checagem da licença, a parte da ativação é do processador seguro) |
 | SceDrmPsmKdc | 0x7EE0F1BC, 0xC16EDCD9, 0xE768E9D1, 0xF562D06D | (sem nome) | eboot | LLE do firmware (psmkdc.suprx) | idem (sceSysmoduleLoadModuleInternal é privilegiado: qualquer chamador carrega o psmkdc) |
 | SceFt2 | 14 NIDs (FT_*) | FreeType | libpsm | LLE do firmware (libSceFt2.suprx) | idem |
 
@@ -66,6 +66,16 @@ SceLibKernel/SceIofilemgr (HLE).
   ativação (0x808F0109), e em todo caso com a assinatura do PSM preenche ID do conteúdo, conta e validade (ticks do
   SceRtc; 0 = sem fim). Uma licença sem assinatura (as do NoPsmDrm) dá 0x808F0104 com os campos preenchidos, como no
   console. Sem a chave do firmware (outra versão, sem firmware): 0x80020004, com aviso no log.
+- **Nome da licença.** O libpsm 2.01 lê a conta do registro (`sceRegMgrSystemParamGetBin(0x450F32)`,
+  `/CONFIG/NP/account_id`, 0 sem conta), pede `scePsmDrmGetRifName(conta)` e abre `RO/License/<nome>`; o nome é a
+  cifra AES (chave do SceNpDrm) de {flag 0, conta}. O instalador de PSM grava a licença com esse nome e a migração
+  `PsmLicenseNameMigration` renomeia as gravadas antes com o nome fixo. `scePsmDrmGetRifNameForInstall` (função
+  interna do SceNpDrm atrás da syscall) confere a assinatura RSA-2048 da licença (SHA-256 dos 0x300 primeiros bytes,
+  chave 5 do módulo, lida do firmware instalado: 0x808F0104), o cabeçalho (0x808F0105) e então a ativação carregada
+  (conta 0x808F0108, resumo 0x808F0109): com `tm0:psmdrm/act.dat` presente essa parte é do processador seguro
+  (0x80020004); sem ele o módulo não tem ativação e responde como nesse caso. A conta de uma licença da loja é a da
+  ativação, logo o nome de instalação é o mesmo que o runtime pede. `GetRifInfo` devolve a conta da licença em
+  big-endian, como o módulo a lê. Fonte: SceNpDrm 3.74 e libpsm/eboot do PCSI00011 2.01 (só estudo).
 
 ## Falta
 
