@@ -6,6 +6,8 @@ Template, prioridades e convenções: [README.md](README.md).
 Este documento descreve o perfil offline (padrão). A internet real opcional (`--net=real`: sockets, epoll, resolver,
 NetCtl e HTTP pelo host, com os servidores da Sony bloqueados) está em [E2-np.md §0.000](E2-np.md).
 
+Exceção ao bloqueio da Sony: os servidores públicos de imagem de atualização do PSP (`*.psp.update.playstation.org`) são alcançáveis com a internet real ligada, como num Vita: o instalador do Adrenaline baixa deles o firmware 6.61 do PSP (arquivo público, sem conta). PSN, contas, loja e a atualização do sistema do Vita continuam sempre bloqueados (`NetConfig.PublicFirmwareDomains`).
+
 ## Escopo e contagem
 
 Fonte da lista: `pkg/E.tsv` filtrado pelas seis bibliotecas acima (106 funções faltantes) + revisão dos stubs triviais

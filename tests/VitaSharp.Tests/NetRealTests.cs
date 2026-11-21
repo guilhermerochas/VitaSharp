@@ -98,6 +98,12 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
         Assert.Contains("Sony", why);
         Assert.False(any.Permits("PLAYSTATION.COM.", out _));
         Assert.True(any.Permits("notplaystation.net", out _));
+        // the PSP update image servers a real Vita downloads the PSP 6.61 update from (Adrenaline's installer)
+        Assert.True(any.Permits("de01.psp.update.playstation.org", out _));
+        Assert.True(any.Permits("us.psp.update.playstation.org", out _));
+        Assert.False(any.Permits("fus01.psp2.update.playstation.net", out _));
+        Assert.False(any.Permits("update.playstation.org", out _));
+        Assert.False(NetConfig.Off.Permits("de01.psp.update.playstation.org", out _));
         Assert.True(s_localOnly.Permits("localhost", out _));
         Assert.True(s_localOnly.PermitsAddress(IPAddress.Loopback, out _));
         Assert.False(s_localOnly.Permits("example.com", out _));
