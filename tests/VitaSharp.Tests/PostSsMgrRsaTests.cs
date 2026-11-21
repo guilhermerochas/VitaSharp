@@ -19,7 +19,7 @@ public sealed class PostSsMgrRsaTests(GuestMemoryFixture fixture) : IDisposable
     private const int HashMd2 = 2, HashMd5 = 4, HashSha1 = 5, HashSha256 = 11, HashSha384 = 12, HashSha512 = 13;
     private const int HashSha224 = 14;
 
-    private static readonly TestKey Key = TestKey.FromSeed(0x56495441);
+    private static readonly TestKey s_key = TestKey.FromSeed(0x56495441);
 
     private readonly HleHarness _harness = new(fixture, "postssrsa");
 
@@ -72,7 +72,7 @@ public sealed class PostSsMgrRsaTests(GuestMemoryFixture fixture) : IDisposable
     {
         uint signature = DataParam([], 0);
         result = Call(Services, "ksceSblRSA2048CreateSignature", signature, DataParam(hash, (uint)hash.Length),
-            PrivateKey(Key), (uint)hashType);
+            PrivateKey(s_key), (uint)hashType);
         Assert.Equal(result == 0 ? 0x100u : 0u, GuestMemory.R32(signature + 4));
         return GuestMemory.ReadSpan(GuestMemory.R32(signature), 0x100).ToArray();
     }
@@ -80,7 +80,7 @@ public sealed class PostSsMgrRsaTests(GuestMemoryFixture fixture) : IDisposable
     private int Verify(byte[] signature, byte[] hash, int hashType, uint size = 0x100)
     {
         return Call(Services, "ksceSblRSA2048VerifySignature", DataParam(signature, size),
-            DataParam(hash, (uint)hash.Length), PublicKey(Key.Modulus, Key.Exponent), (uint)hashType);
+            DataParam(hash, (uint)hash.Length), PublicKey(s_key.Modulus, s_key.Exponent), (uint)hashType);
     }
 
     public static TheoryData<int, string> DotNetHashes => new()
@@ -105,8 +105,8 @@ public sealed class PostSsMgrRsaTests(GuestMemoryFixture fixture) : IDisposable
             "SHA384" => SHA384.HashData("VitaSharp"u8),
             _ => SHA512.HashData("VitaSharp"u8),
         };
-        using RSA reference = RSA.Create();
-        reference.ImportParameters(Key.Parameters());
+        using var reference = RSA.Create();
+        reference.ImportParameters(s_key.Parameters());
         byte[] expected = reference.SignHash(hash, algorithm, RSASignaturePadding.Pkcs1);
 
         byte[] signature = Sign(hash, hashType, out int result);
@@ -128,8 +128,8 @@ public sealed class PostSsMgrRsaTests(GuestMemoryFixture fixture) : IDisposable
         byte[] signature = Sign(hash, hashType, out int result);
 
         Assert.Equal(0, result);
-        BigInteger recovered = BigInteger.ModPow(new BigInteger(signature, isUnsigned: true, isBigEndian: true),
-            Key.Exponent, Key.Modulus);
+        var recovered = BigInteger.ModPow(new BigInteger(signature, isUnsigned: true, isBigEndian: true),
+            s_key.Exponent, s_key.Modulus);
         byte[] encoded = new byte[0x100];
         recovered.TryWriteBytes(encoded.AsSpan(1), out _, isUnsigned: true, isBigEndian: true);
         byte[] prefix = Convert.FromHexString(prefixHex);
@@ -171,18 +171,18 @@ public sealed class PostSsMgrRsaTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(-1, shortHash);
 
         uint signature = DataParam([], 0);
-        TestKey evenPrime = Key with { P = Key.P - 1 };
+        TestKey evenPrime = s_key with { P = s_key.P - 1 };
         Assert.Equal(-1, Call(Services, "ksceSblRSA2048CreateSignature", signature, DataParam(hash, 0x20),
             PrivateKey(evenPrime), (uint)HashSha256));
-        TestKey shortPrime = Key with { Q = Key.Q >> 1 };
+        TestKey shortPrime = s_key with { Q = s_key.Q >> 1 };
         Assert.Equal(-1, Call(Services, "ksceSblRSA2048CreateSignature", signature, DataParam(hash, 0x20),
             PrivateKey(shortPrime), (uint)HashSha256));
 
         byte[] good = Sign(hash, HashSha256, out _);
         Assert.Equal(-1, Call(Services, "ksceSblRSA2048VerifySignature", DataParam(good, 0x100), DataParam(hash, 0x20),
-            PublicKey(Key.Modulus - 1, Key.Exponent), (uint)HashSha256));
+            PublicKey(s_key.Modulus - 1, s_key.Exponent), (uint)HashSha256));
         byte[] aboveModulus = new byte[0x100];
-        Key.Modulus.TryWriteBytes(aboveModulus, out _, isUnsigned: true, isBigEndian: true);
+        s_key.Modulus.TryWriteBytes(aboveModulus, out _, isUnsigned: true, isBigEndian: true);
         Assert.Equal(-1, Verify(aboveModulus, hash, HashSha256));
     }
 
@@ -273,7 +273,7 @@ public sealed class PostSsMgrRsaTests(GuestMemoryFixture fixture) : IDisposable
 
             foreach (int witness in bases)
             {
-                BigInteger value = BigInteger.ModPow(witness, odd, candidate);
+                var value = BigInteger.ModPow(witness, odd, candidate);
                 if (value.IsOne || value == candidate - 1)
                 {
                     continue;

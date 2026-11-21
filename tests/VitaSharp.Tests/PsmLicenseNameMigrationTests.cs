@@ -12,7 +12,7 @@ namespace VitaSharp.Tests;
 /// </summary>
 public sealed class PsmLicenseNameMigrationTests : IDisposable
 {
-    private static readonly byte[] Key = Enumerable.Range(0, 16).Select(i => (byte)(0x50 + i)).ToArray();
+    private static readonly byte[] s_key = Enumerable.Range(0, 16).Select(i => (byte)(0x50 + i)).ToArray();
 
     private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-psmrif-" + Guid.NewGuid().ToString("N"));
 
@@ -50,16 +50,16 @@ public sealed class PsmLicenseNameMigrationTests : IDisposable
         byte[] license = PsmLicense(0x0123456789ABCDEFUL);
         File.WriteAllBytes(Path.Combine(dir, PkgInstaller.AccountRifName), license);
         File.WriteAllBytes(Path.Combine(dir, "FAKE.rif"), [1, 2, 3]);
-        string expected = SystemServicesVsh.RifFileName(Key, 0, 0x0123456789ABCDEFUL)!;
+        string expected = SystemServicesVsh.RifFileName(s_key, 0, 0x0123456789ABCDEFUL)!;
         var log = new List<string>();
 
-        Assert.Equal(1, PsmLicenseNameMigration.Run(_root, Key, log.Add));
+        Assert.Equal(1, PsmLicenseNameMigration.Run(_root, s_key, log.Add));
 
         Assert.False(File.Exists(Path.Combine(dir, PkgInstaller.AccountRifName)));
         Assert.Equal(license, File.ReadAllBytes(Path.Combine(dir, expected)));
         Assert.True(File.Exists(Path.Combine(dir, "FAKE.rif")));
         Assert.Contains(log, line => line.Contains(expected, StringComparison.Ordinal));
-        Assert.Equal(0, PsmLicenseNameMigration.Run(_root, Key, log.Add));
+        Assert.Equal(0, PsmLicenseNameMigration.Run(_root, s_key, log.Add));
         Assert.Equal(license, File.ReadAllBytes(Path.Combine(dir, expected)));
     }
 
@@ -68,11 +68,11 @@ public sealed class PsmLicenseNameMigrationTests : IDisposable
     {
         string dir = LicenseFolder("NPOA00002");
         byte[] license = PsmLicense(5);
-        string expected = SystemServicesVsh.RifFileName(Key, 0, 5)!;
+        string expected = SystemServicesVsh.RifFileName(s_key, 0, 5)!;
         File.WriteAllBytes(Path.Combine(dir, PkgInstaller.AccountRifName), license);
         File.WriteAllBytes(Path.Combine(dir, expected), PsmLicense(6));
 
-        Assert.Equal(0, PsmLicenseNameMigration.Run(_root, Key, null));
+        Assert.Equal(0, PsmLicenseNameMigration.Run(_root, s_key, null));
 
         Assert.Equal(license, File.ReadAllBytes(Path.Combine(dir, PkgInstaller.AccountRifName)));
         Assert.Equal(PsmLicense(6), File.ReadAllBytes(Path.Combine(dir, expected)));
