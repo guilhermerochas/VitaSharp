@@ -58,7 +58,7 @@ public sealed partial class SysmemKernel
 
     /// <summary>The kernel's own SceSelfAuthInfo (0x90 bytes) that ksceSysrootGetSelfAuthInfo copies without a process
     /// manager table: program authority 0x2808000000000001, the kernel's capability and attribute words.</summary>
-    static ReadOnlySpan<byte> KernelSelfAuthInfo =>
+    internal static ReadOnlySpan<byte> KernelSelfAuthInfo =>
     [
         0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x28, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x80, 0x00, 0x00, 0x00, 0xC0, 0x00, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF,
@@ -70,6 +70,11 @@ public sealed partial class SysmemKernel
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     ];
+
+    /// <summary>What SceSblACMgr answers about the kernel process: the capability field (+0x10, 0x20 bytes) of its own
+    /// auth info, read as for any process (its first byte 0x80: bit 0, root, set; bit 1, system program, clear).</summary>
+    internal static Loader.Self.ProgramAccess KernelAccess { get; } =
+        new(0x2808000000000001UL, KernelSelfAuthInfo.Slice(0x10, Loader.Self.ProgramAccess.CapabilitySize).ToArray(), true);
 
     /// <summary>The boot value of a data word of the sysroot: its size (+0x08), the status (+0x28), the KBL parameters
     /// (+0x6C), the factory software version (+0x74, the unit's own: no other is recorded), the model capabilities

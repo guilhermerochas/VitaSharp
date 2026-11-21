@@ -160,6 +160,29 @@ public sealed class SblAcMgrKernelTests(GuestMemoryFixture fixture) : IDisposabl
         Assert.Equal(NoProcess, Call(Services, "ksceSblACMgrConvertModeToFsAttribute", UnknownPid, attribute, 0x106u));
     }
 
+    /// <summary>The kernel process answers from its own auth info as any process (the sysroot's, capability field
+    /// 80 00 00 00 C0 00 F0 00 ...): root (bit 0), not a system program (bit 1), not a game or non-game program, the
+    /// bits of its 0xC0 and 0xF0 bytes set and the empty ones clear; level 0x80.</summary>
+    [Fact]
+    public void The_kernel_process_answers_from_its_own_auth_info()
+    {
+        int kernel = KernelSpace.KernelPid;
+        Assert.Equal(1, Query("ksceSblACMgrIsRootProgram", kernel));
+        Assert.Equal(0, Query("ksceSblACMgrIsSystemProgram2", kernel));
+        Assert.Equal(0, Call(_harness.Module<ProcessmgrKernel>(), "ksceSblACMgrIsSystemProgram", kernel));
+        Assert.Equal(0, Query("ksceSblACMgrIsNonGameOrGameProgram", kernel));
+        Assert.Equal(0, Query("ksceSblACMgrIsNonGameProgram", kernel));
+        Assert.Equal(1, Call(Services, "ksceSblACMgrHasCapability", kernel, 0x20u));
+        Assert.Equal(1, Call(Services, "ksceSblACMgrHasCapability", kernel, 0x21u));
+        Assert.Equal(0, Call(Services, "ksceSblACMgrHasCapability", kernel, 0x22u));
+        Assert.Equal(1, Call(Services, "ksceSblACMgrHasCapability", kernel, 0x33u));
+        Assert.Equal(0, Call(Services, "ksceSblACMgrHasCapability", kernel, 0x34u));
+        Assert.Equal(1, Call(Services, "ksceSblACMgrHasCapability", kernel, 0x7Fu));
+        Assert.Equal(0, Query("SblAcMgrCapability80", kernel));
+        Assert.Equal(0, Query("SblAcMgrCapability81", kernel));
+        Assert.Equal(0, Query("SblAcMgrCapability1F", kernel));
+    }
+
     [Theory]
     [InlineData("ux0:app/PCSE00000/eboot.bin", 0x17u)]
     [InlineData("ux0:/patch/PCSE00000", 0x18u)]
