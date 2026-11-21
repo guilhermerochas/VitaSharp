@@ -414,14 +414,15 @@ public sealed partial class ProcessmgrKernel : HleModule
 
     // ------------------------------------------------------------------ access control and power
 
-    /// <summary>ksceSblACMgrIsSystemProgram (ksceSblACMgrIsShell)(pid): 1 for a system program (it runs from vs0:),
-    /// 0 for a game or application.</summary>
+    /// <summary>ksceSblACMgrIsSystemProgram (ksceSblACMgrIsShell)(pid): capability bit 1 of the process's auth info: 1
+    /// for a system program (it runs from vs0:), 0 for a game or application and for the kernel process (its own auth
+    /// info has bit 1 clear).</summary>
     [Hle(ReturnsValue = true)]
     int ksceSblACMgrIsSystemProgram(int pid)
     {
         if (pid == KernelSpace.KernelPid)
         {
-            return 1;
+            return SysmemKernel.KernelAccess.IsSystemProgram ? 1 : 0;
         }
 
         return ProcessOf(pid) is { IsSystemProgram: true } ? 1 : 0;

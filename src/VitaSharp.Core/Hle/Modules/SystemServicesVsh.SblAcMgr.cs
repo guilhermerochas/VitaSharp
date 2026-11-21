@@ -70,7 +70,7 @@ public sealed partial class SystemServicesVsh
     {
         if (pid == KernelSpace.KernelPid)
         {
-            info = new AcAuthInfo(KernelAuthorityId, new ProgramAccess(KernelAuthorityId, null, true), LevelKernel);
+            info = new AcAuthInfo(KernelAuthorityId, SysmemKernel.KernelAccess, LevelKernel);
             return true;
         }
 

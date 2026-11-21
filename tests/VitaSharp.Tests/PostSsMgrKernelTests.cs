@@ -82,7 +82,6 @@ public sealed class PostSsMgrKernelTests(GuestMemoryFixture fixture) : IDisposab
         Assert.Equal(0xFFFFFFFFu, GuestMemory.R32(date));
         Assert.Equal(unchecked((int)0x800F1325), Call(Services, "ksceSblPostSsMgrActivate", _harness.Str("ux0:data/activate/")));
         Assert.Equal(unchecked((int)0x800F0A16), Call(Services, "ksceSblPmMgrSetSdModeOff", 1u));
-        Assert.Equal(Unsupported, Call(Services, "ksceSblRSA2048Signature"));
     }
 
     [Fact]

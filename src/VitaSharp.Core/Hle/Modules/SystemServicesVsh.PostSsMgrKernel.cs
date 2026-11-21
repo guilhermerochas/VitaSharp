@@ -1,3 +1,4 @@
+using System.Numerics;
 using VitaSharp.Core.Memory;
 
 namespace VitaSharp.Core.Hle.Modules;
@@ -397,10 +398,177 @@ public sealed partial class SystemServicesVsh
         return KERNEL_ERR_UNSUP;
     }
 
-    /// <summary>ksceSblRSA2048CreateSignature / ksceSblRSA2048VerifySignature: the module's RSA-2048 PKCS#1 v1.5
-    /// signing and checking with the key the caller gives. Not implemented: answered as unsupported, never as a valid
-    /// signature.</summary>
-    [Hle("ksceSblRSA2048CreateSignature", Nid = 0x07BAD056, Library = "SceSblPostSsMgrForDriver", Default = true)]
-    [Hle("ksceSblRSA2048VerifySignature", Nid = 0x3DB69911, Library = "SceSblPostSsMgrForDriver", Default = true)]
-    int ksceSblRSA2048Signature() => KERNEL_ERR_UNSUP;
+    // ------------------------------------------------------------------ RSA-2048 (software, on the caller's key)
+
+    // The module signs and checks RSA-2048 PKCS#1 v1.5 itself, on the ARM, with the key the caller passes (no secure
+    // processor): its own multi-precision code (Montgomery exponentiation, CRT for the private key). The data blocks
+    // are { void *data; SceSize size; }; the signature is 0x100 bytes big-endian. The key numbers are arrays of
+    // little-endian 32-bit words, least significant word first: the public key is { n; e } (0x40 words each), the
+    // private key holds at 0x10 p, 0x14 q, 0x18 dp, 0x1C dq and 0x20 qinv = q^-1 mod p (0x20 words each). The
+    // answer is 0 or -1 for every failure (unknown hash type, a hash of the wrong size, a key whose top bit is clear
+    // or that is even, a value not below n, a signature that is not 0x100 bytes or does not match).
+
+    /// <summary>The module's RSA size: 0x40 words, 0x100 bytes.</summary>
+    const int Rsa2048Bytes = 0x100;
+
+    /// <summary>The DER DigestInfo prefixes of PKCS#1 v1.5 by the module's hash type (2 MD2, 4 MD5, 5 SHA-1, 11
+    /// SHA-256, 12 SHA-384, 13 SHA-512, 14 SHA-224) with the digest size; other types (raw 0, MD4 3) fail.</summary>
+    static bool RsaDigestInfo(uint hashType, out ReadOnlySpan<byte> prefix, out int digestSize)
+    {
+        switch (hashType)
+        {
+            case 2:
+                prefix = [0x30, 0x20, 0x30, 0x0C, 0x06, 0x08, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x02, 0x02, 0x05, 0x00, 0x04, 0x10];
+                digestSize = 0x10;
+                return true;
+            case 4:
+                prefix = [0x30, 0x20, 0x30, 0x0C, 0x06, 0x08, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x02, 0x05, 0x05, 0x00, 0x04, 0x10];
+                digestSize = 0x10;
+                return true;
+            case 5:
+                prefix = [0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2B, 0x0E, 0x03, 0x02, 0x1A, 0x05, 0x00, 0x04, 0x14];
+                digestSize = 0x14;
+                return true;
+            case 11:
+                prefix = [0x30, 0x31, 0x30, 0x0D, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0x04, 0x20];
+                digestSize = 0x20;
+                return true;
+            case 12:
+                prefix = [0x30, 0x41, 0x30, 0x0D, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x02, 0x05, 0x00, 0x04, 0x30];
+                digestSize = 0x30;
+                return true;
+            case 13:
+                prefix = [0x30, 0x51, 0x30, 0x0D, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03, 0x05, 0x00, 0x04, 0x40];
+                digestSize = 0x40;
+                return true;
+            case 14:
+                prefix = [0x30, 0x2D, 0x30, 0x0D, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x04, 0x05, 0x00, 0x04, 0x1C];
+                digestSize = 0x1C;
+                return true;
+            default:
+                prefix = default;
+                digestSize = 0;
+                return false;
+        }
+    }
+
+    /// <summary>EMSA-PKCS1-v1_5 of the hash in <paramref name="hashParam"/> ({ data, size }) into the 0x100-byte
+    /// <paramref name="encoded"/>: 00 01 FF.. 00 DigestInfo hash. False for an unknown type or a hash of another
+    /// size.</summary>
+    static bool RsaEncodePkcs1(uint hashParam, uint hashType, Span<byte> encoded)
+    {
+        if (!RsaDigestInfo(hashType, out ReadOnlySpan<byte> prefix, out int digestSize))
+        {
+            return false;
+        }
+
+        if (GuestMemory.R32(hashParam + 4) != (uint)digestSize)
+        {
+            return false;
+        }
+
+        int padEnd = encoded.Length - digestSize - prefix.Length;
+        encoded.Clear();
+        encoded[1] = 1;
+        encoded[2..(padEnd - 1)].Fill(0xFF);
+        prefix.CopyTo(encoded[padEnd..]);
+        GuestMemory.ReadSpan(GuestMemory.R32(hashParam), digestSize).CopyTo(encoded[(padEnd + prefix.Length)..]);
+        return true;
+    }
+
+    /// <summary>A key number of <paramref name="words"/> little-endian 32-bit words at <paramref name="address"/>.</summary>
+    static BigInteger RsaKeyNumber(uint address, int words)
+    {
+        return new BigInteger(GuestMemory.ReadSpan(address, words * 4), isUnsigned: true, isBigEndian: false);
+    }
+
+    /// <summary>The module's check of a modulus or a prime: the top bit of its top word set, and odd.</summary>
+    static bool RsaFullAndOdd(BigInteger number, int words)
+    {
+        return !number.IsEven && number.GetBitLength() == words * 32;
+    }
+
+    /// <summary>Writes <paramref name="value"/> (below 2^2048) as 0x100 big-endian bytes.</summary>
+    static void RsaWriteBigEndian(BigInteger value, uint address)
+    {
+        Span<byte> output = GuestMemory.Span(address, Rsa2048Bytes);
+        output.Clear();
+        int length = value.GetByteCount(isUnsigned: true);
+        value.TryWriteBytes(output[(Rsa2048Bytes - length)..], out _, isUnsigned: true, isBigEndian: true);
+    }
+
+    /// <summary>ksceSblRSA2048CreateSignature (SceSblRsaDataParam *signature, const SceSblRsaDataParam *hash, const
+    /// SceSblRsaPrivateKeyParam *key, int hashType): the PKCS#1 v1.5 signature of the hash with the caller's CRT
+    /// private key into signature->data (0x100 bytes), signature->size = 0x100; 0, or -1 for an unknown type, a hash
+    /// of the wrong size, or p, q or n = p*q with the top bit clear or even.</summary>
+    [Hle("ksceSblRSA2048CreateSignature", Nid = 0x07BAD056, Library = "SceSblPostSsMgrForDriver")]
+    int ksceSblRSA2048CreateSignature(uint signature, uint hash, uint privateKey, uint hashType)
+    {
+        Span<byte> encoded = stackalloc byte[Rsa2048Bytes];
+        if (!RsaEncodePkcs1(hash, hashType, encoded))
+        {
+            return -1;
+        }
+
+        const int halfWords = Rsa2048Bytes / 8;
+        BigInteger p = RsaKeyNumber(GuestMemory.R32(privateKey + 0x10), halfWords);
+        BigInteger q = RsaKeyNumber(GuestMemory.R32(privateKey + 0x14), halfWords);
+        BigInteger modulus = p * q;
+        if (!RsaFullAndOdd(p, halfWords) || !RsaFullAndOdd(q, halfWords) || !RsaFullAndOdd(modulus, halfWords * 2))
+        {
+            return -1;
+        }
+
+        BigInteger message = new(encoded, isUnsigned: true, isBigEndian: true);
+        BigInteger exponentP = RsaKeyNumber(GuestMemory.R32(privateKey + 0x18), halfWords);
+        BigInteger exponentQ = RsaKeyNumber(GuestMemory.R32(privateKey + 0x1C), halfWords);
+        BigInteger inverseQ = RsaKeyNumber(GuestMemory.R32(privateKey + 0x20), halfWords);
+
+        // Garner's recombination as the module does it: m2 + q * (((m1 - m2) * qinv) mod p).
+        BigInteger modP = BigInteger.ModPow(message % p, exponentP, p);
+        BigInteger modQ = BigInteger.ModPow(message % q, exponentQ, q);
+        BigInteger difference = ((modP - (modQ % p)) % p + p) % p;
+        BigInteger high = difference * inverseQ % p;
+        BigInteger signed = modQ + (high * q);
+
+        RsaWriteBigEndian(signed, GuestMemory.R32(signature));
+        GuestMemory.W32(signature + 4, Rsa2048Bytes);
+        return 0;
+    }
+
+    /// <summary>ksceSblRSA2048VerifySignature (const SceSblRsaDataParam *signature, const SceSblRsaDataParam *hash,
+    /// const SceSblRsaPublicKeyParam *key, int hashType): 0 when signature^e mod n is the PKCS#1 v1.5 encoding of the
+    /// hash; -1 otherwise (a signature that is not 0x100 bytes or not below n, n with the top bit clear or even, an
+    /// unknown type or a hash of the wrong size).</summary>
+    [Hle("ksceSblRSA2048VerifySignature", Nid = 0x3DB69911, Library = "SceSblPostSsMgrForDriver")]
+    int ksceSblRSA2048VerifySignature(uint signature, uint hash, uint publicKey, uint hashType)
+    {
+        if (GuestMemory.R32(signature + 4) != Rsa2048Bytes)
+        {
+            return -1;
+        }
+
+        const int words = Rsa2048Bytes / 4;
+        BigInteger modulus = RsaKeyNumber(GuestMemory.R32(publicKey), words);
+        BigInteger value = new(GuestMemory.ReadSpan(GuestMemory.R32(signature), Rsa2048Bytes),
+            isUnsigned: true, isBigEndian: true);
+        if (!RsaFullAndOdd(modulus, words) || value >= modulus)
+        {
+            return -1;
+        }
+
+        BigInteger exponent = RsaKeyNumber(GuestMemory.R32(publicKey + 4), words);
+        BigInteger recovered = BigInteger.ModPow(value, exponent, modulus);
+        Span<byte> expected = stackalloc byte[Rsa2048Bytes];
+        if (!RsaEncodePkcs1(hash, hashType, expected))
+        {
+            return -1;
+        }
+
+        Span<byte> actual = stackalloc byte[Rsa2048Bytes];
+        actual.Clear();
+        int length = recovered.GetByteCount(isUnsigned: true);
+        recovered.TryWriteBytes(actual[(Rsa2048Bytes - length)..], out _, isUnsigned: true, isBigEndian: true);
+        return actual.SequenceEqual(expected) ? 0 : -1;
+    }
 }
