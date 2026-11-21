@@ -236,13 +236,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   bits do usuário e o user data do timer entram no save state (estados antigos carregam sem eles); o evento armado
   volta ao dispatcher depois do load. Eram bugs (callbacks do timer nunca notificados, pulse visto só pelo primeiro
   waiter e nunca pelo WaitMultipleEvents, notify recusado fora do evento simples), corrigidos no mesmo hash.
-  Falta: no WaitMultipleEvents, pipes e E/S assíncrona ainda são lidos como nível (o firmware põe a chamada na fila
-  deles: um IN de pipe levado por outro receptor antes de a chamada olhar é perdido aqui), e a espera CB dele roda os
-  callbacks sem sair das filas (o firmware sai pela notificação e volta ao fim de cada fila; um set durante os
-  callbacks iria aos de trás); os bits do usuário de um Set/PulseEventWithNotifyCallback num pipe ou numa operação de
-  E/S não ficam no padrão (só os callbacks são notificados). As três diferenças são observáveis em intercalações
-  adversas e ficam para um próximo passo (precisam de fila nesses objetos e de tirar a chamada de várias filas sem
-  inverter a ordem dos locks evento → chamada).
+  Pipes e E/S assíncrona no núcleo de evento da classe (21/11/2026, kernJ, `EventCoreInterleavingTests`, conferido no
+  threadmgr 3.74: construtor da classe 0x8100078c, set 0x8101dcf8, espera 0x8101d220, clear 0x9C335818, envio
+  0x81013dfc e recepção 0x8101456c): padrão sticky que começa em 0 (sem OUT inicial), o envio que moveu bytes põe IN
+  (mais 0x10000 com bytes no buffer), a recepção põe OUT (a que esvazia tira 0x10000), ERROR num erro que não seja
+  0x8002802C/0x8002802D, user data {resultado, bytes}; auto-reset pelo atributo 0x100 (nunca tira 0x10000); uma fila
+  só de esperas simples e múltiplas servida dentro do set (um IN levado por outro receptor é visto); sceKernelClearEvent,
+  Set/PulseEventWithNotifyCallback e os sets/leituras de kernel (0xB7DF3EDF, 0x0C6BCB8C, 0x25AB8F6B) em pipe e
+  operação; delete encerra a espera com WAIT_DELETE (OK com DELETE pedido). O padrão entra no save state (estados
+  antigos carregam IN e 0x10000 se há bytes). Falta: a espera CB do WaitMultipleEvents roda os callbacks sem sair das
+  filas (o firmware sai pela notificação e volta ao fim de cada fila; um set durante os callbacks iria aos de trás).
 - [ ] [P3][G] **Contratos do escalonador e do ritmo da CPU:** quem roda primeiro por prioridade e afinidade, quanto tempo de
   guest passa por chamada HLE e por espera, o que acorda quem; uma mudança de desempenho que altere a ordem entre
   threads quebra um teste.
@@ -2028,6 +2031,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   junto com o modelo do chip syscon (item abaixo), com o relógio de usuário (Rtc.NowTick) lendo o mesmo deslocamento;
   (5) SceIntrmgrForKernel: 16 que faltam são do núcleo de troca de contexto do threadmgr (salvar/restaurar registradores
   e VFP do chamador, pilhas por CPU, ganchos de IRQ): só fazem sentido com o threadmgr em LLE.
+  Sistemas de arquivo de plugins de kernel (21/11/2026, kernJ, `IoVfsMountTests`, conferido no iofilemgr 3.74:
+  vfsMount 0xB62DE9A6, divisão de caminho 0x81004718, os wrappers ksceVop*): vfsMount/vfsUmount de verdade (tipos 1-6,
+  mount, set_root e devctl 0x3802 do driver, referência ao driver) e o roteamento das chamadas de E/S do caminho do
+  ponto de montagem (assign name "x0:" ou root path) para o lookup a partir do vnode raiz e as vops do driver; o I/O
+  do driver no dispositivo de bloco vai às pastas do host; ksceVopRead/Write/Pread/Pwrite com o contrato do firmware
+  ({vp, file, buf, size[, offset]}, contagem em *result, retorno 0 ou o erro). Faltam: cache de vnodes com inactive e
+  contagem de referências como o firmware, vfsGetMntInfo/vfsGetMntList das montagens de guest, lseek de 64 bits na
+  volta da vop, montagens PFS de driver de guest (vfsMountForPFS) e ver as pastas do host como vnodes para um driver
+  empilhado (tipo 1 sobre ux0:).
 - [ ] [P3][G] Modelo do chip syscon para o SceSysconForDriver (311 exportações, 198 importadas pelos módulos de kernel do
   FW 3.74). 117 delas montam um pacote (comando de 16 bits, tamanho, dados) e chamam ksceSysconCmdExec/CmdExecAsync; o
   syscon.skprx decompilado está em `fw374\decomp\os0__kd__syscon.skprx.c` (só estudo). Fazer: um modelo C# do chip (os
