@@ -1397,7 +1397,7 @@ public static class SaveStates
             }
         }
 
-        List<GuestThread> restored = KernelSnapshot.Load(emu, new SnapshotReader(Need(ObjectsSection)));
+        List<GuestThread> restored = KernelSnapshot.Load(emu, new SnapshotReader(Need(ObjectsSection)), out List<GuestThread> unclaimedServiceThreads);
         for (int index = 0; index < processes.Count; index++)
         {
             processes[index].Kernel.MainThread = emu.Kernel.Objects.Get<GuestThread>(mainThreads[index]);
@@ -1417,6 +1417,8 @@ public static class SaveStates
         }
 
         LoadKernelModules(emu, sections, layouts, positional);
+        // the saved service threads this session did not run go to their owners, which know their loaded state now
+        KernelSnapshot.AdoptServiceThreads(emu, unclaimedServiceThreads);
         RearmTimers(emu, processes);
         Scheduler.Reset();
         return restored;

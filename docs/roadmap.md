@@ -2769,8 +2769,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
       handlers de exceção e módulos já estavam no estado; nenhum módulo HLE de kernel fica sem save state. Testes:
       `SaveStatePluginTests.ALibraryAKernelPluginRegisteredIsInTheDatabaseAsSaved`, `...TheWorkQueuesWorkerFollowsTheState`,
       `...AKernelPluginsStateIsTheSavedOneAfterALoad`.
-    - [ ] as outras threads de serviço (fila de display do GXM, callbacks do Np, tworker de processo) só são casadas
-      pelo nome com as da sessão: um estado que tem uma delas não carrega numa sessão que ainda não a criou.
+    - [x] (21/11/2026, fix/ss4) as outras threads de serviço seguem o estado pelo `IServiceThreadOwner`: a fila de
+      display do GXM (com a fila; GXM volta a não inicializado num load para antes do `sceGxmInitialize`), a thread de
+      callbacks do SceNpMatching2, as threads de callout do SceNpCommon (pelo UID da thread na primeira palavra do
+      contexto, como no firmware; os contextos iniciados vão no estado) e os tworkers de processo (pelo processo salvo;
+      esperam o event flag do processo carregado). A adoção roda depois dos estados dos módulos; o casamento pelo nome
+      exige o mesmo processo (shell e app têm ambos `SceGxmDisplayQueue`); chamadas enfileiradas pela sessão são
+      descartadas no load. Um save com tworker vivo era recusado ("host is busy"): a espera dele é ponto seguro.
+      Varredura: `SceProcessEvent` (Emulator.InvokeProcessEvent) é transitória, criada e esperada dentro de uma chamada
+      HLE, nunca fica num estado. `LoadedModule.Started` não vai no estado: só o boot do processo o lê (stop/unload
+      não olham). Testes: `SaveStateServiceThreadTests`.
     - [x] (16/11/2026, feat/kernel-proc-switch) eventos switch do processmgr do FW 3.74: 0x11 quando um processo de
       aplicativo (tipo 0x1000000) é suspenso, 0x10 quando volta, com param {0x14, pid, estado 3/2, 0, tipo}, na entrada
       switch do handler. Teste: `KernelProcessEventTests.AHandlerHearsAnApplicationSwitchedOutAndIn`.

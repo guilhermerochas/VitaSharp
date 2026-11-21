@@ -1,4 +1,5 @@
 using VitaSharp.Core.Hle.Np;
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.SaveState;
 using VitaSharp.Core.Util;
@@ -370,7 +371,7 @@ public sealed partial class NpWebApi
     int NpWebApiRefreshForShell() => 0;
 }
 
-public sealed partial class NpManager
+public sealed partial class NpManager : IServiceThreadOwner
 {
     const int NPC_INVALID_ARGUMENT = unchecked((int)0x80550303), NPC_TICKET_VERSION = unchecked((int)0x8055030C),
         NPC_TICKET_FORMAT = unchecked((int)0x80550603), NPC_TEXT_NULL = unchecked((int)0x80550601),
@@ -457,6 +458,11 @@ public sealed partial class NpManager
     [SnapshotMissing]
     uint _netCallout;
 
+    /// <summary>The started callout contexts and the names of their threads (the state of <see cref="_calloutThreads"/>;
+    /// a state of a build before it has none: null, the running session's are kept).</summary>
+    [SnapshotMissing]
+    Dictionary<uint, string>? _calloutNames = [];
+
     readonly Dictionary<uint, HleCallbackThread> _calloutThreads = [];
 
     /// <summary>Tests: receives the due callouts instead of the library's thread.</summary>
@@ -475,9 +481,11 @@ public sealed partial class NpManager
         GuestMemory.W32(context + 0x10, 0);
         GuestMemory.W32(context + 0x14, 0);
         GuestMemory.W32(context + 0xC, 1);
+        string threadName = name == 0 ? "SceNpCallout" : GuestMemory.ReadCString(name, 32);
         lock (_calloutThreads)
         {
-            _calloutThreads[context] = new HleCallbackThread(name == 0 ? "SceNpCallout" : GuestMemory.ReadCString(name, 32));
+            _calloutThreads[context] = CalloutThread(context, threadName);
+            (_calloutNames ??= [])[context] = threadName;
         }
 
         return 0;
@@ -501,6 +509,8 @@ public sealed partial class NpManager
             {
                 thread.Close();
             }
+
+            _calloutNames?.Remove(context);
         }
 
         return 0;
@@ -606,6 +616,116 @@ public sealed partial class NpManager
     }
 
     ulong Now() => Emu?.Kernel.ProcessTimeUs ?? 0;
+
+    /// <summary>A callout context's thread: the context's first word is its UID once it is made (the firmware's layout),
+    /// which is how a save state knows which context a saved thread serves.</summary>
+    static HleCallbackThread CalloutThread(uint context, string threadName)
+    {
+        return new HleCallbackThread(threadName) { Created = thread => GuestMemory.W32(context, (uint)thread.Uid) };
+    }
+
+    /// <summary>
+    /// Save states: the callout threads follow the loaded contexts. A running thread the state has too (kept under its
+    /// saved UID, which the context's first word holds) stays with the context that names it; a context of the state
+    /// whose thread was not running here gets its library thread again (its saved thread is given back by
+    /// <see cref="IServiceThreadOwner.AdoptServiceThread"/>, or a new one is made with its next callout); the contexts
+    /// the state does not have end their threads. The running session's queued calls are dropped.
+    /// </summary>
+    void AfterSnapshotLoad()
+    {
+        lock (_calloutThreads)
+        {
+            if (_calloutNames == null)
+            {
+                // a state of a build before the callout threads were saved: the running session's stay
+                _calloutNames = [];
+                foreach (KeyValuePair<uint, HleCallbackThread> entry in _calloutThreads)
+                {
+                    _calloutNames[entry.Key] = entry.Value.Name;
+                }
+
+                return;
+            }
+
+            var byThread = new Dictionary<int, HleCallbackThread>();
+            foreach (HleCallbackThread running in _calloutThreads.Values)
+            {
+                running.DropPending();
+                if (running.Thread is { IsLive: true } thread)
+                {
+                    byThread[thread.Uid] = running;
+                }
+                else
+                {
+                    running.Close();
+                }
+            }
+
+            _calloutThreads.Clear();
+            foreach (KeyValuePair<uint, string> entry in _calloutNames)
+            {
+                uint context = entry.Key;
+                if (byThread.Remove((int)GuestMemory.R32(context), out HleCallbackThread? kept))
+                {
+                    kept.Created = CalloutThread(context, entry.Value).Created;
+                    _calloutThreads[context] = kept;
+                    continue;
+                }
+
+                _calloutThreads[context] = CalloutThread(context, entry.Value);
+            }
+
+            foreach (HleCallbackThread unused in byThread.Values)
+            {
+                if (unused.Thread is { } thread)
+                {
+                    thread.RequestStop();
+                }
+
+                unused.Close();
+            }
+        }
+    }
+
+    /// <summary>Save states: the saved thread of a loaded callout context (the one its first word names), while this
+    /// session runs none for it, is its library thread again.</summary>
+    bool IServiceThreadOwner.AdoptServiceThread(GuestThread thread)
+    {
+        if (!ReferenceEquals(thread.Process, Emu))
+        {
+            return false;
+        }
+
+        lock (_calloutThreads)
+        {
+            foreach (KeyValuePair<uint, HleCallbackThread> entry in _calloutThreads)
+            {
+                if (GuestMemory.R32(entry.Key) == (uint)thread.Uid && entry.Value.Name == thread.Name)
+                {
+                    return entry.Value.Adopt(Emu, thread);
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Save states: a callout thread the loaded state does not have is let go.</summary>
+    bool IServiceThreadOwner.ReleaseServiceThread(GuestThread thread)
+    {
+        lock (_calloutThreads)
+        {
+            foreach (HleCallbackThread callout in _calloutThreads.Values)
+            {
+                if (callout.Release(thread))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 
     uint NetCallout()
     {

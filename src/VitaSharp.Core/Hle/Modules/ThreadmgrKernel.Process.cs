@@ -35,6 +35,15 @@ public sealed partial class ThreadmgrKernel
     [SnapshotMissing] // states of builds before it: no stop event was sent
     readonly HashSet<int> _processStopSent = new();
 
+    /// <summary>The process workers by thread UID, with the process object each serves (its event flag is at +0x334): a
+    /// save state's workers, given back with their saved UIDs, find their process in it.</summary>
+    [SnapshotMissing] // states of builds before it: their workers keep the flag they were made with
+    readonly Dictionary<int, uint> _processWorkers = new();
+
+    /// <summary>The process workers running in this session (save states: the ones a load lets go).</summary>
+    [SnapshotIgnore]
+    readonly HashSet<GuestThread> _runningProcessWorkers = new();
+
     /// <summary>The trace hooks the two setters keep (+0x28A8 and +0x28AC of the data block).</summary>
     const uint GlobalsTraceExit = 0x28A8, GlobalsTraceEntry = 0x28AC;
 
@@ -67,7 +76,57 @@ public sealed partial class ThreadmgrKernel
         worker.KernelMode = true;
         worker.HostBody = self => ProcessWorker(self, flag);
         GuestMemory.W32(process + 0x330, (uint)worker.Uid);
+        lock (_processWorkers)
+        {
+            _processWorkers[worker.Uid] = process;
+            _runningProcessWorkers.Add(worker);
+        }
+
         return worker.Start(0, 0) < 0 ? -1 : 0;
+    }
+
+    /// <summary>Save states: a saved process worker this session does not run (the process was made after the moment
+    /// this session is at) is a worker again, of the process its loaded record names.</summary>
+    bool AdoptProcessWorker(GuestThread thread)
+    {
+        if (!ReferenceEquals(thread.Process, Emu))
+        {
+            return false;
+        }
+
+        lock (_processWorkers)
+        {
+            if (!_processWorkers.ContainsKey(thread.Uid))
+            {
+                return false;
+            }
+
+            thread.KernelMode = true;
+            thread.HostBody = self => ProcessWorker(self, -1);
+            _runningProcessWorkers.Add(thread);
+        }
+
+        return true;
+    }
+
+    /// <summary>Save states: a process worker the loaded state does not have (its process was made after the save) is
+    /// let go: it stops waiting and ends.</summary>
+    bool ReleaseProcessWorker(GuestThread thread)
+    {
+        lock (_processWorkers)
+        {
+            return _runningProcessWorkers.Remove(thread);
+        }
+    }
+
+    /// <summary>The event flag the worker waits on: its process's (the loaded one after a state load: the worker's UID
+    /// is the saved one), else the one it was made with.</summary>
+    int ProcessWorkerFlag(GuestThread self, int madeWith)
+    {
+        lock (_processWorkers)
+        {
+            return _processWorkers.TryGetValue(self.Uid, out uint process) ? (int)GuestMemory.R32(process + 0x334) : madeWith;
+        }
     }
 
     /// <summary>The process worker's wake bits: bit 31 ends it (NID_5A23A1BE), bit 0 asks for the process's debug
@@ -89,8 +148,16 @@ public sealed partial class ThreadmgrKernel
             {
                 GuestMemory.W32(words, 0);
                 GuestMemory.W32(words + 4, WorkerWaitUs);
-                int wait = UserThreadmgr.sceKernelWaitEventFlag(flag, WorkerEndBit | WorkerHandlerBit, EventFlag.WaitOr | EventFlag.WaitClear,
-                    new Ptr<uint>(words), new Ptr<uint>(words + 4));
+                int wait;
+                // blocked in the host while it waits: a save state's safe point (the worker keeps nothing in guest
+                // registers; a load gives it back or lets it go, IServiceThreadOwner). Before, a save with a process
+                // worker alive was refused ("thread 'tworker: ...' (host) is busy")
+                using (Scheduler.Block())
+                {
+                    wait = UserThreadmgr.sceKernelWaitEventFlag(ProcessWorkerFlag(self, flag), WorkerEndBit | WorkerHandlerBit, EventFlag.WaitOr | EventFlag.WaitClear,
+                        new Ptr<uint>(words), new Ptr<uint>(words + 4));
+                }
+
                 if (wait == SceError.WAIT_TIMEOUT)
                 {
                     continue;
@@ -125,6 +192,15 @@ public sealed partial class ThreadmgrKernel
         {
             thread.WaitForExit(30_000);
             K.Objects.Remove(worker);
+            lock (_processWorkers)
+            {
+                _runningProcessWorkers.Remove(thread);
+            }
+        }
+
+        lock (_processWorkers)
+        {
+            _processWorkers.Remove(worker);
         }
 
         UserThreadmgr.sceKernelDeleteEventFlag(flag);
