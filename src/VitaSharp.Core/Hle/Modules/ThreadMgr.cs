@@ -1722,71 +1722,29 @@ public sealed partial class ThreadMgr : HleModule
         var queuedTimers = new List<TimerObject>();
         var queuedCores = new List<EventObject>();
         int code = SceError.OK;
+        long start = GuestClock.Ticks; // one deadline for the whole call, across the passes a CB wait makes
+        long? limitUs = timeout.IsNull ? null : timeout.Value;
         try
         {
-            for (int i = 0; i < count; i++)
-            {
-                int uid = (int)GuestMemory.R32(events + (uint)i * 8);
-                uint pattern = GuestMemory.R32(events + (uint)i * 8 + 4);
-                switch (K.Objects.Get<KernelObject>(uid))
-                {
-                    case SimpleEvent simple:
-                        if (simple.AttachMulti(multi, i, pattern, self?.Priority ?? 0))
-                        {
-                            queued.Add(simple);
-                        }
-
-                        break;
-                    case TimerObject timer:
-                        // the timer's fire takes the call inside it, in the timer's queue, as a simple event's set does
-                        if (timer.AttachMulti(multi, i, pattern, self?.Priority ?? 0))
-                        {
-                            queuedTimers.Add(timer);
-                        }
-
-                        break;
-                    case MsgPipe or IoAsyncOp:
-                        // the event core every event-class object has: taken at once when it matches, else queued
-                        // there, the object's set taking the call inside it
-                        var core = (EventObject)K.Objects.Get<KernelObject>(uid)!;
-                        if (core.AttachCoreMulti(multi, i, pattern))
-                        {
-                            queuedCores.Add(core);
-                        }
-
-                        break;
-                    default:
-                        multi.Record(i, uid, SceError.UNKNOWN_EVENT_ID, EventBits.Error, 0);
-                        break;
-                }
-            }
-            long start = GuestClock.Ticks;
-            long? limitUs = timeout.IsNull ? null : timeout.Value;
             while (true)
             {
-                int seen = multi.Changes;
-                if (multi.Complete)
+                // threadmgr 3.74 (0x8101ed4c): a CB wait runs the notified callbacks before each pass over the events
+                if (Wait.CallbacksPending(self))
+                {
+                    GuestThread.CallbackProcessor!(self!);
+                }
+
+                multi.BeginPass();
+                AttachMultiEvents(events, count, multi, self, queued, queuedTimers, queuedCores);
+                code = SleepMultiEvents(multi, self, start, limitUs);
+                if (code != SceError.NOTIFY_CALLBACK)
                 {
                     break;
                 }
 
-                long? sliceUs = limitUs.HasValue ? limitUs.Value - MultiElapsedUs(start) : null;
-                if (sliceUs <= 0)
-                {
-                    code = SceError.WAIT_TIMEOUT;
-                    break;
-                }
-
-                int waited;
-                lock (multi)
-                {
-                    waited = Wait.Until(multi, () => multi.ChangedSince(seen), sliceUs, null, "multiple events");
-                }
-                if (waited != SceError.OK && waited != SceError.WAIT_TIMEOUT)
-                {
-                    code = waited;
-                    break;
-                }
+                // the notification ended the sleep: the call leaves every queue (0x8101d7a4), so a set meanwhile goes
+                // to the waiters behind, and after the callbacks it joins the queues of the events still open anew
+                DetachMultiEvents(multi, queued, queuedTimers, queuedCores);
             }
             if (limitUs.HasValue)
             {
@@ -1795,18 +1753,7 @@ public sealed partial class ThreadMgr : HleModule
         }
         finally
         {
-            foreach (SimpleEvent simple in queued)
-            {
-                simple.DetachMulti(multi);
-            }
-            foreach (TimerObject timer in queuedTimers)
-            {
-                timer.DetachMulti(multi);
-            }
-            foreach (EventObject core in queuedCores)
-            {
-                core.DetachCoreMulti(multi);
-            }
+            DetachMultiEvents(multi, queued, queuedTimers, queuedCores);
         }
         int written = 0;
         if (results != 0)
@@ -1824,6 +1771,118 @@ public sealed partial class ThreadMgr : HleModule
         }
 
         return code != SceError.OK ? code : written;
+    }
+
+    /// <summary>
+    /// One pass of a sceKernelWaitMultipleEvents call over its events (0x8101ed4c), in the array's order, skipping the
+    /// ones that already have a result (a pass after the callbacks): a matching event is taken, an unknown uid is done
+    /// with UNKNOWN_EVENT_ID, the others queue the call at the end of their queue.
+    /// </summary>
+    void AttachMultiEvents(uint events, uint count, MultiEventWait multi, GuestThread? self, List<SimpleEvent> queued, List<TimerObject> queuedTimers, List<EventObject> queuedCores)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            if (multi.IsDone(i))
+            {
+                continue;
+            }
+
+            int uid = (int)GuestMemory.R32(events + (uint)i * 8);
+            uint pattern = GuestMemory.R32(events + (uint)i * 8 + 4);
+            switch (K.Objects.Get<KernelObject>(uid))
+            {
+                case SimpleEvent simple:
+                    if (simple.AttachMulti(multi, i, pattern, self?.Priority ?? 0))
+                    {
+                        queued.Add(simple);
+                    }
+
+                    break;
+                case TimerObject timer:
+                    // the timer's fire takes the call inside it, in the timer's queue, as a simple event's set does
+                    if (timer.AttachMulti(multi, i, pattern, self?.Priority ?? 0))
+                    {
+                        queuedTimers.Add(timer);
+                    }
+
+                    break;
+                case EventObject core when core is MsgPipe or IoAsyncOp:
+                    // the event core every event-class object has: taken at once when it matches, else queued there,
+                    // the object's set taking the call inside it
+                    if (core.AttachCoreMulti(multi, i, pattern))
+                    {
+                        queuedCores.Add(core);
+                    }
+
+                    break;
+                default:
+                    multi.Record(i, uid, SceError.UNKNOWN_EVENT_ID, EventBits.Error, 0);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The sleep of a sceKernelWaitMultipleEvents call after a pass: OK once the call is complete, WAIT_TIMEOUT when
+    /// the call's deadline passes first, NOTIFY_CALLBACK when a callback notification ends it in the CB form (also one
+    /// that came during the pass: the thread then does not sleep), or a wait error.
+    /// </summary>
+    static int SleepMultiEvents(MultiEventWait multi, GuestThread? self, long start, long? limitUs)
+    {
+        while (true)
+        {
+            int seen = multi.Changes;
+            if (multi.Complete)
+            {
+                return SceError.OK;
+            }
+
+            if (multi.Interrupted || Wait.CallbacksPending(self))
+            {
+                lock (multi)
+                {
+                    multi.InterruptForCallbacks(self!);
+                }
+
+                return SceError.NOTIFY_CALLBACK;
+            }
+
+            long? sliceUs = limitUs.HasValue ? limitUs.Value - MultiElapsedUs(start) : null;
+            if (sliceUs <= 0)
+            {
+                return SceError.WAIT_TIMEOUT;
+            }
+
+            int waited;
+            lock (multi)
+            {
+                waited = Wait.Until(multi, () => multi.ChangedSince(seen) || Wait.CallbacksPending(self), sliceUs, null, "multiple events");
+            }
+            if (waited != SceError.OK && waited != SceError.WAIT_TIMEOUT)
+            {
+                return waited;
+            }
+        }
+    }
+
+    /// <summary>The call leaves the queue of every event it joined (0x8101d7a4).</summary>
+    static void DetachMultiEvents(MultiEventWait multi, List<SimpleEvent> queued, List<TimerObject> queuedTimers, List<EventObject> queuedCores)
+    {
+        foreach (SimpleEvent simple in queued)
+        {
+            simple.DetachMulti(multi);
+        }
+        foreach (TimerObject timer in queuedTimers)
+        {
+            timer.DetachMulti(multi);
+        }
+        foreach (EventObject core in queuedCores)
+        {
+            core.DetachCoreMulti(multi);
+        }
+        queued.Clear();
+        queuedTimers.Clear();
+        queuedCores.Clear();
     }
 
     /// <summary>Guest microseconds since <paramref name="start"/>, as the waits' timeouts count them.</summary>

@@ -9,9 +9,13 @@ namespace VitaSharp.Core.Kernel;
 /// single waiter, and appends a result in the order the events fired; a cancel or a delete appends that event's error.
 /// The call ends at the first result in OR mode and once every event has one in AND mode; an event reached after an OR
 /// call already ended is not taken. Timers, message pipes and asynchronous I/O operations queue it the same way (the
-/// timer's fire, the pipe's send and receive, the operation's end take it inside their set).
+/// timer's fire, the pipe's send and receive, the operation's end take it inside their set). In the CB form a callback
+/// notification ends the sleep (NOTIFY_CALLBACK): from then on a set that reaches the call's place in a queue takes
+/// nothing and drops that place (0x8101dcf8 hands a multiple wait the event only while its thread still sleeps), the
+/// call leaves every queue (0x8101d7a4), runs the callbacks and makes its first pass again over the events still
+/// without a result, joining their queues anew at the end, under the same deadline.
 /// </summary>
-public sealed class MultiEventWait
+public sealed class MultiEventWait : ICallbackInterruptedWait
 {
     /// <summary>One SceKernelResultEvent: the event's UID, its result, the bits it reported and its user data.</summary>
     public readonly record struct Result(int Uid, int Code, uint Pattern, ulong UserData);
@@ -21,6 +25,7 @@ public sealed class MultiEventWait
     private int _remaining;
     private readonly List<Result> _results = new();
     private int _changes;
+    private bool _interrupted;
 
     public MultiEventWait(int count, bool or, GuestThread? thread)
     {
@@ -55,7 +60,7 @@ public sealed class MultiEventWait
         lock (this)
         {
             ulong bit = 1UL << (index & 63);
-            if (CompleteLocked || (_done[index >> 6] & bit) != 0)
+            if (CompleteLocked || _interrupted || (_done[index >> 6] & bit) != 0)
             {
                 return false;
             }
@@ -66,6 +71,41 @@ public sealed class MultiEventWait
             _changes++;
             Monitor.PulseAll(this);
             return true;
+        }
+    }
+
+    /// <summary>A callback notification ended the CB call's sleep (threadmgr 3.74's notify): the call takes nothing
+    /// until its next pass (<see cref="BeginPass"/>). Called holding this object's lock.</summary>
+    public void InterruptForCallbacks(GuestThread thread)
+    {
+        if (thread != Thread)
+        {
+            return;
+        }
+
+        _interrupted = true;
+        _changes++;
+    }
+
+    /// <summary>A callback notification ended the sleep: the call leaves its queues and runs its callbacks.</summary>
+    public bool Interrupted
+    {
+        get
+        {
+            lock (this)
+            {
+                return _interrupted;
+            }
+        }
+    }
+
+    /// <summary>A pass over the events starts (the first, or the one after the callbacks): the call takes results
+    /// again.</summary>
+    public void BeginPass()
+    {
+        lock (this)
+        {
+            _interrupted = false;
         }
     }
 
@@ -115,5 +155,5 @@ public sealed class MultiEventWait
 
     /// <summary>The wait-loop predicate: complete, or something changed since <paramref name="seen"/> (the caller holds
     /// this object's lock).</summary>
-    internal bool ChangedSince(int seen) => CompleteLocked || _changes != seen;
+    internal bool ChangedSince(int seen) => CompleteLocked || _interrupted || _changes != seen;
 }

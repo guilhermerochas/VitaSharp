@@ -244,8 +244,14 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   só de esperas simples e múltiplas servida dentro do set (um IN levado por outro receptor é visto); sceKernelClearEvent,
   Set/PulseEventWithNotifyCallback e os sets/leituras de kernel (0xB7DF3EDF, 0x0C6BCB8C, 0x25AB8F6B) em pipe e
   operação; delete encerra a espera com WAIT_DELETE (OK com DELETE pedido). O padrão entra no save state (estados
-  antigos carregam IN e 0x10000 se há bytes). Falta: a espera CB do WaitMultipleEvents roda os callbacks sem sair das
-  filas (o firmware sai pela notificação e volta ao fim de cada fila; um set durante os callbacks iria aos de trás).
+  antigos carregam IN e 0x10000 se há bytes).
+  Espera CB do WaitMultipleEvents (21/11/2026, kernK, `CallbackWaitInterleavingTests` com o caso "multi" e
+  `AMultipleEventsCbCallKeepsItsResultsAcrossTheCallbacks`, conferido no threadmgr 3.74: laço 0x8101ed4c, saída das
+  filas 0x8101d7a4, set 0x8101dcf8): a notificação encerra o sono e, a partir dela, o set que alcança o lugar da
+  chamada numa fila não lhe entrega nada e tira o lugar (o set só entrega a uma espera múltipla cujo thread ainda
+  dorme), então vai aos de trás; a chamada sai de todas as filas, roda os callbacks e refaz a primeira passada só nos
+  eventos ainda sem resultado, entrando no fim das filas, com o mesmo prazo; callbacks notificados antes da espera
+  rodam antes da primeira passada. Era bug (os callbacks rodavam com a chamada ainda nas filas), corrigido.
 - [ ] [P3][G] **Contratos do escalonador e do ritmo da CPU:** quem roda primeiro por prioridade e afinidade, quanto tempo de
   guest passa por chamada HLE e por espera, o que acorda quem; uma mudança de desempenho que altere a ordem entre
   threads quebra um teste.

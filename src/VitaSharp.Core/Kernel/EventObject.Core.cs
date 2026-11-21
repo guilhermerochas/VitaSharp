@@ -218,7 +218,7 @@ public abstract partial class EventObject
 
         lock (this)
         {
-            Wait.CallbackWaitDeadline deadline = Wait.CallbackWaitDeadline.Start(timeout);
+            var deadline = Wait.CallbackWaitDeadline.Start(timeout);
             while (true)
             {
                 if (Wait.CallbacksPending(self))
