@@ -144,7 +144,8 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
         }
 
         /// <summary>One scene per group of textures, each drawn once, and a present after each scene.</summary>
-        public int Run(int group)
+        /// <param name="finish">false: returns once everything is submitted, without waiting for the GPU (sceGxmFinish)</param>
+        public int Run(int group, bool finish = true)
         {
             int frames = 0;
             for (int start = 0; start < Textures.Count; start += group)
@@ -165,7 +166,11 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
                 _h.Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(Data, W, W, H, DisplayPixelFormat.A8B8G8R8) });
                 frames++;
             }
-            Assert.Equal(0, Call(_g, "sceGxmFinish", Ctx));
+            if (finish)
+            {
+                Assert.Equal(0, Call(_g, "sceGxmFinish", Ctx));
+            }
+
             return frames;
         }
 
