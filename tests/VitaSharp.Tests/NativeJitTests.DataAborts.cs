@@ -24,6 +24,12 @@ public sealed unsafe partial class NativeJitTests
     // movs r0, #7; cmp r0, r0; it eq; streq r0, [r1]; movs r1, #9; b .
     private static readonly ushort[] s_abortStoreThumb = [0x2007, 0x4280, 0xBF08, 0x6008, 0x2109, 0xE7FE];
 
+    // mov r6, #3; ldmia r1!, {r2-r5}; b .   (r1 = 8 bytes before an unmapped page: the third word faults)
+    private static readonly uint[] s_abortLdmArm = [0xE3A06003, 0xE8B1003C, 0xEAFFFFFE];
+
+    // ldrh r0, [r1, #2]!; b .   and   vldmia r1!, {d0-d1}; b .   (forms whose handlers write the base back first)
+    private static readonly uint[][] s_abortWritebackArm = [[0xE1F100B2, 0xEAFFFFFE], [0xECB10B04, 0xEAFFFFFE]];
+
     private delegate void BlockRunner(CpuState* s, Block b);
 
     private static Block AbortBlock(bool thumb, bool armed, uint[]? arm = null)
@@ -115,6 +121,31 @@ public sealed unsafe partial class NativeJitTests
             Assert.Equal((0u, 1u, 1u, 0u), (s->N, s->Z, s->C, s->V));
             Assert.Equal(0x08u, BlockBuilder.ItStateAt(store, CodeBase + 6)); // IT EQ, one instruction
             Assert.Equal(0u, BlockBuilder.ItStateAt(store, CodeBase + 8));
+
+            // LDM running from a mapped page into an unmapped one: the fault address is the start of that page and the
+            // base is not written back (the registers loaded before the fault are UNKNOWN in the ARM ARM: not checked)
+            if (GuestMemory.MappedTable(GuestMemory.Base)[(DataBase + DataSize) >> 12] == 0)
+            {
+                Block ldm = AbortBlock(thumb: false, armed: true, s_abortLdmArm);
+                AbortState(s, thumb: false, armed: true, DataBase + DataSize - 8);
+                run(s, ldm);
+                Assert.True(ExitReason.DataAbort == s->Exit, $"{backend}: LDM exit {s->Exit}");
+                Assert.Equal(CodeBase + 4, s->SvcPc);
+                Assert.Equal(DataBase + DataSize, s->AbortAddr);
+                Assert.Equal(DataAborts.TranslationFault, s->AbortStatus);
+                Assert.Equal(DataBase + DataSize - 8, s->R[1]);
+                Assert.Equal(3u, s->R[6]);
+            }
+
+            // the base of a faulting access is never written back
+            foreach (uint[] program in s_abortWritebackArm)
+            {
+                AbortState(s, thumb: false, armed: true, AbortTestAddress);
+                run(s, AbortBlock(thumb: false, armed: true, program));
+                Assert.True(ExitReason.DataAbort == s->Exit, $"{backend}: {program[0]:X8} exit {s->Exit}");
+                Assert.Equal(CodeBase, s->SvcPc);
+                Assert.Equal(AbortTestAddress, s->R[1]);
+            }
 
             // mapped pages: the armed block gives what the unguarded interpreter gives
             foreach (bool thumb in new[] { false, true })
