@@ -76,6 +76,10 @@ public sealed class MediaParityTests(ITestOutputHelper output)
         private readonly int _slowUnitMs;
         private int _decoded;
         private readonly Thread _worker;
+        /// <summary>Legacy timing: the first unit's decode starts once its call returned. The old timing gave nothing on
+        /// the first call because a decode outlasted its 5 ms grace; held here, that is so whatever the host's speed (a
+        /// test thread preempted past the decode used to find the picture already there).</summary>
+        private readonly ManualResetEventSlim _firstCallReturned = new();
 
         /// <param name="slowUnit">A unit whose decode takes <paramref name="slowUnitMs"/> instead (a busy machine).</param>
         public ThreadedDecoder(IVideoDecoder inner, int decodeMs, bool legacyTiming, bool pipelined = false, int slowUnit = -1, int slowUnitMs = 0)
@@ -102,6 +106,11 @@ public sealed class MediaParityTests(ITestOutputHelper output)
         {
             foreach ((byte[] unit, long pts) in _input.GetConsumingEnumerable())
             {
+                if (_legacyTiming && _decoded == 0)
+                {
+                    _firstCallReturned.Wait();
+                }
+
                 Thread.Sleep(_decoded == _slowUnit ? _slowUnitMs : _decodeMs);
                 _decoded++;
                 _inner.Send(unit, pts);
@@ -141,6 +150,8 @@ public sealed class MediaParityTests(ITestOutputHelper output)
                 {
                     Poll(5_000);
                 }
+
+                _firstCallReturned.Set();
             }
             else
             {
@@ -150,7 +161,8 @@ public sealed class MediaParityTests(ITestOutputHelper output)
 
         public void Flush()
         {
-            while (_sync.Outstanding > 0 && _output.TryTake(out DecodedPicture? picture, TimeSpan.FromSeconds(2)))
+            // the wait is for the outstanding pictures; the 2 min is only a guard against a hang
+            while (_sync.Outstanding > 0 && _output.TryTake(out DecodedPicture? picture, TimeSpan.FromMinutes(2)))
             {
                 _ready.Enqueue(picture);
                 _sync.PictureOut();
@@ -173,7 +185,9 @@ public sealed class MediaParityTests(ITestOutputHelper output)
         public void Dispose()
         {
             _input.CompleteAdding();
+            _firstCallReturned.Set();
             _worker.Join();
+            _firstCallReturned.Dispose();
             _inner.Dispose();
         }
     }
