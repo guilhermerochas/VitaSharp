@@ -273,7 +273,7 @@ public sealed class PostSsMgrRsaTests(GuestMemoryFixture fixture) : IDisposable
 
             foreach (int witness in bases)
             {
-                BigInteger value = BigInteger.ModPow(witness, odd, candidate);
+                var value = BigInteger.ModPow(witness, odd, candidate);
                 if (value.IsOne || value == candidate - 1)
                 {
                     continue;
