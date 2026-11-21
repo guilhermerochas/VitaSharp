@@ -78,15 +78,30 @@ public sealed class KernelGuidTests(GuestMemoryFixture fixture) : IDisposable
         });
     }
 
+    /// <summary>The HLE's objects have the class sysmem gives the firmware's own: a memory block the memory block
+    /// class (SceUIDMemBlockClass, which derives from the root), any other HLE object (here a semaphore) the root
+    /// class.</summary>
     [Fact]
-    public void HleObjectsAreOfTheRootClass()
+    public void HleObjectsHaveTheFirmwaresClass()
     {
+        uint root = (uint)Invoke(Sysmem, "ksceKernelGetUidClass")!;
+        uint memBlockClass = (uint)Invoke(Sysmem, "ksceKernelGetUIDMemBlockClass")!;
+        Assert.NotEqual(root, memBlockClass);
+
         int block = S("ksceKernelAllocMemBlock", _harness.Str("root-block"), 0x0C20D060u, 0x1000u, 0u);
         uint out_ = _harness.Word(0);
         Assert.Equal(0, S("ksceGUIDGetClass", block, out_));
-        Assert.Equal((uint)Invoke(Sysmem, "ksceKernelGetUidClass")!, GuestMemory.R32(out_));
+        Assert.Equal(memBlockClass, GuestMemory.R32(out_));
         Assert.Equal(0, S("kscePUIDGetClass", 0, block, out_));
+        Assert.Equal(memBlockClass, GuestMemory.R32(out_));
         Assert.Equal(0, S("kscePUIDGetObject", 0, block, out_));
         Assert.NotEqual(0u, GuestMemory.R32(out_));
+        // the memory block class is a subclass of the root
+        Assert.Equal(0, S("ksceGUIDReferObjectWithSubclass", block, root, out_));
+
+        int sema = Call(_harness.Module<ThreadMgr>(), "sceKernelCreateSema", "root-sema", 0u, 0, 1, 0u);
+        Assert.True(sema > 0);
+        Assert.Equal(0, S("ksceGUIDGetClass", sema, out_));
+        Assert.Equal(root, GuestMemory.R32(out_));
     }
 }
