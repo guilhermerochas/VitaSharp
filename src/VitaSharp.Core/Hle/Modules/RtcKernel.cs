@@ -13,8 +13,26 @@ namespace VitaSharp.Core.Hle.Modules;
 /// registered callback is notified. The conversions and calendar exports are the user-mode SceRtc functions (same
 /// code in librtc and the kernel module), bound to their kernel NIDs in <see cref="Rtc"/>.
 /// </summary>
-public sealed class RtcKernel : HleModule
+public sealed class RtcKernel : HleModule, ISnapshotTimers
 {
+    /// <summary>A state load: the alarms of the loaded clocks ring at their times; one that had rung before the save
+    /// (the chip's alarm bit is up; a secure alarm whose time had passed) does not ring again.</summary>
+    void ISnapshotTimers.RearmTimers()
+    {
+        AlarmTimer alarm = Alarm;
+        bool pending;
+        lock (Clocks)
+        {
+            alarm.Restore(Chip.StatusBit(AlarmBit), SecureAlarmed());
+            pending = alarm.HasPending;
+        }
+
+        if (pending)
+        {
+            TimerDispatcher.Arm(alarm);
+        }
+    }
+
     /// <summary>SceRtc: a bad value; NULL; a clock that is not set; a callback already registered; another one.</summary>
     const int RTC_ERR_INVALID = unchecked((int)0x80251000), RTC_ERR_NULL = unchecked((int)0x80251001),
         RTC_ERR_NOT_SET = unchecked((int)0x80251002), RTC_ERR_REGISTERED = unchecked((int)0x80251003),
@@ -30,8 +48,8 @@ public sealed class RtcKernel : HleModule
 
     SysconChip Chip => Emu.Vita.Syscon;
 
-    /// <summary>The alarms' entry in the guest-time scheduler (made on first use; an alarm of a loaded state is armed
-    /// again by its next set).</summary>
+    /// <summary>The alarms' entry in the guest-time scheduler (made on first use; a load arms the loaded state's alarms
+    /// again, <see cref="ISnapshotTimers.RearmTimers"/>).</summary>
     [SnapshotIgnore]
     AlarmTimer? _alarm;
 
@@ -423,6 +441,17 @@ public sealed class RtcKernel : HleModule
         ulong _alarmFor, _secureFor;
 
         public bool Armed { get; set; }
+
+        /// <summary>The loaded clocks' alarms (the caller holds the clocks' lock): whether each had rung by the saved
+        /// time.</summary>
+        public void Restore(bool alarmRang, bool secureRang)
+        {
+            RtcClocks clocks = owner.Clocks;
+            _alarmFor = clocks.AlarmTick;
+            _alarmRang = alarmRang;
+            _secureFor = clocks.SecureAlarmTick;
+            _secureRang = secureRang;
+        }
 
         public bool HasPending
         {

@@ -143,6 +143,16 @@ public sealed class GuestInterruptScheduler(Emulator emulator, Action<uint, ulon
         }
     }
 
+    /// <summary>No line fires any more (a state load: the devices arm the loaded state's lines again).</summary>
+    public void DisarmAll()
+    {
+        lock (_lock)
+        {
+            Array.Fill(_deadlines, NotArmed);
+            _armedLines = 0;
+        }
+    }
+
     /// <summary>The dispatcher's call: an armed line that came due is handed to the interrupt thread (null: the source
     /// leaves the dispatcher until the thread arms it again); otherwise the microseconds left to the earliest line.</summary>
     public ulong? FireDueAndRemaining()

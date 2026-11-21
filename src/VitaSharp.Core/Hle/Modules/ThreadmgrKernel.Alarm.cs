@@ -18,8 +18,23 @@ namespace VitaSharp.Core.Hle.Modules;
 /// the kernel process (handler, argument); its due time is kept here.
 /// </para>
 /// </summary>
-public sealed partial class ThreadmgrKernel
+public sealed partial class ThreadmgrKernel : ISnapshotTimers
 {
+    /// <summary>A state load: the timer line is armed for the loaded state's earliest alarm (or left disarmed).</summary>
+    void ISnapshotTimers.RearmTimers()
+    {
+        bool any;
+        lock (_alarmDue)
+        {
+            any = _alarmDue.Count > 0;
+        }
+
+        if (any)
+        {
+            ArmAlarmTimer();
+        }
+    }
+
     const string AlarmKind = "alarm";
 
     const string DefaultAlarmName = "SceKernelAlarmObject";

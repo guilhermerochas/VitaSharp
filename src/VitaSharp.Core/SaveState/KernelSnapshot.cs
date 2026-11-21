@@ -377,6 +377,16 @@ internal static class KernelSnapshot
             table.Put(o);
         }
 
+        // the running session's timers that the state does not have stop firing in guest time
+        var kept = new HashSet<KernelObject>(objects);
+        foreach (KernelObject o in current)
+        {
+            if (o is TimerObject oldTimer && !kept.Contains(oldTimer))
+            {
+                oldTimer.Retire();
+            }
+        }
+
         // the kernel process's record stays (a state saved before the kernel was one process for the whole system has
         // none: its kernel modules were the process's)
         if (emu.Vita.KernelProcess is { } kernelProcess && table.Get<ProcessObject>(KernelSpace.KernelPid) == null)

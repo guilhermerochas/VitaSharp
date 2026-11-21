@@ -4553,6 +4553,19 @@ public sealed partial class TimerObject : EventObject, IGuestTimed
         }
     }
 
+    /// <summary>A state load replaced the object table and this timer of the running session is not in it: its event no
+    /// longer fires (the dispatcher drops it at its next look). Its waiters were threads of that session.</summary>
+    internal void Retire()
+    {
+        lock (this)
+        {
+            _deleted = true;
+            NextEvent = ulong.MaxValue;
+        }
+
+        TimerDispatcher.Poke();
+    }
+
     /// <summary>A loaded state's armed event goes back to the dispatcher (after the registrations are resolved).</summary>
     internal void ArmLoaded()
     {
