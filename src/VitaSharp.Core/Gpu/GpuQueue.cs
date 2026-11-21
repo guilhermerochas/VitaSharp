@@ -189,7 +189,7 @@ public sealed class GpuQueue : IDisposable
     // (SceneGate) is not waited for on the worker, which would hold up every other process's work behind it (the shell
     // keeps its scenes open while it waits for the vblank). The worker puts it, and the process's commands after it,
     // aside in the process's lane and goes on with the other processes' commands; the lane runs once the scene ended, the
-    // process waits for one of its commands, or after 250 ms. The renderer keeps each process's scene apart
+    // process waits for one of its commands, or after SceneGateTimeoutMs. The renderer keeps each process's scene apart
     // (GpuCommand.Pid), so the order between processes does not matter; within a process it is kept.
 
     private bool HoldsScenes => InterleaveScenes && SharedByProcesses;
@@ -219,14 +219,16 @@ public sealed class GpuQueue : IDisposable
         gate.End();
         if (Interlocked.Increment(ref SceneGateReleases) == 1)
         {
-            Log.Info("[gpu] a draw of an open scene ran before the scene ended (a guest waited for it, or 250 ms passed): its uniform buffers were read early");
+            Log.Info("[gpu] a draw of an open scene ran before the scene ended (a guest waited for it, or the scene gate timeout passed): its uniform buffers were read early");
         }
     }
 
     /// <summary>Worker: runs what the lanes may run now (see above).</summary>
     private void ReleaseHeld()
     {
-        long now = System.Diagnostics.Stopwatch.GetTimestamp(), timeout = System.Diagnostics.Stopwatch.Frequency / 4;
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        int timeoutMs = SceneGateTimeoutMs;
+        long timeout = timeoutMs == Timeout.Infinite ? long.MaxValue : timeoutMs * System.Diagnostics.Stopwatch.Frequency / 1000;
         foreach ((int pid, HeldLane? lane) in _held)
         {
             while (lane.Commands.TryPeek(out GpuCommand? gpuCommand))
@@ -516,15 +518,23 @@ public sealed class GpuQueue : IDisposable
     /// <summary>Scene gates given up on (a guest waited for a draw of its still open scene, or the timeout).</summary>
     public static long SceneGateReleases;
 
+    /// <summary>The longest the worker holds a draw of an open scene (host milliseconds; <see cref="Timeout.Infinite"/>:
+    /// until the scene ends or a guest waits for it). A liveness fallback of the emulator's own, not a console rule:
+    /// tests set it to infinite so only the scene's end or the guest's wait can release the draw, whatever the host's
+    /// speed.</summary>
+    public int SceneGateTimeoutMs { get; set; } = 250;
+
     /// <summary>Worker: holds <paramref name="d"/>, whose bound uniform buffers are read late, until the guest ends its
     /// scene. Not when a guest thread waits for this draw or a later command (it would wait for itself), nor longer than
-    /// 250 ms.</summary>
+    /// <see cref="SceneGateTimeoutMs"/>.</summary>
     private void WaitSceneGate(DrawCommand d, SceneGate gate)
     {
         long ti = FrameLedger.Now();
         uint before = s_gateCheck ? CopyAndHash(d) : 0, atSceneEnd = before;
         bool ended = false, sceneSeen = gate.SceneEnded;
-        for (int i = 0; i < 25 && !_stopping && Interlocked.Read(ref _maxWaited) < d.Sequence; i++)
+        int timeoutMs = SceneGateTimeoutMs;
+        long until = Environment.TickCount64 + timeoutMs;
+        while (!_stopping && Interlocked.Read(ref _maxWaited) < d.Sequence && (timeoutMs == Timeout.Infinite || Environment.TickCount64 < until))
         {
             // the work recorded so far goes to the GPU and finished frames retire while the draw waits: a sync point
             // before the open scene (the display queue entry of the previous frame, which the guest may wait on before it
@@ -581,7 +591,7 @@ public sealed class GpuQueue : IDisposable
             gate.End();
             if (Interlocked.Increment(ref SceneGateReleases) == 1)
             {
-                Log.Info("[gpu] a draw of an open scene ran before the scene ended (a guest waited for it, or 250 ms passed): its uniform buffers were read early");
+                Log.Info("[gpu] a draw of an open scene ran before the scene ended (a guest waited for it, or the scene gate timeout passed): its uniform buffers were read early");
             }
         }
     }
