@@ -85,9 +85,10 @@ public sealed unsafe partial class GuestMemoryCommitTests(GuestMemoryFixture fix
     [Theory]
     [InlineData(0x6C00_0000u)]
     [InlineData(0x4C00_0000u)]
-    public void ANewSharedBlockTakesNoHostMemoryUntilTouched(uint addr)
+    public void ANewSharedBlockTakesNoHostMemoryUntilTouched(uint region)
     {
         const uint UsedOffset = 8u << 20, UsedSize = 8u << 20;
+        uint addr = MostlyUntouchedBlock(region);
         AllocWriteAndFree(addr + UsedOffset, UsedSize);
         byte* host = fixture.Memory.Primary.Base + addr;
         bool[]? mayHoldData = PagesThatMayHoldData(host, BlockSize);
@@ -130,6 +131,32 @@ public sealed unsafe partial class GuestMemoryCommitTests(GuestMemoryFixture fix
         {
             fixture.Memory.Free(addr);
         }
+    }
+
+    /// <summary>The first 32 MB block from <paramref name="region"/> on whose pages at least half were never used
+    /// in this test process: other tests share the one guest memory, and a Windows section page they used stays
+    /// committed, so a fixed address can be wholly used before this test runs.</summary>
+    private uint MostlyUntouchedBlock(uint region)
+    {
+        const int Candidates = 8;
+        for (uint i = 0; i < Candidates; i++)
+        {
+            uint addr = region + (i * BlockSize);
+            bool[]? mayHoldData = PagesThatMayHoldData(fixture.Memory.Primary.Base + addr, BlockSize);
+            if (mayHoldData == null)
+            {
+                return addr;
+            }
+
+            int untouched = mayHoldData.Count(used => !used);
+            if (untouched * 2 >= mayHoldData.Length)
+            {
+                return addr;
+            }
+        }
+
+        Assert.Fail($"no free 32 MB block from 0x{region:X8} has half of its pages unused in this test process");
+        return region;
     }
 
     private void AllocWriteAndFree(uint addr, uint size)
