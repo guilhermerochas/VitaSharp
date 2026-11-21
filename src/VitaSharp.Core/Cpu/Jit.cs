@@ -217,9 +217,11 @@ public static unsafe class Jit
     /// <summary>Native code bytes translated ahead of execution (<see cref="CompileAheadOne"/>).</summary>
     public static long AheadBytes;
 
-    /// <summary>The most native code the ahead-of-time translation may place in the arena (a quarter of it: the rest is
-    /// for the code the game compiles while it runs; a full arena would leave every later block interpreted).</summary>
-    public const long AheadBudget = Native.ExecutableMemory.ReserveSize / 4;
+    /// <summary>The most native code the ahead-of-time translation may place in the arena: half of it, the rest is for
+    /// the code the game compiles while it runs (a full arena would leave every later block interpreted). A quarter was
+    /// too little for a large game: Assassin's Creed III: Liberation runs ~150k distinct blocks (~48 MiB) in its first
+    /// minutes; with 64 MiB the precompilation stopped early and 48k blocks were compiled while it ran, with 128 MiB 13k.</summary>
+    public const long AheadBudget = Native.ExecutableMemory.ReserveSize / 2;
 
     /// <summary>Whether ahead-of-time translation may still use the native code arena (<see cref="AheadBudget"/>).</summary>
     public static bool ArenaHasRoomForAhead() => Volatile.Read(ref AheadBytes) < AheadBudget;

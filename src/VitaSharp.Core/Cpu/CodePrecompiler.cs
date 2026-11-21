@@ -28,15 +28,30 @@ public sealed class CodePrecompiler
     public enum Priority
     {
         Cached,
+        Running,
         Frontier,
         Flow,
         Index,
     }
 
-    private const int Levels = 3;
+    private const int Levels = 4;
 
-    /// <summary>How many blocks away from executed code the frontier goes.</summary>
-    public const int MaxFrontierDepth = 3;
+    /// <summary>How many calls away from executed code the frontier goes: the functions a running function calls,
+    /// not their callees. Measured in Assassin's Creed III: Liberation (first session, 128 MiB budget): 3 calls deep
+    /// the frontier translated 258k blocks of which 26% ran and the budget ran out (23.8k blocks compiled while the
+    /// game ran); 1 call deep, 13.2k.</summary>
+    public const int MaxFrontierDepth = 1;
+
+    /// <summary>The boot step of a session with a code cache waits for about this many recorded blocks (the first the
+    /// game ran, in order); the rest follow at the same priority while the game starts. Assassin's Creed III:
+    /// Liberation records ~160k blocks: waiting for all of them took 2.4 s, for this many 1.1 s, and 195 blocks were
+    /// then compiled while the game ran (7 ms) instead of 43.</summary>
+    public const int BootCachedBlocks = 65536;
+
+    /// <summary>Whether the boot step stops waiting: the work up to the priority it waits for is done, or, waiting
+    /// for the code cache, <see cref="BootCachedBlocks"/> blocks are.</summary>
+    public static bool BootStepDone(Priority waitFor, bool doneUpTo, int done) =>
+        doneUpTo || (waitFor == Priority.Cached && done >= BootCachedBlocks);
 
     /// <summary>Statistics so far.</summary>
     public readonly record struct Result(int Translated, int Visited, int Found, bool Cancelled, bool ArenaLimit);
@@ -48,7 +63,7 @@ public sealed class CodePrecompiler
     private readonly Action<uint, List<(uint Pc, bool Thumb)>>? _pointersOf;
     private readonly ConcurrentDictionary<uint, byte> _expandedFunctions = new();
     private readonly ConcurrentDictionary<ulong, byte> _seen = new();
-    private readonly ConcurrentQueue<(uint Pc, bool Thumb, int Depth)>[] _queues = [new(), new(), new()];
+    private readonly ConcurrentQueue<(uint Pc, bool Thumb, int Depth)>[] _queues = [new(), new(), new(), new()];
     private readonly ConcurrentQueue<Block> _executed = new();
     private readonly int[] _outstanding = new int[Levels + 1]; // queued or being worked on, per priority (+ executed blocks)
     private readonly SemaphoreSlim _work = new(0);
@@ -170,7 +185,7 @@ public sealed class CodePrecompiler
         if (waitFor is { } level)
         {
             using CancellationTokenRegistration registration = cancel.Register(() => Volatile.Write(ref run._foreground, 0));
-            while (Volatile.Read(ref run._foreground) != 0 && !run.DoneUpTo(level))
+            while (Volatile.Read(ref run._foreground) != 0 && !BootStepDone(level, run.DoneUpTo(level), Volatile.Read(ref run._done)))
             {
                 Thread.Sleep(100);
                 progress?.Invoke(Volatile.Read(ref run._done), Volatile.Read(ref run._known));
@@ -289,6 +304,7 @@ public sealed class CodePrecompiler
         Block block = _cache.Get(target.Pc, target.Thumb);
         if (Jit.CompileAheadOne(block))
         {
+            block.AheadPriority = (byte)level;
             Interlocked.Increment(ref _translated);
         }
         else if (_follow != null)
@@ -301,18 +317,18 @@ public sealed class CodePrecompiler
             return;
         }
 
-        // the flow from the entry points goes everywhere it leads; cached and frontier work only a few blocks further
+        // the flow from the entry points goes everywhere it leads; cached and frontier work only a few calls further
         // (Follow), but all through the function they are in
         Priority next = level == (int)Priority.Flow ? Priority.Flow : Priority.Frontier;
         int depth = level == (int)Priority.Flow ? 0 : target.Depth;
-        Follow(block, exits, next, depth);
+        Follow(block, exits, next, depth, (Priority)level);
     }
 
     private void ExpandNow(Block block, List<(uint Pc, bool Thumb)> exits)
     {
         exits.Clear();
         StaticExitsOf(block, exits);
-        Follow(block, exits, Priority.Frontier, 0);
+        Follow(block, exits, Priority.Frontier, 0, Priority.Running);
         // the rest of the function it is in (the exception index names the function starts)
         if (_functionStart?.Invoke(block.Start) is not { } start || start == 0)
         {
@@ -321,7 +337,7 @@ public sealed class CodePrecompiler
 
         if (start != block.Start && _follow!(start))
         {
-            Add((start, block.Thumb), Priority.Frontier, 0);
+            Add((start, block.Thumb), Priority.Running, 0);
         }
 
         // the functions it references through pointers (vtables it stores, callbacks it registers): computed branches
@@ -340,7 +356,7 @@ public sealed class CodePrecompiler
         }
     }
 
-    private void Follow(Block block, List<(uint Pc, bool Thumb)> exits, Priority priority, int depth)
+    private void Follow(Block block, List<(uint Pc, bool Thumb)> exits, Priority priority, int depth, Priority source)
     {
         if (block.Insts.Length > 0 && ReturnsAfter(in block.Insts[^1]))
         {
@@ -353,12 +369,18 @@ public sealed class CodePrecompiler
         }
 
         // frontier: an exit that stays in the block's function (a branch, the return point after a call) keeps its
-        // depth, so the whole function of executed code gets translated; one that leaves it (a call) goes one deeper
-        uint function = priority == Priority.Frontier && _functionStart != null ? _functionStart(block.Start) : 0;
+        // depth, so the whole function gets translated; one that leaves it (a call) goes one deeper
+        bool bounded = priority != Priority.Flow;
+        uint function = bounded && _functionStart != null ? _functionStart(block.Start) : 0;
+        // the rest of a function the game is running (or ran in an earlier session) comes before the other frontier
+        // work: the game is in that function now, and a block it reaches before its translation is compiled by the JIT
+        bool running = depth == 0 && priority == Priority.Frontier && (source is Priority.Cached or Priority.Running);
+
         foreach ((uint Pc, bool Thumb) exit in exits)
         {
             int exitDepth = depth;
-            if (priority == Priority.Frontier && (function == 0 || _functionStart!(exit.Pc) != function))
+            Priority exitPriority = priority;
+            if (bounded && (function == 0 || _functionStart!(exit.Pc) != function))
             {
                 exitDepth = depth + 1;
                 if (exitDepth > MaxFrontierDepth)
@@ -366,8 +388,12 @@ public sealed class CodePrecompiler
                     continue;
                 }
             }
+            else if (running)
+            {
+                exitPriority = Priority.Running;
+            }
 
-            if (_follow!(exit.Pc) && Add(exit, priority, exitDepth))
+            if (_follow!(exit.Pc) && Add(exit, exitPriority, exitDepth))
             {
                 Interlocked.Increment(ref _found);
             }

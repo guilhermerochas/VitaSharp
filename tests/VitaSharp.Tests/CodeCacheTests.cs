@@ -422,8 +422,167 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
             Block pointed = cache.Get(code + 0x600, false);
             Assert.True(pointed.Ahead);
             Assert.Equal(Jit.AheadPending, pointed.JitState);
+            // the rest of the running function comes first (Running); the functions it points to, after (Frontier)
+            Assert.Equal((byte)CodePrecompiler.Priority.Running, cache.Get(code + 0x460, false).AheadPriority);
+            Assert.Equal((byte)CodePrecompiler.Priority.Frontier, pointed.AheadPriority);
             codeCache.Stop();
         });
+    }
+
+    /// <summary>Writes an exception index naming <paramref name="functions"/> (offsets from <paramref name="code"/>) at
+    /// code + 0x800 and returns a module with that code (segment 0, 4 KiB) and <paramref name="data"/> (segment 1).</summary>
+    private static LoadedModule ModuleWithData(uint code, uint data, ulong imageHash, params uint[] functions)
+    {
+        for (int i = 0; i < functions.Length; i++)
+        {
+            uint at = code + 0x800 + 8 * (uint)i;
+            GuestMemory.W32(at, (code + functions[i] - at) & 0x7FFFFFFF);
+            GuestMemory.W32(at + 4, 1);
+        }
+
+        LoadedModule module = Module(code, imageHash);
+        module.Segments[0] = new SegmentInfo(code, 0x81000000, 0x1000);
+        module.SegmentFlags[0] = (5, 0x1000, 0x1000);
+        module.Segments[1] = new SegmentInfo(data, 0x81001000, 0x1000);
+        module.SegmentFlags[1] = (6, 0x1000, 0x1000); // R W: data
+        module.ExidxTop = code + 0x800;
+        module.ExidxEnd = code + 0x800 + 8 * (uint)functions.Length;
+        return module;
+    }
+
+    /// <summary>ARM MOVW (<paramref name="top"/> false) or MOVT of the low or high half of <paramref name="value"/> into <paramref name="register"/>.</summary>
+    private static uint ArmMoveWide(bool top, uint register, uint value)
+    {
+        uint half = top ? value >> 16 : value & 0xFFFF;
+        return (top ? 0xE3400000u : 0xE3000000u) | ((half >> 12) << 16) | (register << 12) | (half & 0xFFF);
+    }
+
+    [Fact]
+    public void TheFrontierFollowsTheTablesAFixedAddressExecutableBuildsWithMovwMovt()
+    {
+        if (!NativeHost)
+        {
+            return;
+        }
+
+        // an executable at a fixed address has no relocations: the vtable F stores is only an address F builds
+        uint code = fixture.Memory.Alloc(0x1000, "codecache fixed tables code");
+        uint data = fixture.Memory.Alloc(0x1000, "codecache fixed tables data");
+        GuestMemory.W32(code + 0x00, 0xE3A00000); // mov r0, #0
+        GuestMemory.W32(code + 0x04, 0xE1A00000); // nop (r2 = F)
+        GuestMemory.W32(code + 0x08, 0xE12FFF32); // blx r2
+        GuestMemory.W32(code + 0x0C, 0xEF000002); // svc #2
+        GuestMemory.W32(code + 0x10, 0xE12FFF1E); // bx lr
+        GuestMemory.W32(code + 0x400, ArmMoveWide(false, 3, data + 0x20)); // F: movw r3, #:lower16:table
+        GuestMemory.W32(code + 0x404, ArmMoveWide(true, 3, data + 0x20)); //     movt r3, #:upper16:table
+        GuestMemory.W32(code + 0x408, 0xE2800005); //                          add r0, r0, #5
+        GuestMemory.W32(code + 0x40C, 0xE12FFF1E); //                          bx lr
+        GuestMemory.W32(code + 0x600, 0xE92D4010); // G: push {r4, lr} (only the table names it)
+        GuestMemory.W32(code + 0x604, 0xE8BD8010); //    pop {r4, pc}
+        GuestMemory.W32(data + 0x20, code + 0x600); // the table: G, then something that is not a function
+        GuestMemory.W32(data + 0x24, 0x12345678);
+        LoadedModule module = ModuleWithData(code, data, 11, 0x000, 0x400, 0x600);
+        Assert.Empty(module.AbsoluteRelocations);
+        WithNative(() =>
+        {
+            var cache = new BlockCache();
+            var codeCache = new CodeCache(null, cache);
+            codeCache.ModuleLoaded(module);
+            codeCache.PrecompilePending(null, CancellationToken.None, workers: 2);
+            CodePrecompiler run = Assert.Single(codeCache.Runs);
+            Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+            Assert.DoesNotContain(code + 0x600, Translated(cache));
+
+            using var core = new CpuCore(cache);
+            core.State->R[2] = code + 0x400;
+            for (int i = 0; i < 2 * Jit.MinExecutions; i++)
+            {
+                Assert.Equal(5u, Run(core, code));
+            }
+
+            Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)));
+            Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+            // once F runs, the function of the table it builds, before anything calls it
+            Block pointed = cache.Get(code + 0x600, false);
+            Assert.True(pointed.Ahead);
+            Assert.Equal(Jit.AheadPending, pointed.JitState);
+            Assert.Equal((byte)CodePrecompiler.Priority.Frontier, pointed.AheadPriority);
+            codeCache.Stop();
+        });
+    }
+
+    /// <summary>An ARM BL at <paramref name="at"/> to <paramref name="target"/>.</summary>
+    private static void Bl(uint at, uint target) => GuestMemory.W32(at, 0xEB000000 | (((target - (at + 8)) >> 2) & 0xFFFFFF));
+
+    [Fact]
+    public void TheFrontierTranslatesTheFunctionsARunningFunctionCallsButNotTheirCallees()
+    {
+        if (!NativeHost)
+        {
+            return;
+        }
+
+        uint code = fixture.Memory.Alloc(0x1000, "codecache frontier depth code");
+        uint data = fixture.Memory.Alloc(0x1000, "codecache frontier depth data");
+        GuestMemory.W32(code + 0x00, 0xE3A00000); // mov r0, #0
+        GuestMemory.W32(code + 0x04, 0xE1A00000); // nop (r2 = F)
+        GuestMemory.W32(code + 0x08, 0xE12FFF32); // blx r2
+        GuestMemory.W32(code + 0x0C, 0xEF000002); // svc #2
+        GuestMemory.W32(code + 0x10, 0xE12FFF1E); // bx lr
+        GuestMemory.W32(code + 0x400, 0xE3500000); // F: cmp r0, #0
+        GuestMemory.W32(code + 0x404, 0x1A000001); //    bne rare
+        GuestMemory.W32(code + 0x408, 0xE2800005); //    add r0, r0, #5
+        GuestMemory.W32(code + 0x40C, 0xE12FFF1E); //    bx lr
+        GuestMemory.W32(code + 0x410, 0xE92D4010); // rare: push {r4, lr} (never runs)
+        Bl(code + 0x414, code + 0x500); //                  bl G
+        GuestMemory.W32(code + 0x418, 0xE8BD8010); //    pop {r4, pc}
+        GuestMemory.W32(code + 0x500, 0xE92D4010); // G: push {r4, lr}
+        Bl(code + 0x504, code + 0x600); //                  bl H
+        GuestMemory.W32(code + 0x508, 0xE8BD8010); //    pop {r4, pc}
+        GuestMemory.W32(code + 0x600, 0xE2800001); // H: add r0, r0, #1
+        GuestMemory.W32(code + 0x604, 0xE12FFF1E); //    bx lr
+        LoadedModule module = ModuleWithData(code, data, 12, 0x000, 0x400, 0x500, 0x600);
+        WithNative(() =>
+        {
+            var cache = new BlockCache();
+            var codeCache = new CodeCache(null, cache);
+            codeCache.ModuleLoaded(module);
+            codeCache.PrecompilePending(null, CancellationToken.None, workers: 2);
+            CodePrecompiler run = Assert.Single(codeCache.Runs);
+            Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+            using var core = new CpuCore(cache);
+            core.State->R[2] = code + 0x400;
+            for (int i = 0; i < 2 * Jit.MinExecutions; i++)
+            {
+                Assert.Equal(5u, Run(core, code));
+            }
+
+            Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)));
+            Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+            HashSet<uint> translated = Translated(cache);
+            // the rest of F, and G, which F calls (MaxFrontierDepth calls away)
+            Assert.Contains(code + 0x410, translated);
+            Assert.Contains(code + 0x500, translated);
+            Assert.Equal(1, CodePrecompiler.MaxFrontierDepth);
+            Assert.Equal(VitaSharp.Core.Cpu.Native.ExecutableMemory.ReserveSize / 2, Jit.AheadBudget); // what runs of a large game fits
+            // not H, which only G calls: a function two calls away from running code seldom runs soon, and translating
+            // it cost more arena than it saved (Assassin's Creed III: Liberation)
+            Assert.DoesNotContain(code + 0x600, translated);
+            codeCache.Stop();
+        });
+    }
+
+    [Fact]
+    public void TheBootStepWaitsForTheFirstRecordedBlocksOnly()
+    {
+        // with a code cache, the first BootCachedBlocks recorded blocks (in the order they first ran) are enough to
+        // start; the rest follow while the game starts
+        Assert.False(CodePrecompiler.BootStepDone(CodePrecompiler.Priority.Cached, false, CodePrecompiler.BootCachedBlocks - 1));
+        Assert.True(CodePrecompiler.BootStepDone(CodePrecompiler.Priority.Cached, false, CodePrecompiler.BootCachedBlocks));
+        Assert.True(CodePrecompiler.BootStepDone(CodePrecompiler.Priority.Cached, true, 0));
+        // a first session waits for the whole flow from the entry points, however many blocks that is
+        Assert.False(CodePrecompiler.BootStepDone(CodePrecompiler.Priority.Flow, false, 10 * CodePrecompiler.BootCachedBlocks));
+        Assert.True(CodePrecompiler.BootStepDone(CodePrecompiler.Priority.Flow, true, 0));
     }
 
     [Fact]

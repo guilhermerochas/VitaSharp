@@ -496,8 +496,19 @@ public sealed class CodeCache
         int used = 0;
         int unused = 0;
         int missed = 0;
+        int levels = Enum.GetValues<CodePrecompiler.Priority>().Length;
+        int[] aheadBy = new int[levels];
+        int[] ranBy = new int[levels];
+        long[] bytesBy = new long[levels];
         foreach (Block block in _code.Blocks)
         {
+            if (block.Ahead && block.AheadPriority < levels)
+            {
+                aheadBy[block.AheadPriority]++;
+                ranBy[block.AheadPriority] += block.JitState == 2 ? 1 : 0;
+                bytesBy[block.AheadPriority] += block.Code?.Tag is Backends.NativeCodeInfo info ? info.Size : 0;
+            }
+
             if (block.JitState == Jit.AheadPending)
             {
                 unused++;
@@ -529,7 +540,98 @@ public sealed class CodeCache
         double coverage = 100.0 * used / Math.Max(1, used + missed);
         return $"ARM code precompilation: {used} precompiled blocks ran, {missed} compiled while running ({coverage:F1}% of the run blocks were precompiled), "
             + $"{unused} precompiled and not reached, {Jit.AheadBytes / (1024.0 * 1024):F1} MB of precompiled code in the arena (budget {Jit.AheadBudget >> 20} MB); while running: "
-            + string.Join(", ", byModule.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key} {kv.Value}")) + "; samples: " + string.Join("; ", lines);
+            + string.Join(", ", byModule.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key} {kv.Value}")) + "; " + DescribeMissKinds(modules)
+            + "; precompiled by priority (translated/ran/MB): " + string.Join(", ", Enumerable.Range(0, levels).Where(i => aheadBy[i] > 0)
+                .Select(i => $"{(CodePrecompiler.Priority)i} {aheadBy[i]}/{ranBy[i]}/{bytesBy[i] / (1024.0 * 1024):F1}"))
+            + "; samples: " + string.Join("; ", lines);
+    }
+
+    /// <summary>
+    /// Why the blocks the JIT compiled while the process ran were not precompiled, by the function (exception index)
+    /// they are in: the function had other blocks precompiled (the analysis reached it, but not this path, or not in
+    /// time), the precompilation never reached the function, or the block is in no known function; and when they first
+    /// ran, by tenths of the order in which the process's blocks first ran (late misses point at a full arena or a
+    /// frontier that lags behind the game).
+    /// </summary>
+    private string DescribeMissKinds(LoadedModule[] modules)
+    {
+        var maps = new ModuleCodeMap[modules.Length];
+        for (int i = 0; i < modules.Length; i++)
+        {
+            maps[i] = ModuleCodeMap.Build(modules[i]);
+        }
+
+        var reachedFunctions = new HashSet<uint>();
+        var missedBlocks = new List<uint>();
+        int outside = 0;
+        var ranUses = new List<long>();
+        var missedUses = new List<long>();
+        foreach (Block block in _code.Blocks)
+        {
+            bool missed = block.JitState == 2 && !block.Ahead;
+            if (block.JitState == 2 && block.FirstUse != 0)
+            {
+                ranUses.Add(block.FirstUse);
+                if (missed)
+                {
+                    missedUses.Add(block.FirstUse);
+                }
+            }
+
+            if (!missed && !block.Ahead)
+            {
+                continue;
+            }
+
+            ModuleCodeMap? map = Array.Find(maps, m => m.InCode(block.Start));
+            if (map == null)
+            {
+                outside += missed ? 1 : 0;
+                continue;
+            }
+
+            uint function = map.FunctionContaining(block.Start);
+            if (missed)
+            {
+                missedBlocks.Add(function);
+            }
+            else if (function != 0)
+            {
+                reachedFunctions.Add(function);
+            }
+        }
+
+        int partial = 0;
+        int notReached = 0;
+        int noFunction = 0;
+        foreach (uint function in missedBlocks)
+        {
+            if (function == 0)
+            {
+                noFunction++;
+            }
+            else if (reachedFunctions.Contains(function))
+            {
+                partial++;
+            }
+            else
+            {
+                notReached++;
+            }
+        }
+
+        // when they first ran, by tenths of the order in which the process's blocks first ran
+        ranUses.Sort();
+        int[] tenths = new int[10];
+        foreach (long use in missedUses)
+        {
+            int rank = ranUses.BinarySearch(use);
+            tenths[Math.Clamp((int)(10L * Math.Max(0, rank) / Math.Max(1, ranUses.Count)), 0, 9)]++;
+        }
+
+        return $"compiled while running, by function: {partial} in functions with precompiled blocks, {notReached} in functions the precompilation never reached, "
+            + $"{noFunction} in no indexed function, {outside} outside the modules; "
+            + $"by tenth of the run order: {string.Join(" ", tenths)}";
     }
 
     /// <summary>The guest memory block holding code outside every module (diagnostics).</summary>
