@@ -69,6 +69,26 @@ public sealed class KernelModuleLoaderTests(GuestMemoryFixture fixture) : IDispo
         Assert.Empty(_harness.Emu.LoadKernelPlugins());
     }
 
+    /// <summary>
+    /// SceVshBridge's _vshKernelSearchModuleByName is ksceKernelSearchModuleByName: it finds a kernel plugin by name on
+    /// the kernel process's list from any process (an so_loader port checks for the plugin it needs this way before it
+    /// starts), compared over 0x1A characters, and answers 0x8002D082 for a name no kernel module has.
+    /// </summary>
+    [Fact]
+    public void TheShellBridgeFindsAKernelPluginByName()
+    {
+        string path = Write("provider.skprx", Provider());
+        Config($"*KERNEL\n{path}\n");
+        _harness.Emu.LoadPlugins();
+        LoadedModule m = Loaded(path);
+        VshBridge vsh = _harness.Module<VshBridge>();
+        uint name = _harness.Alloc(64), buf = _harness.Alloc(8);
+        GuestMemory.WriteCString(name, "TestKernelProvider");
+        Assert.Equal(m.Uid, Call(vsh, "_vshKernelSearchModuleByName", name, buf));
+        GuestMemory.WriteCString(name, "NoSuchKernelModule");
+        Assert.Equal(unchecked((int)0x8002D082), Call(vsh, "_vshKernelSearchModuleByName", name, buf));
+    }
+
     private List<int> UserModuleList()
     {
         SystemMisc misc = _harness.Module<VitaSharp.Core.Hle.Modules.SystemMisc>();
