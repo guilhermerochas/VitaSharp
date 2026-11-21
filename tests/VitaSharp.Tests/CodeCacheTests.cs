@@ -573,6 +573,19 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
     }
 
     [Fact]
+    public void TheBootStepWaitsForTheFirstRecordedBlocksOnly()
+    {
+        // with a code cache, the first BootCachedBlocks recorded blocks (in the order they first ran) are enough to
+        // start; the rest follow while the game starts
+        Assert.False(CodePrecompiler.BootStepDone(CodePrecompiler.Priority.Cached, false, CodePrecompiler.BootCachedBlocks - 1));
+        Assert.True(CodePrecompiler.BootStepDone(CodePrecompiler.Priority.Cached, false, CodePrecompiler.BootCachedBlocks));
+        Assert.True(CodePrecompiler.BootStepDone(CodePrecompiler.Priority.Cached, true, 0));
+        // a first session waits for the whole flow from the entry points, however many blocks that is
+        Assert.False(CodePrecompiler.BootStepDone(CodePrecompiler.Priority.Flow, false, 10 * CodePrecompiler.BootCachedBlocks));
+        Assert.True(CodePrecompiler.BootStepDone(CodePrecompiler.Priority.Flow, true, 0));
+    }
+
+    [Fact]
     public void TheFlowTranslatesTheCasesOfASwitch()
     {
         if (!NativeHost)

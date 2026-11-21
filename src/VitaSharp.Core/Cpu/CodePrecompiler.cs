@@ -42,6 +42,17 @@ public sealed class CodePrecompiler
     /// game ran); 1 call deep, 13.2k.</summary>
     public const int MaxFrontierDepth = 1;
 
+    /// <summary>The boot step of a session with a code cache waits for about this many recorded blocks (the first the
+    /// game ran, in order); the rest follow at the same priority while the game starts. Assassin's Creed III:
+    /// Liberation records ~160k blocks: waiting for all of them took 2.4 s, for this many 1.1 s, and 195 blocks were
+    /// then compiled while the game ran (7 ms) instead of 43.</summary>
+    public const int BootCachedBlocks = 65536;
+
+    /// <summary>Whether the boot step stops waiting: the work up to the priority it waits for is done, or, waiting
+    /// for the code cache, <see cref="BootCachedBlocks"/> blocks are.</summary>
+    public static bool BootStepDone(Priority waitFor, bool doneUpTo, int done) =>
+        doneUpTo || (waitFor == Priority.Cached && done >= BootCachedBlocks);
+
     /// <summary>Statistics so far.</summary>
     public readonly record struct Result(int Translated, int Visited, int Found, bool Cancelled, bool ArenaLimit);
 
@@ -174,7 +185,7 @@ public sealed class CodePrecompiler
         if (waitFor is { } level)
         {
             using CancellationTokenRegistration registration = cancel.Register(() => Volatile.Write(ref run._foreground, 0));
-            while (Volatile.Read(ref run._foreground) != 0 && !run.DoneUpTo(level))
+            while (Volatile.Read(ref run._foreground) != 0 && !BootStepDone(level, run.DoneUpTo(level), Volatile.Read(ref run._done)))
             {
                 Thread.Sleep(100);
                 progress?.Invoke(Volatile.Read(ref run._done), Volatile.Read(ref run._known));
