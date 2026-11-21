@@ -2,28 +2,13 @@ using VitaSharp.Core.Memory;
 
 namespace VitaSharp.Core.Hle.Modules;
 
-// The rest of SceNpDrm / ScePsmDrm / SceNpDrmPackage (bootimage SceNpDrm, FW 3.74). The license names follow the one
-// fixed license file the emulated unit uses for every title (no PSN account binds it); the activation data, the rif
-// decryption keys and the package crypto live in the secure module, which the emulated unit does not run: those
-// calls refuse (0x80020004) after their pointer checks, as defaults.
+// The rest of SceNpDrm / ScePsmDrm / SceNpDrmPackage (bootimage SceNpDrm, FW 3.74). The license names are the
+// module's AES names (SystemServicesVsh.NpDrmKernelRest); the activation data, the rif decryption keys and the
+// package crypto live in the secure module, which the emulated unit does not run: those calls refuse (0x80020004)
+// after their pointer checks, as defaults.
 public sealed partial class SystemServicesVsh
 {
     const int NPDRM_ERR_INVALID = unchecked((int)0x80870001);
-    const string FixedRif = Package.PkgInstaller.AccountRifName;
-
-    /// <summary>The fixed name scePsmDrmGetRifNameForInstall still gives (the PSM license check before the name is the
-    /// module's signature check of the license against the activation, not modelled).</summary>
-    int RifName(uint name)
-    {
-        if (name == 0)
-        {
-            return NPDRM_ERR_INVALID;
-        }
-
-        GuestMemory.Fill(name, 0, 0x30);
-        GuestMemory.WriteCString(name, FixedRif, 0x30);
-        return 0;
-    }
 
     /// <summary>A user license name call as SceNpDrm 3.74's syscall makes it: a NULL name goes to the kernel export as
     /// NULL; otherwise the export writes into a zeroed 0x30-byte buffer that is copied out whatever it answers. The
@@ -74,7 +59,34 @@ public sealed partial class SystemServicesVsh
         return WriteRifName(name, 0, (ulong)accountHigh << 32 | accountLow);
     }
 
-    [Hle("scePsmDrmGetRifNameForInstall", Default = true)] int PsmDrmGetRifNameForInstall(uint name, uint contentId) => RifName(name);
+    /// <summary>(char name[0x30], const ScePsmDrmLicense *license): the name a PSM license is installed under. The
+    /// syscall copies the license (0x400 bytes) in and the zeroed name out; the module checks the license
+    /// (<see cref="PsmLicenseInstallCheck"/>: signature, header, then the activation, whose secure part answers
+    /// 0x80020004) and names it by its account with flag 0. NULL license 0x808F0101; a NULL name 0x80870001 once the
+    /// license passes.</summary>
+    [Hle("scePsmDrmGetRifNameForInstall")]
+    int PsmDrmGetRifNameForInstall(uint name, uint license)
+    {
+        if (name != 0)
+        {
+            GuestMemory.Fill(name, 0, 0x30);
+        }
+
+        if (license == 0)
+        {
+            return PSMDRM_ERR_INVALID;
+        }
+
+        ReadOnlySpan<byte> rif = GuestMemory.ReadSpan(license, Package.PsmLicense.Size);
+        int check = PsmLicenseInstallCheck(rif, PsmLicenseModulusFor(Emu.Options.FsRoot), PsmActivationExists(),
+            out ulong accountId);
+        if (check != 0)
+        {
+            return check;
+        }
+
+        return WriteRifName(name, 0, accountId);
+    }
 
     /// <summary>The account's activation data (act.dat): none on the emulated unit; removing it succeeds.</summary>
     [Hle("_sceNpDrmRemoveActData", Default = true)]

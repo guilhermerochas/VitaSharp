@@ -84,13 +84,10 @@ public sealed class NpDrmUserRifNameTests(GuestMemoryFixture fixture) : IDisposa
     }
 
     [Fact]
-    public void A_psm_license_is_named_by_its_account_with_the_module_key()
+    public void A_psm_license_is_named_by_the_unit_account_without_the_firmware_unknown()
     {
-        byte[] key = Enumerable.Range(0, 16).Select(i => (byte)(0x30 + i)).ToArray();
-        byte[] license = new byte[PsmPkgInstaller.RifSize];
-        BinaryPrimitives.WriteUInt64BigEndian(license.AsSpan(0x10), 0x1122334455667788UL);
-        Assert.Equal(SystemServicesVsh.RifFileName(key, 0, 0x1122334455667788UL), SystemServicesVsh.PsmRifFileName(key, license));
-        Assert.Null(SystemServicesVsh.PsmRifFileName((byte[]?)null, license));
-        Assert.Null(PsmPkgInstaller.LicenseFileName(_harness.Root, license));
+        Assert.Equal(0UL, SystemServicesVsh.RegistryAccountId(_harness.Root));
+        Assert.Null(SystemServicesVsh.PsmLicenseFileName(_harness.Root));
+        Assert.Null(PsmPkgInstaller.LicenseFileName(_harness.Root));
     }
 }

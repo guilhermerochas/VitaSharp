@@ -49,13 +49,16 @@ public sealed partial class SystemServicesVsh
             return account;
         }
 
-        byte[]? stored = Firmware.Registry.For(Emu.Options.FsRoot).Get("/CONFIG/NP", "account_id");
-        return stored is { Length: >= 8 } ? BinaryPrimitives.ReadUInt64LittleEndian(stored) : 0;
+        return RegistryAccountId(Emu.Options.FsRoot);
     }
 
     /// <summary>The license name key of a SceNpDrm module ELF: 16 bytes of its first segment when it is FW 3.74's
     /// module (<paramref name="moduleNid"/>), else null.</summary>
-    internal static byte[]? RifNameKeyFrom(byte[] elf, uint moduleNid)
+    internal static byte[]? RifNameKeyFrom(byte[] elf, uint moduleNid) => NpDrmModuleBytes(elf, moduleNid, RifNameKeyOffset, 0x10);
+
+    /// <summary><paramref name="size"/> bytes at <paramref name="segmentOffset"/> of the first segment of FW 3.74's
+    /// SceNpDrm ELF (<paramref name="moduleNid"/>), else null.</summary>
+    static byte[]? NpDrmModuleBytes(byte[] elf, uint moduleNid, uint segmentOffset, int size)
     {
         if (moduleNid != NpDrm374ModuleNid || elf.Length < 0x34)
         {
@@ -70,12 +73,12 @@ public sealed partial class SystemServicesVsh
 
         uint offset = BinaryPrimitives.ReadUInt32LittleEndian(elf.AsSpan((int)programHeaders + 4));
         uint fileSize = BinaryPrimitives.ReadUInt32LittleEndian(elf.AsSpan((int)programHeaders + 0x10));
-        if (RifNameKeyOffset + 0x10 > fileSize || offset + RifNameKeyOffset + 0x10 > elf.Length)
+        if (segmentOffset + size > fileSize || offset + segmentOffset + size > elf.Length)
         {
             return null;
         }
 
-        return elf.AsSpan((int)(offset + RifNameKeyOffset), 0x10).ToArray();
+        return elf.AsSpan((int)(offset + segmentOffset), size).ToArray();
     }
 
     byte[]? RifNameKey() => RifNameKeyFor(Emu.Options.FsRoot);
@@ -91,24 +94,22 @@ public sealed partial class SystemServicesVsh
         return RifNameKeyFrom(module.Elf, module.Image.ModuleNid);
     }
 
-    /// <summary>Where a PSM license keeps its account (big-endian), which names its file.</summary>
-    const int PsmRifAccountOffset = 0x10;
-
-    /// <summary>The file name the firmware gives a PSM license (scePsmDrmGetRifName of its account: flag 0), with the
-    /// SceNpDrm installed under <paramref name="fsRoot"/>; null without it or for data too short.</summary>
-    internal static string? PsmRifFileName(string fsRoot, ReadOnlySpan<byte> license) =>
-        PsmRifFileName(RifNameKeyFor(fsRoot), license);
-
-    /// <summary>The file name of a PSM license with the module key <paramref name="key"/> (null: unknown).</summary>
-    internal static string? PsmRifFileName(byte[]? key, ReadOnlySpan<byte> license)
+    /// <summary>The unit's account in the registry, /CONFIG/NP/account_id (8 bytes, little-endian), 0 without one; the
+    /// account the PSM runtime names its license by. The runtime's libpsm (PCSI00011 2.01) reads it with
+    /// sceRegMgrSystemParamGetBin(0x450F32) and opens RO/License/&lt;scePsmDrmGetRifName(that account)&gt;; for a
+    /// license from the store it is also the license's account, which scePsmDrmGetRifNameForInstall requires to be the
+    /// activation's.</summary>
+    internal static ulong RegistryAccountId(string fsRoot)
     {
-        if (license.Length < PsmRifAccountOffset + 8 || key == null)
-        {
-            return null;
-        }
-
-        return RifFileName(key, 0, BinaryPrimitives.ReadUInt64BigEndian(license[PsmRifAccountOffset..]));
+        byte[]? stored = Firmware.Registry.For(fsRoot).Get("/CONFIG/NP", "account_id");
+        return stored is { Length: >= 8 } ? BinaryPrimitives.ReadUInt64LittleEndian(stored) : 0;
     }
+
+    /// <summary>The file name the PSM runtime opens in a title's RO/License (scePsmDrmGetRifName of the unit's account,
+    /// <see cref="RegistryAccountId"/>), with the SceNpDrm installed under <paramref name="fsRoot"/>; null without
+    /// it.</summary>
+    internal static string? PsmLicenseFileName(string fsRoot) =>
+        RifFileName(RifNameKeyFor(fsRoot), 0, RegistryAccountId(fsRoot));
 
     /// <summary>The license file name for <paramref name="flag"/> and <paramref name="accountId"/>, or null when the
     /// firmware's key is not available.</summary>

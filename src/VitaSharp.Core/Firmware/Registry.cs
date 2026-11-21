@@ -273,6 +273,15 @@ public sealed class Registry
 
     public byte[]? Get(string category, string name) => Get(Normalize(category, name));
 
+    /// <summary>The value the system software wrote to a key (path); false while the key has its default.</summary>
+    public bool TryGetWritten(string path, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out byte[]? value)
+    {
+        lock (_lock)
+        {
+            return _written.TryGetValue(path, out value);
+        }
+    }
+
     /// <summary>The value the system software wrote to an int key (path); false while the key has its default.</summary>
     public bool TryGetWrittenInt(string path, out int value)
     {

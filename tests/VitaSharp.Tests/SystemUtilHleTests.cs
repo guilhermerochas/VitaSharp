@@ -81,6 +81,23 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(0, Call(r, "sceRegMgrSystemParamGetInt", 0x00100591u, buf));
         Assert.Equal(104u, GuestMemory.R32(buf));
     }
+    /// <summary>The account a sign-in stored in the system registry is the one games read (the PSM runtime names its
+    /// license by it): byte keys follow the system registry as the int ones do.</summary>
+    [Fact]
+    public void TheAccountIdFollowsTheSystemRegistry()
+    {
+        var reg = VitaSharp.Core.Firmware.Registry.For(_root);
+        reg.Define("/CONFIG/NP/account_id", VitaSharp.Core.Firmware.Registry.KeyType.Bin, 8);
+        uint buf = fixture.Memory.Alloc(0x10, "reg");
+        RegMgr r = NewRegMgr();
+        Assert.Equal(0, Call(r, "sceRegMgrSystemParamGetBin", 0x00450F32u, buf, 8u));
+        Assert.Equal(0UL, GuestMemory.Read<ulong>(buf));
+        Assert.True(reg.Set("/CONFIG/NP/", "account_id", BitConverter.GetBytes(0x1122334455667788UL)));
+        Assert.Equal(0, Call(r, "sceRegMgrSystemParamGetBin", 0x00450F32u, buf, 8u));
+        Assert.Equal(0x1122334455667788UL, GuestMemory.Read<ulong>(buf));
+        Assert.Equal(0x1122334455667788UL, SystemServicesVsh.RegistryAccountId(_root));
+    }
+
     [Fact]
     public void RegMgrErrors()
     {
