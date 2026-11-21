@@ -33,6 +33,8 @@ public sealed partial class ThreadmgrKernel : ISnapshotTimers
         {
             ArmAlarmTimer();
         }
+
+        RunLoadedWorkTasks();
     }
 
     const string AlarmKind = "alarm";

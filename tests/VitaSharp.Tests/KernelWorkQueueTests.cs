@@ -63,6 +63,70 @@ public sealed class KernelWorkQueueTests(GuestMemoryFixture fixture) : IDisposab
         }
     }
 
+    private void RunOneTask(uint task, uint argument, int expectedRun)
+    {
+        _harness.OnGuest(_ => Assert.True(Call(Threadmgr, "ksceKernelEnqueueWorkQueue", 0x10023, "kworkq-task", task, argument) > 0));
+        Until(() => Threadmgr.WorkTasksRun == expectedRun, "the worker to run the task");
+    }
+
+    /// <summary>An idle worker sleeps until something signals it: no wake-up of its own while no task comes (it looked
+    /// at the queue every 50 ms of host time), one per task after that, and the tasks still run in order. The pause
+    /// only gives a polling worker the time to show itself; the correct worker has no wake-up whatever the host's
+    /// speed.</summary>
+    [Fact]
+    public void AnIdleWorkerSleepsUntilATaskComes()
+    {
+        uint task = CountingTask();
+        uint counter = _harness.Word(0);
+        uint argument = _harness.Alloc(8);
+        GuestMemory.W32(argument, counter);
+        RunOneTask(task, argument, 1);
+        Until(WorkerWaiting, "the worker to sleep");
+        int idle = Threadmgr.WorkWakeups;
+        Thread.Sleep(300);
+        Assert.Equal(idle, Threadmgr.WorkWakeups);
+
+        RunOneTask(task, argument, 2);
+        Assert.Equal(2u, GuestMemory.R32(counter));
+        Assert.Equal(2u, GuestMemory.R32(argument + 4));
+    }
+
+    private VitaSharp.Core.Kernel.GuestThread Worker()
+    {
+        VitaSharp.Core.Emulator kernel = _harness.Emu.Vita.KernelProcess ?? _harness.Emu;
+        return Assert.Single(kernel.Kernel.Threads, t => t.Name == "SceKernelGlobalWorkQueue");
+    }
+
+    private bool WorkerWaiting() => Worker().BlockedInHost;
+
+    /// <summary>A task the object table got without an enqueue (a state load restores the waiting tasks) runs once
+    /// the load arms its scheduled work, and a stop request ends the sleeping worker.</summary>
+    [Fact]
+    public void ALoadedTaskRunsAndAStopEndsTheSleepingWorker()
+    {
+        uint task = CountingTask();
+        uint counter = _harness.Word(0);
+        uint argument = _harness.Alloc(8);
+        GuestMemory.W32(argument, counter);
+        RunOneTask(task, argument, 1);
+        Until(WorkerWaiting, "the worker to sleep");
+
+        var loaded = new VitaSharp.Core.Kernel.KernelData { Name = "kworkq-loaded", Kind = "worktask", Address = task, Aux = argument };
+        using (VitaSharp.Core.Kernel.ProcessScope.Enter(VitaSharp.Core.Kernel.KernelSpace.KernelPid))
+        {
+            _harness.Emu.Kernel.Objects.Register(loaded);
+        }
+
+        ((VitaSharp.Core.SaveState.ISnapshotTimers)Threadmgr).RearmTimers();
+        Until(() => Threadmgr.WorkTasksRun == 2, "the loaded task to run");
+        Assert.Equal(2u, GuestMemory.R32(counter));
+
+        VitaSharp.Core.Kernel.GuestThread worker = Worker();
+        Until(WorkerWaiting, "the worker to sleep again");
+        worker.RequestStop();
+        Until(() => !worker.IsLive, "the worker to end on the stop request");
+    }
+
     [Fact]
     public void AnotherQueueIsUnknown()
     {
