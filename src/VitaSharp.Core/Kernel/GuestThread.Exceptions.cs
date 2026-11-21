@@ -164,11 +164,18 @@ public sealed unsafe partial class GuestThread
         s->Exit = ExitReason.None;
         bool write = (s->AbortStatus & DataAborts.WriteNotRead) != 0;
         string message = $"Data abort: {(write ? "write to" : "read of")} unmapped address 0x{s->AbortAddr:X8} at 0x{s->SvcPc:X8}";
-        if (!TryDeliverException(s, ExceptionDataAbort, s->SvcPc, message))
+        uint pc = s->SvcPc, address = s->AbortAddr;
+        if (!TryDeliverException(s, ExceptionDataAbort, pc, message))
         {
             LetDataAbortThrough(s);
         }
+        else if (Interlocked.Increment(ref s_dataAbortsDelivered) <= 8)
+        {
+            Log.Info($"Data abort at 0x{pc:X8} on unmapped address 0x{address:X8}: entering the data abort handlers");
+        }
     }
+
+    private static int s_dataAbortsDelivered;
 
     /// <summary>
     /// A data abort no handler took: the page of the faulting address is let through (<see cref="GuestMemory.TolerateFault"/>)
