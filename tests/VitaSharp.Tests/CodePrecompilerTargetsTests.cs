@@ -133,6 +133,44 @@ public sealed class CodePrecompilerTargetsTests(GuestMemoryFixture fixture)
         Assert.False(map.IsFunction(data + 0x11, out _)); // data is never code
     }
 
+    /// <summary>Thumb-2 MOVW (<paramref name="top"/> false) or MOVT (encoding T3/T1) of a half of <paramref name="value"/>.</summary>
+    private static void ThumbMoveWide(uint at, bool top, uint register, uint value)
+    {
+        uint half = top ? value >> 16 : value & 0xFFFF;
+        W16(at, (ushort)((top ? 0xF2C0u : 0xF240u) | ((half >> 11) & 1) << 10 | (half >> 12)));
+        W16(at + 2, (ushort)(((half >> 8) & 7) << 12 | register << 8 | (half & 0xFF)));
+    }
+
+    [Fact]
+    public void AFixedAddressExecutableHasTheReferencesOfAFunctionInItsWordsAndMovwMovt()
+    {
+        // the same module without relocations (an executable loaded at its fixed address): F's references are only in
+        // its bytes
+        LoadedModule module = PointerModule(out uint code, out uint data);
+        module.AbsoluteRelocations.Clear();
+        ThumbMoveWide(code + 0x104, false, 1, data + 0x10); // F: movw r1, #:lower16:vtable
+        W16(code + 0x108, 0xBF00); //                           nop (scheduled between the pair)
+        ThumbMoveWide(code + 0x10A, true, 1, data + 0x10); //   movt r1, #:upper16:vtable
+        ThumbMoveWide(code + 0x110, false, 2, data + 0x40); //  movw r2, #:lower16:string pointer
+        ThumbMoveWide(code + 0x114, true, 3, data + 0x40); //   movt r3 (another register: not a pair)
+        GuestMemory.W32(code + 0x140, code + 0x301); //          F's literal pool: H
+        GuestMemory.W32(data + 0x10, code + 0x201); //           the vtable: G, K, then the string ends it
+        GuestMemory.W32(data + 0x14, code + 0x400);
+        GuestMemory.W32(data + 0x18, code + 0x501);
+        GuestMemory.W32(data + 0x1C, code + 0x201);
+        GuestMemory.W32(data + 0x40, code + 0x501);
+        var targets = new List<(uint Pc, bool Thumb)>();
+        ModuleCodeMap.Build(module).PointersOfFunction(code + 0x100, targets);
+        Assert.Equal(new HashSet<(uint Pc, bool Thumb)> { (code + 0x200, true), (code + 0x400, false), (code + 0x300, true) }, targets.ToHashSet());
+        // the table stops at its first slot that is not a function (G again after the string is not taken)
+        Assert.Equal(1, targets.Count(t => t.Pc == code + 0x200));
+
+        // G's range holds no reference
+        targets.Clear();
+        ModuleCodeMap.Build(module).PointersOfFunction(code + 0x200, targets);
+        Assert.Empty(targets);
+    }
+
     [Fact]
     public void ModuleRelocationsRecordTheAbsoluteAddressesTheyWrite()
     {
