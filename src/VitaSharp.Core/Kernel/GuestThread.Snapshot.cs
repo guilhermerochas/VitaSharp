@@ -252,6 +252,19 @@ public sealed unsafe partial class GuestThread
     /// while the emulation is paused).</summary>
     internal void StartRestored()
     {
+        if (HostBody != null)
+        {
+            // a service thread its owner took back from the state (IServiceThreadOwner): its body is the emulator's
+            // code, which starts again from the top (it keeps nothing in the guest registers)
+            lock (WaitLock)
+            {
+                Status = ThreadStatus.Dormant;
+            }
+
+            Start(0, 0);
+            return;
+        }
+
         lock (WaitLock)
         {
             Status = ThreadStatus.Running;

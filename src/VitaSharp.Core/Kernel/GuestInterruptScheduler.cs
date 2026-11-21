@@ -263,9 +263,57 @@ public sealed class GuestInterruptScheduler(Emulator emulator, Action<uint, ulon
         return best;
     }
 
+    /// <summary>The interrupt thread's name (the save state's identity of the thread, SaveState.IServiceThreadOwner).</summary>
+    public const string ThreadName = "SceIntrmgrDispatch";
+
+    /// <summary>Save states: the saved interrupt thread of a state whose session had one, while this session has none,
+    /// becomes this scheduler's (it starts with the restored threads); false when it is not the interrupt thread of
+    /// this scheduler's process or a thread runs already.</summary>
+    public bool AdoptThread(GuestThread thread)
+    {
+        if (!ReferenceEquals(thread.Process, emulator) || thread.Name != ThreadName)
+        {
+            return false;
+        }
+
+        lock (_lock)
+        {
+            if (_thread != null && _thread.IsLive)
+            {
+                return false;
+            }
+
+            thread.KernelMode = true;
+            thread.HostBody = Interrupts;
+            _thread = thread;
+            _handedOver = false;
+        }
+
+        return true;
+    }
+
+    /// <summary>Save states: the interrupt thread the loaded state does not have is let go (the next armed line makes a
+    /// new one); false when it is not this scheduler's.</summary>
+    public bool ReleaseThread(GuestThread thread)
+    {
+        lock (_lock)
+        {
+            if (!ReferenceEquals(thread, _thread))
+            {
+                return false;
+            }
+
+            _thread = null;
+            _handedOver = false;
+            Monitor.PulseAll(_lock);
+        }
+
+        return true;
+    }
+
     private void StartInterruptThread()
     {
-        GuestThread thread = emulator.Kernel.CreateThread("SceIntrmgrDispatch", 0, 64, 0x4000, 0, 0);
+        GuestThread thread = emulator.Kernel.CreateThread(ThreadName, 0, 64, 0x4000, 0, 0);
         thread.KernelMode = true;
         thread.HostBody = Interrupts;
         _thread = thread;
@@ -283,6 +331,12 @@ public sealed class GuestInterruptScheduler(Emulator emulator, Action<uint, ulon
             {
                 lock (_lock)
                 {
+                    // a thread a state load let go (ReleaseThread) takes no more hand-overs: they are the next thread's
+                    if (!ReferenceEquals(_thread, self) || self.Core.StopRequested)
+                    {
+                        return;
+                    }
+
                     if (!_handedOver)
                     {
                         Monitor.Wait(_lock, MaxWaitMs);
