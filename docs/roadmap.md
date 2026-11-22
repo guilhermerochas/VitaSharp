@@ -513,7 +513,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
       (`Jit.ActivateAhead`, que também alarga a fronteira); é assim que o cache sabe o que rodou. Módulos carregados com
       o jogo rodando entram em segundo plano do mesmo jeito. Tetos por plataforma (`Jit.AheadBudget`,
       `Jit.SpeculativeBudget`): todo o código pré-compilado 128 MiB no desktop / 64 MiB no Android (arena de 256 MiB);
-      dentro dele, o especulativo que ainda não rodou 32 / 24 MiB, com despejo (ver feat/aot4).
+      dentro dele, o especulativo que ainda não rodou 48 / 24 MiB, com despejo (ver feat/aot4).
       Android: o mesmo modelo, tudo em segundo plano (`PrecompileCodeWaits = false`) até a tela do jogo ter a barra.
     - Invalidação: os blocos pré-compilados são blocos normais do cache do processo; escrita em código
       (DirtyPages/`InvalidateCode`), carga/descarga de módulo e save state continuam derrubando a tradução.
@@ -584,10 +584,10 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
       rodar; o resto das funções dos blocos do cache na 2ª sessão: 140k blocos, 5% rodam), e medir no celular.
     - Feito (feat/aot4, 21/11/2026), memória e alvos indiretos:
       (1) a arena guarda o que roda: o código pré-compilado por palpite (fluxo, fronteira) tem orçamento próprio
-      (`Jit.SpeculativeBudget`, 32 MiB desktop / 24 MiB Android; o total, 128 / 64 MiB); passando dele, o
+      (`Jit.SpeculativeBudget`, 48 MiB desktop / 24 MiB Android; o total, 128 / 64 MiB); passando dele, o
       pré-compilador despeja o especulativo que ainda não rodou (`Jit.EvictAhead`: nunca foi publicado, então nada
-      roda nele; o bloco sai do cache e o código volta para a arena), primeiro o fluxo mais fundo, depois a fronteira
-      mais antiga; o que rodou nunca sai. A arena reaproveita as faixas liberadas (`ExecutableMemory.Free`, colocação
+      roda nele; o bloco sai do cache e o código volta para a arena), primeiro o fluxo mais fundo, depois a fronteira,
+      depois o resto das funções em execução, cada um do mais antigo; o que rodou nunca sai. A arena reaproveita as faixas liberadas (`ExecutableMemory.Free`, colocação
       com reuso só nas threads do pré-compilador; x64 codifica de novo para o endereço da faixa). Um palpite despejado
       não volta a ser traduzido (voltar fazia o despejo girar: AC3L 1,2M traduções e 927k despejos). Bloco
       pré-compilado invalidado (escrita no código, troca de processo) devolve o código na hora.
@@ -606,10 +606,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
       Killzone `kz_idle` 1ª sessão: base 1.299 blocos / 154 ms no jogo, 96,8%, arena 35,8 MB, pico de working set
       995 MB; aot4 547 / 41 ms, 98,8%, 42,8 MB, 975 MB (dos 547: 455 na fila e o jogo chegou antes, 92 inícios de
       função alcançados só por ponteiro; nenhum mais depois de TBB/TBH). 2ª sessão: base 3 blocos, 32,8 MB, 111,7k
-      pré-compilados, 1.015 MB; aot4 KZ2_NUM.
-      AC3L 1ª sessão: base 9.481 blocos / 608 ms, 93,3%, arena 128 MB (no teto), 1.654 MB; aot4 AC1_NUM. 2ª sessão: base
-      2.045 / 175 ms, 98,7%, 128 MB, 1.588 MB; aot4 AC2_NUM.
-      Sobra (meta ≲10 ms na 1ª sessão do Killzone não atingida): a maior parte do que o JIT ainda compila no jogo
+      pré-compilados, 1.015 MB; aot4 2 blocos, 26,7 MB, 91,4k pré-compilados, 886 MB.
+      AC3L 1ª sessão: base 9.481 blocos / 608 ms, 93,3%, arena 128 MB (no teto), 1.654 MB; aot4 (orçamento de 48 MiB) 18.131 / 1,9 s,
+      90,3%, 104,7 MB, 1.614 MB (365k palpites despejados; com 32 MiB eram 24.769 blocos, 86,2%, 82,6 MB, 1.503 MB). 2ª
+      sessão: base 2.045 / 175 ms, 98,7%, 128 MB, 1.588 MB; aot4 191 / 7 ms, 99,9%, 121,4 MB, 1.557 MB.
+      Sobra: na 1ª sessão do AC3L o orçamento próprio custa cobertura (o jogo roda ~180k blocos distintos e a
+      fronteira acerta ~50%: despejar o palpite mais antigo perde blocos que o jogo alcança depois). Próximo passo
+      (patch pronto, não medido): orçamento desktop de 64 MiB (metade do total), medir a 1ª sessão do AC3L; e reduzir
+      os sucessores estreitos da 2ª sessão (AC3L 179k traduzidos, 13% rodam; KZ 20,8k, 3,4%).
+      Meta ≲10 ms na 1ª sessão do Killzone não atingida: a maior parte do que o JIT ainda compila no jogo
       estava na fila do pré-compilador quando o jogo chegou (laços que ficam quentes em 64 execuções antes de as
       threads de prioridade baixa chegarem lá, pior com a máquina carregada) e funções chamadas só por ponteiro em
       dados (traduzir todas as tabelas foi medido e descartado no aot3). Próximo passo: medir com a máquina livre e no
