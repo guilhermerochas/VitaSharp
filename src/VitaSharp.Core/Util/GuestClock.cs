@@ -115,6 +115,10 @@ public static partial class GuestClock
 
     public static long ToMicroseconds(long ticks) => (long)(ticks * (1_000_000.0 / Stopwatch.Frequency));
 
+    /// <summary>Guest microseconds as clock ticks (the inverse of <see cref="ToMicroseconds"/>, rounded up so a time
+    /// saved in microseconds is never before the moment it was taken from).</summary>
+    public static long FromMicroseconds(long microseconds) => (long)Math.Ceiling(microseconds * (Stopwatch.Frequency / 1_000_000.0));
+
     /// <summary>Waits until the clock reaches <paramref name="deadline"/> (ticks); in turbo mode jumps there. While the
     /// emulation is paused it first waits for the resume (see <see cref="EmulationPause.WaitWhilePaused"/>).</summary>
     public static void WaitUntil(long deadline, bool allowSpin = true)

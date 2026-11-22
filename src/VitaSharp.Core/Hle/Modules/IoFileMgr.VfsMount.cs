@@ -67,6 +67,7 @@ public sealed partial class IoFileMgr
     /// the state carries.</summary>
     void AfterSnapshotLoad()
     {
+        AfterAsyncLoad();
         AfterHostVnodeLoad();
         lock (_guestMounts)
         {

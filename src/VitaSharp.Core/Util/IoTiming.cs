@@ -101,12 +101,20 @@ public static class IoTiming
                 w.Start = offset;
                 w.End = offset + Math.Max(bytes, ReadAheadBytes);
             }
-            long now = GuestClock.Ticks;
+            long now = t_deferring ? t_deferFrom : GuestClock.Ticks;
             long start = Math.Max(now, s_deviceFreeAt);
             done = start + GuestClock.FromSeconds(LatencySeconds + bytes / BytesPerSecond);
             s_deviceFreeAt = done;
             TimedReads++;
             DeviceTicks += done - start;
+            if (t_deferring)
+            {
+                // an asynchronous request: nobody waits here, the request completes when the device is done
+                t_deferDone = Math.Max(t_deferDone, done);
+                (long Reads, long Ticks, long Bytes, long Regain) s = s_waitsByThread.GetValueOrDefault(AsyncRequests);
+                s_waitsByThread[AsyncRequests] = (s.Reads + 1, s.Ticks + (done - now), s.Bytes + bytes, s.Regain);
+                return;
+            }
         }
         long t0 = GuestClock.Ticks;
         long woke = t0;
@@ -128,6 +136,47 @@ public static class IoTiming
 
     /// <summary>Set while an sceIoXxxAsync request runs (session report attribution).</summary>
     [ThreadStatic] public static bool InAsyncRequest;
+
+    /// <summary>The session report's line for the device time of the asynchronous requests (nobody blocks for it).</summary>
+    private const string AsyncRequests = "asynchronous requests (I/O scheduler, no thread blocked)";
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static bool t_deferring;
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static long t_deferFrom;
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static long t_deferDone;
+
+    /// <summary>
+    /// The calling thread's reads until <see cref="EndDeferred"/> are an asynchronous request's (the I/O scheduler):
+    /// they take their place on the device timeline as if issued at <paramref name="submittedTicks"/> (the guest time
+    /// the request was submitted) but do not block; <see cref="EndDeferred"/> says when the device finishes them.
+    /// </summary>
+    public static void BeginDeferred(long submittedTicks)
+    {
+        t_deferring = true;
+        t_deferFrom = submittedTicks;
+        t_deferDone = submittedTicks;
+    }
+
+    /// <summary>Ends <see cref="BeginDeferred"/>: the guest clock tick the device finishes the request's reads at
+    /// (the submission time when it read nothing from the device).</summary>
+    public static long EndDeferred()
+    {
+        t_deferring = false;
+        return t_deferDone;
+    }
+
+    /// <summary>Tests: the device is idle from now on (device time other tests reserved does not delay this one's).</summary>
+    internal static void ResetDeviceTimeline()
+    {
+        lock (s_lock)
+        {
+            s_deviceFreeAt = 0;
+        }
+    }
 
     /// <summary>Per guest thread: device reads, guest time spent blocked in them, bytes (session report).</summary>
     private static readonly Dictionary<string, (long Reads, long Ticks, long Bytes, long Regain)> s_waitsByThread = new();

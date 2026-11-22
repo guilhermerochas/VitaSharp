@@ -2,6 +2,7 @@ using VitaSharp.Core.Hle;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Loader;
+using VitaSharp.Core.Util;
 using Mutex = VitaSharp.Core.Kernel.Mutex;
 using Semaphore = VitaSharp.Core.Kernel.Semaphore;
 
@@ -134,9 +135,10 @@ internal static class KernelSnapshot
                     w.Write(d.References);
                     break;
                 case IoAsyncOp a:
-                    if (!a.Done)
+                    if (!a.Done && a.State is not IoAsyncState.InDevice)
                     {
-                        throw new SnapshotException("an asynchronous I/O request is in flight");
+                        // its host work is not done yet: the state waits for it (the I/O scheduler is not held)
+                        throw new SnapshotRetryException("an asynchronous I/O request is being served");
                     }
 
                     w.Write(a.Fd);
@@ -144,6 +146,15 @@ internal static class KernelSnapshot
                     w.Write(a.Cancelled);
                     w.Write(a.Pattern);
                     w.Write(a.UserData);
+                    // a request in the device (its result known, its completion time ahead): it completes after the
+                    // load at the same guest time (states of builds before this have none)
+                    w.Write(!a.Done);
+                    if (!a.Done)
+                    {
+                        w.Write(GuestClock.ToMicroseconds(a.DueTicks));
+                        w.Write(a.Param);
+                    }
+
                     break;
                 case PluginFramework.HookPatch hook:
                     hook.Save(w);
@@ -473,9 +484,20 @@ internal static class KernelSnapshot
                     o = new KernelData { Name = name, Kind = b.ReadStringNotNull(), Address = b.ReadUInt32(), Size = b.ReadUInt32(), Aux = b.ReadUInt32(), References = b.ReadInt32() };
                     break;
                 case Async:
-                    o = new IoAsyncOp
+                {
+                    var op = new IoAsyncOp
                     { Name = name, Fd = b.ReadInt32(), Result = b.ReadInt64(), Done = true, Cancelled = b.ReadBool(), Pattern = b.ReadUInt32(), UserData = b.ReadUInt64() };
+                    if (!b.AtEnd && b.ReadBool())
+                    {
+                        op.Done = false;
+                        op.State = IoAsyncState.InDevice;
+                        op.DueTicks = GuestClock.FromMicroseconds(b.ReadInt64());
+                        op.Param = b.ReadUInt32();
+                    }
+
+                    o = op;
                     break;
+                }
                 case PluginHook:
                     o = PluginFramework.HookPatch.Load(b, name);
                     break;
