@@ -1,4 +1,4 @@
-<!-- pair: compatibility.md sha256=8dc7755f240224db85dc7f4dbf1c276c443ed1513c52f23235d715e383b0592b -->
+<!-- pair: compatibility.md sha256=97289ce6dfc4d9be29841c940a0468eefce3b8167c41811112d21262dda4f3c3 -->
 # Compatibilidade
 
 [English](compatibility.md) | **Português**
@@ -55,12 +55,12 @@ uma promessa, e o ponto mais distante a que um cenário chega não é o fim do j
 | Blast 'Em Bunnies | PCSE00328 | Jogável | Primeira fase e tutorial | `bunnies_boot` |
 | Call of Duty: Black Ops Declassified | PCSB00232 | Menus | Logos e tela de título | `cod_boot` |
 | Crazy Market | PCSE00291 | Menus | Logos e os termos de serviço (16 fps nessa tela, a confirmar) | `crazymarket` |
-| Croixleur Sigma | PCSG00537 | Jogável | Páginas de ajuda, abertura, menu de título, seleção de personagem com o modelo 3D, diálogos da história sobre a cena 3D a ~30 fps (versão japonesa: Círculo confirma; o Vita3K trava ao gerar os shaders dele) | `croixleur_boot` |
+| Croixleur Sigma | PCSG00537 | Jogável | Páginas de ajuda, abertura, menu de título, seleção de personagem com o modelo 3D, diálogos da história sobre a cena 3D a ~30 fps (versão japonesa: Círculo confirma) | `croixleur_boot` |
 | Devious Dungeon | PCSB01240 | Jogável | 60 fps; também abre pela LiveArea do shell de verdade | `dd_boot` |
 | F1 2011 | PCSE00002 | Jogável | Corridas com HUD, menus e vídeo (a partir de um perfil existente: com dados novos o cenário para no teclado do nome do piloto) | `f1_drive` |
-| FIFA 13 | PCSE00093 | Jogável | Tela de título, menus e treino na Arena com os jogadores com as peles certas (o Vita3K não abre); os cubos de reflexo dos jogadores são lidos com o espaçamento certo entre faces desde 04/11/2026 (blocos ciano/verdes nos uniformes, a confirmar no jogo) | `fifa13` |
+| FIFA 13 | PCSE00093 | Jogável | Tela de título, menus e treino na Arena com os jogadores com as peles certas; os cubos de reflexo dos jogadores são lidos com o espaçamento certo entre faces desde 04/11/2026 (blocos ciano/verdes nos uniformes, a confirmar no jogo) | `fifa13` |
 | Final Fantasy X HD Remaster | PCSE00293 | Menus | Menu do launcher, depois a cena de abertura do jogo com os créditos | `ffx_boot` |
-| Gal Gunvolt | PCSG00704 | Jogável | Título, seleção de arquivo e a primeira fase a 60 fps; o fundo da área de jogo aparece desde 04/11/2026 (superfícies RGBA lidas na ordem da memória) (o Vita3K trava ao iniciar) | — |
+| Gal Gunvolt | PCSG00704 | Jogável | Título, seleção de arquivo e a primeira fase a 60 fps; o fundo da área de jogo aparece desde 04/11/2026 (superfícies RGBA lidas na ordem da memória) | — |
 | God of War Collection | PCSA00126 | Jogável | Combate, cenas e áudio em God of War I e II; em celulares Mali desde 31/10/2026 (atributos de vértice desalinhados) | `gow_game` |
 | Gravity Rush | PCSF00024 | Jogável | Abertura e primeiro gameplay; um toque no título "Tap the Apple" nem sempre avança | `gr_boot` |
 | Invizimals: The Resistance | PCSA00552 | Menus | Título e menu principal; usa a webcam e os sensores de movimento | `inv_boot` |
@@ -87,7 +87,7 @@ uma promessa, e o ponto mais distante a que um cenário chega não é o fim do j
 | Unit 13 | PCSF00034 | Jogável | Primeira missão com HUD | `unit13_boot` |
 | Uncharted: Golden Abyss | PCSA00029 | Jogável | Primeira fase | `uc_walk` |
 | WRC 4 FIA World Rally Championship | PCSE00411 | Jogável | Perfil novo até o início de um estágio e pilotando | `wrc4_boot` |
-| Zero Escape: Zero Time Dilemma | PCSE00781 | Jogável | Logos, menu de título a 60 fps, New Game, abertura e os primeiros ~2,5 minutos de cenas da história a 30 fps (não abre no Vita3K) | `ztd_boot` |
+| Zero Escape: Zero Time Dilemma | PCSE00781 | Jogável | Logos, menu de título a 60 fps, New Game, abertura e os primeiros ~2,5 minutos de cenas da história a 30 fps | `ztd_boot` |
 
 As funções do sistema que faltam são acompanhadas uma a uma em [`docs/hle`](hle/README.md), com prioridades pelo que
 os jogos testados de fato importam. Os defeitos conhecidos e o trabalho futuro estão no [roadmap](roadmap.md).

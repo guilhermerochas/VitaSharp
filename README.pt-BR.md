@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=8184b2a2b26dcc29f4d0d585ef3a8314b3b721b7cddd22bb1e4d434fefb66c80 -->
+<!-- pair: README.md sha256=3aa7b674619373b8084090f153b0ad1f2c352b0ba49304a5d4605f3c23d33931 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -106,8 +106,8 @@ pode importar), do censo em [`docs/hle/kernel-exports.md`](docs/hle/kernel-expor
 
 38 jogos testados até agora ([`docs/compatibility.md`](docs/compatibility.md), com o estado e o cenário de teste de
 cada um): 25 chegam ao gameplay (entre eles Killzone: Mercenary, Uncharted: Golden Abyss, Gravity Rush, God of War
-Collection, FIFA 13, Persona 4 Golden, LittleBigPlanet, Tearaway, WRC 4, Skullgirls e Devious Dungeon, vários que
-não abrem no Vita3K) e o resto chega aos menus. Os defeitos conhecidos e o trabalho futuro estão no
+Collection, FIFA 13, Persona 4 Golden, LittleBigPlanet, Tearaway, WRC 4, Skullgirls e Devious Dungeon) e o
+resto chega aos menus. Os defeitos conhecidos e o trabalho futuro estão no
 [roadmap](docs/roadmap.md).
 
 ## Plataformas

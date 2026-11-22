@@ -5296,12 +5296,12 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   Vita (aqui a notificação da cena 1 sai em <1 ms) e do decoder; um vídeo do Vita do menu confirmaria se a faixa está
   limpa no console
   Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
-- [x] Army Corps of Hell (PCSE00006; no Vita3K trava na intro; aqui roda a 30 fps estáveis, 31/10/2026, main 13ca113,
+- [x] Army Corps of Hell (PCSE00006; roda a 30 fps estáveis, 31/10/2026, main 13ca113,
   log `20261031_193541_PCSE00006`): implementar `SceDebugLed::sceKernelGetGPI` (NID 0x14F582CF), lida pela `main`
   em 0x81064351 — num Vita de varejo devolve 0 (as chaves de depuração só existem em kits); também ver os 4
   underruns de áudio da sessão. Feito (04/11/2026, fix/user-bugs): `sceKernelGetGPI` devolve 0; 40 s a 30 fps
   sem nenhum underrun (os 4 de antes não se repetiram com o PC livre)
-- [x] Jak and Daxter Collection (PCSA00080; no Vita3K trava no boot): não carrega, fica no quadro 0 (nenhuma imagem)
+- [x] Jak and Daxter Collection (PCSA00080): não carrega, fica no quadro 0 (nenhuma imagem)
   por mais de 1 minuto (31/10/2026, main 13ca113, log `20261031_193411_PCSA00080`). A thread `avPlayer Controller` (o
   player do vídeo de abertura) chama `SceMp4::NID_D5B26179`, que não está implementada (o `Mp4.cs` já tem stubs para
   outros NIDs desconhecidos), logo depois de um `sceGxmWaitEvent` da `main`; o jogo provavelmente espera o filme
@@ -5371,7 +5371,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   `splash_PCSB01240`, `splash_PCSC00045`, `splash_PCSF00476`). Não conferido em vídeo do Vita se outros jogos com
   quadros pretos no início (Killzone) também seguram o pic0 por cima deles
   Confirmado pelo usuário (06/11/2026): ok
-- [x] MLB 14 The Show (PCSA00115; no Vita3K aborta na intro): roda a 53–60 fps e depois de ~70 s trava no quadro
+- [x] MLB 14 The Show (PCSA00115): roda a 53–60 fps e depois de ~70 s trava no quadro
   4116 (31/10/2026, main 13ca113, log `20261031_191246_PCSA00115`, captura F10 `diagnostics\PCSA00115_20261031_191416`
   de antes do travamento). Watchdog `STALL` aos 6 s e 30 s; a fila da GPU está vazia (966383 comandos concluídos). A
   thread `main` espera no `mutex Render 1`; a thread `Display Engine` fica rodando sem parar (pc 0x8102F2A0, lr
@@ -5384,7 +5384,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   aviso de dificuldade e a tela do título) passaram do quadro 4116 sem watchdog; no fim a Display Engine espera no
   seu condvar
   Confirmado no jogo pelo usuário (04/11/2026): não trava mais
-- [x] God Wars: Future Past (PCSB01073; no Vita3K trava no carregamento): o campo de batalha 3D não aparece, só o HUD
+- [x] God Wars: Future Past (PCSB01073): o campo de batalha 3D não aparece, só o HUD
   sobre preto (31/10/2026, main 13ca113, captura F10 `diagnostics\PCSB01073_20261031_191141`, ~30 fps, 134 desenhos em
   6 cenas). O jogo (Unity, IL2CPP) desenha o 3D numa superfície fora da tela em 0x61CFF8E0 (960x544, endereço sem
   alinhamento de página), reduz para 240x136 e 120x68 (brilho) e depois compõe no framebuffer 0x60400000. O log
@@ -5424,7 +5424,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   (`PauseRendering`) e o alvo é gravado de volta antes da cópia, como entre cenas. Falta conferir ao vivo numa batalha
   (o replay não reexecuta transferências; o roteiro `Load Game` com o save no slot 0 só chega ao mapa)
   Confirmado no jogo pelo usuário (04/11/2026): a batalha 3D aparece
-- [x] Gal Gunvolt (PCSG00704; no Vita3K trava ao iniciar): roda a 60 fps estáveis, mas "parece com problemas" (usuário,
+- [x] Gal Gunvolt (PCSG00704): roda a 60 fps estáveis, mas "parece com problemas" (usuário,
   31/10/2026, main 13ca113, captura F10 `diagnostics\PCSG00704_20261031_175803`). O jogo desenha num framebuffer de
   480x272 (pitch 512) que o sistema amplia para a tela; na captura (tela "How to play") a moldura lateral e os sprites
   aparecem, mas a área de jogo no centro está toda preta, sem o cenário/blocos da fase (24 desenhos em 3 cenas por
@@ -5837,7 +5837,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   Ainda pisca (relato do usuário, 04/11/2026, depois da correção do tamanho da textura): o botão SKIP continua
   piscando; validar ao vivo com o detector de flicker e uma captura F8 do usuário no momento
   Confirmado pelo usuário (06/11/2026): o SKIP não pisca mais (b6949d7)
-- [x] Croixleur Sigma (PCSG00537; no Vita3K trava ao gerar shaders): roda a ~30 fps, mas no início 3 cenas são
+- [x] Croixleur Sigma (PCSG00537): roda a ~30 fps, mas no início 3 cenas são
   puladas com `vkAllocateMemory(host buffer) failed: ErrorOutOfDeviceMemory` e "out of host memory for 0,0 MB" com a
   VRAM a 4% e o heap do host a 2% (31/10/2026, main e74a747, log `20261031_030841_PCSG00537`); a captura F10 também
   falhou pelo mesmo erro. Causa: o jogo chama `sceGxmColorSurfaceInit` com data NULL para os framebuffers (a memória
@@ -5848,7 +5848,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   `ReadColorSurface` em vez de chegar ao renderer (31/10/2026, branch fix/croixleur): 0 falhas de alocação, avisos,
   logos, ajuda, abertura e menu do título a 30 fps. Mais dois defeitos achados no caminho, também corrigidos: (1) o jogo
   faz o skinning na GPU com programas de vértice que gravam os vértices transformados na memória (VLDST store, 4
-  programas; provavelmente o que derruba o Vita3K ao gerar shaders) e o tradutor descartava essas gravações: os modelos
+  programas) e o tradutor descartava essas gravações: os modelos
   3D não apareciam e cada desenho de skinning copiava 1 MB para o espelho da CDRAM (≈60 MB por quadro, o jogo caía
   para 4–6 fps nos diálogos). Agora `storeMemory` grava no espelho (`VulkanRenderer.Mapped.cs`), as faixas gravadas
   não são mais copiadas da memória do guest e os streams de vértices dentro delas são lidos do espelho. (2) O bloom
@@ -5865,7 +5865,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   agentes no `<scratchpad>` têm o aviso `a program stores to memory at ..., outside CDRAM`; o único jogo conhecido com
   VLDST store é o Croixleur (CDRAM). Sem jogo que precise, não mexi (fica aberto até aparecer o aviso)
 
-- [x] The Deer God (PCSB01070; no Vita3K trava no boot): engasgos no gameplay (30/10/2026, main 4603a03, logs
+- [x] The Deer God (PCSB01070): engasgos no gameplay (30/10/2026, main 4603a03, logs
   `20261030_230111_PCSB01070` e `20261030_230208_PCSB01070`). Roda a 60 fps, mas cai de repente para 12–16 fps por
   ~5 s (quadros ~1500 e ~2200) sem nenhuma linha no log; uma troca de cena (thread `UnityPreload`) deixou a tela parada
   por ~15 s (watchdog `STALL`, quadro 3813); e no fim da segunda sessão o fps caiu aos poucos (49 → 32 → 15 → 8 em
@@ -5927,13 +5927,13 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   56-60 fps (antes 142-147), 2966 flips segurados; a parada de ~5 s no quadro 2752 é a troca de cena já conhecida (carga
   do jogo). Os engasgos do relato de 30/10 já tinham sido atribuídos à CPU do PC dividida; não reapareceram
 
-- [x] Sonic & All-Stars Racing Transformed (PCSE00056; no Vita3K também não abre): trava no quadro 24, antes dos
+- [x] Sonic & All-Stars Racing Transformed (PCSE00056): trava no quadro 24, antes dos
   logos (watchdog `STALL` aos 6 s e 31 s; 30/10/2026, main 4603a03, log `20261030_225954_PCSE00056`). A
   `MainThread`, a `AchievementIssueThread`, a `SumoPlatform` e o `CRI Server Manager` ficam rodando (polling), o
   resto espera em semáforos/eventflags (`SlSemaphore_Platform`, `SlThreadGateBank`); a única função que falta é
   `ScePspnetAdhoc::sceNetAdhocInit` (NID 0x87805E13), chamada pela MainThread logo antes. Ver o que a MainThread e a
-  `SumoPlatform` esperam (provavelmente rede/PSN ou conquistas) e a instrução `strex r1, r1, [r2]` (Rd = Rt) que
-  derruba o Vita3K. Achados (04/11/2026, fix/user-bugs): não é determinístico — numa rodada passou do quadro 24 e
+  `SumoPlatform` esperam (provavelmente rede/PSN ou conquistas) e a instrução `strex r1, r1, [r2]` (Rd = Rt).
+  Achados (04/11/2026, fix/user-bugs): não é determinístico — numa rodada passou do quadro 24 e
   seguiu a 30 fps (1029 quadros, 11750 desenhos, mas as imagens pretas), nas outras parou no 25/26. Parado, a
   `MainThread` só faz `sceTouchPeek`+`sceTouchRead` (lr 0x81118615/0x81118AFD) e trava/destrava o lwmutex 0x81896328 a
   cada ~16 ms, sem nenhuma outra função desde o quadro 23: espera em memória algo que outra thread deveria
@@ -5942,7 +5942,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   a escreveria, e comparar uma rodada que passa com uma que para
   Corrigido (05/11/2026, fix/bugs-games-4): não era uma variável. O loop em 0x81118608-0x81118AEE é a leitura do
   painel de toque: `while (sceTouchPeek(porta, &d, 1) > 0) { se o timestamp mudou, sceTouchRead(porta, buf, 16);
-  processa; }`, e só sai quando o Peek devolve 0 — o nosso devolvia sempre 1 (o Vita3K também, por isso trava lá).
+  processa; }`, e só sai quando o Peek devolve 0 — o nosso devolvia sempre 1.
   Agora o Peek devolve 0 quando não há amostra mais nova que o último `sceTouchRead` da porta (o buffer continua
   preenchido com a amostra mais nova; portas que o jogo nunca lê seguem como antes). `VITASHARP_TOUCH_PEEK_UNREAD=0`
   volta ao antigo. Prova: 3 de 3 boots passam do quadro 25 (logos SEGA/Sumo/CRIWARE e a tela legal; 400 quadros a
@@ -6146,7 +6146,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   valor anterior, se > 0) devolvia posição 0 nesses ticks. Agora o contador soma o que cada tick entrega, como no
   módulo player. 6200 quadros com o save do usuário: 6283 avisos antes, 0 depois
 
-- [x] Zero Time Dilemma (PCSE00781; no Vita3K trava no boot): 40 dos 105 shaders de fragmento leem o registrador global G16 (banco especial com o bit 0x40), que o tradutor USSE não conhece e troca por 0 (aviso `load from unsupported bank Global register 16`; 31/10/2026, branch fix/ztd, `shadertest PCSE00781`). As cenas parecem corretas, mas falta descobrir o que é o G16 (o Vita3K também não trata o banco GLOBAL). O jogo agora passa do boot (sceGxmColorSurfaceInit com data NULL) e roda as cenas da história a 30 fps; também aparecem `scene without colour surface` e um render target 1024x1024 amostrado enquanto é desenhado perto do quadro 6200
+- [x] Zero Time Dilemma (PCSE00781): 40 dos 105 shaders de fragmento leem o registrador global G16 (banco especial com o bit 0x40), que o tradutor USSE não conhece e troca por 0 (aviso `load from unsupported bank Global register 16`; 31/10/2026, branch fix/ztd, `shadertest PCSE00781`). As cenas parecem corretas, mas falta descobrir o que é o G16 (o Vita3K também não trata o banco GLOBAL). O jogo agora passa do boot (sceGxmColorSurfaceInit com data NULL) e roda as cenas da história a 30 fps; também aparecem `scene without colour surface` e um render target 1024x1024 amostrado enquanto é desenhado perto do quadro 6200
   Achados (05/11/2026, fix/bugs-games-4, `shadertest <app> --warnings` lista os avisos por programa): os 40 são as 10
   variantes (m/o/msaa/...) de 4 materiais, `HemiRimBump`, `HemiRimBumpB`, `HemiRimBumpHDR` e `toon` (iluminação de
   borda/toon dos personagens); nenhum outro shader tem aviso. Próximo: ver no `--dump` em que conta o G16 entra (se

@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=f8ff5c4132807809c598eaa83e3312f0d84ac4d85e69bf0bc0b1f79802472c28 -->
+<!-- pair: README.pt-BR.md sha256=9ce45c5e3b044211f57945da1e9ab01a90b730a6a8e787df491b68e84e9022bd -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -106,8 +106,8 @@ other kernel code (what a kernel plugin can import), from the census in
 
 38 games tested so far ([`docs/compatibility.md`](docs/compatibility.md), with each one's state and test scenario):
 25 reach gameplay (among them Killzone: Mercenary, Uncharted: Golden Abyss, Gravity Rush, God of War Collection,
-FIFA 13, Persona 4 Golden, LittleBigPlanet, Tearaway, WRC 4, Skullgirls and Devious Dungeon, several that do not
-boot on Vita3K) and the rest reach the menus. Known issues and future work are in the [roadmap](docs/roadmap.md).
+FIFA 13, Persona 4 Golden, LittleBigPlanet, Tearaway, WRC 4, Skullgirls and Devious Dungeon) and the
+rest reach the menus. Known issues and future work are in the [roadmap](docs/roadmap.md).
 
 ## Platforms
 
