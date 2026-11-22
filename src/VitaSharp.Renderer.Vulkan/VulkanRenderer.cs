@@ -81,6 +81,9 @@ public sealed class VulkanRendererOptions
     /// <summary>MSAA scenes: "native" (real multisampling), "ss" (2x supersampling) or "off"; null = VITASHARP_MSAA, else
     /// native (VulkanRenderer.MsaaNative.cs). The F3 hotkey sets it and replaces the renderer.</summary>
     public string? Msaa;
+    /// <summary>Programmable blending in MSAA scenes: "copy" reads copies of the samples, anything else the colour
+    /// attachment as an input attachment; null = VITASHARP_MSAA_FETCH (VulkanRenderer.MsaaNative.cs).</summary>
+    public string? MsaaFetch;
     /// <summary>CPU transfers over a writeback in flight run when its frame retires instead of the worker waiting for it
     /// (VulkanRenderer.TransferDefer.cs): null = VITASHARP_TRANSFER_DEFER, else on on Android only.</summary>
     public bool? TransferDefer;
@@ -227,6 +230,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _options = options;
         _resScale = options.ResScale > 0 ? ParseResScale(options.ResScale.ToString(System.Globalization.CultureInfo.InvariantCulture)) : s_envResScale;
         _msaaSetting = ParseMsaa(options.Msaa ?? Environment.GetEnvironmentVariable(EnvVars.Msaa));
+        _msaaInputFetch = !string.Equals((options.MsaaFetch ?? Environment.GetEnvironmentVariable(EnvVars.MsaaFetch))?.Trim(), "copy", StringComparison.OrdinalIgnoreCase);
         _presentCount = Math.Max(0, options.FirstPresent);
         if (options._handoff is { } h && ReferenceEquals(h.Surface, options.Surface))
         {

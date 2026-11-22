@@ -369,7 +369,7 @@ public sealed unsafe partial class VulkanRenderer
         sb.AppendLine($"GPU: {_core.DeviceName} (vendor 0x{physicalDeviceProperties.VendorID:X4}, device 0x{physicalDeviceProperties.DeviceID:X4}, type {physicalDeviceProperties.DeviceType})");
         sb.AppendLine($"Vulkan API: {physicalDeviceProperties.ApiVersion >> 22}.{(physicalDeviceProperties.ApiVersion >> 12) & 0x3FF}.{physicalDeviceProperties.ApiVersion & 0xFFF}");
         sb.AppendLine($"Driver: {DriverDescription()}");
-        sb.AppendLine($"MSAA: {_msaaSetting} (VITASHARP_MSAA), programmable blending in MSAA scenes: {(s_msaaInputFetch ? "input attachment" : "copy")} (VITASHARP_MSAA_FETCH), sample-rate shading {_core.SampleRateShading}");
+        sb.AppendLine($"MSAA: {_msaaSetting} (VITASHARP_MSAA), programmable blending in MSAA scenes: {(_msaaInputFetch ? "input attachment" : "copy")} (VITASHARP_MSAA_FETCH), sample-rate shading {_core.SampleRateShading}");
         sb.AppendLine($"Shaders: shaderc {_compiler.OptLevel} (setting {_options.ShaderOptimization ?? "default"}), async shaders {_asyncShaders}, async pipelines {_asyncPipelines}, workers setting {_options.ShaderWorkers}, generator v{ShaderGenerator.GeneratorVersion}, debug overrides {ShaderGenerator.DebugOverridesActive}");
         sb.AppendLine($"Shader cache: {_options.ShaderCacheDir ?? "(none)"}, title {_titleId ?? "-"}, pack {(_shaderPack != null ? "in use" : "not used")}");
         sb.AppendLine($"VSync {_options.VSync}, validation {_options.Validation}, presented frame {_lastFrameW}x{_lastFrameH}, swapchain {(_swapchain.Handle != 0 ? "yes" : "no (headless)")}");
