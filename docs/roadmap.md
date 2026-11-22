@@ -174,7 +174,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Feito (12/11/2026, b082645a; conferido 15/11/2026, kill1): `GuestThread.HleReturned` para a thread do guest logo depois
   do retorno de uma chamada HLE escolhida (antes da próxima) e `GuestThread.DispatchForTest` faz a chamada pelo caminho
   real do SVC; usados em `ThreadMgrHleTests` (`WokenThreadDoesNotRunAheadOfAStoppedWaker` e vizinhos).
-- [ ] [P3][G] **Sincronização sob intercalações adversas:** event flag, semáforo, mutex, lwmutex, cond, msgpipe, eventos e
+- [x] (22/11/2026, feito: todas as classes do threadmgr cobertas, de EventFlagInterleavingTests a EventCoreInterleavingTests e o caso CB do WaitMultipleEvents, kernK d6772242, na main) [P3][G] **Sincronização sob intercalações adversas:** event flag, semáforo, mutex, lwmutex, cond, msgpipe, eventos e
   callbacks testados contra a semântica do firmware 3.74 com o ponto de atraso entre cada par de chamadas (quem é
   acordado, em que ordem, o que sobra no padrão, cancelamento, delete, timeout), não só o caminho feliz.
   Event flag coberto (16/11/2026, `EventFlagInterleavingTests`, conferido no threadmgr 3.74): modo ilegal na espera e
@@ -358,7 +358,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   título parada em `sceKernelWaitSema` no save: depois do load continua esperando, com o contador e o semáforo do save,
   um signal a acorda pelos registradores salvos e ela volta a esperar), ao lado da thread de kernel em
   `ksceKernelDelayThread` e da thread principal no vblank do mesmo arquivo; 50x sem falha.
-- [ ] [P3][G] **Um teste sintético por bug corrigido:** o padrão do guest reproduzido sem o jogo (protocolo de sync,
+- [x] (22/11/2026, obsoleto: virou regra de toda correção em docs/agents/regras.md, itens 4-5 da regra principal e "Toda correção vem com o teste que a cobre") [P3][G] **Um teste sintético por bug corrigido:** o padrão do guest reproduzido sem o jogo (protocolo de sync,
   sequência de comandos GXM, chamadas HLE com os argumentos vistos), nunca dependente dos dados de um jogo.
 - [x] (15/11/2026, pelo usuário: já é feito continuamente — regras.md, cada correção traz seu caso no TestGame) [P3][G] **O jogo de teste (`tests/VitaSharp.TestGame`) como suíte de integração:** o homebrew de teste (VitaSDK, código
   próprio, agora dentro do repositório) ganha um caso para
@@ -1797,7 +1797,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   encontrado — e juntar com a contagem de fragmentos/vértices do replay e o tráfego de tiles (a Adreno também desenha
   em blocos, com GMEM), para estimar ms por desenho/quadro; o resultado é do Turnip (não do driver da Qualcomm), então
   calibrar quando houver um aparelho Adreno ou pelo Samsung Remote Test Lab / Firebase Test Lab
-- [ ] AAudio de baixa latência no Redmi Note 14: o stream sai "normal shared" (a saída do alto-falante não tem
+- [x] (22/11/2026, concluído: os três caminhos existem em `AndroidAudioBackend` (AAudio low-latency, MMAP exclusivo quando o aparelho dá, AudioTrack LOW_LATENCY); o alto-falante deste celular não tem caminho rápido nem MMAP, medido em 31/10) AAudio de baixa latência no Redmi Note 14: o stream sai "normal shared" (a saída do alto-falante não tem
   FastMixer, rajada informada de 4096 quadros, ~200 ms de latência); ver se outro caminho (MMAP, sem
   `setBufferCapacityInFrames`, AudioTrack com `PERFORMANCE_MODE_LOW_LATENCY`) consegue a saída rápida
   (31/10/2026, perf/android-phone-2: sem pedir capacidade o AAudio dá rajada de 2052 quadros e ~96 ms, sem underrun;
@@ -1864,7 +1864,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   (30/10/2026: `SessionReport` no Core, o mesmo texto do `Runner` do desktop; o `SessionStatistics` as escreve no fim
   do jogo e, só no arquivo de log, a cada 30 s e a cada pausa, porque o Android costuma matar o processo; falta ver
   num aparelho que as linhas aparecem e que os tempos por thread do Mono são lidos)
-- [ ] Rodar sessões longas com `VITASHARP_NATIVE_VERIFY=1` (pelo `config/env.txt`) no Android para achar outros
+- [x] (22/11/2026, obsoleto: o Release do Android é NativeAOT desde 09/11, sem JIT do Mono nem backend IL (`IlJitCompiler.IsSupported` = `IsDynamicCodeSupported`, docs/notes/il-jit.md; VitaSharp.Android.csproj); o Mono só fica no Debug e sai no .NET 11) Rodar sessões longas com `VITASHARP_NATIVE_VERIFY=1` (pelo `config/env.txt`) no Android para achar outros
   pontos em que o JIT do Mono dobra constantes de outro jeito que o CoreCLR (o backend IL e os blocos que sobem para
   ele)
 - [x] shaderc para Android: compilar a `libshaderc_shared.so` (arm64-v8a e x86_64) com o NDK e empacotar no APK; sem
@@ -2163,7 +2163,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   comandos que os módulos usam e as respostas de um PCH-1000: versão do baryon, hardware info, bateria, RTC, alarmes,
   estado de energia) atrás de ksceSysconCmdExec, as exportações em cima dele, os callbacks registrados disparando nos
   eventos que o VitaSharp tem (bateria, alarme, botão de energia). Antes: fonte confiável para os valores de hardware.
-- [ ] [P3][G] ScePervasiveForDriver (lowio.skprx do FW 3.74, 156 exportações): feitas as páginas de reset, gate,
+- [x] (22/11/2026, feito: 9bf24ad5 "ScePervasiveForDriver complete", na main: DsiSetPixelClock, NID_243D0E78, NID_7E813FC5 e NID_E9D95643; `KernelPervasiveSecureTests`) [P3][G] ScePervasiveForDriver (lowio.skprx do FW 3.74, 156 exportações): feitas as páginas de reset, gate,
   base clock e misc em memória de kernel com o layout físico, os getters de página, o UartSetBaudrate e os getters de
   identificação do SoC (palavras da página misc ao ligar de um PCH-1000: revisão 0x80000042, CXD5315GG; as outras
   0, sem importador no FW). Fora de escopo: as 31 que passam a mudança ao secure monitor (smc 0x110, 0x111, 0x113,
@@ -2186,8 +2186,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Entrega movida para "Corrigido, falta o usuário testar" (reboot do sistema, kernN, 22/11/2026); o resto segue aberto aqui.
 - [ ] [P3][G] sceAppMgrPspSaveDataRootMount (HLE) escreve `ux0:pspemu` como ponto de montagem sem registrar uma
   montagem no AppMgr, então um sceAppMgrUmount dele falha: conferir no appmgr 3.74 o que é montado (o SAVEDATA do
-  emulador de PSP) e o ponto devolvido, e depois fazer o par do apputil.suprx NID_C3CB128B/NID_C0418B1C (montagem da
-  raiz de saves do PSP com contagem de uso, dono 0xCA).
+  emulador de PSP) e o ponto devolvido; o par do apputil.suprx NID_C3CB128B/NID_C0418B1C (montagem
+  da raiz de saves do PSP com contagem de uso, dono 0xCA) já está feito (9c263ffe).
 - [ ] [P3][G] Temas do Vita (pedido do usuário, 10/11/2026): instalar e usar temas como no aparelho. (1) Instalação: `.pkg` de
   tema da loja (content type de tema; o agente de PKG já detecta o tipo) com a licença, extraído para `ux0:theme/<id>`
   com o `theme.xml` e as imagens/sons, e registrado como o firmware faz (banco do shell / app.db, lista de temas das
