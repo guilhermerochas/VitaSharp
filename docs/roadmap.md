@@ -2086,12 +2086,22 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   (0x80010016) e devolve os 64 bits do driver (r0:r1). vfsGetMntList(list, max, *count) e vfsGetMntInfo(mount, info)
   com os campos do firmware para as montagens de guest. vfsMountForPFS/vfsUmountForPFS(param, 0, 0) rodam
   vfsMount/vfsUmount (2º ou 3º argumento não nulo é 0x80010016; antes a checagem era a inversa e a resposta
-  0x80010030). Eram bugs, corrigidos. Faltam: (1) ver as pastas do host como vnodes para um driver empilhado (tipo 1
-  sobre ux0:, o vnode coberto em +0x40 com uma tabela de vops do próprio IoFileMgr sobre as pastas do host); (2) o
-  objeto de arquivo do VitaSharp não segue o do firmware (no 3.74 vfsAllocateFile devolve um descritor e o arquivo
-  tem o vnode em +0x18, a posição em +8 e o estado em +0x10, conferido por 0x8100ada4): drivers que leem esses
-  campos veem outra coisa; (3) reciclar vnodes do cache quando o pool acaba (0x81007934) e o lock de vnode com
-  espera como o firmware (0x8100a7b0).
+  0x80010030). Eram bugs, corrigidos.
+  Objeto de arquivo, pool e lock de vnode, montagem empilhada (21/11/2026, kernL, `IoVfsMountTests`, conferido no
+  iofilemgr 3.74: vfsAllocateFile 0x81007a80 / 0x8100ac88, vfsFreeFile 0x81007a9c, vfsAllocateFileDummy 0x81007ae4,
+  os estados 0x8100ada4 / 0x8100add8, os wrappers ksceVop*, o pool 0x8100ae98 / 0x8100bca8 / 0x8100bc68, a reciclagem
+  0x81007934, os locks 0x8100a6ec / 0x8100a7b0 / 0x8100a7e8, vfsMount tipo 1): o arquivo é um objeto de kernel cujo
+  UID vfsAllocateFile devolve (vfsFreeFile recebe o UID), com os campos do firmware (+0x18 vnode, +8 posição, +0x10
+  estado, +4 flags, +0x14 processo, lista do vnode em +0x90/+0x94, contagem da montagem em +0x64); os wrappers conferem
+  o estado do arquivo e do vnode (0x80010001 fora de 0x100 / 0x1000) e a leitura na posição >= tamanho do vnode termina
+  sem o driver; o pool tem 0x1000 vnodes, 0x400 em uso no começo, recicla um vnode em cache antes de crescer 0x40 e
+  no fim é 0x8001000C; o lock tem o layout do firmware (+0 esperando, +4 dono -1 livre, +8 profundidade, +0xC event
+  flag por 32 vnodes) e espera de verdade; a montagem tipo 1 (fs tipo 3) cobre o vnode do caminho (+0x40): nas pastas
+  do host é um vnode do próprio IoFileMgr com vops sobre os arquivos do emulador. Antes: vfsAllocateFile devolvia 0
+  com o vnode em +0, vfsAllocateFileDummy gravava num ponteiro que é uma flag, o lock não esperava e o tipo 1 não
+  cobria nada. Faltam: o cache de nomes (+0x70) e o vnode de cima (+0x98) que o vfsRead usa, o cache de buffers do
+  vnode (+0x5C), a classe SceVfsFile como SceClass de guest (ksceGUIDReferObjectWithClass com ela) e o +0x28 do
+  arquivo dummy (um dado estático do iofilemgr).
 - [ ] [P3][G] Modelo do chip syscon para o SceSysconForDriver (311 exportações, 198 importadas pelos módulos de kernel do
   FW 3.74). 117 delas montam um pacote (comando de 16 bits, tamanho, dados) e chamam ksceSysconCmdExec/CmdExecAsync; o
   syscon.skprx decompilado está em `fw374\decomp\os0__kd__syscon.skprx.c` (só estudo). Fazer: um modelo C# do chip (os
