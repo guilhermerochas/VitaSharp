@@ -3449,7 +3449,18 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   em paralelo) caiu para 54/s, com um gap de 462 ms: é o ritmo do item P2 abaixo, não o NGS.
 - [ ] [P2][M] Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
   capturas de 21/11/2026, e um engasgo de 132 ms por leitura de arquivo (fileIo 134 ms; quadro 302 do dump da
-  `_232150_tudo`).
+  `_232150_tudo`). Achado (perf/ac3pace): fora das gravações o jogo fica em 30 fps (linhas `FPS frame` da sessão) e
+  só cai nelas, porque o gravador do GPU dump gasta 21-28 ms/quadro no GPU worker; o rerun headless sem dump dá 29-31
+  fps depois do aquecimento dos shaders. O engasgo do quadro 302 é de shader/pipeline (`[shadercache] present 4397:
+  stalled 98 ms`, 4 shaders e 2 pipelines novos), não de IO: a thread `main` esperou 0,0 s de IO, e a espera
+  modelada do cartão (7 MB/s) da thread de streaming `Gear::AsynchGeneric` entrava no `fileIo` do ledger e virava a
+  "causa" de todo quadro. Feito: o `fileIo` conta só a leitura no host, e o relatório da captura mostra o custo do
+  gravador por quadro e avisa quando ele passa de 4 ms. Falta: (1) baratear o gravador do dump (21 ms/quadro: a
+  codificação dos comandos e dos blocos de uniforms, ~11 MB/quadro crus, no GPU worker; levar para outra thread ou
+  reduzir as cópias/alocações por draw); (2) `sceIoXxxAsync` roda a requisição inteira na thread que chama, com a
+  espera do modelo do cartão: no Vita a chamada volta na hora e a leitura corre em paralelo (o AC3 não usa isso: lê
+  com `sceIoRead` na própria thread de streaming), então um jogo que lê assíncrono na thread principal trava o quadro
+  pelo tempo do cartão; completar a requisição no tempo do dispositivo sem bloquear quem chama.
 - [ ] [P2][G] Abrir um jogo não dá retorno visual (relato do usuário, 21/11/2026: "quando eu clico de novo no jogo ele
   não abre a janela dele"): pelo log, a sessão começa e a janela só aparece 13 s depois (firmware, input, áudio,
   dispositivo Vulkan), seguida de ~12 s de carregamento do cache de shaders e da etapa de pré-compilação ARM. Fazer,
