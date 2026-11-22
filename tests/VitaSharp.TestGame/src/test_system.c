@@ -184,23 +184,44 @@ static void check_power(void)
     result_check(AREA, "clock_bus_gpu", busClock > 0 && gpuClock > 0, "bus %d gpu %d MHz", busClock, gpuClock);
 }
 
+/* Reads the vcount together with the process time it belongs to: the pair is kept only when no preemption came
+ * between the two clock reads (both within 1 ms), so a busy machine delays the reading but never skews it. */
+static void read_vcount_with_time(int *vcount, uint64_t *timeUs)
+{
+    for (int attempt = 0; attempt < 1000; attempt++)
+    {
+        uint64_t before = time_now_us();
+        int value = sceDisplayGetVcount();
+        uint64_t after = time_now_us();
+        *vcount = value;
+        *timeUs = before + (after - before) / 2;
+        if (after - before < 1000)
+        {
+            return;
+        }
+    }
+}
+
 static void check_display_and_memory(void)
 {
     float refreshRate = 0.0f;
     int rateResult = sceDisplayGetRefreshRate(&refreshRate);
     result_check(AREA, "display_refresh_rate", rateResult >= 0 && refreshRate > 59.0f && refreshRate < 61.0f,
                  "%.3f Hz", (double)refreshRate);
-    /* 30 vblank waits, checked in the console's own clocks (vcount and process time), never against how fast the
-     * host runs: every wait returns on a new vblank (the vcount always moves), most waits return on the very next one
-     * (a wait that waited two vblanks each time is a bug; a few longer ones are a busy machine skipping vblanks, as a
-     * starved thread on the console would), and the process time over the waits matches the vblanks seen at
-     * 59.94 Hz within one vblank. */
-    int vcountStart = sceDisplayGetVcount();
+    /* 30 vblank waits, checked in the console's own clocks (vcount and process time) by contracts that hold however
+     * busy the machine is: every wait returns on a new vblank (the vcount always moves); a wait ends on the first
+     * vblank after the call, so some wait returns on the very next one (a wait that always waits two vblanks is the
+     * bug; a busy machine only makes waits late, as a starved thread on the console would, so the loop goes on, up
+     * to 300 waits, until it sees one); and the process time over the waits matches the vblanks seen at 59.94 Hz
+     * within one vblank, both clocks read as unpreempted pairs. How many waits came late is reported. */
+    int vcountStart = 0;
+    uint64_t start = 0;
+    read_vcount_with_time(&vcountStart, &start);
     int previousVcount = vcountStart;
+    int waits = 0;
     int nextVblankWaits = 0;
     int stalledWaits = 0;
-    uint64_t start = time_now_us();
-    for (int index = 0; index < 30; index++)
+    while (waits < 30 || (nextVblankWaits == 0 && waits < 300))
     {
         sceDisplayWaitVblankStart();
         int vcount = sceDisplayGetVcount();
@@ -213,15 +234,19 @@ static void check_display_and_memory(void)
             stalledWaits++;
         }
         previousVcount = vcount;
+        waits++;
     }
-    uint64_t elapsed = time_now_us() - start;
-    int vcountDelta = sceDisplayGetVcount() - vcountStart;
+    int vcountEnd = 0;
+    uint64_t end = 0;
+    read_vcount_with_time(&vcountEnd, &end);
+    uint64_t elapsed = end - start;
+    int vcountDelta = vcountEnd - vcountStart;
     int64_t expectedUs = (int64_t)vcountDelta * 1000000 * 1001 / 60000;
     int64_t driftUs = (int64_t)elapsed - expectedUs;
-    bool clocksAgree = driftUs > -16683 && driftUs < 2 * 16683;
-    result_check(AREA, "display_vblank_30", stalledWaits == 0 && nextVblankWaits >= 15 && clocksAgree,
-                 "vcount +%d, %d next-vblank waits, %llu ms (%+lld ms off)", vcountDelta, nextVblankWaits,
-                 (unsigned long long)(elapsed / 1000), (long long)(driftUs / 1000));
+    bool clocksAgree = driftUs > -(16683 + 1000) && driftUs < 16683 + 1000;
+    result_check(AREA, "display_vblank_30", stalledWaits == 0 && nextVblankWaits > 0 && clocksAgree,
+                 "%d waits, vcount +%d, %d next-vblank, %d stalled, %llu ms (%+lld ms off)", waits, vcountDelta,
+                 nextVblankWaits, stalledWaits, (unsigned long long)(elapsed / 1000), (long long)(driftUs / 1000));
 
     SceKernelFreeMemorySizeInfo memoryInfo;
     memset(&memoryInfo, 0, sizeof(memoryInfo));
