@@ -639,6 +639,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
       (endereços absolutos de slots de link, stubs Epilogue/Callout, tabela de dispatch, pool de constantes, contador de
       tier-up; superblocos e stores mortos dependem dos vizinhos já executados): precisa de uma tabela de relocações
       nos emissores x64 (Iced e fast-encode) e ARM64. Só vale se a etapa de boot ficar longa.
+  Entrega movida para "Corrigido, falta o usuário testar" (feat/aot3, 22/11/2026); o resto segue aberto aqui.
 
 - [ ] [P3][M] Investigar reduções de memória do emulador (pedido do usuário, 17/11/2026): medir o uso de RAM do
   processo com um jogo pesado (dotnet-counters/dotnet-gcdump) e listar onde dá para cortar (caches de shader/textura,
@@ -977,6 +978,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   1º quadro continua com a opção desligada (a thread da GPU passa a esperar os workers em vez de montar: 2,1-4,4 s no
   PCSE00053 com a CPU da máquina a 83-96%), e é o que a opção ligada resolve. Próximas partes: (3) estado dinâmico EDS3/vertex input onde houver; (4) Android: medir no
   Killzone o tempo de carregamento a mais e a queda de pipelines no thread da GPU
+  Entrega movida para "Corrigido, falta o usuário testar" (uber2/uber3/uber4, 22/11/2026); o resto segue aberto aqui.
 - [x] (16/11/2026, usuário: removido da lista; é regra de medição) [P3][P] Medidas de desempenho com a CPU saturada por outros trabalhos não valem: no Killzone (emulador quente, driver
   frio) o watchdog acusou a thread da GPU 11-31 s sem progresso, sem nada atribuído a shader/pipeline (pior 116 ms),
   e o áudio teve um buraco de 5,0 s. Repetido com a máquina livre (carga média 22%): nenhuma parada, buraco de 1,2 s.
@@ -1216,30 +1218,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 ## Android
 
 - [x] App Android, tela da biblioteca: tirar a palavra "VitaSharp" em cima do título da biblioteca, o botão de instalar e o botão de Ajustes ao lado do texto da biblioteca. Feito (feat/andpar): o cabeçalho é só o título; instalar continua no botão flutuante e em Ajustes > Instalar jogo (`AndroidNarrowLayoutTests`). **Falta validar no aparelho.**
-- [ ] [P2][M] Paridade PC/Android das entregas de 17-18/11 (feat/andpar), **feito no código, falta validar no aparelho**:
-  "Carregar o cache de shaders antes de jogar" em Ajustes e na página do jogo, com o cartão de progresso e Cancelar
-  sobre o jogo (`ShaderCacheLoad.Reported`, `AndroidShaderCacheLoadTests`); o teste de paridade agora classifica toda
-  opção do `LauncherSettings`/`GameOptions` e falha com uma opção nova sem par no Android; mapeamento: gravação pelo
-  `BindingRecorder` (a linha "Pausar emulação" grava só a combinação final, que dispara no jogo só com todos os botões
-  apertados) e linha "Salvo"/"Alterações não salvas" (`PadCaptureTests`); desinstalar um jogo e apagar uma gravação
-  mantêm a rolagem e destacam o item seguinte (`ListPosition` no Core, `AndroidListRemovalTests`); biblioteca e troféus
-  guardam só os textos dos TROPHY.TRP (`TrophyTextsCache` no Core) e leem os ícones quando aparecem
-  (`AndroidTrophyMemoryTests`); tela estreita: valor da linha vai para baixo do título, textos e filtros quebram linha
-  (`NarrowLayout`). Ficam para quando existirem no PC: "Compilar shaders ao carregar o programa" (hoje só
-  `--compile-on-program-load`, sem opção no launcher) e a pré-compilação de código ARM (agente aot1).
-- [ ] [P2][M] Paridade PC/Android das entregas de 20-21/11 (fix/andpar3), **feito no código, falta validar no aparelho**:
-  "Precompilar código ARM" espera a etapa de boot como no desktop (era tudo em segundo plano no celular), com o cartão
-  de progresso e Cancelar sobre o jogo (`CodePrecompileLog.Reported`, `CodePrecompileBanner`); MSAA por jogo e no menu
-  de pausa com os 3 modos do F3 do desktop (nativo, superamostragem 2x, desligado; era só nativo/desligado);
-  `VITASHARP_NET_ALLOW` do env.txt limita a internet real como o `--net-allow` (`AndroidDeliveryParityTests`).
-  Conferido igual nos dois (código comum): cache de código e fronteira, compilar ao carregar o programa e workers de
-  shaders (mesmos padrões, `VITASHARP_COMPILE_ON_PROGRAM_LOAD`/`VITASHARP_SHADER_WORKERS` pelo env.txt), seed de
-  profundidade entre emulações de MSAA, liberação dos recursos da GPU no fim do processo, save state com plugins de
-  kernel e threads de serviço, licenças PSM, exceção do servidor de atualização do PSP, exceções da CPU para o
-  SceExcpmgr (kubridge), áudio sem aparelho ritmado pelo relógio do guest. No aparelho: (a) Killzone com cache de
-  código: o cartão aparece no 1º boot, some sozinho e o Cancelar começa o jogo na hora; medir quanto a etapa
-  espera no celular (no PC 0,6-1,2 s); (b) MSAA superamostragem 2x no menu de pausa troca o renderizador sem
-  travar e o fps; (c) o teto de arena por plataforma (64 MiB de pré-compilação no Android) entra com o feat/aot4.
 - [ ] [P2][M] Dead Space (port, DEADSPACE) no Android sem som e engasgando (relato do usuário, 15/11/2026, APK build-1f8c024, com "Ativar Plugins do Kernel" e kubridge + fd_fix; no PC roda com som). Logs do celular guardados pelo lead (`<scratchpad>ds_android`). Ler o log primeiro: áudio (saída aberta? grãos/s), fps e tiers da CPU, threads em espera; comparar com o PC na mesma cena.
 - [x] Paridade de opções PC/Android: toda opção do launcher do desktop também no app Android, com o mesmo nome, padrão
   e efeito (`AndroidOptionParityTests`; regra no README, "Code style"). Feito: compilação rápida de shaders e
@@ -2168,6 +2146,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   cobria nada. Faltam: o cache de nomes (+0x70) e o vnode de cima (+0x98) que o vfsRead usa, o cache de buffers do
   vnode (+0x5C), a classe SceVfsFile como SceClass de guest (ksceGUIDReferObjectWithClass com ela) e o +0x28 do
   arquivo dummy (um dado estático do iofilemgr).
+  Entrega movida para "Corrigido, falta o usuário testar" (kernel HLE completo, save state com plugins de kernel, vfsMount/pipes, Dead Space com kubridge, 22/11/2026); o resto segue aberto aqui.
 - [ ] [P3][G] Modelo do chip syscon para o SceSysconForDriver (311 exportações, 198 importadas pelos módulos de kernel do
   FW 3.74). 117 delas montam um pacote (comando de 16 bits, tamanho, dados) e chamam ksceSysconCmdExec/CmdExecAsync; o
   syscon.skprx decompilado está em `fw374\decomp\os0__kd__syscon.skprx.c` (só estudo). Fazer: um modelo C# do chip (os
@@ -2194,6 +2173,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   ksceSblACMgrIsDevelopmentMode; 1574E1A4 montagem por id 0x6A/0x6B/0xCD/600/900; 324DD34E; E8DB7942; 504023C8);
   SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver 14
   (layout dos objetos da libult na memória do processo).
+  Entrega movida para "Corrigido, falta o usuário testar" (reboot do sistema, kernN, 22/11/2026); o resto segue aberto aqui.
 - [ ] [P3][G] sceAppMgrPspSaveDataRootMount (HLE) escreve `ux0:pspemu` como ponto de montagem sem registrar uma
   montagem no AppMgr, então um sceAppMgrUmount dele falha: conferir no appmgr 3.74 o que é montado (o SAVEDATA do
   emulador de PSP) e o ponto devolvido, e depois fazer o par do apputil.suprx NID_C3CB128B/NID_C0418B1C (montagem da
@@ -3303,6 +3283,108 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   correção). É do roteiro de teste, não do jogador: falta a série no celular (load seguido de outro, slot livre) para
   saber se o 2º load do usuário congela
   Correção: 90f1ceb8 (merge db7044ef, 15/11/2026): o passo scripted de save/load state roda uma vez mesmo com várias threads lendo o pad. Teste: no celular, carregar um estado e logo em seguida carregar outro; o jogo não deve congelar.
+- [ ] (22/11/2026, na main, falta testar) [P2][M] Paridade PC/Android das entregas de 17-18/11 (feat/andpar), **feito no código, falta validar no aparelho**:
+  "Carregar o cache de shaders antes de jogar" em Ajustes e na página do jogo, com o cartão de progresso e Cancelar
+  sobre o jogo (`ShaderCacheLoad.Reported`, `AndroidShaderCacheLoadTests`); o teste de paridade agora classifica toda
+  opção do `LauncherSettings`/`GameOptions` e falha com uma opção nova sem par no Android; mapeamento: gravação pelo
+  `BindingRecorder` (a linha "Pausar emulação" grava só a combinação final, que dispara no jogo só com todos os botões
+  apertados) e linha "Salvo"/"Alterações não salvas" (`PadCaptureTests`); desinstalar um jogo e apagar uma gravação
+  mantêm a rolagem e destacam o item seguinte (`ListPosition` no Core, `AndroidListRemovalTests`); biblioteca e troféus
+  guardam só os textos dos TROPHY.TRP (`TrophyTextsCache` no Core) e leem os ícones quando aparecem
+  (`AndroidTrophyMemoryTests`); tela estreita: valor da linha vai para baixo do título, textos e filtros quebram linha
+  (`NarrowLayout`). Ficam para quando existirem no PC: "Compilar shaders ao carregar o programa" (hoje só
+  `--compile-on-program-load`, sem opção no launcher) e a pré-compilação de código ARM (agente aot1).
+  Na main: merge de feat/andpar. Testar (no celular): Ajustes > "Carregar o cache de shaders antes de jogar" liga/desliga e o
+  cartão de progresso com Cancelar aparece sobre o jogo; apagar um jogo ou uma gravação mantém a rolagem; tela estreita
+  quebra as linhas em vez de cortar.
+- [ ] (22/11/2026, na main, falta testar) [P2][M] Paridade PC/Android das entregas de 20-21/11 (fix/andpar3), **feito no código, falta validar no aparelho**:
+  "Precompilar código ARM" espera a etapa de boot como no desktop (era tudo em segundo plano no celular), com o cartão
+  de progresso e Cancelar sobre o jogo (`CodePrecompileLog.Reported`, `CodePrecompileBanner`); MSAA por jogo e no menu
+  de pausa com os 3 modos do F3 do desktop (nativo, superamostragem 2x, desligado; era só nativo/desligado);
+  `VITASHARP_NET_ALLOW` do env.txt limita a internet real como o `--net-allow` (`AndroidDeliveryParityTests`).
+  Conferido igual nos dois (código comum): cache de código e fronteira, compilar ao carregar o programa e workers de
+  shaders (mesmos padrões, `VITASHARP_COMPILE_ON_PROGRAM_LOAD`/`VITASHARP_SHADER_WORKERS` pelo env.txt), seed de
+  profundidade entre emulações de MSAA, liberação dos recursos da GPU no fim do processo, save state com plugins de
+  kernel e threads de serviço, licenças PSM, exceção do servidor de atualização do PSP, exceções da CPU para o
+  SceExcpmgr (kubridge), áudio sem aparelho ritmado pelo relógio do guest. No aparelho: (a) Killzone com cache de
+  código: o cartão aparece no 1º boot, some sozinho e o Cancelar começa o jogo na hora; medir quanto a etapa
+  espera no celular (no PC 0,6-1,2 s); (b) MSAA superamostragem 2x no menu de pausa troca o renderizador sem
+  travar e o fps; (c) o teto de arena por plataforma (64 MiB de pré-compilação no Android) entra com o feat/aot4.
+  Na main: 0e8a2518, merge f2d5dbe6 (fix/andpar3). Testar (no celular, Killzone): no 1º boot com cache de código o cartão
+  "Precompilar código ARM" aparece, some sozinho e o Cancelar começa o jogo na hora; menu de pausa > MSAA > superamostragem
+  2x troca sem travar (anote o fps).
+- [ ] (22/11/2026, na main, falta testar) [P2][P] Launcher com a janela menor: botões e textos são cortados em vez de quebrar para a linha de baixo
+  (relato do usuário, 18/11/2026, print de 18/11 19:34): na página Sistema do Vita, a linha "Instalar firmware (.PUP)... /
+  Usar o firmware do Vita3K / Desinstalar firmware" corta o terceiro botão ("Uninstall f") no meio do cartão. Fazer
+  as linhas de botões quebrarem (WrapPanel), os textos longos quebrarem/encolherem e as duas colunas virarem uma só
+  abaixo de uma largura mínima, em todas as páginas do launcher (Sistema, Configurações, página do jogo, Troféus,
+  Capturas, Instalar), com teste headless em larguras pequenas (nenhum controle fora do próprio cartão)
+  Na main: 21c406b8 e 05aca05c. Testar: estreitar a janela do launcher (página Sistema do Vita, Configurações, jogo,
+  Troféus, Capturas, Instalar) e ver botões e textos quebrando linha, sem nada cortado.
+- [ ] (22/11/2026, na main, falta testar) [P3][P] Ao apagar um item da lista (biblioteca de jogos do launcher), a rolagem volta para o topo (pedido do
+  usuário, 17/11/2026): manter a posição da rolagem onde estava, com o foco no item seguinte ao apagado; o mesmo nas
+  outras listas com apagar (saves, capturas) e no app Android quando ele voltar
+  Feito no desktop (18/11/2026, feat/pend1, a confirmar pelo usuário): desinstalar um jogo (pela página dele) volta à
+  biblioteca na rolagem de antes, com o foco no jogo seguinte (grade e lista); voltar da página de um jogo também
+  mantém a rolagem; apagar uma captura (página Capturas e lista da página do jogo) mantém a rolagem com o foco na
+  captura seguinte (`ListDeleteKeepsPositionTests`). Não há lista de saves com apagar no launcher. Falta: o app
+  Android (pausado).
+  (18/11/2026, usuário: a parte do desktop confirmada como corrigida; o app Android segue aberto)
+  Android na main: 84c6d25c (desktop: e4aa9dac, já confirmado). Testar: desinstalar um jogo e apagar uma captura (desktop e
+  Android) e ver a rolagem ficar onde estava, com o foco no item seguinte.
+- [ ] (22/11/2026, na main, falta testar) [P3][G] Kernel HLE completo do FW 3.74: o censo das exportações de kernel está em 0 faltando
+  (3409 HLE + 509 em resposta padrão; `014cf17c`, `0b6e7456`, lotes kernA a kernM, merges 53ded519, 21552e4b, c1da55a6, 7ff1c555).
+  O que ainda está em resposta padrão e o hardware (syscon, secure monitor) seguem no item "Plugins de kernel" e no "Kernel de
+  software ainda em resposta padrão". Testar: com "Ativar Plugins do Kernel" ligado, abrir o Sistema do Vita e um jogo e
+  ver que o boot segue como antes; no log não deve aparecer "Unimplemented HLE function" de função de kernel.
+- [ ] (22/11/2026, na main, falta testar) [P1][M] Save state com plugins de kernel ativos (fix/ss2 040b30f2, fix/ss3 a00cd145, fix/ss4
+  f287c86f): as threads de serviço (work queue do kernel, thread de interrupção, fila de display do GXM, callbacks do
+  NpMatching2, tworkers) e o banco de bibliotecas seguem o estado. Testar: com "Ativar Plugins do Kernel" ligado e um
+  jogo rodando (de preferência o Dead Space ou outro com plugin), salvar o estado, jogar mais um pouco, carregar e
+  seguir sem travar; repetir com o shell aberto.
+- [ ] (22/11/2026, na main, falta testar) [P1][G] PSM, licenças (fix/psm3 8132d374, fix/psm4 d0aa0cdc): a licença fica em RO/License com o nome
+  que o runtime abre e scePsmDrmGetRifInfo/GetRifKey respondem como o SceNpDrm 3.74. A chave de uma licença sem assinatura só
+  vem de um plugin de kernel que faça hook da exportação (`NoPsmDrm` na seção `*KERNEL` de `ur0:tai/config.txt`, com
+  "Ativar Plugins do Kernel"). Testar: instalar o plugin como acima, reinstalar/abrir um jogo de PSM do seu usuário pelo
+  shell e ver se passa da checagem de licença (antes parava no erro 0x808F04FF); sem o plugin deve continuar recusando.
+  Pode parar mais adiante (Mono/Piglet ainda não foram vistos rodando): mande o log.
+- [ ] (22/11/2026, na main, falta testar) [P1][M] Vidro da cabine do MGS3 (fix/mgs3g dd0f03e5, e95171c3): a profundidade carregada entre
+  emulações de MSAA agora é reamostrada para o mapeamento de amostras da imagem. Vale para MSAA superamostragem (ss) e
+  desligado; o MSAA nativo ainda precisa de uma captura "Gravar tudo" se continuar errado. Testar: MGS3, abertura no avião,
+  vista externa "Flying over Pakistan", com MSAA em superamostragem 2x (F3) e depois desligado: vidros e hélices certos.
+- [ ] (22/11/2026, na main, falta testar) [P1][M] Textura do MGS3 depois de trocar de jogo, só a parte da GPU (fix/vram1 ef352ffa, bfa12a55):
+  tudo o que foi feito com a memória de um processo que terminou é liberado (os render targets do God of War ficavam).
+  A causa do quadro quase vazio (o jogo manda menos draws) segue aberta no item de origem. Testar: shell > MGS HD > God of
+  War Collection > fechar > MGS de novo, abertura do MGS3; confira a cabeça do tripulante e, se ainda estiver errado, grave
+  com "Gravar tudo" (e uma do MGS aberto direto, sem a troca).
+- [ ] (22/11/2026, na main, falta testar) [P2][G] Pré-compilação do código ARM (feat/aot3 07e78bf5): prioridade da função que roda, referências
+  de executável sem relocações, fronteira de 1 chamada, teto de metade da arena, etapa de boot que espera só os primeiros
+  blocos. Medido: AC3L 63% -> 90% do código pré-compilado, Killzone 2ª sessão 100%. Testar: Killzone ou AC III Liberation,
+  ligar "Precompilar código ARM", 1º boot com a barra e o Cancelar; na 2ª sessão o jogo não deve engasgar por compilação.
+- [ ] (22/11/2026, na main, falta testar) [P2][G] Engasgos de shader (feat/uber2 8041868f, perf/uber3 0738b224, perf/uber4 51085928): pipelines do
+  passe de fetch, de saída inteira e a ordem dos workers (pipeline antes dos shaders posteriores); no replay frio
+  quadros lentos por pipeline foram a 0. Testar: Killzone, AC III Liberation ou Uncharted, 2ª sessão com "Carregar o cache de
+  shaders antes de jogar" ligado: menos travadinhas ao entrar em cenas novas (a 1ª sessão ainda engasga).
+- [ ] (22/11/2026, na main, falta testar) [P1][M] Dead Space (port) com plugins de kernel (f147edf2, exc1 ea10af09): o jogo achava
+  "You need to install kubridge.skprx" porque a busca de módulo de kernel olhava só o processo dele; agora usa a lista do
+  kernel. Testar: com "Ativar Plugins do Kernel", kubridge.skprx e fd_fix em `ur0:tai`, abrir o Dead Space (PC): deve passar
+  daquela mensagem; o kubridge ainda depende do taiHEN real (ver o item do Adrenaline), então pode parar depois: mande o log.
+  O Dead Space no Android (sem som, engasgos) segue aberto.
+- [ ] (22/11/2026, na main, falta testar) [P2][M] Adrenaline, download do PSP 6.61 (454ab99d): os servidores de imagem de atualização do PSP
+  respondem como num Vita (PSN continua bloqueado). Testar: abrir o Adrenaline (PSPEMUCFW) e iniciar a instalação do 6.61:
+  o download deve começar. O fechamento em `taiLoadStartKernelModuleForUser` continua aberto (item em "Bugs em aberto").
+- [ ] (22/11/2026, na main, falta testar) [P3][G] Sistemas de arquivo de plugins de kernel e eventos (kernJ 58a8f546, kernK 42236d9d, kernL
+  19754e7b): vfsMount/vfsUmount de verdade, vnodes e lseek de 64 bits, arquivo/lock/pool de vnode, montagem empilhada sobre
+  pastas do host, e as message pipes e a E/S assíncrona no núcleo de eventos do firmware (d3cfe391). Testar: jogo com
+  plugin de kernel que monta um sistema de arquivos (ex.: plugin de armazenamento) lista e lê os arquivos; jogos que usam
+  message pipe abrem como antes.
+- [ ] (22/11/2026, na main, falta testar) [P3][M] Reboot do sistema emulado (kernN 8a6177fc, 2d316497): as requisições de reset de energia
+  (ScePower SoftReset, tipos de reset do syscon) reiniciam o sistema emulado, e o host boota de novo. Testar: no Sistema do
+  Vita, Desligar/Reiniciar pelo menu de energia: o sistema deve reiniciar do boot em vez de fechar a janela.
+- [ ] (22/11/2026, na main, falta testar) [P2][M] MSAA superamostragem em GPU tile-based (fix/cifix12 cf490c1b, f2ea2e89): a área de render
+  cortada multiplicava os retângulos só pela escala de resolução e, em cena supersampled, só o canto superior esquerdo era
+  desenhado. Testar (no celular, Mali ou Adreno): um jogo com MSAA superamostragem 2x (menu de pausa): imagem completa,
+  sem só um quarto da tela desenhado.
 
 ## Bugs em aberto
 - [ ] [P2][G] CI: no runner Linux os testes de GPU do renderer são pulados ("shaderc not available ... install
@@ -3327,6 +3409,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   está em `ur0:tai/` do usuário; fazer o boot dos plugins carregar o `taihen.skprx` real primeiro (como o HENkaku faz)
   e deixá-lo ler o `config.txt`, para que as exportações taihen* sejam as dele e não stubs do HLE. Teste: um app
   sintético que chama taiLoadStartKernelModuleForUser recebe o UID do módulo carregado pelo taihen real.
+  Entrega movida para "Corrigido, falta o usuário testar" (download do PSP 6.61, 22/11/2026); o resto segue aberto aqui.
 - [ ] [P1][M] The Amazing Spider-Man (PCSE00333), tela de pausa piscando (relato do usuário, 21/11/2026; captura
   `PCSE00333_20261121_232645_tudo`, 4,3 s a 60 fps, dump da GPU de 198 quadros): o menu de pausa ("RESUME" e as
   opções abaixo, sobre o fundo com a aranha) pisca; na folha de contatos as opções abaixo de "RESUME" quase não
@@ -3352,12 +3435,6 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   e "pré-compilando código ARM" (N/total) com barra e Cancelar, na tela de carregamento do PC e do Android (o Android
   já tem o cartão da pré-compilação do andpar3: usar o mesmo modelo), com os nomes corretos dos dois conceitos.
 
-- [ ] [P2][P] Launcher com a janela menor: botões e textos são cortados em vez de quebrar para a linha de baixo
-  (relato do usuário, 18/11/2026, print de 18/11 19:34): na página Sistema do Vita, a linha "Instalar firmware (.PUP)... /
-  Usar o firmware do Vita3K / Desinstalar firmware" corta o terceiro botão ("Uninstall f") no meio do cartão. Fazer
-  as linhas de botões quebrarem (WrapPanel), os textos longos quebrarem/encolherem e as duas colunas virarem uma só
-  abaixo de uma largura mínima, em todas as páginas do launcher (Sistema, Configurações, página do jogo, Troféus,
-  Capturas, Instalar), com teste headless em larguras pequenas (nenhum controle fora do próprio cartão)
 - [x] (18/11/2026, usuário: corrigido; reabre se aparecer de novo) [P1][M] PSVitaAlive (PSVAS1178, homebrew vita2d), bug gráfico no teclado de busca (usuário, 17/11/2026; captura
   `captures/PSVAS1178_20261117_215911_tudo`, 41 achados [flash]): em quadros isolados faltam as teclas e parte do
   texto ("9/12" em vez de "9/128") e triângulos saem do canto superior esquerdo. Causa (replay do gpu.vsgd, quadro
@@ -3398,15 +3475,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   de um plugin de kernel que faz hook da exportação; a palavra +0x18 da licença responde 0x808F0109; o leitor
   pss_crypto_* do HLE da mono_bridge pede a chave a scePsmDrmGetRifKey (mesmas checagens, ativação e hooks), sem ler
   a licença por fora.
-- [ ] [P3][P] Ao apagar um item da lista (biblioteca de jogos do launcher), a rolagem volta para o topo (pedido do
-  usuário, 17/11/2026): manter a posição da rolagem onde estava, com o foco no item seguinte ao apagado; o mesmo nas
-  outras listas com apagar (saves, capturas) e no app Android quando ele voltar
-  Feito no desktop (18/11/2026, feat/pend1, a confirmar pelo usuário): desinstalar um jogo (pela página dele) volta à
-  biblioteca na rolagem de antes, com o foco no jogo seguinte (grade e lista); voltar da página de um jogo também
-  mantém a rolagem; apagar uma captura (página Capturas e lista da página do jogo) mantém a rolagem com o foco na
-  captura seguinte (`ListDeleteKeepsPositionTests`). Não há lista de saves com apagar no launcher. Falta: o app
-  Android (pausado).
-  (18/11/2026, usuário: a parte do desktop confirmada como corrigida; o app Android segue aberto)
+  Entrega movida para "Corrigido, falta o usuário testar" (PSM psm3/psm4, 22/11/2026); o resto segue aberto aqui.
 - [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053) trava no boot, nunca mostra o primeiro quadro (usuário,
   17/11/2026; primeiro teste do jogo). Captura `captures/PCSE00053_20261117_012258_tudo`: 7 min no quadro 0 (0 fps,
   só a imagem de boot), áudio aberto mas em silêncio. Os threads do motor (Gear) foram todos criados, NGS e GXM
@@ -3557,6 +3626,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   suspend/resume com outro jogo rodando (modelos do cenário não carregados, streaming ou animação da cutscene
   parados); as threads do MGS no início da captura não estão presas em nada anormal. Falta a captura do mesmo plano
   com o MGS aberto direto (pedida ao usuário em 16/11) para separar "depende da troca" de "o plano é assim aqui".
+  Entrega movida para "Corrigido, falta o usuário testar" (liberação dos recursos da GPU, vram1, 22/11/2026); o resto segue aberto aqui.
 - [x] (18/11/2026, usuário: corrigido; reabre se aparecer de novo) [P1][G] Metal Gear Solid HD Collection (PCSE00020), subitem que sobrou do relato de 11/11/2026 (o resto está em "Corrigido, falta o usuário testar"):
   - **Ainda aberto: escurecimento de um quadro (cabeça do tripulante e bloom, flashes 2752-2778 da captura
     010709; são os flashes que sobram com a correção acima).** No replay do dump 010709 (quadros 2740-2790) aparecem
@@ -3929,6 +3999,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
     ou arquivo no log. Uma tentativa só; próximo: `--trace-hle-only=sceIo+sceFios+sceKernelSignalCond` nesse boot para
     ver se a operação chegou ao sceIo e quem deveria acordar o escalonador do FIOS (pode ser o mesmo tipo de corrida
     da trava do MGS3).
+  Entrega movida para "Corrigido, falta o usuário testar" (vidro do MGS3, mgs3g, 22/11/2026); o resto segue aberto aqui.
 - [x] [P2][M] (15/11/2026, confirmado pelo usuário; parte (1), o L2, corrigido em c7ab6b57/4402b87a) Android, controle conectado no celular (relato do usuário, 10/11/2026): (1) o L2 não funciona (conferir o
   mapeamento do eixo/botão do gatilho: no Android o L2 pode chegar como AXIS_LTRIGGER/AXIS_BRAKE ou KEYCODE_BUTTON_L2,
   conforme o controle; o Vita não tem L2, então conferir para o que o VitaSharp o mapeia (toque traseiro/atalho) e se
@@ -6123,6 +6194,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   nativo não serve o formato; cópia só com VITASHARP_MSAA_FETCH=copy) e o tile-based é do Android. Nenhum log ou
   gravação do usuário nem execução no `<scratchpad>` tem o aviso `... which the scene cannot keep (...)`; sem jogo
   que precise, não mexi
+  Entrega movida para "Corrigido, falta o usuário testar" (MSAA ss em tile-based, cifix12, 22/11/2026); o resto segue aberto aqui.
 - [x] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
   Feito (10/11/2026, agente B, fix/bugs-b-2), pelo libfiber.suprx 3.74 desmontado: as checagens do
   _sceFiberAttachContextAndRun/AndSwitch seguem a ordem do firmware (NULL; fiber ou contexto desalinhado; Run já dentro
