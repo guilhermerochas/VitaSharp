@@ -265,7 +265,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 30;
+    public const int GeneratorVersion = 31;
 
     /// <summary>Clip distances the generated vertex shaders may write (index 0 the far plane, 1-7 the GXM user clip
     /// planes 0-6): the Vulkan minimum of maxClipDistances.</summary>
@@ -1633,6 +1633,13 @@ float packC10(vec3 c) {
             rawBits = 32;
             rawWords = nativeWords;
         }
+
+        int packedHalfWords = rawBits == 0 ? NativePackedHalfSurfaceWords(program, hints, usseTranslator) : 0;
+        if (packedHalfWords != 0)
+        {
+            rawBits = 16;
+            rawWords = packedHalfWords;
+        }
         // a float colour stored as its bits through the integer view of a 32-bit float surface (ShaderHints.FloatBitsOutput)
         bool floatBits = rawBits == 0 && hints.FloatBitsOutput && !result.UsesFragColor && FloatBitsOutputPossible(hints.ColorFormat);
         if (rawBits != 0)
@@ -1795,6 +1802,46 @@ float packC10(vec3 c) {
             _ => 0,
         };
         return registerWords == surfaceWords ? surfaceWords : 0;
+    }
+
+    /// <summary>
+    /// Words (1 or 2) of the output register that a native-colour program stores unconverted into a half-float surface
+    /// (F16F16F16F16, F16F16) because it left packed integer data in o0, or 0. The program was created with an explicit
+    /// output register format exactly the size of the pixel (HALF4/FLOAT2 on the 64-bit surface, a 32-bit format on
+    /// F16F16), so the tile store copies the register bits: there is no conversion between the register and a surface
+    /// of the same layout. HELLDIVERS creates its G-buffer programs (declared half4) with HALF4 on a 960x544
+    /// F16F16F16F16 surface, packs the RGBA8 albedo into o0.x and the S8 normal into o0.y, and samples the surface back
+    /// as U8U8U8U8 at +0 and S8S8S8S8 at +4. Read as the bytes of o0.x into the float view, the albedo became four
+    /// halves and the normal was lost (green, saturated ships and planet on the title screen). A real half colour in
+    /// o0 keeps the converted path (and fixed-function blending); swizzled surfaces are left to it too.
+    /// </summary>
+    private static int NativePackedHalfSurfaceWords(GxpProgram program, ShaderHints hints, UsseTranslator usseTranslator)
+    {
+        if (!program.IsNativeColor || hints.OutputRegisterFormat == 0 || ((hints.ColorFormat >> 20) & 3) != 0)
+        {
+            return 0;
+        }
+
+        int surfaceWords = (hints.ColorFormat & 0xF1800000) switch
+        {
+            0x01000000 => 2, // F16F16F16F16
+            0x00800000 => 1, // F16F16
+            _ => 0,
+        };
+        int registerWords = hints.OutputRegisterFormat switch
+        {
+            5 or 7 => 2,                     // HALF4, FLOAT2: 64 bits
+            1 or 2 or 3 or 4 or 6 or 8 => 1, // UCHAR4, CHAR4, USHORT2, SHORT2, HALF2, FLOAT: 32 bits
+            _ => 0,
+        };
+        if (surfaceWords == 0 || registerWords != surfaceWords)
+        {
+            return 0;
+        }
+
+        bool packed = usseTranslator.WordType(Bank.Output, 0) is DataType.UInt8 or DataType.Int8 or DataType.O8
+            or DataType.UInt16 or DataType.Int16 or DataType.UInt32 or DataType.Int32;
+        return packed ? surfaceWords : 0;
     }
 
     public static int RawOutputBits(GxpProgram program, uint colorFormat)

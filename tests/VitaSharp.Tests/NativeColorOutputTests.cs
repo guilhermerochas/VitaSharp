@@ -194,13 +194,49 @@ public class NativeColorOutputTests
     [InlineData(0x11000000u, 1u)] // UCHAR4 (4 bytes) on F32F32 (8 bytes): sizes differ
     [InlineData(0x10800000u, 5u)] // HALF4 (8 bytes) on F32 (4 bytes)
     [InlineData(0x00000000u, 5u)] // U8U8U8U8 surface: converted colour, as before
-    [InlineData(0x01000000u, 5u)] // F16F16F16F16 surface: converted colour, as before
+    [InlineData(0x01000000u, 6u)] // HALF2 (4 bytes) on F16F16F16F16 (8 bytes): sizes differ
+    [InlineData(0x00800000u, 5u)] // HALF4 (8 bytes) on F16F16 (4 bytes)
+    [InlineData(0x01100000u, 5u)] // swizzled F16F16F16F16 surface: host layout differs
     [InlineData(0x11000000u, 0u)] // not created with an explicit register format: declared type, as before
+    [InlineData(0x01000000u, 0u)] // F16F16F16F16 without an explicit register format: declared type
     public void OtherSurfacesAndRegisterSizesKeepTheConvertedColour(uint colorFormat, uint outputFormat)
     {
         GeneratedShader gen = GenerateOn(s_gbufferWords, colorFormat, outputFormat);
         Assert.Equal(0, gen.RawColorBits);
         Assert.DoesNotContain("out_raw", gen.Glsl);
+    }
+
+    [Fact]
+    public void PackedWordsOnF16x4SurfaceAreStoredAsRawBits()
+    {
+        // HELLDIVERS G-buffer (fs 5CA57D88E2153AF0, declared half4, created with HALF4, 960x544 F16F16F16F16 surface):
+        // the 64-bit output register goes to the pixel unconverted and the surface is sampled back as U8U8U8U8 albedo
+        // at +0 and S8S8S8S8 normal at +4. Read as the bytes of o0.x into the half view, the albedo became four halves
+        // and the normal was dropped (green, saturated ships and planet on the title screen)
+        GeneratedShader gen = GenerateOn(s_gbufferWords, 0x01000000, 5);
+        Assert.Equal(16, gen.RawColorBits);
+        Assert.Contains("uvec4 raw_words = uvec4(uvec2(floatBitsToUint(o[0].x), floatBitsToUint(o[0].y)), 0u, 0u);", gen.Glsl);
+        Assert.Contains("out_raw = uvec4(raw_words.x & 0xFFFFu, raw_words.x >> 16, raw_words.y & 0xFFFFu, raw_words.y >> 16);", gen.Glsl);
+        Assert.Equal(0, (int)gen.TileWord1);
+    }
+
+    [Theory]
+    [InlineData(1u)] // UCHAR4 on F16F16
+    [InlineData(6u)] // HALF2 on F16F16
+    public void PackedWordOnF16F16SurfaceIsStoredAsRawBits(uint outputFormat)
+    {
+        GeneratedShader gen = GenerateOn(s_gbufferWords, 0x00800000, outputFormat);
+        Assert.Equal(16, gen.RawColorBits);
+        Assert.Contains("uvec4 raw_words = uvec4(floatBitsToUint(o[0].x), 0u, 0u, 0u);", gen.Glsl);
+    }
+
+    [Fact]
+    public void HalfColourOnF16x4SurfaceKeepsTheConvertedColour()
+    {
+        // a real half colour in o0 (VPCK.F16.U8) is the colour the float attachment receives, and keeps blending
+        GeneratedShader gen = GenerateOn(s_halfColour, 0x01000000, 5);
+        Assert.Equal(0, gen.RawColorBits);
+        Assert.Contains("unpackHalf2x16(floatBitsToUint(o[0].y))", OutColor(gen.Glsl));
     }
 
     [Fact]
