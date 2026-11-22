@@ -257,3 +257,21 @@ shader that reads the framebuffer through `last_frag_in` (input attachment 0, pr
 and `colorAttachmentCount` 0. Adding the key's colour attachments to the fragment library and to the link did not
 remove it, so the call is not identified yet. The frames stay pixel-identical. This has to be fixed before the
 libraries can be turned on by default.
+
+## Shader workers by the CPU budget (perf/uber5, 21 November 2026)
+- `ShaderWorkerBudget`: at most 90% of the logical processors; while the GPU thread works, 2 of them stay with the guest
+  CPU thread and the GPU thread (8: 5 workers, 4 pinned: 2); from the GPU thread's first wait in a frame until that
+  frame's present, and while the game waits for the shader cache load, the whole budget runs (8: 7, 4: 3). Phones: 2
+  steady and 4 in a stall, on the LITTLE cores (slowest cpufreq cluster). `--shader-workers` / `VITASHARP_SHADER_WORKERS`
+  still fix the count.
+- References: yuzu/Eden (hardware threads - 1, low priority, `ThreadPlacement::Background`), Dolphin
+  (`clamp(cores - 3, 1, 4)`), RPCS3 (8 threads: 2, 12: 4, 16: 8, 24: 12, priority -1). All three share one
+  VkPipelineCache between the workers.
+- No global lock: shaderc locks only around glslang's process init (`GlslangInitializer`); each thread has its own
+  compiler. First frame of the PCSE00053 dump, cold, program load off, 4 pinned CPUs, quiet machine, fixed workers
+  1/2/3: 4,435/2,948/1,632 ms; without the shared VkPipelineCache 3 workers gave 1,769-1,901 ms (same within noise).
+- A pool that shrank back to the steady share after each wait of the same frame left the extra worker idle (first
+  frame 2,250 ms against 1,632 ms fixed): the stall budget is now held until the present.
+- Replays that ran 53-166 s instead of 12 s were CPU starvation (BelowNormal, pinned, other jobs at Normal; run time
+  followed the machine load in both builds; dotnet-stack showed the replay thread computing). Measure with the load
+  sampled during the run.
