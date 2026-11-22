@@ -916,7 +916,20 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   GTAVCECTY 670 → 676-680 MB, PCSE01023 587 → 596 MB. Sem dump do Killzone para medir o teto num jogo com ~670
   shaders. Também feito: teste guarda `ShaderGeneratorVersionTests` (hash do GLSL e dos metadados de ~430 casos
   sintéticos contra a `GeneratorVersion`: mudança de GLSL sem bump falha) e `replay-gpu` sem `--shader-cache` usa um
-  cache temporário, apagado no fim, com aviso no log (nunca o shadercache do usuário). Próximas partes: (3) estado dinâmico EDS3/vertex input onde houver; (4) Android: medir no
+  cache temporário, apagado no fim, com aviso no log (nunca o shadercache do usuário). Com a opção desligada
+  (perf/uber4, 21/11/2026, feito): os pipelines que sobravam na thread da GPU no replay frio (PCSE00053 8-13, PCSA00029
+  2-4, shell e PCSE01023 1) eram todos do 1º quadro do dump e estavam previstos certo pelo prefetch de draw (log em
+  modo debug: "pipeline jobs queued 88, running 0", depois "draw prefetch reached a pipeline the GPU thread built
+  itself"): os workers rodavam todos os shaders da fila antes de qualquer pipeline, e um quadro com 127 shaders novos
+  deixava os 40 pipelines atrás deles. Agora o pipeline mais antigo cujos shaders já não estão pendentes passa à frente
+  dos shaders de draws posteriores (ordem de submissão, como a thread da GPU precisa; teste
+  `RendererPathsTests.DrawPrefetchFinishesEachPipelineBeforeTheShadersOfLaterDraws`). Replay frio 2x alternado, opção
+  desligada, base → correção: PCSE00053 13/0 → 0/0, PCSA00029 4/2 → 0/0, shell 1/1 → 0/0, PCSE01023 1/0 → 0/0, o 2º
+  dump do PCSE00053 5/9 → 1/2 (e 1/0 em 2 execuções em modo debug: 1 pipeline de fetch pass previsto certo, 13 ms
+  atrasado, com os 2 workers ocupados e 17 jobs na fila: limite de vazão, alavanca da frente (3)), GTAVCECTY x2 e
+  PSVAS1178 0 → 0; opção ligada: 0 → 0 em todos; `--compare` dos 8 dumps nos dois modos pixel-idêntico. O engasgo do
+  1º quadro continua com a opção desligada (a thread da GPU passa a esperar os workers em vez de montar: 2,1-4,4 s no
+  PCSE00053 com a CPU da máquina a 83-96%), e é o que a opção ligada resolve. Próximas partes: (3) estado dinâmico EDS3/vertex input onde houver; (4) Android: medir no
   Killzone o tempo de carregamento a mais e a queda de pipelines no thread da GPU
 - [x] (16/11/2026, usuário: removido da lista; é regra de medição) [P3][P] Medidas de desempenho com a CPU saturada por outros trabalhos não valem: no Killzone (emulador quente, driver
   frio) o watchdog acusou a thread da GPU 11-31 s sem progresso, sem nada atribuído a shader/pipeline (pior 116 ms),
