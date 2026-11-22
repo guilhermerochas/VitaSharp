@@ -3274,6 +3274,11 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   Correção: 90f1ceb8 (merge db7044ef, 15/11/2026): o passo scripted de save/load state roda uma vez mesmo com várias threads lendo o pad. Teste: no celular, carregar um estado e logo em seguida carregar outro; o jogo não deve congelar.
 
 ## Bugs em aberto
+- [ ] [P1][M] HELLDIVERS (PCSA00134), cores erradas na tela de título (relato do usuário, 21/11/2026; captura
+  `shell_20261121_233801_tudo`, 6,3 s a 60 fps, dump da GPU de 168 quadros): as naves e o planeta saem verde-saturado
+  (as naves deveriam ser cinza-metálicas), o fundo azul e o logo parecem certos. Suspeita: canal/formato trocado ou
+  swizzle numa textura ou num alvo intermediário da iluminação; comparar no replay do dump draw a draw onde o verde
+  aparece.
 - [ ] [P1][G] Aumentar a resolução interna em jogo falha (relato do usuário, 21/11/2026; log da sessão shell de 23:34):
   duas tentativas de 1x -> 2x respondem `Internal resolution 1x -> 2x not applied: thread 'SceShellMusicCoreCacheIo' is
   running guest code` (a troca usa o mesmo ponto seguro do save state, que exige todas as threads paradas; uma thread
