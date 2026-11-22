@@ -346,8 +346,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   3 só de programas com SDK anterior a 2.50. Prova: `GxmFlowTests.YuvProfileAndVisibilityBufferFollowTheFirmwareChecks`
   (falha sem a correção). O renderizador não lê esses campos (o decodificador YUV usa as matrizes fixas, CSC1 = BT.601
   full), então a imagem não muda; usar o perfil do contexto no decodificador é parte do item de GXM acima.
-- [ ] [P3][M] **Mídia:** decodificação de vídeo e áudio pelo contrato do Vita no desktop e no Android (já existe a base em
-  `MediaContract`/`MediaParityTests`).
 - [ ] [P3][M] **Sistema de arquivos, carregador e módulos:** montagens, patches por origem, NIDs, imports/exports, permissões
   de módulos de sistema.
 - [x] [P3][M] **Save states:** ida e volta de cada módulo HLE e do escalonador com threads em espera. Feito
@@ -825,54 +823,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   1,7-6,8 s (leitura ~3,1 GB/s, AES-CTR ~4 GB/s, PFS ~8,5 GB/s; a gravação, 240-1160 MB/s, é o limite). Arquivos
   instalados idênticos (SHA-256 dos 207 arquivos). VPK no mesmo pipeline; progresso com MB/s e tempo restante no
   launcher e no Android, no máximo a cada 100 ms
-- [ ] [P2][G] Engasgos da primeira vez: montar os pipelines que faltam com `VK_EXT_graphics_pipeline_library` (ligação
-  rápida, sem otimizar, no thread da GPU) e trocar pelo otimizado em segundo plano; prever também as variantes
-  tile-word e de saída inteira. Pular o desenho foi analisado e descartado: quase nada do que trava pode ser pulado
-  sem risco (Killzone 0 de 91 engasgos, Tearaway 1 de 14), ver `docs/notes/pipeline-skip.md`
-  Tentado em 07/11/2026 (perf/desktop-res) e descartado: no Killzone com cache frio o thread da GPU passou a montar
-  mais pipelines (18,8-21,4 s contra 5,0-10,7 s; os mesmos ~90 quadros acima de 16,7 ms), porque no driver da NVIDIA
-  a biblioteca de shader custa quase um pipeline inteiro e o Killzone tem tantos shaders quanto pipelines. O limite é a
-  vazão de compilação (2 workers); ver `docs/notes/pipeline-skip.md`. Próximo passo, se voltar: mais workers ou
-  pipelines.list pré-gerado por jogo
-  Rodada de 08/11/2026 (perf/desktop-12; Injustice `inj_fight` novo cenário com luta no Treino, Killzone `kz_skin`,
-  FIFA 13; GTX 1650, 4 CPUs fixadas, caches frios = `--shader-cache` e cache do driver NVIDIA novos). Antes: Injustice
-  frio 61-83 desenhos travados (5,4-6,6 s) em 33-40 quadros, Killzone frio 375 desenhos (13,5 s), 95 quadros >= 16,7 ms.
-  Onde está o tempo: o driver da NVIDIA leva 60-90 ms por pipeline (83 ms medidos no replay, sozinho, sem disputa) e
-  quase cada pipeline é um par de shaders novo (Injustice 115 pipelines / 105 pares, Killzone 552 / 533); o shaderc em
-  `zero` leva 2-12 ms por shader. O jogo pede o pipeline ~1 quadro depois do prefetch, então cada pipeline novo custa
-  quase os seus 60-90 ms. Medido e descartado: `--shaderc-opt=perf` (driver 83 -> 59 ms por pipeline, mas shaderc 12 ->
-  80 ms por shader: pior), sem `VkPipelineCache` (sem ganho; não serializa), 4 workers em 4 CPUs (mesmos engasgos, CPU
-  cheia), normalizar a chave do pipeline (estado de blend desligado, sem cor, layout de vértice: 2 duplicatas em 115,
-  3 em 552). Ubershader: não cabe (USSE arbitrário). Feito: shaderc e o tradutor aquecidos em segundo plano (o 1º shader
-  novo de uma sessão com cache quente: ~20 ms em vez de ~150-190 ms; 08aede3), prewarm também nos workers (cache do driver
-  frio: Killzone 21-22 s -> 11 s; 5ca2e0a) e o renderizador trocado (F1/F3/load state) passa a abrir os caches do jogo
-  (7d73f91). O que sobra no cache frio é o custo do driver por pipeline novo; só cai pulando desenho (descartado) ou
-  com menos SPIR-V por shader (gerar GLSL menor: o `-O` mostrou ~30% a menos no driver)
-  Segunda tentativa em 13/11/2026 (perf/desktop-26), no estilo do DXVK: quatro bibliotecas, ligadas sem LTO, inclusive
-  nos passes MSAA; o pipeline otimizado é compilado por último nos workers e trocado depois. Exige
-  `graphicsPipelineLibraryFastLinking`; fica desligada nos blobs de celular (`GpuQuirk.AvoidPipelineLibrary`) e nos
-  perfis mobile. Ficou no código desligada (`VITASHARP_PIPELINE_LIBRARY=1` liga), com o contador
-  `PipelineStats.CriticalPath` e o teste `RendererPipelineLibraryTests`. Medido no Killzone (GTX 1650, 4 CPUs):
-  no replay do dump F8, 488 compilações de estágio viram 346 bibliotecas (-29%), mas uma biblioteca custa ~metade de
-  um pipeline (pior quadro 31,3 -> 28,8 s; quadros idênticos). Em gameplay com os caches frios, piorou: 80 quadros
-  >= 16,7 ms contra 62 e 25,6 s parados contra 14,4 s, porque as bibliotecas tiram tempo dos 2 workers. O prewarm por
-  bibliotecas com o driver frio levou 51,5 s contra 19,7 s (removido). Já a segunda sessão com o prewarm normal cai
-  para 16 quadros (pior 116 ms). Próximo passo, se voltar: mais workers fora da fixação em 4 CPUs, ou medir a GPL em
-  AMD/Intel/Mesa, onde a biblioteca pode custar bem menos que o pipeline. Ver `docs/notes/pipeline-skip.md`
-  Pendente antes de ligar as bibliotecas: VUID-VkGraphicsPipelineCreateInfo-renderPass-09652 só com elas (replay do
-  dump do Killzone com `--validation`: 0 com `VITASHARP_PIPELINE_LIBRARY=0`). Ponto: shader de fragmento com
-  `last_frag_in` (input attachment 0, variantes fetch-input do `ShaderGenerator`) numa biblioteca de fragmento ou na
-  ligação com renderização dinâmica e `colorAttachmentCount` 0. Pôr os anexos de cor da chave na biblioteca e na
-  ligação não resolveu; a chamada exata ainda não foi identificada (quadros idênticos)
-  Medido de novo em 16/11/2026 com o replay que antecipa o prefetch um quadro (`replay-gpu --async-shaders=on
-  --speed=1`, caches do emulador e do driver frios, 4 CPUs, A/B alternado 2x): com as bibliotecas o Killzone não melhora
-  (quadros >= 50 ms 5/5 contra 5/6, >= 16,7 ms 5/5 contra 7/7, pior 3,6-3,7 s contra 3,5-3,9 s; 250 ligados em 3 ms, mas
-  os mesmos ~85 pipelines esperados nos workers). O que o GPU thread ainda monta sozinho em 5 dumps (linha da sessão,
-  por variante) não é tile-word nem visão inteira (0 em todos): Killzone 21 MSAA + 6 fetch, 13 deles no 1º quadro do dump,
-  com a fila dos workers cheia. O limite é a vazão: com `VITASHARP_SHADER_WORKERS=4` em vez dos 2 automáticos (4 CPUs)
-  o pior quadro cai de 3,7-4,5 s para 0,1-1,6 s no Killzone (esperas 75-87 -> 5-7) e de 1,4-3,0 s para 0,6-0,7 s no
-  PCSE00269. Próximo passo: medir em gameplay com o cache frio `--shader-workers=` acima do automático (metade das CPUs)
-  e, se ganhar lá, subir o padrão (o Dolphin usa todos os núcleos menos 3)
 - [ ] [P2][G] Engasgos de shader na primeira vez que se joga (plano escolhido): o custo é o driver montar cada pipeline
   (~80 ms por pipeline na GTX 1650; traduzir os shaders do Vita custa no máximo ~116 ms por sessão), e na segunda
   sessão o pré-aquecimento pela lista de pipelines já leva o Killzone de 62 para 16 quadros lentos. Frentes:
@@ -989,6 +939,55 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   PCSE00053 com a CPU da máquina a 83-96%), e é o que a opção ligada resolve. Próximas partes: (3) estado dinâmico EDS3/vertex input onde houver; (4) Android: medir no
   Killzone o tempo de carregamento a mais e a queda de pipelines no thread da GPU
   Entrega movida para "Corrigido, falta o usuário testar" (uber2/uber3/uber4, 22/11/2026); o resto segue aberto aqui.
+  Junto aqui (triagem de 22/11/2026) o item das bibliotecas de pipeline, que já cai na frente (3): o próximo passo dele é medir mais workers.
+  [P2][G] Engasgos da primeira vez: montar os pipelines que faltam com `VK_EXT_graphics_pipeline_library` (ligação
+  rápida, sem otimizar, no thread da GPU) e trocar pelo otimizado em segundo plano; prever também as variantes
+  tile-word e de saída inteira. Pular o desenho foi analisado e descartado: quase nada do que trava pode ser pulado
+  sem risco (Killzone 0 de 91 engasgos, Tearaway 1 de 14), ver `docs/notes/pipeline-skip.md`
+  Tentado em 07/11/2026 (perf/desktop-res) e descartado: no Killzone com cache frio o thread da GPU passou a montar
+  mais pipelines (18,8-21,4 s contra 5,0-10,7 s; os mesmos ~90 quadros acima de 16,7 ms), porque no driver da NVIDIA
+  a biblioteca de shader custa quase um pipeline inteiro e o Killzone tem tantos shaders quanto pipelines. O limite é a
+  vazão de compilação (2 workers); ver `docs/notes/pipeline-skip.md`. Próximo passo, se voltar: mais workers ou
+  pipelines.list pré-gerado por jogo
+  Rodada de 08/11/2026 (perf/desktop-12; Injustice `inj_fight` novo cenário com luta no Treino, Killzone `kz_skin`,
+  FIFA 13; GTX 1650, 4 CPUs fixadas, caches frios = `--shader-cache` e cache do driver NVIDIA novos). Antes: Injustice
+  frio 61-83 desenhos travados (5,4-6,6 s) em 33-40 quadros, Killzone frio 375 desenhos (13,5 s), 95 quadros >= 16,7 ms.
+  Onde está o tempo: o driver da NVIDIA leva 60-90 ms por pipeline (83 ms medidos no replay, sozinho, sem disputa) e
+  quase cada pipeline é um par de shaders novo (Injustice 115 pipelines / 105 pares, Killzone 552 / 533); o shaderc em
+  `zero` leva 2-12 ms por shader. O jogo pede o pipeline ~1 quadro depois do prefetch, então cada pipeline novo custa
+  quase os seus 60-90 ms. Medido e descartado: `--shaderc-opt=perf` (driver 83 -> 59 ms por pipeline, mas shaderc 12 ->
+  80 ms por shader: pior), sem `VkPipelineCache` (sem ganho; não serializa), 4 workers em 4 CPUs (mesmos engasgos, CPU
+  cheia), normalizar a chave do pipeline (estado de blend desligado, sem cor, layout de vértice: 2 duplicatas em 115,
+  3 em 552). Ubershader: não cabe (USSE arbitrário). Feito: shaderc e o tradutor aquecidos em segundo plano (o 1º shader
+  novo de uma sessão com cache quente: ~20 ms em vez de ~150-190 ms; 08aede3), prewarm também nos workers (cache do driver
+  frio: Killzone 21-22 s -> 11 s; 5ca2e0a) e o renderizador trocado (F1/F3/load state) passa a abrir os caches do jogo
+  (7d73f91). O que sobra no cache frio é o custo do driver por pipeline novo; só cai pulando desenho (descartado) ou
+  com menos SPIR-V por shader (gerar GLSL menor: o `-O` mostrou ~30% a menos no driver)
+  Segunda tentativa em 13/11/2026 (perf/desktop-26), no estilo do DXVK: quatro bibliotecas, ligadas sem LTO, inclusive
+  nos passes MSAA; o pipeline otimizado é compilado por último nos workers e trocado depois. Exige
+  `graphicsPipelineLibraryFastLinking`; fica desligada nos blobs de celular (`GpuQuirk.AvoidPipelineLibrary`) e nos
+  perfis mobile. Ficou no código desligada (`VITASHARP_PIPELINE_LIBRARY=1` liga), com o contador
+  `PipelineStats.CriticalPath` e o teste `RendererPipelineLibraryTests`. Medido no Killzone (GTX 1650, 4 CPUs):
+  no replay do dump F8, 488 compilações de estágio viram 346 bibliotecas (-29%), mas uma biblioteca custa ~metade de
+  um pipeline (pior quadro 31,3 -> 28,8 s; quadros idênticos). Em gameplay com os caches frios, piorou: 80 quadros
+  >= 16,7 ms contra 62 e 25,6 s parados contra 14,4 s, porque as bibliotecas tiram tempo dos 2 workers. O prewarm por
+  bibliotecas com o driver frio levou 51,5 s contra 19,7 s (removido). Já a segunda sessão com o prewarm normal cai
+  para 16 quadros (pior 116 ms). Próximo passo, se voltar: mais workers fora da fixação em 4 CPUs, ou medir a GPL em
+  AMD/Intel/Mesa, onde a biblioteca pode custar bem menos que o pipeline. Ver `docs/notes/pipeline-skip.md`
+  Pendente antes de ligar as bibliotecas: VUID-VkGraphicsPipelineCreateInfo-renderPass-09652 só com elas (replay do
+  dump do Killzone com `--validation`: 0 com `VITASHARP_PIPELINE_LIBRARY=0`). Ponto: shader de fragmento com
+  `last_frag_in` (input attachment 0, variantes fetch-input do `ShaderGenerator`) numa biblioteca de fragmento ou na
+  ligação com renderização dinâmica e `colorAttachmentCount` 0. Pôr os anexos de cor da chave na biblioteca e na
+  ligação não resolveu; a chamada exata ainda não foi identificada (quadros idênticos)
+  Medido de novo em 16/11/2026 com o replay que antecipa o prefetch um quadro (`replay-gpu --async-shaders=on
+  --speed=1`, caches do emulador e do driver frios, 4 CPUs, A/B alternado 2x): com as bibliotecas o Killzone não melhora
+  (quadros >= 50 ms 5/5 contra 5/6, >= 16,7 ms 5/5 contra 7/7, pior 3,6-3,7 s contra 3,5-3,9 s; 250 ligados em 3 ms, mas
+  os mesmos ~85 pipelines esperados nos workers). O que o GPU thread ainda monta sozinho em 5 dumps (linha da sessão,
+  por variante) não é tile-word nem visão inteira (0 em todos): Killzone 21 MSAA + 6 fetch, 13 deles no 1º quadro do dump,
+  com a fila dos workers cheia. O limite é a vazão: com `VITASHARP_SHADER_WORKERS=4` em vez dos 2 automáticos (4 CPUs)
+  o pior quadro cai de 3,7-4,5 s para 0,1-1,6 s no Killzone (esperas 75-87 -> 5-7) e de 1,4-3,0 s para 0,6-0,7 s no
+  PCSE00269. Próximo passo: medir em gameplay com o cache frio `--shader-workers=` acima do automático (metade das CPUs)
+  e, se ganhar lá, subir o padrão (o Dolphin usa todos os núcleos menos 3)
 - [x] (16/11/2026, usuário: removido da lista; é regra de medição) [P3][P] Medidas de desempenho com a CPU saturada por outros trabalhos não valem: no Killzone (emulador quente, driver
   frio) o watchdog acusou a thread da GPU 11-31 s sem progresso, sem nada atribuído a shader/pipeline (pior 116 ms),
   e o áudio teve um buraco de 5,0 s. Repetido com a máquina livre (carga média 22%): nenhuma parada, buraco de 1,2 s.
@@ -1791,6 +1790,12 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `docs/android/README.md`, "Phone run")
 - [ ] Aparelho Adreno: driver da Qualcomm, libadrenotools (driver customizado, BCeNabler), controle Bluetooth, giro de
   180° (o que falta da lista no fim de `docs/android/README.md`)
+  Junto aqui (triagem de 22/11/2026), também precisa do aparelho Adreno:
+  Validar num aparelho Adreno a camada de quirks de GPU (na Mali-G57 nenhum contorno fez diferença visível, 30/10/2026;
+  `docs/notes/mobile-gpu.md`): quais contornos
+  continuam necessários, `VK_EXT_rasterization_order_attachment_access` (nunca executado), o ganho real dos
+  load/store por cena no perfilador do aparelho, o caminho de render passes (Vulkan 1.1) num Adreno 6xx com driver
+  antigo e a qualidade/velocidade da conversão para ASTC (item 10 da lista em `docs/android/README.md`)
 - [ ] Estimador de custo de GPU para Adreno, como o `vitasharp-perf mali-cost` da Mali: analisar os shaders traduzidos
   numa Adreno (6xx/7xx) sem aparelho — compilar o Mesa no PC e usar o compilador `ir3` do Turnip pela linha de comando
   (instruções, registradores, transbordo, ocupação por shader) ou o Adreno Offline Compiler da Qualcomm se for
@@ -1878,11 +1883,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   YUV_420_888, frontal/traseira para as câmeras 0/1, tamanho e fps pedidos pelo jogo, imagem em pé, permissão CAMERA
   pedida no primeiro uso (negada = quadros cinza); falta testar num aparelho, item 11 da lista em
   `docs/android/README.md`)
-- [ ] Validar num aparelho Adreno a camada de quirks de GPU (na Mali-G57 nenhum contorno fez diferença visível, 30/10/2026;
-  `docs/notes/mobile-gpu.md`): quais contornos
-  continuam necessários, `VK_EXT_rasterization_order_attachment_access` (nunca executado), o ganho real dos
-  load/store por cena no perfilador do aparelho, o caminho de render passes (Vulkan 1.1) num Adreno 6xx com driver
-  antigo e a qualidade/velocidade da conversão para ASTC (item 10 da lista em `docs/android/README.md`)
 - [x] Menos interrupções de cena no renderizador (30/10/2026: uploads e cópias que não leem a cena são gravados
   antes da renderização, que continua; `docs/notes/mobile-renderer.md`)
 - [x] Texturas BC/PVRTC convertidas para ASTC 4x4 com cache em disco por jogo (30/10/2026: codificador em C#,
@@ -2052,7 +2052,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   e ícone do app.info e abre pelo runtime com o mesmo parâmetro. Falta (item abaixo, PlayStation Mobile): o shell
   pede a atualização do runtime (vs0:vsh/game/psm/runtime_version.txt = 2.01; o PCSI00011 do usuário é 01.00: no
   console também pediria), e o próprio runtime (sceKernelAllocUnmapMemBlock, SceAppMgrUser 0x9D6D8058...).
-- [ ] [P3][G] PlayStation Mobile (pedido do usuário, 11/11/2026; o runtime `PCSI00011` "PSM Runtime Package" 01.00, SDK
+- [ ] [P1][G] PlayStation Mobile (pedido do usuário, 11/11/2026; o runtime `PCSI00011` "PSM Runtime Package" 01.00, SDK
   2.00, já está instalado pelo usuário com a sua licença). 1) Rodar o runtime no VitaSharp sem janela e levantar o
   que o Mono dele usa e o que falta (HLE genérico do que faltar, nada específico do PSM). 2) Instalador de `.pkg` de
   PSM: feito (`PsmPkgInstaller`, feat/psm-install): `ux0:psm/<ID>/RO` (itens `content/`), `RO/License/<rif da
@@ -2078,6 +2078,27 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   depois da licença (Mono, libpsm, Piglet) quando o PSM-B entregar a ativação; o 1.00 sozinho não roda no 3.74
   (0x9D6D8058 não exportado: o shell pede a atualização, como no console). Falta também como o shell inicia o runtime com o jogo (parâmetro/ID) e o registro de `ux0:psm` no app.db. 3) Validar com jogos de PSM do usuário e as licenças da conta dele. Nada de
   assinatura da Sony gerada, licença gerada ou remoção da proteção (PSSE): só a licença real do usuário.
+  Junto aqui (triagem de 22/11/2026; prioridade P1 vinda dele) o item da chave do conteúdo:
+  [P1][G] PSM: chave do conteúdo a partir da licença instalada (pedido do usuário, 18/11/2026). Feito (fix/psm1):
+  scePsmDrmGetRifKey devolve o conjunto de chaves (0x200 bytes em +0x100 da licença de 0x400) quando a licença o traz
+  em claro (área de assinatura 0x300-0x3FF vazia, a forma das licenças instaladas pelo usuário); licença assinada da
+  loja continua recusada (0x80020004, só o processador de segurança abre); scePsmDrmGetRifInfo lê ID de conteúdo,
+  conta e datas. Formato PSSE (`PsseFile`: cabeçalho, IV do arquivo sob a chave de cabeçalho do runtime, blocos de
+  0x8000 em AES-128-CBC com IV = bloco XOR IV, assinatura a cada 0x80000, MD5) e o leitor pss_crypto_* do HLE da
+  mono_bridge abre os arquivos com a chave da licença de RO/License (sem licença: 0x80870005). Falta: a ativação PSM
+  (scePsmDrmGetActInfo) depende do act.dat e do processador de segurança e continua recusada; com ela recusada o
+  runtime mostra 0x808F04FF e para antes de abrir o conteúdo. Decisão do lead/usuário: como tratar a ativação.
+  Feito (fix/psm3): a licença fica em RO/License com o nome que o runtime abre (libpsm 2.01:
+  scePsmDrmGetRifName da conta do registro /CONFIG/NP/account_id), no instalador e na migração das gravadas com o nome
+  fixo; scePsmDrmGetRifNameForInstall com a checagem do módulo (assinatura RSA, cabeçalho, ativação). Feito (fix/psm4),
+  revalidado contra o SceNpDrm 3.74: scePsmDrmGetRifInfo/kscePsmDrmGetRifInfo com os 5 argumentos do módulo, a
+  checagem da licença como resposta, nada preenchido com 0x808F0104 e os tempos como ticks do SceRtc;
+  scePsmDrmGetRifKey/kscePsmDrmGetRifKey como o firmware (só o runtime de PSM, 0x80010058; sem ativação 0x808F0106
+  antes de ler a licença; a chave é do processador seguro), de modo que a chave de uma licença sem assinatura só vem
+  de um plugin de kernel que faz hook da exportação; a palavra +0x18 da licença responde 0x808F0109; o leitor
+  pss_crypto_* do HLE da mono_bridge pede a chave a scePsmDrmGetRifKey (mesmas checagens, ativação e hooks), sem ler
+  a licença por fora.
+  Entrega movida para "Corrigido, falta o usuário testar" (PSM psm3/psm4, 22/11/2026); o resto segue aberto aqui.
 - [ ] [P3][G] Plugins de usuário: hooks e injeção completos (pedido do usuário, 11/11/2026). Hoje os plugins `.suprx` do
   arquivo de configuração de plugins carregam no processo, e parte dos hooks/injeções já existe (ver Dead Space e
   libshacccg); completar todas as formas de hook (export/import/offset, cadeia de hooks com continuação, liberação) e
@@ -2778,6 +2799,23 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `src/VitaSharp.Android` (fora do .sln), 30 no `src/VitaSharp.Desktop/Lockstep.cs` (só com `-p:Lockstep=true`), 2
   no `build/IconGen`, além dos ~311 do Hle. Os WIPs do Android, do Desktop e da format-check corrigem; só considerar
   feito com uma busca no repositório inteiro que dê zero fora do Hle, e com a format-check cobrindo esses projetos.
+  Junto aqui (triagem de 22/11/2026) o item do guia, já adotado no `.editorconfig` (linha 1: estilo Ryujinx/Ryubing); o que sobra dele é este item:
+  [P3][G] Refatorar o projeto para o guia de estilo de código do Ryujinx/Ryubing (pedido do usuário, 06/11/2026,
+  substitui o guia do Google). Cópia local do guia e do `.editorconfig` dele (277 linhas, ponto de partida do nosso):
+  `%USERPROFILE%/Ryubing/docs/coding-guidelines/coding-style.md` e `%USERPROFILE%/Ryubing/.editorconfig`. Regras
+  ("padrões do Visual Studio"): chaves Allman; 4 espaços; campos privados/internos `_camelCase`, estáticos `s_`,
+  thread-static `t_`, `static readonly` nessa ordem, `readonly` sempre que der, campos públicos em PascalCase e raros;
+  sem `this.`; visibilidade sempre explícita e como primeiro modificador; `using` no topo, fora do namespace; no máximo
+  uma linha em branco; sem espaços sobrando; `var` só com o tipo escrito à direita (`new`/cast) e `new()` só com o tipo
+  à esquerda; palavras-chave (`int`, `int.Parse`); constantes e métodos (inclusive funções locais) em PascalCase;
+  `nameof`; campos no topo do tipo; labels de `goto` um nível a menos; `if` de uma instrução nunca na mesma linha, chaves
+  em todos os blocos se algum tiver; tipos privados/internos `static` ou `sealed`; XML docs em interfaces e no que for
+  complexo; números mágicos viram constantes nomeadas. A regra 16 (caracteres não ASCII como escape Unicode) conflita
+  com os textos em português da interface (launcher, Android, mensagens): decidir com o usuário antes (proposta: vale
+  para o código, os textos de interface ficam em arquivos de recurso/strings). Cuidados: o GLSL gerado vem de strings
+  literais do C# (o conteúdo delas tem que ficar idêntico, conferir com o shadertest e `replay-gpu --compare`), a regra
+  9 deixa arquivos com estilo próprio como estão até serem convertidos, e fazer num momento sem outros branches abertos
+  (o diff toca quase todos os arquivos); `dotnet format` + analisadores no CI para não voltar
 - [x] (16/11/2026, usuário: fechado — o CI do Windows e a cobertura estão verdes) [P3][M] CI do Windows e da cobertura (pausado em 11/11/2026): `fix/ci-green-2` (SwiftShader registrado para o carregador
   como administrador, `--gpu-dump-at` armado antes do jogo, limite de 3 apresentações pendentes). Antes de juntar:
   medição A/B do F1 2011 e do Uncharted com a máquina quieta e conferência de travadas nos quadros gravados.
@@ -3025,6 +3063,9 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   idênticos e mesma ordem/tempo; áudio: mesma contagem de amostras e tempo, PCM dentro de uma tolerância declarada
   (arredondamento do decodificador). O hardware do celular (decodificador MediaTek, GPU Mali, modos do AAudio) segue
   confirmado no aparelho. Documentar no README como rodar. Em andamento com o agente de bugs do Android (fix/android-video).
+  Junto aqui (triagem de 22/11/2026) o item "Mídia" da seção Testes de regressão:
+  [P3][M] **Mídia:** decodificação de vídeo e áudio pelo contrato do Vita no desktop e no Android (já existe a base em
+  `MediaContract`/`MediaParityTests`).
 - [ ] [P3][G] Cobertura de código mínima de 70% em tudo (pedido do usuário, 10/11/2026). Base de hoje (`build/coverage.ps1` /
   `.sh`, coverlet + ReportGenerator, `Category!=Slow`): geral 59,4% linhas / 42,5% ramos; VitaSharp.Core 65,8%;
   Mobile.Core 85,4%; Renderer.Vulkan 1,3%. Meta: cada projeto e cada namespace com pelo menos 70% de linhas, e manter
@@ -3152,22 +3193,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `VitaSharp.sln`, `VitaSharp.Android.sln`, testes, docs)
   Feito (08/11/2026, refactor/mobile-core): pasta, projeto, namespaces `VitaSharp.Mobile.Core.*`, referências, as duas
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
-- [ ] [P3][G] Refatorar o projeto para o guia de estilo de código do Ryujinx/Ryubing (pedido do usuário, 06/11/2026,
-  substitui o guia do Google). Cópia local do guia e do `.editorconfig` dele (277 linhas, ponto de partida do nosso):
-  `%USERPROFILE%/Ryubing/docs/coding-guidelines/coding-style.md` e `%USERPROFILE%/Ryubing/.editorconfig`. Regras
-  ("padrões do Visual Studio"): chaves Allman; 4 espaços; campos privados/internos `_camelCase`, estáticos `s_`,
-  thread-static `t_`, `static readonly` nessa ordem, `readonly` sempre que der, campos públicos em PascalCase e raros;
-  sem `this.`; visibilidade sempre explícita e como primeiro modificador; `using` no topo, fora do namespace; no máximo
-  uma linha em branco; sem espaços sobrando; `var` só com o tipo escrito à direita (`new`/cast) e `new()` só com o tipo
-  à esquerda; palavras-chave (`int`, `int.Parse`); constantes e métodos (inclusive funções locais) em PascalCase;
-  `nameof`; campos no topo do tipo; labels de `goto` um nível a menos; `if` de uma instrução nunca na mesma linha, chaves
-  em todos os blocos se algum tiver; tipos privados/internos `static` ou `sealed`; XML docs em interfaces e no que for
-  complexo; números mágicos viram constantes nomeadas. A regra 16 (caracteres não ASCII como escape Unicode) conflita
-  com os textos em português da interface (launcher, Android, mensagens): decidir com o usuário antes (proposta: vale
-  para o código, os textos de interface ficam em arquivos de recurso/strings). Cuidados: o GLSL gerado vem de strings
-  literais do C# (o conteúdo delas tem que ficar idêntico, conferir com o shadertest e `replay-gpu --compare`), a regra
-  9 deixa arquivos com estilo próprio como estão até serem convertidos, e fazer num momento sem outros branches abertos
-  (o diff toca quase todos os arquivos); `dotnet format` + analisadores no CI para não voltar
 
 ## Corrigido, falta o usuário testar
 
@@ -3442,13 +3467,6 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   `PCSE00333_20261121_232645_tudo`, 4,3 s a 60 fps, dump da GPU de 198 quadros): o menu de pausa ("RESUME" e as
   opções abaixo, sobre o fundo com a aranha) pisca; na folha de contatos as opções abaixo de "RESUME" quase não
   aparecem. Comparar quadros seguidos no replay do dump (texto/opções presentes em um quadro e ausentes no outro).
-- [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053), áudio picotado (mesmas capturas de 21/11/2026): as vozes NGS
-  (Atrac9) têm buracos regulares de ~0,4-0,7 s dentro do som (49 buracos em 20 s no `audio_mix.wav`; só 2,6 s de som);
-  a porta MAIN teve gap máximo de 410 ms. O usuário também acha que imagem e som não estão sincronizados.
-  Entrega movida para "Corrigido, falta o usuário testar" (envelope do NGS, fix/ac3audio, 22/11/2026). Segue aberto
-  aqui: a sincronia imagem x som, a confirmar depois da correção (o som cortado pode ter sido o que pareceu
-  dessincronizado). No rerun headless a porta MAIN sai a 93,8 saídas/s, sem underrun; com o host carregado (format-check
-  em paralelo) caiu para 54/s, com um gap de 462 ms: é o ritmo do item P2 abaixo, não o NGS.
 - [ ] [P2][M] Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
   capturas de 21/11/2026, e um engasgo de 132 ms por leitura de arquivo (fileIo 134 ms; quadro 302 do dump da
   `_232150_tudo`). Achado (perf/ac3pace): fora das gravações o jogo fica em 30 fps (linhas `FPS frame` da sessão) e
@@ -3463,13 +3481,15 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   espera do modelo do cartão: no Vita a chamada volta na hora e a leitura corre em paralelo (o AC3 não usa isso: lê
   com `sceIoRead` na própria thread de streaming), então um jogo que lê assíncrono na thread principal trava o quadro
   pelo tempo do cartão; completar a requisição no tempo do dispositivo sem bloquear quem chama.
+  Junto aqui (triagem de 22/11/2026) o resto do item do áudio picotado: a sincronia imagem x som já é pedida no "Testar" da correção do NGS (seção "Corrigido, falta o usuário testar"); no rerun headless a porta MAIN sai a 93,8 saídas/s sem underrun e, com o host carregado, caiu para 54/s (gap de 462 ms): é o ritmo deste item, não o NGS.
 - [ ] [P2][G] Abrir um jogo não dá retorno visual (relato do usuário, 21/11/2026: "quando eu clico de novo no jogo ele
   não abre a janela dele"): pelo log, a sessão começa e a janela só aparece 13 s depois (firmware, input, áudio,
   dispositivo Vulkan), seguida de ~12 s de carregamento do cache de shaders e da etapa de pré-compilação ARM. Fazer,
   no PC e no Android: a janela abre na hora do clique com uma tela de carregamento (nome do jogo e etapa atual);
   clicar de novo no mesmo jogo traz a janela existente para frente; conferir se há caso em que o segundo clique
   realmente não abre.
-- [ ] [P2][G] Barras de progresso no carregamento (pedido do usuário, 21/11/2026): "carregando cache de shaders" (N/total)
+  Junto aqui (triagem de 22/11/2026), é a mesma tela de carregamento:
+  [P2][G] Barras de progresso no carregamento (pedido do usuário, 21/11/2026): "carregando cache de shaders" (N/total)
   e "pré-compilando código ARM" (N/total) com barra e Cancelar, na tela de carregamento do PC e do Android (o Android
   já tem o cartão da pré-compilação do andpar3: usar o mesmo modelo), com os nomes corretos dos dois conceitos.
 
@@ -3494,26 +3514,6 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   `FirmwareLayoutTests.ThePsmRuntimeIsNotListedButStartsThePsmTitles`. Os jogos PSM instalados (NPNA00228 Front Wars,
   NPOA00239 Cave Squid, NPPA00120 Merum) abrem pelo runtime com o parâmetro; daí em diante o que falta é a ativação
   PSM (scePsmDrmGetActInfo: act.dat do console, processador de segurança; item abaixo).
-- [ ] [P1][G] PSM: chave do conteúdo a partir da licença instalada (pedido do usuário, 18/11/2026). Feito (fix/psm1):
-  scePsmDrmGetRifKey devolve o conjunto de chaves (0x200 bytes em +0x100 da licença de 0x400) quando a licença o traz
-  em claro (área de assinatura 0x300-0x3FF vazia, a forma das licenças instaladas pelo usuário); licença assinada da
-  loja continua recusada (0x80020004, só o processador de segurança abre); scePsmDrmGetRifInfo lê ID de conteúdo,
-  conta e datas. Formato PSSE (`PsseFile`: cabeçalho, IV do arquivo sob a chave de cabeçalho do runtime, blocos de
-  0x8000 em AES-128-CBC com IV = bloco XOR IV, assinatura a cada 0x80000, MD5) e o leitor pss_crypto_* do HLE da
-  mono_bridge abre os arquivos com a chave da licença de RO/License (sem licença: 0x80870005). Falta: a ativação PSM
-  (scePsmDrmGetActInfo) depende do act.dat e do processador de segurança e continua recusada; com ela recusada o
-  runtime mostra 0x808F04FF e para antes de abrir o conteúdo. Decisão do lead/usuário: como tratar a ativação.
-  Feito (fix/psm3): a licença fica em RO/License com o nome que o runtime abre (libpsm 2.01:
-  scePsmDrmGetRifName da conta do registro /CONFIG/NP/account_id), no instalador e na migração das gravadas com o nome
-  fixo; scePsmDrmGetRifNameForInstall com a checagem do módulo (assinatura RSA, cabeçalho, ativação). Feito (fix/psm4),
-  revalidado contra o SceNpDrm 3.74: scePsmDrmGetRifInfo/kscePsmDrmGetRifInfo com os 5 argumentos do módulo, a
-  checagem da licença como resposta, nada preenchido com 0x808F0104 e os tempos como ticks do SceRtc;
-  scePsmDrmGetRifKey/kscePsmDrmGetRifKey como o firmware (só o runtime de PSM, 0x80010058; sem ativação 0x808F0106
-  antes de ler a licença; a chave é do processador seguro), de modo que a chave de uma licença sem assinatura só vem
-  de um plugin de kernel que faz hook da exportação; a palavra +0x18 da licença responde 0x808F0109; o leitor
-  pss_crypto_* do HLE da mono_bridge pede a chave a scePsmDrmGetRifKey (mesmas checagens, ativação e hooks), sem ler
-  a licença por fora.
-  Entrega movida para "Corrigido, falta o usuário testar" (PSM psm3/psm4, 22/11/2026); o resto segue aberto aqui.
 - [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053) trava no boot, nunca mostra o primeiro quadro (usuário,
   17/11/2026; primeiro teste do jogo). Captura `captures/PCSE00053_20261117_012258_tudo`: 7 min no quadro 0 (0 fps,
   só a imagem de boot), áudio aberto mas em silêncio. Os threads do motor (Gear) foram todos criados, NGS e GXM
