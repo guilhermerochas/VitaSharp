@@ -3517,6 +3517,15 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   (gravador de GPU dump 36,7 ms/quadro + compressão 93,9 ms/quadro); fora da gravação a mesma cena roda a ~30 fps
   Feito (ac3c bfc56c4b e 52934e4f, ac3g, ac3d 13a350d8, na main); as capturas de 21/11 já mostram o jogo em gameplay. Testar: abrir o AC III Liberation do zero: passa dos logos e chega ao menu e ao gameplay sem travar no quadro 0; a cena 3D com as cores certas e os decals do chão sem ruído azul/verde.
 
+- [ ] (22/11/2026, na release, falta testar) [P3][M] Anexo da palavra extra do registrador de saída (TileWord1) em todos os
+  caminhos (fix/rend1): o tile do Vita guarda as duas palavras do registrador de saída de cada pixel pela cena inteira,
+  e o anexo R32_UINT que faz isso no host agora existe também nas cenas supersampled (do tamanho da imagem 2x das
+  amostras), nas renderizações tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (cópia multisampled lida por
+  amostra, binding 5); antes a palavra era perdida nesses casos (lida como zero). `GeneratorVersion` 32. Testes:
+  `RendererTileWordTests` (programa que grava o0.y e outro que lê, em 1 amostra, MSAA nativo, MSAA cópia e ss, cada um
+  também com +TileBased). Testar: no celular, Tearaway (sombras dos volumes de papel, que multiplicam por essa palavra)
+  como no PC; no PC com VITASHARP_MSAA=ss, o mesmo.
+
 ## Bugs em aberto
 - [ ] [P2][G] CI: no runner Linux os testes de GPU do renderer são pulados ("shaderc not available ... install
   libshaderc-dev"), então a "passagem" do Linux não testa o renderer (achado do cifix12, 21/11/2026). Instalar o
@@ -6242,12 +6251,6 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   close-up do quadro 3795 o G16 = 0 deixa uns pontos verdes na borda de uma folha (como antes do 11f18ce), sem vídeo do
   Vita do mesmo ângulo (a câmera do Tearaway segue o giroscópio)
   Confirmado pelo usuário (06/11/2026): ok
-- [ ] [P3][M] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
-  Conferido (10/11/2026, agente B): os três casos são caminhos de reserva no desktop (supersample só quando o MSAA
-  nativo não serve o formato; cópia só com VITASHARP_MSAA_FETCH=copy) e o tile-based é do Android. Nenhum log ou
-  gravação do usuário nem execução no `<scratchpad>` tem o aviso `... which the scene cannot keep (...)`; sem jogo
-  que precise, não mexi
-  Entrega movida para "Corrigido, falta o usuário testar" (MSAA ss em tile-based, cifix12, 22/11/2026); o resto segue aberto aqui.
 - [x] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
   Feito (10/11/2026, agente B, fix/bugs-b-2), pelo libfiber.suprx 3.74 desmontado: as checagens do
   _sceFiberAttachContextAndRun/AndSwitch seguem a ordem do firmware (NULL; fiber ou contexto desalinhado; Run já dentro
