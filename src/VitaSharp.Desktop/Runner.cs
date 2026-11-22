@@ -171,7 +171,19 @@ public static class Runner
         HostThreads.Enabled = OnOff(options, "--host-prio") ?? true;
         try
         {
-            return RunCore(appPath, options);
+            // a reboot of the emulated system (kscePowerRequestSoftReset, the syscon's reset) ends the session and
+            // boots the same target again, as the console's boot runs again after a reset
+            while (true)
+            {
+                s_rebootRequested = false;
+                int result = RunCore(appPath, options);
+                if (!s_rebootRequested)
+                {
+                    return result;
+                }
+
+                Log.Info("The emulated system rebooted: booting it again");
+            }
         }
         finally
         {
@@ -181,6 +193,9 @@ public static class Runner
             }
         }
     }
+
+    /// <summary>The session ended because the emulated system rebooted: <see cref="Run"/> boots it again.</summary>
+    static volatile bool s_rebootRequested;
 
     [System.Runtime.InteropServices.DllImport("winmm.dll")] static extern uint timeBeginPeriod(uint ms);
     [System.Runtime.InteropServices.DllImport("winmm.dll")] static extern uint timeEndPeriod(uint ms);
@@ -891,6 +906,13 @@ public static class Runner
             Log.Info("Window: the system turned off: closing the window");
             Volatile.Write(ref processExited, 1);
         };
+        // the system rebooted: this session ends and Run boots the system again
+        emu.Vita.Power.Rebooted += () =>
+        {
+            Log.Info("Window: the system rebooted: ending the session to boot again");
+            s_rebootRequested = true;
+            Volatile.Write(ref processExited, 1);
+        };
         // standby: the picture stays, with the standby notice until POWER wakes the system
         emu.Vita.Power.StandbyChanged += _ =>
         {
@@ -1452,6 +1474,12 @@ public static class Runner
         emu.Vita.Power.PoweredOff += () =>
         {
             Log.Info("Headless: the system turned off: the run ends");
+            processExited.Set();
+        };
+        emu.Vita.Power.Rebooted += () =>
+        {
+            Log.Info("Headless: the system rebooted: the run boots it again");
+            s_rebootRequested = true;
             processExited.Set();
         };
         while (!fatal.Wait(50) && !processExited.IsSet && nav?.Quit != true && playback?.Done != true && (frameLimit <= 0 || VitaSharp.Core.Hle.Modules.Display.FramesPresented < frameLimit) && wall.Elapsed.TotalSeconds < seconds)

@@ -58,6 +58,9 @@ public sealed partial class EmulationSession : IDisposable
     /// screen.</summary>
     public event Action? Exited;
 
+    /// <summary>The emulated system rebooted: the session is over and a new one boots the same title.</summary>
+    public event Action? Rebooted;
+
     /// <summary>Raised (on an emulator thread) on a trophy unlock.</summary>
     public event Action<TrophyUnlockedEvent>? TrophyUnlocked;
 
@@ -129,6 +132,12 @@ public sealed partial class EmulationSession : IDisposable
         {
             Log.Info("The system turned off: leaving the game screen");
             Exited?.Invoke();
+        };
+        // the system rebooted (kscePowerRequestSoftReset, the syscon's reset): the screen boots it again
+        _emu.Vita.Power.Rebooted += () =>
+        {
+            Log.Info("The system rebooted: booting it again");
+            Rebooted?.Invoke();
         };
         _emu.Host.Input = input;
         _emu.Host.Motion = input.Keyboard; // the keyboard's tilt keys (VirtualMotion), from their first use

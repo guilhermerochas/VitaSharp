@@ -355,21 +355,46 @@ public sealed partial class SysconKernel
         return Exec(0, rx);
     }
 
-    /// <summary>ksceSysconSetPowerMode(mode, flags): the chip's power sequence (standby, power off, reboot) is not
-    /// emulated: the mode is kept on the chip. 0.</summary>
-    [Hle(Nid = 0x8A95D35C, Library = "SceSysconForDriver", Default = true)]
-    int ksceSysconSetPowerMode(uint mode, uint flags)
+    /// <summary>
+    /// ksceSysconSetPowerMode(type, mode) (FW 3.74 syscon.skprx, decompiled, study only: an smc 0 to the secure
+    /// monitor, which hands the power sequence to the chip; the processor does not come back from it): the system goes
+    /// the way the type asks. The types, as vita-headers names them (SceSysconResetType) and ScePower's suspend path
+    /// uses them: 0 power off; 1 suspend (standby, POWER wakes it); 2 cold reset and 0x11 soft reset (the boot runs
+    /// again: a reboot). ScePower also sends 0x10, 3 and 4 on its power-off path (the variants for an AC adapter / a
+    /// charging state) and 5 on its update-restart path (NID_4278E614): power off and reboot. Another type is kept on
+    /// the chip only. 0.
+    /// </summary>
+    [Hle(Nid = 0x8A95D35C, Library = "SceSysconForDriver")]
+    int ksceSysconSetPowerMode(uint type, uint mode)
     {
-        Chip.PowerMode = mode;
+        Chip.PowerMode = type;
+        switch (type)
+        {
+            case 0:
+            case 3:
+            case 4:
+            case 0x10:
+                Emu.Vita.Power.PowerOff();
+                break;
+            case 1:
+                Emu.Vita.Power.Suspend();
+                break;
+            case 2:
+            case 5:
+            case 0x11:
+                Emu.Vita.Power.Reboot();
+                break;
+        }
+
         return 0;
     }
 
-    /// <summary>NID_4278E614(): ksceSysconSetPowerMode(5, 0).</summary>
-    [Hle(Nid = 0x4278E614, Library = "SceSysconForDriver", Default = true)]
+    /// <summary>NID_4278E614(): ksceSysconSetPowerMode(5, 0), the restart ScePower asks for after an update.</summary>
+    [Hle(Nid = 0x4278E614, Library = "SceSysconForDriver")]
     int NID_4278E614() => ksceSysconSetPowerMode(5, 0);
 
-    /// <summary>NID_14B99945(): ksceSysconSetPowerMode(2, 0).</summary>
-    [Hle(Nid = 0x14B99945, Library = "SceSysconForDriver", Default = true)]
+    /// <summary>NID_14B99945(): ksceSysconSetPowerMode(2, 0), the cold reset.</summary>
+    [Hle(Nid = 0x14B99945, Library = "SceSysconForDriver")]
     int NID_14B99945() => ksceSysconSetPowerMode(2, 0);
 
     /// <summary>ksceSysconCtrlLED(led, on): command 0x891 {led | 0x80 when on}.</summary>
