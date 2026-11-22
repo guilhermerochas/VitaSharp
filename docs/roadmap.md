@@ -649,45 +649,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
       nos emissores x64 (Iced e fast-encode) e ARM64. Só vale se a etapa de boot ficar longa.
   Entrega movida para "Corrigido, falta o usuário testar" (feat/aot3, 22/11/2026); o resto segue aberto aqui.
 
-- [ ] [P3][M] Investigar reduções de memória do emulador (pedido do usuário, 17/11/2026): medir o uso de RAM do
-  processo com um jogo pesado (dotnet-counters/dotnet-gcdump) e listar onde dá para cortar (caches de shader/textura,
-  cópias da memória do Vita, buffers da GPU, heap do .NET), com o ganho estimado de cada um, sem perder fps
-  Medido (mgs1, 18/11/2026, Killzone Mercenary headless em gameplay, Windows + GPU desktop; soma por tipo com
-  VirtualQueryEx/QueryWorkingSetEx): pico de working set 567 MB, ~455 MB em gameplay. Divisão: memória de usuário do
-  guest 189 MB (toda residente), CDRAM 100 MB (visão compartilhada, toda residente), uma região privada de 80-150 MB
-  (heap do .NET + driver; o heap gerenciado é 55-80 MB, `PERF allocated`), DLLs ~50 MB residentes.
-  Feito: um bloco novo do guest não é mais zerado à mão (o `Span.Clear` deixava todas as páginas residentes logo no
-  boot, também as que o jogo nunca usa); os blocos privados saem por decommit + commit, que já lê zeros sem tocar nas
-  páginas (`GuestMemoryCommitTests`). Killzone: usuário 189 → 104 MB residentes, pico 567 → 471 MB, gameplay
-  455 → 415 MB. Sem custo por quadro (só na alocação). A/B em pares (antes e depois ao mesmo tempo, em metades
-  opostas da CPU, trocadas na segunda rodada; boot turbo de 3000 quadros): working set no fim 520/526 → 440/437 MB.
-  O fps não piorou: o último trecho ficou em 181/117 fps antes e 368/329 depois, mas a máquina estava carregada e
-  a variação é grande. O JIT parado por 14-65 s no boot apareceu nas duas builds (carga da máquina, não a mudança).
-  Feito no launcher (mem3, 18/11/2026; `ui-render --mem`, 63 títulos, mesma sessão, antes → depois, working set):
-  Biblioteca 368 → 171 MB (heap do .NET 176 → 22 MB, GC comprometido 232 → 36 MB), página do jogo 388 → 175 MB,
-  troféus 388 → 187 MB, jogo rodando 433 → 243 MB, depois de fechar o jogo 629 → 232 MB (GC comprometido
-  457 → 62 MB). Como: os conjuntos de troféus do launcher guardam só os textos (SFM) e leem o ícone do TRP quando a
-  página o mostra (`TrophyPackage.LoadTexts`; antes eram as TROPHY.TRP inteiras de todos os jogos, 166 MB de
-  `byte[]`); o Refresh não relê os TRP que não mudaram (`TrophyTextsCache`, por arquivo + tamanho + data); depois de
-  fechar um jogo, uma coleta compactadora agressiva devolve ao sistema o que o RetainVM guardaria (só nesse ponto; o
-  RetainVM continua no processo do jogo, que não mudou). Save state: as páginas zero de um bloco restaurado saem por
-  decommit + commit, sem ficarem residentes (`GuestMemoryCommitTests.Restoring*`); na CDRAM do Windows (visão
-  compartilhada) elas ainda são zeradas à mão, como num bloco novo.
-  Ainda dá para cortar (estimativas):
-  - CDRAM compartilhada (até ~50-100 MB): ela ainda é zerada à mão, porque um bloco liberado ali só é descartado
-    (MEM_RESET). Com um mapa das páginas já usadas, só as reusadas seriam zeradas; o resto da seção (SEC_RESERVE) já
-    vem zerado. Risco de fps nenhum. O ganho depende de quanto da CDRAM o jogo deixa sem tocar (a GPU e as writebacks
-    escrevem os alvos lá).
-  - Heap do .NET (~10-30 MB): `GCHeapAffinitizeMask`/`GCHeapHardLimit` ou o GC de estação de trabalho não
-    concorrente. Risco: pausas de GC maiores. Medir a `pause` do `PERF allocated` antes de mudar.
-  - Caches da GPU no lado da CPU: `BcSoftware` (64 MB) e `AstcTranscoder` (32 MB) só pesam onde a GPU não decodifica
-    BC (celular). No desktop ficam vazios. Reduzir no Android custa reenvios de texturas (fps).
-  - Não vale: a tabela de páginas sujas (1 MB), a tabela de despacho do JIT (4 MB) e o código nativo (~3 MB) são
-    pequenos. O espelho da CDRAM (288 MB) e o pool de imagens ficam na VRAM, não na RAM, em GPU dedicada.
-  - Notas da medida: o `dotnet-gcdump` travou o processo do jogo (o fps caiu para 2-9 e o dump não terminou), então o
-    heap foi medido pela linha `PERF allocated`. A máquina estava carregada por outros agentes, então o fps destas
-    execuções não serve de comparação. A mudança só age na alocação de blocos, não no caminho por quadro.
-
 - [x] Onde o código do guest roda (perf/il-1, 11/11/2026): linha nova `CPU tiers` no relatório do fim da execução
   (instruções executadas no código nativo, nas callouts, no backend IL e no interpretador, com o estado dos blocos
   interpretados) e os motivos de rejeição por backend. Desktop x64, cenários inteiros (boot incluído): Killzone 99,40%
@@ -1259,14 +1220,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `build/build-android-adrenotools.ps1|.sh` antes do próximo APK de teste
   Resolvido (conferido em 15/11/2026): as duas pastas da checkout principal têm as bibliotecas de novo
   (`libs/arm64-v8a/libshaderc_shared.so`, `libadrenotools.so` e os hooks), e os APKs de 14/11 rodaram no celular
-- [ ] Compatibilidade com o modo desempenho / modo jogo dos celulares (pedido do usuário, 07/11/2026): o app se declara
-  jogo para o Android e para os otimizadores dos fabricantes (`android:appCategory="game"`/`isGame`, `game_mode_config`
-  com suporte aos modos de desempenho e de bateria da API GameManager, `GameState` de carregando/jogando), para entrar
-  nos painéis como o Game Turbo da Xiaomi e o Game Booster da Samsung e receber o perfil de desempenho; respeitar o
-  modo escolhido (desempenho = sem limite de energia; bateria = ritmo econômico). Validar no Redmi com o Game Turbo e
-  medir no Killzone com e sem o modo desempenho
-  Declaração feita (conferido em 08/11/2026: 7b6a2ae, `isGame`/`appCategory="game"` e `game_mode_config` no
-  AndroidManifest, modo de jogo lido no GameActivity); falta validar no Redmi com o Game Turbo e medir no Killzone
 - [x] Vibração dos botões na tela enquanto segura o analógico (pedido do usuário, 07/11/2026): opção nos controles por
   toque para os botões virtuais vibrarem ao serem tocados mesmo com o outro dedo no analógico (hoje o toque multiponto
   com o analógico pressionado não dá retorno tátil); intensidade ajustável e desligável, por perfil de controle
@@ -3443,6 +3396,126 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   cortada multiplicava os retângulos só pela escala de resolução e, em cena supersampled, só o canto superior esquerdo era
   desenhado. Testar (no celular, Mali ou Adreno): um jogo com MSAA superamostragem 2x (menu de pausa): imagem completa,
   sem só um quarto da tela desenhado.
+- [ ] (22/11/2026, na main, falta testar) [P3][M] Investigar reduções de memória do emulador (pedido do usuário, 17/11/2026): medir o uso de RAM do
+  processo com um jogo pesado (dotnet-counters/dotnet-gcdump) e listar onde dá para cortar (caches de shader/textura,
+  cópias da memória do Vita, buffers da GPU, heap do .NET), com o ganho estimado de cada um, sem perder fps
+  Medido (mgs1, 18/11/2026, Killzone Mercenary headless em gameplay, Windows + GPU desktop; soma por tipo com
+  VirtualQueryEx/QueryWorkingSetEx): pico de working set 567 MB, ~455 MB em gameplay. Divisão: memória de usuário do
+  guest 189 MB (toda residente), CDRAM 100 MB (visão compartilhada, toda residente), uma região privada de 80-150 MB
+  (heap do .NET + driver; o heap gerenciado é 55-80 MB, `PERF allocated`), DLLs ~50 MB residentes.
+  Feito: um bloco novo do guest não é mais zerado à mão (o `Span.Clear` deixava todas as páginas residentes logo no
+  boot, também as que o jogo nunca usa); os blocos privados saem por decommit + commit, que já lê zeros sem tocar nas
+  páginas (`GuestMemoryCommitTests`). Killzone: usuário 189 → 104 MB residentes, pico 567 → 471 MB, gameplay
+  455 → 415 MB. Sem custo por quadro (só na alocação). A/B em pares (antes e depois ao mesmo tempo, em metades
+  opostas da CPU, trocadas na segunda rodada; boot turbo de 3000 quadros): working set no fim 520/526 → 440/437 MB.
+  O fps não piorou: o último trecho ficou em 181/117 fps antes e 368/329 depois, mas a máquina estava carregada e
+  a variação é grande. O JIT parado por 14-65 s no boot apareceu nas duas builds (carga da máquina, não a mudança).
+  Feito no launcher (mem3, 18/11/2026; `ui-render --mem`, 63 títulos, mesma sessão, antes → depois, working set):
+  Biblioteca 368 → 171 MB (heap do .NET 176 → 22 MB, GC comprometido 232 → 36 MB), página do jogo 388 → 175 MB,
+  troféus 388 → 187 MB, jogo rodando 433 → 243 MB, depois de fechar o jogo 629 → 232 MB (GC comprometido
+  457 → 62 MB). Como: os conjuntos de troféus do launcher guardam só os textos (SFM) e leem o ícone do TRP quando a
+  página o mostra (`TrophyPackage.LoadTexts`; antes eram as TROPHY.TRP inteiras de todos os jogos, 166 MB de
+  `byte[]`); o Refresh não relê os TRP que não mudaram (`TrophyTextsCache`, por arquivo + tamanho + data); depois de
+  fechar um jogo, uma coleta compactadora agressiva devolve ao sistema o que o RetainVM guardaria (só nesse ponto; o
+  RetainVM continua no processo do jogo, que não mudou). Save state: as páginas zero de um bloco restaurado saem por
+  decommit + commit, sem ficarem residentes (`GuestMemoryCommitTests.Restoring*`); na CDRAM do Windows (visão
+  compartilhada) elas ainda são zeradas à mão, como num bloco novo.
+  Ainda dá para cortar (estimativas):
+  - CDRAM compartilhada (até ~50-100 MB): ela ainda é zerada à mão, porque um bloco liberado ali só é descartado
+    (MEM_RESET). Com um mapa das páginas já usadas, só as reusadas seriam zeradas; o resto da seção (SEC_RESERVE) já
+    vem zerado. Risco de fps nenhum. O ganho depende de quanto da CDRAM o jogo deixa sem tocar (a GPU e as writebacks
+    escrevem os alvos lá).
+  - Heap do .NET (~10-30 MB): `GCHeapAffinitizeMask`/`GCHeapHardLimit` ou o GC de estação de trabalho não
+    concorrente. Risco: pausas de GC maiores. Medir a `pause` do `PERF allocated` antes de mudar.
+  - Caches da GPU no lado da CPU: `BcSoftware` (64 MB) e `AstcTranscoder` (32 MB) só pesam onde a GPU não decodifica
+    BC (celular). No desktop ficam vazios. Reduzir no Android custa reenvios de texturas (fps).
+  - Não vale: a tabela de páginas sujas (1 MB), a tabela de despacho do JIT (4 MB) e o código nativo (~3 MB) são
+    pequenos. O espelho da CDRAM (288 MB) e o pool de imagens ficam na VRAM, não na RAM, em GPU dedicada.
+  - Notas da medida: o `dotnet-gcdump` travou o processo do jogo (o fps caiu para 2-9 e o dump não terminou), então o
+    heap foi medido pela linha `PERF allocated`. A máquina estava carregada por outros agentes, então o fps destas
+    execuções não serve de comparação. A mudança só age na alocação de blocos, não no caminho por quadro.
+  Feito (mgs1 0fd4afd0, mem3 220f32ad e d706064f, na main). Testar: abrir o launcher e depois um jogo pesado (Killzone) e olhar a memória do VitaSharp no Gerenciador de Tarefas: Biblioteca perto de 170 MB, jogo abaixo do que era, e a memória volta a cair depois de fechar o jogo; o fps não deve mudar.
+- [ ] (22/11/2026, na main, falta testar) Compatibilidade com o modo desempenho / modo jogo dos celulares (pedido do usuário, 07/11/2026): o app se declara
+  jogo para o Android e para os otimizadores dos fabricantes (`android:appCategory="game"`/`isGame`, `game_mode_config`
+  com suporte aos modos de desempenho e de bateria da API GameManager, `GameState` de carregando/jogando), para entrar
+  nos painéis como o Game Turbo da Xiaomi e o Game Booster da Samsung e receber o perfil de desempenho; respeitar o
+  modo escolhido (desempenho = sem limite de energia; bateria = ritmo econômico). Validar no Redmi com o Game Turbo e
+  medir no Killzone com e sem o modo desempenho
+  Declaração feita (conferido em 08/11/2026: 7b6a2ae, `isGame`/`appCategory="game"` e `game_mode_config` no
+  AndroidManifest, modo de jogo lido no GameActivity); falta validar no Redmi com o Game Turbo e medir no Killzone
+  Feito (7b6a2ae, na main; GameManager.setGameState com `VITASHARP_ANDROID_GAME_STATE=1`). Testar: no Redmi, o VitaSharp aparece no Game Turbo; com o modo desempenho o Killzone fica igual ou mais fluido e com o modo bateria o celular esquenta menos.
+- [ ] (22/11/2026, na main, falta testar) [P1][M] Assassin's Creed III Liberation (PCSE00053) trava no boot, nunca mostra o primeiro quadro (usuário,
+  17/11/2026; primeiro teste do jogo). Captura `captures/PCSE00053_20261117_012258_tudo`: 7 min no quadro 0 (0 fps,
+  só a imagem de boot), áudio aberto mas em silêncio. Os threads do motor (Gear) foram todos criados, NGS e GXM
+  iniciados, troféus ok; depois a `main` fica Running (sem esperar nada) num laço em 0x814661FC-0x8146620A (bt
+  81466A3E/814668DE recursivo, chamado de 82D7D96C/81459B16), segurando o lwmutex `GEAR_BLOCKINGLOCK_LWMUTEX`; o
+  thread `Loading` espera esse lwmutex e os TaskThread1-3/`Loading Support`/`Gear::AsynchGeneric` esperam o
+  eventflag `GEAR_EVENT`. Próximo passo: descobrir o que a `main` espera nesse laço (valor em memória que outro
+  thread ou o HLE deveria escrever) pelo `rerun` da captura e pela desmontagem do laço
+  Andamento (18/11/2026, jogos1; não resolvido): reproduz sem a captura (`run PCSE00053 --headless --seconds=40`,
+  sem plugins, ~5-7 s de boot): o laço é a busca na árvore de páginas livres do alocador de páginas do Gear (objeto
+  0x8337A060, que alimenta o dlmalloc do bloco `GameHeap` 0x83881000-0x8B181000) com um ciclo; em outras execuções
+  o mesmo heap estoura asserts do dlmalloc (BKPT 0x8145C50E/0x8145BB2E/0x8145C6EC) ou saltos para lixo. Watchpoint:
+  a `main` e a `Loading` escrevem no mesmo chunk (0x845596C8). Descartado: JIT (`--cpu=interp`/`il` falham igual),
+  corrida de núcleos (`--cores=1` falha), o atalho de lwmutex (`VITASHARP_HLE_GUEST_CODE=nolw` falha; Mutex C#
+  instrumentado nunca entregou um lwmutex ocupado), liberação de pilha/TLS na saída de thread (o VitaSharp não libera)
+  e o alocador de páginas em si (alocar/liberar registrados por probe: nenhuma sobreposição). Achado no caminho e
+  corrigido: sceLocationGetLocationWithTimeout lia o 2º argumento (timeout) como ponteiro de saída (FW 3.74:
+  handle, timeout, saída), mas não era esta causa. Próximo passo: watchpoint nos nós da árvore do alocador de páginas
+  (o nó cujo ponteiro vira ciclo) para achar a escrita de fora; suspeitos: escrita HLE fora do tamanho (sceIo*/FIOS2
+  assíncrono, Ngs) e instruções de memória comuns ao interp e ao JIT
+  Andamento (18/11/2026, vc1; não resolvido): o laço é o ajuste de inserção de uma árvore rubro-negra (0x81464798)
+  do alocador de páginas, cujos nós ficam no próprio bloco livre (página + 0x800: esquerda, direita, pai, cor,
+  endereço); no dump do travamento a raiz 0x8AD05800 aponta como pai para 0x8AD01800, que é outro nó, e não para
+  o cabeçalho 0x8337A078. A `main` está dentro da seção crítica certa (lwmutex work 0x8337A260, dono = UID da main,
+  count 1, attr recursivo). Descartados com medida: o lwmutex (`--watch 8337A260:C` + log das aquisições em C#:
+  5144 escritas até o crash, o dono sempre 0->X->0, nunca X->Y, contagem nunca escrita com o mutex livre); estouro
+  de pilha (preenchimento 0xCC intacto no fundo de todas as pilhas); sceGxmPrecomputedDrawInit (32 dos 44 bytes);
+  overlays do FIOS2 (a libfios2 é LLE e só chama _sceFiosKernelOverlayGetList uma vez, na própria pilha).
+  Escritas do lado do host no GameHeap (log em DirtyPages.Mark/MarkRange, 2874 numa execução até o travamento):
+  só criação de lwmutex (32 bytes do work), descritores de textura da GXM (16 bytes), estado precomputado da GXM,
+  sceIoRead de 0x8000/0x40000 em buffers do jogo, o zero do AllocMemBlock do GameHeap e blocos de 0xF8/0x40 da
+  NGS, sem sobreposição aparente. Próximo passo: comparar essas escritas com os chunks do dlmalloc no assert
+  (0x8145C50E) e, se nenhuma cair no chunk corrompido, procurar na semântica de memória da CPU guest
+  (LDM/STM, LDREXD/STREXD, VFP) com um watchpoint no campo pai do nó raiz
+  Andamento (18/11/2026, ac3c; correção feita, falta a confirmação do usuário): causa no HLE do SceSystemGesture.
+  O jogo cria cada reconhecedor de toque num buffer da pilha (porta 0, depois porta 1, no mesmo endereço) e copia o
+  SceSystemGestureTouchRecognizer (uint64_t reserved[307], todo o estado fica no buffer do chamador) para os seus
+  objetos; o HLE guardava o estado pelo endereço, então Update/GetTouchEventsCount na cópia (0x83A11000) davam
+  INVALID_ARG. O jogo usou 0x80800001 como número de eventos e chamou GetTouchEventByIndex 12278 vezes, crescendo um
+  vetor de eventos de 0x90 bytes até a capacidade de 16 bits dar a volta (0x4002 -> 0x0002): o próximo "realloc"
+  de 0xEA0 bytes recebeu um chunk pequeno do dlmalloc e a cópia de ~3 MB passou por cima das páginas livres do
+  alocador do Gear (o pai errado da raiz e os asserts do dlmalloc). Achado com um watchpoint nos campos dos nós (a
+  `main` gravando numa página que ela mesma tinha liberado), probes no realloc do vetor e trace de HLE da `main`.
+  Correção: Create grava um handle no buffer e toda chamada acha o reconhecedor por ele (teste
+  SystemGestureFlowTests.CopiedRecognizerBufferKeepsItsState). Headless: 769 quadros em 60 s, ~26-30 fps, logos
+  da Ubisoft e a abertura, sem BKPT. No caminho: sceKernelAtomicCompareAndSet8/16 e AddUnless8/16 reduziam os
+  operandos a 8/16 bits, e o FW 3.74 usa o registrador inteiro (corrigido, teste
+  KernelHleTests.SmallAtomicsUseTheWholeOperandRegisters); DecIfPositive8/16 com >= 0 é o que o firmware faz
+  (LDREXB + CMP #0x80). Descartado com medida: lockstep contra o Unicorn (VITASHARP_LOCKSTEP=ALL, --cores=1), 0
+  divergências até o Unicorn cair. Falta: o usuário confirmar o jogo até o menu/gameplay
+  Andamento (18/11/2026, ac3g; correção feita, falta a confirmação do usuário): o jogo chega ao gameplay, mas a
+  cena 3D saía com cores erradas (ciano/turquesa e amarelo saturados, com ruído; o HUD certo) e 17-22 fps. Causa
+  (replay do `gpu.vsgd` da captura de gameplay, present 5165): o G-buffer 704x576 F32F32 (0x6078C000) é escrito por
+  programas native-colour criados com HALF4 que empacotam o albedo RGBA8 em o0.x e a normal S8 em o0.y; a passada
+  de luz lê a superfície como U8U8U8U8 em +0 e S8S8S8S8 em +4. O gerador escrevia só os bytes de o0.x convertidos
+  para float (R=byte0/255, G=byte1/255; a normal perdida) e os programas de decal com framebuffer fetch liam o pixel
+  como quatro halves. Correção (genérica, superfícies de canais float de 32 bits): quando o formato do registrador
+  de saída tem o tamanho do pixel (HALF4/FLOAT2 em F32F32; UCHAR4/CHAR4/USHORT2/SHORT2/HALF2/FLOAT em F32), as
+  palavras do registrador vão cruas pela view inteira e o fetch devolve as palavras como estão; gerador v29 (testes
+  NativeColorOutputTests). Falta: os decals do chão (canteiros, manchas) ainda saem como ruído azul/verde no replay;
+  vêm do programa com framebuffer fetch fs E75AC07A68CC79A1 (zerá-lo com `--debug-fs` some com as manchas), que
+  mistura bytes do albedo lido do pixel (SOP2); suspeita: a cópia do fetch é lida por um sampler float
+  (R32G32Sfloat), que pode zerar denormais/alterar NaN das palavras empacotadas; próximo passo é ler a cópia por uma
+  view inteira (R32G32Uint, usampler) quando o programa usa as palavras cruas. Depois, o usuário confirmar as cores
+  no jogo. Desempenho (não mexido): na captura, GPU
+  ~14 ms por quadro contra ~52 ms de quadro do guest, com TaskThread1-3 e a `main` ocupadas: o gargalo é a CPU do
+  guest, não a GPU
+  Andamento (18/11/2026, ac3d, 13a350d8; correção feita, falta o usuário confirmar): as manchas dos decals vinham de
+  um cache de shader v29 gravado antes da mudança do fetch (sem novo bump): gerador v30, e o fetch de palavras cruas
+  lê a cópia por uma imagem inteira (R32G32Uint/usampler2D). O fps de 17-22 das capturas é custo do próprio F8
+  (gravador de GPU dump 36,7 ms/quadro + compressão 93,9 ms/quadro); fora da gravação a mesma cena roda a ~30 fps
+  Feito (ac3c bfc56c4b e 52934e4f, ac3g, ac3d 13a350d8, na main); as capturas de 21/11 já mostram o jogo em gameplay. Testar: abrir o AC III Liberation do zero: passa dos logos e chega ao menu e ao gameplay sem travar no quadro 0; a cena 3D com as cores certas e os decals do chão sem ruído azul/verde.
 
 ## Bugs em aberto
 - [ ] [P2][G] CI: no runner Linux os testes de GPU do renderer são pulados ("shaderc not available ... install
@@ -3514,77 +3587,6 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   `FirmwareLayoutTests.ThePsmRuntimeIsNotListedButStartsThePsmTitles`. Os jogos PSM instalados (NPNA00228 Front Wars,
   NPOA00239 Cave Squid, NPPA00120 Merum) abrem pelo runtime com o parâmetro; daí em diante o que falta é a ativação
   PSM (scePsmDrmGetActInfo: act.dat do console, processador de segurança; item abaixo).
-- [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053) trava no boot, nunca mostra o primeiro quadro (usuário,
-  17/11/2026; primeiro teste do jogo). Captura `captures/PCSE00053_20261117_012258_tudo`: 7 min no quadro 0 (0 fps,
-  só a imagem de boot), áudio aberto mas em silêncio. Os threads do motor (Gear) foram todos criados, NGS e GXM
-  iniciados, troféus ok; depois a `main` fica Running (sem esperar nada) num laço em 0x814661FC-0x8146620A (bt
-  81466A3E/814668DE recursivo, chamado de 82D7D96C/81459B16), segurando o lwmutex `GEAR_BLOCKINGLOCK_LWMUTEX`; o
-  thread `Loading` espera esse lwmutex e os TaskThread1-3/`Loading Support`/`Gear::AsynchGeneric` esperam o
-  eventflag `GEAR_EVENT`. Próximo passo: descobrir o que a `main` espera nesse laço (valor em memória que outro
-  thread ou o HLE deveria escrever) pelo `rerun` da captura e pela desmontagem do laço
-  Andamento (18/11/2026, jogos1; não resolvido): reproduz sem a captura (`run PCSE00053 --headless --seconds=40`,
-  sem plugins, ~5-7 s de boot): o laço é a busca na árvore de páginas livres do alocador de páginas do Gear (objeto
-  0x8337A060, que alimenta o dlmalloc do bloco `GameHeap` 0x83881000-0x8B181000) com um ciclo; em outras execuções
-  o mesmo heap estoura asserts do dlmalloc (BKPT 0x8145C50E/0x8145BB2E/0x8145C6EC) ou saltos para lixo. Watchpoint:
-  a `main` e a `Loading` escrevem no mesmo chunk (0x845596C8). Descartado: JIT (`--cpu=interp`/`il` falham igual),
-  corrida de núcleos (`--cores=1` falha), o atalho de lwmutex (`VITASHARP_HLE_GUEST_CODE=nolw` falha; Mutex C#
-  instrumentado nunca entregou um lwmutex ocupado), liberação de pilha/TLS na saída de thread (o VitaSharp não libera)
-  e o alocador de páginas em si (alocar/liberar registrados por probe: nenhuma sobreposição). Achado no caminho e
-  corrigido: sceLocationGetLocationWithTimeout lia o 2º argumento (timeout) como ponteiro de saída (FW 3.74:
-  handle, timeout, saída), mas não era esta causa. Próximo passo: watchpoint nos nós da árvore do alocador de páginas
-  (o nó cujo ponteiro vira ciclo) para achar a escrita de fora; suspeitos: escrita HLE fora do tamanho (sceIo*/FIOS2
-  assíncrono, Ngs) e instruções de memória comuns ao interp e ao JIT
-  Andamento (18/11/2026, vc1; não resolvido): o laço é o ajuste de inserção de uma árvore rubro-negra (0x81464798)
-  do alocador de páginas, cujos nós ficam no próprio bloco livre (página + 0x800: esquerda, direita, pai, cor,
-  endereço); no dump do travamento a raiz 0x8AD05800 aponta como pai para 0x8AD01800, que é outro nó, e não para
-  o cabeçalho 0x8337A078. A `main` está dentro da seção crítica certa (lwmutex work 0x8337A260, dono = UID da main,
-  count 1, attr recursivo). Descartados com medida: o lwmutex (`--watch 8337A260:C` + log das aquisições em C#:
-  5144 escritas até o crash, o dono sempre 0->X->0, nunca X->Y, contagem nunca escrita com o mutex livre); estouro
-  de pilha (preenchimento 0xCC intacto no fundo de todas as pilhas); sceGxmPrecomputedDrawInit (32 dos 44 bytes);
-  overlays do FIOS2 (a libfios2 é LLE e só chama _sceFiosKernelOverlayGetList uma vez, na própria pilha).
-  Escritas do lado do host no GameHeap (log em DirtyPages.Mark/MarkRange, 2874 numa execução até o travamento):
-  só criação de lwmutex (32 bytes do work), descritores de textura da GXM (16 bytes), estado precomputado da GXM,
-  sceIoRead de 0x8000/0x40000 em buffers do jogo, o zero do AllocMemBlock do GameHeap e blocos de 0xF8/0x40 da
-  NGS, sem sobreposição aparente. Próximo passo: comparar essas escritas com os chunks do dlmalloc no assert
-  (0x8145C50E) e, se nenhuma cair no chunk corrompido, procurar na semântica de memória da CPU guest
-  (LDM/STM, LDREXD/STREXD, VFP) com um watchpoint no campo pai do nó raiz
-  Andamento (18/11/2026, ac3c; correção feita, falta a confirmação do usuário): causa no HLE do SceSystemGesture.
-  O jogo cria cada reconhecedor de toque num buffer da pilha (porta 0, depois porta 1, no mesmo endereço) e copia o
-  SceSystemGestureTouchRecognizer (uint64_t reserved[307], todo o estado fica no buffer do chamador) para os seus
-  objetos; o HLE guardava o estado pelo endereço, então Update/GetTouchEventsCount na cópia (0x83A11000) davam
-  INVALID_ARG. O jogo usou 0x80800001 como número de eventos e chamou GetTouchEventByIndex 12278 vezes, crescendo um
-  vetor de eventos de 0x90 bytes até a capacidade de 16 bits dar a volta (0x4002 -> 0x0002): o próximo "realloc"
-  de 0xEA0 bytes recebeu um chunk pequeno do dlmalloc e a cópia de ~3 MB passou por cima das páginas livres do
-  alocador do Gear (o pai errado da raiz e os asserts do dlmalloc). Achado com um watchpoint nos campos dos nós (a
-  `main` gravando numa página que ela mesma tinha liberado), probes no realloc do vetor e trace de HLE da `main`.
-  Correção: Create grava um handle no buffer e toda chamada acha o reconhecedor por ele (teste
-  SystemGestureFlowTests.CopiedRecognizerBufferKeepsItsState). Headless: 769 quadros em 60 s, ~26-30 fps, logos
-  da Ubisoft e a abertura, sem BKPT. No caminho: sceKernelAtomicCompareAndSet8/16 e AddUnless8/16 reduziam os
-  operandos a 8/16 bits, e o FW 3.74 usa o registrador inteiro (corrigido, teste
-  KernelHleTests.SmallAtomicsUseTheWholeOperandRegisters); DecIfPositive8/16 com >= 0 é o que o firmware faz
-  (LDREXB + CMP #0x80). Descartado com medida: lockstep contra o Unicorn (VITASHARP_LOCKSTEP=ALL, --cores=1), 0
-  divergências até o Unicorn cair. Falta: o usuário confirmar o jogo até o menu/gameplay
-  Andamento (18/11/2026, ac3g; correção feita, falta a confirmação do usuário): o jogo chega ao gameplay, mas a
-  cena 3D saía com cores erradas (ciano/turquesa e amarelo saturados, com ruído; o HUD certo) e 17-22 fps. Causa
-  (replay do `gpu.vsgd` da captura de gameplay, present 5165): o G-buffer 704x576 F32F32 (0x6078C000) é escrito por
-  programas native-colour criados com HALF4 que empacotam o albedo RGBA8 em o0.x e a normal S8 em o0.y; a passada
-  de luz lê a superfície como U8U8U8U8 em +0 e S8S8S8S8 em +4. O gerador escrevia só os bytes de o0.x convertidos
-  para float (R=byte0/255, G=byte1/255; a normal perdida) e os programas de decal com framebuffer fetch liam o pixel
-  como quatro halves. Correção (genérica, superfícies de canais float de 32 bits): quando o formato do registrador
-  de saída tem o tamanho do pixel (HALF4/FLOAT2 em F32F32; UCHAR4/CHAR4/USHORT2/SHORT2/HALF2/FLOAT em F32), as
-  palavras do registrador vão cruas pela view inteira e o fetch devolve as palavras como estão; gerador v29 (testes
-  NativeColorOutputTests). Falta: os decals do chão (canteiros, manchas) ainda saem como ruído azul/verde no replay;
-  vêm do programa com framebuffer fetch fs E75AC07A68CC79A1 (zerá-lo com `--debug-fs` some com as manchas), que
-  mistura bytes do albedo lido do pixel (SOP2); suspeita: a cópia do fetch é lida por um sampler float
-  (R32G32Sfloat), que pode zerar denormais/alterar NaN das palavras empacotadas; próximo passo é ler a cópia por uma
-  view inteira (R32G32Uint, usampler) quando o programa usa as palavras cruas. Depois, o usuário confirmar as cores
-  no jogo. Desempenho (não mexido): na captura, GPU
-  ~14 ms por quadro contra ~52 ms de quadro do guest, com TaskThread1-3 e a `main` ocupadas: o gargalo é a CPU do
-  guest, não a GPU
-  Andamento (18/11/2026, ac3d, 13a350d8; correção feita, falta o usuário confirmar): as manchas dos decals vinham de
-  um cache de shader v29 gravado antes da mudança do fetch (sem novo bump): gerador v30, e o fetch de palavras cruas
-  lê a cópia por uma imagem inteira (R32G32Uint/usampler2D). O fps de 17-22 das capturas é custo do próprio F8
-  (gravador de GPU dump 36,7 ms/quadro + compressão 93,9 ms/quadro); fora da gravação a mesma cena roda a ~30 fps
 - [x] (18/11/2026, usuário: corrigido; reabre se aparecer de novo) [P1][M] GTA: Vice City (port GTAVCECTY), cutscene de abertura com os personagens pretos (pedido do usuário,
   17/11/2026): na cena do restaurante o cenário aparece iluminado, mas os personagens ficam totalmente escuros, como
   silhuetas. Captura: `captures/GTAVCECTY_20261117_004955_tudo` (frames.png, gpu.vsgd para replay-gpu; 29-30 fps;
