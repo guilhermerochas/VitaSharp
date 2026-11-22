@@ -8,7 +8,7 @@ namespace VitaSharp.Renderer.Vulkan;
 /// <summary>GLSL → SPIR-V through shaderc, with an on-disk cache keyed by the source hash.</summary>
 public sealed unsafe class ShaderCompiler : IDisposable
 {
-    private readonly Shaderc _shaderc = Shaderc.GetApi();
+    private readonly Shaderc _shaderc = ShadercLoader.Load();
     // one shaderc compiler per thread: the GPU thread and the shader workers compile concurrently
     private readonly ThreadLocal<nint> _compilers;
     private readonly string? _cacheDir;
@@ -69,7 +69,7 @@ public sealed unsafe class ShaderCompiler : IDisposable
         {
             try
             {
-                var sc = Shaderc.GetApi();
+                Shaderc sc = ShadercLoader.Load();
                 long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
                 // never released: glslang counts its users and frees the tables when the last compiler goes away (a
                 // released warm-up compiler made the next shader pay the whole initialisation again)

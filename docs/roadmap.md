@@ -3432,9 +3432,14 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   como no PC; no PC com VITASHARP_MSAA=ss, o mesmo.
 
 ## Bugs em aberto
-- [ ] [P2][G] CI: no runner Linux os testes de GPU do renderer são pulados ("shaderc not available ... install
-  libshaderc-dev"), então a "passagem" do Linux não testa o renderer (achado do cifix12, 21/11/2026). Instalar o
-  shaderc no job Linux (e conferir o macOS) para os testes de renderer rodarem nas 3 plataformas.
+- [x] (22/11/2026, fix/quick1; confirmação final: o próximo CI do Linux sem "shaderc not available") [P2][G] CI: no
+  runner Linux os testes de GPU do renderer eram pulados. Causa: a busca do Silk.NET procura a cópia do
+  Silk.NET.Shaderc.Native em `runtimes/ubuntu.26.04-x64/native` (RID da distribuição) e só cai para `linux-x64` nas
+  distribuições que conhece (Ubuntu não está na lista), e o pacote da distribuição se chama `libshaderc.so.1`, não
+  `libshaderc_shared.so`. O `ShadercLoader` do renderer tenta depois a cópia em `runtimes/<RID portátil>/native` e os
+  nomes do sistema (Linux `libshaderc.so.1`; macOS Homebrew); vale também para o VitaSharp no Ubuntu fora de um
+  publish. macOS já carregava (fallback `osx`). Testes: `ShadercLoaderTests` (carrega com a busca padrão falhando;
+  no CI, `ShadercAvailability.SkipReason` tem de ser nulo).
 - [ ] [P1][G] Aumentar a resolução interna em jogo falha (relato do usuário, 21/11/2026; log da sessão shell de 23:34):
   duas tentativas de 1x -> 2x respondem `Internal resolution 1x -> 2x not applied: thread 'SceShellMusicCoreCacheIo' is
   running guest code` (a troca usa o mesmo ponto seguro do save state, que exige todas as threads paradas; uma thread
