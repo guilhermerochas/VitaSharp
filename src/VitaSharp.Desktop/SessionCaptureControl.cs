@@ -272,7 +272,16 @@ sealed class SessionCaptureControl : IDisposable
                     }
 
                     control.Capture.Idle.Wait(180000);
-                    string cmp = control.Capture.Dir is { } rd ? CaptureAnalyzer.Compare(pb._dir, rd) : "no re-run capture";
+                    string cmp;
+                    try
+                    {
+                        cmp = control.Capture.Dir is { } rd ? CaptureAnalyzer.Compare(pb._dir, rd) : "no re-run capture";
+                    }
+                    catch (Exception ex) when (ex is IOException or InvalidDataException)
+                    {
+                        // A broken or partial frames file must not take the process down before the PERF summary.
+                        cmp = $"compare: failed ({ex.Message})";
+                    }
                     Log.Info($"[capture] re-run recorded: {control.Capture.Dir} (report.txt there; compare.txt against the original); {cmp}");
                     Console.WriteLine($"re-run capture: {control.Capture.Dir}");
                     Console.WriteLine(cmp);

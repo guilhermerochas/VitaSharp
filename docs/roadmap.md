@@ -3174,6 +3174,12 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 Itens com correção já na `main` que esperam só a confirmação do usuário no jogo/tela do relato; quem fecha (`[x]`) é o
 usuário. Se o teste falhar, o item volta para "Bugs em aberto".
 
+- [ ] [P3][P] `--capture-playback` (rerun): o fim do rerun derrubava o processo quando a pasta da captura não tem
+  `frames.vsfr` (captura sem quadros): `CaptureAnalyzer.Compare` lançava FileNotFoundException na thread `rerun-end` e
+  o resumo PERF não saía. Correção (fix/io1, 22/11/2026): sem `frames.vsfr` no original ou no rerun a comparação é
+  pulada e diz isso ("compare: skipped ..."), e um erro de leitura dos quadros vira uma linha `compare: failed` em vez
+  de fechar o processo (`SessionCaptureTests.Compare_skips_when_a_capture_has_no_frames_file`). Teste: rodar o rerun
+  de uma captura sem quadros e ver a linha `compare: skipped` e o resumo PERF no fim.
 - [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053), áudio picotado (capturas de 21/11/2026). Causa: o módulo
   Envelope do NGS só fazia o loop de sustentação (uLoopStart..nLoopEnd) quando o loop terminava no último ponto. O jogo
   usa 4 pontos com o loop em 1..2 (amplitude 1) e um ponto 3 em 0, então toda voz passava para o 0: os efeitos eram
