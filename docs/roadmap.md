@@ -3537,10 +3537,16 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   programa e lidos por outro no mesmo quadro e no seguinte, em LPDDR e CDRAM, também +TileBased; CPU regravando
   devolve a memória ao guest). Testar: Croixleur Sigma (seleção de personagem e diálogos): modelos 3D como antes.
 
-## Bugs em aberto
 - [ ] [P2][G] CI: no runner Linux os testes de GPU do renderer são pulados ("shaderc not available ... install
   libshaderc-dev"), então a "passagem" do Linux não testa o renderer (achado do cifix12, 21/11/2026). Instalar o
   shaderc no job Linux (e conferir o macOS) para os testes de renderer rodarem nas 3 plataformas.
+  Feito (22/11/2026, fix/quick1 89310536): o Silk.NET só procurava a cópia do Shaderc.Native em runtimes/<RID da distro>
+  (ubuntu.26.04-x64) e o pacote da distro se chama libshaderc.so.1; o novo ShadercLoader tenta a cópia em
+  runtimes/<RID portátil> e libshaderc.so.1 (vale também para quem usa o VitaSharp no Ubuntu). Teste
+  ShadercIsAvailableOnTheCiRunners falha no CI se os testes voltarem a pular. Testar: o próximo CI no Linux roda os
+  testes de renderer (sem "shaderc not available"); no Ubuntu, o VitaSharp desenha sem erro de shaderc.
+
+## Bugs em aberto
 - [ ] [P1][G] Aumentar a resolução interna em jogo falha (relato do usuário, 21/11/2026; log da sessão shell de 23:34):
   duas tentativas de 1x -> 2x respondem `Internal resolution 1x -> 2x not applied: thread 'SceShellMusicCoreCacheIo' is
   running guest code` (a troca usa o mesmo ponto seguro do save state, que exige todas as threads paradas; uma thread

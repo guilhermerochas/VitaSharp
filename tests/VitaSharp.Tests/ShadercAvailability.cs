@@ -1,13 +1,15 @@
 using Silk.NET.Shaderc;
 using System.Runtime.InteropServices;
 using VitaSharp.Core.Util;
+using VitaSharp.Renderer.Vulkan;
 
 namespace VitaSharp.Tests;
 
 /// <summary>
 /// shaderc (the GLSL to SPIR-V compiler the renderer feeds every translated shader to): Silk.NET.Shaderc.Native ships
 /// it for Windows, Linux and macOS, and on Linux the distribution's package is the fallback (Debian/Ubuntu:
-/// libshaderc-dev). Tests that compile shaders are skipped with the reason when the library cannot be loaded.
+/// libshaderc-dev). The probe loads it as the renderer does (<see cref="ShadercLoader"/>). Tests that compile shaders
+/// are skipped with the reason when the library cannot be loaded.
 /// </summary>
 public static class ShadercAvailability
 {
@@ -21,7 +23,7 @@ public static class ShadercAvailability
     {
         try
         {
-            s_probe = Shaderc.GetApi();
+            s_probe = ShadercLoader.Load();
             return null;
         }
         catch (Exception e) when (e is FileNotFoundException or DllNotFoundException or BadImageFormatException)
@@ -38,8 +40,7 @@ public static class ShadercAvailability
     /// <summary>Why the copy from Silk.NET.Shaderc.Native did not load (the loader's own message, e.g. dlerror's).</summary>
     private static string BundledLoadError()
     {
-        string name = OperatingSystem.IsWindows() ? "shaderc_shared.dll" : OperatingSystem.IsMacOS() ? "libshaderc_shared.dylib" : "libshaderc_shared.so";
-        string path = Path.Combine(AppContext.BaseDirectory, "runtimes", RuntimeInformation.RuntimeIdentifier, "native", name);
+        string path = Path.Combine(AppContext.BaseDirectory, "runtimes", RuntimeInformation.RuntimeIdentifier, "native", ShadercLoader.BundledFileName);
         if (!File.Exists(path))
         {
             return $"{path} is missing";
