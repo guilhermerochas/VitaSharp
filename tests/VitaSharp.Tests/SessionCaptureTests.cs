@@ -410,6 +410,26 @@ public sealed class SessionCaptureTests : IDisposable
         return dir;
     }
 
+    /// <summary>The re-run of a capture made without frames (no <c>frames.vsfr</c> on either side) ends without
+    /// throwing: the comparison is skipped and says why, so the re-run still prints its PERF summary.</summary>
+    [Fact]
+    public void Compare_skips_when_a_capture_has_no_frames_file()
+    {
+        string original = Path.Combine(_dir, "no-frames-original");
+        string rerun = Path.Combine(_dir, "no-frames-rerun");
+        Directory.CreateDirectory(original);
+        Directory.CreateDirectory(rerun);
+
+        string bothMissing = CaptureAnalyzer.Compare(original, rerun);
+        Assert.Contains("skipped", bothMissing);
+        Assert.Contains("frames.vsfr", bothMissing);
+
+        string withFrames = SimpleCapture("with-frames", 3);
+        string rerunMissing = CaptureAnalyzer.Compare(withFrames, rerun);
+        Assert.Contains("skipped", rerunMissing);
+        Assert.False(File.Exists(Path.Combine(rerun, "compare.txt")));
+    }
+
     /// <summary>The analysis reports its progress (the "saving NN%" badge) and stops when the window closes while a
     /// recording is saved (the close waits only for the files).</summary>
     [Fact]

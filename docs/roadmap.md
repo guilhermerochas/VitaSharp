@@ -3555,6 +3555,21 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   execução contínua é aplicada no próximo quadro.
   Feito (fix/res1, 22/11/2026): a troca de resolução e de MSAA (F1/F3 no PC, MSAA no menu do Android) não segura mais as threads do guest; o worker da GPU troca o renderer sozinho na próxima fronteira entre cenas e o jogo segue rodando (`GpuQueueLiveReplaceTests`, `GraphicsHotkeysTests.AChangeIsAppliedWhileAGuestThreadRunsGuestCode`). O save state continua exigindo o ponto seguro. Testar: no shell (com a música/SceShellMusicCoreCacheIo ativa) e num jogo, F1 de 1x para 2x/3x/4x e de volta, e F3: a troca aparece no próximo quadro, sem "not applied" no log e sem queda de fps durante a troca.
 
+- [ ] [P2][M] IO assíncrono (`sceIoXxxAsync`) bloqueava quem chama pelo tempo do cartão: a requisição inteira, com a
+  espera do modelo do cartão (7 MB/s), rodava na thread do guest, e um jogo que lê assíncrono na thread principal
+  travava o quadro. Correção (fix/io1, 22/11/2026): como no SceIofilemgr 3.74 (fila "SceIoScheduler"), a chamada volta
+  na hora, o trabalho no arquivo roda numa thread do host em ordem de envio e a conclusão (param, bit do evento,
+  `sceIoComplete`) chega quando o tempo do dispositivo acaba, no relógio do guest; save state guarda pedido em voo
+  (`IoAsyncSchedulerTests`). Teste: um jogo que usa `sceIoReadAsync` (ex.: o shell copiando o pic0 de um jogo para o
+  LiveArea, a Câmera salvando foto) continua funcionando, e carregamentos com leitura assíncrona não engasgam o quadro.
+
+- [ ] [P3][P] `--capture-playback` (rerun): o fim do rerun derrubava o processo quando a pasta da captura não tem
+  `frames.vsfr` (captura sem quadros): `CaptureAnalyzer.Compare` lançava FileNotFoundException na thread `rerun-end` e
+  o resumo PERF não saía. Correção (fix/io1, 22/11/2026): sem `frames.vsfr` no original ou no rerun a comparação é
+  pulada e diz isso ("compare: skipped ..."), e um erro de leitura dos quadros vira uma linha `compare: failed` em vez
+  de fechar o processo (`SessionCaptureTests.Compare_skips_when_a_capture_has_no_frames_file`). Teste: rodar o rerun
+  de uma captura sem quadros e ver a linha `compare: skipped` e o resumo PERF no fim.
+
 ## Bugs em aberto
 - [ ] [P1][G] PSM em Unity não abre (relato do usuário, 22/11/2026; log de 19:33, NPOA00239): o título traz o próprio
   runtime (`ux0:psm/<título>/runtime/eboot.bin`, PCSI00010 "Unity Runtime for PlayStation Mobile", mais mono_prx e
@@ -3601,11 +3616,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   "causa" de todo quadro. Feito: o `fileIo` conta só a leitura no host, e o relatório da captura mostra o custo do
   gravador por quadro e avisa quando ele passa de 4 ms. Falta: (1) baratear o gravador do dump (21 ms/quadro: a
   codificação dos comandos e dos blocos de uniforms, ~11 MB/quadro crus, no GPU worker; levar para outra thread ou
-  reduzir as cópias/alocações por draw); (2) `sceIoXxxAsync` roda a requisição inteira na thread que chama, com a
-  espera do modelo do cartão: no Vita a chamada volta na hora e a leitura corre em paralelo (o AC3 não usa isso: lê
-  com `sceIoRead` na própria thread de streaming), então um jogo que lê assíncrono na thread principal trava o quadro
-  pelo tempo do cartão; completar a requisição no tempo do dispositivo sem bloquear quem chama.
-  Junto aqui (triagem de 22/11/2026) o resto do item do áudio picotado: a sincronia imagem x som já é pedida no "Testar" da correção do NGS (seção "Corrigido, falta o usuário testar"); no rerun headless a porta MAIN sai a 93,8 saídas/s sem underrun e, com o host carregado, caiu para 54/s (gap de 462 ms): é o ritmo deste item, não o NGS.
+  reduzir as cópias/alocações por draw); (2) feito (fix/io1, 22/11/2026), ver "Corrigido, falta o usuário testar".
 - [ ] [P2][G] Abrir um jogo não dá retorno visual (relato do usuário, 21/11/2026: "quando eu clico de novo no jogo ele
   não abre a janela dele"): pelo log, a sessão começa e a janela só aparece 13 s depois (firmware, input, áudio,
   dispositivo Vulkan), seguida de ~12 s de carregamento do cache de shaders e da etapa de pré-compilação ARM. Fazer,

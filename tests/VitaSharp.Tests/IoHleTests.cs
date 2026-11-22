@@ -147,6 +147,7 @@ public sealed class IoHleTests(GuestMemoryFixture fixture)
         GuestMemory.Write(param, -1L);
         int op = Call(io, "sceIoOpenAsync", "tty0:", 3, 0, param);
         Assert.True(op > 0);
+        io.WaitForAsyncHostWork(); // the I/O scheduler served it (a tty has no device time)
         long paramFd = GuestMemory.Read<long>(param);
         int fd = Call(io, "sceIoComplete", op);
         Assert.True(fd > 0);
@@ -156,6 +157,7 @@ public sealed class IoHleTests(GuestMemoryFixture fixture)
         uint buf = fixture.Memory.Alloc(16, "buf");
         GuestMemory.WriteCString(buf, "hello");
         int wop = Call(io, "sceIoWriteAsync", fd, buf, 5u, param);
+        io.WaitForAsyncHostWork();
         Assert.Equal(5L, GuestMemory.Read<long>(param));
         Assert.Equal(0, Call(io, "sceIoCancel", wop)); // already complete: nothing to cancel
         Assert.Equal(5, Call(io, "sceIoComplete", wop));
@@ -179,6 +181,7 @@ public sealed class IoHleTests(GuestMemoryFixture fixture)
         GuestMemory.Write(opt, 0L);       // offset
         GuestMemory.W32(opt + 8, param);  // then the param
         int wop = Call(io, "_sceIoPwriteAsync", fd, buf, 4u, opt);
+        io.WaitForAsyncHostWork();
         Assert.Equal((long)SceError.IO_EBADF, GuestMemory.Read<long>(param)); // a tty has no file to write at an offset
         Call(io, "sceIoComplete", wop);
         Assert.Equal(0, Call(io, "sceIoComplete", Call(io, "sceIoCloseAsync", fd, 0u)));
@@ -205,6 +208,7 @@ public sealed class IoHleTests(GuestMemoryFixture fixture)
             GuestMemory.Write(param, -1L);
             long Done(int op)
             {
+                io.WaitForAsyncHostWork();
                 long got = GuestMemory.Read<long>(param);
                 Assert.Equal(got, (long)Call(io, "sceIoComplete", op));
                 Assert.Equal(0x5A5A5A5Au, GuestMemory.R32(opt)); // the scratch struct is never written

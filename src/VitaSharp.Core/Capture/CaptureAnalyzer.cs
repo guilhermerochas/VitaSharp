@@ -303,6 +303,18 @@ public static class CaptureAnalyzer
     /// </summary>
     public static string Compare(string original, string rerun, double threshold = 6)
     {
+        // A capture recorded without the frames stream ("Gravar tudo" with pictures off, an input-only capture)
+        // has nothing to compare against: say so instead of throwing, so the re-run still ends and prints its summary.
+        if (!File.Exists(Path.Combine(original, "frames.vsfr")))
+        {
+            return "compare: skipped, the original capture has no frames.vsfr (no recorded frames)";
+        }
+
+        if (!File.Exists(Path.Combine(rerun, "frames.vsfr")))
+        {
+            return "compare: skipped, the re-run recorded no frames.vsfr";
+        }
+
         static List<(long Us, long Present, byte[] T)> Load(string dir) =>
             FramesFile.ReadAll(Path.Combine(dir, "frames.vsfr"))
                 .Where(x => x.Picture != null && x.Frame.Info.Flip >= 0)

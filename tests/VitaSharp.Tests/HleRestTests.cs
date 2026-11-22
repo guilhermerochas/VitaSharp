@@ -113,6 +113,7 @@ public sealed class HleRestTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(SceError.IO_EBADF, Call(io, "sceIoFlockForSystem", 0x1234, 0));
         // CompleteMultiple: 0x18-byte entries starting with the opid; finishes and frees them, counts them
         int op1 = Call(io, "sceIoOpenAsync", "tty0:", 3, 0, 0u), op2 = Call(io, "sceIoOpenAsync", "tty1:", 3, 0, 0u);
+        io.WaitForAsyncHostWork(); // served by the I/O scheduler (no device time): complete, not busy
         uint ps = Alloc(0x18 * 3), n = Alloc(4);
         GuestMemory.W32(ps, (uint)op1);
         GuestMemory.W32(ps + 0x18, (uint)op2);
