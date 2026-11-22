@@ -131,6 +131,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `libshacccg` são da Sony); a amostragem de cube do renderizador segue coberta pelos testes de renderizador da suíte.
   O CSC1 também não entra: a libgxm 3.74 começa o CSC1 como BT.709 padrão (`GxmContext.YuvProfile`), mas o
   `TextureDecoder` o converte como BT.601 de faixa cheia e não lê o `sceGxmSetYuvProfile`; a conferir num item próprio.
+  Feito (22/11/2026, small1, fix/small1; a confirmar pelo usuário): o `display_vblank_30` ainda exigia 15 de 30
+  esperas no vblank seguinte, o que a carga derruba (vcount +77 em 30 esperas na rodada do bug7). Agora decide só pelo
+  contrato: nenhuma espera sem vblank novo, alguma espera no vblank seguinte (o laço segue até 300 esperas até ver
+  uma; uma espera que sempre pula dois vblanks nunca vê) e o tempo do processo batendo com os vblanks em ±1 vblank,
+  com vcount e tempo lidos em pares sem preempção (< 1 ms entre as leituras). Prova (VPK novo, build de e5c31b77):
+  livre `# done ok=227 fail=0 skip=5` (MAIN 10,669 ms, BGM 11,611, delays +103/+18/+719 us: o MAIN de 12,2 ms não
+  é do ritmo do HLE de áudio); sob carga (6 e 16 laços ocupados nos mesmos 4 núcleos, rodada 2-3x mais lenta)
+  `ok=227 fail=0` nas duas; com o contrato quebrado de propósito (vblank espera dois, delay volta na metade, porta sem
+  ritmo) dão FAIL `display_vblank_30` (300 esperas, 0 no seguinte), os três `delay_*` (-351/-4977/-38272 us) e os
+  dois `*_block_period` (-99%). Testar: abrir o VitaSharp Test e ver `system/display_vblank_30` OK com o PC ocupado.
 - [x] **Testes da suíte que dependiam do relógio ou da pasta do host:** `SharedCaptureTests.IdleCaptureStopsAfterTheLinger`
   (o linger agora corre num `TimeProvider` manual, `ManualTimeProvider`; mais o caso do linger cancelado),
   `RunnerProcessTests.HeadlessRun...` (`--frames=N` pausa o guest no quadro N: termina com exatamente N, antes 42-555),
