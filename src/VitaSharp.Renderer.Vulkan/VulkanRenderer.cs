@@ -2200,20 +2200,18 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             ImageExtent = new Extent3D(w, h, 1),
         };
-        if (scaled)
-        {
-            Barrier(src.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
-                PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
-                AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit);
-        }
         // guest size unless scaled (VulkanRenderer.ResScale.cs)
-        _vk.CmdCopyImageToBuffer(Cmd, scaled ? src.Image : NativeImageOf(src), ImageLayout.General, r.Buf, 1, in region);
-        if (scaled)
-        {
-            Barrier(src.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
-                PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit,
-                AccessFlags.TransferReadBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit);
-        }
+        Image copied = scaled ? src.Image : NativeImageOf(src);
+        Barrier(copied, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
+            PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
+            AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit);
+        _vk.CmdCopyImageToBuffer(Cmd, copied, ImageLayout.General, r.Buf, 1, in region);
+        // the next frame's renderings into the surface wait for the copy (write after read): without a swapchain blit
+        // (headless runs, replay-gpu) nothing else ordered them, and the frame read back could hold pixels of the next
+        // frame's first draws
+        Barrier(copied, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
+            PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.TransferBit,
+            AccessFlags.TransferReadBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit);
 
         f.DumpIndex = (int)_presentCount;
         f.DumpPending = true;

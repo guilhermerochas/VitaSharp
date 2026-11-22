@@ -4621,6 +4621,10 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   No Vita esses registradores guardam o que uma tarefa anterior deixou (o programa sobrescreve o resultado); o
   gerador agora zera todos os bancos (sa, p e as saídas também no fragmento), GeneratorVersion 34. Replay do dump:
   198/198 quadros idênticos entre execuções (antes 81-147/198). Teste: `ShaderRegisterInitTests`.
+  Também (fix/spidey2, 22/11/2026): a validação de sincronização (`VITASHARP_VK_VALIDATION=sync` no `replay-gpu`)
+  achou WRITE_AFTER_READ entre a cópia de readback do quadro (`RecordReadback`, sem barreira quando o alvo não tem
+  escala) e os draws do quadro seguinte no mesmo alvo, só sem swapchain (headless/replay); agora há barreiras antes e
+  depois da cópia em todos os casos.
   Testar: The Amazing Spider-Man, abrir a pausa (e a folha de contatos) e ficar alguns segundos: RESUME e as opções
   abaixo sempre visíveis, sem piscar.
 
