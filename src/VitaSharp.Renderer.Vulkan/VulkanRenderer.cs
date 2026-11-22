@@ -828,6 +828,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public uint StrideBytes;
         public uint StencilAddress, StencilStrideBytes; // separate S8 stencil plane (formats S8, DF32_S8, DF32M_S8)
         public long LastScene;
+        /// <summary>The last scene with a colour surface that used it (0: none): its scale is the one scenes without a
+        /// colour surface take (<see cref="ColorlessSceneScale"/>).</summary>
+        public long LastColorScene;
         public long Version;          // bumped whenever depth may have been written
         public Image Image;
         public ImageView View;
@@ -1304,6 +1307,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _inScene = true;
         _renderTarget = beginSceneCommand.Color != null ? GetRenderTarget(beginSceneCommand.Color) : null;
         _renderTarget?.LastPid = beginSceneCommand.Pid;
+        _colorlessSceneScale = _renderTarget == null ? ColorlessSceneScale(beginSceneCommand.Depth, beginSceneCommand.Width, beginSceneCommand.Height) : 1f;
         ProfMark(ProfPhase.BsTarget);
         if (TracingScenes || s_traceVis)
         {
@@ -1401,6 +1405,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _depth.TexelsPerSampleX = texelsPerSampleX;
         _depth.TexelsPerSampleY = texelsPerSampleY;
         _depth.LastScene = _sceneSerial;
+        if (_renderTarget != null)
+        {
+            _depth.LastColorScene = _sceneSerial;
+        }
+
         _depth.LastUsedFrame = _depth.LastTouchedFrame = FrameCount;
         if (beginSceneCommand.Depth is { ForceStore: true })
         {
