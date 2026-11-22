@@ -58,6 +58,9 @@ public sealed class VulkanRendererOptions
     /// <summary>adreno|mali|desktop: behave as that device class (missing features, limits, driver quirks) to test
     /// the mobile paths on a desktop GPU (--gpu-profile; null = VITASHARP_GPU_PROFILE, else the real device).</summary>
     public string? GpuProfile;
+    /// <summary>Quirks forced on (+Name) or off (-Name), comma-separated, as VITASHARP_GPU_QUIRKS (null = that variable):
+    /// tests run one path, such as the tile-based renderings (+TileBased), on the software device.</summary>
+    public string? GpuQuirks;
     /// <summary>Tooling (replay-gpu --mali-cost): receives every executed draw with its occlusion sample count once its
     /// frame completed (VulkanRenderer.DrawCost.cs). Null = off.</summary>
     public Action<IReadOnlyList<DrawCostRecord>>? DrawCostSink;
@@ -235,7 +238,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         else
         {
             options._handoff?.Core.Dispose();
-            _core = new VkCore(options.Surface, options.Validation || Environment.GetEnvironmentVariable(EnvVars.VkValidation) is "1" or "sync", options.GpuProfile);
+            _core = new VkCore(options.Surface, options.Validation || Environment.GetEnvironmentVariable(EnvVars.VkValidation) is "1" or "sync", options.GpuProfile, options.GpuQuirks);
         }
         options._handoff = null;
         _vk = _core.Vk;

@@ -106,7 +106,8 @@ public sealed unsafe class VkCore : IDisposable
     public GpuCapabilities Caps = null!;
 
     /// <param name="gpuProfile">adreno|mali|desktop: behave as that device class (--gpu-profile); null = VITASHARP_GPU_PROFILE</param>
-    public VkCore(IPresentationSurface? surface, bool validation, string? gpuProfile = null)
+    /// <param name="gpuQuirks">quirks forced on (+Name) or off (-Name), as VITASHARP_GPU_QUIRKS; null = that variable</param>
+    public VkCore(IPresentationSurface? surface, bool validation, string? gpuProfile = null, string? gpuQuirks = null)
     {
         CreateInstance(surface, validation);
         if (surface != null)
@@ -116,7 +117,7 @@ public sealed unsafe class VkCore : IDisposable
             Surface = surface.CreateSurface(Vk, Instance);
         }
         PickDevice();
-        CreateDevice(surface != null, GpuQuirkTable.ParseProfile(gpuProfile ?? Environment.GetEnvironmentVariable(EnvVars.GpuProfile)));
+        CreateDevice(surface != null, GpuQuirkTable.ParseProfile(gpuProfile ?? Environment.GetEnvironmentVariable(EnvVars.GpuProfile)), gpuQuirks ?? Environment.GetEnvironmentVariable(EnvVars.GpuQuirks));
         DepthFormat = PickDepthFormat();
     }
 
@@ -450,7 +451,7 @@ public sealed unsafe class VkCore : IDisposable
     /// <summary>Driver identity strings (name, info, version) for <see cref="GpuQuirk.PipelineCachePerDriverBuild"/>.</summary>
     public string DriverBuildId => $"{Caps.Device.DriverId}:{Caps.Device.DriverName}:{Caps.Device.DriverInfo}:{Caps.Device.DriverVersion:X8}";
 
-    private void CreateDevice(bool present, GpuProfile profile)
+    private void CreateDevice(bool present, GpuProfile profile, string? quirkOverrides)
     {
         uint qc = 0;
         Vk.GetPhysicalDeviceQueueFamilyProperties(Physical, ref qc, null);
@@ -543,7 +544,7 @@ public sealed unsafe class VkCore : IDisposable
             }
         }
         Caps = GpuQuirkTable.Select(DescribeDevice(supported2.Features, has11, has12, devExts, roaaName != null && hasRoaa.RasterizationOrderColorAttachmentAccess,
-            families[QueueFamily].TimestampValidBits, bcPatched, dynamicRendering, pipelineLibrary), profile, Environment.GetEnvironmentVariable(EnvVars.GpuQuirks));
+            families[QueueFamily].TimestampValidBits, bcPatched, dynamicRendering, pipelineLibrary), profile, quirkOverrides);
         bool Has(GpuFeature gpuFeature) => Caps.Has(gpuFeature);
         // the sample counts every multisampling check reads: the profile's (e.g. Mali: no 2x)
         var counts = (SampleCountFlags)Caps.Limits.FramebufferSampleCounts;
