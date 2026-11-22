@@ -110,6 +110,9 @@ public sealed partial class SysMem : HleModule
     const uint VmBlockGranule = 0x100000, VmBudget = 0x1000000;
     bool _vmDomainOpen;
 
+    /// <summary>Whether sceKernelOpenVMDomain opened the VM domain (the DACR's domain 2 in manager mode).</summary>
+    internal bool VmDomainOpen => _vmDomainOpen;
+
     /// <summary>Executable blocks for JITs (Mono/PSM): size a multiple of 1 MiB, at most 16 MiB in all (Vita3K).</summary>
     [Hle]
     internal int sceKernelAllocMemBlockForVM(string name, uint size)

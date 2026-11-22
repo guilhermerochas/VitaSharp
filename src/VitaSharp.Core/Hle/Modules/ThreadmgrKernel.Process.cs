@@ -534,8 +534,7 @@ public sealed partial class ThreadmgrKernel
             return SceError.INVALID_ARGUMENT;
         }
 
-        uint tcb = GuestThread.Current is { } current ? ThreadObject(current) + ThreadControlBlock : 0;
-        GuestMemory.W32(output, tcb);
+        GuestMemory.W32(output, CurrentControlBlock());
         GuestMemory.W32(output + 4, 0);
         return 0;
     }

@@ -40,6 +40,10 @@ public sealed partial class ThreadmgrKernel
     [SnapshotMissing] // states of builds before it: no thread had one
     readonly Dictionary<int, uint> _threadObjects = new();
 
+    /// <summary>The running thread's control block (what TPIDRPRW holds while it runs: its object block + 0x28), or 0
+    /// without a current thread.</summary>
+    internal uint CurrentControlBlock() => GuestThread.Current is { } current ? ThreadObject(current) + ThreadControlBlock : 0;
+
     /// <summary>The thread's object block (made on first use) with its words refreshed from the thread.</summary>
     uint ThreadObject(GuestThread thread)
     {

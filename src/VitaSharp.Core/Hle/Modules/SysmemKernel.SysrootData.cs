@@ -244,6 +244,30 @@ public sealed partial class SysmemKernel
     [Hle(Nid = 0x37EC12BB, Library = "SceSysrootForKernel", ReturnsValue = true)]
     uint ksceKernelSysrootGetModulePrivate(uint index) => SysrootData(0x34 + index * 4);
 
+    /// <summary>The words of sysmem's context (module private word 3) its boot reads: +0x10 the kernel's physical
+    /// partition, +0x14 the development kit's tool partition (none on a retail console).</summary>
+    const uint SysmemContextKernelPartition = 0x10, SysmemContextToolPartition = 0x14, SysmemContextSize = 0x100;
+
+    /// <summary>Sysmem's context, module private word 3 (made the first time it is asked for, as the boot leaves it:
+    /// the kernel's physical partition, no tool partition, no extra physical regions, the other words 0).</summary>
+    uint SysmemContext()
+    {
+        lock (_sysrootWords)
+        {
+            uint existing = ksceKernelSysrootGetModulePrivate(3);
+            if (existing != 0)
+            {
+                return existing;
+            }
+
+            uint context = KernelAlloc(SysmemContextSize, "kernel:SceSysmemContext", 0x10);
+            GuestMemory.Span(context, (int)SysmemContextSize).Clear();
+            GuestMemory.W32(context + SysmemContextKernelPartition, KernelPhyMemPart());
+            NID_7A7E7C0C(3, context);
+            return context;
+        }
+    }
+
     /// <summary>NID_7A7E7C0C(index, value): sets module private word <paramref name="index"/> (+0x34).</summary>
     [Hle(Nid = 0x7A7E7C0C, Library = "SceSysrootForKernel")]
     void NID_7A7E7C0C(uint index, uint value) => SetSysrootWord(0x34 + index * 4, value);
@@ -655,48 +679,58 @@ public sealed partial class SysmemKernel
         }
     }
 
-    // ------------------------------------------------------------------ the running thread's kernel state word
+    // ------------------------------------------------------------------ the running thread's syscall frame
 
-    /// <summary>NID_44EA3197(): the running thread's kernel state block (the word at TPIDRPRW + 0x44). VitaSharp's
-    /// thread manager runs in HLE and keeps no such block (TPIDRPRW reads 0 on its CPU), so the firmware's own
-    /// answer for that case: 0.</summary>
-    [Hle(Nid = 0x44EA3197, Library = "SceSysrootForDriver", Default = true)]
-    uint NID_44EA3197() => 0;
+    /// <summary>The word of the thread control block (what TPIDRPRW holds while the thread runs) that points at the
+    /// thread's syscall frame, and the frame's state word.</summary>
+    const uint ControlBlockSyscallFrame = 0x44, SyscallFrameState = 0x40;
 
-    /// <summary>NID_D86BD6DC(): state 0 into the thread's kernel state block (+0x40); nothing without the block (see
-    /// <see cref="NID_44EA3197"/>).</summary>
-    [Hle(Nid = 0xD86BD6DC, Library = "SceSysrootForDriver", Default = true)]
-    void NID_D86BD6DC()
+    ThreadmgrKernel Threadmgr => Emu.Hle.Modules.OfType<ThreadmgrKernel>().First();
+
+    /// <summary>The running thread's syscall frame (control block +0x44): 0 without a current thread or outside a
+    /// syscall.</summary>
+    uint CurrentSyscallFrame()
     {
+        uint controlBlock = Threadmgr.CurrentControlBlock();
+        return controlBlock == 0 ? 0 : GuestMemory.R32(controlBlock + ControlBlockSyscallFrame);
     }
+
+    /// <summary>Writes the state word of the running thread's syscall frame; nothing without a frame.</summary>
+    void SetSyscallFrameState(uint state)
+    {
+        uint frame = CurrentSyscallFrame();
+        if (frame != 0)
+        {
+            GuestMemory.W32(frame + SyscallFrameState, state);
+        }
+    }
+
+    /// <summary>NID_44EA3197(): the running thread's syscall frame, the word at its control block + 0x44 (the saved
+    /// r0-r12, SP, LR and PC the syscall entry stored; 0 outside a syscall or without a current thread).</summary>
+    [Hle(Nid = 0x44EA3197, Library = "SceSysrootForDriver", ReturnsValue = true)]
+    uint NID_44EA3197() => CurrentSyscallFrame();
+
+    /// <summary>NID_D86BD6DC(): state 0 into the syscall frame's state word (+0x40); nothing without a frame.</summary>
+    [Hle(Nid = 0xD86BD6DC, Library = "SceSysrootForDriver")]
+    void NID_D86BD6DC() => SetSyscallFrameState(0);
 
     /// <summary>NID_8B8F1D01(): state 1 (see <see cref="NID_D86BD6DC"/>).</summary>
-    [Hle(Nid = 0x8B8F1D01, Library = "SceSysrootForDriver", Default = true)]
-    void NID_8B8F1D01()
-    {
-    }
+    [Hle(Nid = 0x8B8F1D01, Library = "SceSysrootForDriver")]
+    void NID_8B8F1D01() => SetSyscallFrameState(1);
 
     /// <summary>NID_6E0BC27C(): state 2 (see <see cref="NID_D86BD6DC"/>).</summary>
-    [Hle(Nid = 0x6E0BC27C, Library = "SceSysrootForDriver", Default = true)]
-    void NID_6E0BC27C()
-    {
-    }
+    [Hle(Nid = 0x6E0BC27C, Library = "SceSysrootForDriver")]
+    void NID_6E0BC27C() => SetSyscallFrameState(2);
 
     /// <summary>NID_2A5DBD38(): state 3 (see <see cref="NID_D86BD6DC"/>).</summary>
-    [Hle(Nid = 0x2A5DBD38, Library = "SceSysrootForDriver", Default = true)]
-    void NID_2A5DBD38()
-    {
-    }
+    [Hle(Nid = 0x2A5DBD38, Library = "SceSysrootForDriver")]
+    void NID_2A5DBD38() => SetSyscallFrameState(3);
 
     /// <summary>NID_8A760856(): state 4 (see <see cref="NID_D86BD6DC"/>).</summary>
-    [Hle(Nid = 0x8A760856, Library = "SceSysrootForDriver", Default = true)]
-    void NID_8A760856()
-    {
-    }
+    [Hle(Nid = 0x8A760856, Library = "SceSysrootForDriver")]
+    void NID_8A760856() => SetSyscallFrameState(4);
 
     /// <summary>NID_8CD02748(value): state value | 0x80000000 (see <see cref="NID_D86BD6DC"/>).</summary>
-    [Hle(Nid = 0x8CD02748, Library = "SceSysrootForDriver", Default = true)]
-    void NID_8CD02748()
-    {
-    }
+    [Hle(Nid = 0x8CD02748, Library = "SceSysrootForDriver")]
+    void NID_8CD02748(uint value) => SetSyscallFrameState(value | 0x80000000);
 }
