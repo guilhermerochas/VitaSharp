@@ -778,6 +778,7 @@ public static class Runner
         }
 
         bool licenseMissing = false;
+        bool loadFailed = false;
         window.Loaded += () =>
         {
             rendererOptions.Surface = window;
@@ -798,6 +799,15 @@ public static class Runner
                 // window closes and the launcher shows the message for this exit code
                 ReportLicenseMissing(noLicense);
                 licenseMissing = true;
+                window.Close();
+                return;
+            }
+            catch (Exception failure) when (failure is not OutOfMemoryException)
+            {
+                // any other load failure (a key that does not open the files, an executable that is no SELF): the
+                // process never started; the window closes and the launcher shows the reason for this exit code
+                ReportLoadFailure(appPath, failure);
+                loadFailed = true;
                 window.Close();
                 return;
             }
@@ -945,7 +955,22 @@ public static class Runner
         // the renderer (its swapchain and window surface) goes before the window: the window is disposed first at the
         // end of this method (declared after the emulator), and a surface must not outlive its window
         emu.Gpu.ReplaceBackend(null);
-        return licenseMissing ? TitleLicense.ExitCode : 0;
+        if (licenseMissing)
+        {
+            return TitleLicense.ExitCode;
+        }
+
+        return loadFailed ? TitleLaunchFailure.ExitCode : 0;
+    }
+
+    /// <summary>The launched title could not be loaded: the reason in plain words, in the log and as the last line on
+    /// the error output (the launcher shows it for <see cref="TitleLaunchFailure.ExitCode"/>).</summary>
+    static void ReportLoadFailure(string appPath, Exception failure)
+    {
+        string titleId = Path.GetFileName(Path.TrimEndingDirectorySeparator(appPath));
+        string message = TitleLaunchFailure.Message(titleId, failure, Log.FilePath);
+        Log.Error($"{message}{Environment.NewLine}{failure}");
+        Console.Error.WriteLine(message);
     }
 
     /// <summary>The launched application is encrypted and its license is not installed: the localized message with
@@ -1421,6 +1446,11 @@ public static class Runner
         {
             ReportLicenseMissing(noLicense);
             return TitleLicense.ExitCode;
+        }
+        catch (Exception failure) when (failure is not OutOfMemoryException)
+        {
+            ReportLoadFailure(appPath, failure);
+            return TitleLaunchFailure.ExitCode;
         }
 
         emu.Start();

@@ -121,6 +121,10 @@ public sealed class Vfs
     /// <summary>Additional read-only layers searched before app0 (e.g. installed patches).</summary>
     public void AddApp0Overlay(string hostPath) => _app0Overlays.Insert(0, hostPath);
 
+    /// <summary>A read-only layer searched after every other overlay and before app0's own folder: the decrypted view
+    /// of the application's PFS image (<see cref="Package.Pfs.PfsApp0View"/>), which an update still overrides.</summary>
+    public void AddApp0BaseLayer(string hostPath) => _app0Overlays.Add(hostPath);
+
     public void ClearApp0Overlays() => _app0Overlays.Clear();
 
     /// <summary>

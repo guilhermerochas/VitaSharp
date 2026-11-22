@@ -50,6 +50,12 @@ public static class TitleLicense
     /// encrypted (it can only be loaded with the title's license).</summary>
     public static bool NeedsLicense(string appDir, string self = "eboot.bin")
     {
+        // a folder that is still a PFS image is mounted with the licence's key (Pfs.PfsApp0View)
+        if (Pfs.PfsApp0View.IsImage(appDir))
+        {
+            return true;
+        }
+
         string path = Vfs.ResolveCaseInsensitive(appDir, self);
         if (!File.Exists(path))
         {
