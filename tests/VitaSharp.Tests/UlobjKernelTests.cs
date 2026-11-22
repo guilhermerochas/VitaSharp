@@ -15,7 +15,7 @@ namespace VitaSharp.Tests;
 public sealed class UlobjKernelTests(GuestMemoryFixture fixture) : IDisposable
 {
     private const int Argument = unchecked((int)0x80020005), NoRecord = unchecked((int)0x80010002);
-    private const int NoObject = unchecked((int)0x8002000C);
+    private const int NoObject = unchecked((int)0x8002000C), Fault = VitaSharp.Core.Kernel.KernelSpace.UserCopyFault;
 
     private readonly HleHarness _harness = new(fixture, "ulobjk");
 
@@ -49,11 +49,16 @@ public sealed class UlobjKernelTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(Argument, Call(Debug, "ksceUlobjMgr_A90A564C", 0, 0u, words + 4, words + 8));
         Assert.Equal(NoRecord, Call(Debug, "ksceUlobjMgr_A90A564C", 0, words, words + 4, words + 8));
         Assert.Equal(unchecked((int)0x80020004), Call(Debug, "ksceUlobjMgr_6F868221"));
-        Assert.Equal(0, Call(Debug, "_sceUlobjMgrStartSupportingUserlevelObject", 0x1000u, 0x3600011u, 0u));
+        Assert.Equal(0, Call(Debug, "_sceUlobjMgrStartSupportingUserlevelObject", 0x1000u, 0x3600011u, words + 8));
+        uint table = GuestMemory.R32(words + 8);
+        Assert.Equal(unchecked((int)0x80028003), Call(Debug, "_sceUlobjMgrStartSupportingUserlevelObject", 0x1000u, 0x3600011u, words + 8));
+        Assert.Equal(8u, GuestMemory.R32(table + 0x10));
+        Assert.Equal(0xFFFFFFF8u, GuestMemory.R32(table + 0x10 + 0xFFF * 4));
         Assert.Equal(0, Call(Debug, "ksceUlobjMgr_A90A564C", 0, words, words + 4, words + 8));
-        Assert.Equal(0x3600011u, GuestMemory.R32(words));
+        Assert.Equal(table, GuestMemory.R32(words));
         Assert.Equal(GuestMemory.R32(words + 8) + 0xC, GuestMemory.R32(words + 4));
-        Assert.Equal(0x1000u, GuestMemory.R32(GuestMemory.R32(words + 4)));
+        Assert.Equal(0x3600011u, GuestMemory.R32(GuestMemory.R32(words + 4)));
+        Assert.Equal(0x1000u, GuestMemory.R32(GuestMemory.R32(words + 8) + 0x10));
         Assert.Equal(0, Call(Debug, "ksceUlobjMgr_A48A5B3C", GuestMemory.R32(words + 8)));
         Assert.Equal(Argument, Call(Debug, "ksceUlobjMgr_A48A5B3C", 0u));
         Assert.Equal(0, Call(Debug, "_sceUlobjMgrStopSupportingUserlevelObject"));
@@ -67,13 +72,14 @@ public sealed class UlobjKernelTests(GuestMemoryFixture fixture) : IDisposable
         uint count = _harness.Alloc(4);
         GuestMemory.W32(count, 0);
         Assert.Equal(Argument, Call(Debug, "ksceUlobjMgr_525A9BDB", 0, 0x81000000u, 0u));
-        Assert.Equal(NoObject, Call(Debug, "ksceUlobjMgr_525A9BDB", 0, 0x81000000u, info));
+        Assert.Equal(Fault, Call(Debug, "ksceUlobjMgr_525A9BDB", 0, 0x10u, info));
         Assert.Equal(Argument, Call(Debug, "ksceUlobjMgr_6D2C8928", 0, 0x81000000u, info, 0u, count));
-        Assert.Equal(NoObject, Call(Debug, "ksceUlobjMgr_6D2C8928", 0, 0x81000000u, info, 4u, count));
+        Assert.Equal(Fault, Call(Debug, "ksceUlobjMgr_6D2C8928", 0, 0x10u, info, 4u, count));
+        Assert.Equal(NoObject, Call(Debug, "ksceUlobjMgr_6D2C8928", 0, info, info, 4u, count));
         GuestMemory.W32(count, 0xFFFFFFFF);
         Assert.Equal(Argument, Call(Debug, "ksceUlobjMgr_74B9199C", 0, 0x81000000u, info, 4u, count));
         Assert.Equal(NoObject, Call(Debug, "ksceUlobjMgr_CDAD91AD", 0, 0x81000000u, 1u));
-        Assert.Equal(0, Call(Debug, "ksceUlobjMgr_BB11EB2F", 0, info, 4u, count, 1u));
-        Assert.Equal(0u, GuestMemory.R32(count));
+        Assert.Equal(0, Call(Debug, "ksceUlobjMgr_BB11EB2F", 0, info, 4u, 0u, 1u));
+        Assert.Equal(Argument, Call(Debug, "ksceUlobjMgr_BB11EB2F", 0, info, 4u, 0u, 9u));
     }
 }
