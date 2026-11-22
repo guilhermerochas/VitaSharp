@@ -3274,6 +3274,9 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   Correção: 90f1ceb8 (merge db7044ef, 15/11/2026): o passo scripted de save/load state roda uma vez mesmo com várias threads lendo o pad. Teste: no celular, carregar um estado e logo em seguida carregar outro; o jogo não deve congelar.
 
 ## Bugs em aberto
+- [ ] [P2][G] CI: no runner Linux os testes de GPU do renderer são pulados ("shaderc not available ... install
+  libshaderc-dev"), então a "passagem" do Linux não testa o renderer (achado do cifix12, 21/11/2026). Instalar o
+  shaderc no job Linux (e conferir o macOS) para os testes de renderer rodarem nas 3 plataformas.
 - [ ] [P1][M] HELLDIVERS (PCSA00134), cores erradas na tela de título (relato do usuário, 21/11/2026; captura
   `shell_20261121_233801_tudo`, 6,3 s a 60 fps, dump da GPU de 168 quadros): as naves e o planeta saem verde-saturado
   (as naves deveriam ser cinza-metálicas), o fundo azul e o logo parecem certos. Suspeita: canal/formato trocado ou
