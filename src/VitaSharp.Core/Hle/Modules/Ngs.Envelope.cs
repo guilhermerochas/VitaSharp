@@ -9,6 +9,8 @@ namespace VitaSharp.Core.Hle.Modules;
 /// sceNgsVoiceKeyOff ("processing continues until the voice finishes"); the voice ends when the release does. It used
 /// to be a passthrough and a key off stopped the voice on the next update, so every keyed-off sound was cut mid-wave:
 /// Jak 1's Scream voices release over 23 ms to 12 s and were cut at full level (a click per sound, 150 in 40 s).
+/// Reaching the point nLoopEnd jumps back to uLoopStart (a sustain loop anywhere in the envelope, not only at its last
+/// point) until key off or until the game moves the loop away; then the envelope goes on to its later points.
 /// Curved segments are approximated as linear. State (SceNgsEnvelopeStates, 20 bytes) lives in the module's GuestState:
 /// +0 current height, +4 position in the segment (ms), +8 release scale (height when the release started), +12
 /// current point, +16 releasing. <c>VITASHARP_NGS_ENVELOPE=0</c> restores the passthrough (A/B).
@@ -52,6 +54,10 @@ public sealed partial class Ngs
         return true;
     }
 
+    /// <summary>True when <paramref name="point"/> is the end of a valid envelope loop (nLoopEnd &lt; 0: no loop).</summary>
+    static bool InEnvelopeLoop(int point, int loopStart, int loopEnd) =>
+        loopEnd >= 0 && point == loopEnd && loopStart >= 0 && loopStart < loopEnd;
+
     /// <summary>Applies one granule of the envelope to the voice's product; true when the release has ended.</summary>
     bool ProcessEnvelope(NgsVoice v, NgsModuleData m, int g)
     {
@@ -83,14 +89,36 @@ public sealed partial class Ngs
                 // segment point -> point + 1 over the point's uMsecsToNextPoint (0 = a step)
                 uint d = dur[point];
                 float a0 = amp[point], a1 = amp[point + 1];
-                if (pos >= d && steps++ < 16) { point++; pos -= d; height = a1; i--; continue; }
+                if (pos >= d && steps++ < 16)
+                {
+                    point++;
+                    pos -= d;
+                    height = a1;
+                    // reaching the loop's end point (nLoopEnd) goes back to uLoopStart, wherever the loop sits: the
+                    // sustain loop holds the voice there until key off. Assassin's Creed III Liberation's voices
+                    // loop points 1..2 (amplitude 1) ahead of a point 3 at 0; looping only at the last point ran
+                    // them on into that 0 after 5-105 ms, so sound effects were cut and long streams went silent
+                    if (InEnvelopeLoop(point, loopStart, loopEnd))
+                    {
+                        point = loopStart;
+                    }
+                    i--;
+                    continue;
+                }
                 height = a0 + (a1 - a0) * (d == 0 ? 1f : Math.Min(pos / d, 1f));
             }
             else
             {
-                // at the last point: an envelope loop (uLoopStart..nLoopEnd) restarts its segment, else it holds
+                // at the last point: a loop that ends there restarts its segment (also when the game moved the
+                // loop onto the point the envelope already sits on), else it holds
                 height = points > 0 ? amp[points - 1] : 1f;
-                if (loopEnd >= 0 && loopEnd == point && loopStart >= 0 && loopStart < loopEnd && steps++ < 16) { point = loopStart; pos = 0; i--; continue; }
+                if (InEnvelopeLoop(point, loopStart, loopEnd) && steps++ < 16)
+                {
+                    point = loopStart;
+                    pos = 0;
+                    i--;
+                    continue;
+                }
             }
             if (buf != null) { buf[2 * i] *= height; buf[2 * i + 1] *= height; }
             pos += msPerSample;
