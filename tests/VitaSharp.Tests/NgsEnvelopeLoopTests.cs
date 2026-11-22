@@ -77,7 +77,7 @@ public sealed class NgsEnvelopeLoopTests(GuestMemoryFixture fixture)
     {
         // AC3L's streamed voices: 0 ms to 0, 5 ms to 1, 0 ms to 1, then a point at 0; loop 1..2, no release
         var ngs = new Ngs();
-        var (voice, m) = Envelope(Params([0, 5, 0, 0], [0f, 1f, 1f, 0f], 0, 1, 2));
+        (NgsVoice voice, NgsModuleData m) = Envelope(Params([0, 5, 0, 0], [0f, 1f, 1f, 0f], 0, 1, 2));
         for (int g = 0; g < GranulesIn(10); g++)
         {
             float[] heights = Granule(ngs, voice, m, out bool done);
@@ -91,7 +91,7 @@ public sealed class NgsEnvelopeLoopTests(GuestMemoryFixture fixture)
     {
         // AC3L's sound effects: 100 ms fade-in from 0, then the same sustain loop; the sound must not stop at 105 ms
         var ngs = new Ngs();
-        var (voice, m) = Envelope(Params([100, 5, 0, 0], [0f, 1f, 1f, 0f], 0, 1, 2));
+        (NgsVoice voice, NgsModuleData m) = Envelope(Params([100, 5, 0, 0], [0f, 1f, 1f, 0f], 0, 1, 2));
         float last = -1f;
         int samples = 0;
         for (int g = 0; g < GranulesIn(2); g++)
@@ -118,7 +118,7 @@ public sealed class NgsEnvelopeLoopTests(GuestMemoryFixture fixture)
         // AC3L ends a sound by rewriting the parameters: point 2 now fades to point 3 (0) over 100 ms and the loop
         // end is negative (no loop): the envelope leaves the sustain and fades out, then holds 0
         var ngs = new Ngs();
-        var (voice, m) = Envelope(Params([0, 5, 0, 0], [0f, 1f, 1f, 0f], 0, 1, 2));
+        (NgsVoice voice, NgsModuleData m) = Envelope(Params([0, 5, 0, 0], [0f, 1f, 1f, 0f], 0, 1, 2));
         for (int g = 0; g < 4; g++)
         {
             Granule(ngs, voice, m, out _);
@@ -139,7 +139,7 @@ public sealed class NgsEnvelopeLoopTests(GuestMemoryFixture fixture)
     {
         // the same sustain with a 10 ms release: key off fades from the held height to 0 and ends the voice
         var ngs = new Ngs();
-        var (voice, m) = Envelope(Params([0, 5, 0, 0], [0f, 1f, 1f, 0f], 10, 1, 2));
+        (NgsVoice voice, NgsModuleData m) = Envelope(Params([0, 5, 0, 0], [0f, 1f, 1f, 0f], 10, 1, 2));
         for (int g = 0; g < GranulesIn(1); g++)
         {
             Granule(ngs, voice, m, out _);
@@ -158,7 +158,7 @@ public sealed class NgsEnvelopeLoopTests(GuestMemoryFixture fixture)
     {
         // the loop on the last segment (points 2..3, 1 -> 0.5 over 10 ms): the height cycles and never holds at 0.5
         var ngs = new Ngs();
-        var (voice, m) = Envelope(Params([0, 0, 10, 0], [1f, 1f, 1f, 0.5f], 0, 2, 3));
+        (NgsVoice voice, NgsModuleData m) = Envelope(Params([0, 0, 10, 0], [1f, 1f, 1f, 0.5f], 0, 2, 3));
         int risesBackToOne = 0;
         float last = 1f;
         for (int g = 0; g < GranulesIn(0.2); g++)
