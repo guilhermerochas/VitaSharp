@@ -258,7 +258,7 @@ public sealed partial class SystemServicesVsh
 
     /// <summary>The programs that are not sandboxed: the PSP emulator (0x2800000000007009, 0x13) and the system
     /// services 0x10, 0x2D, 0x2E, 0x22, 0x39 and the shell (1).</summary>
-    static bool IsNotSandboxedAuthority(ulong id) =>
+    internal static bool IsNotSandboxedAuthority(ulong id) =>
         id is 0x2800000000007009UL or 0x2800000000000013UL or 0x2800000000000010UL or 0x280000000000002DUL
             or 0x280000000000002EUL or 0x2800000000000022UL or 0x2800000000000039UL or 0x2800000000000001UL;
 

@@ -2158,7 +2158,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver 14
   (layout dos objetos da libult na memória do processo).
   Entrega movida para "Corrigido, falta o usuário testar" (reboot do sistema, kernN, 22/11/2026); o resto segue aberto aqui.
-- [ ] [P3][G] sceAppMgrPspSaveDataRootMount (HLE) escreve `ux0:pspemu` como ponto de montagem sem registrar uma
+- [x] (22/11/2026, fix/quick1 529bd5a0: a montagem id 0xCA de ux0:pspemu fica registrada no AppMgr como no SceAppMgr 3.74; sceAppMgrUmount e o par do apputil desmontam; testes falham sem) [P3][G] sceAppMgrPspSaveDataRootMount (HLE) escreve `ux0:pspemu` como ponto de montagem sem registrar uma
   montagem no AppMgr, então um sceAppMgrUmount dele falha: conferir no appmgr 3.74 o que é montado (o SAVEDATA do
   emulador de PSP) e o ponto devolvido; o par do apputil.suprx NID_C3CB128B/NID_C0418B1C (montagem
   da raiz de saves do PSP com contagem de uso, dono 0xCA) já está feito (9c263ffe).
