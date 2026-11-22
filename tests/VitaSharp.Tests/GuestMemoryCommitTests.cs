@@ -138,10 +138,14 @@ public sealed unsafe partial class GuestMemoryCommitTests(GuestMemoryFixture fix
     /// committed, so a fixed address can be wholly used before this test runs.</summary>
     private uint MostlyUntouchedBlock(uint region)
     {
-        const int Candidates = 8;
+        // the 8 blocks of the region's 256 MB segment (CDRAM or kernel memory), starting at the region: a block past
+        // the segment's end is not the same kind of memory
+        const uint SegmentSize = 0x1000_0000;
+        const int Candidates = (int)(SegmentSize / BlockSize);
+        uint segment = region & ~(SegmentSize - 1);
         for (uint i = 0; i < Candidates; i++)
         {
-            uint addr = region + (i * BlockSize);
+            uint addr = segment + ((region - segment + (i * BlockSize)) % SegmentSize);
             bool[]? mayHoldData = PagesThatMayHoldData(fixture.Memory.Primary.Base + addr, BlockSize);
             if (mayHoldData == null)
             {
