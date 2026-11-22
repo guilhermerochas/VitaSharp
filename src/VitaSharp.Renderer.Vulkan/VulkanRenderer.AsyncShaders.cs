@@ -109,6 +109,30 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
+    /// <summary>1 while the frame the GPU thread is executing has waited for the workers.</summary>
+    private int _frameStallHeld;
+
+    /// <summary>The GPU thread waits for a worker's shader or pipeline: the frame is late already, so the whole pool runs
+    /// until it is presented (<see cref="ReleaseFrameStall"/>), not only during each wait. A frame of new draws waits
+    /// many times with short draws in between, and a pool shrinking to the steady share in each gap left the extra
+    /// workers idle (cold replay of a dump: first frame 2,250 ms against 1,632 ms with the same pool fixed).</summary>
+    private void HoldStallForFrame()
+    {
+        if (!t_shaderWorker && Interlocked.Exchange(ref _frameStallHeld, 1) == 0)
+        {
+            BeginWaitForWorkers();
+        }
+    }
+
+    /// <summary>GPU thread, at each present: a frame that waited for the workers gives the extra workers back.</summary>
+    private void ReleaseFrameStall()
+    {
+        if (Interlocked.Exchange(ref _frameStallHeld, 0) == 1)
+        {
+            EndWaitForWorkers();
+        }
+    }
+
     /// <summary>Worker: takes a running slot if the budget allows one now (the steady share, or the whole pool while a
     /// thread waits for the workers).</summary>
     /// <param name="beyondSteady">the slot is one beyond the steady share</param>
@@ -160,15 +184,8 @@ public sealed unsafe partial class VulkanRenderer
             }
             else
             {
-                r.BeginWaitForWorkers();
-                try
-                {
-                    _done.Wait();
-                }
-                finally
-                {
-                    r.EndWaitForWorkers();
-                }
+                r.HoldStallForFrame();
+                _done.Wait();
             }
 
             return _result!;
@@ -614,16 +631,8 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         long t0 = FrameLedger.Now();
-        BeginWaitForWorkers();
-        try
-        {
-            manualResetEventSlim.Wait();
-        }
-        finally
-        {
-            EndWaitForWorkers();
-        }
-
+        HoldStallForFrame();
+        manualResetEventSlim.Wait();
         long dt = FrameLedger.Now() - t0;
         FrameLedger.Add(FrameLedger.Cat.ShaderWait, dt);
         _statPipelineWaits++;

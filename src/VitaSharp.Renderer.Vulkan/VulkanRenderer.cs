@@ -2001,6 +2001,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _workFrames++;
         _drawSerial = 0;
         EndFrameStallStats();
+        ReleaseFrameStall();
         TrimAtFrameBoundary();
         bool png = _options.DumpFramesDir != null && _presentCount % Math.Max(1, _options.DumpEvery) == 0 && _presentCount >= _options.DumpFrom;
         string? shot = _options.ShotPath != null ? Interlocked.Exchange(ref _options.ShotPath, null) : null;
