@@ -107,6 +107,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   velocidade só é impressa) e `RendererDeviceHandoffTests` (acha o repositório pelo caminho do fonte, funciona com
   `-o` fora do repo). Junto: a thread do codificador da captura lia `_queue` depois de um stop logo após o start e
   derrubava o testhost inteiro (NullReferenceException), coberto por `PreRollDisarmedBeforeTheEncoderThreadRunsKeepsItsQueue`.
+- [x] **Varredura da suíte por testes que dependiam do relógio do host (2ª rodada):** `SceneGateTests` (o tempo
+  limite de 250 ms do worker da GPU virou `GpuQueue.SceneGateTimeoutMs`; os testes o desligam e o caso do tempo
+  limite tem teste próprio), `ThreadMgrHleTests.EventFlagWakeLatencyDoesNotHoldTheFlag` (a latência de despertar
+  termina quando o teste manda, `Wait.LatencyForTest`, em vez de "< 400 ms"), `EventFlagSetGrantsTheWaitersInQueueOrder`
+  (relógio do guest parado), `WaitThreadEndReturnsTheExitStatus` (ordem por condição, não por `Thread.Sleep`),
+  `EmulationPauseTests` (`EmulationPause.ActiveHostTicks` fica parado de verdade durante a pausa; "sem salto" medido
+  contra o tempo do host do próprio resume; a thread estacionada é esperada por `GuestThread.IsParked`),
+  `MediaParityTests` (a primeira chamada do modo legado não depende mais da velocidade do host) e o `HleHarness.Join`
+  (limite só contra travamento, 2 min, em vez de 5/30 s).
 - [x] [P2][M] **Suíte rápida: testhost < 4 GB e `Category!=Slow` < 8 min.** Feito (15/11/2026, bugB): os testes do
   renderer seguravam ~0,5 GB cada (só as 24 classes do renderer chegavam a 11,1 GB): um programa GXP com contagens de
   tabela lixo virava listas de milhões de entradas e o cache estático de programas (`GxmProgramInfo`) segurava todos

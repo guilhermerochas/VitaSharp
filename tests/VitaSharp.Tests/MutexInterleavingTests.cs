@@ -85,10 +85,10 @@ public sealed class MutexInterleavingTests(GuestMemoryFixture fixture) : IDispos
             }
             foreach (GuestRun waiter in waiters)
             {
-                _h.Join(waiter, 5_000);
+                _h.Join(waiter);
             }
 
-            _h.Join(again, 5_000);
+            _h.Join(again);
             Assert.Equal([0, 0, 0], results);
             Assert.Equal([0, 1, 2], order);
             Assert.Equal((1, again.Thread.Uid, 0), Info(main, uid)); // it never unlocked
@@ -120,9 +120,9 @@ public sealed class MutexInterleavingTests(GuestMemoryFixture fixture) : IDispos
                 Assert.Equal(0u, main.DispatchForTest("sceKernelUnlockMutex", (uint)uid, 1u));
                 Assert.Equal((1, first.Thread.Uid, 2), Info(main, uid));
             }
-            _h.Join(low, 5_000);
-            _h.Join(highFirst, 5_000);
-            _h.Join(highSecond, 5_000);
+            _h.Join(low);
+            _h.Join(highFirst);
+            _h.Join(highSecond);
             Assert.Equal([0, 0, 0], results);
             Assert.Equal(threadPriority ? [1, 2, 0] : [0, 1, 2], order);
         });
@@ -157,7 +157,7 @@ public sealed class MutexInterleavingTests(GuestMemoryFixture fixture) : IDispos
             List<int> order = [];
             GuestRun waiter = Waiter(uid, 3, results, 0, order);
             GuestRun stranger = _h.Start(_ => Assert.Equal(SceError.MUTEX_NOT_OWNED, Call(Tm, "sceKernelUnlockMutex", uid, 1)), "mutex-stranger");
-            _h.Join(stranger, 5_000);
+            _h.Join(stranger);
             Assert.Equal(0, Call(Tm, "sceKernelUnlockMutex", uid, 3));
             Assert.Equal((1, main.Uid, 1), Info(main, uid));
             Assert.Equal(ThreadStatus.Waiting, waiter.Thread.Status);
@@ -166,7 +166,7 @@ public sealed class MutexInterleavingTests(GuestMemoryFixture fixture) : IDispos
                 Assert.Equal(0u, main.DispatchForTest("sceKernelUnlockMutex", (uint)uid, 1u));
                 Assert.Equal((3, waiter.Thread.Uid, 0), Info(main, uid));
             }
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal([0], results);
             Assert.Equal((0, 0, 0), Info(main, uid));
         });
@@ -199,8 +199,8 @@ public sealed class MutexInterleavingTests(GuestMemoryFixture fixture) : IDispos
                 Assert.Equal(0u, main.DispatchForTest("sceKernelUnlockMutex", (uint)uid, 1u));
                 Assert.Equal((0, 0, 0), Info(main, uid));
             }
-            _h.Join(first, 5_000);
-            _h.Join(second, 5_000);
+            _h.Join(first);
+            _h.Join(second);
             Assert.Equal(2u, GuestMemory.R32(numWait));
             Assert.Equal([SceError.WAIT_CANCEL, SceError.WAIT_CANCEL], results);
             Assert.Empty(order);
@@ -227,8 +227,8 @@ public sealed class MutexInterleavingTests(GuestMemoryFixture fixture) : IDispos
                 Assert.Equal(0u, main.DispatchForTest("sceKernelDeleteMutex", (uint)uid));
                 Assert.Equal(unchecked((uint)SceError.UNKNOWN_MUTEX_ID), main.DispatchForTest("sceKernelUnlockMutex", (uint)uid, 1u));
             }
-            _h.Join(first, 5_000);
-            _h.Join(second, 5_000);
+            _h.Join(first);
+            _h.Join(second);
             Assert.Equal([SceError.WAIT_DELETE, SceError.WAIT_DELETE], results);
             Assert.Empty(order);
         });
@@ -264,10 +264,10 @@ public sealed class MutexInterleavingTests(GuestMemoryFixture fixture) : IDispos
                 Assert.Equal(0u, main.DispatchForTest("sceKernelUnlockMutex", (uint)uid, 1u));
                 Assert.Equal(waiterBehind ? (1, behind!.Thread.Uid, 0) : (0, 0, 0), Info(main, uid));
             }
-            _h.Join(late, 5_000);
+            _h.Join(late);
             if (behind != null)
             {
-                _h.Join(behind, 5_000);
+                _h.Join(behind);
                 Assert.Equal([1], order);
             }
 
@@ -341,7 +341,7 @@ public sealed class MutexInterleavingTests(GuestMemoryFixture fixture) : IDispos
 
             foreach (GuestRun run in runs)
             {
-                _h.Join(run, 5_000);
+                _h.Join(run);
             }
 
             Assert.Equal([0, SceError.WAIT_CANCEL, SceError.WAIT_CANCEL], first);
@@ -400,7 +400,7 @@ public sealed class MutexInterleavingTests(GuestMemoryFixture fixture) : IDispos
                 Assert.Equal((1, waiter.Thread.Uid, 0), Info(main, uid));
                 mutex.Save(writer);
             }
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal(0, result);
             var restored = new Mutex { Name = "cond-mutex" };
             restored.Load(new SnapshotReader(writer.Data.ToArray()));

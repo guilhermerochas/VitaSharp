@@ -67,12 +67,12 @@ public sealed class SemaphoreInterleavingTests(GuestMemoryFixture fixture) : IDi
                 Assert.Equal((0, 1), Info(main, uid));
                 Assert.Equal(unchecked((uint)SceError.SEMA_ZERO), main.DispatchForTest("sceKernelPollSema", (uint)uid, 1u));
             }
-            _h.Join(waiters[0], 5_000);
-            _h.Join(waiters[1], 5_000);
+            _h.Join(waiters[0]);
+            _h.Join(waiters[1]);
             Assert.Equal([0, 0, 1], results);
             Assert.Equal(ThreadStatus.Waiting, waiters[2].Thread.Status);
             Assert.Equal(0, Call(Tm, "sceKernelSignalSema", uid, 1));
-            _h.Join(waiters[2], 5_000);
+            _h.Join(waiters[2]);
             Assert.Equal([0, 0, 0], results);
             Assert.Equal((0, 0), Info(main, uid));
         });
@@ -104,7 +104,7 @@ public sealed class SemaphoreInterleavingTests(GuestMemoryFixture fixture) : IDi
                     Assert.Equal(0u, main.DispatchForTest("sceKernelSignalSema", (uint)uid, 1u));
                     Assert.Equal((0, 2 - served), Info(main, uid));
                 }
-                _h.Join(expectedOrder[served], 5_000);
+                _h.Join(expectedOrder[served]);
                 for (int later = served + 1; later < 3; later++)
                 {
                     Assert.Equal(ThreadStatus.Waiting, expectedOrder[later].Thread.Status);
@@ -136,7 +136,7 @@ public sealed class SemaphoreInterleavingTests(GuestMemoryFixture fixture) : IDi
                 Assert.Equal((1, 2), Info(main, uid));
                 Assert.Equal(unchecked((uint)SceError.SEMA_ZERO), main.DispatchForTest("sceKernelPollSema", (uint)uid, 1u));
             }
-            _h.Join(first, 5_000);
+            _h.Join(first);
             GuestRun late = _h.Start(_ => results[3] = Call(Tm, "sceKernelWaitSema", uid, 1, new Ptr<uint>(0)), "sema-late");
             Until(() => late.Thread.Status == ThreadStatus.Waiting || !late.Thread.IsLive, "the late wait");
             Assert.Equal(ThreadStatus.Waiting, late.Thread.Status);
@@ -146,10 +146,10 @@ public sealed class SemaphoreInterleavingTests(GuestMemoryFixture fixture) : IDi
                 Assert.Equal(0u, main.DispatchForTest("sceKernelSignalSema", (uint)uid, 2u));
                 Assert.Equal((0, 2), Info(main, uid));
             }
-            _h.Join(big, 5_000);
+            _h.Join(big);
             Assert.Equal(0, Call(Tm, "sceKernelSignalSema", uid, 2));
-            _h.Join(third, 5_000);
-            _h.Join(late, 5_000);
+            _h.Join(third);
+            _h.Join(late);
             Assert.Equal([0, 0, 0, 0], results);
             Assert.Equal((0, 0), Info(main, uid));
         });
@@ -180,8 +180,8 @@ public sealed class SemaphoreInterleavingTests(GuestMemoryFixture fixture) : IDi
                 Assert.Equal(0u, main.DispatchForTest("sceKernelSignalSema", (uint)uid, 1u));
                 Assert.Equal((2, 0), Info(main, uid));
             }
-            _h.Join(big, 5_000);
-            _h.Join(small, 5_000);
+            _h.Join(big);
+            _h.Join(small);
             Assert.Equal(2u, GuestMemory.R32(numWait));
             Assert.Equal([SceError.WAIT_CANCEL, SceError.WAIT_CANCEL], results);
             Assert.Equal(2, sema.Count);
@@ -205,8 +205,8 @@ public sealed class SemaphoreInterleavingTests(GuestMemoryFixture fixture) : IDi
                 Assert.Equal(0u, main.DispatchForTest("sceKernelDeleteSema", (uint)uid));
                 Assert.Equal(unchecked((uint)SceError.UNKNOWN_SEMA_ID), main.DispatchForTest("sceKernelSignalSema", (uint)uid, 1u));
             }
-            _h.Join(big, 5_000);
-            _h.Join(small, 5_000);
+            _h.Join(big);
+            _h.Join(small);
             Assert.Equal([SceError.WAIT_DELETE, SceError.WAIT_DELETE], results);
             Assert.Equal(SceError.UNKNOWN_SEMA_ID, Call(Tm, "sceKernelPollSema", uid, 1));
         });
@@ -238,7 +238,7 @@ public sealed class SemaphoreInterleavingTests(GuestMemoryFixture fixture) : IDi
                 Assert.Equal(0u, main.DispatchForTest("sceKernelSignalSema", (uint)uid, 1u));
                 Assert.Equal((1, 0), Info(main, uid));
             }
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal(SceError.WAIT_TIMEOUT, result);
             Assert.Equal(0u, GuestMemory.R32(timeout));
             Assert.Equal(1, sema.Count);
@@ -274,8 +274,8 @@ public sealed class SemaphoreInterleavingTests(GuestMemoryFixture fixture) : IDi
                 Assert.Equal(unchecked((uint)SceError.SEMA_ZERO), main.DispatchForTest("sceKernelPollSema", (uint)uid, 1u));
                 Assert.Equal((0, 0), Info(main, uid));
             }
-            _h.Join(head, 5_000);
-            _h.Join(behind, 5_000);
+            _h.Join(head);
+            _h.Join(behind);
             Assert.Equal([SceError.WAIT_TIMEOUT, 0], results);
             Assert.Equal(0u, GuestMemory.R32(timeout));
         });
@@ -330,17 +330,17 @@ public sealed class SemaphoreInterleavingTests(GuestMemoryFixture fixture) : IDi
                     "the reissued wait");
             }
 
-            _h.Join(runs[0], 5_000); // served before the save
+            _h.Join(runs[0]); // served before the save
             Assert.Equal(0, second[0]);
             lock (restored)
             {
                 Assert.Equal(SceError.OK, restored.Signal(1));
                 Assert.Equal((0, 1), restored.Info());
             }
-            _h.Join(runs[1], 5_000);
+            _h.Join(runs[1]);
             Assert.Equal(ThreadStatus.Waiting, runs[2].Thread.Status);
             Assert.Equal(SceError.OK, restored.Signal(1));
-            _h.Join(runs[2], 5_000);
+            _h.Join(runs[2]);
             Assert.Equal([0, SceError.WAIT_CANCEL, SceError.WAIT_CANCEL], first);
             Assert.Equal([0, 0, 0], second);
         });

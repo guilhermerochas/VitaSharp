@@ -100,7 +100,7 @@ public sealed class MsgPipeInterleavingTests(GuestMemoryFixture fixture) : IDisp
                 Assert.Equal((0x1000, 0, 0), Info(main, uid));
                 Assert.Equal(SceError.MPP_EMPTY, Try("sceKernelTryReceiveMsgPipe", uid, stolen, 16u, MsgPipe.WaitAsap, _h.Word(0)));
             }
-            _h.Join(receiver, 5_000);
+            _h.Join(receiver);
             Assert.Equal(0, results[0]);
             Assert.Equal(8u, GuestMemory.R32(moved));
             Assert.True(GuestMemory.ReadSpan(destination, 8).SequenceEqual(GuestMemory.ReadSpan(source, 8)));
@@ -136,7 +136,7 @@ public sealed class MsgPipeInterleavingTests(GuestMemoryFixture fixture) : IDisp
                     Assert.Equal(0, Blocking("sceKernelSendMsgPipe", uid, source, 4u, MsgPipe.WaitAll, 0u, 0u));
                     Assert.Equal((0x1000, 0, 2 - served), Info(main, uid));
                 }
-                _h.Join(runs[expected[served]], 5_000);
+                _h.Join(runs[expected[served]]);
                 Assert.True(GuestMemory.ReadSpan(destinations[expected[served]], 4).SequenceEqual(GuestMemory.ReadSpan(source, 4)));
             }
             Assert.Equal([0, 0, 0], results);
@@ -170,10 +170,10 @@ public sealed class MsgPipeInterleavingTests(GuestMemoryFixture fixture) : IDisp
                 Assert.Equal(0, Blocking("sceKernelReceiveMsgPipe", uid, sink, 4u, MsgPipe.WaitAll, 0u, 0u));
                 Assert.Equal((0, 1, 0), Info(main, uid));
             }
-            _h.Join(head, 5_000);
+            _h.Join(head);
             Assert.Equal(ThreadStatus.Waiting, behind.Thread.Status);
             Assert.Equal(0, Call(Tm, "sceKernelReceiveMsgPipe", uid, sink, 4u, MsgPipe.WaitAll, new Ptr<uint>(0), new Ptr<uint>(0)));
-            _h.Join(behind, 5_000);
+            _h.Join(behind);
             Assert.Equal([0, 0], results);
             Assert.Equal(8u, GuestMemory.R32(moved[0]));
             Assert.Equal(4u, GuestMemory.R32(moved[1]));
@@ -203,12 +203,12 @@ public sealed class MsgPipeInterleavingTests(GuestMemoryFixture fixture) : IDisp
             int tried = 1;
             uint count = _h.Word(0xDEAD);
             GuestRun high = _h.Start(_ => tried = Try("sceKernelTrySendMsgPipe", uid, Bytes(4, 0x80), 4u, MsgPipe.WaitAsap, count), "mpp-high-send", HighPriority);
-            _h.Join(high, 5_000);
+            _h.Join(high);
             Assert.Equal(threadPriority ? 0 : SceError.MPP_FULL, tried);
             Assert.Equal(threadPriority ? 4u : 0xDEADu, GuestMemory.R32(count));
             Assert.Equal((threadPriority ? 4 : 8, 1, 0), Info(main, uid));
             Assert.Equal(0, Call(Tm, "sceKernelCancelMsgPipe", uid, new Ptr<int>(0), new Ptr<int>(0)));
-            _h.Join(low, 5_000);
+            _h.Join(low);
             Assert.Equal(SceError.WAIT_CANCEL, results[0]);
         });
     }
@@ -246,10 +246,10 @@ public sealed class MsgPipeInterleavingTests(GuestMemoryFixture fixture) : IDisp
                 Assert.Equal(0, Blocking("sceKernelSendMsgPipe", uid, second, 5u, MsgPipe.WaitAll, 0u, 0u));
                 Assert.Equal((0x1000, 0, 1), Info(main, uid));
             }
-            _h.Join(receiver, 5_000);
+            _h.Join(receiver);
             Assert.Equal(ThreadStatus.Waiting, high.Thread.Status);
             Assert.Equal(0, Call(Tm, "sceKernelCancelMsgPipe", uid, new Ptr<int>(0), new Ptr<int>(0)));
-            _h.Join(high, 5_000);
+            _h.Join(high);
             Assert.Equal(SceError.WAIT_CANCEL, highResult[0]);
             Assert.Equal(0, results[0]);
             Assert.Equal(8u, GuestMemory.R32(moved));
@@ -279,7 +279,7 @@ public sealed class MsgPipeInterleavingTests(GuestMemoryFixture fixture) : IDisp
                 Assert.Equal((0x1000 - 8, 0, 0), Info(main, uid));
                 Assert.Equal(16u, GuestMemory.R32(moved));
             }
-            _h.Join(sender, 5_000);
+            _h.Join(sender);
             Assert.Equal(0, results[0]);
             Assert.True(GuestMemory.ReadSpan(sink + 0xFF8, 8).SequenceEqual(GuestMemory.ReadSpan(source, 8)));
             uint rest = _h.Alloc(8);
@@ -312,8 +312,8 @@ public sealed class MsgPipeInterleavingTests(GuestMemoryFixture fixture) : IDisp
                 Assert.Equal((0x1000, 0, 0), Info(main, uid));
                 Assert.Equal(SceError.MPP_EMPTY, Try("sceKernelTryReceiveMsgPipe", uid, _h.Alloc(4), 1u, MsgPipe.WaitAsap, _h.Word(0)));
             }
-            _h.Join(first, 5_000);
-            _h.Join(second, 5_000);
+            _h.Join(first);
+            _h.Join(second);
             Assert.Equal(2u, GuestMemory.R32(numSend));
             Assert.Equal(0u, GuestMemory.R32(numRecv));
             Assert.Equal([SceError.WAIT_CANCEL, SceError.WAIT_CANCEL], results);
@@ -340,8 +340,8 @@ public sealed class MsgPipeInterleavingTests(GuestMemoryFixture fixture) : IDisp
                 Assert.Equal(0u, main.DispatchForTest("sceKernelDeleteMsgPipe", (uint)uid));
                 Assert.Equal(SceError.UNKNOWN_MSG_PIPE_ID, Try("sceKernelTrySendMsgPipe", uid, Bytes(1), 1u, 0u, 0u));
             }
-            _h.Join(first, 5_000);
-            _h.Join(second, 5_000);
+            _h.Join(first);
+            _h.Join(second);
             Assert.Equal([SceError.WAIT_DELETE, SceError.WAIT_DELETE], results);
             Assert.Equal(3u, GuestMemory.R32(moved[0]));
             Assert.Equal(0u, GuestMemory.R32(moved[1]));
@@ -375,8 +375,8 @@ public sealed class MsgPipeInterleavingTests(GuestMemoryFixture fixture) : IDisp
                 clock.Advance(1);
                 Assert.Equal((0, 0, 0), Info(main, uid));
             }
-            _h.Join(head, 5_000);
-            _h.Join(behind, 5_000);
+            _h.Join(head);
+            _h.Join(behind);
             Assert.Equal([SceError.WAIT_TIMEOUT, 0], results);
             Assert.Equal(0u, GuestMemory.R32(moved[0]));
             Assert.Equal(4u, GuestMemory.R32(moved[1]));
@@ -400,7 +400,7 @@ public sealed class MsgPipeInterleavingTests(GuestMemoryFixture fixture) : IDisp
             Assert.Equal(0, Call(Tm, "sceKernelSendMsgPipe", uid, Bytes(3), 3u, MsgPipe.WaitAll, new Ptr<uint>(0), new Ptr<uint>(0)));
             clock.Advance(LimitUs);
             Assert.Equal((0x1000, 0, 0), Info(main, uid));
-            _h.Join(receiver, 5_000);
+            _h.Join(receiver);
             Assert.Equal(SceError.WAIT_TIMEOUT, results[0]);
             Assert.Equal(3u, GuestMemory.R32(moved));
         });
@@ -486,7 +486,7 @@ public sealed class MsgPipeInterleavingTests(GuestMemoryFixture fixture) : IDisp
                     "the reissued receive");
             }
 
-            _h.Join(runs[0], 5_000); // served before the save
+            _h.Join(runs[0]); // served before the save
             Assert.Equal(0, second[0]);
             uint next = Bytes(4, 0x20);
             lock (restored)
@@ -494,10 +494,10 @@ public sealed class MsgPipeInterleavingTests(GuestMemoryFixture fixture) : IDisp
                 Assert.Equal(SceError.OK, restored.Send(next, 4, MsgPipe.WaitAll, default, default, true));
                 Assert.Equal(1, restored.RecvWaiters);
             }
-            _h.Join(runs[1], 5_000);
+            _h.Join(runs[1]);
             Assert.Equal(ThreadStatus.Waiting, runs[2].Thread.Status);
             Assert.Equal(SceError.OK, restored.Send(Bytes(4, 0x30), 4, MsgPipe.WaitAll, default, default, true));
-            _h.Join(runs[2], 5_000);
+            _h.Join(runs[2]);
             Assert.Equal([0, SceError.WAIT_CANCEL, SceError.WAIT_CANCEL], first);
             Assert.Equal([0, 0, 0], second);
             Assert.True(GuestMemory.ReadSpan(destinations[0], 4).SequenceEqual(GuestMemory.ReadSpan(served, 4)));

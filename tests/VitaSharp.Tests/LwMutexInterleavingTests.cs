@@ -96,10 +96,10 @@ public sealed class LwMutexInterleavingTests(GuestMemoryFixture fixture) : IDisp
             }
             foreach (GuestRun waiter in waiters)
             {
-                _h.Join(waiter, 5_000);
+                _h.Join(waiter);
             }
 
-            _h.Join(again, 5_000);
+            _h.Join(again);
             Assert.Equal([0, 0, 0], results);
             Assert.Equal([0, 1, 2], order);
             Assert.Equal((1, again.Thread.Uid, 0), Info(main, work)); // it never unlocked
@@ -130,9 +130,9 @@ public sealed class LwMutexInterleavingTests(GuestMemoryFixture fixture) : IDisp
                 Assert.Equal(0u, main.DispatchForTest("sceKernelUnlockLwMutex", work, 1u));
                 Assert.Equal((1, first.Thread.Uid, 2), Info(main, work));
             }
-            _h.Join(low, 5_000);
-            _h.Join(highFirst, 5_000);
-            _h.Join(highSecond, 5_000);
+            _h.Join(low);
+            _h.Join(highFirst);
+            _h.Join(highSecond);
             Assert.Equal([0, 0, 0], results);
             Assert.Equal(threadPriority ? [1, 2, 0] : [0, 1, 2], order);
         });
@@ -167,7 +167,7 @@ public sealed class LwMutexInterleavingTests(GuestMemoryFixture fixture) : IDisp
                 Assert.Equal(SceError.LW_MUTEX_FAILED_TO_OWN, Call(Tm, "sceKernelTryLockLwMutex", plain, 2));
                 Assert.Equal(SceError.LW_MUTEX_NOT_OWNED, Call(Tm, "sceKernelUnlockLwMutex", plain, 1));
             }, "lwmutex-other");
-            _h.Join(other, 5_000);
+            _h.Join(other);
             Assert.Equal(0, Call(Tm, "sceKernelUnlockLwMutex", plain, 1));
 
             (uint work, Mutex mutex) = Create("recursive", Mutex.AttrRecursive, 2);
@@ -185,7 +185,7 @@ public sealed class LwMutexInterleavingTests(GuestMemoryFixture fixture) : IDisp
                 Assert.Equal(0u, main.DispatchForTest("sceKernelUnlockLwMutex", work, 1u));
                 Assert.Equal((3, waiter.Thread.Uid, 0), Info(main, work));
             }
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal([0], results);
             Assert.Equal((0, 0, 0), Info(main, work));
             Assert.Equal(0u, OwnerWord(work));
@@ -210,8 +210,8 @@ public sealed class LwMutexInterleavingTests(GuestMemoryFixture fixture) : IDisp
                 Assert.Equal(0u, GuestMemory.R32(work + Mutex.LwUidOffset));
                 Assert.Equal(unchecked((uint)SceError.UNKNOWN_LW_MUTEX_ID), main.DispatchForTest("sceKernelLockLwMutex", work, 1u, 0u));
             }
-            _h.Join(first, 5_000);
-            _h.Join(second, 5_000);
+            _h.Join(first);
+            _h.Join(second);
             Assert.Equal([SceError.WAIT_DELETE, SceError.WAIT_DELETE], results);
             Assert.Empty(order);
         });
@@ -247,10 +247,10 @@ public sealed class LwMutexInterleavingTests(GuestMemoryFixture fixture) : IDisp
                 Assert.Equal(waiterBehind ? (1, behind!.Thread.Uid, 0) : (0, 0, 0), Info(main, work));
                 Assert.Equal(waiterBehind ? (uint)behind!.Thread.Uid : 0u, OwnerWord(work));
             }
-            _h.Join(late, 5_000);
+            _h.Join(late);
             if (behind != null)
             {
-                _h.Join(behind, 5_000);
+                _h.Join(behind);
                 Assert.Equal([1], order);
             }
 
@@ -284,7 +284,7 @@ public sealed class LwMutexInterleavingTests(GuestMemoryFixture fixture) : IDisp
                 Assert.Equal(0u, main.DispatchForTest("sceKernelUnlockLwMutex", work, 1u));
                 clock.Advance(LimitUs); // the waiter's thread runs past its deadline
             }
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal(0, result);
             Assert.Equal(LimitUs - BeforeUnlockUs, GuestMemory.R32(timeout));
         });
@@ -327,8 +327,8 @@ public sealed class LwMutexInterleavingTests(GuestMemoryFixture fixture) : IDisp
             // the live mutex shares the work area: put it back for the threads still waiting on it
             GuestMemory.W32(work + Mutex.LwOwnerOffset, (uint)main.Uid | Mutex.Contended);
             Assert.Equal(0, Call(Tm, "sceKernelUnlockLwMutex", work, 1));
-            _h.Join(first, 5_000);
-            _h.Join(second, 5_000);
+            _h.Join(first);
+            _h.Join(second);
             Assert.Equal([0, 0], results);
             Assert.Equal([0, 1], order);
         });
