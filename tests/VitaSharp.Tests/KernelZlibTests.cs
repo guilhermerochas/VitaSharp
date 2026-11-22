@@ -517,7 +517,7 @@ public sealed class KernelZlibTests(GuestMemoryFixture fixture) : IDisposable
     private static byte[] DropBits(byte[] bytes, int bits)
     {
         int total = bytes.Length * 8 - bits;
-        var result = new byte[(total + 7) / 8];
+        byte[] result = new byte[(total + 7) / 8];
         for (int i = 0; i < total; i++)
         {
             int source = i + bits;
