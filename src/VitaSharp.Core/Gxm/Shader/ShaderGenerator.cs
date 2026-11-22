@@ -12,8 +12,8 @@ namespace VitaSharp.Core.Gxm.Shader;
 /// colour): the layout of the colour the program leaves in its output registers (see ShaderGenerator.OutputType)</param>
 /// <param name="TileWord1">the scene keeps the second output register word of its pixels in an auxiliary R32_UINT
 /// attachment (see <see cref="TileWord1Use"/>): the shader starts with o[0].y = that word (set 3 binding 3 input
-/// attachment with <see cref="FetchInputAttachment"/>, else binding 4, a copy) and, when it writes the word, outputs
-/// it at location 1</param>
+/// attachment with <see cref="FetchInputAttachment"/>, else a copy: binding 4, binding 5 in multisampled scenes) and,
+/// when it writes the word, outputs it at location 1</param>
 /// <param name="FetchInputSingleSample">with <see cref="FetchInputAttachment"/>: the attachment is single-sampled (a
 /// one-sample scene whose programmable-blending draw renders in a render pass, VulkanRenderer.SingleFetch.cs), read
 /// as a plain subpassInput</param>
@@ -254,7 +254,8 @@ public enum TileWord1Use : byte
 /// Builds complete Vulkan GLSL for a GXP program. Descriptor layout:
 /// set 0 binding 0 = vertex uniform SSBO, binding 1 = fragment uniform SSBO;
 /// set 1 = vertex textures (binding = texture unit); set 2 = fragment textures; set 3 = framebuffer fetch (binding 0 =
-/// single-sampled copy of the target, 1 = multisampled copy, 2 = multisampled colour input attachment).
+/// single-sampled copy of the target, 1 = multisampled copy, 2 = multisampled colour input attachment; 3, 4, 5 = the
+/// tile word: input attachment, single-sampled copy, multisampled copy).
 /// The render state lives in a push-constant block shared by both stages.
 /// </summary>
 public static class ShaderGenerator
@@ -265,7 +266,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 31;
+    public const int GeneratorVersion = 32;
 
     /// <summary>Clip distances the generated vertex shaders may write (index 0 the far plane, 1-7 the GXM user clip
     /// planes 0-6): the Vulkan minimum of maxClipDistances.</summary>
@@ -1488,8 +1489,11 @@ float packC10(vec3 c) {
             }
             else
             {
+                // a copy of the attachment: binding 4 one-sample (also supersampled scenes), binding 5 the samples of
+                // a multisampled scene (VITASHARP_MSAA_FETCH=copy, rinfo.fb_samples > 1), read per sample
                 decl.AppendLine("layout(set = 3, binding = 4) uniform usampler2D tile_word1_tex;");
-                word = "texelFetch(tile_word1_tex, ivec2(gl_FragCoord.xy), 0).x";
+                decl.AppendLine("layout(set = 3, binding = 5) uniform usampler2DMS tile_word1_ms;");
+                word = $"(rinfo.fb_samples > 1.5 ? texelFetch(tile_word1_ms, ivec2(gl_FragCoord.xy), {sample}).x : texelFetch(tile_word1_tex, ivec2(gl_FragCoord.xy), 0).x)";
             }
             usseTranslator.Line($"o[0].y = uintBitsToFloat({word});");
         }

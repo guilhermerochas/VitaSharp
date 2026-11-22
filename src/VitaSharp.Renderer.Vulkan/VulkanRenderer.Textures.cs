@@ -466,16 +466,17 @@ public sealed unsafe partial class VulkanRenderer
     private long _fbCopiesPixels;
     private readonly HashSet<uint> _ssFetchLogged = new();
 
-    /// <param name="tileWord1">the shader also reads the scene's tile-word attachment (a copy of it, binding 4)</param>
+    /// <param name="tileWord1">the shader also reads the scene's tile-word attachment (a copy of it, binding 4 / 5 multisampled)</param>
     /// <param name="rawWords">the shader reads the pixel's raw words (<see cref="Core.Gxm.Shader.GeneratedShader.FetchesRawWords"/>):
     /// the single-sampled copy is an unsigned-integer image</param>
     private DescriptorSet BuildFramebufferFetchSet(bool tileWord1, bool rawWords)
     {
         DescriptorSet set = BuildFramebufferFetchSet(rawWords);
-        if (tileWord1 && _tileWord1 != null && _renderTarget != null && !_multisampled) // (never the persistent empty set: there is a target)
+        if (tileWord1 && _tileWord1 != null && _renderTarget != null) // (never the persistent empty set: there is a target)
         {
+            // the colour copy above ended the rendering (multisampled: stored its samples and the word's)
             EndRendering(resolve: false);
-            WriteTileWord1Copy(set, CopyTileWord1());
+            WriteTileWord1Copy(set, CopyTileWord1(), _multisampled);
         }
         return set;
     }

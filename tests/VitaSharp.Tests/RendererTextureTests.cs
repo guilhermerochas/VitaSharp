@@ -213,6 +213,16 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
             return GuestMemory.R32(fp);
         }
 
+        /// <summary>Registers <paramref name="gxp"/> and creates a fragment program object of it with the output
+        /// register format <paramref name="outputFormat"/> (SceGxmOutputRegisterFormat; 0 = the declared output).</summary>
+        public uint CreateFragmentProgram(byte[] gxp, uint outputFormat)
+        {
+            uint id = _h.Word(0), fp = _h.Word(0);
+            Assert.Equal(0, Call(_g, "sceGxmShaderPatcherRegisterProgram", _patcher, Copy(_h, gxp), new Ptr<uint>(id)));
+            Assert.Equal(0, Call(_g, "sceGxmShaderPatcherCreateFragmentProgram", _patcher, GuestMemory.R32(id), outputFormat, 0u, 0u, _vertexGxp, new Ptr<uint>(fp)));
+            return GuestMemory.R32(fp);
+        }
+
         /// <summary>One scene drawing the whole surface once with <paramref name="fragmentProgram"/> and
         /// <paramref name="texture"/> on unit 3, and a present.</summary>
         public void RunWith(uint fragmentProgram, uint texture)
