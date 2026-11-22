@@ -806,6 +806,15 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
     }
 
     [Fact]
+    public void TheWeakestGuessesAreEvictedFirst()
+    {
+        // the flow from the entry points ran least (17% in Assassin's Creed III: Liberation), then the frontier (32%),
+        // then the rest of the functions the game is running (67%); what the code cache recorded is never a guess
+        Assert.Equal([CodePrecompiler.Priority.Flow, CodePrecompiler.Priority.Frontier, CodePrecompiler.Priority.Running], CodePrecompiler.EvictionOrder);
+        Assert.DoesNotContain(CodePrecompiler.Priority.Cached, CodePrecompiler.EvictionOrder);
+    }
+
+    [Fact]
     public void TheBootStepWaitsForTheFirstRecordedBlocksOnly()
     {
         // with a code cache, the first BootCachedBlocks recorded blocks (in the order they first ran) are enough to

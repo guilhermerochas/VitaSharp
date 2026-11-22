@@ -236,14 +236,15 @@ public static unsafe class Jit
 
     /// <summary>The most speculative code waiting to run (<see cref="SpeculativeBytes"/>): beyond it the
     /// precompilation evicts its oldest speculative blocks that never ran (<see cref="CodePrecompiler"/>), so the arena
-    /// holds what runs plus a bounded guess. 32 MiB on a desktop, 24 MiB on Android: the whole flow from a large game's
+    /// holds what runs plus a bounded guess. 48 MiB on a desktop, 24 MiB on Android: the whole flow from a large game's
     /// entry points (Assassin's Creed III: Liberation 24 MiB, Killzone: Mercenary 18 MiB) fits, so the boot step keeps
-    /// what the game runs first. Tests may lower it.</summary>
+    /// what the game runs first; with 32 MiB the frontier of Assassin's Creed III: Liberation evicted guesses the game
+    /// reached later (24.8k blocks compiled while it ran instead of 9.5k). Tests may lower it.</summary>
     public static long SpeculativeBudget = DefaultSpeculativeBudget(OperatingSystem.IsAndroid());
 
     public static long DefaultAheadBudget(bool android) => android ? 64L << 20 : 128L << 20;
 
-    public static long DefaultSpeculativeBudget(bool android) => android ? 24L << 20 : 32L << 20;
+    public static long DefaultSpeculativeBudget(bool android) => android ? 24L << 20 : 48L << 20;
 
     /// <summary>Whether ahead-of-time translation may still use the native code arena (<see cref="AheadBudget"/>).</summary>
     public static bool ArenaHasRoomForAhead() => Volatile.Read(ref AheadBytes) < AheadBudget;

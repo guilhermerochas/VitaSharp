@@ -354,13 +354,9 @@ public sealed class CodePrecompiler
         if (Jit.CompileAheadOne(block, (byte)level, speculative))
         {
             Interlocked.Increment(ref _translated);
-            if (level == (int)Priority.Flow)
+            if (speculative)
             {
-                s_speculativeFlow.Push((block, this));
-            }
-            else if (speculative)
-            {
-                s_speculativeFrontier.Enqueue((block, this));
+                s_speculative[level].TryAdd((block, this));
             }
         }
         else if (_follow != null)
@@ -432,18 +428,28 @@ public sealed class CodePrecompiler
         level != Priority.Flow && _recordedFunctions.Count > 0 && _functionStart != null && _recordedFunctions.Contains(_functionStart(block.Start));
 
     /// <summary>The speculative blocks every run translated so far (<see cref="MakeRoom"/>; the arena is one per
-    /// process, and so is its budget): the flow from the entry points, newest on top, and the frontier, oldest first.</summary>
-    private static readonly ConcurrentStack<(Block Block, CodePrecompiler Run)> s_speculativeFlow = new();
-    private static readonly ConcurrentQueue<(Block Block, CodePrecompiler Run)> s_speculativeFrontier = new();
+    /// process, and so is its budget): the flow from the entry points, newest on top; the frontier (callees and
+    /// functions referenced by pointer) and the rest of running functions, each oldest first.</summary>
+    private static readonly IProducerConsumerCollection<(Block Block, CodePrecompiler Run)>[] s_speculative =
+    [
+        new ConcurrentQueue<(Block Block, CodePrecompiler Run)>(), // Cached: not speculative, never used
+        new ConcurrentQueue<(Block Block, CodePrecompiler Run)>(),
+        new ConcurrentQueue<(Block Block, CodePrecompiler Run)>(),
+        new ConcurrentStack<(Block Block, CodePrecompiler Run)>(),
+    ];
+
+    /// <summary>The order <see cref="MakeRoom"/> evicts speculative work in: the weakest guesses first.</summary>
+    public static readonly Priority[] EvictionOrder = [Priority.Flow, Priority.Frontier, Priority.Running];
 
     /// <summary>
     /// Keeps the speculative code waiting to run within <see cref="Jit.SpeculativeBudget"/> (and all the code
     /// translated ahead within <see cref="Jit.AheadBudget"/>) by evicting speculative blocks the guest has not run;
     /// what ran is never evicted (it is skipped: running publishes a block, which takes it out of the guesses). The
     /// weakest guesses go first: the flow from the entry points, the deepest first (the code farthest from where the
-    /// game starts; in Killzone: Mercenary 19% of the flow ran, 43% of the frontier), then the frontier, the oldest
-    /// first (code next to what the game ran long ago and has not needed since; how an LRU cache evicts, without
-    /// bookkeeping on every use). An evicted block is not translated ahead again (the JIT compiles it if it gets hot):
+    /// game starts), then the frontier, then the rest of running functions, each the oldest first (code next to what
+    /// the game ran long ago and has not needed since; how an LRU cache evicts, without bookkeeping on every use). In
+    /// Assassin's Creed III: Liberation 17% of the flow ran, 32% of the frontier and 67% of the rest of running
+    /// functions; one queue for the last two evicted good guesses before the game reached them. An evicted block is not translated ahead again (the JIT compiles it if it gets hot):
     /// translating it again whenever the frontier reached it made the eviction churn (Assassin's Creed III:
     /// Liberation, first session: 1.2M translations, 927k evictions, for 174k blocks that ran).
     /// </summary>
@@ -451,7 +457,7 @@ public sealed class CodePrecompiler
     {
         while (Volatile.Read(ref Jit.SpeculativeBytes) > Jit.SpeculativeBudget || !Jit.ArenaHasRoomForAhead())
         {
-            if (!s_speculativeFlow.TryPop(out (Block Block, CodePrecompiler Run) guess) && !s_speculativeFrontier.TryDequeue(out guess))
+            if (!TakeWeakestGuess(out (Block Block, CodePrecompiler Run) guess))
             {
                 return;
             }
@@ -461,6 +467,21 @@ public sealed class CodePrecompiler
                 Interlocked.Increment(ref guess.Run._evicted);
             }
         }
+    }
+
+    /// <summary>The next speculative block to evict, in <see cref="EvictionOrder"/>; false when none is left.</summary>
+    private static bool TakeWeakestGuess(out (Block Block, CodePrecompiler Run) guess)
+    {
+        foreach (Priority priority in EvictionOrder)
+        {
+            if (s_speculative[(int)priority].TryTake(out guess))
+            {
+                return true;
+            }
+        }
+
+        guess = default;
+        return false;
     }
 
     /// <summary>Queues the blocks right after <paramref name="block"/> (its static exits, the return point of a call,
