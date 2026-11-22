@@ -59,6 +59,9 @@ public sealed partial class MainWindow : Window
     Process? _running;
     GameEntry? _runningGame;
     string? _runningTitle, _runningId;
+
+    /// <summary>The running emulator's last line on its error output (the reason of a failed load).</summary>
+    string? _lastErrorLine;
     DateTime _runStartUtc;
 
     /// <summary>Extra options for every run (ui-render's launch check: --headless --seconds=N).</summary>
@@ -654,6 +657,7 @@ public sealed partial class MainWindow : Window
         }
 
         _logLines.Clear();
+        _lastErrorLine = null;
         _logChars = 0;
         _log.Text = "";
         AppendLog($"> {title} ({titleId})");
@@ -677,7 +681,11 @@ public sealed partial class MainWindow : Window
             {
                 if (e.Data != null)
                 {
-                    Dispatcher.UIThread.Post(() => AppendLog(e.Data));
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        _lastErrorLine = e.Data;
+                        AppendLog(e.Data);
+                    });
                 }
             };
             p.Exited += (_, _) => Dispatcher.UIThread.Post(() => OnGameExited(p));
@@ -755,6 +763,11 @@ public sealed partial class MainWindow : Window
             string message = S.LicenseMissing(titleId ?? title ?? "");
             SetStatus(message);
             AppendLog(message);
+        }
+        else if (code == VitaSharp.Core.TitleLaunchFailure.ExitCode && !string.IsNullOrWhiteSpace(_lastErrorLine))
+        {
+            // the title could not be loaded: the emulator's last error line says why in plain words
+            SetStatus(_lastErrorLine);
         }
         else
         {

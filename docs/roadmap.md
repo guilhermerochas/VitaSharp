@@ -3576,10 +3576,18 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   bridge_prx), que está cifrado com a chave do conteúdo, e o carregador o lê como SELF comum: `InvalidDataException: Not
   a SELF/ELF file` em `SelfDecryptor.ToElf` (Emulator.LoadTitle). Estudar como o Vita abre esse runtime (quem decifra,
   com que chave: a da licença pelo PsmDrm, o mesmo caminho do NoPsmDrm) e fazer igual, sem atalho de DRM.
+  Em andamento (feat/psmu1): o runtime é uma imagem PFS do app0 (`runtime/sce_pfs`); o carregador agora monta o app0
+  PFS pelo caminho do firmware (licença em ux0:license/app/<título> → checagens do SceNpDrm → chave pelo processador
+  seguro → PFS conferido pelos ICVs do unicv.db, `PfsApp0View`/`LicenseTitleKey`). A licença do runtime é "free"
+  (kind 0xD), cuja chave só sai do SceSblAuthMgr DecBindData: sem processador seguro o lançamento para com 0x80020004
+  e mensagem clara. Falta: o título abrir de fato, o que depende de decidir como a chave chega sem processador seguro.
 - [ ] [P1][M] Falha ao abrir um jogo fecha o app sem aviso (relato do usuário, 22/11/2026: "ele nem me deu aviso do por
   que"): uma exceção no carregamento do título (ex.: o `Not a SELF/ELF file` acima) termina o processo só com o log.
   Mostrar uma mensagem na janela/launcher (PC e Android) com o motivo em linguagem simples e onde está o log, e voltar
   ao launcher sem crash; teste com um título inválido.
+  Em andamento (feat/psmu1, o mínimo): no PC, qualquer falha do `LoadTitle` vira erro no log e no stderr com o motivo e
+  o caminho do log (`TitleLaunchFailure`, código de saída 4), e o launcher mostra essa linha no status; no Android a
+  falha da chave mostra o texto próprio. Falta a mensagem na própria janela do jogo.
 - [ ] [P1][G] Adrenaline (PSPEMUCFW) fecha logo ao abrir (relato do usuário, 21/11/2026; log `20261121_233018_PSPEMUCFW.log`):
   o eboot chama `taihenUnsafe::taiLoadStartKernelModuleForUser` (NID 0x9890A8D3) para subir o módulo de kernel dele,
   o VitaSharp responde "Unimplemented HLE function" e o app sai no quadro 1 (`sceKernelExitProcess`). Sem código

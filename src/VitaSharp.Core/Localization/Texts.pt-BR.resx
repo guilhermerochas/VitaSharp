@@ -3198,4 +3198,10 @@
   <data name="LicenseMissingBadge" xml:space="preserve">
     <value>Sem licença</value>
   </data>
+  <data name="TitleKeyNotOpened" xml:space="preserve">
+    <value>Os arquivos de {0} estão cifrados e o sistema não consegue obter a chave deles pela licença instalada (erro {1}): o console verifica a licença e a ativação, e decifra a chave, no processador de segurança, que o emulador não tem.</value>
+  </data>
+  <data name="TitleLoadFailed" xml:space="preserve">
+    <value>Não foi possível iniciar {0}: {1}. Os detalhes estão no log ({2}).</value>
+  </data>
 </root>

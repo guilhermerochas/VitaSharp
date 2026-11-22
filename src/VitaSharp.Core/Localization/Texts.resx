@@ -3198,4 +3198,10 @@
   <data name="LicenseMissingBadge" xml:space="preserve">
     <value>No license</value>
   </data>
+  <data name="TitleKeyNotOpened" xml:space="preserve">
+    <value>The files of {0} are encrypted and the system cannot get their key from the installed license (error {1}): the console verifies the license and its activation, and decrypts the key, in its security processor, which the emulator does not have.</value>
+  </data>
+  <data name="TitleLoadFailed" xml:space="preserve">
+    <value>{0} could not be started: {1}. Details are in the log ({2}).</value>
+  </data>
 </root>

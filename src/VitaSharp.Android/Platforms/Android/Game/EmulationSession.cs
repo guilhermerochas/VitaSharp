@@ -354,6 +354,8 @@ public sealed partial class EmulationSession : IDisposable
             {
                 // the system refuses the launch: the license of this encrypted game is not installed
                 TitleLicenseMissingException noLicense => noLicense.UserMessage,
+                // the title's files are encrypted and its licence's key does not open them
+                TitleKeyException noKey => noKey.UserMessage,
                 DllNotFoundException => Loc.Format("MNativeLibraryMissing", e.Message),
                 _ => Loc.Format("MStartFailed", e.Message),
             });
