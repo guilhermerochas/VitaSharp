@@ -266,7 +266,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 32;
+    public const int GeneratorVersion = 33;
 
     /// <summary>Clip distances the generated vertex shaders may write (index 0 the far plane, 1-7 the GXM user clip
     /// planes 0-6): the Vulkan minimum of maxClipDistances.</summary>
@@ -924,11 +924,22 @@ float packC10(vec3 c) {
                 decl.Clear().Append(text.Replace(mapped, $"layout(std430, set = 0, binding = {(vertex ? 2 : 3)}) restrict buffer MappedData"));
                 decl.AppendLine($"void storeMemory(int addr, float v) {{ if ((addr & 0x{MappedFlag:X}) != 0) {{ uint j = uint(addr & 0x{MappedFlag - 1:X}) >> 2; " +
                                 "if (j < uint(mem.length())) mem[j] = floatBitsToUint(v); } }");
+                // 16- and 8-bit stores (VLDST INT16/INT8) replace their bytes of the little-endian word and keep the
+                // others, which another invocation may be storing at the same time (two atomics, no read-modify-write)
+                foreach ((int bits, string name, uint lane) in new[] { (16, "storeMemory16", 2u), (8, "storeMemory8", 3u) })
+                {
+                    uint valueMask = (1u << bits) - 1;
+                    decl.AppendLine($"void {name}(int addr, int v) {{ if ((addr & 0x{MappedFlag:X}) != 0) {{ uint b = uint(addr & 0x{MappedFlag - 1:X}); uint j = b >> 2; " +
+                                    $"if (j < uint(mem.length())) {{ uint sh = (b & {lane}u) * 8u; atomicAnd(mem[j], ~(0x{valueMask:X}u << sh)); " +
+                                    $"atomicOr(mem[j], (uint(v) & 0x{valueMask:X}u) << sh); }} }} }}");
+                }
                 result.WritesMemory = true;
             }
             else
             {
                 decl.AppendLine("void storeMemory(int addr, float v) { }");
+                decl.AppendLine("void storeMemory16(int addr, int v) { }");
+                decl.AppendLine("void storeMemory8(int addr, int v) { }");
                 result.Warnings.Add("buffer store without a mapped uniform buffer (dropped)");
             }
         }

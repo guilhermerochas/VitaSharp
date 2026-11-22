@@ -20,9 +20,9 @@ namespace VitaSharp.Tests;
 public sealed class ShaderGeneratorVersionTests
 {
     /// <summary>The version the hash below was recorded with.</summary>
-    private const int RecordedVersion = 32;
+    private const int RecordedVersion = 33;
     /// <summary>The <see cref="TranslationHash"/> of <see cref="RecordedVersion"/>.</summary>
-    private const string RecordedHash = "5083C68C8344C762";
+    private const string RecordedHash = "E3CC1FEC5DAC967B";
 
     private static GxpProgram CodeProgram(ulong[] code, bool fragment, uint address)
     {
