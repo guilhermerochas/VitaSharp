@@ -34,6 +34,10 @@ public sealed partial class IoFileMgr
     const uint MountBeingMounted = 0x100;
     const uint MountFlagNoDevctl = 0x1000;
     const uint VnodeTypeDirectory = 0x1002;
+
+    /// <summary>The type of a block device vnode (+0x78), the one a device file system's mount (kind 3) makes at its
+    /// path and vfsRmdev removes.</summary>
+    const uint VnodeTypeBlockDevice = 0x2000;
     const int VFS_ERR_ACCEPTED_DEVCTL = unchecked((int)0x8001001C);
     const int VFS_ERR_NOMEM = unchecked((int)0x8001000C);
 
@@ -224,7 +228,7 @@ public sealed partial class IoFileMgr
         {
             1 => fsType == 3,
             2 => fsType is 1 or 2,
-            3 => GuestMemory.R32(driver + 0x10) == 0x10,
+            3 => GuestMemory.R32(driver + 0x10) == 0x10 && IsDeviceDirectory(GuestMemory.ReadCString(rootPathAddress, 0x40)),
             4 => device != 0,
             5 => fsType is 1 or 2 && device != 0,
             6 => fsType == 4,
@@ -311,13 +315,15 @@ public sealed partial class IoFileMgr
         }
 
         // the root is a directory, active from the start (+0x74 1); over a covered vnode its parent is the covered
-        // vnode's (+0x50)
-        GuestMemory.W32(root + 0x78, VnodeTypeDirectory);
+        // vnode's (+0x50). A device file system's (kind 3) is the block device vnode at its path (0x2000), which the
+        // mount covers (+0x40) and whose ops are the mount's default ones (+0x6C)
+        GuestMemory.W32(root + 0x78, kind == 3 ? VnodeTypeBlockDevice : VnodeTypeDirectory);
         GuestMemory.W32(root + 0x74, VnodeStateActive);
         GuestMemory.W32(root + 0x4C, mount);
         if (kind == 3)
         {
             GuestMemory.W32(mount + 0x40, root);
+            GuestMemory.W32(root + 0x6C, GuestMemory.R32(mount + 0x44));
         }
         else if (kind == 1)
         {
@@ -395,6 +401,111 @@ public sealed partial class IoFileMgr
         ReleaseVfsDriver(driver);
     }
 
+    /// <summary>The first element of a device file system's path is one of the device directories ("dev", "tty",
+    /// "md", iofilemgr 3.74 0x8101ce94): a name the firmware fixes.</summary>
+    static bool IsDeviceDirectory(string rootPath)
+    {
+        string first = rootPath.TrimStart('/').Split('/')[0];
+        return first is "dev" or "tty" or "md";
+    }
+
+    /// <summary>
+    /// vfsRmdev(param { path, flags }) as iofilemgr 3.74 has it (0x81007f14): the path ("sdstor0:gcd-lp-ign-entire", by
+    /// an assign name or a root path) is walked to its parent and its last element looked up there; that vnode must be
+    /// a block device's (type bit 0x2000; another vnode 0x80010001; nothing there 0x80010002, as with no game card in
+    /// the slot). Only a plain block device vnode (type 0x2000 exactly) goes, and with flag 1 only when no file is open
+    /// on it (+0x94; else 0x80010010): its files are synced (ksceVopSync), the parent's driver removes it
+    /// (ksceVopRemove), it turns inactive (+0x74 0x100, so the files still open on it lose it) and, with no other
+    /// reference, it is inactivated and freed. The block device vnode a device file system's mount (kind 3) put at its
+    /// own path takes that mount away with it. 0.
+    /// </summary>
+    [Hle(Nid = 0x69A7E076, Library = "SceIofilemgrForDriver")]
+    int vfsRmdev(uint param)
+    {
+        if (param == 0 || GuestMemory.R32(param) == 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        string path = GuestMemory.ReadCString(GuestMemory.R32(param), 0x400);
+        uint flags = GuestMemory.R32(param + 4);
+        if (ResolveGuestMount(path, out string fullPath) is not { } mount)
+        {
+            return VFS_ERR_NOENT;
+        }
+
+        using var block = new GuestPathBlock(this, fullPath);
+        int result = GuestWalk(mount, block, fullPath, parentOnly: true, out uint parent, out int lastStart);
+        if (result < 0)
+        {
+            return result;
+        }
+
+        if (lastStart < 0)
+        {
+            // the path is the mount's own: its root vnode (the walk's reference)
+            return RemoveDeviceVnode(mount, 0, parent, block.VfsPath, flags);
+        }
+
+        GuestMemory.W32(block.VnodeOut, 0);
+        result = ksceVopLookup(parent, block.VnodeOut, block.VfsPath, 0);
+        uint vnode = result < 0 ? 0 : GuestMemory.R32(block.VnodeOut);
+        if (result < 0 || vnode == 0)
+        {
+            ReleaseVnode(parent);
+            return result < 0 ? result : VFS_ERR_NOENT;
+        }
+
+        result = RemoveDeviceVnode(mount, parent, vnode, block.VfsPath, flags);
+        ReleaseVnode(parent);
+        return result;
+    }
+
+    /// <summary>The checks and the removal of vfsRmdev on the vnode found (one reference held, given back here; the
+    /// parent 0 for a mount's root).</summary>
+    int RemoveDeviceVnode(GuestMount mount, uint parent, uint vnode, uint vfsPath, uint flags)
+    {
+        uint type = GuestMemory.R32(vnode + 0x78);
+        if ((type & VnodeTypeBlockDevice) == 0 || type != VnodeTypeBlockDevice
+            || ((flags & 1) != 0 && (int)GuestMemory.R32(vnode + 0x94) >= 1))
+        {
+            ReleaseVnode(vnode);
+            return (type & VnodeTypeBlockDevice) == 0 ? VFS_ERR_PERM : VFS_ERR_BUSY;
+        }
+
+        if (parent == 0)
+        {
+            // the device vnode of a device file system's own mount: the mount goes with it
+            ReleaseVnode(vnode);
+            GuestMemory.W32(vnode + 0x74, VnodeActiveBelow);
+            return RemoveGuestMount(mount, flags);
+        }
+
+        int result = ksceVopSync(vnode, GuestMemory.R32(vnode + 0x90), 0);
+        if (result >= 0)
+        {
+            result = ksceVopRemove(parent, vnode, vfsPath, 0);
+        }
+
+        if (result < 0)
+        {
+            ReleaseVnode(vnode);
+            return result;
+        }
+
+        GuestMemory.W32(vnode + 0x74, VnodeActiveBelow);
+        if (GuestMemory.R32(vnode + 0x58) <= 1)
+        {
+            GuestMemory.W32(vnode + 0x58, 0);
+            ksceVopInactive(vnode);
+            vfsFreeVnode(vnode);
+            return 0;
+        }
+
+        ReleaseVnode(vnode);
+        return 0;
+    }
+
     /// <summary>vfsUmount(param { path, flags }): the driver's unmount op (+4, { mount, flags }), then the mount goes
     /// away; a path with no guest mount 0x80010002.</summary>
     [Hle(Nid = 0x9C7E7B76, Library = "SceIofilemgrForDriver")]
@@ -419,6 +530,13 @@ public sealed partial class IoFileMgr
             return VFS_ERR_BUSY;
         }
 
+        return RemoveGuestMount(mount, flags);
+    }
+
+    /// <summary>The end of an unmount: the driver's unmount op (+4, { mount, flags }); when it accepts, the covered
+    /// vnode is given back and the mount goes away with its vnodes.</summary>
+    int RemoveGuestMount(GuestMount mount, uint flags)
+    {
         GuestMemory.W32(mount.Mount + 0x48, MountStateUnmounting);
         int result = VfsOpCall(mount.Mount, 0x04, [mount.Mount, flags]);
         if (result < 0)

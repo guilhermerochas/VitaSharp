@@ -16,7 +16,7 @@ namespace VitaSharp.Tests;
 public sealed class IofilemgrArgumentBlockTests(GuestMemoryFixture fixture) : IDisposable
 {
     private const int Inval = unchecked((int)0x80010016), BadFile = unchecked((int)0x80010009);
-    private const int NoEnt = unchecked((int)0x80010002), Unsup = unchecked((int)0x80010030);
+    private const int NoEnt = unchecked((int)0x80010002);
 
     private static readonly uint[] s_nids = [0x0E518FA9, 0x1AE14011, 0x809892C1, 0x8598ADC3, 0x0B54F9E0, 0xE5DEA6B7, 0xC1DD4317, 0xBCE4865B, 0x7517FE29];
 
@@ -132,6 +132,7 @@ public sealed class IofilemgrArgumentBlockTests(GuestMemoryFixture fixture) : ID
         Assert.Equal(Inval, Call(Io, "ksceIofilemgr_A39A9CA7", path, 0u, 1u, 0u));
         Assert.Equal(Inval, Call(Io, "ksceIofilemgr_A39A9CA7", path, 0u, 0u, 1u));
         Assert.Equal(Call(Io, "vfsRmdev", Block(path, 1)), Call(Io, "ksceIofilemgr_A39A9CA7", path, 0u, 0u, 0u));
-        Assert.Equal(Unsup, Call(Io, "ksceIofilemgr_A39A9CA7", path, 0u, 0u, 0u));
+        // no guest device file system holds that block device vnode (no game card here): nothing at the path
+        Assert.Equal(NoEnt, Call(Io, "ksceIofilemgr_A39A9CA7", path, 0u, 0u, 0u));
     }
 }
