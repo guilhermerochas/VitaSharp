@@ -1,3 +1,4 @@
+using VitaSharp.Core.SaveState;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
 
@@ -1042,6 +1043,7 @@ public sealed partial class AppMgr
     internal const int ERR_ALREADY_MOUNTED = unchecked((int)0x80800003);
 
     /// <summary>The device of the PSP emulator's root mount (id 202) while it is mounted, else null.</summary>
+    [SnapshotMissing] // states of builds before it: the PSP save root was never a registered mount
     string? _pspSaveRootDevice;
 
     /// <summary>

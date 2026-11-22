@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=3aa7b674619373b8084090f153b0ad1f2c352b0ba49304a5d4605f3c23d33931 -->
+<!-- pair: README.md sha256=1b7280c5d6f8d19edcb8764967417960f4b6fc67bddf5637829e0bb0b80e9632 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -441,7 +441,7 @@ O que o `dotnet test tests/VitaSharp.Tests` precisa em cada sistema; um teste se
 |---|---|---|---|
 | SDK | .NET 10 SDK | .NET 10 SDK | .NET 10 SDK |
 | Dispositivo Vulkan (testes do renderizador, dos dumps da GPU e dos jogos rodando) | o lavapipe do Mesa (Vulkan 1.4, o mesmo do CI do Linux): descompacte a pasta `x64` de uma versão do [mesa-dist-win](https://github.com/pal1000/mesa-dist-win/releases) (`vulkan_lvp.dll` + `lvp_icd.x86_64.json`) em `%LOCALAPPDATA%\VitaSharpTools\mesa\<versão>\x64`; sem ele, ou quando o carregador do sistema `vulkan-1.dll` não pode usá-lo, o SwiftShader que vem com o Microsoft Edge ou o Google Chrome (os dois achados sozinhos) | o lavapipe do Mesa: `sudo apt install mesa-vulkan-drivers libvulkan1` (Fedora: `mesa-vulkan-drivers vulkan-loader`) | o MoltenVK: o Vulkan SDK da LunarG, ou `brew install molten-vk vulkan-loader` |
-| shaderc (testes do renderizador e de compilação de shaders; o renderizador também precisa dele) | vem do pacote Silk.NET.Shaderc.Native | vem do pacote; quando essa cópia não carrega: `sudo apt install libshaderc-dev` (Fedora, Arch: `shaderc`) | vem do pacote |
+| shaderc (testes do renderizador e de compilação de shaders; o renderizador também precisa dele) | vem do pacote Silk.NET.Shaderc.Native | vem do pacote (achado em `runtimes/linux-x64` também onde a busca do Silk.NET não acha, como no Ubuntu); quando essa cópia não carrega: `sudo apt install libshaderc-dev` (Fedora, Arch: `shaderc`; carregado como `libshaderc.so.1`) | vem do pacote, senão o `brew install shaderc` do Homebrew |
 | Uma janela do desktop (testes do overlay do jogo) | sempre | uma tela X11 ou Wayland; sem tela: `xvfb-run dotnet test tests/VitaSharp.Tests` (`sudo apt install xvfb`) | pulados: o AppKit só cria janelas na thread principal, e os testes rodam em threads de trabalho |
 | FFmpeg (testes de decodificação de vídeo e áudio) | baixado pelo primeiro build | baixado pelo primeiro build | o do sistema: `brew install ffmpeg` |
 
