@@ -105,7 +105,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   com os vblanks vistos a 59,94 Hz com folga de um vblank. As três medidas de fps do `perf` na rodada automática viram
   SKIP com o valor medido (o fps de um emulador depende do host), e a checagem que decide é a cena desenhar (mais de
   10 quadros); a rodada de 60 s do menu continua aprovando ou reprovando o fps.
-- [ ] [P3][P] **Checagens do TestGame que ainda dependem do relógio do host:** `audio/main_block_period`,
+- [x] (22/11/2026, fix/small1 e5947278: decididas pelo contrato do console; 227 ok sob carga, falham com o contrato quebrado) [P3][P] **Checagens do TestGame que ainda dependem do relógio do host:** `audio/main_block_period`,
   `audio/bgm_block_period` e `threads/delay_1ms/10ms/100ms` comparam o tempo do processo com a duração esperada, e o
   tempo do processo anda com o relógio do host: com o PC ocupado (outros agentes compilando) a rodada de 16/11/2026
   (bug7) deu `delay_10ms` 344.508 us, blocos de 28,6 ms (MAIN, quer 10,667) e 22,2 ms (BGM, quer 11,610) e
@@ -3171,6 +3171,18 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] [P1][M] HELLDIVERS (PCSA00134), cores erradas na tela de título (relato do usuário, 21/11/2026; captura
+  `shell_20261121_233801_tudo`, 6,3 s a 60 fps, dump da GPU de 168 quadros): as naves e o planeta saem verde-saturado
+  (as naves deveriam ser cinza-metálicas), o fundo azul e o logo parecem certos. Suspeita: canal/formato trocado ou
+  swizzle numa textura ou num alvo intermediário da iluminação; comparar no replay do dump draw a draw onde o verde
+  aparece.
+  Feito (fix/hd2green 2cf1bc04, 22/11/2026): o G-buffer F16x4 guarda cor e normal empacotadas; a saída vai crua (bits), como o tile do Vita. Testar: abrir o HELLDIVERS; na tela de título as naves cinza-metálicas e o planeta azul, sem verde; olhar também o gameplay.
+- [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053), painéis do HUD pretos (relato do usuário, 21/11/2026; capturas
+  `PCSE00053_20261121_232126_tudo` e `PCSE00053_20261121_232150_tudo`, com dump da GPU de 72 e 464 quadros): a faixa do
+  objetivo ("Pegue a galinha!", topo esquerdo), a caixa do minimapa (embaixo à esquerda) e a dica "USE ◎ para MOVER A
+  CÂMERA" saem como retângulos pretos opacos em vez de translúcidos; o resto da cena está certo. Investigar blend/alfa
+  da textura do HUD no replay do dump.
+  Feito (fix/ac3hud 8d1dc91b, 22/11/2026): só a 2x+; a cena só de profundidade/stencil usava outra imagem de depth e a cena 3D herdava o stencil do HUD. Testar: AC III Liberation em resolução 2x (ou 3x/4x): faixa do objetivo, minimapa e dica da câmera translúcidos, sem preto; cutscene com desfoque de fundo sem manchas.
 Itens com correção já na `main` que esperam só a confirmação do usuário no jogo/tela do relato; quem fecha (`[x]`) é o
 usuário. Se o teste falhar, o item volta para "Bugs em aberto".
 
@@ -3411,11 +3423,6 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
 - [ ] [P2][G] CI: no runner Linux os testes de GPU do renderer são pulados ("shaderc not available ... install
   libshaderc-dev"), então a "passagem" do Linux não testa o renderer (achado do cifix12, 21/11/2026). Instalar o
   shaderc no job Linux (e conferir o macOS) para os testes de renderer rodarem nas 3 plataformas.
-- [ ] [P1][M] HELLDIVERS (PCSA00134), cores erradas na tela de título (relato do usuário, 21/11/2026; captura
-  `shell_20261121_233801_tudo`, 6,3 s a 60 fps, dump da GPU de 168 quadros): as naves e o planeta saem verde-saturado
-  (as naves deveriam ser cinza-metálicas), o fundo azul e o logo parecem certos. Suspeita: canal/formato trocado ou
-  swizzle numa textura ou num alvo intermediário da iluminação; comparar no replay do dump draw a draw onde o verde
-  aparece.
 - [ ] [P1][G] Aumentar a resolução interna em jogo falha (relato do usuário, 21/11/2026; log da sessão shell de 23:34):
   duas tentativas de 1x -> 2x respondem `Internal resolution 1x -> 2x not applied: thread 'SceShellMusicCoreCacheIo' is
   running guest code` (a troca usa o mesmo ponto seguro do save state, que exige todas as threads paradas; uma thread
@@ -3435,11 +3442,6 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   `PCSE00333_20261121_232645_tudo`, 4,3 s a 60 fps, dump da GPU de 198 quadros): o menu de pausa ("RESUME" e as
   opções abaixo, sobre o fundo com a aranha) pisca; na folha de contatos as opções abaixo de "RESUME" quase não
   aparecem. Comparar quadros seguidos no replay do dump (texto/opções presentes em um quadro e ausentes no outro).
-- [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053), painéis do HUD pretos (relato do usuário, 21/11/2026; capturas
-  `PCSE00053_20261121_232126_tudo` e `PCSE00053_20261121_232150_tudo`, com dump da GPU de 72 e 464 quadros): a faixa do
-  objetivo ("Pegue a galinha!", topo esquerdo), a caixa do minimapa (embaixo à esquerda) e a dica "USE ◎ para MOVER A
-  CÂMERA" saem como retângulos pretos opacos em vez de translúcidos; o resto da cena está certo. Investigar blend/alfa
-  da textura do HUD no replay do dump.
 - [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053), áudio picotado (mesmas capturas de 21/11/2026): as vozes NGS
   (Atrac9) têm buracos regulares de ~0,4-0,7 s dentro do som (49 buracos em 20 s no `audio_mix.wav`; só 2,6 s de som);
   a porta MAIN teve gap máximo de 410 ms. O usuário também acha que imagem e som não estão sincronizados.
