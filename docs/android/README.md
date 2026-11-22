@@ -406,6 +406,12 @@ happened with `mono-aot` and in the earlier phone runs, so it is a driver issue,
 - **Lifecycle**: `onPause` suspends the guest process (`Emulator.Suspend`) and pauses the AAudio streams; `onResume`
   resumes both. The guest clock keeps running meanwhile (as the Vita's RTC across a suspend). Leaving the game
   (pause menu > Sair) records the play time and average FPS in the game's statistics.
+- **Boot waits** (as the desktop launcher's status bar): "Precompilar código ARM" (the code cache of earlier sessions,
+  or the code reached from the entry points in a first one; `CodePrecompileLog.Reported`) and "Carregar o cache de
+  shaders antes de jogar" (`ShaderCacheLoad.Reported`) each show a card over the game with the progress and
+  "Cancelar", which starts the game at once while the rest goes on in the background.
+- **MSAA** (the game's settings and the pause menu, the desktop's F3 modes): native, 2x supersampling (`ss`) or off;
+  a change in the pause menu replaces the renderer between two scenes and is saved for the game.
 - **Input** (`AndroidInput`, the core's `IInputBackend`): the on-screen pad (`OnScreenPad`, drawn by
   `OnScreenControlsView`) combined with every physical controller (`AndroidGamepads`): `InputDevice` hot-plug,
   `KeyEvent` buttons and `MotionEvent` axes become a standard-layout `PadSnapshot` mapped through the same controller
@@ -596,6 +602,7 @@ ignored). It applies to the next game started; the log shows each one (`env.txt:
 ```
 # VITASHARP_GPU_QUIRKS=-TextureCompressionBC  (ASTC transcoding on a GPU with BC)
 # VITASHARP_GPU_PROFILE=adreno-vk11           (render passes + static state)
+# VITASHARP_NET_ALLOW=localhost,example.org   (with "Internet real": only these hosts, the desktop's --net-allow)
 VITASHARP_NATIVE_VERIFY=1
 ```
 ```

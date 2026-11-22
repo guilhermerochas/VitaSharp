@@ -2934,6 +2934,9 @@
   <data name="MMsaaNative" xml:space="preserve">
     <value>Nativo (como o jogo pede)</value>
   </data>
+  <data name="MMsaaSs" xml:space="preserve">
+    <value>Superamostragem 2x (mais nítido, mais trabalho da GPU)</value>
+  </data>
   <data name="MMsaaOff" xml:space="preserve">
     <value>Desligado (mais rápido, bordas serrilhadas)</value>
   </data>
@@ -2974,7 +2977,7 @@
     <value>{0} FPS · {1}</value>
   </data>
   <data name="MMsaaDetail" xml:space="preserve">
-    <value>Desligado desenha o jogo com uma amostra por pixel: menos trabalho para a GPU, bordas serrilhadas. Vale na hora</value>
+    <value>Superamostragem 2x desenha as cenas com MSAA no dobro do tamanho; Desligado desenha com uma amostra por pixel (menos trabalho para a GPU, bordas serrilhadas). Vale na hora</value>
   </data>
   <data name="MDefaultParen" xml:space="preserve">
     <value>Padrão ({0})</value>

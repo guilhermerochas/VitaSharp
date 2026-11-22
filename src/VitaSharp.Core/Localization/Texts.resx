@@ -2934,6 +2934,9 @@
   <data name="MMsaaNative" xml:space="preserve">
     <value>Native (as the game asks)</value>
   </data>
+  <data name="MMsaaSs" xml:space="preserve">
+    <value>2x supersampling (sharper, more GPU work)</value>
+  </data>
   <data name="MMsaaOff" xml:space="preserve">
     <value>Off (faster, jagged edges)</value>
   </data>
@@ -2974,7 +2977,7 @@
     <value>{0} FPS · {1}</value>
   </data>
   <data name="MMsaaDetail" xml:space="preserve">
-    <value>Off renders the game with one sample per pixel: less GPU work, edges alias. Applies right away</value>
+    <value>2x supersampling renders the multisampled scenes at twice the size, off with one sample per pixel (less GPU work, edges alias). Applies right away</value>
   </data>
   <data name="MDefaultParen" xml:space="preserve">
     <value>Default ({0})</value>
