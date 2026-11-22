@@ -1038,7 +1038,19 @@ public sealed partial class AppMgr
     }
 
     // ---- the PSP emulator's save data
-    /// <summary>(char mountPoint[16]): mounts the PSP emulator's save root (ux0:pspemu/PSP/SAVEDATA): its folder.</summary>
+    /// <summary>SceAppMgr's "already mounted" (the mount of that id is kept and its mount point given back).</summary>
+    internal const int ERR_ALREADY_MOUNTED = unchecked((int)0x80800003);
+
+    /// <summary>The device of the PSP emulator's root mount (id 202) while it is mounted, else null.</summary>
+    string? _pspSaveRootDevice;
+
+    /// <summary>
+    /// (char mountPoint[16]): mounts the PSP emulator's root, ux0:pspemu (the folder that holds PSP/SAVEDATA), as
+    /// SceAppMgr 3.74 does (0x81033DD0 -> mount id 0xCA): a registered mount that sceAppMgrUmount takes away. The
+    /// processes that are not sandboxed (the PSP emulator) get the fixed "ms0:"; the others a random
+    /// "ms&lt;12 hex digits&gt;:". While it is mounted, another call gives the same mount point back with
+    /// 0x80800003. The folder is made when missing.
+    /// </summary>
     [Hle("sceAppMgrPspSaveDataRootMount")]
     [Hle("_sceAppMgrPspSaveDataRootMount")]
     internal int PspSaveDataRootMount(uint mountPoint)
@@ -1048,8 +1060,55 @@ public sealed partial class AppMgr
             return ERR_NULL_POINTER;
         }
 
-        GuestMemory.WriteCString(mountPoint, Io.FirmwareLayout.PspEmulator.Guest(), 0x10);
-        return 0;
+        int result = 0;
+        string device;
+        lock (_mounts)
+        {
+            if (_pspSaveRootDevice != null)
+            {
+                device = _pspSaveRootDevice;
+                result = ERR_ALREADY_MOUNTED;
+            }
+            else
+            {
+                device = PspSaveRootDeviceName();
+                _mounts.Add(device);
+                _pspSaveRootDevice = device;
+            }
+        }
+
+        if (result == 0)
+        {
+            string hostDir = Path.Combine(Emu.Options.FsRoot, Io.FirmwareLayout.PspEmulator.Relative().Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(hostDir);
+            Emu.Vfs.Mount(device, hostDir);
+        }
+
+        GuestMemory.Fill(mountPoint, 0, 16);
+        GuestMemory.WriteCString(mountPoint, device + ":", 16);
+        return result;
+    }
+
+    /// <summary>The device name SceAppMgr 3.74 gives mount id 0xCA: "ms0" for the programs that are not sandboxed,
+    /// else "ms" and six random bytes in hex (unique among this process's mounts).</summary>
+    string PspSaveRootDeviceName()
+    {
+        ulong authorityId = Emu.Access?.AuthorityId ?? 0;
+        if (SystemServicesVsh.IsNotSandboxedAuthority(authorityId) && !_mounts.Contains("ms0"))
+        {
+            return "ms0";
+        }
+
+        Span<byte> random = stackalloc byte[6];
+        string device;
+        do
+        {
+            Random.Shared.NextBytes(random);
+            device = "ms" + Convert.ToHexStringLower(random);
+        }
+        while (_mounts.Contains(device));
+
+        return device;
     }
 
     /// <summary>(SceAppMgrPspSaveDataParam *param 0x544): the parameters of a PSP save (PARAM.SFO of the folder named in

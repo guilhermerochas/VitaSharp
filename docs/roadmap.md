@@ -2184,10 +2184,13 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver 14
   (layout dos objetos da libult na memória do processo).
   Entrega movida para "Corrigido, falta o usuário testar" (reboot do sistema, kernN, 22/11/2026); o resto segue aberto aqui.
-- [ ] [P3][G] sceAppMgrPspSaveDataRootMount (HLE) escreve `ux0:pspemu` como ponto de montagem sem registrar uma
-  montagem no AppMgr, então um sceAppMgrUmount dele falha: conferir no appmgr 3.74 o que é montado (o SAVEDATA do
-  emulador de PSP) e o ponto devolvido, e depois fazer o par do apputil.suprx NID_C3CB128B/NID_C0418B1C (montagem da
-  raiz de saves do PSP com contagem de uso, dono 0xCA).
+- [x] (22/11/2026, fix/quick1) [P3][G] sceAppMgrPspSaveDataRootMount (HLE) registra a montagem no AppMgr, como o
+  SceAppMgr 3.74 (0x81033DD0 -> montagem id 0xCA de `ux0:pspemu`): o ponto é `ms0:` para quem não está no sandbox (o
+  emulador de PSP) e `ms` + 12 dígitos hexadecimais aleatórios para os outros; uma segunda montagem devolve o mesmo
+  ponto com 0x80800003; o sceAppMgrUmount e o par do apputil (NID_C3CB128B/NID_C0418B1C) desmontam de verdade.
+  Testes: `AppMgrHleTests.PspSaveDataRootMountIsARegisteredMount`, `SystemImportsLot2Tests.AppUtilPspSaveRootMountIsCounted`.
+  Falta: a checagem de permissão do 3.74 (só jogo ou fora do sandbox, senão 0x80800009) depende de todo programa ter a
+  autoridade certa (ELF puro tem 0 no VitaSharp).
 - [ ] [P3][G] Temas do Vita (pedido do usuário, 10/11/2026): instalar e usar temas como no aparelho. (1) Instalação: `.pkg` de
   tema da loja (content type de tema; o agente de PKG já detecta o tipo) com a licença, extraído para `ux0:theme/<id>`
   com o `theme.xml` e as imagens/sons, e registrado como o firmware faz (banco do shell / app.db, lista de temas das
