@@ -348,13 +348,6 @@ public sealed partial class IoFileMgr
         return address == 0 ? 0 : GuestMemory.R32(address);
     }
 
-    /// <summary>A mount request of a guest file system: NULL 0x80010016; not wired into the emulator's paths
-    /// (0x80010030).</summary>
-    static int VfsMountRequest(uint argument)
-    {
-        return argument == 0 ? VFS_ERR_INVAL : VFS_ERR_UNSUP;
-    }
-
     /// <summary>
     /// vfsMountForPFS(param, 0, 0) as iofilemgr 3.74 has it (0x8101960c): a second or third argument that is not 0 is
     /// 0x80010016; otherwise the I/O manager's request thread (request kind 3, 0x810182e8) copies the SceVfsMountParam
@@ -383,13 +376,6 @@ public sealed partial class IoFileMgr
         }
 
         return vfsUmount(param);
-    }
-
-    /// <summary>vfsRmdev(param): removes a block device's mounts.</summary>
-    [Hle(Nid = 0x69A7E076, Library = "SceIofilemgrForDriver", Default = true)]
-    int vfsRmdev(uint param)
-    {
-        return VfsMountRequest(param);
     }
 
     /// <summary>

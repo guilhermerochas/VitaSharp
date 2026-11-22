@@ -228,8 +228,12 @@ public sealed class IoVfsMountTests(GuestMemoryFixture fixture) : IDisposable
         GuestMemory.W32(info + 4, _h.Str("tvfs"));
         GuestMemory.W32(info + 0x14, _vops);
         Assert.Equal(0, Call(Io, "ksceVfsAddVfs", info));
+        _lastInfo = info;
         return info;
     }
+
+    /// <summary>The SceVfsInfo RegisterDriver registered last.</summary>
+    private uint _lastInfo;
 
     /// <summary>A SceVfsMountParam: root path, block device, fs type, flags, driver name, misc { assign name, fs name,
     /// block device, block device without partition }.</summary>
@@ -831,5 +835,118 @@ public sealed class IoVfsMountTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(1, owner);
         Assert.Equal(0u, GuestMemory.R32(vnode));
         Assert.Equal(0xFFFFFFFFu, GuestMemory.R32(vnode + 4));
+    }
+
+    // ---------------------------------------------------------------- block device vnodes (vfsRmdev)
+
+    /// <summary>Registers "tdev", a device file system driver (SceVfsInfo +0x10 = 0x10) with tvfs's ops, and mounts it
+    /// as kind 3 at <paramref name="root"/>; the mount's result.</summary>
+    private int MountDevice(string root)
+    {
+        RegisterDriver();
+        return MountDeviceDriverOnly(root);
+    }
+
+    private uint RmdevParam(string path, uint flags)
+    {
+        uint param = _h.Alloc(8);
+        GuestMemory.W32(param, _h.Str(path));
+        GuestMemory.W32(param + 4, flags);
+        return param;
+    }
+
+    [Fact]
+    public void ADeviceFileSystemMountsABlockDeviceVnodeUnderTheDeviceDirectoriesOnly()
+    {
+        _h.OnGuest(_ =>
+        {
+            Assert.Equal(Inval, MountDevice("/other/tdev"));
+            Assert.Equal(0, Call(Io, "vfsMount", MountParam("/dev/tdev", null, 1, 3, driver: "tdev", assign: "tdev0:")));
+            Assert.Equal(0x2000u, GuestMemory.R32(_root + 0x78));
+            uint mount = GuestMemory.R32(_root + 0x4C);
+            Assert.Equal(_root, GuestMemory.R32(mount + 0x40));
+            Assert.Equal(GuestMemory.R32(mount + 0x44), GuestMemory.R32(_root + 0x6C));
+            Assert.DoesNotContain("devctl", _calls);
+        });
+    }
+
+    [Fact]
+    public void RmdevRemovesTheBlockDeviceVnodeAndItsDeviceFileSystem()
+    {
+        _h.OnGuest(_ =>
+        {
+            Assert.Equal(0, MountDevice("/dev/tdev"));
+            uint vnode = _root;
+            _calls.Clear();
+            Assert.Equal(0, Call(Io, "vfsRmdev", RmdevParam("/dev/tdev", 0)));
+            Assert.Contains("umount", _calls);
+            Assert.Equal(NoEnt, Call(Io, "vfsRmdev", RmdevParam("/dev/tdev", 0)));
+            Assert.Equal(Inval, Call(Io, "vfsRmdev", 0u));
+            // the path is free again: the device file system mounts there anew
+            Assert.Equal(0, Call(Io, "vfsMount", MountParam("/dev/tdev", null, 1, 3, driver: "tdev", assign: "tdev0:")));
+            Assert.NotEqual(0u, vnode);
+        });
+    }
+
+    [Fact]
+    public void RmdevRefusesAVnodeThatIsNotABlockDevicesAndABusyOneWithFlagOne()
+    {
+        _h.OnGuest(_ =>
+        {
+            MountTvfs();
+            Assert.Equal(Perm, Call(Io, "vfsRmdev", RmdevParam("/tvfs", 0)));
+
+            Assert.Equal(0, MountDeviceDriverOnly("/dev/tdev"));
+            uint device = _root;
+            // a file open on the device vnode (its count, +0x94)
+            GuestMemory.W32(device + 0x94, 1);
+            Assert.Equal(Busy, Call(Io, "vfsRmdev", RmdevParam("/dev/tdev", 1)));
+            // NID_A39A9CA7(path, ?, 0, 0) is vfsRmdev with flag 1
+            Assert.Equal(Busy, Call(Io, "ksceIofilemgr_A39A9CA7", _h.Str("/dev/tdev"), 0u, 0u, 0u));
+            Assert.Equal(Inval, Call(Io, "ksceIofilemgr_A39A9CA7", _h.Str("/dev/tdev"), 0u, 1u, 0u));
+            // a device vnode of another kind of block device (0x2010) is busy too
+            GuestMemory.W32(device + 0x94, 0);
+            GuestMemory.W32(device + 0x78, 0x2010);
+            Assert.Equal(Busy, Call(Io, "vfsRmdev", RmdevParam("/dev/tdev", 0)));
+            GuestMemory.W32(device + 0x78, 0x2000);
+            Assert.Equal(0, Call(Io, "ksceIofilemgr_A39A9CA7", _h.Str("/dev/tdev"), 0u, 0u, 0u));
+            Assert.Equal(NoEnt, Call(Io, "vfsRmdev", RmdevParam("/dev/tdev", 0)));
+        });
+    }
+
+    [Fact]
+    public void RmdevOfABlockDeviceVnodeInsideADeviceFileSystemSyncsRemovesAndFreesIt()
+    {
+        _h.OnGuest(_ =>
+        {
+            Assert.Equal(0, MountDevice("/dev/tdev"));
+            GuestMemory.W32(_vops + 0x5C, Stub("sync", _ => 0));
+            uint mount = GuestMemory.R32(_root + 0x4C);
+            _contents["part0"] = [];
+            uint partition = NewVnode(mount, "part0");
+            GuestMemory.W32(partition + 0x78, 0x2000);
+            GuestMemory.W32(partition + 0x58, 0);
+            _calls.Clear();
+            Assert.Equal(0, Call(Io, "vfsRmdev", RmdevParam("tdev0:part0", 1)));
+            Assert.Equal(["lookup", "sync", "remove", "inactive"], _calls);
+            Assert.Contains("part0", _inactivated);
+            // the driver removed it: nothing at the path any more
+            Assert.Equal(NoEnt, Call(Io, "vfsRmdev", RmdevParam("tdev0:part0", 1)));
+            // a vnode that is not a block device's: 0x80010001
+            Assert.Equal(Perm, Call(Io, "vfsRmdev", RmdevParam("tdev0:hello.txt", 0)));
+        });
+    }
+
+    /// <summary>Registers "tdev" (after tvfs is already registered) and mounts it.</summary>
+    private int MountDeviceDriverOnly(string root)
+    {
+        uint info = _h.Alloc(0x20);
+        GuestMemory.Fill(info, 0, 0x20);
+        GuestMemory.W32(info + 4, _h.Str("tdev"));
+        GuestMemory.W32(info, GuestMemory.R32(_lastInfo));
+        GuestMemory.W32(info + 0x14, GuestMemory.R32(_lastInfo + 0x14));
+        GuestMemory.W32(info + 0x10, 0x10);
+        Assert.Equal(0, Call(Io, "ksceVfsAddVfs", info));
+        return Call(Io, "vfsMount", MountParam(root, null, 1, 3, driver: "tdev", assign: "tdev0:"));
     }
 }

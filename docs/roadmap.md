@@ -2124,6 +2124,19 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   0x114; TrustZone, ver a regra do processador de segurança).
   Falta: kscePervasiveDsiSetPixelClock, NID_243D0E78 e NID_7E813FC5 (tabela de 20 pixel clocks do módulo e o estado
   por porta DSI) e NID_E9D95643 (troca do clock base pelo caminho de transição da tabela do módulo).
+- [ ] [P2][G] Kernel de software ainda em resposta padrão (FW 3.74, do lote kernN): feitos SceZlibForDriver
+  deflatePrime (encoder deflate próprio em nível de bit), ScePervasiveForDriver (palavras de identificação), ScePower
+  SoftReset/0x3951AF53 e SceSyscon SetPowerMode e entradas (reboot do sistema emulado: SystemPower.Rebooted, o host
+  boota de novo), SceIofilemgrForDriver vfsRmdev e NID_A39A9CA7 (vnodes de dispositivo de bloco dos mounts tipo 3 em
+  dev/tty/md). Falta: SceIofilemgrForDriver NID_5B7E5AB8 (id -> caminho pela tabela de 0x20 entradas de 0x38 bytes
+  em 0x81022b30, marca a palavra +8 do bloco extra do mount e acorda o event flag dele: aviso de troca de mídia; achar
+  quem preenche a tabela) e NID_DD46CD63 (para cada objeto de arquivo da classe do módulo com +0x38 == mount, flags
+  +0x40 & máscara e +0x44 == 0, envia o aviso e marca +0x44: precisa desses campos no objeto de arquivo);
+  SceCoredumpForDriver NID_A7D214A7 / NID_D064F6DC / NID_EF20949F (validação do pedido e a fila do thread de dump,
+  escrever o .psp2dmp do processo); SceAppMgrForDriver 6 (1B6C2FED/C4924946 caminho de lançamento de debug atrás de
+  ksceSblACMgrIsDevelopmentMode; 1574E1A4 montagem por id 0x6A/0x6B/0xCD/600/900; 324DD34E; E8DB7942; 504023C8);
+  SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver 14
+  (layout dos objetos da libult na memória do processo).
 - [ ] [P3][G] sceAppMgrPspSaveDataRootMount (HLE) escreve `ux0:pspemu` como ponto de montagem sem registrar uma
   montagem no AppMgr, então um sceAppMgrUmount dele falha: conferir no appmgr 3.74 o que é montado (o SAVEDATA do
   emulador de PSP) e o ponto devolvido, e depois fazer o par do apputil.suprx NID_C3CB128B/NID_C0418B1C (montagem da
