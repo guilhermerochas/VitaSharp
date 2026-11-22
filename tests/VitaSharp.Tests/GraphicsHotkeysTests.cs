@@ -1,5 +1,6 @@
-using VitaSharp.Core.Gpu;
+﻿using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Hle.Modules;
+using VitaSharp.Core.Memory;
 using VitaSharp.Desktop;
 using VitaSharp.Renderer.Vulkan;
 
@@ -9,8 +10,8 @@ namespace VitaSharp.Tests;
 /// The window's graphics hotkeys (VitaSharp.Desktop <see cref="GraphicsHotkeys"/>) on a running emulator with a
 /// software Vulkan renderer: F1 / Shift+F1 step the internal resolution through 1x..4x and back, F3 / Shift+F3 the
 /// MSAA mode (native, 2x supersampling, off), each by a new renderer swapped in between two GPU scenes, with a notice
-/// of the new value; F2 / Shift+F2 step the frame rate mode at once. A change the guest cannot take (a thread that
-/// keeps a GPU scene open) is refused and leaves the options and the renderer as they were.
+/// of the new value; F2 / Shift+F2 step the frame rate mode at once. The swap does not wait for the guest threads: one
+/// that keeps running guest code does not refuse it.
 /// </summary>
 [Collection("guest")]
 public sealed class GraphicsHotkeysTests(GuestMemoryFixture fixture)
@@ -194,33 +195,76 @@ public sealed class GraphicsHotkeysTests(GuestMemoryFixture fixture)
         Assert.Null(ro.Msaa);
     }
 
-    /// <summary>A guest thread that keeps a GPU scene open past the swap's wait: the change is refused with the reason
-    /// in the notice, the options go back to what they were and the renderer is the same one.</summary>
+    /// <summary>
+    /// Guest threads that keep running and are not at a safe point when the change is made (the shell's
+    /// SceShellMusicCoreCacheIo refused every F1 with "thread ... is running guest code", and each try held the other
+    /// threads and dropped the frame rate): one loops in guest code, one is busy inside a long HLE call. A new
+    /// resolution and a new MSAA mode only change the renderer, so they are applied at the GPU's next scene boundary
+    /// while both keep running (their counters go on during the swap).
+    /// A save state still needs every thread at a safe point, and this one is not at one.
+    /// </summary>
     [SoftwareVulkanFact]
-    public void AChangeTheGuestCannotTakeIsRefused()
+    public void AChangeIsAppliedWhileAGuestThreadRunsGuestCode()
     {
-        using var s = new Session(fixture, "hotkeys-refused");
-        VulkanRenderer before = s.Renderer!;
-        Core.Kernel.GuestThread scene = s.Harness.Emu.Kernel.CreateThread("scene-thread", 0, 0x10000100, 0x10000, 0, 0x70000);
-        s.Harness.Emu.OpenSceneThread = scene;
+        using var s = new Session(fixture, "hotkeys-spin");
+        uint counter = s.Harness.Alloc(0x10);
+        GuestMemory.Fill(counter, 0, 0x10);
+        uint code = s.Harness.Alloc(0x40);
+        uint[] words =
+        [
+            0xE59F4018, // ldr r4, [pc, #24]   (the counter)
+            0xE5945000, // loop: ldr r5, [r4]
+            0xE2855001, // add r5, r5, #1
+            0xE5845000, // str r5, [r4]
+            0xE5946004, // ldr r6, [r4, #4]    (the stop flag)
+            0xE3560000, // cmp r6, #0
+            0x0AFFFFF9, // beq loop            (no HLE call: never a safe point)
+            0xE12FFF1E, // bx lr               (the thread exit trap)
+            counter,
+        ];
+        for (int i = 0; i < words.Length; i++)
+        {
+            GuestMemory.W32(code + (uint)i * 4, words[i]);
+        }
+
+        Core.Kernel.GuestThread spinning = s.Harness.Emu.Kernel.CreateThread("SpinningGuestThread", code, 0x10000100, 0x10000, 0, 0x70000);
+        Assert.Equal(0, spinning.Start(0, 0));
+        // and one busy inside a long HLE call, never blocked: it never reaches a safe point while the change is made
+        int busyStop = 0;
+        long busyLoops = 0;
+        HleHarness.GuestRun busy = s.Harness.Start(_ =>
+        {
+            while (Volatile.Read(ref busyStop) == 0)
+            {
+                Interlocked.Increment(ref busyLoops);
+                Thread.SpinWait(100);
+            }
+        }, "BusyHleThread");
         try
         {
+            HleHarness.Until(() => GuestMemory.R32(counter) > 1000 && Interlocked.Read(ref busyLoops) > 1000, "the running threads' first counts");
+            Assert.NotNull(busy.Thread.SafePointProblem(out _));
+            VulkanRenderer before = s.Renderer!;
             string res = s.Press("F1");
-            Assert.Contains("scene", res);
-            Assert.Equal(0f, s.Options.ResScale);
-            string msaa = s.Press("F3");
-            Assert.Contains("scene", msaa);
-            Assert.Null(s.Options.Msaa);
-            Assert.Same(before, s.Renderer);
-            Assert.Equal(1f, before.InternalScale);
-            Assert.Equal("native", before.MsaaMode);
+            Assert.DoesNotContain("running guest code", res);
+            Assert.NotSame(before, s.Renderer);
+            Assert.Equal(2f, s.Renderer!.InternalScale);
+            Assert.Equal(2f, s.Options.ResScale);
+            s.Press("F3");
+            Assert.Equal("ss", s.Renderer!.MsaaMode);
+            uint afterSwaps = GuestMemory.R32(counter);
+            long busyAfterSwaps = Interlocked.Read(ref busyLoops);
+            HleHarness.Until(() => GuestMemory.R32(counter) > afterSwaps + 1000 && Interlocked.Read(ref busyLoops) > busyAfterSwaps + 1000, "counts after the swaps");
+
+            // the save state's safe point is unchanged: the thread running guest code is not at one
+            Assert.Contains("running guest code", spinning.SafePointProblem(out _));
         }
         finally
         {
-            s.Harness.Emu.OpenSceneThread = null;
+            GuestMemory.W32(counter + 4, 1);
+            Volatile.Write(ref busyStop, 1);
+            Assert.True(spinning.WaitForExit(120_000), "the spinning thread did not stop");
+            s.Harness.Join(busy);
         }
-
-        s.Press("F1"); // the scene closed: the next press is applied
-        Assert.Equal(2f, s.Renderer!.InternalScale);
     }
 }

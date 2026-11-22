@@ -3149,6 +3149,14 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] [P1][G] Aumentar a resolução interna em jogo falha (relato do usuário, 21/11/2026; log da sessão shell de 23:34):
+  duas tentativas de 1x -> 2x respondem `Internal resolution 1x -> 2x not applied: thread 'SceShellMusicCoreCacheIo' is
+  running guest code` (a troca usa o mesmo ponto seguro do save state, que exige todas as threads paradas; uma thread
+  do shell que nunca para em ponto seguro bloqueia a troca), e o fps cai para 8-31 durante as tentativas. A troca de
+  resolução só mexe no renderer: não deveria esperar as threads do guest (ou deveria esperar com tentativa/timeout e
+  aplicar no próximo quadro). Corrigir genericamente, com teste: troca de resolução com uma thread do guest em
+  execução contínua é aplicada no próximo quadro.
+  Feito (fix/res1, 22/11/2026): a troca de resolução e de MSAA (F1/F3 no PC, MSAA no menu do Android) não segura mais as threads do guest; o worker da GPU troca o renderer sozinho na próxima fronteira entre cenas e o jogo segue rodando (`GpuQueueLiveReplaceTests`, `GraphicsHotkeysTests.AChangeIsAppliedWhileAGuestThreadRunsGuestCode`). O save state continua exigindo o ponto seguro. Testar: no shell (com a música/SceShellMusicCoreCacheIo ativa) e num jogo, F1 de 1x para 2x/3x/4x e de volta, e F3: a troca aparece no próximo quadro, sem "not applied" no log e sem queda de fps durante a troca.
 - [ ] [P1][M] HELLDIVERS (PCSA00134), cores erradas na tela de título (relato do usuário, 21/11/2026; captura
   `shell_20261121_233801_tudo`, 6,3 s a 60 fps, dump da GPU de 168 quadros): as naves e o planeta saem verde-saturado
   (as naves deveriam ser cinza-metálicas), o fundo azul e o logo parecem certos. Suspeita: canal/formato trocado ou
@@ -3530,13 +3538,6 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
 - [ ] [P2][G] CI: no runner Linux os testes de GPU do renderer são pulados ("shaderc not available ... install
   libshaderc-dev"), então a "passagem" do Linux não testa o renderer (achado do cifix12, 21/11/2026). Instalar o
   shaderc no job Linux (e conferir o macOS) para os testes de renderer rodarem nas 3 plataformas.
-- [ ] [P1][G] Aumentar a resolução interna em jogo falha (relato do usuário, 21/11/2026; log da sessão shell de 23:34):
-  duas tentativas de 1x -> 2x respondem `Internal resolution 1x -> 2x not applied: thread 'SceShellMusicCoreCacheIo' is
-  running guest code` (a troca usa o mesmo ponto seguro do save state, que exige todas as threads paradas; uma thread
-  do shell que nunca para em ponto seguro bloqueia a troca), e o fps cai para 8-31 durante as tentativas. A troca de
-  resolução só mexe no renderer: não deveria esperar as threads do guest (ou deveria esperar com tentativa/timeout e
-  aplicar no próximo quadro). Corrigir genericamente, com teste: troca de resolução com uma thread do guest em
-  execução contínua é aplicada no próximo quadro.
 - [ ] [P1][G] Adrenaline (PSPEMUCFW) fecha logo ao abrir (relato do usuário, 21/11/2026; log `20261121_233018_PSPEMUCFW.log`):
   o eboot chama `taihenUnsafe::taiLoadStartKernelModuleForUser` (NID 0x9890A8D3) para subir o módulo de kernel dele,
   o VitaSharp responde "Unimplemented HLE function" e o app sai no quadro 1 (`sceKernelExitProcess`). Sem código

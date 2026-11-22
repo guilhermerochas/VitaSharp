@@ -271,54 +271,31 @@ public static class SaveStates
     }
 
     /// <summary>
-    /// Replaces the GPU backend while the game runs (live graphics options: the internal resolution hotkey). The guest
-    /// threads are held between two GPU scenes, like for a save, so the new backend starts on a scene boundary; its
-    /// caches are built again from guest memory, as after a state load. Null when done, else why it was not.
+    /// Replaces the GPU backend while the game runs (live graphics options: the internal resolution and MSAA hotkeys,
+    /// the Android pause menu). Only the renderer changes, so the guest threads are not held at a safe point as for a
+    /// save: the GPU worker swaps the backend itself at its next scene boundary
+    /// (<see cref="Gpu.GpuQueue.ReplaceBackendBetweenScenes"/>) and the new one builds its caches again from guest memory, as after a state load. A paused emulation runs
+    /// meanwhile, so a scene the pause left open can end. Null when done, else why it was not.
     /// </summary>
     public static string? ReplaceBackendBetweenScenes(Emulator emu, Func<Gpu.IGpuBackend?> factory, int timeoutMs = 3000)
     {
-        lock (s_gate)
+        lock (s_gate) // not during a save or a load
         {
             bool wasPaused = EmulationPause.IsPaused;
-            var held = new List<GuestThread>();
+            if (wasPaused)
+            {
+                EmulationPause.Resume("GPU backend swap");
+            }
+
             try
             {
-                if (wasPaused)
-                {
-                    EmulationPause.Resume("GPU backend swap");
-                }
-
-                if (HoldBetweenScenes(emu, held, Stopwatch.StartNew(), timeoutMs) is { } why)
-                {
-                    return why;
-                }
-
-                EmulationPause.Pause("GPU backend swap", @internal: true);
-                if (OpenScene(emu) is { } scene)
-                {
-                    return $"thread '{scene.Name}' is finishing a GPU scene";
-                }
-
-                long t0 = Stopwatch.GetTimestamp();
-                emu.Gpu.WaitIdle();
-                emu.Gpu.ReplaceBackend(factory, sameTitle: true);
-                Log.Info($"GPU backend replaced while running in {Stopwatch.GetElapsedTime(t0).TotalMilliseconds:F0} ms");
-                return null;
+                return emu.Gpu.ReplaceBackendBetweenScenes(factory, sameTitle: true, timeoutMs);
             }
             finally
             {
                 if (wasPaused)
                 {
                     EmulationPause.Pause("GPU backend swap");
-                }
-                else
-                {
-                    EmulationPause.Resume("GPU backend swap");
-                }
-
-                foreach (GuestThread t in held)
-                {
-                    t.HoldForSave(false);
                 }
             }
         }
