@@ -3274,6 +3274,26 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   Correção: 90f1ceb8 (merge db7044ef, 15/11/2026): o passo scripted de save/load state roda uma vez mesmo com várias threads lendo o pad. Teste: no celular, carregar um estado e logo em seguida carregar outro; o jogo não deve congelar.
 
 ## Bugs em aberto
+- [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053), painéis do HUD pretos (relato do usuário, 21/11/2026; capturas
+  `PCSE00053_20261121_232126_tudo` e `PCSE00053_20261121_232150_tudo`, com dump da GPU de 72 e 464 quadros): a faixa do
+  objetivo ("Pegue a galinha!", topo esquerdo), a caixa do minimapa (embaixo à esquerda) e a dica "USE ◎ para MOVER A
+  CÂMERA" saem como retângulos pretos opacos em vez de translúcidos; o resto da cena está certo. Investigar blend/alfa
+  da textura do HUD no replay do dump.
+- [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053), áudio picotado (mesmas capturas de 21/11/2026): as vozes NGS
+  (Atrac9) têm buracos regulares de ~0,4-0,7 s dentro do som (49 buracos em 20 s no `audio_mix.wav`; só 2,6 s de som);
+  a porta MAIN teve gap máximo de 410 ms. O usuário também acha que imagem e som não estão sincronizados.
+- [ ] [P2][M] Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
+  capturas de 21/11/2026, e um engasgo de 132 ms por leitura de arquivo (fileIo 134 ms; quadro 302 do dump da
+  `_232150_tudo`).
+- [ ] [P2][G] Abrir um jogo não dá retorno visual (relato do usuário, 21/11/2026: "quando eu clico de novo no jogo ele
+  não abre a janela dele"): pelo log, a sessão começa e a janela só aparece 13 s depois (firmware, input, áudio,
+  dispositivo Vulkan), seguida de ~12 s de carregamento do cache de shaders e da etapa de pré-compilação ARM. Fazer,
+  no PC e no Android: a janela abre na hora do clique com uma tela de carregamento (nome do jogo e etapa atual);
+  clicar de novo no mesmo jogo traz a janela existente para frente; conferir se há caso em que o segundo clique
+  realmente não abre.
+- [ ] [P2][G] Barras de progresso no carregamento (pedido do usuário, 21/11/2026): "carregando cache de shaders" (N/total)
+  e "pré-compilando código ARM" (N/total) com barra e Cancelar, na tela de carregamento do PC e do Android (o Android
+  já tem o cartão da pré-compilação do andpar3: usar o mesmo modelo), com os nomes corretos dos dois conceitos.
 
 - [ ] [P2][P] Launcher com a janela menor: botões e textos são cortados em vez de quebrar para a linha de baixo
   (relato do usuário, 18/11/2026, print de 18/11 19:34): na página Sistema do Vita, a linha "Instalar firmware (.PUP)... /
