@@ -4221,6 +4221,19 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   seria palpite). Próximo passo decisivo: um teste no Vita de verdade (o homebrew de testes local: um sprite com
   sceGxmSetViewport(0,0,0,0,0.5,0.5) depois de um com viewport cheio, e ver se ele aparece) ou um vídeo do Vita com
   a intro do Salt and Sanctuary a 60 fps num boot de save novo; enquanto isso o item fica aberto
+  Rodada 5 (salt1, 22/11/2026, release/20261117): **ainda reproduz** (replay do `gpu.vsgd`, presents 15-30: média
+  0,044-0,070 nos quadros do 0x66600000 contra 0,013-0,023 nos do 0x66900000, alternando). Probes ao vivo: as duas
+  chamadas do setter (0x81D8E0B2, args 0,0,960,544) e todos os Present/Clear rodam na thread `Guest:main`, em
+  sequência, antes do 1º Present; a carga em paralelo é da `ManagedThread` e não chama o setter. Ou seja, **não é
+  tempo nem evento entregue cedo**: a ordem é a do próprio código e é a mesma no Vita. Ordem num quadro ímpar (trace
+  HLE + probe no `blx` do sceGxmSetViewport em 0x81D8D35E): BeginScene (viewport padrão cheio) > quad preto > Clear
+  (mask update) > desenho 3 (logo, ainda com o viewport padrão) > reaplicação do viewport do bloco 1 (zero) >
+  desenhos 4 e 5. O libgxm (sceGxmSetViewport 0x8100AA2C, emissão `FUN_8100e9b4` bit 0x100 > `FUN_8100e7ec`, um
+  programa PDS que copia as palavras para o estado do TA) manda os seis floats crus ao hardware; o
+  sceGxmSetDefaultRegionClipAndViewport do BeginScene só grava (w/2, w/2, h/2, -h/2, 0.5, 0.5). Não há fonte para
+  outro comportamento com escala 0, então continua sem correção genérica. Hipótese nova: o vídeo de 2023 pode ser
+  de uma versão com patch do jogo (o do usuário é APP_VER 01.00, sem `ux0:patch`). Próximo passo: o usuário dizer
+  se existe atualização do jogo (ou instalá-la) e repetir a gravação; ou o teste no Vita de verdade da rodada 4
   Lentidão de ~70 s ao sair da criação (quadros 1934-1977 da varredura): **não reproduz** (agente A4, 10/11/2026). Com o
   roteiro da varredura (cross a cada 150 quadros; o START do sweep.ps1 nunca disparava: 400+150k nunca é múltiplo
   de 600) e cache de shaders quente ou frio, 180 s a 28-30 fps, só uma queda curta a 15 fps na entrada da criação
