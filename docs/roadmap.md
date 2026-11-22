@@ -3355,8 +3355,8 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   seguir sem travar; repetir com o shell aberto.
 - [ ] (22/11/2026, na main, falta testar) [P1][G] PSM, licenças (fix/psm3 8132d374, fix/psm4 d0aa0cdc): a licença fica em RO/License com o nome
   que o runtime abre e scePsmDrmGetRifInfo/GetRifKey respondem como o SceNpDrm 3.74. A chave de uma licença sem assinatura só
-  vem de um plugin de kernel que faça hook da exportação (`NoPsmDrm` na seção `*KERNEL` de `ur0:tai/config.txt`, com
-  "Ativar Plugins do Kernel"). Testar: instalar o plugin como acima, reinstalar/abrir um jogo de PSM do seu usuário pelo
+  vem de um plugin de kernel que faça hook da exportação (`NoPsmDrm` na seção `*KERNEL` do `ur0:kernel_plugins/config.txt`, a pasta de plugins do
+  emulador, onde o do usuário já está, com "Ativar Plugins do Kernel"). Testar: reinstalar/abrir um jogo de PSM do seu usuário pelo
   shell e ver se passa da checagem de licença (antes parava no erro 0x808F04FF); sem o plugin deve continuar recusando.
   Pode parar mais adiante (Mono/Piglet ainda não foram vistos rodando): mande o log.
 - [ ] (22/11/2026, na main, falta testar) [P1][M] Vidro da cabine do MGS3 (fix/mgs3g dd0f03e5, e95171c3): a profundidade carregada entre
