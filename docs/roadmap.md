@@ -3274,6 +3274,10 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   Correção: 90f1ceb8 (merge db7044ef, 15/11/2026): o passo scripted de save/load state roda uma vez mesmo com várias threads lendo o pad. Teste: no celular, carregar um estado e logo em seguida carregar outro; o jogo não deve congelar.
 
 ## Bugs em aberto
+- [ ] [P1][M] The Amazing Spider-Man (PCSE00333), tela de pausa piscando (relato do usuário, 21/11/2026; captura
+  `PCSE00333_20261121_232645_tudo`, 4,3 s a 60 fps, dump da GPU de 198 quadros): o menu de pausa ("RESUME" e as
+  opções abaixo, sobre o fundo com a aranha) pisca; na folha de contatos as opções abaixo de "RESUME" quase não
+  aparecem. Comparar quadros seguidos no replay do dump (texto/opções presentes em um quadro e ausentes no outro).
 - [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053), painéis do HUD pretos (relato do usuário, 21/11/2026; capturas
   `PCSE00053_20261121_232126_tudo` e `PCSE00053_20261121_232150_tudo`, com dump da GPU de 72 e 464 quadros): a faixa do
   objetivo ("Pegue a galinha!", topo esquerdo), a caixa do minimapa (embaixo à esquerda) e a dica "USE ◎ para MOVER A
