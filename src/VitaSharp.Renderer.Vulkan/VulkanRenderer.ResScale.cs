@@ -89,8 +89,50 @@ public sealed unsafe partial class VulkanRenderer
         return ok ? _resScale : 1f;
     }
 
-    /// <summary>Scale of the current scene's attachments (1 without a colour target or for a native one).</summary>
-    private float RtScale => _renderTarget?.Scale ?? 1f;
+    /// <summary>Scale of the current scene's attachments: the colour target's, or <see cref="_colorlessSceneScale"/> in a
+    /// scene without a colour surface.</summary>
+    private float RtScale => _renderTarget?.Scale ?? _colorlessSceneScale;
+
+    /// <summary>Scale of the current scene when it has no colour surface (<see cref="ColorlessSceneScale"/>).</summary>
+    private float _colorlessSceneScale = 1f;
+
+    /// <summary>
+    /// The scale a scene without a colour surface renders its depth/stencil at. On the Vita a depth/stencil surface is
+    /// one block of memory whatever scene uses it, so a depth-only scene (a depth pre-pass, occlusion queries, a stencil
+    /// mask) and the colour scenes that load the surface after it must share one image here too, of the scale the
+    /// colour scenes give it: the scale of the image of that surface a colour scene used last, else the scale a colour
+    /// target of the scene's size would get. At native scale the colour-less scene rendered into a separate native image; Assassin's
+    /// Creed III Liberation clears its depth/stencil in such a scene before the 3D scene loads it, so at 2x the 3D scene
+    /// loaded the 2x image the HUD had written stencil into the frame before, and its geometry failed the stencil test
+    /// under the HUD panels, which then blended over black.
+    /// </summary>
+    private float ColorlessSceneScale(DepthSurfaceInfo? depthSurfaceInfo, uint width, uint height)
+    {
+        if (_resScale == 1f)
+        {
+            return 1f;
+        }
+
+        uint depthAddr = depthSurfaceInfo?.DepthData ?? 0;
+        uint keyAddr = depthAddr != 0 ? depthAddr : depthSurfaceInfo?.StencilData ?? 0;
+        if (keyAddr != 0)
+        {
+            DepthTarget? latest = null;
+            foreach (KeyValuePair<(uint KeyAddr, uint W, uint H, SampleCountFlags Samples), DepthTarget> entry in _depthTargets)
+            {
+                if (entry.Key.KeyAddr == keyAddr && entry.Value.LastColorScene > (latest?.LastColorScene ?? 0))
+                {
+                    latest = entry.Value;
+                }
+            }
+
+            if (latest != null)
+            {
+                return latest.Scale;
+            }
+        }
+        return width < ResScaleMinSize || height < ResScaleMinSize ? 1f : _resScale;
+    }
 
     /// <summary>A scene-space length (guest pixels) in attachment pixels at <paramref name="scale"/>.</summary>
     private static uint ScaledLen(uint v, float scale) => scale == 1f ? v : scale == 2f ? v * 2 : (uint)MathF.Round(v * scale);
