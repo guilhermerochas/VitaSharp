@@ -180,7 +180,7 @@ public sealed class CodeCache
         _code = code;
         _configurationKey = configurationKey ?? CodeCacheFile.ConfigurationKey;
         code.FirstUse = OnFirstUse;
-        code.FirstRun = OnFirstUse;
+        code.FirstRun = OnFirstRun;
     }
 
     /// <summary>A block's compiled code ran for the first time: the runs widen their frontier around it.</summary>
@@ -189,6 +189,15 @@ public sealed class CodeCache
         foreach (CodePrecompiler run in Volatile.Read(ref _active))
         {
             run.Expand(block);
+        }
+    }
+
+    /// <summary>The interpreter ran a block for the first time: the runs widen their frontier around it too.</summary>
+    private void OnFirstRun(Block block)
+    {
+        foreach (CodePrecompiler run in Volatile.Read(ref _active))
+        {
+            run.Expand(block, interpreted: true);
         }
     }
 
@@ -408,7 +417,7 @@ public sealed class CodeCache
             _code.FirstUse = null;
         }
 
-        if (_code.FirstRun == OnFirstUse)
+        if (_code.FirstRun == OnFirstRun)
         {
             _code.FirstRun = null;
         }

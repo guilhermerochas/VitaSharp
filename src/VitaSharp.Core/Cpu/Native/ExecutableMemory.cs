@@ -199,9 +199,10 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
     /// <summary>
     /// <see cref="Place(Func{ulong, byte[]})"/>, first trying a freed range (<see cref="Free"/>) with
     /// <paramref name="reuseFreed"/>: the code is encoded once for the next address to learn its length, and again for
-    /// the freed range that holds it with <see cref="PlaceSlack"/> to spare (an x64 encoding may change length with its
-    /// address). Meant for work that is not waited for (the precompilation's background threads): the second encoding
-    /// costs time, and only when a range was freed.
+    /// a freed range that holds that length (freed ranges are the sizes of evicted blocks, so a slack would rarely
+    /// fit); an x64 encoding that grows at the new address (a short branch out of reach) gives the range back and is
+    /// placed at the end. Meant for work that is not waited for (the precompilation's background threads): the second
+    /// encoding costs time, and only when a range was freed.
     /// </summary>
     public byte* Place(Func<ulong, byte[]> assemble, bool reuseFreed)
     {
@@ -211,7 +212,7 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
         }
 
         byte[] guess = assemble((ulong)(_exec + ((Volatile.Read(ref _used) + 15) & ~15)));
-        int reserved = (guess.Length + PlaceSlack + 15) & ~15;
+        int reserved = (guess.Length + 15) & ~15; // most encodings keep their length at another address
         int start;
         lock (_lock)
         {

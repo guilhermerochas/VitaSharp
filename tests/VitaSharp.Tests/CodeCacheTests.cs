@@ -646,6 +646,10 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
                 Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)));
                 core.State->R[1] = 1;
                 Assert.Equal((uint)ChainBlocks, Run(core, code));
+                // an evicted guess is not translated ahead again when the frontier reaches it (that churned): at most
+                // one translation per block of the program
+                Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+                Assert.True(run.Statistics.Translated <= ChainBlocks + 8, $"{run.Statistics}");
                 codeCache.Stop();
             }
             finally
@@ -671,7 +675,7 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
         GuestMemory.W32(code + 0x08, 0xE12FFF32); // blx r2
         GuestMemory.W32(code + 0x0C, 0xEF000002); // svc #2
         GuestMemory.W32(code + 0x10, 0xE12FFF1E); // bx lr
-        foreach ((uint function, uint addend) in new[] { (0x400u, 5u), (0x500u, 7u) })
+        foreach ((uint function, uint addend) in new[] { (0x400u, 5u), (0x500u, 7u), (0x600u, 3u) })
         {
             uint at = code + function;
             GuestMemory.W32(at + 0x00, 0xE3500000); // cmp r0, #0
@@ -685,7 +689,7 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
             GuestMemory.W32(at + 0x24, 0xE12FFF1E); // bx lr
         }
 
-        LoadedModule Loaded() => ModuleWithData(code, fixture.Memory.Alloc(0x1000, "codecache narrow data"), 14, 0x000, 0x400, 0x500);
+        LoadedModule Loaded() => ModuleWithData(code, fixture.Memory.Alloc(0x1000, "codecache narrow data"), 14, 0x000, 0x400, 0x500, 0x600);
         WithNative(() =>
         {
             // session 1 runs F only: the frontier fills in all of F, and the cache records what ran
@@ -728,6 +732,10 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
                     core2.State->R[2] = code + 0x500;
                     Assert.Equal(7u, Run(core2, code));
                 }
+
+                // H runs once, interpreted: in a session with a code cache only the blocks right after it
+                core2.State->R[2] = code + 0x600;
+                Assert.Equal(3u, Run(core2, code));
             }
 
             Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)));
@@ -736,6 +744,8 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
             Assert.Contains(code + 0x410, translated); // right after a block that ran
             Assert.DoesNotContain(code + 0x420, translated); // two blocks away in a recorded function: not a guess worth its arena
             Assert.Contains(code + 0x520, translated); // the whole of the new function
+            Assert.Contains(code + 0x610, translated);
+            Assert.DoesNotContain(code + 0x620, translated); // interpreted code is no stronger a guess than recorded code
             codeCache2.Stop();
         });
     }

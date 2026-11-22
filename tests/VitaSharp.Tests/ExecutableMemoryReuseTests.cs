@@ -47,7 +47,7 @@ public sealed unsafe class ExecutableMemoryReuseTests
         Assert.Equal(5, reused[0]);
         Assert.Equal(5, reused[199]);
 
-        // address-dependent code (x64): encoded for the freed range it goes to, with room to spare for a longer encoding
+        // address-dependent code (x64): encoded again for the freed range it goes to
         arena.Free(second, 512);
         var addresses = new List<ulong>();
         byte* encoded = arena.Place(rip =>
