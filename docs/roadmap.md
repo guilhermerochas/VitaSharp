@@ -3274,6 +3274,13 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   Correção: 90f1ceb8 (merge db7044ef, 15/11/2026): o passo scripted de save/load state roda uma vez mesmo com várias threads lendo o pad. Teste: no celular, carregar um estado e logo em seguida carregar outro; o jogo não deve congelar.
 
 ## Bugs em aberto
+- [ ] [P1][G] Adrenaline (PSPEMUCFW) fecha logo ao abrir (relato do usuário, 21/11/2026; log `20261121_233018_PSPEMUCFW.log`):
+  o eboot chama `taihenUnsafe::taiLoadStartKernelModuleForUser` (NID 0x9890A8D3) para subir o módulo de kernel dele,
+  o VitaSharp responde "Unimplemented HLE function" e o app sai no quadro 1 (`sceKernelExitProcess`). Sem código
+  específico de taiHEN (decisão do usuário): no Vita com HENkaku essas exportações vêm do `taihen.skprx` real, que
+  está em `ur0:tai/` do usuário; fazer o boot dos plugins carregar o `taihen.skprx` real primeiro (como o HENkaku faz)
+  e deixá-lo ler o `config.txt`, para que as exportações taihen* sejam as dele e não stubs do HLE. Teste: um app
+  sintético que chama taiLoadStartKernelModuleForUser recebe o UID do módulo carregado pelo taihen real.
 - [ ] [P1][M] The Amazing Spider-Man (PCSE00333), tela de pausa piscando (relato do usuário, 21/11/2026; captura
   `PCSE00333_20261121_232645_tudo`, 4,3 s a 60 fps, dump da GPU de 198 quadros): o menu de pausa ("RESUME" e as
   opções abaixo, sobre o fundo com a aranha) pisca; na folha de contatos as opções abaixo de "RESUME" quase não
