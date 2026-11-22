@@ -518,13 +518,16 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
     /// everything to the renderer and, before each draw runs, waits for the shader workers. The draw's prefetch (on
     /// submit, before it is queued) has then finished, as when the game submits a frame ahead of the GPU thread, and
     /// whatever the GPU thread still builds is what the prefetch did not predict.</summary>
-    private sealed class PrefetchedFirstBackend(VulkanRenderer renderer) : IGpuBackend
+    /// <param name="held">when given, every command waits for it first (the GPU thread held while the game submits)</param>
+    /// <param name="waitForWorkers">false: the draws do not wait for the shader workers</param>
+    private sealed class PrefetchedFirstBackend(VulkanRenderer renderer, ManualResetEventSlim? held = null, bool waitForWorkers = true) : IGpuBackend
     {
         private readonly IGpuBackend _inner = renderer;
 
         public void Execute(GpuCommand command)
         {
-            if (command is DrawCommand)
+            held?.Wait();
+            if (waitForWorkers && command is DrawCommand)
             {
                 Assert.True(renderer.WaitForBackgroundCompiles(CancellationToken.None));
             }
@@ -612,6 +615,82 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
 
             Assert.True(prefetched >= 6, $"{prefetched} pipelines prefetched");
             Assert.Equal((0, 0), (fetchPass, gpuPipelines));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(cache, true);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    /// <summary>
+    /// The shader workers finish the draw prefetch's work in the order the draws were submitted: a pipeline job runs as
+    /// soon as its shaders are no longer pending, ahead of the shader jobs of later draws, because the GPU thread needs
+    /// the draws in that order. They used to run every queued shader job first, so a frame of new draws (the first frame
+    /// of a cold dump replay without program load: 127 shaders, 40 pipelines) left every pipeline queued behind all the
+    /// shaders, and the GPU thread built the 8-13 it reached first itself although the prefetch had predicted each one.
+    /// One worker, held (as is the GPU thread) until the whole scene is submitted, so the queues hold every job: draws of
+    /// four texture classes give a shader each and one vertex shader; each pipeline but the last runs while a later
+    /// shader job waits, every pipeline is built by the worker, and the GPU thread then builds none.
+    /// </summary>
+    [SoftwareVulkanFact]
+    public void DrawPrefetchFinishesEachPipelineBeforeTheShadersOfLaterDraws()
+    {
+        using IDisposable driver = SoftwareVulkan.Use();
+        string cache = Path.Combine(Path.GetTempPath(), "vitasharp-pipelineorder-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var r = new VulkanRenderer(new VulkanRendererOptions
+            {
+                VSync = false,
+                AsyncShaders = true,
+                AsyncPipelines = true,
+                CompileOnProgramLoad = false,
+                ShaderWorkers = 1,
+                ShaderCacheDir = cache,
+            });
+            using var workersHeld = new ManualResetEventSlim(false);
+            using var gpuHeld = new ManualResetEventSlim(false);
+            typeof(VulkanRenderer).GetProperty("TestWorkerGate", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(r, workersHeld);
+            Core.Gxm.TexBase[] classes = [Core.Gxm.TexBase.U8U8U8U8, Core.Gxm.TexBase.F16F16F16F16, Core.Gxm.TexBase.S8S8S8S8, Core.Gxm.TexBase.UBC3];
+            int ahead = -1, prefetched = -1, gpuPipelines = -1;
+            using var h = new HleHarness(fx, "pipelineorder");
+            try
+            {
+                h.Emu.Gpu.Backend = new PrefetchedFirstBackend(r, gpuHeld, waitForWorkers: false);
+                r.BeginTitle("PCSA00083");
+                var w = new RendererTextureTests.Workload(h);
+                var drawn = new List<uint>();
+                foreach (Core.Gxm.TexBase format in classes)
+                {
+                    int index = Enumerable.Range(0, w.Textures.Count).First(i => w.TextureFormats[i] == format && !w.CubeTextures.Contains(w.Textures[i]));
+                    drawn.Add(w.Textures[index]);
+                }
+
+                w.Textures.Clear();
+                w.Textures.AddRange(drawn);
+                w.Run(drawn.Count, finish: false); // one scene with the four draws, all prefetched
+                workersHeld.Set();
+                Assert.True(r.WaitForBackgroundCompiles(CancellationToken.None));
+                gpuHeld.Set();
+                h.Emu.Gpu.WaitIdle();
+                (ahead, prefetched, gpuPipelines) = (Stat(r, "_statPipelinesAheadOfShaders"), Stat(r, "_statPipelinesPrefetched"), Stat(r, "_statGpuPipelines"));
+                w.Terminate();
+            }
+            finally
+            {
+                workersHeld.Set();
+                gpuHeld.Set();
+                h.Emu.Gpu.WaitIdle();
+                h.Emu.Gpu.Backend = null;
+                r.Dispose();
+            }
+
+            Assert.Equal((classes.Length - 1, classes.Length, 0), (ahead, prefetched, gpuPipelines));
         }
         finally
         {

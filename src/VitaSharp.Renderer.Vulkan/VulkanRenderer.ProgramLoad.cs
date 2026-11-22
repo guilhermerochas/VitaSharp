@@ -369,10 +369,7 @@ public sealed unsafe partial class VulkanRenderer
         var key = new PipelineKey(vs.Module.Handle, fetch.Module.Handle, vs.LayoutHash, attach, true,
             false, j.Blend?.ColorFunc ?? 0, j.Blend?.AlphaFunc ?? 0, j.Blend?.ColorSrc ?? 1, j.Blend?.ColorDst ?? 0, j.Blend?.AlphaSrc ?? 1, j.Blend?.AlphaDst ?? 0,
             mask, TopologyClass(topology), Formats.Polygon(j.PolygonMode), SampleCountFlags.Count1Bit, j.Static, 0, InputPass: true);
-        if (j.ProgramLoad)
-        {
-            DbgProgramLoadPipeline(j.Fs.Hash, j.FetchKey, key);
-        }
+        DbgPredictedPipeline(j.Fs.Hash, j.FetchKey, key, j.ProgramLoad);
 
         if (BuildSharedPipeline(key, vs, fetch.Module, topology) == SharedBuild.Built)
         {
@@ -492,27 +489,39 @@ public sealed unsafe partial class VulkanRenderer
         return true;
     }
 
-    /// <summary>Debug mode: the pipelines built at program load, by fragment program hash (with the fragment hint key),
-    /// to tell what a pipeline the GPU thread had to build was predicted as.</summary>
-    private readonly ConcurrentDictionary<ulong, ConcurrentQueue<(ulong FsHintKey, PipelineKey Key)>> _dbgProgramLoadPipelines = new();
+    /// <summary>Debug mode: the pipelines built at program load and by the draw prefetch, by fragment program hash (with
+    /// the fragment hint key), to tell what a pipeline the GPU thread had to build was predicted as.</summary>
+    private readonly ConcurrentDictionary<ulong, ConcurrentQueue<(ulong FsHintKey, PipelineKey Key, bool ProgramLoad)>> _dbgPredictedPipelines = new();
+    /// <summary>Debug mode: the pipelines the GPU thread built itself, with the time it started each.</summary>
+    private readonly ConcurrentDictionary<PipelineKey, long> _dbgGpuThreadPipelines = new();
 
-    private void DbgProgramLoadPipeline(ulong fsProgramHash, ulong fsHintKey, in PipelineKey key)
+    /// <summary>Debug mode: a pipeline a worker predicted (program load or draw prefetch). One the GPU thread already
+    /// built itself is logged: the prediction was right but came too late.</summary>
+    private void DbgPredictedPipeline(ulong fsProgramHash, ulong fsHintKey, in PipelineKey key, bool programLoad)
     {
-        if (DebugMode.Enabled)
+        if (!DebugMode.Enabled)
         {
-            _dbgProgramLoadPipelines.GetOrAdd(fsProgramHash, _ => new()).Enqueue((fsHintKey, key));
+            return;
+        }
+
+        _dbgPredictedPipelines.GetOrAdd(fsProgramHash, _ => new()).Enqueue((fsHintKey, key, programLoad));
+        if (_dbgGpuThreadPipelines.TryGetValue(key, out long started))
+        {
+            double lateMs = (System.Diagnostics.Stopwatch.GetTimestamp() - started) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            Dbg($"{(programLoad ? "program load" : "draw prefetch")} reached a pipeline the GPU thread built itself {lateMs:F1} ms before: fs {fsProgramHash:X16} hints {fsHintKey:X16} fetch pass {key.InputPass}");
         }
     }
 
-    /// <summary>Debug mode: a pipeline the GPU thread builds itself, with the closest program-load prediction for the
-    /// same fragment program and the key fields that differ.</summary>
+    /// <summary>Debug mode: a pipeline the GPU thread builds itself, with the closest prediction (program load or draw
+    /// prefetch) for the same fragment program, the key fields that differ, and the pipeline jobs still queued.</summary>
     private void DbgGpuThreadPipeline(in PipelineKey key, VsEntry vs, FsEntry fs)
     {
+        _dbgGpuThreadPipelines.TryAdd(key, System.Diagnostics.Stopwatch.GetTimestamp());
         string predicted = "none";
-        if (_dbgProgramLoadPipelines.TryGetValue(fs.ProgramHash, out ConcurrentQueue<(ulong FsHintKey, PipelineKey Key)>? list))
+        if (_dbgPredictedPipelines.TryGetValue(fs.ProgramHash, out ConcurrentQueue<(ulong FsHintKey, PipelineKey Key, bool ProgramLoad)>? list))
         {
             int best = int.MaxValue;
-            foreach ((ulong fsHintKey, PipelineKey candidate) in list)
+            foreach ((ulong fsHintKey, PipelineKey candidate, bool programLoad) in list)
             {
                 List<string> diff = PipelineKeyDiff(key, candidate);
                 if (fsHintKey != fs.HintKey)
@@ -523,12 +532,13 @@ public sealed unsafe partial class VulkanRenderer
                 if (diff.Count < best)
                 {
                     best = diff.Count;
-                    predicted = $"{list.Count} predicted, closest differs in [{string.Join(", ", diff)}]";
+                    predicted = $"{list.Count} predicted, closest ({(programLoad ? "program load" : "draw prefetch")}) differs in [{string.Join(", ", diff)}]";
                 }
             }
         }
 
-        Dbg($"pipeline built on the GPU thread: vs {vs.ProgramHash:X16} hints {vs.HintKey:X16} fs {fs.ProgramHash:X16} hints {fs.HintKey:X16} {key}; program load: {predicted}");
+        Dbg($"pipeline built on the GPU thread: vs {vs.ProgramHash:X16} hints {vs.HintKey:X16} fs {fs.ProgramHash:X16} hints {fs.HintKey:X16} {key}; predicted: {predicted}; "
+            + $"pipeline jobs queued {_pipelineJobs.Count}, running {Volatile.Read(ref _pipelineJobsRunning)}");
     }
 
     private static List<string> PipelineKeyDiff(in PipelineKey a, in PipelineKey b)
