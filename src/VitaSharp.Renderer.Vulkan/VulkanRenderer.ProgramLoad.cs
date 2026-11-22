@@ -58,6 +58,23 @@ public sealed unsafe partial class VulkanRenderer
 
     public void VertexProgramCreated(GxmVertexProgram vertexProgram)
     {
+        if (!EnterGuestCall())
+        {
+            return;
+        }
+
+        try
+        {
+            VertexProgramCreatedCore(vertexProgram);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _prefetchActive);
+        }
+    }
+
+    private void VertexProgramCreatedCore(GxmVertexProgram vertexProgram)
+    {
         if (!ProgramLoadActive || vertexProgram.Info == null)
         {
             return;
@@ -85,6 +102,23 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     public void FragmentProgramCreated(GxmFragmentProgram fragmentProgram, GxmProgramInfo? vertexProgram)
+    {
+        if (!EnterGuestCall())
+        {
+            return;
+        }
+
+        try
+        {
+            FragmentProgramCreatedCore(fragmentProgram, vertexProgram);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _prefetchActive);
+        }
+    }
+
+    private void FragmentProgramCreatedCore(GxmFragmentProgram fragmentProgram, GxmProgramInfo? vertexProgram)
     {
         if (!ProgramLoadActive || fragmentProgram.IsMaskUpdate || fragmentProgram.Info == null)
         {
@@ -243,7 +277,43 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    public void ColorSurfaceInitialised(uint colorFormat, bool downscale) => ColorSurfaceKnown(colorFormat, 0, 0, downscale);
+    public void ColorSurfaceInitialised(uint colorFormat, bool downscale)
+    {
+        if (!EnterGuestCall())
+        {
+            return;
+        }
+
+        try
+        {
+            ColorSurfaceKnown(colorFormat, 0, 0, downscale);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _prefetchActive);
+        }
+    }
+
+    /// <summary>A call from a guest thread (program and surface creation) announces itself like <see cref="Prefetch"/>:
+    /// a live backend change disposes this renderer while the guest runs on (GpuQueue.ReplaceBackendBetweenScenes),
+    /// and <see cref="StopShaderWorkers"/> waits for the calls in progress before tearing down. False once stopping;
+    /// else the caller decrements <see cref="_prefetchActive"/> when done.</summary>
+    private bool EnterGuestCall()
+    {
+        if (_stopShaderJobs)
+        {
+            return false;
+        }
+
+        Interlocked.Increment(ref _prefetchActive);
+        if (_stopShaderJobs)
+        {
+            Interlocked.Decrement(ref _prefetchActive);
+            return false; // re-checked after announcing ourselves
+        }
+
+        return true;
+    }
 
     /// <summary>A render target was created with <paramref name="multisample"/> (SceGxmMultisampleMode).</summary>
     public void RenderTargetCreated(uint multisample)

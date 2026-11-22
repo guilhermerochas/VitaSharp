@@ -3546,6 +3546,15 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   ShadercIsAvailableOnTheCiRunners falha no CI se os testes voltarem a pular. Testar: o próximo CI no Linux roda os
   testes de renderer (sem "shaderc not available"); no Ubuntu, o VitaSharp desenha sem erro de shaderc.
 
+- [ ] [P1][G] Aumentar a resolução interna em jogo falha (relato do usuário, 21/11/2026; log da sessão shell de 23:34):
+  duas tentativas de 1x -> 2x respondem `Internal resolution 1x -> 2x not applied: thread 'SceShellMusicCoreCacheIo' is
+  running guest code` (a troca usa o mesmo ponto seguro do save state, que exige todas as threads paradas; uma thread
+  do shell que nunca para em ponto seguro bloqueia a troca), e o fps cai para 8-31 durante as tentativas. A troca de
+  resolução só mexe no renderer: não deveria esperar as threads do guest (ou deveria esperar com tentativa/timeout e
+  aplicar no próximo quadro). Corrigir genericamente, com teste: troca de resolução com uma thread do guest em
+  execução contínua é aplicada no próximo quadro.
+  Feito (fix/res1, 22/11/2026): a troca de resolução e de MSAA (F1/F3 no PC, MSAA no menu do Android) não segura mais as threads do guest; o worker da GPU troca o renderer sozinho na próxima fronteira entre cenas e o jogo segue rodando (`GpuQueueLiveReplaceTests`, `GraphicsHotkeysTests.AChangeIsAppliedWhileAGuestThreadRunsGuestCode`). O save state continua exigindo o ponto seguro. Testar: no shell (com a música/SceShellMusicCoreCacheIo ativa) e num jogo, F1 de 1x para 2x/3x/4x e de volta, e F3: a troca aparece no próximo quadro, sem "not applied" no log e sem queda de fps durante a troca.
+
 ## Bugs em aberto
 - [ ] [P1][G] PSM em Unity não abre (relato do usuário, 22/11/2026; log de 19:33, NPOA00239): o título traz o próprio
   runtime (`ux0:psm/<título>/runtime/eboot.bin`, PCSI00010 "Unity Runtime for PlayStation Mobile", mais mono_prx e
@@ -3556,13 +3565,6 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   que"): uma exceção no carregamento do título (ex.: o `Not a SELF/ELF file` acima) termina o processo só com o log.
   Mostrar uma mensagem na janela/launcher (PC e Android) com o motivo em linguagem simples e onde está o log, e voltar
   ao launcher sem crash; teste com um título inválido.
-- [ ] [P1][G] Aumentar a resolução interna em jogo falha (relato do usuário, 21/11/2026; log da sessão shell de 23:34):
-  duas tentativas de 1x -> 2x respondem `Internal resolution 1x -> 2x not applied: thread 'SceShellMusicCoreCacheIo' is
-  running guest code` (a troca usa o mesmo ponto seguro do save state, que exige todas as threads paradas; uma thread
-  do shell que nunca para em ponto seguro bloqueia a troca), e o fps cai para 8-31 durante as tentativas. A troca de
-  resolução só mexe no renderer: não deveria esperar as threads do guest (ou deveria esperar com tentativa/timeout e
-  aplicar no próximo quadro). Corrigir genericamente, com teste: troca de resolução com uma thread do guest em
-  execução contínua é aplicada no próximo quadro.
 - [ ] [P1][G] Adrenaline (PSPEMUCFW) fecha logo ao abrir (relato do usuário, 21/11/2026; log `20261121_233018_PSPEMUCFW.log`):
   o eboot chama `taihenUnsafe::taiLoadStartKernelModuleForUser` (NID 0x9890A8D3) para subir o módulo de kernel dele,
   o VitaSharp responde "Unimplemented HLE function" e o app sai no quadro 1 (`sceKernelExitProcess`). Sem código

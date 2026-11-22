@@ -51,37 +51,166 @@ public sealed class GpuQueue : IDisposable
         WaitIdle();
         lock (_backendLock)
         {
-            void Swap()
+            SwapBackend(factory, sameTitle);
+        }
+    }
+
+    /// <summary>Disposes the current backend and installs the one <paramref name="factory"/> makes, on the thread
+    /// <see cref="ReplaceOn"/> names; the caller holds <see cref="_backendLock"/>.</summary>
+    private void SwapBackend(Func<IGpuBackend?>? factory, bool sameTitle)
+    {
+        void Swap()
+        {
+            IGpuBackend? old = Backend;
+            string? title = sameTitle ? old?.TitleId : null;
+            Backend = null;
+            old?.Dispose();
+            if (factory != null)
             {
-                IGpuBackend? old = Backend;
-                string? title = sameTitle ? old?.TitleId : null;
-                Backend = null;
-                old?.Dispose();
-                if (factory != null)
+                Backend = factory();
+            }
+
+            if (title != null && Backend is { } b)
+            {
+                try
                 {
-                    Backend = factory();
+                    b.BeginTitle(title);
+                }
+                catch (Exception e)
+                {
+                    Log.Warn($"GPU backend title setup failed: {e.Message}");
+                }
+            }
+        }
+        if (ReplaceOn is { } on)
+        {
+            on(Swap);
+        }
+        else
+        {
+            Swap();
+        }
+    }
+
+    /// <summary>A backend swap the worker makes at its next scene boundary (<see cref="ReplaceBackendBetweenScenes"/>).</summary>
+    private sealed class ReplaceRequest(Func<IGpuBackend?> factory, bool sameTitle)
+    {
+        public readonly Func<IGpuBackend?> Factory = factory;
+        public readonly bool SameTitle = sameTitle;
+        public readonly ManualResetEventSlim Done = new();
+        public Exception? Error;
+    }
+
+    private ReplaceRequest? _replaceRequest;
+
+    /// <summary>A <see cref="ReplaceBackendBetweenScenes"/> swap waits for the worker's next scene boundary.</summary>
+    internal bool ReplacePending => Volatile.Read(ref _replaceRequest) != null;
+
+    /// <summary>GPU worker only: the processes whose scene the worker began (BeginScene executed) and has not ended yet.
+    /// The backend records a scene's draws into the render pass its BeginScene opened, so a new backend can only take
+    /// over where no scene is open in the executed stream.</summary>
+    private readonly HashSet<int> _executedOpenScenes = [];
+
+    /// <summary>
+    /// Replaces the backend while the game runs (live graphics options: the internal resolution and MSAA hotkeys, the
+    /// Android pause menu): the GPU worker makes the swap itself, in command order, at the first point of its stream
+    /// where no scene is open (between two scenes, at the latest at the next frame), and the new backend builds its
+    /// caches again from guest memory, as after a state load. It only touches the renderer, so the guest threads keep
+    /// running: they are not held at a safe point like for a save state (a system thread that never reaches one, the
+    /// shell's SceShellMusicCoreCacheIo, refused every change and the retries dropped the frame rate). Commands the
+    /// guest submits meanwhile wait in the queue and run on the new backend. Null when done, else why it was not
+    /// (a scene stayed open for <paramref name="timeoutMs"/>, another change is in progress).
+    /// </summary>
+    public string? ReplaceBackendBetweenScenes(Func<IGpuBackend?> factory, bool sameTitle = true, int timeoutMs = 3000)
+    {
+        var request = new ReplaceRequest(factory, sameTitle);
+        if (Interlocked.CompareExchange(ref _replaceRequest, request, null) != null)
+        {
+            return "another GPU backend change is in progress";
+        }
+
+        try
+        {
+            _available.Release(); // wakes an idle worker
+        }
+        catch (ObjectDisposedException)
+        {
+            Interlocked.CompareExchange(ref _replaceRequest, null, request);
+            return "the GPU is stopping";
+        }
+
+        if (!request.Done.Wait(timeoutMs))
+        {
+            if (Interlocked.CompareExchange(ref _replaceRequest, null, request) == request)
+            {
+                return $"a GPU scene stayed open for {timeoutMs} ms";
+            }
+
+            request.Done.Wait(); // the worker took it just now: wait for the swap to finish
+        }
+
+        if (request.Error is { } error)
+        {
+            throw new InvalidOperationException($"GPU backend change failed: {error.Message}", error);
+        }
+
+        return null;
+    }
+
+    /// <summary>GPU worker, between two commands: makes a pending <see cref="ReplaceBackendBetweenScenes"/> swap when no
+    /// scene is open in the executed stream and no process's commands are held back.</summary>
+    private void ReplaceAtSceneBoundary()
+    {
+        if (_executedOpenScenes.Count > 0 || _held.Count > 0)
+        {
+            return;
+        }
+
+        ReplaceRequest? request = Interlocked.Exchange(ref _replaceRequest, null);
+        if (request == null)
+        {
+            return; // the caller gave up meanwhile
+        }
+
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        try
+        {
+            lock (_backendLock)
+            {
+                SwapBackend(request.Factory, request.SameTitle);
+            }
+
+            Log.Info($"GPU backend replaced between two scenes in {System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds:F0} ms");
+        }
+        catch (Exception e)
+        {
+            request.Error = e;
+        }
+        finally
+        {
+            request.Done.Set();
+        }
+    }
+
+    /// <summary>GPU worker: follows which processes have a scene open in the executed stream.</summary>
+    private void TrackExecutedScene(GpuCommand cmd)
+    {
+        switch (cmd)
+        {
+            case BeginSceneCommand:
+                _executedOpenScenes.Add(cmd.Pid);
+                break;
+            case EndSceneCommand:
+                // a scene begun before a second process shared the GPU carries pid 0 (GpuCommand.Pid)
+                if (!_executedOpenScenes.Remove(cmd.Pid))
+                {
+                    _executedOpenScenes.Remove(0);
                 }
 
-                if (title != null && Backend is { } b)
-                {
-                    try
-                    {
-                        b.BeginTitle(title);
-                    }
-                    catch (Exception e)
-                    {
-                        Log.Warn($"GPU backend title setup failed: {e.Message}");
-                    }
-                }
-            }
-            if (ReplaceOn is { } on)
-            {
-                on(Swap);
-            }
-            else
-            {
-                Swap();
-            }
+                break;
+            case ProcessEndedCommand:
+                _executedOpenScenes.Remove(cmd.Pid);
+                break;
         }
     }
 
@@ -698,6 +827,11 @@ public sealed class GpuQueue : IDisposable
         while (!_stopping)
         {
             GpuCommand? cmd;
+            if (Volatile.Read(ref _replaceRequest) != null)
+            {
+                ReplaceAtSceneBoundary();
+            }
+
             if (s_flipsAtNextCommand)
             {
                 RunFlips(); // A/B: every flip before the work queued after it (see SubmitFlip)
@@ -804,6 +938,8 @@ public sealed class GpuQueue : IDisposable
         {
             return; // a sync object wait ran it ahead of its queue position
         }
+
+        TrackExecutedScene(cmd);
 
         // the command's guest addresses are its process's: the worker reads and writes that address space until the
         // next command (deferred work in Idle runs in the last one; results that outlive it carry their own space)

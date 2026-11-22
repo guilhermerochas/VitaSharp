@@ -14,10 +14,10 @@ namespace VitaSharp.Desktop;
 /// multisampling, 2x supersampling, off), Shift+F3 the previous one. Each change shows a notice with the
 /// new value. They last for the session: the launcher's per-game settings are not changed.
 /// <para>
-/// A new resolution needs a new renderer (render targets, depth images and pipelines are sized by it): the guest
-/// threads are held between two GPU scenes and the backend is replaced, as for a state load, and the new one builds
-/// its caches again from guest memory (<see cref="SaveStates.ReplaceBackendBetweenScenes"/>). The frame rate mode is
-/// read at every display wait, so it changes at once.
+/// A new resolution needs a new renderer (render targets, depth images and pipelines are sized by it): the GPU worker
+/// replaces the backend at its next scene boundary while the guest threads run on, and the new one builds its caches
+/// again from guest memory, as after a state load (<see cref="SaveStates.ReplaceBackendBetweenScenes"/>). The frame
+/// rate mode is read at every display wait, so it changes at once.
 /// </para>
 /// </summary>
 sealed class GraphicsHotkeys(Emulator emu, VulkanRendererOptions ro, Func<VulkanRenderer?> current, Func<VulkanRenderer> factory, Action<string> notice)
