@@ -160,13 +160,18 @@ public sealed partial class IoFileMgr : HleModule
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
         int n;
         long pos;
-        using var ledger = FrameLedger.Time(FrameLedger.Cat.FileIo);
-        lock (f)
+        // the hitch ledger counts the host read only: the device model's wait below (IoTiming) blocks this thread off
+        // its core, as a read on the Vita does, and the other threads go on; counted, a streaming thread's modelled
+        // reads were the "cause" of every frame and hid the real stall (a 98 ms shader stall shown as fileIo 134 ms)
+        using (FrameLedger.Time(FrameLedger.Cat.FileIo))
         {
-            pos = f.Stream.Position;
-            n = f.Stream.Read(GuestMemory.Span(buf, (int)size));
-            DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
-            Interlocked.Add(ref BytesRead, n);
+            lock (f)
+            {
+                pos = f.Stream.Position;
+                n = f.Stream.Read(GuestMemory.Span(buf, (int)size));
+                DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
+                Interlocked.Add(ref BytesRead, n);
+            }
         }
         IoTiming.Read(f, pos, n);
         return n;
@@ -219,10 +224,14 @@ int fd, long offset, int whence)
     internal int sceIoPread(int fd, uint buf, uint size, long offset)
     {
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
-        using var ledger = FrameLedger.Time(FrameLedger.Cat.FileIo);
-        int n = RandomAccess.Read(f.Stream.SafeFileHandle, GuestMemory.Span(buf, (int)size), offset);
-        DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
-        Interlocked.Add(ref BytesRead, n);
+        int n;
+        // the host read only, as in sceIoRead: the device model's wait is not a hitch of the frame
+        using (FrameLedger.Time(FrameLedger.Cat.FileIo))
+        {
+            n = RandomAccess.Read(f.Stream.SafeFileHandle, GuestMemory.Span(buf, (int)size), offset);
+            DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
+            Interlocked.Add(ref BytesRead, n);
+        }
         IoTiming.Read(f, offset, n);
         return n;
     }
