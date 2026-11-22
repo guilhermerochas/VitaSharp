@@ -174,7 +174,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Feito (12/11/2026, b082645a; conferido 15/11/2026, kill1): `GuestThread.HleReturned` para a thread do guest logo depois
   do retorno de uma chamada HLE escolhida (antes da próxima) e `GuestThread.DispatchForTest` faz a chamada pelo caminho
   real do SVC; usados em `ThreadMgrHleTests` (`WokenThreadDoesNotRunAheadOfAStoppedWaker` e vizinhos).
-- [ ] [P3][G] **Sincronização sob intercalações adversas:** event flag, semáforo, mutex, lwmutex, cond, msgpipe, eventos e
+- [x] (22/11/2026, feito: todas as classes do threadmgr cobertas, de EventFlagInterleavingTests a EventCoreInterleavingTests e o caso CB do WaitMultipleEvents, kernK d6772242, na main) [P3][G] **Sincronização sob intercalações adversas:** event flag, semáforo, mutex, lwmutex, cond, msgpipe, eventos e
   callbacks testados contra a semântica do firmware 3.74 com o ponto de atraso entre cada par de chamadas (quem é
   acordado, em que ordem, o que sobra no padrão, cancelamento, delete, timeout), não só o caminho feliz.
   Event flag coberto (16/11/2026, `EventFlagInterleavingTests`, conferido no threadmgr 3.74): modo ilegal na espera e
@@ -346,8 +346,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   3 só de programas com SDK anterior a 2.50. Prova: `GxmFlowTests.YuvProfileAndVisibilityBufferFollowTheFirmwareChecks`
   (falha sem a correção). O renderizador não lê esses campos (o decodificador YUV usa as matrizes fixas, CSC1 = BT.601
   full), então a imagem não muda; usar o perfil do contexto no decodificador é parte do item de GXM acima.
-- [ ] [P3][M] **Mídia:** decodificação de vídeo e áudio pelo contrato do Vita no desktop e no Android (já existe a base em
-  `MediaContract`/`MediaParityTests`).
 - [ ] [P3][M] **Sistema de arquivos, carregador e módulos:** montagens, patches por origem, NIDs, imports/exports, permissões
   de módulos de sistema.
 - [x] [P3][M] **Save states:** ida e volta de cada módulo HLE e do escalonador com threads em espera. Feito
@@ -358,7 +356,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   título parada em `sceKernelWaitSema` no save: depois do load continua esperando, com o contador e o semáforo do save,
   um signal a acorda pelos registradores salvos e ela volta a esperar), ao lado da thread de kernel em
   `ksceKernelDelayThread` e da thread principal no vblank do mesmo arquivo; 50x sem falha.
-- [ ] [P3][G] **Um teste sintético por bug corrigido:** o padrão do guest reproduzido sem o jogo (protocolo de sync,
+- [x] (22/11/2026, obsoleto: virou regra de toda correção em docs/agents/regras.md, itens 4-5 da regra principal e "Toda correção vem com o teste que a cobre") [P3][G] **Um teste sintético por bug corrigido:** o padrão do guest reproduzido sem o jogo (protocolo de sync,
   sequência de comandos GXM, chamadas HLE com os argumentos vistos), nunca dependente dos dados de um jogo.
 - [x] (15/11/2026, pelo usuário: já é feito continuamente — regras.md, cada correção traz seu caso no TestGame) [P3][G] **O jogo de teste (`tests/VitaSharp.TestGame`) como suíte de integração:** o homebrew de teste (VitaSDK, código
   próprio, agora dentro do repositório) ganha um caso para
@@ -651,45 +649,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
       nos emissores x64 (Iced e fast-encode) e ARM64. Só vale se a etapa de boot ficar longa.
   Entrega movida para "Corrigido, falta o usuário testar" (feat/aot3, 22/11/2026); o resto segue aberto aqui.
 
-- [ ] [P3][M] Investigar reduções de memória do emulador (pedido do usuário, 17/11/2026): medir o uso de RAM do
-  processo com um jogo pesado (dotnet-counters/dotnet-gcdump) e listar onde dá para cortar (caches de shader/textura,
-  cópias da memória do Vita, buffers da GPU, heap do .NET), com o ganho estimado de cada um, sem perder fps
-  Medido (mgs1, 18/11/2026, Killzone Mercenary headless em gameplay, Windows + GPU desktop; soma por tipo com
-  VirtualQueryEx/QueryWorkingSetEx): pico de working set 567 MB, ~455 MB em gameplay. Divisão: memória de usuário do
-  guest 189 MB (toda residente), CDRAM 100 MB (visão compartilhada, toda residente), uma região privada de 80-150 MB
-  (heap do .NET + driver; o heap gerenciado é 55-80 MB, `PERF allocated`), DLLs ~50 MB residentes.
-  Feito: um bloco novo do guest não é mais zerado à mão (o `Span.Clear` deixava todas as páginas residentes logo no
-  boot, também as que o jogo nunca usa); os blocos privados saem por decommit + commit, que já lê zeros sem tocar nas
-  páginas (`GuestMemoryCommitTests`). Killzone: usuário 189 → 104 MB residentes, pico 567 → 471 MB, gameplay
-  455 → 415 MB. Sem custo por quadro (só na alocação). A/B em pares (antes e depois ao mesmo tempo, em metades
-  opostas da CPU, trocadas na segunda rodada; boot turbo de 3000 quadros): working set no fim 520/526 → 440/437 MB.
-  O fps não piorou: o último trecho ficou em 181/117 fps antes e 368/329 depois, mas a máquina estava carregada e
-  a variação é grande. O JIT parado por 14-65 s no boot apareceu nas duas builds (carga da máquina, não a mudança).
-  Feito no launcher (mem3, 18/11/2026; `ui-render --mem`, 63 títulos, mesma sessão, antes → depois, working set):
-  Biblioteca 368 → 171 MB (heap do .NET 176 → 22 MB, GC comprometido 232 → 36 MB), página do jogo 388 → 175 MB,
-  troféus 388 → 187 MB, jogo rodando 433 → 243 MB, depois de fechar o jogo 629 → 232 MB (GC comprometido
-  457 → 62 MB). Como: os conjuntos de troféus do launcher guardam só os textos (SFM) e leem o ícone do TRP quando a
-  página o mostra (`TrophyPackage.LoadTexts`; antes eram as TROPHY.TRP inteiras de todos os jogos, 166 MB de
-  `byte[]`); o Refresh não relê os TRP que não mudaram (`TrophyTextsCache`, por arquivo + tamanho + data); depois de
-  fechar um jogo, uma coleta compactadora agressiva devolve ao sistema o que o RetainVM guardaria (só nesse ponto; o
-  RetainVM continua no processo do jogo, que não mudou). Save state: as páginas zero de um bloco restaurado saem por
-  decommit + commit, sem ficarem residentes (`GuestMemoryCommitTests.Restoring*`); na CDRAM do Windows (visão
-  compartilhada) elas ainda são zeradas à mão, como num bloco novo.
-  Ainda dá para cortar (estimativas):
-  - CDRAM compartilhada (até ~50-100 MB): ela ainda é zerada à mão, porque um bloco liberado ali só é descartado
-    (MEM_RESET). Com um mapa das páginas já usadas, só as reusadas seriam zeradas; o resto da seção (SEC_RESERVE) já
-    vem zerado. Risco de fps nenhum. O ganho depende de quanto da CDRAM o jogo deixa sem tocar (a GPU e as writebacks
-    escrevem os alvos lá).
-  - Heap do .NET (~10-30 MB): `GCHeapAffinitizeMask`/`GCHeapHardLimit` ou o GC de estação de trabalho não
-    concorrente. Risco: pausas de GC maiores. Medir a `pause` do `PERF allocated` antes de mudar.
-  - Caches da GPU no lado da CPU: `BcSoftware` (64 MB) e `AstcTranscoder` (32 MB) só pesam onde a GPU não decodifica
-    BC (celular). No desktop ficam vazios. Reduzir no Android custa reenvios de texturas (fps).
-  - Não vale: a tabela de páginas sujas (1 MB), a tabela de despacho do JIT (4 MB) e o código nativo (~3 MB) são
-    pequenos. O espelho da CDRAM (288 MB) e o pool de imagens ficam na VRAM, não na RAM, em GPU dedicada.
-  - Notas da medida: o `dotnet-gcdump` travou o processo do jogo (o fps caiu para 2-9 e o dump não terminou), então o
-    heap foi medido pela linha `PERF allocated`. A máquina estava carregada por outros agentes, então o fps destas
-    execuções não serve de comparação. A mudança só age na alocação de blocos, não no caminho por quadro.
-
 - [x] Onde o código do guest roda (perf/il-1, 11/11/2026): linha nova `CPU tiers` no relatório do fim da execução
   (instruções executadas no código nativo, nas callouts, no backend IL e no interpretador, com o estado dos blocos
   interpretados) e os motivos de rejeição por backend. Desktop x64, cenários inteiros (boot incluído): Killzone 99,40%
@@ -825,54 +784,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   1,7-6,8 s (leitura ~3,1 GB/s, AES-CTR ~4 GB/s, PFS ~8,5 GB/s; a gravação, 240-1160 MB/s, é o limite). Arquivos
   instalados idênticos (SHA-256 dos 207 arquivos). VPK no mesmo pipeline; progresso com MB/s e tempo restante no
   launcher e no Android, no máximo a cada 100 ms
-- [ ] [P2][G] Engasgos da primeira vez: montar os pipelines que faltam com `VK_EXT_graphics_pipeline_library` (ligação
-  rápida, sem otimizar, no thread da GPU) e trocar pelo otimizado em segundo plano; prever também as variantes
-  tile-word e de saída inteira. Pular o desenho foi analisado e descartado: quase nada do que trava pode ser pulado
-  sem risco (Killzone 0 de 91 engasgos, Tearaway 1 de 14), ver `docs/notes/pipeline-skip.md`
-  Tentado em 07/11/2026 (perf/desktop-res) e descartado: no Killzone com cache frio o thread da GPU passou a montar
-  mais pipelines (18,8-21,4 s contra 5,0-10,7 s; os mesmos ~90 quadros acima de 16,7 ms), porque no driver da NVIDIA
-  a biblioteca de shader custa quase um pipeline inteiro e o Killzone tem tantos shaders quanto pipelines. O limite é a
-  vazão de compilação (2 workers); ver `docs/notes/pipeline-skip.md`. Próximo passo, se voltar: mais workers ou
-  pipelines.list pré-gerado por jogo
-  Rodada de 08/11/2026 (perf/desktop-12; Injustice `inj_fight` novo cenário com luta no Treino, Killzone `kz_skin`,
-  FIFA 13; GTX 1650, 4 CPUs fixadas, caches frios = `--shader-cache` e cache do driver NVIDIA novos). Antes: Injustice
-  frio 61-83 desenhos travados (5,4-6,6 s) em 33-40 quadros, Killzone frio 375 desenhos (13,5 s), 95 quadros >= 16,7 ms.
-  Onde está o tempo: o driver da NVIDIA leva 60-90 ms por pipeline (83 ms medidos no replay, sozinho, sem disputa) e
-  quase cada pipeline é um par de shaders novo (Injustice 115 pipelines / 105 pares, Killzone 552 / 533); o shaderc em
-  `zero` leva 2-12 ms por shader. O jogo pede o pipeline ~1 quadro depois do prefetch, então cada pipeline novo custa
-  quase os seus 60-90 ms. Medido e descartado: `--shaderc-opt=perf` (driver 83 -> 59 ms por pipeline, mas shaderc 12 ->
-  80 ms por shader: pior), sem `VkPipelineCache` (sem ganho; não serializa), 4 workers em 4 CPUs (mesmos engasgos, CPU
-  cheia), normalizar a chave do pipeline (estado de blend desligado, sem cor, layout de vértice: 2 duplicatas em 115,
-  3 em 552). Ubershader: não cabe (USSE arbitrário). Feito: shaderc e o tradutor aquecidos em segundo plano (o 1º shader
-  novo de uma sessão com cache quente: ~20 ms em vez de ~150-190 ms; 08aede3), prewarm também nos workers (cache do driver
-  frio: Killzone 21-22 s -> 11 s; 5ca2e0a) e o renderizador trocado (F1/F3/load state) passa a abrir os caches do jogo
-  (7d73f91). O que sobra no cache frio é o custo do driver por pipeline novo; só cai pulando desenho (descartado) ou
-  com menos SPIR-V por shader (gerar GLSL menor: o `-O` mostrou ~30% a menos no driver)
-  Segunda tentativa em 13/11/2026 (perf/desktop-26), no estilo do DXVK: quatro bibliotecas, ligadas sem LTO, inclusive
-  nos passes MSAA; o pipeline otimizado é compilado por último nos workers e trocado depois. Exige
-  `graphicsPipelineLibraryFastLinking`; fica desligada nos blobs de celular (`GpuQuirk.AvoidPipelineLibrary`) e nos
-  perfis mobile. Ficou no código desligada (`VITASHARP_PIPELINE_LIBRARY=1` liga), com o contador
-  `PipelineStats.CriticalPath` e o teste `RendererPipelineLibraryTests`. Medido no Killzone (GTX 1650, 4 CPUs):
-  no replay do dump F8, 488 compilações de estágio viram 346 bibliotecas (-29%), mas uma biblioteca custa ~metade de
-  um pipeline (pior quadro 31,3 -> 28,8 s; quadros idênticos). Em gameplay com os caches frios, piorou: 80 quadros
-  >= 16,7 ms contra 62 e 25,6 s parados contra 14,4 s, porque as bibliotecas tiram tempo dos 2 workers. O prewarm por
-  bibliotecas com o driver frio levou 51,5 s contra 19,7 s (removido). Já a segunda sessão com o prewarm normal cai
-  para 16 quadros (pior 116 ms). Próximo passo, se voltar: mais workers fora da fixação em 4 CPUs, ou medir a GPL em
-  AMD/Intel/Mesa, onde a biblioteca pode custar bem menos que o pipeline. Ver `docs/notes/pipeline-skip.md`
-  Pendente antes de ligar as bibliotecas: VUID-VkGraphicsPipelineCreateInfo-renderPass-09652 só com elas (replay do
-  dump do Killzone com `--validation`: 0 com `VITASHARP_PIPELINE_LIBRARY=0`). Ponto: shader de fragmento com
-  `last_frag_in` (input attachment 0, variantes fetch-input do `ShaderGenerator`) numa biblioteca de fragmento ou na
-  ligação com renderização dinâmica e `colorAttachmentCount` 0. Pôr os anexos de cor da chave na biblioteca e na
-  ligação não resolveu; a chamada exata ainda não foi identificada (quadros idênticos)
-  Medido de novo em 16/11/2026 com o replay que antecipa o prefetch um quadro (`replay-gpu --async-shaders=on
-  --speed=1`, caches do emulador e do driver frios, 4 CPUs, A/B alternado 2x): com as bibliotecas o Killzone não melhora
-  (quadros >= 50 ms 5/5 contra 5/6, >= 16,7 ms 5/5 contra 7/7, pior 3,6-3,7 s contra 3,5-3,9 s; 250 ligados em 3 ms, mas
-  os mesmos ~85 pipelines esperados nos workers). O que o GPU thread ainda monta sozinho em 5 dumps (linha da sessão,
-  por variante) não é tile-word nem visão inteira (0 em todos): Killzone 21 MSAA + 6 fetch, 13 deles no 1º quadro do dump,
-  com a fila dos workers cheia. O limite é a vazão: com `VITASHARP_SHADER_WORKERS=4` em vez dos 2 automáticos (4 CPUs)
-  o pior quadro cai de 3,7-4,5 s para 0,1-1,6 s no Killzone (esperas 75-87 -> 5-7) e de 1,4-3,0 s para 0,6-0,7 s no
-  PCSE00269. Próximo passo: medir em gameplay com o cache frio `--shader-workers=` acima do automático (metade das CPUs)
-  e, se ganhar lá, subir o padrão (o Dolphin usa todos os núcleos menos 3)
 - [ ] [P2][G] Engasgos de shader na primeira vez que se joga (plano escolhido): o custo é o driver montar cada pipeline
   (~80 ms por pipeline na GTX 1650; traduzir os shaders do Vita custa no máximo ~116 ms por sessão), e na segunda
   sessão o pré-aquecimento pela lista de pipelines já leva o Killzone de 62 para 16 quadros lentos. Frentes:
@@ -989,6 +900,55 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   PCSE00053 com a CPU da máquina a 83-96%), e é o que a opção ligada resolve. Próximas partes: (3) estado dinâmico EDS3/vertex input onde houver; (4) Android: medir no
   Killzone o tempo de carregamento a mais e a queda de pipelines no thread da GPU
   Entrega movida para "Corrigido, falta o usuário testar" (uber2/uber3/uber4, 22/11/2026); o resto segue aberto aqui.
+  Junto aqui (triagem de 22/11/2026) o item das bibliotecas de pipeline, que já cai na frente (3): o próximo passo dele é medir mais workers.
+  [P2][G] Engasgos da primeira vez: montar os pipelines que faltam com `VK_EXT_graphics_pipeline_library` (ligação
+  rápida, sem otimizar, no thread da GPU) e trocar pelo otimizado em segundo plano; prever também as variantes
+  tile-word e de saída inteira. Pular o desenho foi analisado e descartado: quase nada do que trava pode ser pulado
+  sem risco (Killzone 0 de 91 engasgos, Tearaway 1 de 14), ver `docs/notes/pipeline-skip.md`
+  Tentado em 07/11/2026 (perf/desktop-res) e descartado: no Killzone com cache frio o thread da GPU passou a montar
+  mais pipelines (18,8-21,4 s contra 5,0-10,7 s; os mesmos ~90 quadros acima de 16,7 ms), porque no driver da NVIDIA
+  a biblioteca de shader custa quase um pipeline inteiro e o Killzone tem tantos shaders quanto pipelines. O limite é a
+  vazão de compilação (2 workers); ver `docs/notes/pipeline-skip.md`. Próximo passo, se voltar: mais workers ou
+  pipelines.list pré-gerado por jogo
+  Rodada de 08/11/2026 (perf/desktop-12; Injustice `inj_fight` novo cenário com luta no Treino, Killzone `kz_skin`,
+  FIFA 13; GTX 1650, 4 CPUs fixadas, caches frios = `--shader-cache` e cache do driver NVIDIA novos). Antes: Injustice
+  frio 61-83 desenhos travados (5,4-6,6 s) em 33-40 quadros, Killzone frio 375 desenhos (13,5 s), 95 quadros >= 16,7 ms.
+  Onde está o tempo: o driver da NVIDIA leva 60-90 ms por pipeline (83 ms medidos no replay, sozinho, sem disputa) e
+  quase cada pipeline é um par de shaders novo (Injustice 115 pipelines / 105 pares, Killzone 552 / 533); o shaderc em
+  `zero` leva 2-12 ms por shader. O jogo pede o pipeline ~1 quadro depois do prefetch, então cada pipeline novo custa
+  quase os seus 60-90 ms. Medido e descartado: `--shaderc-opt=perf` (driver 83 -> 59 ms por pipeline, mas shaderc 12 ->
+  80 ms por shader: pior), sem `VkPipelineCache` (sem ganho; não serializa), 4 workers em 4 CPUs (mesmos engasgos, CPU
+  cheia), normalizar a chave do pipeline (estado de blend desligado, sem cor, layout de vértice: 2 duplicatas em 115,
+  3 em 552). Ubershader: não cabe (USSE arbitrário). Feito: shaderc e o tradutor aquecidos em segundo plano (o 1º shader
+  novo de uma sessão com cache quente: ~20 ms em vez de ~150-190 ms; 08aede3), prewarm também nos workers (cache do driver
+  frio: Killzone 21-22 s -> 11 s; 5ca2e0a) e o renderizador trocado (F1/F3/load state) passa a abrir os caches do jogo
+  (7d73f91). O que sobra no cache frio é o custo do driver por pipeline novo; só cai pulando desenho (descartado) ou
+  com menos SPIR-V por shader (gerar GLSL menor: o `-O` mostrou ~30% a menos no driver)
+  Segunda tentativa em 13/11/2026 (perf/desktop-26), no estilo do DXVK: quatro bibliotecas, ligadas sem LTO, inclusive
+  nos passes MSAA; o pipeline otimizado é compilado por último nos workers e trocado depois. Exige
+  `graphicsPipelineLibraryFastLinking`; fica desligada nos blobs de celular (`GpuQuirk.AvoidPipelineLibrary`) e nos
+  perfis mobile. Ficou no código desligada (`VITASHARP_PIPELINE_LIBRARY=1` liga), com o contador
+  `PipelineStats.CriticalPath` e o teste `RendererPipelineLibraryTests`. Medido no Killzone (GTX 1650, 4 CPUs):
+  no replay do dump F8, 488 compilações de estágio viram 346 bibliotecas (-29%), mas uma biblioteca custa ~metade de
+  um pipeline (pior quadro 31,3 -> 28,8 s; quadros idênticos). Em gameplay com os caches frios, piorou: 80 quadros
+  >= 16,7 ms contra 62 e 25,6 s parados contra 14,4 s, porque as bibliotecas tiram tempo dos 2 workers. O prewarm por
+  bibliotecas com o driver frio levou 51,5 s contra 19,7 s (removido). Já a segunda sessão com o prewarm normal cai
+  para 16 quadros (pior 116 ms). Próximo passo, se voltar: mais workers fora da fixação em 4 CPUs, ou medir a GPL em
+  AMD/Intel/Mesa, onde a biblioteca pode custar bem menos que o pipeline. Ver `docs/notes/pipeline-skip.md`
+  Pendente antes de ligar as bibliotecas: VUID-VkGraphicsPipelineCreateInfo-renderPass-09652 só com elas (replay do
+  dump do Killzone com `--validation`: 0 com `VITASHARP_PIPELINE_LIBRARY=0`). Ponto: shader de fragmento com
+  `last_frag_in` (input attachment 0, variantes fetch-input do `ShaderGenerator`) numa biblioteca de fragmento ou na
+  ligação com renderização dinâmica e `colorAttachmentCount` 0. Pôr os anexos de cor da chave na biblioteca e na
+  ligação não resolveu; a chamada exata ainda não foi identificada (quadros idênticos)
+  Medido de novo em 16/11/2026 com o replay que antecipa o prefetch um quadro (`replay-gpu --async-shaders=on
+  --speed=1`, caches do emulador e do driver frios, 4 CPUs, A/B alternado 2x): com as bibliotecas o Killzone não melhora
+  (quadros >= 50 ms 5/5 contra 5/6, >= 16,7 ms 5/5 contra 7/7, pior 3,6-3,7 s contra 3,5-3,9 s; 250 ligados em 3 ms, mas
+  os mesmos ~85 pipelines esperados nos workers). O que o GPU thread ainda monta sozinho em 5 dumps (linha da sessão,
+  por variante) não é tile-word nem visão inteira (0 em todos): Killzone 21 MSAA + 6 fetch, 13 deles no 1º quadro do dump,
+  com a fila dos workers cheia. O limite é a vazão: com `VITASHARP_SHADER_WORKERS=4` em vez dos 2 automáticos (4 CPUs)
+  o pior quadro cai de 3,7-4,5 s para 0,1-1,6 s no Killzone (esperas 75-87 -> 5-7) e de 1,4-3,0 s para 0,6-0,7 s no
+  PCSE00269. Próximo passo: medir em gameplay com o cache frio `--shader-workers=` acima do automático (metade das CPUs)
+  e, se ganhar lá, subir o padrão (o Dolphin usa todos os núcleos menos 3)
 - [x] (16/11/2026, usuário: removido da lista; é regra de medição) [P3][P] Medidas de desempenho com a CPU saturada por outros trabalhos não valem: no Killzone (emulador quente, driver
   frio) o watchdog acusou a thread da GPU 11-31 s sem progresso, sem nada atribuído a shader/pipeline (pior 116 ms),
   e o áudio teve um buraco de 5,0 s. Repetido com a máquina livre (carga média 22%): nenhuma parada, buraco de 1,2 s.
@@ -1260,14 +1220,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `build/build-android-adrenotools.ps1|.sh` antes do próximo APK de teste
   Resolvido (conferido em 15/11/2026): as duas pastas da checkout principal têm as bibliotecas de novo
   (`libs/arm64-v8a/libshaderc_shared.so`, `libadrenotools.so` e os hooks), e os APKs de 14/11 rodaram no celular
-- [ ] Compatibilidade com o modo desempenho / modo jogo dos celulares (pedido do usuário, 07/11/2026): o app se declara
-  jogo para o Android e para os otimizadores dos fabricantes (`android:appCategory="game"`/`isGame`, `game_mode_config`
-  com suporte aos modos de desempenho e de bateria da API GameManager, `GameState` de carregando/jogando), para entrar
-  nos painéis como o Game Turbo da Xiaomi e o Game Booster da Samsung e receber o perfil de desempenho; respeitar o
-  modo escolhido (desempenho = sem limite de energia; bateria = ritmo econômico). Validar no Redmi com o Game Turbo e
-  medir no Killzone com e sem o modo desempenho
-  Declaração feita (conferido em 08/11/2026: 7b6a2ae, `isGame`/`appCategory="game"` e `game_mode_config` no
-  AndroidManifest, modo de jogo lido no GameActivity); falta validar no Redmi com o Game Turbo e medir no Killzone
 - [x] Vibração dos botões na tela enquanto segura o analógico (pedido do usuário, 07/11/2026): opção nos controles por
   toque para os botões virtuais vibrarem ao serem tocados mesmo com o outro dedo no analógico (hoje o toque multiponto
   com o analógico pressionado não dá retorno tátil); intensidade ajustável e desligável, por perfil de controle
@@ -1791,13 +1743,19 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `docs/android/README.md`, "Phone run")
 - [ ] Aparelho Adreno: driver da Qualcomm, libadrenotools (driver customizado, BCeNabler), controle Bluetooth, giro de
   180° (o que falta da lista no fim de `docs/android/README.md`)
+  Junto aqui (triagem de 22/11/2026), também precisa do aparelho Adreno:
+  Validar num aparelho Adreno a camada de quirks de GPU (na Mali-G57 nenhum contorno fez diferença visível, 30/10/2026;
+  `docs/notes/mobile-gpu.md`): quais contornos
+  continuam necessários, `VK_EXT_rasterization_order_attachment_access` (nunca executado), o ganho real dos
+  load/store por cena no perfilador do aparelho, o caminho de render passes (Vulkan 1.1) num Adreno 6xx com driver
+  antigo e a qualidade/velocidade da conversão para ASTC (item 10 da lista em `docs/android/README.md`)
 - [ ] Estimador de custo de GPU para Adreno, como o `vitasharp-perf mali-cost` da Mali: analisar os shaders traduzidos
   numa Adreno (6xx/7xx) sem aparelho — compilar o Mesa no PC e usar o compilador `ir3` do Turnip pela linha de comando
   (instruções, registradores, transbordo, ocupação por shader) ou o Adreno Offline Compiler da Qualcomm se for
   encontrado — e juntar com a contagem de fragmentos/vértices do replay e o tráfego de tiles (a Adreno também desenha
   em blocos, com GMEM), para estimar ms por desenho/quadro; o resultado é do Turnip (não do driver da Qualcomm), então
   calibrar quando houver um aparelho Adreno ou pelo Samsung Remote Test Lab / Firebase Test Lab
-- [ ] AAudio de baixa latência no Redmi Note 14: o stream sai "normal shared" (a saída do alto-falante não tem
+- [x] (22/11/2026, concluído: os três caminhos existem em `AndroidAudioBackend` (AAudio low-latency, MMAP exclusivo quando o aparelho dá, AudioTrack LOW_LATENCY); o alto-falante deste celular não tem caminho rápido nem MMAP, medido em 31/10) AAudio de baixa latência no Redmi Note 14: o stream sai "normal shared" (a saída do alto-falante não tem
   FastMixer, rajada informada de 4096 quadros, ~200 ms de latência); ver se outro caminho (MMAP, sem
   `setBufferCapacityInFrames`, AudioTrack com `PERFORMANCE_MODE_LOW_LATENCY`) consegue a saída rápida
   (31/10/2026, perf/android-phone-2: sem pedir capacidade o AAudio dá rajada de 2052 quadros e ~96 ms, sem underrun;
@@ -1864,7 +1822,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   (30/10/2026: `SessionReport` no Core, o mesmo texto do `Runner` do desktop; o `SessionStatistics` as escreve no fim
   do jogo e, só no arquivo de log, a cada 30 s e a cada pausa, porque o Android costuma matar o processo; falta ver
   num aparelho que as linhas aparecem e que os tempos por thread do Mono são lidos)
-- [ ] Rodar sessões longas com `VITASHARP_NATIVE_VERIFY=1` (pelo `config/env.txt`) no Android para achar outros
+- [x] (22/11/2026, obsoleto: o Release do Android é NativeAOT desde 09/11, sem JIT do Mono nem backend IL (`IlJitCompiler.IsSupported` = `IsDynamicCodeSupported`, docs/notes/il-jit.md; VitaSharp.Android.csproj); o Mono só fica no Debug e sai no .NET 11) Rodar sessões longas com `VITASHARP_NATIVE_VERIFY=1` (pelo `config/env.txt`) no Android para achar outros
   pontos em que o JIT do Mono dobra constantes de outro jeito que o CoreCLR (o backend IL e os blocos que sobem para
   ele)
 - [x] shaderc para Android: compilar a `libshaderc_shared.so` (arm64-v8a e x86_64) com o NDK e empacotar no APK; sem
@@ -1878,11 +1836,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   YUV_420_888, frontal/traseira para as câmeras 0/1, tamanho e fps pedidos pelo jogo, imagem em pé, permissão CAMERA
   pedida no primeiro uso (negada = quadros cinza); falta testar num aparelho, item 11 da lista em
   `docs/android/README.md`)
-- [ ] Validar num aparelho Adreno a camada de quirks de GPU (na Mali-G57 nenhum contorno fez diferença visível, 30/10/2026;
-  `docs/notes/mobile-gpu.md`): quais contornos
-  continuam necessários, `VK_EXT_rasterization_order_attachment_access` (nunca executado), o ganho real dos
-  load/store por cena no perfilador do aparelho, o caminho de render passes (Vulkan 1.1) num Adreno 6xx com driver
-  antigo e a qualidade/velocidade da conversão para ASTC (item 10 da lista em `docs/android/README.md`)
 - [x] Menos interrupções de cena no renderizador (30/10/2026: uploads e cópias que não leem a cena são gravados
   antes da renderização, que continua; `docs/notes/mobile-renderer.md`)
 - [x] Texturas BC/PVRTC convertidas para ASTC 4x4 com cache em disco por jogo (30/10/2026: codificador em C#,
@@ -2052,7 +2005,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   e ícone do app.info e abre pelo runtime com o mesmo parâmetro. Falta (item abaixo, PlayStation Mobile): o shell
   pede a atualização do runtime (vs0:vsh/game/psm/runtime_version.txt = 2.01; o PCSI00011 do usuário é 01.00: no
   console também pediria), e o próprio runtime (sceKernelAllocUnmapMemBlock, SceAppMgrUser 0x9D6D8058...).
-- [ ] [P3][G] PlayStation Mobile (pedido do usuário, 11/11/2026; o runtime `PCSI00011` "PSM Runtime Package" 01.00, SDK
+- [ ] [P1][G] PlayStation Mobile (pedido do usuário, 11/11/2026; o runtime `PCSI00011` "PSM Runtime Package" 01.00, SDK
   2.00, já está instalado pelo usuário com a sua licença). 1) Rodar o runtime no VitaSharp sem janela e levantar o
   que o Mono dele usa e o que falta (HLE genérico do que faltar, nada específico do PSM). 2) Instalador de `.pkg` de
   PSM: feito (`PsmPkgInstaller`, feat/psm-install): `ux0:psm/<ID>/RO` (itens `content/`), `RO/License/<rif da
@@ -2078,6 +2031,27 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   depois da licença (Mono, libpsm, Piglet) quando o PSM-B entregar a ativação; o 1.00 sozinho não roda no 3.74
   (0x9D6D8058 não exportado: o shell pede a atualização, como no console). Falta também como o shell inicia o runtime com o jogo (parâmetro/ID) e o registro de `ux0:psm` no app.db. 3) Validar com jogos de PSM do usuário e as licenças da conta dele. Nada de
   assinatura da Sony gerada, licença gerada ou remoção da proteção (PSSE): só a licença real do usuário.
+  Junto aqui (triagem de 22/11/2026; prioridade P1 vinda dele) o item da chave do conteúdo:
+  [P1][G] PSM: chave do conteúdo a partir da licença instalada (pedido do usuário, 18/11/2026). Feito (fix/psm1):
+  scePsmDrmGetRifKey devolve o conjunto de chaves (0x200 bytes em +0x100 da licença de 0x400) quando a licença o traz
+  em claro (área de assinatura 0x300-0x3FF vazia, a forma das licenças instaladas pelo usuário); licença assinada da
+  loja continua recusada (0x80020004, só o processador de segurança abre); scePsmDrmGetRifInfo lê ID de conteúdo,
+  conta e datas. Formato PSSE (`PsseFile`: cabeçalho, IV do arquivo sob a chave de cabeçalho do runtime, blocos de
+  0x8000 em AES-128-CBC com IV = bloco XOR IV, assinatura a cada 0x80000, MD5) e o leitor pss_crypto_* do HLE da
+  mono_bridge abre os arquivos com a chave da licença de RO/License (sem licença: 0x80870005). Falta: a ativação PSM
+  (scePsmDrmGetActInfo) depende do act.dat e do processador de segurança e continua recusada; com ela recusada o
+  runtime mostra 0x808F04FF e para antes de abrir o conteúdo. Decisão do lead/usuário: como tratar a ativação.
+  Feito (fix/psm3): a licença fica em RO/License com o nome que o runtime abre (libpsm 2.01:
+  scePsmDrmGetRifName da conta do registro /CONFIG/NP/account_id), no instalador e na migração das gravadas com o nome
+  fixo; scePsmDrmGetRifNameForInstall com a checagem do módulo (assinatura RSA, cabeçalho, ativação). Feito (fix/psm4),
+  revalidado contra o SceNpDrm 3.74: scePsmDrmGetRifInfo/kscePsmDrmGetRifInfo com os 5 argumentos do módulo, a
+  checagem da licença como resposta, nada preenchido com 0x808F0104 e os tempos como ticks do SceRtc;
+  scePsmDrmGetRifKey/kscePsmDrmGetRifKey como o firmware (só o runtime de PSM, 0x80010058; sem ativação 0x808F0106
+  antes de ler a licença; a chave é do processador seguro), de modo que a chave de uma licença sem assinatura só vem
+  de um plugin de kernel que faz hook da exportação; a palavra +0x18 da licença responde 0x808F0109; o leitor
+  pss_crypto_* do HLE da mono_bridge pede a chave a scePsmDrmGetRifKey (mesmas checagens, ativação e hooks), sem ler
+  a licença por fora.
+  Entrega movida para "Corrigido, falta o usuário testar" (PSM psm3/psm4, 22/11/2026); o resto segue aberto aqui.
 - [ ] [P3][G] Plugins de usuário: hooks e injeção completos (pedido do usuário, 11/11/2026). Hoje os plugins `.suprx` do
   arquivo de configuração de plugins carregam no processo, e parte dos hooks/injeções já existe (ver Dead Space e
   libshacccg); completar todas as formas de hook (export/import/offset, cadeia de hooks com continuação, liberação) e
@@ -2163,7 +2137,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   comandos que os módulos usam e as respostas de um PCH-1000: versão do baryon, hardware info, bateria, RTC, alarmes,
   estado de energia) atrás de ksceSysconCmdExec, as exportações em cima dele, os callbacks registrados disparando nos
   eventos que o VitaSharp tem (bateria, alarme, botão de energia). Antes: fonte confiável para os valores de hardware.
-- [ ] [P3][G] ScePervasiveForDriver (lowio.skprx do FW 3.74, 156 exportações): feitas as páginas de reset, gate,
+- [x] (22/11/2026, feito: 9bf24ad5 "ScePervasiveForDriver complete", na main: DsiSetPixelClock, NID_243D0E78, NID_7E813FC5 e NID_E9D95643; `KernelPervasiveSecureTests`) [P3][G] ScePervasiveForDriver (lowio.skprx do FW 3.74, 156 exportações): feitas as páginas de reset, gate,
   base clock e misc em memória de kernel com o layout físico, os getters de página, o UartSetBaudrate e os getters de
   identificação do SoC (palavras da página misc ao ligar de um PCH-1000: revisão 0x80000042, CXD5315GG; as outras
   0, sem importador no FW). Fora de escopo: as 31 que passam a mudança ao secure monitor (smc 0x110, 0x111, 0x113,
@@ -2186,8 +2160,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Entrega movida para "Corrigido, falta o usuário testar" (reboot do sistema, kernN, 22/11/2026); o resto segue aberto aqui.
 - [ ] [P3][G] sceAppMgrPspSaveDataRootMount (HLE) escreve `ux0:pspemu` como ponto de montagem sem registrar uma
   montagem no AppMgr, então um sceAppMgrUmount dele falha: conferir no appmgr 3.74 o que é montado (o SAVEDATA do
-  emulador de PSP) e o ponto devolvido, e depois fazer o par do apputil.suprx NID_C3CB128B/NID_C0418B1C (montagem da
-  raiz de saves do PSP com contagem de uso, dono 0xCA).
+  emulador de PSP) e o ponto devolvido; o par do apputil.suprx NID_C3CB128B/NID_C0418B1C (montagem
+  da raiz de saves do PSP com contagem de uso, dono 0xCA) já está feito (9c263ffe).
 - [ ] [P3][G] Temas do Vita (pedido do usuário, 10/11/2026): instalar e usar temas como no aparelho. (1) Instalação: `.pkg` de
   tema da loja (content type de tema; o agente de PKG já detecta o tipo) com a licença, extraído para `ux0:theme/<id>`
   com o `theme.xml` e as imagens/sons, e registrado como o firmware faz (banco do shell / app.db, lista de temas das
@@ -2778,6 +2752,23 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `src/VitaSharp.Android` (fora do .sln), 30 no `src/VitaSharp.Desktop/Lockstep.cs` (só com `-p:Lockstep=true`), 2
   no `build/IconGen`, além dos ~311 do Hle. Os WIPs do Android, do Desktop e da format-check corrigem; só considerar
   feito com uma busca no repositório inteiro que dê zero fora do Hle, e com a format-check cobrindo esses projetos.
+  Junto aqui (triagem de 22/11/2026) o item do guia, já adotado no `.editorconfig` (linha 1: estilo Ryujinx/Ryubing); o que sobra dele é este item:
+  [P3][G] Refatorar o projeto para o guia de estilo de código do Ryujinx/Ryubing (pedido do usuário, 06/11/2026,
+  substitui o guia do Google). Cópia local do guia e do `.editorconfig` dele (277 linhas, ponto de partida do nosso):
+  `%USERPROFILE%/Ryubing/docs/coding-guidelines/coding-style.md` e `%USERPROFILE%/Ryubing/.editorconfig`. Regras
+  ("padrões do Visual Studio"): chaves Allman; 4 espaços; campos privados/internos `_camelCase`, estáticos `s_`,
+  thread-static `t_`, `static readonly` nessa ordem, `readonly` sempre que der, campos públicos em PascalCase e raros;
+  sem `this.`; visibilidade sempre explícita e como primeiro modificador; `using` no topo, fora do namespace; no máximo
+  uma linha em branco; sem espaços sobrando; `var` só com o tipo escrito à direita (`new`/cast) e `new()` só com o tipo
+  à esquerda; palavras-chave (`int`, `int.Parse`); constantes e métodos (inclusive funções locais) em PascalCase;
+  `nameof`; campos no topo do tipo; labels de `goto` um nível a menos; `if` de uma instrução nunca na mesma linha, chaves
+  em todos os blocos se algum tiver; tipos privados/internos `static` ou `sealed`; XML docs em interfaces e no que for
+  complexo; números mágicos viram constantes nomeadas. A regra 16 (caracteres não ASCII como escape Unicode) conflita
+  com os textos em português da interface (launcher, Android, mensagens): decidir com o usuário antes (proposta: vale
+  para o código, os textos de interface ficam em arquivos de recurso/strings). Cuidados: o GLSL gerado vem de strings
+  literais do C# (o conteúdo delas tem que ficar idêntico, conferir com o shadertest e `replay-gpu --compare`), a regra
+  9 deixa arquivos com estilo próprio como estão até serem convertidos, e fazer num momento sem outros branches abertos
+  (o diff toca quase todos os arquivos); `dotnet format` + analisadores no CI para não voltar
 - [x] (16/11/2026, usuário: fechado — o CI do Windows e a cobertura estão verdes) [P3][M] CI do Windows e da cobertura (pausado em 11/11/2026): `fix/ci-green-2` (SwiftShader registrado para o carregador
   como administrador, `--gpu-dump-at` armado antes do jogo, limite de 3 apresentações pendentes). Antes de juntar:
   medição A/B do F1 2011 e do Uncharted com a máquina quieta e conferência de travadas nos quadros gravados.
@@ -3025,6 +3016,9 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   idênticos e mesma ordem/tempo; áudio: mesma contagem de amostras e tempo, PCM dentro de uma tolerância declarada
   (arredondamento do decodificador). O hardware do celular (decodificador MediaTek, GPU Mali, modos do AAudio) segue
   confirmado no aparelho. Documentar no README como rodar. Em andamento com o agente de bugs do Android (fix/android-video).
+  Junto aqui (triagem de 22/11/2026) o item "Mídia" da seção Testes de regressão:
+  [P3][M] **Mídia:** decodificação de vídeo e áudio pelo contrato do Vita no desktop e no Android (já existe a base em
+  `MediaContract`/`MediaParityTests`).
 - [ ] [P3][G] Cobertura de código mínima de 70% em tudo (pedido do usuário, 10/11/2026). Base de hoje (`build/coverage.ps1` /
   `.sh`, coverlet + ReportGenerator, `Category!=Slow`): geral 59,4% linhas / 42,5% ramos; VitaSharp.Core 65,8%;
   Mobile.Core 85,4%; Renderer.Vulkan 1,3%. Meta: cada projeto e cada namespace com pelo menos 70% de linhas, e manter
@@ -3152,22 +3146,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `VitaSharp.sln`, `VitaSharp.Android.sln`, testes, docs)
   Feito (08/11/2026, refactor/mobile-core): pasta, projeto, namespaces `VitaSharp.Mobile.Core.*`, referências, as duas
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
-- [ ] [P3][G] Refatorar o projeto para o guia de estilo de código do Ryujinx/Ryubing (pedido do usuário, 06/11/2026,
-  substitui o guia do Google). Cópia local do guia e do `.editorconfig` dele (277 linhas, ponto de partida do nosso):
-  `%USERPROFILE%/Ryubing/docs/coding-guidelines/coding-style.md` e `%USERPROFILE%/Ryubing/.editorconfig`. Regras
-  ("padrões do Visual Studio"): chaves Allman; 4 espaços; campos privados/internos `_camelCase`, estáticos `s_`,
-  thread-static `t_`, `static readonly` nessa ordem, `readonly` sempre que der, campos públicos em PascalCase e raros;
-  sem `this.`; visibilidade sempre explícita e como primeiro modificador; `using` no topo, fora do namespace; no máximo
-  uma linha em branco; sem espaços sobrando; `var` só com o tipo escrito à direita (`new`/cast) e `new()` só com o tipo
-  à esquerda; palavras-chave (`int`, `int.Parse`); constantes e métodos (inclusive funções locais) em PascalCase;
-  `nameof`; campos no topo do tipo; labels de `goto` um nível a menos; `if` de uma instrução nunca na mesma linha, chaves
-  em todos os blocos se algum tiver; tipos privados/internos `static` ou `sealed`; XML docs em interfaces e no que for
-  complexo; números mágicos viram constantes nomeadas. A regra 16 (caracteres não ASCII como escape Unicode) conflita
-  com os textos em português da interface (launcher, Android, mensagens): decidir com o usuário antes (proposta: vale
-  para o código, os textos de interface ficam em arquivos de recurso/strings). Cuidados: o GLSL gerado vem de strings
-  literais do C# (o conteúdo delas tem que ficar idêntico, conferir com o shadertest e `replay-gpu --compare`), a regra
-  9 deixa arquivos com estilo próprio como estão até serem convertidos, e fazer num momento sem outros branches abertos
-  (o diff toca quase todos os arquivos); `dotnet format` + analisadores no CI para não voltar
 
 ## Corrigido, falta o usuário testar
 
@@ -3418,112 +3396,55 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   cortada multiplicava os retângulos só pela escala de resolução e, em cena supersampled, só o canto superior esquerdo era
   desenhado. Testar (no celular, Mali ou Adreno): um jogo com MSAA superamostragem 2x (menu de pausa): imagem completa,
   sem só um quarto da tela desenhado.
-
-- [ ] (22/11/2026, na release, falta testar) [P3][M] Anexo da palavra extra do registrador de saída (TileWord1) em todos os
-  caminhos (fix/rend1): o tile do Vita guarda as duas palavras do registrador de saída de cada pixel pela cena inteira,
-  e o anexo R32_UINT que faz isso no host agora existe também nas cenas supersampled (do tamanho da imagem 2x das
-  amostras), nas renderizações tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (cópia multisampled lida por
-  amostra, binding 5); antes a palavra era perdida nesses casos (lida como zero). `GeneratorVersion` 32. Testes:
-  `RendererTileWordTests` (programa que grava o0.y e outro que lê, em 1 amostra, MSAA nativo, MSAA cópia e ss, cada um
-  também com +TileBased). Testar: no celular, Tearaway (sombras dos volumes de papel, que multiplicam por essa palavra)
-  como no PC; no PC com VITASHARP_MSAA=ss, o mesmo.
-
-## Bugs em aberto
-- [ ] [P2][G] CI: no runner Linux os testes de GPU do renderer são pulados ("shaderc not available ... install
-  libshaderc-dev"), então a "passagem" do Linux não testa o renderer (achado do cifix12, 21/11/2026). Instalar o
-  shaderc no job Linux (e conferir o macOS) para os testes de renderer rodarem nas 3 plataformas.
-- [ ] [P1][G] Aumentar a resolução interna em jogo falha (relato do usuário, 21/11/2026; log da sessão shell de 23:34):
-  duas tentativas de 1x -> 2x respondem `Internal resolution 1x -> 2x not applied: thread 'SceShellMusicCoreCacheIo' is
-  running guest code` (a troca usa o mesmo ponto seguro do save state, que exige todas as threads paradas; uma thread
-  do shell que nunca para em ponto seguro bloqueia a troca), e o fps cai para 8-31 durante as tentativas. A troca de
-  resolução só mexe no renderer: não deveria esperar as threads do guest (ou deveria esperar com tentativa/timeout e
-  aplicar no próximo quadro). Corrigir genericamente, com teste: troca de resolução com uma thread do guest em
-  execução contínua é aplicada no próximo quadro.
-- [ ] [P1][G] Adrenaline (PSPEMUCFW) fecha logo ao abrir (relato do usuário, 21/11/2026; log `20261121_233018_PSPEMUCFW.log`):
-  o eboot chama `taihenUnsafe::taiLoadStartKernelModuleForUser` (NID 0x9890A8D3) para subir o módulo de kernel dele,
-  o VitaSharp responde "Unimplemented HLE function" e o app sai no quadro 1 (`sceKernelExitProcess`). Sem código
-  específico de taiHEN (decisão do usuário): no Vita com HENkaku essas exportações vêm do `taihen.skprx` real, que
-  está em `ur0:tai/` do usuário; fazer o boot dos plugins carregar o `taihen.skprx` real primeiro (como o HENkaku faz)
-  e deixá-lo ler o `config.txt`, para que as exportações taihen* sejam as dele e não stubs do HLE. Teste: um app
-  sintético que chama taiLoadStartKernelModuleForUser recebe o UID do módulo carregado pelo taihen real.
-  Entrega movida para "Corrigido, falta o usuário testar" (download do PSP 6.61, 22/11/2026); o resto segue aberto aqui.
-- [ ] [P1][M] The Amazing Spider-Man (PCSE00333), tela de pausa piscando (relato do usuário, 21/11/2026; captura
-  `PCSE00333_20261121_232645_tudo`, 4,3 s a 60 fps, dump da GPU de 198 quadros): o menu de pausa ("RESUME" e as
-  opções abaixo, sobre o fundo com a aranha) pisca; na folha de contatos as opções abaixo de "RESUME" quase não
-  aparecem. Comparar quadros seguidos no replay do dump (texto/opções presentes em um quadro e ausentes no outro).
-- [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053), áudio picotado (mesmas capturas de 21/11/2026): as vozes NGS
-  (Atrac9) têm buracos regulares de ~0,4-0,7 s dentro do som (49 buracos em 20 s no `audio_mix.wav`; só 2,6 s de som);
-  a porta MAIN teve gap máximo de 410 ms. O usuário também acha que imagem e som não estão sincronizados.
-  Entrega movida para "Corrigido, falta o usuário testar" (envelope do NGS, fix/ac3audio, 22/11/2026). Segue aberto
-  aqui: a sincronia imagem x som, a confirmar depois da correção (o som cortado pode ter sido o que pareceu
-  dessincronizado). No rerun headless a porta MAIN sai a 93,8 saídas/s, sem underrun; com o host carregado (format-check
-  em paralelo) caiu para 54/s, com um gap de 462 ms: é o ritmo do item P2 abaixo, não o NGS.
-- [ ] [P2][M] Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
-  capturas de 21/11/2026, e um engasgo de 132 ms por leitura de arquivo (fileIo 134 ms; quadro 302 do dump da
-  `_232150_tudo`). Achado (perf/ac3pace): fora das gravações o jogo fica em 30 fps (linhas `FPS frame` da sessão) e
-  só cai nelas, porque o gravador do GPU dump gasta 21-28 ms/quadro no GPU worker; o rerun headless sem dump dá 29-31
-  fps depois do aquecimento dos shaders. O engasgo do quadro 302 é de shader/pipeline (`[shadercache] present 4397:
-  stalled 98 ms`, 4 shaders e 2 pipelines novos), não de IO: a thread `main` esperou 0,0 s de IO, e a espera
-  modelada do cartão (7 MB/s) da thread de streaming `Gear::AsynchGeneric` entrava no `fileIo` do ledger e virava a
-  "causa" de todo quadro. Feito: o `fileIo` conta só a leitura no host, e o relatório da captura mostra o custo do
-  gravador por quadro e avisa quando ele passa de 4 ms. Falta: (1) baratear o gravador do dump (21 ms/quadro: a
-  codificação dos comandos e dos blocos de uniforms, ~11 MB/quadro crus, no GPU worker; levar para outra thread ou
-  reduzir as cópias/alocações por draw); (2) `sceIoXxxAsync` roda a requisição inteira na thread que chama, com a
-  espera do modelo do cartão: no Vita a chamada volta na hora e a leitura corre em paralelo (o AC3 não usa isso: lê
-  com `sceIoRead` na própria thread de streaming), então um jogo que lê assíncrono na thread principal trava o quadro
-  pelo tempo do cartão; completar a requisição no tempo do dispositivo sem bloquear quem chama.
-- [ ] [P2][G] Abrir um jogo não dá retorno visual (relato do usuário, 21/11/2026: "quando eu clico de novo no jogo ele
-  não abre a janela dele"): pelo log, a sessão começa e a janela só aparece 13 s depois (firmware, input, áudio,
-  dispositivo Vulkan), seguida de ~12 s de carregamento do cache de shaders e da etapa de pré-compilação ARM. Fazer,
-  no PC e no Android: a janela abre na hora do clique com uma tela de carregamento (nome do jogo e etapa atual);
-  clicar de novo no mesmo jogo traz a janela existente para frente; conferir se há caso em que o segundo clique
-  realmente não abre.
-- [ ] [P2][G] Barras de progresso no carregamento (pedido do usuário, 21/11/2026): "carregando cache de shaders" (N/total)
-  e "pré-compilando código ARM" (N/total) com barra e Cancelar, na tela de carregamento do PC e do Android (o Android
-  já tem o cartão da pré-compilação do andpar3: usar o mesmo modelo), com os nomes corretos dos dois conceitos.
-
-- [x] (18/11/2026, usuário: corrigido; reabre se aparecer de novo) [P1][M] PSVitaAlive (PSVAS1178, homebrew vita2d), bug gráfico no teclado de busca (usuário, 17/11/2026; captura
-  `captures/PSVAS1178_20261117_215911_tudo`, 41 achados [flash]): em quadros isolados faltam as teclas e parte do
-  texto ("9/12" em vez de "9/128") e triângulos saem do canto superior esquerdo. Causa (replay do gpu.vsgd, quadro
-  7692, draws 379+): os draws leem os vértices do quadro seguinte (o programa de cor recebe dados com coordenadas de
-  textura, o de texto recebe cores). A cena num buffer ainda na tela espera na GPU a troca de quadro (sync object de
-  fragmento) e o GPU worker executa vértice e fragmento juntos; no console só o fragmento espera, os vértices são
-  lidos no kick (sceGxmEndScene/MidSceneFlush), e o vita2d reaproveita o pool de vértices a cada quadro. Correção
-  feita (fix/psm1), ainda não confirmada: os draws enfileirados atrás de uma espera de exibição copiam no kick os
-  índices, os vertex streams e os uniform buffers vinculados (`GeometrySnapshot`, `DisplayHold`), e o worker lê a
-  cópia; teste `GxmFlowTests.DrawsBehindADisplayHoldReadTheGeometryOfTheirKick`. Teste do usuário: PSVitaAlive,
-  abrir "Buscar no catálogo" e digitar várias letras pelo toque; não pode piscar nem faltar tecla.
-- [x] (18/11/2026, usuário: corrigido; reabre se aparecer de novo) [P1][M] PSM: "0 fps / não dá para jogar" (usuário, 17/11/2026; captura `captures/PCSI00011_20261117_225840_tudo`).
-  O que foi aberto foi o próprio PSM Runtime Package (PCSI00011), sem jogo: o main do runtime 2.01 (estudo do eboot
-  decifrado) carrega libmono_bridge/libmono/libpsm, pede o parâmetro (sceAppMgrGetAppParam, "ux0:psm/<id>"), monta
-  106/107 com os 9 últimos caracteres; sem parâmetro a montagem falha, ele descarrega tudo e termina no abort da libc
-  (o bt ScePsm+2F50 do log). No console o runtime não tem bolha (o shell 3.74 o registra sem ícone no app.db, como o
-  app.db do usuário mostra) e só é aberto por um título PSM. Correção feita (fix/psm1), ainda não confirmada: a
-  Biblioteca não lista o runtime (`InstalledContent.IsPsmRuntime`, pelo runtime_version.txt); teste
-  `FirmwareLayoutTests.ThePsmRuntimeIsNotListedButStartsThePsmTitles`. Os jogos PSM instalados (NPNA00228 Front Wars,
-  NPOA00239 Cave Squid, NPPA00120 Merum) abrem pelo runtime com o parâmetro; daí em diante o que falta é a ativação
-  PSM (scePsmDrmGetActInfo: act.dat do console, processador de segurança; item abaixo).
-- [ ] [P1][G] PSM: chave do conteúdo a partir da licença instalada (pedido do usuário, 18/11/2026). Feito (fix/psm1):
-  scePsmDrmGetRifKey devolve o conjunto de chaves (0x200 bytes em +0x100 da licença de 0x400) quando a licença o traz
-  em claro (área de assinatura 0x300-0x3FF vazia, a forma das licenças instaladas pelo usuário); licença assinada da
-  loja continua recusada (0x80020004, só o processador de segurança abre); scePsmDrmGetRifInfo lê ID de conteúdo,
-  conta e datas. Formato PSSE (`PsseFile`: cabeçalho, IV do arquivo sob a chave de cabeçalho do runtime, blocos de
-  0x8000 em AES-128-CBC com IV = bloco XOR IV, assinatura a cada 0x80000, MD5) e o leitor pss_crypto_* do HLE da
-  mono_bridge abre os arquivos com a chave da licença de RO/License (sem licença: 0x80870005). Falta: a ativação PSM
-  (scePsmDrmGetActInfo) depende do act.dat e do processador de segurança e continua recusada; com ela recusada o
-  runtime mostra 0x808F04FF e para antes de abrir o conteúdo. Decisão do lead/usuário: como tratar a ativação.
-  Feito (fix/psm3): a licença fica em RO/License com o nome que o runtime abre (libpsm 2.01:
-  scePsmDrmGetRifName da conta do registro /CONFIG/NP/account_id), no instalador e na migração das gravadas com o nome
-  fixo; scePsmDrmGetRifNameForInstall com a checagem do módulo (assinatura RSA, cabeçalho, ativação). Feito (fix/psm4),
-  revalidado contra o SceNpDrm 3.74: scePsmDrmGetRifInfo/kscePsmDrmGetRifInfo com os 5 argumentos do módulo, a
-  checagem da licença como resposta, nada preenchido com 0x808F0104 e os tempos como ticks do SceRtc;
-  scePsmDrmGetRifKey/kscePsmDrmGetRifKey como o firmware (só o runtime de PSM, 0x80010058; sem ativação 0x808F0106
-  antes de ler a licença; a chave é do processador seguro), de modo que a chave de uma licença sem assinatura só vem
-  de um plugin de kernel que faz hook da exportação; a palavra +0x18 da licença responde 0x808F0109; o leitor
-  pss_crypto_* do HLE da mono_bridge pede a chave a scePsmDrmGetRifKey (mesmas checagens, ativação e hooks), sem ler
-  a licença por fora.
-  Entrega movida para "Corrigido, falta o usuário testar" (PSM psm3/psm4, 22/11/2026); o resto segue aberto aqui.
-- [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053) trava no boot, nunca mostra o primeiro quadro (usuário,
+- [ ] (22/11/2026, na main, falta testar) [P3][M] Investigar reduções de memória do emulador (pedido do usuário, 17/11/2026): medir o uso de RAM do
+  processo com um jogo pesado (dotnet-counters/dotnet-gcdump) e listar onde dá para cortar (caches de shader/textura,
+  cópias da memória do Vita, buffers da GPU, heap do .NET), com o ganho estimado de cada um, sem perder fps
+  Medido (mgs1, 18/11/2026, Killzone Mercenary headless em gameplay, Windows + GPU desktop; soma por tipo com
+  VirtualQueryEx/QueryWorkingSetEx): pico de working set 567 MB, ~455 MB em gameplay. Divisão: memória de usuário do
+  guest 189 MB (toda residente), CDRAM 100 MB (visão compartilhada, toda residente), uma região privada de 80-150 MB
+  (heap do .NET + driver; o heap gerenciado é 55-80 MB, `PERF allocated`), DLLs ~50 MB residentes.
+  Feito: um bloco novo do guest não é mais zerado à mão (o `Span.Clear` deixava todas as páginas residentes logo no
+  boot, também as que o jogo nunca usa); os blocos privados saem por decommit + commit, que já lê zeros sem tocar nas
+  páginas (`GuestMemoryCommitTests`). Killzone: usuário 189 → 104 MB residentes, pico 567 → 471 MB, gameplay
+  455 → 415 MB. Sem custo por quadro (só na alocação). A/B em pares (antes e depois ao mesmo tempo, em metades
+  opostas da CPU, trocadas na segunda rodada; boot turbo de 3000 quadros): working set no fim 520/526 → 440/437 MB.
+  O fps não piorou: o último trecho ficou em 181/117 fps antes e 368/329 depois, mas a máquina estava carregada e
+  a variação é grande. O JIT parado por 14-65 s no boot apareceu nas duas builds (carga da máquina, não a mudança).
+  Feito no launcher (mem3, 18/11/2026; `ui-render --mem`, 63 títulos, mesma sessão, antes → depois, working set):
+  Biblioteca 368 → 171 MB (heap do .NET 176 → 22 MB, GC comprometido 232 → 36 MB), página do jogo 388 → 175 MB,
+  troféus 388 → 187 MB, jogo rodando 433 → 243 MB, depois de fechar o jogo 629 → 232 MB (GC comprometido
+  457 → 62 MB). Como: os conjuntos de troféus do launcher guardam só os textos (SFM) e leem o ícone do TRP quando a
+  página o mostra (`TrophyPackage.LoadTexts`; antes eram as TROPHY.TRP inteiras de todos os jogos, 166 MB de
+  `byte[]`); o Refresh não relê os TRP que não mudaram (`TrophyTextsCache`, por arquivo + tamanho + data); depois de
+  fechar um jogo, uma coleta compactadora agressiva devolve ao sistema o que o RetainVM guardaria (só nesse ponto; o
+  RetainVM continua no processo do jogo, que não mudou). Save state: as páginas zero de um bloco restaurado saem por
+  decommit + commit, sem ficarem residentes (`GuestMemoryCommitTests.Restoring*`); na CDRAM do Windows (visão
+  compartilhada) elas ainda são zeradas à mão, como num bloco novo.
+  Ainda dá para cortar (estimativas):
+  - CDRAM compartilhada (até ~50-100 MB): ela ainda é zerada à mão, porque um bloco liberado ali só é descartado
+    (MEM_RESET). Com um mapa das páginas já usadas, só as reusadas seriam zeradas; o resto da seção (SEC_RESERVE) já
+    vem zerado. Risco de fps nenhum. O ganho depende de quanto da CDRAM o jogo deixa sem tocar (a GPU e as writebacks
+    escrevem os alvos lá).
+  - Heap do .NET (~10-30 MB): `GCHeapAffinitizeMask`/`GCHeapHardLimit` ou o GC de estação de trabalho não
+    concorrente. Risco: pausas de GC maiores. Medir a `pause` do `PERF allocated` antes de mudar.
+  - Caches da GPU no lado da CPU: `BcSoftware` (64 MB) e `AstcTranscoder` (32 MB) só pesam onde a GPU não decodifica
+    BC (celular). No desktop ficam vazios. Reduzir no Android custa reenvios de texturas (fps).
+  - Não vale: a tabela de páginas sujas (1 MB), a tabela de despacho do JIT (4 MB) e o código nativo (~3 MB) são
+    pequenos. O espelho da CDRAM (288 MB) e o pool de imagens ficam na VRAM, não na RAM, em GPU dedicada.
+  - Notas da medida: o `dotnet-gcdump` travou o processo do jogo (o fps caiu para 2-9 e o dump não terminou), então o
+    heap foi medido pela linha `PERF allocated`. A máquina estava carregada por outros agentes, então o fps destas
+    execuções não serve de comparação. A mudança só age na alocação de blocos, não no caminho por quadro.
+  Feito (mgs1 0fd4afd0, mem3 220f32ad e d706064f, na main). Testar: abrir o launcher e depois um jogo pesado (Killzone) e olhar a memória do VitaSharp no Gerenciador de Tarefas: Biblioteca perto de 170 MB, jogo abaixo do que era, e a memória volta a cair depois de fechar o jogo; o fps não deve mudar.
+- [ ] (22/11/2026, na main, falta testar) Compatibilidade com o modo desempenho / modo jogo dos celulares (pedido do usuário, 07/11/2026): o app se declara
+  jogo para o Android e para os otimizadores dos fabricantes (`android:appCategory="game"`/`isGame`, `game_mode_config`
+  com suporte aos modos de desempenho e de bateria da API GameManager, `GameState` de carregando/jogando), para entrar
+  nos painéis como o Game Turbo da Xiaomi e o Game Booster da Samsung e receber o perfil de desempenho; respeitar o
+  modo escolhido (desempenho = sem limite de energia; bateria = ritmo econômico). Validar no Redmi com o Game Turbo e
+  medir no Killzone com e sem o modo desempenho
+  Declaração feita (conferido em 08/11/2026: 7b6a2ae, `isGame`/`appCategory="game"` e `game_mode_config` no
+  AndroidManifest, modo de jogo lido no GameActivity); falta validar no Redmi com o Game Turbo e medir no Killzone
+  Feito (7b6a2ae, na main; GameManager.setGameState com `VITASHARP_ANDROID_GAME_STATE=1`). Testar: no Redmi, o VitaSharp aparece no Game Turbo; com o modo desempenho o Killzone fica igual ou mais fluido e com o modo bateria o celular esquenta menos.
+- [ ] (22/11/2026, na main, falta testar) [P1][M] Assassin's Creed III Liberation (PCSE00053) trava no boot, nunca mostra o primeiro quadro (usuário,
   17/11/2026; primeiro teste do jogo). Captura `captures/PCSE00053_20261117_012258_tudo`: 7 min no quadro 0 (0 fps,
   só a imagem de boot), áudio aberto mas em silêncio. Os threads do motor (Gear) foram todos criados, NGS e GXM
   iniciados, troféus ok; depois a `main` fica Running (sem esperar nada) num laço em 0x814661FC-0x8146620A (bt
@@ -3594,6 +3515,78 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   um cache de shader v29 gravado antes da mudança do fetch (sem novo bump): gerador v30, e o fetch de palavras cruas
   lê a cópia por uma imagem inteira (R32G32Uint/usampler2D). O fps de 17-22 das capturas é custo do próprio F8
   (gravador de GPU dump 36,7 ms/quadro + compressão 93,9 ms/quadro); fora da gravação a mesma cena roda a ~30 fps
+  Feito (ac3c bfc56c4b e 52934e4f, ac3g, ac3d 13a350d8, na main); as capturas de 21/11 já mostram o jogo em gameplay. Testar: abrir o AC III Liberation do zero: passa dos logos e chega ao menu e ao gameplay sem travar no quadro 0; a cena 3D com as cores certas e os decals do chão sem ruído azul/verde.
+
+## Bugs em aberto
+- [ ] [P2][G] CI: no runner Linux os testes de GPU do renderer são pulados ("shaderc not available ... install
+  libshaderc-dev"), então a "passagem" do Linux não testa o renderer (achado do cifix12, 21/11/2026). Instalar o
+  shaderc no job Linux (e conferir o macOS) para os testes de renderer rodarem nas 3 plataformas.
+- [ ] [P1][G] Aumentar a resolução interna em jogo falha (relato do usuário, 21/11/2026; log da sessão shell de 23:34):
+  duas tentativas de 1x -> 2x respondem `Internal resolution 1x -> 2x not applied: thread 'SceShellMusicCoreCacheIo' is
+  running guest code` (a troca usa o mesmo ponto seguro do save state, que exige todas as threads paradas; uma thread
+  do shell que nunca para em ponto seguro bloqueia a troca), e o fps cai para 8-31 durante as tentativas. A troca de
+  resolução só mexe no renderer: não deveria esperar as threads do guest (ou deveria esperar com tentativa/timeout e
+  aplicar no próximo quadro). Corrigir genericamente, com teste: troca de resolução com uma thread do guest em
+  execução contínua é aplicada no próximo quadro.
+- [ ] [P1][G] Adrenaline (PSPEMUCFW) fecha logo ao abrir (relato do usuário, 21/11/2026; log `20261121_233018_PSPEMUCFW.log`):
+  o eboot chama `taihenUnsafe::taiLoadStartKernelModuleForUser` (NID 0x9890A8D3) para subir o módulo de kernel dele,
+  o VitaSharp responde "Unimplemented HLE function" e o app sai no quadro 1 (`sceKernelExitProcess`). Sem código
+  específico de taiHEN (decisão do usuário): no Vita com HENkaku essas exportações vêm do `taihen.skprx` real, que
+  está em `ur0:tai/` do usuário; fazer o boot dos plugins carregar o `taihen.skprx` real primeiro (como o HENkaku faz)
+  e deixá-lo ler o `config.txt`, para que as exportações taihen* sejam as dele e não stubs do HLE. Teste: um app
+  sintético que chama taiLoadStartKernelModuleForUser recebe o UID do módulo carregado pelo taihen real.
+  Entrega movida para "Corrigido, falta o usuário testar" (download do PSP 6.61, 22/11/2026); o resto segue aberto aqui.
+- [ ] [P1][M] The Amazing Spider-Man (PCSE00333), tela de pausa piscando (relato do usuário, 21/11/2026; captura
+  `PCSE00333_20261121_232645_tudo`, 4,3 s a 60 fps, dump da GPU de 198 quadros): o menu de pausa ("RESUME" e as
+  opções abaixo, sobre o fundo com a aranha) pisca; na folha de contatos as opções abaixo de "RESUME" quase não
+  aparecem. Comparar quadros seguidos no replay do dump (texto/opções presentes em um quadro e ausentes no outro).
+- [ ] [P2][M] Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
+  capturas de 21/11/2026, e um engasgo de 132 ms por leitura de arquivo (fileIo 134 ms; quadro 302 do dump da
+  `_232150_tudo`). Achado (perf/ac3pace): fora das gravações o jogo fica em 30 fps (linhas `FPS frame` da sessão) e
+  só cai nelas, porque o gravador do GPU dump gasta 21-28 ms/quadro no GPU worker; o rerun headless sem dump dá 29-31
+  fps depois do aquecimento dos shaders. O engasgo do quadro 302 é de shader/pipeline (`[shadercache] present 4397:
+  stalled 98 ms`, 4 shaders e 2 pipelines novos), não de IO: a thread `main` esperou 0,0 s de IO, e a espera
+  modelada do cartão (7 MB/s) da thread de streaming `Gear::AsynchGeneric` entrava no `fileIo` do ledger e virava a
+  "causa" de todo quadro. Feito: o `fileIo` conta só a leitura no host, e o relatório da captura mostra o custo do
+  gravador por quadro e avisa quando ele passa de 4 ms. Falta: (1) baratear o gravador do dump (21 ms/quadro: a
+  codificação dos comandos e dos blocos de uniforms, ~11 MB/quadro crus, no GPU worker; levar para outra thread ou
+  reduzir as cópias/alocações por draw); (2) `sceIoXxxAsync` roda a requisição inteira na thread que chama, com a
+  espera do modelo do cartão: no Vita a chamada volta na hora e a leitura corre em paralelo (o AC3 não usa isso: lê
+  com `sceIoRead` na própria thread de streaming), então um jogo que lê assíncrono na thread principal trava o quadro
+  pelo tempo do cartão; completar a requisição no tempo do dispositivo sem bloquear quem chama.
+  Junto aqui (triagem de 22/11/2026) o resto do item do áudio picotado: a sincronia imagem x som já é pedida no "Testar" da correção do NGS (seção "Corrigido, falta o usuário testar"); no rerun headless a porta MAIN sai a 93,8 saídas/s sem underrun e, com o host carregado, caiu para 54/s (gap de 462 ms): é o ritmo deste item, não o NGS.
+- [ ] [P2][G] Abrir um jogo não dá retorno visual (relato do usuário, 21/11/2026: "quando eu clico de novo no jogo ele
+  não abre a janela dele"): pelo log, a sessão começa e a janela só aparece 13 s depois (firmware, input, áudio,
+  dispositivo Vulkan), seguida de ~12 s de carregamento do cache de shaders e da etapa de pré-compilação ARM. Fazer,
+  no PC e no Android: a janela abre na hora do clique com uma tela de carregamento (nome do jogo e etapa atual);
+  clicar de novo no mesmo jogo traz a janela existente para frente; conferir se há caso em que o segundo clique
+  realmente não abre.
+  Junto aqui (triagem de 22/11/2026), é a mesma tela de carregamento:
+  [P2][G] Barras de progresso no carregamento (pedido do usuário, 21/11/2026): "carregando cache de shaders" (N/total)
+  e "pré-compilando código ARM" (N/total) com barra e Cancelar, na tela de carregamento do PC e do Android (o Android
+  já tem o cartão da pré-compilação do andpar3: usar o mesmo modelo), com os nomes corretos dos dois conceitos.
+
+- [x] (18/11/2026, usuário: corrigido; reabre se aparecer de novo) [P1][M] PSVitaAlive (PSVAS1178, homebrew vita2d), bug gráfico no teclado de busca (usuário, 17/11/2026; captura
+  `captures/PSVAS1178_20261117_215911_tudo`, 41 achados [flash]): em quadros isolados faltam as teclas e parte do
+  texto ("9/12" em vez de "9/128") e triângulos saem do canto superior esquerdo. Causa (replay do gpu.vsgd, quadro
+  7692, draws 379+): os draws leem os vértices do quadro seguinte (o programa de cor recebe dados com coordenadas de
+  textura, o de texto recebe cores). A cena num buffer ainda na tela espera na GPU a troca de quadro (sync object de
+  fragmento) e o GPU worker executa vértice e fragmento juntos; no console só o fragmento espera, os vértices são
+  lidos no kick (sceGxmEndScene/MidSceneFlush), e o vita2d reaproveita o pool de vértices a cada quadro. Correção
+  feita (fix/psm1), ainda não confirmada: os draws enfileirados atrás de uma espera de exibição copiam no kick os
+  índices, os vertex streams e os uniform buffers vinculados (`GeometrySnapshot`, `DisplayHold`), e o worker lê a
+  cópia; teste `GxmFlowTests.DrawsBehindADisplayHoldReadTheGeometryOfTheirKick`. Teste do usuário: PSVitaAlive,
+  abrir "Buscar no catálogo" e digitar várias letras pelo toque; não pode piscar nem faltar tecla.
+- [x] (18/11/2026, usuário: corrigido; reabre se aparecer de novo) [P1][M] PSM: "0 fps / não dá para jogar" (usuário, 17/11/2026; captura `captures/PCSI00011_20261117_225840_tudo`).
+  O que foi aberto foi o próprio PSM Runtime Package (PCSI00011), sem jogo: o main do runtime 2.01 (estudo do eboot
+  decifrado) carrega libmono_bridge/libmono/libpsm, pede o parâmetro (sceAppMgrGetAppParam, "ux0:psm/<id>"), monta
+  106/107 com os 9 últimos caracteres; sem parâmetro a montagem falha, ele descarrega tudo e termina no abort da libc
+  (o bt ScePsm+2F50 do log). No console o runtime não tem bolha (o shell 3.74 o registra sem ícone no app.db, como o
+  app.db do usuário mostra) e só é aberto por um título PSM. Correção feita (fix/psm1), ainda não confirmada: a
+  Biblioteca não lista o runtime (`InstalledContent.IsPsmRuntime`, pelo runtime_version.txt); teste
+  `FirmwareLayoutTests.ThePsmRuntimeIsNotListedButStartsThePsmTitles`. Os jogos PSM instalados (NPNA00228 Front Wars,
+  NPOA00239 Cave Squid, NPPA00120 Merum) abrem pelo runtime com o parâmetro; daí em diante o que falta é a ativação
+  PSM (scePsmDrmGetActInfo: act.dat do console, processador de segurança; item abaixo).
 - [x] (18/11/2026, usuário: corrigido; reabre se aparecer de novo) [P1][M] GTA: Vice City (port GTAVCECTY), cutscene de abertura com os personagens pretos (pedido do usuário,
   17/11/2026): na cena do restaurante o cenário aparece iluminado, mas os personagens ficam totalmente escuros, como
   silhuetas. Captura: `captures/GTAVCECTY_20261117_004955_tudo` (frames.png, gpu.vsgd para replay-gpu; 29-30 fps;
@@ -6249,6 +6242,12 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   close-up do quadro 3795 o G16 = 0 deixa uns pontos verdes na borda de uma folha (como antes do 11f18ce), sem vídeo do
   Vita do mesmo ângulo (a câmera do Tearaway segue o giroscópio)
   Confirmado pelo usuário (06/11/2026): ok
+- [ ] [P3][M] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
+  Conferido (10/11/2026, agente B): os três casos são caminhos de reserva no desktop (supersample só quando o MSAA
+  nativo não serve o formato; cópia só com VITASHARP_MSAA_FETCH=copy) e o tile-based é do Android. Nenhum log ou
+  gravação do usuário nem execução no `<scratchpad>` tem o aviso `... which the scene cannot keep (...)`; sem jogo
+  que precise, não mexi
+  Entrega movida para "Corrigido, falta o usuário testar" (MSAA ss em tile-based, cifix12, 22/11/2026); o resto segue aberto aqui.
 - [x] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
   Feito (10/11/2026, agente B, fix/bugs-b-2), pelo libfiber.suprx 3.74 desmontado: as checagens do
   _sceFiberAttachContextAndRun/AndSwitch seguem a ordem do firmware (NULL; fiber ou contexto desalinhado; Run já dentro
