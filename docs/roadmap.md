@@ -59,6 +59,31 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
 
 ## Testes de regressão
 
+- [ ] [P1][G] Achar erros sem jogar (pedido do usuário, 21/11/2026: "não quero ter que jogar todos os jogos de Vita
+  pra encontrar todos os problemas do emulador"). Prioridade máxima para os próximos dias. Regras de dados: o
+  conteúdo dos jogos (shaders `.gxp`, áudio) é código/obra dos estúdios: fica só numa pasta local do usuário
+  (`%LOCALAPPDATA%\VitaSharpTools\...`), extraído das cópias dele, nunca no git, no CI ou fora da máquina; relatórios
+  locais guardam só hash, jogo de origem e veredito; os testes que vão para o git são sintéticos, escritos do zero, e
+  recriam só o padrão de um erro achado (nunca bytes nem desmontagem do jogo).
+  1. Acervo de shaders: ferramenta que extrai todos os `.gxp` dos jogos instalados (pastas e `.vpk`/`.pkg`), um arquivo
+     por hash de conteúdo + índice de origem; cada shader é traduzido e executado no tradutor e num interpretador
+     USSE de referência na CPU com milhares de entradas, comparando as saídas (cor, alfa, swizzle, precisão). Roda
+     local (categoria de teste própria) e grava o relatório; no CI a mesma comparação roda com shaders sintéticos que
+     cobrem cada instrução.
+  2. Tabela do GPU do Vita: formatos de textura × swizzle (~250), formatos de cor (~40), blend cor/alfa (~1.700),
+     profundidade (16), stencil (~4.000), filtros/endereçamento (~30), MSAA (3); cada eixo inteiro e os pares entre
+     eles (pairwise, ~3-5 mil casos de 8x8) contra um renderizador de referência em software; roda no CI em minutos.
+  3. Áudio, mesma ideia: acervo local dos fluxos de áudio dos jogos (`.at9`/`.at3`/`.vag` soltos e, para os que vêm
+     dentro de pacotes próprios do jogo, o fluxo comprimido capturado na entrada do decodificador); cada fluxo
+     decodificado pelo VitaSharp e por uma referência aberta (LibAtrac9 etc.), comparando amostra a amostra; efeitos
+     do NGS contra a matemática documentada; buracos/underrun/sincronia viram critério de reprovação. No CI, fluxos
+     sintéticos.
+  4. HLE contra o firmware real: para cada função que os jogos importam (censo), chamar o HLE e o módulo real (LLE)
+     com os mesmos argumentos (incluindo casos-limite) e comparar retorno e efeitos na memória.
+  5. (Depende do OK do usuário, esbarra na regra de agentes não validarem em jogos) rodada automática local dos jogos
+     instalados, sem janela e com entrada aleatória/roteirizada, com detectores de crash, tela preta, piscada, preto
+     onde há blend, buracos no som e queda de fps.
+
 Divisão do trabalho: os jogos são testados pelo usuário; um erro que ele encontra é corrigido junto com o teste que o
 teria pegado; todo o resto do comportamento é garantido pela suíte do repositório, que qualquer pessoa roda sem nenhum
 jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança é validada rodando jogos.
