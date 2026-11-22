@@ -498,4 +498,207 @@ public sealed class KernelZlibTests(GuestMemoryFixture fixture) : IDisposable
             Assert.Equal(sample, plain.ToArray());
         });
     }
+
+    /// <summary>Deflates <paramref name="data"/> in one deflate(Z_FINISH) with room for all of it; the bytes.</summary>
+    private byte[] DeflateAll(GuestThread t, uint stream, byte[] data, int flush = 4)
+    {
+        uint input = Bytes(data);
+        uint output = _harness.Alloc((uint)data.Length * 2 + 1024);
+        GuestMemory.W32(stream, input);
+        GuestMemory.W32(stream + 4, (uint)data.Length);
+        GuestMemory.W32(stream + 0xC, output);
+        GuestMemory.W32(stream + 0x10, (uint)data.Length * 2 + 1024);
+        int status = Call(t, Deflate, stream, (uint)flush);
+        Assert.Equal(flush == 4 ? ZStreamEnd : ZOk, status);
+        return GuestMemory.Span(output, (int)((uint)data.Length * 2 + 1024 - GuestMemory.R32(stream + 0x10))).ToArray();
+    }
+
+    /// <summary>The bytes with their first <paramref name="bits"/> bits (LSB first, as deflate packs them) removed.</summary>
+    private static byte[] DropBits(byte[] bytes, int bits)
+    {
+        int total = bytes.Length * 8 - bits;
+        var result = new byte[(total + 7) / 8];
+        for (int i = 0; i < total; i++)
+        {
+            int source = i + bits;
+            if ((bytes[source >> 3] >> (source & 7) & 1) != 0)
+            {
+                result[i >> 3] |= (byte)(1 << (i & 7));
+            }
+        }
+
+        return result;
+    }
+
+    private static byte[] HostInflateRaw(byte[] bytes)
+    {
+        using var decoder = new DeflateStream(new MemoryStream(bytes), CompressionMode.Decompress);
+        using var plain = new MemoryStream();
+        decoder.CopyTo(plain);
+        return plain.ToArray();
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(3, 5)]
+    [InlineData(7, 0x55)]
+    [InlineData(8, 0xA5)]
+    [InlineData(13, 0x1ABC)]
+    [InlineData(16, 0xBEEF)]
+    public void PrimedBitsComeBeforeTheFirstBlockOnTheSameByte(int bits, int value)
+    {
+        byte[] sample = Sample();
+        _harness.OnGuest(t =>
+        {
+            uint stream = _harness.Alloc(0x38);
+            Assert.Equal(ZOk, Call(t, DeflateInit2, stream, 6, 8, unchecked((uint)-15), 8, 0, Version, 0x38));
+            // the value's bits above the count are dropped (bi_buf = value & ((1 << bits) - 1))
+            Assert.Equal(ZOk, Call(t, 0x0FA805A3, stream, (uint)bits, (uint)(value | (0x7 << bits))));
+            byte[] packed = DeflateAll(t, stream, sample);
+            int primed = packed[0] | (packed[1] << 8);
+            Assert.Equal(value, primed & ((1 << bits) - 1));
+            // the block follows the bits directly, not on the next byte
+            Assert.Equal(sample, HostInflateRaw(DropBits(packed, bits)));
+            Assert.Equal(ZOk, Call(t, DeflateEnd, stream));
+        });
+    }
+
+    [Fact]
+    public void APrimeReplacesTheBitsOfAnEarlierOneAndFollowsAZlibHeader()
+    {
+        byte[] sample = Encoding.ASCII.GetBytes("primed after the zlib header, primed after the zlib header");
+        _harness.OnGuest(t =>
+        {
+            uint stream = _harness.Alloc(0x38);
+            Assert.Equal(ZOk, Call(t, DeflateInit, stream, 6, Version, 0x38));
+            Assert.Equal(ZOk, Call(t, 0x1C344E27, stream, 6, 0x3F));
+            Assert.Equal(ZOk, Call(t, 0x1C344E27, stream, 2, 0x2));
+            byte[] packed = DeflateAll(t, stream, sample);
+            // the two header bytes are written as bytes, the primed bits start the third
+            Assert.Equal(0x78, packed[0]);
+            Assert.Equal(0, ((packed[0] << 8) | packed[1]) % 31);
+            Assert.Equal(2, packed[2] & 3);
+            byte[] body = DropBits(packed[2..^4], 2);
+            Assert.Equal(sample, HostInflateRaw(body));
+            Assert.Equal(ZStreamError, Call(t, 0x0FA805A3, 0, 3, 1));
+            Assert.Equal(ZOk, Call(t, DeflateEnd, stream));
+        });
+    }
+
+    [Fact]
+    public void ABlockFlushLeavesTheStreamOffAByteAndTheNextBlockFollowsIt()
+    {
+        byte[] first = Encoding.ASCII.GetBytes("first part of the stream, first part of the stream ");
+        byte[] second = Encoding.ASCII.GetBytes("second part, which refers back to the first part of the stream");
+        _harness.OnGuest(t =>
+        {
+            for (int flush = 1; flush <= 5; flush++)
+            {
+                if (flush == 4)
+                {
+                    continue;
+                }
+
+                uint stream = _harness.Alloc(0x38);
+                Assert.Equal(ZOk, Call(t, DeflateInit2, stream, 6, 8, unchecked((uint)-15), 8, 0, Version, 0x38));
+                byte[] head = DeflateAll(t, stream, first, flush);
+                byte[] tail = DeflateAll(t, stream, second);
+                byte[] whole = [.. head, .. tail];
+                Assert.Equal([.. first, .. second], HostInflateRaw(whole));
+                if (flush is 2 or 3)
+                {
+                    // the sync and full flushes end on a byte with an empty stored block
+                    Assert.Equal([0, 0, 0xFF, 0xFF], head[^4..]);
+                }
+
+                Assert.Equal(ZOk, Call(t, DeflateEnd, stream));
+            }
+        });
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(1, 0)]
+    [InlineData(3, 0)]
+    [InlineData(4, 0)]
+    [InlineData(6, 1)]
+    [InlineData(6, 2)]
+    [InlineData(6, 3)]
+    [InlineData(6, 4)]
+    [InlineData(9, 0)]
+    public void EveryLevelAndStrategyMakesAStreamTheHostDecodes(int level, int strategy)
+    {
+        var random = new Random(level * 7 + strategy);
+        byte[] sample = [.. Sample(), .. Enumerable.Range(0, 70000).Select(_ => (byte)random.Next(4)), .. new byte[3000]];
+        _harness.OnGuest(t =>
+        {
+            uint stream = _harness.Alloc(0x38);
+            Assert.Equal(ZOk, Call(t, DeflateInit2, stream, (uint)level, 8, 15, 8, (uint)strategy, Version, 0x38));
+            byte[] packed = DeflateAll(t, stream, sample);
+            Assert.Equal(sample, HostDecompress(packed));
+            if (level > 0 && strategy != 2)
+            {
+                Assert.True(packed.Length < sample.Length / 2, $"level {level} strategy {strategy}: {packed.Length} of {sample.Length}");
+            }
+
+            // FLEVEL by level, 0 for Z_HUFFMAN_ONLY and up
+            int expectedLevel = strategy >= 2 || level < 2 ? 0 : level < 6 ? 1 : level == 6 ? 2 : 3;
+            Assert.Equal(expectedLevel, packed[1] >> 6);
+            Assert.Equal(ZOk, Call(t, DeflateEnd, stream));
+        });
+    }
+
+    [Fact]
+    public void ADeflatePresetDictionaryIsInTheHeaderAndTheDataRefersToIt()
+    {
+        byte[] dictionary = Encoding.ASCII.GetBytes("a dictionary of words the payload repeats: kernel zlib stream");
+        byte[] payload = Encoding.ASCII.GetBytes("kernel zlib stream: words the payload repeats");
+        _harness.OnGuest(t =>
+        {
+            uint plain = _harness.Alloc(0x38);
+            Assert.Equal(ZOk, Call(t, DeflateInit, plain, 9, Version, 0x38));
+            byte[] without = DeflateAll(t, plain, payload);
+
+            uint stream = _harness.Alloc(0x38);
+            Assert.Equal(ZOk, Call(t, DeflateInit, stream, 9, Version, 0x38));
+            Assert.Equal(ZOk, Call(t, 0x4EE6C080, stream, Bytes(dictionary), (uint)dictionary.Length));
+            uint dictionaryId = GuestMemory.R32(stream + 0x30);
+            byte[] packed = DeflateAll(t, stream, payload);
+            Assert.Equal(0x20, packed[1] & 0x20);
+            Assert.Equal(dictionaryId, (uint)((packed[2] << 24) | (packed[3] << 16) | (packed[4] << 8) | packed[5]));
+            Assert.True(packed.Length - 4 < without.Length, "the data refers to the dictionary");
+            // a zlib stream takes the dictionary only before its first deflate
+            Assert.Equal(ZStreamError, Call(t, 0x4EE6C080, stream, Bytes(dictionary), (uint)dictionary.Length));
+
+            uint z = _harness.Alloc(0x38);
+            Assert.Equal(ZOk, Call(t, InflateInit, z, Version, 0x38));
+            uint output = _harness.Alloc(256);
+            GuestMemory.W32(z, Bytes(packed));
+            GuestMemory.W32(z + 4, (uint)packed.Length);
+            GuestMemory.W32(z + 0xC, output);
+            GuestMemory.W32(z + 0x10, 256);
+            Assert.Equal(ZNeedDict, Call(t, Inflate, z, 0));
+            Assert.Equal(ZOk, Call(t, 0x00561385, z, Bytes(dictionary), (uint)dictionary.Length));
+            Assert.Equal(ZStreamEnd, Call(t, Inflate, z, 0));
+            Assert.Equal(payload, GuestMemory.Span(output, payload.Length).ToArray());
+        });
+    }
+
+    [Fact]
+    public void TheDataTypeIsTextOrBinaryFromTheFirstBlock()
+    {
+        _harness.OnGuest(t =>
+        {
+            uint text = _harness.Alloc(0x38);
+            Assert.Equal(ZOk, Call(t, DeflateInit, text, 6, Version, 0x38));
+            Assert.Equal(2u, GuestMemory.R32(text + 0x2C));
+            DeflateAll(t, text, Encoding.ASCII.GetBytes("plain text\r\n"));
+            Assert.Equal(1u, GuestMemory.R32(text + 0x2C));
+
+            uint binary = _harness.Alloc(0x38);
+            Assert.Equal(ZOk, Call(t, DeflateInit, binary, 6, Version, 0x38));
+            DeflateAll(t, binary, [1, 2, 3, 0x41, 0x42]);
+            Assert.Equal(0u, GuestMemory.R32(binary + 0x2C));
+        });
+    }
 }
