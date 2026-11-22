@@ -1647,16 +1647,9 @@ public sealed class Emulator : IDisposable
         codeCache.Analyze = Options.PrecompileCode;
         bool wait = Options.PrecompileCode && Options.PrecompileCodeWaits;
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
-        long last = 0;
-        CodePrecompiler.Result result = codeCache.PrecompilePending(!wait ? null : progress =>
-        {
-            long now = Environment.TickCount64;
-            if (progress.Finished || now - last >= 250)
-            {
-                last = now;
-                Log.Info(CodePrecompileLog.Format(progress));
-            }
-        }, CodePrecompileLog.Token, wait);
+        CodePrecompileLog.Reporter? reporter = wait ? new CodePrecompileLog.Reporter() : null;
+        CodePrecompiler.Result result = codeCache.PrecompilePending(reporter == null ? null : reporter.Progress, CodePrecompileLog.Token, wait);
+        reporter?.End();
         double seconds = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalSeconds;
         Log.Info($"ARM code precompilation: boot step {seconds:F1} s ({(wait ? "waited for " + (codeCache.CachedSeeds > 0 ? "the code cache" : "the code reached from the entry points") : "nothing waited for")}), "
             + $"{result.Translated} blocks translated of {result.Visited} visited ({codeCache.CachedSeeds} from the code cache, {result.Found} found by the static analysis)"

@@ -1196,6 +1196,19 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   (`AndroidTrophyMemoryTests`); tela estreita: valor da linha vai para baixo do título, textos e filtros quebram linha
   (`NarrowLayout`). Ficam para quando existirem no PC: "Compilar shaders ao carregar o programa" (hoje só
   `--compile-on-program-load`, sem opção no launcher) e a pré-compilação de código ARM (agente aot1).
+- [ ] [P2][M] Paridade PC/Android das entregas de 20-21/11 (fix/andpar3), **feito no código, falta validar no aparelho**:
+  "Precompilar código ARM" espera a etapa de boot como no desktop (era tudo em segundo plano no celular), com o cartão
+  de progresso e Cancelar sobre o jogo (`CodePrecompileLog.Reported`, `CodePrecompileBanner`); MSAA por jogo e no menu
+  de pausa com os 3 modos do F3 do desktop (nativo, superamostragem 2x, desligado; era só nativo/desligado);
+  `VITASHARP_NET_ALLOW` do env.txt limita a internet real como o `--net-allow` (`AndroidDeliveryParityTests`).
+  Conferido igual nos dois (código comum): cache de código e fronteira, compilar ao carregar o programa e workers de
+  shaders (mesmos padrões, `VITASHARP_COMPILE_ON_PROGRAM_LOAD`/`VITASHARP_SHADER_WORKERS` pelo env.txt), seed de
+  profundidade entre emulações de MSAA, liberação dos recursos da GPU no fim do processo, save state com plugins de
+  kernel e threads de serviço, licenças PSM, exceção do servidor de atualização do PSP, exceções da CPU para o
+  SceExcpmgr (kubridge), áudio sem aparelho ritmado pelo relógio do guest. No aparelho: (a) Killzone com cache de
+  código: o cartão aparece no 1º boot, some sozinho e o Cancelar começa o jogo na hora; medir quanto a etapa
+  espera no celular (no PC 0,6-1,2 s); (b) MSAA superamostragem 2x no menu de pausa troca o renderizador sem
+  travar e o fps; (c) o teto de arena por plataforma (64 MiB de pré-compilação no Android) entra com o feat/aot4.
 - [ ] [P2][M] Dead Space (port, DEADSPACE) no Android sem som e engasgando (relato do usuário, 15/11/2026, APK build-1f8c024, com "Ativar Plugins do Kernel" e kubridge + fd_fix; no PC roda com som). Logs do celular guardados pelo lead (`<scratchpad>ds_android`). Ler o log primeiro: áudio (saída aberta? grãos/s), fps e tiers da CPU, threads em espera; comparar com o PC na mesma cena.
 - [x] Paridade de opções PC/Android: toda opção do launcher do desktop também no app Android, com o mesmo nome, padrão
   e efeito (`AndroidOptionParityTests`; regra no README, "Code style"). Feito: compilação rápida de shaders e

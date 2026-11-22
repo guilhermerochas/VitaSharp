@@ -113,8 +113,8 @@ public sealed class GameSettings
     /// only, VulkanRenderer.ResScale.cs; 2-4 are the desktop launcher's choices). Lower is faster on GPU-bound games, and
     /// softer; 2x is sharper and costs about four times the GPU work, 3x nine, 4x sixteen.</summary>
     public string? ResScale { get; set; }
-    /// <summary>"MSAA": "off" renders the game's multisampled scenes with one sample (faster on the GPU, edges alias);
-    /// null = native (as the game asks, 2x/4x). Per game only.</summary>
+    /// <summary>"MSAA": the desktop's modes (its F3 key): "ss" renders the game's multisampled scenes 2x supersampled,
+    /// "off" with one sample (faster on the GPU, edges alias); null = native (as the game asks, 2x/4x). Per game only.</summary>
     public string? Msaa { get; set; }
     /// <summary>"Carregamento rapido" of this game (null = <see cref="AppPreferences.FastLoading"/>).</summary>
     public bool? FastLoading { get; set; }
@@ -179,7 +179,7 @@ public sealed record EffectiveSettings(string CpuBackend, int CpuMhz, string Gpu
 
         string gpu = SettingsChoices.GpuProfiles.Any(c => c.Value == (game?.GpuProfile ?? app.GpuProfile)) ? game?.GpuProfile ?? app.GpuProfile : "";
         string res = SettingsChoices.ResScales.Any(c => c.Value == game?.ResScale) ? game!.ResScale! : "";
-        string msaa = game?.Msaa == "off" ? "off" : "";
+        string msaa = SettingsChoices.MsaaModes.Any(c => c.Value.Length > 0 && c.Value == game?.Msaa) ? game!.Msaa! : "";
         string rate = SettingsChoices.FrameRates.Any(c => c.Value.Length > 0 && c.Value == game?.FrameRate) ? game!.FrameRate! : "";
         string language = SettingsChoices.SystemLanguages.Any(c => c.Value.Length > 0 && c.Value == game?.SystemLanguage) ? game!.SystemLanguage! : "";
         return new(cpu, mhz, gpu, game?.VSync ?? app.VSync, game?.ShowFps ?? app.ShowFps, res, msaa, game?.FastLoading ?? app.FastLoading, rate, language,
@@ -196,6 +196,10 @@ public sealed record EffectiveSettings(string CpuBackend, int CpuMhz, string Gpu
         VitaSharp.Core.Hle.Modules.FrameRate.Parse(FrameRate.Length > 0 ? FrameRate : environmentValue);
 
     /// <summary>VulkanRendererOptions.ResScale for <see cref="ResScale"/> (0 = native).</summary>
+    /// <summary>VulkanRendererOptions.Msaa for <see cref="Msaa"/>: "ss" or "off", null = native (VITASHARP_MSAA in
+    /// env.txt, else what the game asks).</summary>
+    public string? MsaaValue => Msaa.Length > 0 ? Msaa : null;
+
     public float ResScaleValue => float.TryParse(ResScale, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float v) ? v : 0f;
 
     /// <summary>CpuCore.InstructionsPerSecond for <see cref="CpuMhz"/>.</summary>
@@ -276,11 +280,29 @@ public static class SettingsChoices
         new("3", Loc.Get("MHapticStrong")),
     ];
 
+    /// <summary>"MSAA" per game, the desktop's modes in the order of its F3 key: native, 2x supersampling, off.</summary>
     public static IReadOnlyList<Choice> MsaaModes =>
     [
         new("", Loc.Get("MMsaaNative")),
+        new("ss", Loc.Get("MMsaaSs")),
         new("off", Loc.Get("MMsaaOff")),
     ];
+
+    /// <summary>The pause menu's "MSAA": the mode after <paramref name="value"/> ("" = native), as the desktop's F3.</summary>
+    public static string NextMsaa(string? value)
+    {
+        IReadOnlyList<Choice> modes = MsaaModes;
+        int index = -1;
+        for (int i = 0; i < modes.Count; i++)
+        {
+            if (modes[i].Value == (value ?? ""))
+            {
+                index = i;
+            }
+        }
+
+        return modes[(index + 1) % modes.Count].Value;
+    }
 
     /// <summary>The label of <paramref name="value"/> in <paramref name="choices"/>, or the value itself.</summary>
     public static string LabelOf(IReadOnlyList<Choice> choices, string value) => choices.FirstOrDefault(c => c.Value == value)?.Label ?? value;

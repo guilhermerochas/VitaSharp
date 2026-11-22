@@ -22,6 +22,18 @@ public sealed partial class GameActivity
     /// <summary>Builds the (hidden) card and follows <see cref="ShaderCacheLoad.Reported"/>; called from OnCreate.</summary>
     void AddShaderCacheLoadBanner(FrameLayout root)
     {
+        _shaderCacheLoadCard = AddProgressCard(root, ShaderCacheLoadBanner.CancelText, () =>
+        {
+            _shaderCacheLoad.Cancel();
+            UpdateShaderCacheLoadBanner();
+        }, out _shaderCacheLoadText, out _shaderCacheLoadBar);
+        ShaderCacheLoad.Reported += OnShaderCacheLoadReported;
+    }
+
+    /// <summary>A hidden card centred over the game with a text, a bar (0..1000) and a "Cancelar" button: the shader cache
+    /// load's and the ARM code precompilation's (GameActivity.CodePrecompile.cs).</summary>
+    LinearLayout AddProgressCard(FrameLayout root, string cancelText, Action cancelled, out TextView text, out ProgressBar bar)
+    {
         var card = new LinearLayout(this) { Orientation = Orientation.Vertical, Visibility = ViewStates.Gone };
         card.SetPadding(Dp(18), Dp(14), Dp(18), Dp(10));
         var background = new global::Android.Graphics.Drawables.GradientDrawable();
@@ -29,26 +41,19 @@ public sealed partial class GameActivity
         background.SetCornerRadius(Dp(18));
         card.Background = background;
 
-        var text = new TextView(this) { TextSize = 14 };
+        text = new TextView(this) { TextSize = 14 };
         text.SetTextColor(Color.ParseColor("#E8ECF2"));
         card.AddView(text);
 
-        var bar = new ProgressBar(this, null, global::Android.Resource.Attribute.ProgressBarStyleHorizontal) { Max = 1000 };
+        bar = new ProgressBar(this, null, global::Android.Resource.Attribute.ProgressBarStyleHorizontal) { Max = 1000 };
         card.AddView(bar, new LinearLayout.LayoutParams(Dp(260), ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(8) });
 
-        var cancel = new Button(this) { Text = ShaderCacheLoadBanner.CancelText };
-        cancel.Click += (_, _) =>
-        {
-            _shaderCacheLoad.Cancel();
-            UpdateShaderCacheLoadBanner();
-        };
+        var cancel = new Button(this) { Text = cancelText };
+        cancel.Click += (_, _) => cancelled();
         card.AddView(cancel, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { Gravity = GravityFlags.End });
 
         root.AddView(card, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent, GravityFlags.Center));
-        _shaderCacheLoadCard = card;
-        _shaderCacheLoadText = text;
-        _shaderCacheLoadBar = bar;
-        ShaderCacheLoad.Reported += OnShaderCacheLoadReported;
+        return card;
     }
 
     void RemoveShaderCacheLoadBanner()

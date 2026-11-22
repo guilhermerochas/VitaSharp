@@ -226,7 +226,11 @@ public sealed partial class GameActivity
         Add(ToggleRow(Loc.Get("MRearTouch"), Loc.Get("MRearTouchDetail"), () => _pad.RearTouch, v => _pad.RearTouch = v));
         Add(ToggleRow(Loc.Get("MOnScreenControls"), null, () => _pad.Visible, v => _pad.Visible = v));
         if (_session is { } msaaSession)
-            Add(ToggleRow(Loc.Get("MMsaa"), Loc.Get("MMsaaDetail"), () => !msaaSession.MsaaOff, v => msaaSession.SetMsaaOff(!v)));
+        {
+            Add(ChoiceRow(Loc.Get("MMsaa"), Loc.Get("MMsaaDetail"),
+                () => SettingsChoices.LabelOf(SettingsChoices.MsaaModes, msaaSession.MsaaValue),
+                () => msaaSession.SetMsaa(SettingsChoices.NextMsaa(msaaSession.MsaaValue))));
+        }
         if (_session is { } rateSession)
         {
             Add(ChoiceRow(Loc.Get("FrameRate"), Loc.Get("MFrameRateDetail"),

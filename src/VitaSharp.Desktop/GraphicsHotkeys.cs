@@ -47,7 +47,8 @@ sealed class GraphicsHotkeys(Emulator emu, VulkanRendererOptions ro, Func<Vulkan
         }
     }
 
-    static readonly string[] MsaaModes = ["native", "ss", "off"];
+    /// <summary>The F3 order (the Android app offers the same modes, AndroidDeliveryParityTests).</summary>
+    internal static readonly string[] MsaaModes = ["native", "ss", "off"];
 
     /// <summary>The next (or previous) MSAA mode (real multisampling, 2x supersampling, off): like a new resolution, a
     /// new renderer replaces the current one between two GPU scenes.</summary>
