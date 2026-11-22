@@ -3274,6 +3274,13 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   Correção: 90f1ceb8 (merge db7044ef, 15/11/2026): o passo scripted de save/load state roda uma vez mesmo com várias threads lendo o pad. Teste: no celular, carregar um estado e logo em seguida carregar outro; o jogo não deve congelar.
 
 ## Bugs em aberto
+- [ ] [P1][G] Aumentar a resolução interna em jogo falha (relato do usuário, 21/11/2026; log da sessão shell de 23:34):
+  duas tentativas de 1x -> 2x respondem `Internal resolution 1x -> 2x not applied: thread 'SceShellMusicCoreCacheIo' is
+  running guest code` (a troca usa o mesmo ponto seguro do save state, que exige todas as threads paradas; uma thread
+  do shell que nunca para em ponto seguro bloqueia a troca), e o fps cai para 8-31 durante as tentativas. A troca de
+  resolução só mexe no renderer: não deveria esperar as threads do guest (ou deveria esperar com tentativa/timeout e
+  aplicar no próximo quadro). Corrigir genericamente, com teste: troca de resolução com uma thread do guest em
+  execução contínua é aplicada no próximo quadro.
 - [ ] [P1][G] Adrenaline (PSPEMUCFW) fecha logo ao abrir (relato do usuário, 21/11/2026; log `20261121_233018_PSPEMUCFW.log`):
   o eboot chama `taihenUnsafe::taiLoadStartKernelModuleForUser` (NID 0x9890A8D3) para subir o módulo de kernel dele,
   o VitaSharp responde "Unimplemented HLE function" e o app sai no quadro 1 (`sceKernelExitProcess`). Sem código
