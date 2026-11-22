@@ -3341,6 +3341,20 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   `PCSE00333_20261121_232645_tudo`, 4,3 s a 60 fps, dump da GPU de 198 quadros): o menu de pausa ("RESUME" e as
   opções abaixo, sobre o fundo com a aranha) pisca; na folha de contatos as opções abaixo de "RESUME" quase não
   aparecem. Comparar quadros seguidos no replay do dump (texto/opções presentes em um quadro e ausentes no outro).
+  Em andamento (22/11/2026, small1; causa ainda não achada): nos quadros gravados (`frames.vsfr`) 4 de 243 (presents
+  8499, 8592, 8606, 8667) perdem RESTART/SETTINGS/QUIT, sempre cortados no mesmo ponto; os dados do guest no dump estão
+  certos. O replay do dump não é determinístico: duas execuções iguais têm só 86-120 de 198 quadros idênticos, e as
+  diferenças são triângulos dos últimos draws do quadro (o texto, fs `E8CED0FE0BD923E3`, e o PAUSE) faltando a partir de
+  um ponto do draw. `run --load-state=state_start.vss` da captura (pasta de dados com o `ur0` copiado) reproduz no jogo:
+  7-9 quadros sem texto em ~3000. É um hazard na GPU entre draws de uma mesma renderização: `EndRendering` (com a
+  barreira de anexos normal) depois de cada draw deixa 198/198 quadros idênticos, e basta fazê-lo depois dos draws
+  ~48-50 do quadro (antes dos draws 51-53, com uniforms de vértice de ~3 KB e seis texturas, que escrevem profundidade);
+  cortar depois do 51 ou do 54 não resolve. Descartados por A/B no replay: o cache de estado dinâmico/pipeline
+  (`_dyn`/`_boundPipeline` zerados a cada command buffer: nada muda), o cache de vértices (`VITASHARP_VERTEX_CACHE=0`),
+  o uniform heap, `VITASHARP_FRAMES_IN_FLIGHT` 2/8, `VITASHARP_SCENE_BREAKS=strict`, `VITASHARP_MSAA=off` e uma barreira
+  total antes do present; não há quebras de cena nos quadros do menu. Próximo passo: validação de sincronização
+  (`VITASHARP_VK_VALIDATION=sync` no `replay-gpu` não produziu mensagens; conferir se a camada carrega no replay) e
+  bisseção do que os draws 51-53 leem/escrevem (profundidade com teste LE do texto, recursos ligados).
 - [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053), painéis do HUD pretos (relato do usuário, 21/11/2026; capturas
   `PCSE00053_20261121_232126_tudo` e `PCSE00053_20261121_232150_tudo`, com dump da GPU de 72 e 464 quadros): a faixa do
   objetivo ("Pegue a galinha!", topo esquerdo), a caixa do minimapa (embaixo à esquerda) e a dica "USE ◎ para MOVER A
