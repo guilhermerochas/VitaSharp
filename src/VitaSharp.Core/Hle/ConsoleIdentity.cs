@@ -25,6 +25,16 @@ public static class ConsoleIdentity
     /// the emulated handheld's word is 0 (the one ksceSysconGetHardwareInfo reports through the bridge).</summary>
     public const uint HardwareInfo = 0;
 
+    /// <summary>
+    /// The SoC revision word (ScePervasive misc register 0xE3100000, "revision0", what kscePervasiveGetSoCRevision
+    /// answers): 0x80000042, the CXD5315GG of a retail PCH-1000 (IRS-002 board, 2 x 256 MiB LPDDR2), as identification
+    /// tools list the values read on real units (vita-PSVident getSoC: 0x80000042 fat CEX, 0x00000042 DevKit,
+    /// 0x80000115 the newer CXD5316GG). Bits 0..7 are the revision (4.2), bits 8..16 zero on the first SoC; bit 31 set
+    /// with those bits zero puts the second RAM bank at 0x58000000 (no extra 512 MiB), as the coredump module reads it.
+    /// The FW 3.74 readers (SceGpuEs4, ScePower, msif, sdif, crashdump) test exactly those fields.
+    /// </summary>
+    public const uint SocRevision = 0x80000042;
+
     /// <summary>The secure module information word (KBL parameters +8): 0.</summary>
     public const uint SecureModuleInfo = 0;
 

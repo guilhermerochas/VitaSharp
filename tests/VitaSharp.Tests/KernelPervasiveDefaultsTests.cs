@@ -5,7 +5,8 @@ using static VitaSharp.Tests.HleHarness;
 namespace VitaSharp.Tests;
 
 /// <summary>
-/// The FW 3.74 ScePervasiveForDriver SoC identification getters (lowio.skprx) answer the misc words as defaults; the
+/// The FW 3.74 ScePervasiveForDriver SoC identification getters (lowio.skprx) answer the power-on misc words of a
+/// retail PCH-1000 as the module copied them at start; the
 /// UART baud rate setter writes the clock word of each accepted rate (0x803F0000 for another rate or port). The
 /// exports are found by name so the proof without them still builds.
 /// </summary>
@@ -34,14 +35,31 @@ public sealed class KernelPervasiveDefaultsTests(GuestMemoryFixture fixture) : I
     private uint Register(uint offset) => (uint)Invoke(Pervasive, "Register", offset)!;
 
     [Fact]
-    public void TheIdentificationGettersAnswerTheMiscWords()
+    public void TheSocRevisionIsTheRetailPch1000sAndTheOtherWordsAreZero()
     {
-        Assert.Equal(0u, (uint)Invoke(Pervasive, "kscePervasiveGetSoCRevision")!);
+        uint revision = (uint)Invoke(Pervasive, "kscePervasiveGetSoCRevision")!;
+        Assert.Equal(0x80000042u, revision);
+        // what the FW 3.74 readers test: the first SoC (bits 8..16 zero), revision 4.2 (ScePower and msif take the
+        // newer path from 0x42, SceGpuEs4 from 0x33), a retail unit without the extra RAM bank (bit 31)
+        Assert.Equal(0u, revision & 0x1FF00);
+        Assert.True((revision & 0xFF) >= 0x42);
+        Assert.NotEqual(0u, revision & 0x80000000);
+        Assert.Equal(revision, Register(0));
         Assert.Equal(0u, (uint)Invoke(Pervasive, "NID_41C3C299")!);
         Assert.Equal(0u, (uint)Invoke(Pervasive, "NID_FB0EF8C7")!);
         Assert.Equal(0u, (uint)Invoke(Pervasive, "NID_443E2A3F")!);
         Assert.Equal(0u, (uint)Invoke(Pervasive, "NID_F58EF3A5")!);
-        Assert.True(_harness.Emu.Hle.IsImplemented(0x714EEFB7));
+    }
+
+    [Fact]
+    public void TheGettersAnswerTheWordsAsTheModuleReadThemAtStart()
+    {
+        uint revision = (uint)Invoke(Pervasive, "kscePervasiveGetSoCRevision")!;
+        uint misc = (uint)Invoke(Pervasive, "PageAddress", 0xE3100000u)!;
+        VitaSharp.Core.Memory.GuestMemory.W32(misc, 0x12345678);
+        VitaSharp.Core.Memory.GuestMemory.W32(misc + 0x304, 0x9ABC);
+        Assert.Equal(revision, (uint)Invoke(Pervasive, "kscePervasiveGetSoCRevision")!);
+        Assert.Equal(0u, (uint)Invoke(Pervasive, "NID_443E2A3F")!);
     }
 
     [Fact]

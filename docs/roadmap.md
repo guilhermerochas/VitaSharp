@@ -2109,8 +2109,9 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   eventos que o VitaSharp tem (bateria, alarme, botão de energia). Antes: fonte confiável para os valores de hardware.
 - [ ] [P3][G] ScePervasiveForDriver (lowio.skprx do FW 3.74, 156 exportações): feitas as páginas de reset, gate,
   base clock e misc em memória de kernel com o layout físico, os getters de página, o UartSetBaudrate e os getters de
-  identificação do SoC (default: sem valor documentado de uma unidade real). Fora de escopo: as 31 que passam a
-  mudança ao secure monitor (smc 0x110, 0x111, 0x113, 0x114; TrustZone, ver a regra do processador de segurança).
+  identificação do SoC (palavras da página misc ao ligar de um PCH-1000: revisão 0x80000042, CXD5315GG; as outras
+  0, sem importador no FW). Fora de escopo: as 31 que passam a mudança ao secure monitor (smc 0x110, 0x111, 0x113,
+  0x114; TrustZone, ver a regra do processador de segurança).
   Falta: kscePervasiveDsiSetPixelClock, NID_243D0E78 e NID_7E813FC5 (tabela de 20 pixel clocks do módulo e o estado
   por porta DSI) e NID_E9D95643 (troca do clock base pelo caminho de transição da tabela do módulo).
 - [ ] [P3][G] sceAppMgrPspSaveDataRootMount (HLE) escreve `ux0:pspemu` como ponto de montagem sem registrar uma
