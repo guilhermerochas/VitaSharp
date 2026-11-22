@@ -293,14 +293,22 @@ public sealed partial class UsseTranslator
             {
                 // memory written by the program (Croixleur Sigma skins its meshes in a vertex program that stores the
                 // vertices for later draws): only through a mapped slot's pointer, into the renderer's mirror of
-                // guest memory; 32-bit words only (a narrower store would have to merge into its word)
-                if (!ShaderGenerator.MemoryStores(_program.IsVertex) || type != DataType.F32)
+                // guest memory; 32-bit words, and 16/8-bit values merged into their word (storeMemory16/8)
+                if (!ShaderGenerator.MemoryStores(_program.IsVertex) || type == DataType.Unk)
                 {
-                    Warnings.Add(type != DataType.F32 ? $"buffer store of {type} unsupported" : "buffer store unsupported (no shader stores on this device)");
+                    Warnings.Add(type == DataType.Unk ? "buffer store of an unknown data type" : "buffer store unsupported (no shader stores on this device)");
                     continue;
                 }
                 WritesMemory = true;
-                Line($"storeMemory({baseAddr}, {Load(toStore, 1, storeOff)});");
+                if (type == DataType.F32)
+                {
+                    Line($"storeMemory({baseAddr}, {Load(toStore, 1, storeOff)});");
+                }
+                else
+                {
+                    Line($"{(type == DataType.Int16 ? "storeMemory16" : "storeMemory8")}({baseAddr}, int({Load(toStore, 1, storeOff)}));");
+                }
+
                 continue;
             }
             int words = totalBytes / 4;

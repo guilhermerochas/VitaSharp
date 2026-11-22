@@ -3416,6 +3416,17 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   também com +TileBased). Testar: no celular, Tearaway (sombras dos volumes de papel, que multiplicam por essa palavra)
   como no PC; no PC com VITASHARP_MSAA=ss, o mesmo.
 
+- [ ] (22/11/2026, na release, falta testar) [P3][M] Memória gravada por programas de shader (VLDST store) em qualquer
+  memória mapeada para a GPU e em todos os tamanhos (fix/rend1): os stores de 16 e 8 bits (antes descartados com
+  aviso) gravam os seus bytes do word com dois atômicos (os outros bytes ficam), e a memória fora da CDRAM (LPDDR
+  mapeada com sceGxmMapMemory) ganha um lugar numa área de 16 MB do espelho, lida pelos draws seguintes (slots
+  mapeados e streams de vértices) até a CPU gravar as páginas, como a CDRAM; antes ia para a cópia temporária do quadro
+  e os draws seguintes liam a memória antiga do guest. Achado no caminho e corrigido: o primeiro store da sessão
+  contava como gravação posterior da CPU o que ela gravou antes dele e ainda não varrido (os draws seguintes liam a
+  cópia velha). `GeneratorVersion` 33. Testes: `RendererMemoryStoreTests` (float, byte e meia palavra gravados por um
+  programa e lidos por outro no mesmo quadro e no seguinte, em LPDDR e CDRAM, também +TileBased; CPU regravando
+  devolve a memória ao guest). Testar: Croixleur Sigma (seleção de personagem e diálogos): modelos 3D como antes.
+
 ## Bugs em aberto
 - [ ] [P2][G] CI: no runner Linux os testes de GPU do renderer são pulados ("shaderc not available ... install
   libshaderc-dev"), então a "passagem" do Linux não testa o renderer (achado do cifix12, 21/11/2026). Instalar o
@@ -5890,14 +5901,13 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   conteúdo do início da cena (o quadro anterior) e o resultado acumulava até ficar branco (fundo branco no título, na
   seleção de personagem e nos diálogos); a área do desenho agora é recortada pelo viewport. Seleção de personagem,
   diálogos e o cenário 3D a ~30 fps (`croixleur_boot`)
-- [ ] [P3][M] Memória gravada por programas de shader (VLDST store): só funciona para endereços na CDRAM e para palavras de 32
-  bits; o que a GPU grava não volta para a memória do guest (a CPU que ler essa memória vê o conteúdo antigo), e uma
-  escrita da CPU em qualquer página da faixa devolve a faixa inteira à cópia do guest. Ver se algum jogo lê esses
-  dados na CPU ou grava fora da CDRAM (aviso `a program stores to memory at ..., outside CDRAM`) (31/10/2026, branch
+- [ ] [P3][M] Memória gravada por programas de shader (VLDST store): o que a GPU grava não volta para a memória do guest
+  (a CPU que ler essa memória vê o conteúdo antigo). Para devolver é preciso saber os bytes que o programa gravou de
+  fato (a faixa anotada é a janela inteira do slot, até 1 MB, onde a CPU grava outros dados no mesmo quadro: copiar a
+  janela inteira de volta sobrescreveria esses dados), por exemplo com os limites min/max gravados por draw num buffer
+  de extensões, e devolver só isso quando o quadro termina. Ver se algum jogo lê esses dados na CPU (31/10/2026, branch
   fix/croixleur)
-  Conferido (10/11/2026, agente B, fix/bugs-b-2): nenhum dos 11 logs e 13 gravações do usuário nem as execuções dos
-  agentes no `<scratchpad>` têm o aviso `a program stores to memory at ..., outside CDRAM`; o único jogo conhecido com
-  VLDST store é o Croixleur (CDRAM). Sem jogo que precise, não mexi (fica aberto até aparecer o aviso)
+  Entrega movida para "Corrigido, falta o usuário testar" (stores de 16/8 bits e fora da CDRAM, rend1, 22/11/2026); o resto segue aberto aqui.
 
 - [x] The Deer God (PCSB01070): engasgos no gameplay (30/10/2026, main 4603a03, logs
   `20261030_230111_PCSB01070` e `20261030_230208_PCSB01070`). Roda a 60 fps, mas cai de repente para 12–16 fps por
