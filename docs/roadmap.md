@@ -4170,7 +4170,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   dele, como no vídeo do Vita real (`<scratchpad>\bA\proofs\bom_live_flashlight.png`, `..._flashlight2.png`). O save
   state da gravação do usuário não carrega mais (formato de outra versão), por isso não deu para repetir o ponto exato
   dela; falta o usuário confirmar no ponto dele
-- [ ] [P3][M] Salt and Sanctuary (PCSE01023): logo da Ska Studios pisca na introdução (relato do usuário, 08/11/2026,
+- [x] (22/11/2026: não é bug do emulador. A Ska Studios listou no lançamento do Vita, 28/03/2017, como problema conhecido do próprio jogo: "Logos and icon on the launch loading screens flicker" (ska-studios.com/?p=12334); a cópia do usuário é a 01.00 e o VitaSharp reproduz o que o jogo manda (viewport zerada nos quadros ímpares, salt1). Reabre se o usuário instalar um patch e a pisca continuar) [P3][M] Salt and Sanctuary (PCSE01023): logo da Ska Studios pisca na introdução (relato do usuário, 08/11/2026,
   `captures\PCSE01023_20261108_220030_tudo`). Achados (não resolvido): o replay reproduz (quadros no 0x66600000 claros,
   ~3,3x os do 0x66900000); os dois quadros têm os mesmos 5 desenhos (quad preto em tela cheia, um mask update em tela
   cheia com stencil ALWAYS, e três sprites aditivos com alfa crescendo suave), mesmas texturas (md5 iguais). O desenho
