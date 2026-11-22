@@ -78,6 +78,12 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
      decodificado pelo VitaSharp e por uma referência aberta (LibAtrac9 etc.), comparando amostra a amostra; efeitos
      do NGS contra a matemática documentada; buracos/underrun/sincronia viram critério de reprovação. No CI, fluxos
      sintéticos.
+  Fontes além dos jogos do usuário: o compilador de shaders da Sony (`libshacccg`, rodando de verdade no emulador)
+  compilando programas Cg sintéticos nossos; homebrews e ports abertos (VitaDB, vitaGL, vitasdk); e shaders USSE
+  aleatórios válidos contra o interpretador.
+  A frente 2 começa em 22/11/2026 (1 dos 4 agentes, por blocos: formatos de textura e swizzle; blend e alfa;
+  profundidade e stencil; MSAA), com a referência por pixel escrita do zero (sem reaproveitar o código testado) e cada
+  fórmula citando a fonte. As outras frentes ficam só no roadmap até nova ordem.
   4. HLE contra o firmware real: para cada função que os jogos importam (censo), chamar o HLE e o módulo real (LLE)
      com os mesmos argumentos (incluindo casos-limite) e comparar retorno e efeitos na memória.
   5. (Depende do OK do usuário, esbarra na regra de agentes não validarem em jogos) rodada automática local dos jogos
