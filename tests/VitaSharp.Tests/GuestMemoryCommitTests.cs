@@ -133,7 +133,7 @@ public sealed unsafe partial class GuestMemoryCommitTests(GuestMemoryFixture fix
         }
     }
 
-    /// <summary>The first 32 MB block from <paramref name="region"/> on whose pages at least half were never used
+    /// <summary>The first free 32 MB block from <paramref name="region"/> on whose pages at least half were never used
     /// in this test process: other tests share the one guest memory, and a Windows section page they used stays
     /// committed, so a fixed address can be wholly used before this test runs.</summary>
     private uint MostlyUntouchedBlock(uint region)
@@ -149,7 +149,8 @@ public sealed unsafe partial class GuestMemoryCommitTests(GuestMemoryFixture fix
             }
 
             int untouched = mayHoldData.Count(used => !used);
-            if (untouched * 2 >= mayHoldData.Length)
+            bool free = !fixture.Memory.Blocks().Any(block => block.Address < addr + BlockSize && addr < block.Address + block.Size);
+            if (free && untouched * 2 >= mayHoldData.Length)
             {
                 return addr;
             }
