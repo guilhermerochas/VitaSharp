@@ -26,6 +26,24 @@ public sealed class DeviceInfoReportTests(GuestMemoryFixture fixture) : IDisposa
         return DeviceCapacity.Of(host);
     }
 
+    /// <summary>Runs <paramref name="report"/> until the host drive's free space is the same before and after it (other
+    /// processes write to the drive meanwhile), then checks the block against that value.</summary>
+    private void AssertReportsTheServedDrive(string device, Func<uint> report, Action<uint, (ulong Total, ulong Free)> check)
+    {
+        const int Attempts = 8;
+        for (int attempt = 1; ; attempt++)
+        {
+            (ulong Total, ulong Free) before = Served(device);
+            uint info = report();
+            (ulong Total, ulong Free) after = Served(device);
+            if (before == after || attempt == Attempts)
+            {
+                check(info, after);
+                return;
+            }
+        }
+    }
+
     private uint FilledBlock()
     {
         uint info = _harness.Alloc(0x20);
@@ -48,9 +66,12 @@ public sealed class DeviceInfoReportTests(GuestMemoryFixture fixture) : IDisposa
     [InlineData("ur0:")]
     public void DevctlReportsTheServedDrive(string device)
     {
-        uint info = FilledBlock();
-        Assert.Equal(0, Call(_harness.Module<IoFileMgr>(), "sceIoDevctl", device, 0x3001, 0u, 0u, info, 0x18u));
-        AssertBlock(info, Served(device[..4]));
+        AssertReportsTheServedDrive(device[..4], () =>
+        {
+            uint info = FilledBlock();
+            Assert.Equal(0, Call(_harness.Module<IoFileMgr>(), "sceIoDevctl", device, 0x3001, 0u, 0u, info, 0x18u));
+            return info;
+        }, AssertBlock);
     }
 
     [Fact]
@@ -69,20 +90,28 @@ public sealed class DeviceInfoReportTests(GuestMemoryFixture fixture) : IDisposa
     [Fact]
     public void AShortBufferGetsOnlyItsBytes()
     {
-        uint info = FilledBlock();
-        Assert.Equal(0, Call(_harness.Module<IoFileMgr>(), "sceIoDevctl", "ux0:", 0x3001, 0u, 0u, info, 16u));
-        (ulong total, ulong free) = Served("ux0:");
-        Assert.Equal(total, GuestMemory.Read<ulong>(info));
-        Assert.Equal(free, GuestMemory.Read<ulong>(info + 8));
-        Assert.Equal(0xAAAAAAAAu, GuestMemory.R32(info + 0x10));
+        AssertReportsTheServedDrive("ux0:", () =>
+        {
+            uint info = FilledBlock();
+            Assert.Equal(0, Call(_harness.Module<IoFileMgr>(), "sceIoDevctl", "ux0:", 0x3001, 0u, 0u, info, 16u));
+            return info;
+        }, (info, served) =>
+        {
+            Assert.Equal(served.Total, GuestMemory.Read<ulong>(info));
+            Assert.Equal(served.Free, GuestMemory.Read<ulong>(info + 8));
+            Assert.Equal(0xAAAAAAAAu, GuestMemory.R32(info + 0x10));
+        });
     }
 
     [Fact]
     public void FiosDevctlForwardsTheSameBlock()
     {
-        uint info = FilledBlock();
-        Assert.Equal(0, Call(_harness.Module<Fios2>(), "sceFiosDevctlSync", 0u, "ux0:", 0x3001, 0u, 0u, info, 0x18u));
-        AssertBlock(info, Served("ux0:"));
+        AssertReportsTheServedDrive("ux0:", () =>
+        {
+            uint info = FilledBlock();
+            Assert.Equal(0, Call(_harness.Module<Fios2>(), "sceFiosDevctlSync", 0u, "ux0:", 0x3001, 0u, 0u, info, 0x18u));
+            return info;
+        }, AssertBlock);
     }
 
     [Fact]
@@ -92,8 +121,11 @@ public sealed class DeviceInfoReportTests(GuestMemoryFixture fixture) : IDisposa
         _harness.Emu.IsSystemProgram = true;
         uint bases = _harness.Alloc(8);
         Assert.Equal(0, Call(compat, "sceCompatAllocCdramWithHole", bases));
-        uint info = FilledBlock();
-        Assert.Equal(0, Call(compat, "sceCompatGetDevInf", info));
-        AssertBlock(info, Served("ux0:"));
+        AssertReportsTheServedDrive("ux0:", () =>
+        {
+            uint info = FilledBlock();
+            Assert.Equal(0, Call(compat, "sceCompatGetDevInf", info));
+            return info;
+        }, AssertBlock);
     }
 }
