@@ -3164,6 +3164,17 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 Itens com correção já na `main` que esperam só a confirmação do usuário no jogo/tela do relato; quem fecha (`[x]`) é o
 usuário. Se o teste falhar, o item volta para "Bugs em aberto".
 
+- [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053), áudio picotado (capturas de 21/11/2026). Causa: o módulo
+  Envelope do NGS só fazia o loop de sustentação (uLoopStart..nLoopEnd) quando o loop terminava no último ponto. O jogo
+  usa 4 pontos com o loop em 1..2 (amplitude 1) e um ponto 3 em 0, então toda voz passava para o 0: os efeitos eram
+  cortados em 5-105 ms (o resto do som tocava mudo, daí os buracos regulares) e os streams estéreo longos ficavam
+  mudos. Os dados Atrac9, os buffers encadeados e os callbacks estavam certos (trace do NGS no rerun, nenhum erro de
+  decodificação). Correção: chegar ao ponto nLoopEnd volta para uLoopStart, em qualquer ponto do envelope
+  (`NgsEnvelopeLoopTests`). No rerun da `_232150_tudo`, buracos de silêncio total >=100 ms dentro do som: 20 → 0. As
+  vozes que já estavam presas no 0 dentro do save state não se recuperam no rerun; num key on novo, tocam.
+  Teste: jogar a mesma área da captura (andar e correr pela cidade): passos e efeitos inteiros, ambiente/música
+  presentes, sem picote; dizer se imagem e som parecem sincronizados.
+
 - [x] (15/11/2026, usuário: fechado; reabre se aparecer de novo) [P1][M] Save state que depende de arquivo temporário (achado do agente P1, 13/11/2026): um estado salvo com um filme do
   avPlayer aberto guarda o caminho de um `%TEMP%itasharp-mp4-*.mp4` da sessão; quando esse arquivo some, o estado
   congela ~5 s depois de carregar ("Load state: module Mp4: the movie ... cannot be opened", as threads do avPlayer
@@ -3422,6 +3433,10 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
 - [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053), áudio picotado (mesmas capturas de 21/11/2026): as vozes NGS
   (Atrac9) têm buracos regulares de ~0,4-0,7 s dentro do som (49 buracos em 20 s no `audio_mix.wav`; só 2,6 s de som);
   a porta MAIN teve gap máximo de 410 ms. O usuário também acha que imagem e som não estão sincronizados.
+  Entrega movida para "Corrigido, falta o usuário testar" (envelope do NGS, fix/ac3audio, 22/11/2026). Segue aberto
+  aqui: a sincronia imagem x som, a confirmar depois da correção (o som cortado pode ter sido o que pareceu
+  dessincronizado). No rerun headless a porta MAIN sai a 93,8 saídas/s, sem underrun; com o host carregado (format-check
+  em paralelo) caiu para 54/s, com um gap de 462 ms: é o ritmo do item P2 abaixo, não o NGS.
 - [ ] [P2][M] Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
   capturas de 21/11/2026, e um engasgo de 132 ms por leitura de arquivo (fileIo 134 ms; quadro 302 do dump da
   `_232150_tudo`).
