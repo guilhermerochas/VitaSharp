@@ -670,11 +670,19 @@ public sealed partial class SysmemKernel
     [Hle(Nid = 0xBDE00106, Library = "SceSysmemForKernel")]
     int NID_BDE00106(uint name) => NID_F49C0BE8(name);
 
-    /// <summary>NID_4E6D8BC3(): 2 when the running thread's process has both kernel access bits (0x30) of its control
-    /// block, 0 otherwise; without a thread control block (TPIDRPRW 0, as VitaSharp's CPU reads it with the thread
-    /// manager in HLE) the firmware's own answer: 0x80027101.</summary>
-    [Hle(Nid = 0x4E6D8BC3, Library = "SceSysmemForKernel", Default = true)]
-    int NID_4E6D8BC3() => unchecked((int)0x80027101);
+    /// <summary>NID_4E6D8BC3(): 2 when the running thread's domain access word (its control block's MMU context
+    /// +0x44, the DACR) has domain 2 in manager mode (0x30), what sceKernelOpenVMDomain sets and
+    /// sceKernelCloseVMDomain takes back; 0 otherwise; no current thread (no control block) 0x80027101.</summary>
+    [Hle(Nid = 0x4E6D8BC3, Library = "SceSysmemForKernel")]
+    int NID_4E6D8BC3()
+    {
+        if (Threadmgr.CurrentControlBlock() == 0)
+        {
+            return unchecked((int)0x80027101);
+        }
+
+        return UserSysMem.VmDomainOpen ? 2 : 0;
+    }
 
     /// <summary>ksceKernelAllocPartitionMemBlock (0x6DB46017)(partition, name, type, size, opt): a block of the
     /// partition (size page-aligned, else 0x80020005; an unknown type 0x80024B01). VitaSharp's partitions are the

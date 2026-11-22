@@ -400,10 +400,10 @@ public sealed partial class SysmemKernel
         return address >= rangeBase && address - rangeBase < rangeSize ? 1 : PhysicalRangeOutside;
     }
 
-    /// <summary>NID_89475192(kind, info): the physical region of kind 1, 8 or 9 (info: +0 its size, 0xC, else
-    /// 0x80020005; +4 base, +8 size). The boot loader describes those regions; VitaSharp's boot has none, so the
-    /// firmware's answer without one: 0x80024300.</summary>
-    [Hle(Nid = 0x89475192, Library = "SceSysmemForDriver", Default = true)]
+    /// <summary>NID_89475192(kind, info): a physical region (info: +0 its size, 0xC, else 0x80020005; +4 base, +8
+    /// size): kind 1 the first chunk of the kernel's physical partition (ScePhyMemPartKD), kinds 8 and 9 the regions
+    /// of the boot's sysmem context (+0x90, +0x94: {page, size}); a kind without its region 0x80024300.</summary>
+    [Hle(Nid = 0x89475192, Library = "SceSysmemForDriver")]
     int NID_89475192(uint kind, uint info)
     {
         if (info == 0 || GuestMemory.R32(info) != 0xC)
@@ -411,7 +411,29 @@ public sealed partial class SysmemKernel
             return SceError.INVALID_ARGUMENT;
         }
 
-        return NoMemoryRegion;
+        if (kind is 8 or 9)
+        {
+            uint region = GuestMemory.R32(SysmemContext() + (kind == 8 ? 0x90u : 0x94u));
+            if (region == 0)
+            {
+                return NoMemoryRegion;
+            }
+
+            GuestMemory.W32(info + 4, GuestMemory.R32(region) << 12);
+            GuestMemory.W32(info + 8, GuestMemory.R32(region + 4));
+            return 0;
+        }
+
+        uint partition = kind == 1 ? GuestMemory.R32(SysmemContext() + SysmemContextKernelPartition) : 0;
+        uint chunk = partition == 0 ? 0 : GuestMemory.R32(partition + 0x7C);
+        if (chunk == 0)
+        {
+            return NoMemoryRegion;
+        }
+
+        GuestMemory.W32(info + 4, GuestMemory.R32(chunk + 4));
+        GuestMemory.W32(info + 8, GuestMemory.R32(chunk + 8));
+        return 0;
     }
 
     // ------------------------------------------------------------------ attributes of a block's pages, maps, remaps

@@ -546,68 +546,104 @@ public sealed partial class IoFileMgr
         return VfsMountRequest(param);
     }
 
-    /// <summary>The I/O manager's file operations on a guest file system's file (one argument block): NULL
-    /// 0x80010016; guest file systems are not mounted (0x80010030).</summary>
-    [Hle(Nid = 0x0E518FA9, Library = "SceIofilemgrForDriver", Default = true)]
+    /// <summary>
+    /// The argument-block forms of the I/O calls (iofilemgr 3.74: vfsOpen 0x81008b30 and its neighbours), what the
+    /// I/O manager's request thread and ScePfsMgr run: each reads the call's arguments from one block of words and runs
+    /// the same operation as the plain call on every device (the emulator's and the guest-mounted ones), its result the
+    /// call's. A NULL block 0x80010016.
+    /// </summary>
+    [Hle(Nid = 0x0E518FA9, Library = "SceIofilemgrForDriver")]
     int vfsOpen(uint args)
     {
-        return VfsMountRequest(args);
+        if (args == 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        uint flags = GuestMemory.R32(args + 4);
+        if (flags >> 28 != 0)
+        {
+            // the top nibble is the caller's request kind, not an open flag
+            flags &= 0x0FFFFFFF;
+        }
+
+        return sceIoOpen(GuestMemory.ReadCString(GuestMemory.R32(args)), (int)flags, (int)GuestMemory.R32(args + 8));
     }
 
-    /// <summary>vfsClose(args).</summary>
-    [Hle(Nid = 0x1AE14011, Library = "SceIofilemgrForDriver", Default = true)]
+    /// <summary>vfsClose(args { fd }).</summary>
+    [Hle(Nid = 0x1AE14011, Library = "SceIofilemgrForDriver")]
     int vfsClose(uint args)
     {
-        return VfsMountRequest(args);
+        return args == 0 ? VFS_ERR_INVAL : sceIoClose((int)GuestMemory.R32(args));
     }
 
-    /// <summary>vfsRead(args).</summary>
-    [Hle(Nid = 0x809892C1, Library = "SceIofilemgrForDriver", Default = true)]
+    /// <summary>vfsRead(args { fd, buffer, size }).</summary>
+    [Hle(Nid = 0x809892C1, Library = "SceIofilemgrForDriver")]
     int vfsRead(uint args)
     {
-        return VfsMountRequest(args);
+        return args == 0 ? VFS_ERR_INVAL : sceIoRead((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), GuestMemory.R32(args + 8));
     }
 
-    /// <summary>vfsWrite(args).</summary>
-    [Hle(Nid = 0x8598ADC3, Library = "SceIofilemgrForDriver", Default = true)]
+    /// <summary>vfsWrite(args { fd, buffer, size }).</summary>
+    [Hle(Nid = 0x8598ADC3, Library = "SceIofilemgrForDriver")]
     int vfsWrite(uint args)
     {
-        return VfsMountRequest(args);
+        return args == 0 ? VFS_ERR_INVAL : sceIoWrite((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), GuestMemory.R32(args + 8));
     }
 
-    /// <summary>vfsPread(args).</summary>
-    [Hle(Nid = 0x0B54F9E0, Library = "SceIofilemgrForDriver", Default = true)]
+    /// <summary>vfsPread(args { fd, buffer, size, pad, offset (64-bit, words 4 and 5) }).</summary>
+    [Hle(Nid = 0x0B54F9E0, Library = "SceIofilemgrForDriver")]
     int vfsPread(uint args)
     {
-        return VfsMountRequest(args);
+        if (args == 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        return sceIoPread((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), GuestMemory.R32(args + 8), (long)GuestMemory.Read<ulong>(args + 0x10));
     }
 
-    /// <summary>vfsPwrite(args).</summary>
-    [Hle(Nid = 0xE5DEA6B7, Library = "SceIofilemgrForDriver", Default = true)]
+    /// <summary>vfsPwrite(args { fd, buffer, size, pad, offset (64-bit, words 4 and 5) }).</summary>
+    [Hle(Nid = 0xE5DEA6B7, Library = "SceIofilemgrForDriver")]
     int vfsPwrite(uint args)
     {
-        return VfsMountRequest(args);
+        if (args == 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        return sceIoPwrite((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), GuestMemory.R32(args + 8), (long)GuestMemory.Read<ulong>(args + 0x10));
     }
 
-    /// <summary>vfsIoctl(args).</summary>
-    [Hle(Nid = 0xC1DD4317, Library = "SceIofilemgrForDriver", Default = true)]
+    /// <summary>vfsIoctl(args { fd, command, input, input size, output, output size }).</summary>
+    [Hle(Nid = 0xC1DD4317, Library = "SceIofilemgrForDriver")]
     int vfsIoctl(uint args)
     {
-        return VfsMountRequest(args);
+        if (args == 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        return sceIoIoctl((int)GuestMemory.R32(args), (int)GuestMemory.R32(args + 4), GuestMemory.R32(args + 8), GuestMemory.R32(args + 0xC), GuestMemory.R32(args + 0x10), GuestMemory.R32(args + 0x14));
     }
 
-    /// <summary>vfsChstat(args).</summary>
-    [Hle(Nid = 0xBCE4865B, Library = "SceIofilemgrForDriver", Default = true)]
+    /// <summary>vfsChstat(args { path, stat, bits }).</summary>
+    [Hle(Nid = 0xBCE4865B, Library = "SceIofilemgrForDriver")]
     int vfsChstat(uint args)
     {
-        return VfsMountRequest(args);
+        if (args == 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        return sceIoChstat(GuestMemory.ReadCString(GuestMemory.R32(args)), GuestMemory.R32(args + 4), (int)GuestMemory.R32(args + 8));
     }
 
-    /// <summary>vfsChstatByFd(args).</summary>
-    [Hle(Nid = 0x7517FE29, Library = "SceIofilemgrForDriver", Default = true)]
+    /// <summary>vfsChstatByFd(args { fd, stat, bits }).</summary>
+    [Hle(Nid = 0x7517FE29, Library = "SceIofilemgrForDriver")]
     int vfsChstatByFd(uint args)
     {
-        return VfsMountRequest(args);
+        return args == 0 ? VFS_ERR_INVAL : sceIoChstatByFd((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), (int)GuestMemory.R32(args + 8));
     }
 
     /// <summary>vfsBuffCacheCtl(vnode, ?, offset, size, buffer): the buffer cache of a guest file system's vnode:

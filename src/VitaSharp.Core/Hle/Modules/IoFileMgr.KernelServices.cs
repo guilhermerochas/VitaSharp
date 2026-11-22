@@ -354,12 +354,27 @@ public sealed partial class IoFileMgr
         return VFS_ERR_INVAL;
     }
 
-    /// <summary>NID_A39A9CA7(?, ?, device, param): removes a block device (vfsRmdev): NULLs 0x80010016; guest
-    /// mounts are not wired (0x80010030).</summary>
+    /// <summary>NID_A39A9CA7(path, ?, 0, 0): vfsRmdev of <paramref name="path"/> with flags 1 (iofilemgr 3.74
+    /// 0x81019440 builds { path, 1 }); a third or fourth argument that is not 0 is 0x80010016.</summary>
     [Hle(Nid = 0xA39A9CA7, Library = "SceIofilemgrForDriver", Default = true)]
-    int ksceIofilemgr_A39A9CA7(uint first, uint second, uint device, uint param)
+    int ksceIofilemgr_A39A9CA7(uint path, uint second, uint third, uint fourth)
     {
-        return device == 0 || param == 0 ? VFS_ERR_INVAL : VFS_ERR_UNSUP;
+        if (third != 0 || fourth != 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        uint param = Emu.Memory.Alloc(8, "kernel:vfsRmdevParam", MemoryRegion.Kernel);
+        try
+        {
+            GuestMemory.W32(param, path);
+            GuestMemory.W32(param + 4, 1);
+            return vfsRmdev(param);
+        }
+        finally
+        {
+            Emu.Memory.Free(param);
+        }
     }
 
     /// <summary>NID_DD46CD63(mount, ?, ?): the exFAT driver's mount lookup: no guest mount (0x8001000C).</summary>
