@@ -1037,7 +1037,7 @@ public static class Program
         Console.WriteLine("               --precompile-code=on|off  translate the ARM code before the game starts: the blocks earlier sessions ran, or the code reached from the modules' entry points (default on; \"cancel-code-precompile\" on stdin stops the wait)");
         Console.WriteLine("               --code-cache=<dir>|off  code cache folder (the ARM blocks each module ran; default <data>/codecache)");
         Console.WriteLine("               --compile-on-program-load=on|off  compile a program's shaders and pipeline on worker threads when the game creates it (usually while loading), before its first draw (default on)");
-        Console.WriteLine("               --async-pipelines=on|off  background pipelines only (default on), --shader-workers=N (default auto)");
+        Console.WriteLine("               --async-pipelines=on|off  background pipelines only (default on), --shader-workers=N (fixed; default from the CPU budget: 90% of the processors, 2 left to the emulation while the GPU thread works)");
         Console.WriteLine("               --host-prio=on|off  guest threads and GPU worker above normal host priority (default on)");
         Console.WriteLine("               --gpu-profile=adreno|mali|desktop  emulate a mobile GPU class: its missing features, limits and driver quirks");
         Console.WriteLine("               --res-scale=0.75|0.5|2|3|4  internal resolution: below native (faster on GPU-bound games, softer) or 2x-4x (sharper, costs GPU)");

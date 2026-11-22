@@ -704,6 +704,111 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
     }
 
     /// <summary>
+    /// The shader workers follow the CPU budget (<see cref="ShaderWorkerBudget"/>): while the GPU thread is working only
+    /// the steady share runs, so the guest CPU thread and the GPU thread keep their cores, and while the GPU thread waits
+    /// for a job the whole pool runs, independent jobs in parallel, because the frame cannot go on. The pool used to be a
+    /// fixed half of the processors in every state (a cold replay of a dump: the first frame waited 2-4 s for 2 workers
+    /// on 4 CPUs while 2 cores were idle). Covered: one job running and the other workers held back while the GPU thread
+    /// is held; three jobs at once (the pool) once it waits for the first; back to one when a later frame brings new
+    /// jobs while the GPU thread is held again.
+    /// </summary>
+    [SoftwareVulkanFact]
+    public void ShaderWorkersRunTheWholePoolOnlyWhileTheGpuThreadWaitsForThem()
+    {
+        using IDisposable driver = SoftwareVulkan.Use();
+        string cache = Path.Combine(Path.GetTempPath(), "vitasharp-workerbudget-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var r = new VulkanRenderer(new VulkanRendererOptions
+            {
+                VSync = false,
+                AsyncShaders = true,
+                AsyncPipelines = true,
+                CompileOnProgramLoad = false,
+                WorkerBudget = new ShaderWorkerBudget(Steady: 1, Stall: 3),
+                ShaderCacheDir = cache,
+            });
+            int running = 0, most = 0;
+            var jobGate = new ManualResetEventSlim(false);
+            void JobStarted()
+            {
+                int now = Interlocked.Increment(ref running);
+                int seen;
+                do
+                {
+                    seen = Volatile.Read(ref most);
+                }
+                while (now > seen && Interlocked.CompareExchange(ref most, now, seen) != seen);
+
+                Volatile.Read(ref jobGate).Wait();
+                Interlocked.Decrement(ref running);
+            }
+
+            typeof(VulkanRenderer).GetProperty("TestJobStarted", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(r, (Action)JobStarted);
+            int Parked() => Stat(r, "_workersParked");
+            // a stuck pool fails the test instead of hanging it; the result never depends on how long anything takes
+            void Until(Func<bool> condition, string what) => Assert.True(SpinWait.SpinUntil(condition, TimeSpan.FromMinutes(2)), what);
+            var gpuHeld = new ManualResetEventSlim(false);
+            using var h = new HleHarness(fx, "workerbudget");
+            try
+            {
+                h.Emu.Gpu.Backend = new PrefetchedFirstBackend(r, gpuHeld, waitForWorkers: false);
+                r.BeginTitle("PCSA00085");
+                var w = new RendererTextureTests.Workload(h);
+                List<uint> plain = Enumerable.Range(0, w.Textures.Count).Where(i => !w.CubeTextures.Contains(w.Textures[i]))
+                    .GroupBy(i => w.TextureFormats[i]).Select(g => w.Textures[g.First()]).ToList();
+                Assert.True(plain.Count >= 7, $"{plain.Count} texture formats");
+
+                // a frame of new draws, the GPU thread held: one worker runs, the other two wait (the steady share)
+                w.Textures.Clear();
+                w.Textures.AddRange(plain.Take(4));
+                w.Run(4, finish: false);
+                Until(() => Volatile.Read(ref running) >= 1 && (Parked() == 2 || Volatile.Read(ref running) > 1), "one job running, two workers held back");
+                Assert.Equal(1, Volatile.Read(ref running));
+
+                // the GPU thread reaches the first draw and waits for its shader: the whole pool runs
+                gpuHeld.Set();
+                Until(() => Volatile.Read(ref running) == 3, "three jobs at once while the GPU thread waits");
+                jobGate.Set();
+                h.Emu.Gpu.WaitIdle();
+                Assert.True(r.WaitForBackgroundCompiles(CancellationToken.None));
+
+                // the wait is over: a later frame of new draws, the GPU thread held again, runs one job at a time again
+                gpuHeld.Reset();
+                Volatile.Write(ref jobGate, new ManualResetEventSlim(false));
+                w.Textures.Clear();
+                w.Textures.AddRange(plain.Skip(4).Take(3));
+                w.Run(3, finish: false);
+                Until(() => Volatile.Read(ref running) >= 1 && (Parked() == 2 || Volatile.Read(ref running) > 1), "one job running again after the wait");
+                Assert.Equal(1, Volatile.Read(ref running));
+                jobGate.Set();
+                gpuHeld.Set();
+                h.Emu.Gpu.WaitIdle();
+                w.Terminate();
+            }
+            finally
+            {
+                jobGate.Set();
+                gpuHeld.Set();
+                h.Emu.Gpu.WaitIdle();
+                h.Emu.Gpu.Backend = null;
+                r.Dispose();
+            }
+
+            Assert.Equal(3, most);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(cache, true);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    /// <summary>
     /// The ceiling of "compilar shaders ao carregar o programa": a surface-dependent program (programmable blending) is
     /// built at creation for its primary prediction and for each known surface, which multiplies in a game with many
     /// programs and surfaces. Covered: a load queues at most the budget of such combinations (the rest is left out); a

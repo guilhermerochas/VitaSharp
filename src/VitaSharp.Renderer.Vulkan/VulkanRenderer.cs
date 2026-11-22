@@ -51,8 +51,11 @@ public sealed class VulkanRendererOptions
     /// <summary>With <see cref="CompileOnProgramLoad"/>: the pipelines queued per load for the combinations of a program
     /// with a surface other than its primary prediction (a load ends after presents without a program created).</summary>
     public int ProgramLoadBudget = 256;
-    /// <summary>Shader worker threads, 0 = automatic (half the logical processors, 1-6). VITASHARP_SHADER_WORKERS overrides it.</summary>
+    /// <summary>Shader worker threads, a fixed number in every state; 0 = automatic, from the CPU budget
+    /// (<see cref="ShaderWorkerBudget.ForHost"/>). VITASHARP_SHADER_WORKERS overrides it.</summary>
     public int ShaderWorkers;
+    /// <summary>With <see cref="ShaderWorkers"/> 0: the budget to use instead of this machine's (tests; null = the host's).</summary>
+    public ShaderWorkerBudget? WorkerBudget;
     /// <summary>Presents counted before this renderer's first one (GPU dump replay: frames keep the recorded numbers).</summary>
     public long FirstPresent;
     /// <summary>adreno|mali|desktop: behave as that device class (missing features, limits, driver quirks) to test

@@ -475,18 +475,27 @@ public sealed unsafe partial class VulkanRenderer
     /// </summary>
     public bool WaitForBackgroundCompiles(CancellationToken cancel)
     {
-        var spin = new SpinWait();
-        while (!_shaderJobs.IsEmpty || !_pipelineJobs.IsEmpty || !_inflight.IsEmpty || !_pipelineInflight.IsEmpty || Volatile.Read(ref _pipelineJobsRunning) != 0)
+        // the caller waits for the workers: the whole pool may run (ShaderWorkerBudget)
+        BeginWaitForWorkers();
+        try
         {
-            if (cancel.IsCancellationRequested || _stopShaderJobs || _deviceLost)
+            var spin = new SpinWait();
+            while (!_shaderJobs.IsEmpty || !_pipelineJobs.IsEmpty || !_inflight.IsEmpty || !_pipelineInflight.IsEmpty || Volatile.Read(ref _pipelineJobsRunning) != 0)
             {
-                return false;
+                if (cancel.IsCancellationRequested || _stopShaderJobs || _deviceLost)
+                {
+                    return false;
+                }
+
+                spin.SpinOnce(sleep1Threshold: 20);
             }
 
-            spin.SpinOnce(sleep1Threshold: 20);
+            return true;
         }
-
-        return true;
+        finally
+        {
+            EndWaitForWorkers();
+        }
     }
 
     /// <summary>Debug mode: the pipelines built at program load and by the draw prefetch, by fragment program hash (with
