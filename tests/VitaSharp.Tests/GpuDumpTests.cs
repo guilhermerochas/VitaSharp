@@ -128,6 +128,14 @@ public sealed class GpuDumpTests(GuestMemoryFixture fixture) : IDisposable
             Draw(vu1, fu, 0x81400000), Draw(vu2, fu, 0x81500000), Draw(vu3, fu, 0x81600000), Draw(vu1, [], 0x81700000),
             new MidSceneFlushCommand(),
             new EndSceneCommand { Notifications = [(0x81000010, 5), (0x81000014, 6)] },
+            // sceGxmBeginSceneEx with another load surface: its addresses survive the round trip
+            new BeginSceneCommand { Width = 960, Height = 544,
+                Depth = new DepthSurfaceInfo(0x61000000, 0x61200000, 960, 0x4000, 1, 0.5f, 7, true, true) { LoadDepthData = 0x61400000, LoadStencilData = 0x61600000 } },
+            new EndSceneCommand(),
+            // a second Ex scene, same store surface, another load surface (only its depth moves): read back as its own
+            new BeginSceneCommand { Width = 960, Height = 544,
+                Depth = new DepthSurfaceInfo(0x61000000, 0x61200000, 960, 0x4000, 1, 0.25f, 3, true, false) { LoadDepthData = 0x61800000, LoadStencilData = 0x61200000 } },
+            new EndSceneCommand(),
             new CallbackCommand { WriteAddress = 0x62000000, WriteSize = 4096, Action = () => { } },
             new SignalCommand { Signal = () => { } },
             new FinishCommand(),

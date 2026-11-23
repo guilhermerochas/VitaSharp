@@ -473,4 +473,94 @@ public sealed class RendererSurfaceReuseTests(GuestMemoryFixture fx)
         Assert.True(keptWhereFailing == total, $"{setup}: {total - keptWhereFailing} of {total} pixels were drawn where the earlier scenes' depth (0.2) fails the test");
         Assert.True(drawnWherePassing > total * 9 / 10, $"{setup}: only {drawnWherePassing} of {total} pixels were drawn where the earlier scenes' depth (1.0) passes the test");
     }
+
+    /// <summary>
+    /// sceGxmBeginSceneEx loads the depth/stencil of one surface and stores it to another (libgxm, FW 3.74): the force
+    /// load bit is the load surface's, the force store bit the store surface's. A scene writes texels 0-31 of each row
+    /// of surface A at 0.2 (the rest is its background, 1.0); an Ex scene loads A (load bit on A only) and stores to B
+    /// (store bit on B only, background 0.0), writing texels 32-47 at 0.2; a scene that loads B draws the whole surface
+    /// at 0.75: with LESS only texels 48-63 pass, with GREATER_EQUAL only texels 0-47. The Ex scene took both bits from
+    /// the store surface, so it cleared B to its background instead of loading A. Also as a tile-based GPU, which keeps
+    /// a scene's depth past its end only when the scene stores it (the store surface's bit).
+    /// </summary>
+    [SoftwareVulkanTheory]
+    [InlineData(DepthLess, null)]
+    [InlineData(DepthGreaterEqual, null)]
+    [InlineData(DepthLess, "+TileBased")]
+    [InlineData(DepthGreaterEqual, "+TileBased")]
+    public void SceneExLoadsTheLoadSurfaceAndStoresToTheStoreSurface(uint depthFunc, string? gpuQuirks)
+    {
+        const int Edge = W * 3 / 4;
+        using IDisposable driver = SoftwareVulkan.Use();
+        byte[] image = Run("vkreuse-scene-ex", (harness, workload) =>
+        {
+            Gxm gxm = harness.Module<Gxm>();
+            for (uint i = 0; i < W * H; i++)
+            {
+                GuestMemory.W32(workload.Data + i * 4, PatternTexel(i));
+            }
+
+            uint loadSurface = harness.Alloc(0x20), loadData = harness.Alloc(W * H * 4);
+            uint storeSurface = harness.Alloc(0x20), storeData = harness.Alloc(W * H * 4);
+            Assert.Equal(0, Call(gxm, "sceGxmDepthStencilSurfaceInit", loadSurface, 0x00044000u, 0u, (uint)W, loadData, 0u));
+            Assert.Equal(0, Call(gxm, "sceGxmDepthStencilSurfaceInit", storeSurface, 0x00044000u, 0u, (uint)W, storeData, 0u));
+            Invoke(gxm, "sceGxmDepthStencilSurfaceSetBackgroundDepth", storeSurface, 0f);
+            uint colorA = harness.Alloc(0x40), dataA = harness.Alloc(W * H * 4);
+            Assert.Equal(0, Call(gxm, "sceGxmColorSurfaceInit", colorA, 0u, 0u, 0u, 0u, (uint)W, (uint)H, (uint)W, dataA));
+
+            // 1. surface A: cleared to its background (1.0), texels 0-31 at 0.2, stored
+            Invoke(gxm, "sceGxmDepthStencilSurfaceSetForceStoreMode", loadSurface, 4u);
+            Assert.Equal(0, Call(gxm, "sceGxmBeginScene", workload.Ctx, 0u, workload.Rt, 0u, 0u, 0u, colorA, loadSurface));
+            Setup(gxm, workload, DepthAlways, depthWrite: true);
+            DrawColumns(harness, gxm, workload, 0, W / 2, -0.6f);
+            Assert.Equal(0, Call(gxm, "sceGxmEndScene", workload.Ctx, 0u, 0u));
+
+            // 2. the Ex scene: the load bit only on A, the store bit only on B; texels 32-47 at 0.2
+            Invoke(gxm, "sceGxmDepthStencilSurfaceSetForceStoreMode", loadSurface, 0u);
+            Invoke(gxm, "sceGxmDepthStencilSurfaceSetForceLoadMode", loadSurface, 2u);
+            Invoke(gxm, "sceGxmDepthStencilSurfaceSetForceStoreMode", storeSurface, 4u);
+            Assert.Equal(0, Call(gxm, "sceGxmBeginSceneEx", workload.Ctx, 0u, workload.Rt, 0u, 0u, 0u, colorA, loadSurface, storeSurface));
+            Setup(gxm, workload, DepthAlways, depthWrite: true);
+            DrawColumns(harness, gxm, workload, W / 2, Edge, -0.6f);
+            Assert.Equal(0, Call(gxm, "sceGxmEndScene", workload.Ctx, 0u, 0u));
+
+            // 3. the presented scene loads B and draws the whole surface at 0.75
+            Invoke(gxm, "sceGxmDepthStencilSurfaceSetForceLoadMode", storeSurface, 2u);
+            Assert.Equal(0, Call(gxm, "sceGxmBeginScene", workload.Ctx, 0u, workload.Rt, 0u, 0u, 0u, workload.Color, storeSurface));
+            Setup(gxm, workload, depthFunc, depthWrite: false);
+            Assert.Equal(0, Call(gxm, "sceGxmSetVertexStream", workload.Ctx, 0u, workload.Verts));
+            Assert.Equal(0, Call(gxm, "sceGxmDraw", workload.Ctx, 0u, 0u, workload.Idx, 3u));
+            Assert.Equal(0, Call(gxm, "sceGxmEndScene", workload.Ctx, 0u, 0u));
+            harness.Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(workload.Data, W, W, H, DisplayPixelFormat.A8B8G8R8) });
+            Assert.Equal(0, Call(gxm, "sceGxmFinish", workload.Ctx));
+        }, multisample: 0, scaleMode: 0, gpuQuirks: gpuQuirks);
+
+        int keptWhereFailing = 0, failing = 0, drawnWherePassing = 0, passing = 0;
+        for (int y = 2; y < H - 2; y++)
+        {
+            for (int x = 2; x < W - 2; x++)
+            {
+                if (Math.Abs(x - Edge) <= 2)
+                {
+                    continue;
+                }
+
+                bool passes = depthFunc == DepthLess ? x >= Edge : x < Edge;
+                bool kept = Near(At(image, x, y), Pattern(x, y, W));
+                if (passes)
+                {
+                    passing++;
+                    drawnWherePassing += kept ? 0 : 1;
+                }
+                else
+                {
+                    failing++;
+                    keptWhereFailing += kept ? 1 : 0;
+                }
+            }
+        }
+        string setup = $"GPU quirks {gpuQuirks ?? "of the device"}";
+        Assert.True(keptWhereFailing == failing, $"{setup}: {failing - keptWhereFailing} of {failing} pixels were drawn where the loaded and stored depth (0.2) fails the test");
+        Assert.True(drawnWherePassing > passing * 9 / 10, $"{setup}: only {drawnWherePassing} of {passing} pixels were drawn where the loaded depth (1.0) passes the test");
+    }
 }

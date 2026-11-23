@@ -3188,6 +3188,18 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   uma licença que passa nas verificações recebe 0x80020004 com o buffer da chave zerado; os metadados (SKU, tempos,
   flags) continuam. Testes: `NpDrmKernelTests`. Testar: um jogo PS Vita que o usuário já abre pelo Sistema do Vita
   continua abrindo do mesmo jeito.
+- [ ] (23/11/2026, falta testar) [P2][P] sceGxmBeginSceneEx com superfícies de profundidade de carga e de gravação
+  diferentes (fix/gxmex1), como o libgxm 3.74: a palavra de controle da cena junta os bits de carga da superfície de
+  carga (FORCE_LOAD e o lado de carga do formato) com o resto da de gravação (FORCE_STORE incluído); a cena carrega da
+  memória e com o fundo (profundidade/stencil) da superfície de carga e grava na da superfície de gravação. Pares que o
+  libgxm recusa (só um lado ligado, stride diferente, componente carregado que a gravação não grava) devolvem
+  SCE_GXM_ERROR_INVALID_VALUE sem abrir a cena. O renderizador inicia a imagem da superfície de gravação com o conteúdo
+  mais novo da de carga (também com TileBased/Android e com `VITASHARP_DEPTH_SEED=0`); o dump da GPU (versão 3) guarda
+  os endereços de carga. Testes: `GxmFlowTests.SceneExTakesTheLoadBitFromTheLoadSurfaceAndTheStoreBitFromTheStoreSurface`,
+  `RendererSurfaceReuseTests.SceneExLoadsTheLoadSurfaceAndStoresToTheStoreSurface` (com e sem +TileBased),
+  `GpuDumpTests.CommandsRoundTripThroughAFile`. Testar: jogos que usam o BeginSceneEx (no trace de cenas da GPU,
+  `loadDs` diferente de `ds`) sem sombras, reflexos ou profundidade faltando ou piscando onde
+  antes apareciam; Injustice (HUD da luta), MGS3 e LBP continuam com a profundidade carregada certa.
 
 - [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo analisável e reexecutável sem o jogo (feat/capself1,
   `docs/captures.md`): (1) nenhum arquivo da gravação leva dado pessoal: uma última etapa troca, em todo texto e no
@@ -3698,8 +3710,9 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   (nítida contra a 1x); o jogo renderiza a 704x384 e amplia para 960x544, por isso é macia mesmo a 2x.
   Andamento (ac3depth, 23/11/2026; não resolvido): **carregar a profundidade do pré-passe está certo.** No libgxm
   3.74, SetForceLoadMode/SetForceStoreMode só ligam os bits 1/2 da palavra 0 da superfície, que o sceGxmBeginScene
-  repassa ao hardware (o BeginSceneEx tira o load da superfície de carga e o store da de gravação; o
-  sceGxmMidSceneFlush liga os dois para continuar uma cena dividida). Implementada a semântica estrita (a carga só lê
+  repassa ao hardware (o BeginSceneEx tira o load da superfície de carga e o store da de gravação; quando o anel de
+  fragmentos enche, o envio parcial interno liga o store e depois o load para continuar a cena; o sceGxmMidSceneFlush
+  só envia o trabalho de vértices e não mexe nesses bits). Implementada a semântica estrita (a carga só lê
   o que uma cena com FORCE_STORE gravou), o replay sai com o 3D todo preto: o G-buffer não limpa e carregaria a
   própria profundidade do quadro anterior. No aparelho o jogo funciona, então o pré-passe (limpa + oclusores com
   escrita) chega à memória. Cenas do quadro: pré-passe 960x800 (ds 0x61100000, sem load/store; quad ALWAYS que limpa,

@@ -22,8 +22,9 @@ public static class GpuDumpFormat
     public static ReadOnlySpan<byte> Magic => "VSGPUDMP"u8;
     /// <summary>Format version: readers accept files up to this version. 2: the mask update byte of a fragment program
     /// record is a flag byte (bit 0 mask update, bit 1 a u32 + u8 texture coordinate remap follows); version 1 files
-    /// read the same.</summary>
-    public const uint Version = 2;
+    /// read the same. 3: bit 1 of a scene's force-load byte says the load surface's depth and stencil addresses follow
+    /// (sceGxmBeginSceneEx with another load surface); older files read the same.</summary>
+    public const uint Version = 3;
     public const string Extension = ".vsgd";
 
     public const byte ChunkRecords = 1, ChunkEnd = 2;
@@ -578,8 +579,14 @@ public sealed class GpuDumpCodec
                     w.U32(z.Type);
                     w.F32(z.BackgroundDepth);
                     w.U8(z.BackgroundStencil);
-                    w.Bool(z.ForceLoad);
+                    // bit 0: force load; bit 1 (version 3): the load surface's depth and stencil addresses follow
+                    w.U8((byte)((z.ForceLoad ? 1 : 0) | (z.LoadsFromOtherSurface ? 2 : 0)));
                     w.Bool(z.ForceStore);
+                    if (z.LoadsFromOtherSurface)
+                    {
+                        w.U32(z.LoadDepthData);
+                        w.U32(z.LoadStencilData);
+                    }
                 }
                 return true;
             case EndSceneCommand e:
@@ -891,7 +898,21 @@ public sealed class GpuDumpCodec
 
                 if (r.Bool())
                 {
-                    b.Depth = new DepthSurfaceInfo(r.U32(), r.U32(), r.U32(), r.U32(), r.U32(), r.F32(), r.U8(), r.Bool(), r.Bool());
+                    uint depthData = r.U32();
+                    uint stencilData = r.U32();
+                    uint stride = r.U32();
+                    uint format = r.U32();
+                    uint type = r.U32();
+                    float backgroundDepth = r.F32();
+                    byte backgroundStencil = r.U8();
+                    byte loadFlags = r.U8();
+                    bool forceStore = r.Bool();
+                    bool otherLoadSurface = (loadFlags & 2) != 0;
+                    b.Depth = new DepthSurfaceInfo(depthData, stencilData, stride, format, type, backgroundDepth, backgroundStencil, (loadFlags & 1) != 0, forceStore)
+                    {
+                        LoadDepthData = otherLoadSurface ? r.U32() : depthData,
+                        LoadStencilData = otherLoadSurface ? r.U32() : stencilData,
+                    };
                 }
 
                 return b;

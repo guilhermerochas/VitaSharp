@@ -15,8 +15,25 @@ public abstract class GpuCommand
 
 public sealed record ColorSurfaceInfo(uint Data, uint Width, uint Height, uint StrideInPixels, uint ColorFormat, uint SurfaceType, bool Downscale, uint GammaMode);
 
+/// <summary>
+/// The scene's depth/stencil surface as the hardware gets it. <see cref="DepthData"/>/<see cref="StencilData"/> are
+/// where the scene stores; a scene begun with sceGxmBeginSceneEx loads from another surface
+/// (<see cref="LoadDepthData"/>/<see cref="LoadStencilData"/>, the same addresses otherwise). libgxm merges the two
+/// surfaces' control words: the force-load bit and the background come from the load surface, the force-store bit from
+/// the store surface.
+/// </summary>
 public sealed record DepthSurfaceInfo(uint DepthData, uint StencilData, uint StrideInSamples, uint Format, uint Type,
-    float BackgroundDepth, byte BackgroundStencil, bool ForceLoad, bool ForceStore);
+    float BackgroundDepth, byte BackgroundStencil, bool ForceLoad, bool ForceStore)
+{
+    /// <summary>Where a <see cref="ForceLoad"/> scene reads its depth from (default: <see cref="DepthData"/>).</summary>
+    public uint LoadDepthData { get; init; } = DepthData;
+
+    /// <summary>Where a <see cref="ForceLoad"/> scene reads its stencil from (default: <see cref="StencilData"/>).</summary>
+    public uint LoadStencilData { get; init; } = StencilData;
+
+    /// <summary>The scene loads from another surface than the one it stores to.</summary>
+    public bool LoadsFromOtherSurface => LoadDepthData != DepthData || LoadStencilData != StencilData;
+}
 
 /// <summary>Starts a scene (render pass) on a render target.</summary>
 public sealed class BeginSceneCommand : GpuCommand
