@@ -134,6 +134,11 @@ public sealed class VitaSystem
     /// retry) them.</summary>
     internal bool KernelPluginsLoaded { get; set; }
 
+    /// <summary>The firmware HLE functions a kernel plugin's hook took (by library and function NID): the hook's thunk,
+    /// where every process's imports of the function go, as on the Vita every caller reaches the one hooked kernel
+    /// function (<see cref="Hle.HleRegistry.Redirect"/>).</summary>
+    internal System.Collections.Concurrent.ConcurrentDictionary<(uint LibNid, uint Nid), uint> HookRedirects { get; } = new();
+
     private readonly object _kernelGate = new();
     private Emulator? _kernelProcess;
 

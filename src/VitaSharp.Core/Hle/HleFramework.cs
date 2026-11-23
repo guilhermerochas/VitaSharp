@@ -420,19 +420,31 @@ public sealed partial class HleRegistry : IImportResolver
         }
     }
 
-    readonly System.Collections.Concurrent.ConcurrentDictionary<uint, uint> _redirects = new();
+    readonly System.Collections.Concurrent.ConcurrentDictionary<(uint LibNid, uint Nid), uint> _ownRedirects = new();
 
-    /// <summary>Import stubs bound to HLE function <paramref name="nid"/> from now on jump to <paramref name="target"/>
-    /// (a plugin's hook on the firmware export of the function, emulator option "Enable Kernel Plugins").</summary>
-    public void Redirect(uint nid, uint target) => _redirects[nid] = target;
+    /// <summary>The HLE functions plugin hooks took, by library and function NID: the emulated Vita's (its one kernel's
+    /// hooks hold for every process, those that exist and those made later), or this registry's own for an emulator
+    /// made without one (tests).</summary>
+    System.Collections.Concurrent.ConcurrentDictionary<(uint LibNid, uint Nid), uint> Redirects =>
+        _emu.Vita is { } vita ? vita.HookRedirects : _ownRedirects;
 
-    /// <summary>Import stubs of <paramref name="nid"/> bind to the HLE function again.</summary>
-    public void ClearRedirect(uint nid) => _redirects.TryRemove(nid, out _);
+    /// <summary>Import stubs bound to HLE function <paramref name="nid"/> of library <paramref name="libNid"/> from now
+    /// on jump to <paramref name="target"/> (a plugin's hook on the firmware export of the function, emulator option
+    /// "Enable Kernel Plugins"). Another library's function with the same NID (a kernel twin) is another function.</summary>
+    public void Redirect(uint libNid, uint nid, uint target) => Redirects[(libNid, nid)] = target;
+
+    /// <summary>Import stubs of <paramref name="nid"/> of library <paramref name="libNid"/> bind to the HLE function again.</summary>
+    public void ClearRedirect(uint libNid, uint nid) => Redirects.TryRemove((libNid, nid), out _);
 
     /// <summary>A guest-code implementation (<see cref="HleGuestCode"/>) of an implemented NID, placed in the calling
     /// thread's address space; 0 when there is none (or VITASHARP_HLE_GUEST_CODE=0).</summary>
-    public uint GetHleGuestCode(uint nid) => _redirects.TryGetValue(nid, out uint redirect) ? redirect
-        : _impls.ContainsKey(nid) ? HleGuestCode.AddressOf(nid, _emu.Memory, n => GetHleFunctionIndex(n, 0, NidDatabase.Lookup(n)?.Library ?? ""), this) : 0;
+    public uint GetHleGuestCode(uint nid) =>
+        _impls.ContainsKey(nid) ? HleGuestCode.AddressOf(nid, _emu.Memory, n => GetHleFunctionIndex(n, 0, NidDatabase.Lookup(n)?.Library ?? ""), this) : 0;
+
+    /// <summary>The thunk of the plugin hook that took function <paramref name="nid"/> of library
+    /// <paramref name="libNid"/>, else <see cref="GetHleGuestCode(uint)"/>.</summary>
+    public uint GetHleGuestCode(uint nid, uint libNid) =>
+        !Redirects.IsEmpty && Redirects.TryGetValue((libNid, nid), out uint redirect) ? redirect : GetHleGuestCode(nid);
 
     /// <summary>After a save state load: places this build's guest-code routines again (<see cref="HleGuestCode.Replace"/>).</summary>
     public Func<uint, bool> ReplaceGuestCode() => HleGuestCode.Replace(_emu.Memory, n => GetHleFunctionIndex(n, 0, NidDatabase.Lookup(n)?.Library ?? ""), this);

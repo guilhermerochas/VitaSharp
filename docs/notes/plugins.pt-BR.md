@@ -98,11 +98,29 @@ mais novo para o mais antigo), deslocamentos nos segmentos de um módulo, as ent
 injeção de dados (os bytes originais guardados e escritos de volta na liberação) e os códigos de erro do framework
 (0x9001xxxx). Um módulo listado que exporta essas bibliotecas (a cópia do framework do usuário) não é carregado: o log
 diz `not loaded (the emulator provides its libraries)`. Com a opção desligada as funções não fazem nada, como
-importações que ninguém fornece. Os hooks de função são o próximo passo.
+importações que ninguém fornece.
+
+Os hooks de função (exportação, importação, deslocamento e endereço absoluto; kernel e usuário) seguem o contrato
+publicado do framework: as primeiras instruções da função viram um salto para o primeiro hook; cada hook recebe um
+registro de referência (next, func, old) e continua a chamada como a macro de continuação do framework (a função do
+próximo hook ou, depois do último, um trampolim que roda as instruções substituídas e o resto da original). Os hooks
+de uma função são ligados como o framework liga: o primeiro continua sendo o destino do salto e cada novo entra logo
+depois dele (a ordem é primeiro, mais novo, ..., segundo; o framework não define a ordem). Liberar um hook mantém os
+outros; liberar o último escreve os bytes originais de volta. Cada patch descarta só o código traduzido que ele cobre,
+em todo processo. Um hook funciona igual numa função do guest (LLE) e numa função do firmware servida pelo HLE: um
+hook de kernel numa exportação do firmware também toma, em todo processo (também nos criados depois), as stubs de
+importação da função daquela biblioteca, então um hook numa exportação de syscall vê as chamadas dos programas de
+usuário; a função de mesmo NID da biblioteca de kernel (a gêmea de kernel) é outra função. O hook roda na thread que
+chamou, com o processo dela como o atual, como o código de kernel que um syscall roda (ksceKernelGetProcessId dá o
+processo de usuário). Um hook ou injeção de um plugin de kernel num processo de usuário é feito na memória desse
+processo, e os patches de um processo saem quando ele termina.
 
 ## Limites
 
 - Um plugin que corrige por deslocamento o código do próprio firmware não acha código do firmware ali (o VitaSharp
   implementa ele mesmo as bibliotecas do firmware).
+- Um hook de exportação de um plugin de usuário numa biblioteca de usuário do firmware servida pelo HLE (SceLibKernel,
+  SceDisplay, ...) não acha o módulo: esses módulos ainda não estão na lista de módulos do processo. Hooks de importação
+  nas stubs do próprio programa para elas funcionam.
 - Exceções não são entregues a handlers de kernel (a CPU emulada relata uma falha do guest como queda); o mascaramento
   de interrupções é só estado (não há controlador de interrupções).

@@ -220,7 +220,7 @@ public sealed unsafe class SaveStatePluginTests : IDisposable
         int uid;
         using (ProcessScope.Enter(Kernel))
         {
-            uid = Convert.ToInt32(Invoke(Framework, "HookAbsolute", KernelSpace.KernelPid, hookRef, entry, hooks[0], GetThreadId));
+            uid = Convert.ToInt32(Invoke(Framework, "HookAbsolute", KernelSpace.KernelPid, hookRef, entry, hooks[0], ThreadmgrLib, GetThreadId));
         }
 
         Assert.True(uid > 0, $"hook returned 0x{uid:X8}");
@@ -259,7 +259,7 @@ public sealed unsafe class SaveStatePluginTests : IDisposable
         int uid;
         using (ProcessScope.Enter(Kernel))
         {
-            uid = Convert.ToInt32(Invoke(Framework, "HookAbsolute", KernelSpace.KernelPid, hookRef, entry, hooks[0], GetThreadId));
+            uid = Convert.ToInt32(Invoke(Framework, "HookAbsolute", KernelSpace.KernelPid, hookRef, entry, hooks[0], ThreadmgrLib, GetThreadId));
         }
 
         Assert.True(uid > 0, $"hook returned 0x{uid:X8}");
