@@ -115,6 +115,19 @@ chamou, com o processo dela como o atual, como o código de kernel que um syscal
 processo de usuário). Um hook ou injeção de um plugin de kernel num processo de usuário é feito na memória desse
 processo, e os patches de um processo saem quando ele termina.
 
+As chamadas de módulo do framework para programas de usuário (taiLoadKernelModule, taiLoadStartKernelModuleForUser,
+taiStartKernelModuleForUser, taiLoadStartModuleForPidForUser, as quatro chamadas de stop, taiUnloadKernelModule,
+taiUnloadModuleForPid, taiMemcpyUserToKernel e taiMemcpyKernelToUser) seguem o contrato publicado dele: só um programa
+com a classe de sistema pode chamá-las (ksceSblACMgrIsShell: bit 1 de capability, que o homebrew gerado como fake SELF
+unsafe tem e o homebrew safe e os jogos de varejo não têm; senão 0x90010009); os argumentos vêm no registro de 0x14
+bytes (size, pid, args, argp, flags), até 256 bytes de argp são copiados para um buffer de kernel que o
+module_start/module_stop recebe, o caminho tem no máximo 255 caracteres e opt tem que ser NULL, com os códigos de erro
+do framework para cada checagem. O módulo carrega pelo gerenciador de módulos de kernel do firmware, o carregador dos
+plugins `*KERNEL`: um módulo de kernel vai para o kernel e sobrevive ao programa que o carregou; as chamadas de stop
+escrevem o status do module_stop em `*res`. O UID devolvido é o do próprio módulo (o VitaSharp tem um espaço de UID só
+para o kernel e os processos). É assim que um homebrew carrega o próprio módulo de kernel (o eboot do Adrenaline faz
+isso primeiro). taiReloadConfig, taiReloadConfigForKernel e taiLoadPluginsForTitleForKernel ainda não são oferecidas.
+
 ## Limites
 
 - Um plugin que corrige por deslocamento o código do próprio firmware não acha código do firmware ali (o VitaSharp

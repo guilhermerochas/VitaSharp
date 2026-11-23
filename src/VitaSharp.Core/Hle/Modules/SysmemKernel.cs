@@ -719,7 +719,7 @@ public sealed partial class SysmemKernel : HleModule
     /// <summary>kscePUIDtoGUID (ksceKernelKernelUidForUserUid)(pid, puid): the object behind a process handle (the same
     /// UID here).</summary>
     [Hle]
-    int kscePUIDtoGUID(int pid, int puid)
+    internal int kscePUIDtoGUID(int pid, int puid)
     {
         if (ProcessOf(pid) == null)
         {
@@ -820,7 +820,7 @@ public sealed partial class SysmemKernel : HleModule
     /// NUL (len when the string does not end within len).
     /// </summary>
     [Hle]
-    int ksceKernelStrncpyUserToKernel(uint dst, uint src, uint len)
+    internal int ksceKernelStrncpyUserToKernel(uint dst, uint src, uint len)
     {
         if (!KernelSpace.IsMappedRange(dst, len))
         {
