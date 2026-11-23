@@ -87,6 +87,7 @@ public sealed unsafe class ExecutableMemoryReuseTests
         Assert.Equal(64L << 20, Jit.DefaultAheadBudget(android: true));
         Assert.True(Jit.DefaultSpeculativeBudget(android: true) < Jit.DefaultSpeculativeBudget(android: false));
         Assert.True(Jit.DefaultSpeculativeBudget(android: true) < Jit.DefaultAheadBudget(android: true) / 2);
+        Assert.Equal(Jit.DefaultAheadBudget(android: false) / 2, Jit.DefaultSpeculativeBudget(android: false));
         Assert.True(Jit.DefaultAheadBudget(android: false) <= ExecutableMemory.ReserveSize / 2);
     }
 }
