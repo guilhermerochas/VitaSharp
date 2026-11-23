@@ -3690,6 +3690,26 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   FORCE_LOAD, com teste sintético (pré-passe sem store + cena com load) e --compare nos outros dumps (Injustice,
   MGS3, LBP dependem da carga de profundidade). O "borrão" não é bug de escala: a cena 3D já sai em 1408x768 a 2x
   (nítida contra a 1x); o jogo renderiza a 704x384 e amplia para 960x544, por isso é macia mesmo a 2x.
+  Andamento (ac3depth, 23/11/2026; não resolvido): **carregar a profundidade do pré-passe está certo.** No libgxm
+  3.74, SetForceLoadMode/SetForceStoreMode só ligam os bits 1/2 da palavra 0 da superfície, que o sceGxmBeginScene
+  repassa ao hardware (o BeginSceneEx tira o load da superfície de carga e o store da de gravação; o
+  sceGxmMidSceneFlush liga os dois para continuar uma cena dividida). Implementada a semântica estrita (a carga só lê
+  o que uma cena com FORCE_STORE gravou), o replay sai com o 3D todo preto: o G-buffer não limpa e carregaria a
+  própria profundidade do quadro anterior. No aparelho o jogo funciona, então o pré-passe (limpa + oclusores com
+  escrita) chega à memória. Cenas do quadro: pré-passe 960x800 (ds 0x61100000, sem load/store; quad ALWAYS que limpa,
+  oclusores 724271F2/C34E297C/07DF9995 com LESS_EQUAL e escrita, caixas E8D0292C só com consulta), sombra 2048x512
+  (outro ds, store), G-buffer (load+store, LESS_EQUAL, sem bias, stencil LESS_EQUAL ref 0), luz e cena (load, sem
+  store; a luz lê a profundidade como textura), final no framebuffer (sem load/store). Quadro par x ímpar: mesmas
+  cenas, mesmos estados (ds, formato, viewport, clip, bias 0, funções), pré-passe idêntico; o G-buffer só muda a
+  ordem de alguns draws, e a câmera anda ~0,001. No ímpar a parede (C700C860B216CB68, 2329 vértices) falha numa
+  área grande com borda pontilhada em degradê (empate quase exato com a profundidade de um oclusor); no par passa
+  inteira. Descartados: precisão do formato (imagens D32F em vez de D24S8: pisca igual), bias (0/0). Hipótese a
+  testar ao vivo (o dump já traz os uniforms copiados, o replay não muda isso): os oclusores leem a matriz de
+  vub1, fatias de 80 bytes num buffer que alterna entre dois endereços por quadro, e o pré-passe do quadro N começa
+  e termina antes do flip do quadro N-1. Se o jogo grava essas matrizes depois do sceGxmEndScene do pré-passe, a
+  cópia no fim da cena pega dados de outro quadro e o oclusor fica deslocado em quadros alternados. Rodar o jogo no
+  ponto do relato com VITASHARP_UB_SCENE_END=audit (e o A/B =frame) e ver se o vs 724271F2CFC4A93C aparece com
+  buffers reescritos depois do fim da cena e se o pisca some com =frame.
 - [ ] [P2][P] Resolução interna padrão (pedido do usuário, 22/11/2026): uma opção global nas configurações (PC e Android)
   para escolher a resolução interna (1x, 2x, 3x, 4x) com que todo jogo já abre, sem precisar trocar no atalho a cada
   sessão; a escolha por jogo (quando existir) vence a global. Mostrar o valor efetivo na tela de carregamento e no log
