@@ -3632,6 +3632,10 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   abaixo sempre visíveis, sem piscar.
 
 ## Bugs em aberto
+- [ ] [P2][P] Resolução interna padrão (pedido do usuário, 22/11/2026): uma opção global nas configurações (PC e Android)
+  para escolher a resolução interna (1x, 2x, 3x, 4x) com que todo jogo já abre, sem precisar trocar no atalho a cada
+  sessão; a escolha por jogo (quando existir) vence a global. Mostrar o valor efetivo na tela de carregamento e no log
+  da sessão. Teste: um jogo sem escolha própria abre na resolução global; com escolha própria, na dele.
 - [ ] [P1][G] PSM em Unity não abre (relato do usuário, 22/11/2026; log de 19:33, NPOA00239): o título traz o próprio
   runtime (`ux0:psm/<título>/runtime/eboot.bin`, PCSI00010 "Unity Runtime for PlayStation Mobile", mais mono_prx e
   bridge_prx), que está cifrado com a chave do conteúdo, e o carregador o lê como SELF comum: `InvalidDataException: Not
