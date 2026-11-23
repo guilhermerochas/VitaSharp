@@ -36,11 +36,11 @@ public sealed partial class Sensors
     /// 0x8036020B; 1..4: NULL 0x80360209, no controller 0x80360202.
     /// </summary>
     [Hle("sceMotionGetDeadbandExt")]
-    private int sceMotionGetDeadbandExt(int port, uint value) => GetExtSetting(port, value, sceMotionGetDeadband());
+    private int sceMotionGetDeadbandExt(int port, uint value) => GetExtSetting(port, value, sceMotionGetDeadbandThroughEntry());
 
     /// <summary>(int port, int *value): sceMotionGetTiltCorrection of a port, checked as sceMotionGetDeadbandExt.</summary>
     [Hle("sceMotionGetTiltCorrectionExt")]
-    private int sceMotionGetTiltCorrectionExt(int port, uint value) => GetExtSetting(port, value, sceMotionGetTiltCorrection());
+    private int sceMotionGetTiltCorrectionExt(int port, uint value) => GetExtSetting(port, value, sceMotionGetTiltCorrectionThroughEntry());
 
     private static int GetExtSetting(int port, uint value, int current)
     {

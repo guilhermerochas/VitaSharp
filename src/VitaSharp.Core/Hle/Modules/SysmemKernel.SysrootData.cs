@@ -121,7 +121,7 @@ public sealed partial class SysmemKernel
                 GuestMemory.W32(block + (uint)word.Key, (uint)word.Value);
             }
 
-            ksceKernelCorelockInitialize(block + 0x2C);
+            ksceKernelCorelockInitializeThroughEntry(block + 0x2C);
             GuestMemory.W32(block + 0x90, BootInitLevel);
             _sysrootBlock = block;
         }
@@ -254,7 +254,7 @@ public sealed partial class SysmemKernel
     {
         lock (_sysrootWords)
         {
-            uint existing = ksceKernelSysrootGetModulePrivate(3);
+            uint existing = ksceKernelSysrootGetModulePrivateThroughEntry(3);
             if (existing != 0)
             {
                 return existing;
@@ -263,7 +263,7 @@ public sealed partial class SysmemKernel
             uint context = KernelAlloc(SysmemContextSize, "kernel:SceSysmemContext", 0x10);
             GuestMemory.Span(context, (int)SysmemContextSize).Clear();
             GuestMemory.W32(context + SysmemContextKernelPartition, KernelPhyMemPart());
-            NID_7A7E7C0C(3, context);
+            NID_7A7E7C0CThroughEntry(3, context);
             return context;
         }
     }
@@ -344,7 +344,7 @@ public sealed partial class SysmemKernel
 
     /// <summary>NID_AE55B7CC(): releases the sysroot's corelock.</summary>
     [Hle(Nid = 0xAE55B7CC, Library = "SceSysrootForKernel")]
-    void NID_AE55B7CC() => ksceKernelCorelockUnlock(SysrootBlock() + 0x2C);
+    void NID_AE55B7CC() => ksceKernelCorelockUnlockThroughEntry(SysrootBlock() + 0x2C);
 
     /// <summary>NID_59B76D23(heap): sets word +0x2E0 (the PUID entry heap without a process table).</summary>
     [Hle(Nid = 0x59B76D23, Library = "SceSysrootForKernel")]

@@ -109,6 +109,6 @@ public sealed partial class SystemServicesVsh
     [Hle("NID_5D6F0CFC", Nid = 0x5D6F0CFC, Library = "SceDebugForKernel")]
     void DebugPrintExceptionDump(uint where, uint context)
     {
-        DebugPrintKernelException(where, context, 0, 0);
+        DebugPrintKernelExceptionThroughEntry(where, context, 0, 0);
     }
 }

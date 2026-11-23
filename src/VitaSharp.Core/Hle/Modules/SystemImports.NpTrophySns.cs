@@ -84,7 +84,7 @@ public sealed partial class NpTrophy
         }
 
         GuestMemory.W32(handle, 0xFFFFFFFF);
-        return sceNpTrophyCreateHandle(new Ptr<int>(handle));
+        return sceNpTrophyCreateHandleThroughEntry(new Ptr<int>(handle));
     }
 
     /// <summary>NID_44E0F73E (SceNpTrophy)(int handle): destroys a system handle (-1 0x80551604, unknown
@@ -93,7 +93,7 @@ public sealed partial class NpTrophy
     int NpTrophyDestroySystemHandle(int handle)
     {
         int result = SystemCheck(handle, true);
-        return result != 0 ? result : sceNpTrophyDestroyHandle(handle);
+        return result != 0 ? result : sceNpTrophyDestroyHandleThroughEntry(handle);
     }
 
     /// <summary>NID_FD34F7CF (SceNpTrophy)(int handle): aborts a system handle's request (-1 0x80551604, unknown
@@ -102,7 +102,7 @@ public sealed partial class NpTrophy
     int NpTrophyAbortSystemHandle(int handle)
     {
         int result = SystemCheck(handle, true);
-        return result != 0 ? result : sceNpTrophyAbortHandle(handle);
+        return result != 0 ? result : sceNpTrophyAbortHandleThroughEntry(handle);
     }
 
     /// <summary>NID_C80794CF (SceNpTrophy)(int *context, const SceNpCommunicationId *commId, uint64 options): a system
@@ -122,7 +122,7 @@ public sealed partial class NpTrophy
         }
 
         GuestMemory.W32(context, 0xFFFFFFFF);
-        return sceNpTrophyCreateContext(new Ptr<int>(context), commId, 0, 0);
+        return sceNpTrophyCreateContextThroughEntry(new Ptr<int>(context), commId, 0, 0);
     }
 
     /// <summary>NID_10371F25 (SceNpTrophy)(int context): destroys a system context (-1 0x80551604, unknown
@@ -140,7 +140,7 @@ public sealed partial class NpTrophy
             return ERR_INVALID_ARGUMENT;
         }
 
-        return sceNpTrophyDestroyContext(context);
+        return sceNpTrophyDestroyContextThroughEntry(context);
     }
 
     /// <summary>NID_97D19AB6 (SceNpTrophy)(void *request): releases a system request block (NULL 0x80551604).</summary>

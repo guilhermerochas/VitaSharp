@@ -63,7 +63,7 @@ public sealed unsafe partial class MonoBridge
         uint errCell = err != 0 ? err : Malloc0(4);
         if (err != 0) W32(err, 0);
         try { return ParsePending(ctx, st, errCell); }
-        finally { if (err == 0) { GErrorFree(R32(errCell)); Free(errCell); } }
+        finally { if (err == 0) { GErrorFreeThroughEntry(R32(errCell)); Free(errCell); } }
     }
 
     bool Fail(uint ctx, uint errCell, string message)
@@ -202,7 +202,7 @@ public sealed unsafe partial class MonoBridge
         var valuesV = values.Select(v => Encoding.UTF8.GetBytes(v)).ToList();
         uint an2 = StrVector(namesV), av = StrVector(valuesV);
         bool ok = Callback(R32(ctx), errCell, ctx, nameP, an2, av, R32(ctx + 0x14), errCell);
-        GStrfreev(an2); GStrfreev(av);
+        GStrfreevThroughEntry(an2); GStrfreevThroughEntry(av);
         if (ok)
         {
             if (selfClose) ok = Callback(R32(ctx + 4), errCell, ctx, nameP, R32(ctx + 0x14), errCell);

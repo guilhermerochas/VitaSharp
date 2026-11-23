@@ -139,7 +139,7 @@ public sealed partial class Net : HleModule
         {
             case 1: GuestMemory.WriteCString(info, "VitaSharp", 65); break;           // configuration name
             case 2: GuestMemory.W32(info, 0); break;                                // device: wireless
-            case 3: sceNetGetMacAddress(info, 0); break;                           // ether address (emulated: the host's is not exposed)
+            case 3: sceNetGetMacAddressThroughEntry(info, 0); break;                           // ether address (emulated: the host's is not exposed)
             case 4: GuestMemory.W32(info, (uint)(host?.Mtu ?? 1500)); break;        // MTU
             case 5: GuestMemory.W32(info, 1); break;                                // link up
             case 6: new byte[] { 0x00, 0x1F, 0xA7, 0x00, 0x00, 0x01 }.CopyTo(GuestMemory.Span(info, 6)); break;

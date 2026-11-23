@@ -196,7 +196,7 @@ public sealed partial class GpuEs4 : HleModule
     [Hle("sceGpuSignalWaitLockup")]
     int sceGpuSignalWaitLockup()
     {
-        Tm.sceKernelDelayThread(LockupTimeoutUs);
+        Tm.sceKernelDelayThreadThroughEntry(LockupTimeoutUs);
         return KernelWaitTimeout;
     }
 

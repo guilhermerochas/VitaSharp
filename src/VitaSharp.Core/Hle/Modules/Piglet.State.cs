@@ -94,7 +94,7 @@ public sealed partial class Piglet
 
     static bool BlendEqOk(uint e) => e is Gl.FUNC_ADD or Gl.FUNC_SUBTRACT or Gl.FUNC_REVERSE_SUBTRACT or Gl.MIN_EXT or Gl.MAX_EXT;
 
-    [Hle] void glBlendFunc(uint sfactor, uint dfactor) => glBlendFuncSeparate(sfactor, dfactor, sfactor, dfactor);
+    [Hle] void glBlendFunc(uint sfactor, uint dfactor) => glBlendFuncSeparateThroughEntry(sfactor, dfactor, sfactor, dfactor);
 
     [Hle]
     void glBlendFuncSeparate(uint srcRgb, uint dstRgb, uint srcAlpha, uint dstAlpha)
@@ -105,7 +105,7 @@ public sealed partial class Piglet
         c.BlendSrcRgb = srcRgb; c.BlendDstRgb = dstRgb; c.BlendSrcAlpha = srcAlpha; c.BlendDstAlpha = dstAlpha;
     }
 
-    [Hle] void glBlendEquation(uint mode) => glBlendEquationSeparate(mode, mode);
+    [Hle] void glBlendEquation(uint mode) => glBlendEquationSeparateThroughEntry(mode, mode);
 
     [Hle]
     void glBlendEquationSeparate(uint modeRgb, uint modeAlpha)
@@ -193,7 +193,7 @@ public sealed partial class Piglet
         if (face is Gl.BACK or Gl.FRONT_AND_BACK) set(c, false);
     }
 
-    [Hle] void glStencilFunc(uint func, int reference, uint mask) => glStencilFuncSeparate(Gl.FRONT_AND_BACK, func, reference, mask);
+    [Hle] void glStencilFunc(uint func, int reference, uint mask) => glStencilFuncSeparateThroughEntry(Gl.FRONT_AND_BACK, func, reference, mask);
 
     [Hle]
     void glStencilFuncSeparate(uint face, uint func, int reference, uint mask)
@@ -208,7 +208,7 @@ public sealed partial class Piglet
         });
     }
 
-    [Hle] void glStencilMask(uint mask) => glStencilMaskSeparate(Gl.FRONT_AND_BACK, mask);
+    [Hle] void glStencilMask(uint mask) => glStencilMaskSeparateThroughEntry(Gl.FRONT_AND_BACK, mask);
 
     [Hle]
     void glStencilMaskSeparate(uint face, uint mask)
@@ -218,7 +218,7 @@ public sealed partial class Piglet
         ForFaces(c, face, (ctx, front) => { if (front) ctx.StencilFront.WriteMask = mask; else ctx.StencilBack.WriteMask = mask; });
     }
 
-    [Hle] void glStencilOp(uint fail, uint zfail, uint zpass) => glStencilOpSeparate(Gl.FRONT_AND_BACK, fail, zfail, zpass);
+    [Hle] void glStencilOp(uint fail, uint zfail, uint zpass) => glStencilOpSeparateThroughEntry(Gl.FRONT_AND_BACK, fail, zfail, zpass);
 
     [Hle]
     void glStencilOpSeparate(uint face, uint fail, uint zfail, uint zpass)

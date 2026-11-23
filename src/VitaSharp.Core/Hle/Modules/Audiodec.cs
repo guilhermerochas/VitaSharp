@@ -312,7 +312,7 @@ public sealed unsafe partial class Audiodec : HleModule
     [Hle("_sceAudiodecCreateDecoderResident")]
     [Hle] int sceAudiodecCreateDecoderResident(uint ctrl, uint codecType) => Create(ctrl, codecType, false);
     [Hle("_sceAudiodecDeleteDecoderResident")]
-    [Hle] int sceAudiodecDeleteDecoderResident(uint ctrl) => sceAudiodecDeleteDecoder(ctrl);
+    [Hle] int sceAudiodecDeleteDecoderResident(uint ctrl) => sceAudiodecDeleteDecoderThroughEntry(ctrl);
 
     [Hle("_sceAudiodecClearContext")]
     [Hle]
@@ -342,7 +342,7 @@ public sealed unsafe partial class Audiodec : HleModule
     }
 
     [Hle("_sceAudiodecDeleteDecoderExternal")]
-    [Hle] int sceAudiodecDeleteDecoderExternal(uint ctrl, uint context) => sceAudiodecDeleteDecoder(ctrl);
+    [Hle] int sceAudiodecDeleteDecoderExternal(uint ctrl, uint context) => sceAudiodecDeleteDecoderThroughEntry(ctrl);
 
     [Hle("_sceAudiodecGetInternalError")]
     [Hle]

@@ -47,15 +47,15 @@ public sealed partial class Paf
     [Hle("_ZN3paf6thread5MutexD2Ev")]
     [Hle("_ZN3paf6thread6RMutexD1Ev")]
     [Hle("_ZN3paf6thread6RMutexD2Ev")]
-    uint MutexDtor(uint me) { Check(Tm.sceKernelDeleteLwMutex(me), "~Mutex"); return me; }
+    uint MutexDtor(uint me) { Check(Tm.sceKernelDeleteLwMutexThroughEntry(me), "~Mutex"); return me; }
 
     [Hle("_ZN3paf6thread5Mutex4LockEv")]
     [Hle("_ZN3paf6thread6RMutex4LockEv")]
-    void MutexLock(uint me) => Check(Tm.sceKernelLockLwMutex(me, 1, new Ptr<uint>(0)), "Mutex::Lock");
+    void MutexLock(uint me) => Check(Tm.sceKernelLockLwMutexThroughEntry(me, 1, new Ptr<uint>(0)), "Mutex::Lock");
 
     [Hle("_ZN3paf6thread5Mutex6UnlockEv")]
     [Hle("_ZN3paf6thread6RMutex6UnlockEv")]
-    void MutexUnlock(uint me) => Check(Tm.sceKernelUnlockLwMutex(me, 1), "Mutex::Unlock");
+    void MutexUnlock(uint me) => Check(Tm.sceKernelUnlockLwMutexThroughEntry(me, 1), "Mutex::Unlock");
 
     /// <summary>libpaf 3.74 returns 1 when the mutex is held by another thread (the kernel's "failed to own") and 0 when
     /// it took it.</summary>
@@ -63,7 +63,7 @@ public sealed partial class Paf
     [Hle("_ZN3paf6thread6RMutex7TryLockEv")]
     bool MutexTryLock(uint me)
     {
-        int r = Tm.sceKernelTryLockLwMutex(me, 1);
+        int r = Tm.sceKernelTryLockLwMutexThroughEntry(me, 1);
         if (r == LwMutexFailedToOwn) return true;
         Check(r, "Mutex::TryLock");
         return false;
@@ -81,7 +81,7 @@ public sealed partial class Paf
 
     [Hle("_ZN3paf6thread4CondD1Ev")]
     [Hle("_ZN3paf6thread4CondD2Ev")]
-    uint CondDtor(uint me) { Check(Tm.sceKernelDeleteLwCond(me + 4), "~Cond"); return me; }
+    uint CondDtor(uint me) { Check(Tm.sceKernelDeleteLwCondThroughEntry(me + 4), "~Cond"); return me; }
 
     /// <summary>(timeout in ms, 0 = forever): 1 when it timed out, else 0.</summary>
     [Hle("_ZN3paf6thread4Cond4WaitEi")]
@@ -90,7 +90,7 @@ public sealed partial class Paf
         uint t = TimeoutPtr(ms);
         try
         {
-            int r = Tm.sceKernelWaitLwCond(me + 4, new Ptr<uint>(t));
+            int r = Tm.sceKernelWaitLwCondThroughEntry(me + 4, new Ptr<uint>(t));
             if (r == KernelTimeout) return 1;
             Check(r, "Cond::Wait");
             return 0;
@@ -98,8 +98,8 @@ public sealed partial class Paf
         finally { Free(t); }
     }
 
-    [Hle("_ZN3paf6thread4Cond6NotifyEv")] void CondNotify(uint me) => Check(Tm.sceKernelSignalLwCond(me + 4), "Cond::Notify");
-    [Hle("_ZN3paf6thread4Cond9NotifyAllEv")] void CondNotifyAll(uint me) => Check(Tm.sceKernelSignalLwCondAll(me + 4), "Cond::NotifyAll");
+    [Hle("_ZN3paf6thread4Cond6NotifyEv")] void CondNotify(uint me) => Check(Tm.sceKernelSignalLwCondThroughEntry(me + 4), "Cond::Notify");
+    [Hle("_ZN3paf6thread4Cond9NotifyAllEv")] void CondNotifyAll(uint me) => Check(Tm.sceKernelSignalLwCondAllThroughEntry(me + 4), "Cond::NotifyAll");
 
     // ---- Semaphore
     [Hle("_ZN3paf6thread9SemaphoreC1EPKciii")]
@@ -114,10 +114,10 @@ public sealed partial class Paf
 
     [Hle("_ZN3paf6thread9SemaphoreD1Ev")]
     [Hle("_ZN3paf6thread9SemaphoreD2Ev")]
-    uint SemaDtor(uint me) { Check(Tm.sceKernelDeleteSema((int)U(me)), "~Semaphore"); return me; }
+    uint SemaDtor(uint me) { Check(Tm.sceKernelDeleteSemaThroughEntry((int)U(me)), "~Semaphore"); return me; }
 
-    [Hle("_ZN3paf6thread9Semaphore7AcquireEv")] void SemaAcquire(uint me) => Check(Tm.sceKernelWaitSema((int)U(me), 1, new Ptr<uint>(0)), "Semaphore::Acquire");
-    [Hle("_ZN3paf6thread9Semaphore7ReleaseEv")] void SemaRelease(uint me) => Check(Tm.sceKernelSignalSema((int)U(me), 1), "Semaphore::Release");
+    [Hle("_ZN3paf6thread9Semaphore7AcquireEv")] void SemaAcquire(uint me) => Check(Tm.sceKernelWaitSemaThroughEntry((int)U(me), 1, new Ptr<uint>(0)), "Semaphore::Acquire");
+    [Hle("_ZN3paf6thread9Semaphore7ReleaseEv")] void SemaRelease(uint me) => Check(Tm.sceKernelSignalSemaThroughEntry((int)U(me), 1), "Semaphore::Release");
 
     // ---- RWLock: { event flag, readers }
     [Hle("_ZN3paf6thread6RWLockC1EPKci")]
@@ -131,9 +131,9 @@ public sealed partial class Paf
 
     [Hle("_ZN3paf6thread6RWLockD1Ev")]
     [Hle("_ZN3paf6thread6RWLockD2Ev")]
-    uint RwDtor(uint me) { Tm.sceKernelDeleteEventFlag((int)U(me)); return me; }
+    uint RwDtor(uint me) { Tm.sceKernelDeleteEventFlagThroughEntry((int)U(me)); return me; }
 
-    [Hle("_ZN3paf6thread5SleepEi")] void ThreadSleep(int ms) => Tm.sceKernelDelayThread((uint)ms * 1000);
+    [Hle("_ZN3paf6thread5SleepEi")] void ThreadSleep(int ms) => Tm.sceKernelDelayThreadThroughEntry((uint)ms * 1000);
 
     // ---- Thread
     /// <summary>The option libpaf starts from: attribute 0, affinity 0, stack memory type 0x0C20D060.</summary>
@@ -176,9 +176,9 @@ public sealed partial class Paf
 
     [Hle("_ZN3paf6thread6ThreadD1Ev")]
     [Hle("_ZN3paf6thread6ThreadD2Ev")]
-    uint ThreadDtor(uint me) { if ((int)U(me + 4) >= 0) Tm.sceKernelDeleteThread((int)U(me + 4)); return me; }
+    uint ThreadDtor(uint me) { if ((int)U(me + 4) >= 0) Tm.sceKernelDeleteThreadThroughEntry((int)U(me + 4)); return me; }
 
-    [Hle("_ZN3paf6thread6ThreadD0Ev")] void ThreadDelete(uint me) { ThreadDtor(me); Free(me); }
+    [Hle("_ZN3paf6thread6ThreadD0Ev")] void ThreadDelete(uint me) { ThreadDtorThroughEntry(me); Free(me); }
 
     /// <summary>Starts the thread once (a second start is 0x80AF0702).</summary>
     [Hle("_ZN3paf6thread6Thread5StartEv")]
@@ -190,7 +190,7 @@ public sealed partial class Paf
         if (thid < 0) { B(me + 9, 0); return thid; }
         uint arg = Alloc(4);
         U(arg, me);
-        int r = Tm.sceKernelStartThread(thid, 4, arg);
+        int r = Tm.sceKernelStartThreadThroughEntry(thid, 4, arg);
         Free(arg);
         if (r != 0) { B(me + 9, 0); Check(r, "Thread::Start"); return r; }
         B(me + 8, 1);
@@ -198,10 +198,10 @@ public sealed partial class Paf
     }
 
     [Hle("_ZN3paf6thread6Thread4JoinEv")]
-    void ThreadJoin(uint me) { if ((int)U(me + 4) >= 0) Tm.sceKernelWaitThreadEnd((int)U(me + 4), new Ptr<int>(0), new Ptr<uint>(0)); }
+    void ThreadJoin(uint me) { if ((int)U(me + 4) >= 0) Tm.sceKernelWaitThreadEndThroughEntry((int)U(me + 4), new Ptr<int>(0), new Ptr<uint>(0)); }
 
     [Hle("_ZN3paf6thread6Thread14ChangePriorityEi")]
-    void ThreadChangePriority(uint me, int prio) { if ((int)U(me + 4) >= 0) Tm.sceKernelChangeThreadPriority((int)U(me + 4), prio); }
+    void ThreadChangePriority(uint me, int prio) { if ((int)U(me + 4) >= 0) Tm.sceKernelChangeThreadPriorityThroughEntry((int)U(me + 4), prio); }
 
     [Hle("_ZN3paf6thread6Thread5GetIDEv")] int ThreadGetId(uint me) => (int)U(me + 4);
     [Hle("_ZN3paf6thread6Thread7IsAliveEv")] bool ThreadIsAlive(uint me) => B(me + 9) != 0;
@@ -212,12 +212,12 @@ public sealed partial class Paf
     readonly int[] _threadIds = new int[8];
 
     [Hle("_ZN3paf6thread13ThreadIDCache14SetCurrentTypeENS1_4TypeE")]
-    void TidSetCurrent(int type) { if ((uint)type < _threadIds.Length) _threadIds[type] = Tm.sceKernelGetThreadId(); }
+    void TidSetCurrent(int type) { if ((uint)type < _threadIds.Length) _threadIds[type] = Tm.sceKernelGetThreadIdThroughEntry(); }
 
     [Hle("_ZN3paf6thread13ThreadIDCache3GetENS1_4TypeE")] int TidGet(int type) => (uint)type < _threadIds.Length ? _threadIds[type] : 0;
 
     [Hle("_ZN3paf6thread13ThreadIDCache5CheckENS1_4TypeE")]
-    bool TidCheck(int type) => (uint)type < _threadIds.Length && _threadIds[type] == Tm.sceKernelGetThreadId();
+    bool TidCheck(int type) => (uint)type < _threadIds.Length && _threadIds[type] == Tm.sceKernelGetThreadIdThroughEntry();
 
     // ---- CallQueue: { Mutex (0x20), list +0x20, count +0x24 }; the queued calls run on the thread that calls Check
     readonly Dictionary<uint, Queue<(uint Fn, uint Arg)>> _callQueues = new();
@@ -232,7 +232,7 @@ public sealed partial class Paf
     [Hle("_ZN3paf6thread9CallQueueC2EPKc")]
     uint CallQueueCtor(uint me, uint name)
     {
-        MutexCtor(me, name, 0);
+        MutexCtorThroughEntry(me, name, 0);
         U(me + 0x20, me + 0x20); U(me + 0x24, 0);
         lock (_callQueues) _callQueues[me] = new();
         return me;
@@ -244,7 +244,7 @@ public sealed partial class Paf
     {
         lock (_callQueues) _callQueues.Remove(me);
         U(me + 0x20, 0xFFFFFFFF); U(me + 0x24, 0xFFFFFFFF);
-        MutexDtor(me);
+        MutexDtorThroughEntry(me);
         return me;
     }
 
@@ -277,7 +277,7 @@ public sealed partial class Paf
 
     /// <summary>Sleeps 10 ms at a time until another thread has run the queue empty.</summary>
     [Hle("_ZN3paf6thread9CallQueue9WaitEmptyEv")]
-    void CallQueueWaitEmpty(uint me) { while (CallQueueCount(me) > 0) ThreadSleep(10); }
+    void CallQueueWaitEmpty(uint me) { while (CallQueueCountThroughEntry(me) > 0) ThreadSleepThroughEntry(10); }
 
     // ---- SyncCall: { event flag, function +4, argument +8, result +0xC }
     [Hle("_ZN3paf6thread8SyncCallC1EPKc")]
@@ -291,7 +291,7 @@ public sealed partial class Paf
 
     [Hle("_ZN3paf6thread8SyncCallD1Ev")]
     [Hle("_ZN3paf6thread8SyncCallD2Ev")]
-    uint SyncCallDtor(uint me) { Tm.sceKernelDeleteEventFlag((int)U(me)); return me; }
+    uint SyncCallDtor(uint me) { Tm.sceKernelDeleteEventFlagThroughEntry((int)U(me)); return me; }
 
     /// <summary>On the main thread the function runs at once; another thread hands it to the main thread's Check and
     /// waits for its result (event flag bits: 4 free, 1 posted, 2 done).</summary>
@@ -299,14 +299,14 @@ public sealed partial class Paf
     int SyncCallCall(uint me, uint fn, uint arg)
     {
         if (Kernel.GuestThread.Current is not { } t) return 0;
-        if (TidCheck(0)) return (int)t.CallGuest(fn, arg);
+        if (TidCheckThroughEntry(0)) return (int)t.CallGuest(fn, arg);
         int evf = (int)U(me);
-        Tm.sceKernelWaitEventFlag(evf, 4, 4 /* AND, clear the bits */, new Ptr<uint>(0), new Ptr<uint>(0));
+        Tm.sceKernelWaitEventFlagThroughEntry(evf, 4, 4 /* AND, clear the bits */, new Ptr<uint>(0), new Ptr<uint>(0));
         U(me + 4, fn); U(me + 8, arg); U(me + 0xC, 0);
-        Tm.sceKernelSetEventFlag(evf, 1);
-        Tm.sceKernelWaitEventFlag(evf, 2, 4, new Ptr<uint>(0), new Ptr<uint>(0));
+        Tm.sceKernelSetEventFlagThroughEntry(evf, 1);
+        Tm.sceKernelWaitEventFlagThroughEntry(evf, 2, 4, new Ptr<uint>(0), new Ptr<uint>(0));
         int r = (int)U(me + 0xC);
-        Tm.sceKernelSetEventFlag(evf, 4);
+        Tm.sceKernelSetEventFlagThroughEntry(evf, 4);
         return r;
     }
 
@@ -315,9 +315,9 @@ public sealed partial class Paf
     {
         int evf = (int)U(me);
         if (U(me + 4) == 0 || Kernel.GuestThread.Current is not { } t) return;
-        Tm.sceKernelClearEventFlag(evf, ~1u);
+        Tm.sceKernelClearEventFlagThroughEntry(evf, ~1u);
         U(me + 0xC, t.CallGuest(U(me + 4), U(me + 8)));
         U(me + 8, 0); U(me + 4, 0);
-        Tm.sceKernelSetEventFlag(evf, 2);
+        Tm.sceKernelSetEventFlagThroughEntry(evf, 2);
     }
 }

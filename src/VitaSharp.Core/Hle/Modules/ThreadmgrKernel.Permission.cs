@@ -45,7 +45,7 @@ public sealed partial class ThreadmgrKernel
     }
 
     /// <summary>The current thread's permission (other modules' checks: 0x40 and 0x80 are the kernel's).</summary>
-    internal int CurrentPermission() => NID_332E127C();
+    internal int CurrentPermission() => NID_332E127CThroughEntry();
 
     /// <summary>NID_332E127C(): the current thread's permission (+0x2C); 0x80027101 without a current thread.</summary>
     [Hle(Nid = 0x332E127C, Library = "SceThreadmgrForDriver")]

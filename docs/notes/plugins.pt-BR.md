@@ -193,7 +193,7 @@ originais de volta (o código saiu com o processo); os patches de kernel ficam a
 | Código traduzido: cada patch descarta os blocos que cobre; um bloco decodificado durante um patch é conferido de novo | Feito |
 | Chamadas de módulo para programas de usuário (carregar, iniciar, parar, descarregar módulo de kernel ou de processo; cópias usuário/kernel) | Feito |
 | Corrigir o código do próprio firmware por deslocamento | Impossível (não há código do firmware: o HLE o serve) |
-| Os chamadores internos de uma função do firmware (o HLE chamando a própria função) passam pelo hook na entrada | Em andamento: o roteamento (sem custo sem hook) existe; o ksceVopLookup (os caminhos do iofilemgr) já o usa, as chamadas internas das outras funções ainda não |
+| Os chamadores internos de uma função do firmware (o HLE chamando a própria função) passam pelo hook na entrada | Sim: toda chamada interna a uma função exportada passa pelo wrapper gerado `XxxThroughEntry` (ver abaixo) |
 
 ### Matriz de validação
 
@@ -217,11 +217,29 @@ cache de código: traduzido antes de rodar, depois com hook).
 | Hooks de kernel vistos por um aplicativo aberto depois deles, nas threads dele | ok | ok | ok | ok |
 | Save state com os hooks: carrega com eles ativos; um de antes carrega sem eles | ok | ok | ok | ok |
 | Fuzz da cadeia (kernel e usuário, 3 sementes cada) | ok | ok | ok | ok |
-| Chamador interno do firmware (a chamada do próprio HLE à função com hook) | corrigido no ksceVopLookup (teste `IoVfsMountTests.AHookOnTheVopLookupEntrySeesTheModulesOwnPathWalks`) | idem | idem | idem |
+| Chamador interno do firmware (a chamada do próprio HLE à função com hook) | ok (`HleEntryCallTests`, `HleEntryCallLibraryTests`, `IoVfsMountTests.AHookOnTheVopLookupEntrySeesTheModulesOwnPathWalks`) | idem | idem | idem |
 
 O sandbox ARM64 (Unicorn) roda blocos traduzidos soltos, não o despachante, então não é um caminho da matriz; a matriz
 roda em ARM64 nativo quando o host é ARM64. Carregar estado com `VITASHARP_LOAD_KEEP_CODE=1` (traduções mantidas e
 conferidas pelos bytes) é lido uma vez por processo e não é uma célula (o load padrão descarta todas as traduções).
+
+### As chamadas do próprio firmware a uma função com hook
+
+No Vita um hook de exportação corrige o código da função, então todo chamador passa por ele, inclusive as chamadas do
+próprio módulo do firmware. As funções do firmware servidas pelo HLE são métodos C#; quando uma chama outra função
+exportada, chama o wrapper gerado `XxxThroughEntry` (gerador de código `HleEntryCallGenerator`, feito para todo método
+`[Hle]` que algum código chama assim). Sem hook o wrapper lê alguns campos (a contagem de hooks de usuário do processo e a
+de entradas corrigidas dos módulos de kernel do firmware, recontada só quando o código do guest muda) e chama o método C#,
+sem alocar nada (`HleEntryCallBenchmarks`, `HleEntryCallTests`). Com hook, acha-o onde o framework o pôs: a entrada
+corrigida da função nos módulos de kernel do firmware (hook de um plugin de kernel, ou qualquer código escrito sobre a
+entrada) ou o thunk do hook de um plugin de usuário na função, no processo do módulo; o código com hook roda na thread
+que chamou com os argumentos como palavras AAPCS (valores de 64 bits num par par de registradores ou numa posição
+alinhada da pilha) e o r0/r1 dele é o resultado. Função que o guest não consegue chamar pelo endereço (recebe uma string
+C#, um float, o contexto do HLE ou argumentos variáveis) não tem wrapper. O analisador VSHLE010 acusa a chamada direta a
+uma função exportada no VitaSharp.Core; as chamadas que não são a chamada do firmware àquela função ficam diretas com um
+`#pragma` dizendo o porquê: as formas de syscall por trás dos wrappers de uma biblioteca de usuário (`_sceIo*`,
+`_sceKernel*`, ...) e as entradas de kernel que dividem o corpo C# da chamada de usuário de mesmo nome (no Vita a chamada
+de usuário chega ao kernel pela syscall, então o hook numa não é visto pela outra).
 
 O início de processo do firmware chama o export ksceKernelStartPreloadingModules(pid) do modulemgr pelo endereço,
 quando a thread principal do processo novo já existe (processmgr 3.74). O VitaSharp inicia ele mesmo os módulos

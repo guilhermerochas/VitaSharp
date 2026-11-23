@@ -95,8 +95,8 @@ public sealed partial class IoFileMgr
             }
         }
 
-        int result = kscePfsMount2(source, mountPoint, keys, type);
-        return result != 0 ? result : kscePfsApprove(mountPoint, keys, type, 0);
+        int result = kscePfsMount2ThroughEntry(source, mountPoint, keys, type);
+        return result != 0 ? result : kscePfsApproveThroughEntry(mountPoint, keys, type, 0);
     }
 
     /// <summary>kscePfsUnmount(mountPoint): unknown 0x80010013; the mount point no longer served.</summary>
@@ -184,7 +184,7 @@ public sealed partial class IoFileMgr
             return fd;
         }
 
-        sceIoDclose(fd);
+        sceIoDcloseThroughEntry(fd);
         return 0;
     }
 

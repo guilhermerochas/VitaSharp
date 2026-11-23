@@ -268,7 +268,7 @@ public sealed partial class SysconKernel
     int ksceSysconCmdExec(uint packet, uint flags)
     {
         int queued = RunPacket(packet, flags);
-        return queued < 0 ? queued : ksceSysconCmdSync(packet, 0);
+        return queued < 0 ? queued : ksceSysconCmdSyncThroughEntry(packet, 0);
     }
 
     /// <summary>ksceSysconCmdExecAsync(packet, flags, callback, argument): the same exchange; the callback(packet,
@@ -515,7 +515,7 @@ public sealed partial class SysconKernel
 
         if (info != 0)
         {
-            if (Services.ksceSblAimgrIsGenuineDolce() != 0)
+            if (Services.ksceSblAimgrIsGenuineDolceThroughEntry() != 0)
             {
                 value &= 0xFFFF00FF;
             }
@@ -554,7 +554,7 @@ public sealed partial class SysconKernel
 
     /// <summary>NID_769F9AC4(): 1 on a PS TV, else status bit 6.</summary>
     [Hle(Nid = 0x769F9AC4, Library = "SceSysconForDriver")]
-    int NID_769F9AC4() => Services.ksceSblAimgrIsDolce() != 0 ? 1 : StatusFlag(6);
+    int NID_769F9AC4() => Services.ksceSblAimgrIsDolceThroughEntry() != 0 ? 1 : StatusFlag(6);
 
     /// <summary>NID_4BC63A40(): status bit 8.</summary>
     [Hle(Nid = 0x4BC63A40, Library = "SceSysconForDriver")]

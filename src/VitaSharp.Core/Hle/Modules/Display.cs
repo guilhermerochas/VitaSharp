@@ -259,7 +259,7 @@ public sealed partial class Display : HleModule
 
     [Hle("sceDisplaySetFrameBufForCompat")]
     [Hle("_sceDisplaySetFrameBufForCompat")] // syscall: (pParam, sync, opt)
-    int SetFrameBufForCompat(uint pParam, uint sync) => SetFrameBuf(pParam, sync);
+    int SetFrameBufForCompat(uint pParam, uint sync) => SetFrameBufThroughEntry(pParam, sync);
 
     [Hle("_sceDisplayGetFrameBuf")] // syscall: (pParam, sync, opt {pParam->size})
     [Hle("sceDisplayGetFrameBuf")]
@@ -297,7 +297,7 @@ public sealed partial class Display : HleModule
         return 0;
     }
 
-    [Hle(Cost = HleCost.SchedulerWait, CallbackWait = true)] int sceDisplayWaitVblankStartMultiCB(uint count) { sceDisplayWaitVblankStartMulti(count); RunCallbacks(); return 0; }
+    [Hle(Cost = HleCost.SchedulerWait, CallbackWait = true)] int sceDisplayWaitVblankStartMultiCB(uint count) { sceDisplayWaitVblankStartMultiThroughEntry(count); RunCallbacks(); return 0; }
 
     [Hle(Cost = HleCost.SchedulerWait)] int sceDisplayWaitSetFrameBuf() { if (!FrameRate.NoWaits) VBlank.WaitFor(_lastSetVcount + 1); return 0; }
     [Hle(Cost = HleCost.SchedulerWait, CallbackWait = true)] int sceDisplayWaitSetFrameBufCB() { if (!FrameRate.NoWaits) VBlank.WaitFor(_lastSetVcount + 1); RunCallbacks(); return 0; }
@@ -373,7 +373,7 @@ public sealed partial class Display : HleModule
         if (head != 0) return ERR_INVALID_HEAD;
         if (pParam == 0) return ERR_INVALID_ADDR;
         if (sync > 1) return ERR_INVALID_UPDATETIMING;
-        if (index == 0) return GetFrameBuf(pParam, sync);
+        if (index == 0) return GetFrameBufThroughEntry(pParam, sync);
         uint size = GuestMemory.R32(pParam);
         if (size is not (0x18 or 0x1C)) return ERR_INVALID_VALUE;
         GuestMemory.Fill(pParam + 4, 0, size - 4);
@@ -388,7 +388,7 @@ public sealed partial class Display : HleModule
         // is connected to head 1, so its framebuffer is checked and not shown.
         if (head is not (0 or 1)) return ERR_INVALID_HEAD;
         if (sync > 1) return ERR_INVALID_UPDATETIMING;
-        if (head == 0 && index == 0) return SetFrameBuf(pParam, sync);
+        if (head == 0 && index == 0) return SetFrameBufThroughEntry(pParam, sync);
         if (pParam != 0 && GuestMemory.R32(pParam) is not (0x18 or 0x1C)) return ERR_INVALID_VALUE;
         return 0;
     }
@@ -813,11 +813,11 @@ public sealed partial class Touch : HleModule
     // Regions split the panel between processes/overlays; a game owns the whole panel, so the region is ignored.
     [Hle("sceTouchPeekRegion")]
     [Hle("sceTouchPeekRegionExt")]
-    int sceTouchPeekRegion(int port, uint data, uint count, int region) => region > 0xFF ? ERR_INVALID_ARG : sceTouchPeek(port, data, count);
+    int sceTouchPeekRegion(int port, uint data, uint count, int region) => region > 0xFF ? ERR_INVALID_ARG : sceTouchPeekThroughEntry(port, data, count);
 
     [Hle("sceTouchReadRegion", Cost = HleCost.SchedulerWait)]
     [Hle("sceTouchReadRegionExt", Cost = HleCost.SchedulerWait)]
-    int sceTouchReadRegion(int port, uint data, uint count, int region) => region > 0xFF ? ERR_INVALID_ARG : sceTouchRead(port, data, count);
+    int sceTouchReadRegion(int port, uint data, uint count, int region) => region > 0xFF ? ERR_INVALID_ARG : sceTouchReadThroughEntry(port, data, count);
 
     /// <summary>(port, region, rect: u16 x, y, width, height in panel coordinates, attr). The shell's ime_plugin keeps
     /// region 2 over its on-screen keyboard and the status bar region 1 over the bar while they are up over an
@@ -849,7 +849,7 @@ public sealed partial class Touch : HleModule
     [Hle]
     int sceTouchClearRegion(uint port, uint region)
     {
-        return TouchClearRegionKernel(port, region);
+        return TouchClearRegionKernelThroughEntry(port, region);
     }
 
     /// <summary>NID_E1C5D95F (SceTouchForDriver)(port, region): the kernel side of sceTouchClearRegion (the syscall

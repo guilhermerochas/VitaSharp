@@ -29,7 +29,7 @@ public sealed partial class Libc
                 if (nothrow) return 0;
                 Log.Warn($"[guest] operator new({size}): out of memory and no new handler (std::bad_alloc)");
                 if (ctx != null) ThrowNew(ctx, ExcBadAlloc);
-                else TerminateNow();
+                else TerminateNowThroughEntry();
                 return 0;
             }
             GuestThread.Current?.CallGuest(h);
@@ -38,7 +38,7 @@ public sealed partial class Libc
 
     [Hle("_Znwj")] [Hle("_Znaj")] uint _Znwj(HleContext ctx, uint size) => New(size, false, ctx);
     [Hle("_ZnwjRKSt9nothrow_t")] [Hle("_ZnajRKSt9nothrow_t")] uint _ZnwjRKSt9nothrow_t(uint size, uint nothrow) => New(size, true);
-    [Hle("_ZdlPv")] [Hle("_ZdaPv")] [Hle("_ZdlPvRKSt9nothrow_t")] [Hle("_ZdaPvRKSt9nothrow_t")] void _ZdlPv(uint p) => free(p);
+    [Hle("_ZdlPv")] [Hle("_ZdaPv")] [Hle("_ZdlPvRKSt9nothrow_t")] [Hle("_ZdaPvRKSt9nothrow_t")] void _ZdlPv(uint p) => freeThroughEntry(p);
     /// <summary>The placement forms do nothing.</summary>
     [Hle("_ZdlPvS_")] [Hle("_ZdaPvS_")] void _ZdlPvS_(uint p, uint place) { }
 

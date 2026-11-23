@@ -296,7 +296,7 @@ public sealed partial class ModulemgrKernel
     }
 
     /// <summary>How many modules import the library.</summary>
-    uint ClientCount(int pid, int library) => (uint)ksceKernelGetLibraryClientList(pid, library, 0, 0, 0);
+    uint ClientCount(int pid, int library) => (uint)ksceKernelGetLibraryClientListThroughEntry(pid, library, 0, 0, 0);
 
     /// <summary>ksceKernelGetStubInfoForDebugger(pid, stubid, info): the stub's module, library NID and name, and its
     /// function and variable counts (0x118 bytes).</summary>
@@ -460,7 +460,7 @@ public sealed partial class ModulemgrKernel
 
             uint info = infos + written * 0x1B8;
             GuestMemory.W32(info, 0x1B8);
-            if (ksceKernelGetModuleInfo(pid, module.Uid, info) >= 0)
+            if (ksceKernelGetModuleInfoThroughEntry(pid, module.Uid, info) >= 0)
             {
                 written++;
             }
@@ -511,7 +511,7 @@ public sealed partial class ModulemgrKernel
     /// <summary>ksceKernelLoadProcessImage(pid, path, flags, auth, param, moduleInfo): the process's executable, loaded
     /// with the process: its main module's UID.</summary>
     [Hle(Nid = 0xA85A44D7, Library = "SceModulemgrForKernel")]
-    int ksceKernelLoadProcessImage(int pid, uint path, uint flags, uint auth, uint parameters, uint moduleInfo) => ksceKernelGetModuleIdByPid(pid);
+    int ksceKernelLoadProcessImage(int pid, uint path, uint flags, uint auth, uint parameters, uint moduleInfo) => ksceKernelGetModuleIdByPidThroughEntry(pid);
 
     /// <summary>ksceKernelLoadPreloadingModules(pid, param, flags): the preloaded modules, loaded with the process; 0
     /// for a process (SCE_KERNEL_ERROR_MODULEMGR_INVALID_PROCESS_UID otherwise).</summary>

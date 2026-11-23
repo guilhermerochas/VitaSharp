@@ -39,7 +39,7 @@ public sealed partial class AppMgr
     /// process's info and binds the area to the file: an existing pm.dat of the area's size is read into it, otherwise
     /// the file is written from the area (AppUtil.BindSafeMemoryFile).
     /// </summary>
-    [Hle] internal int sceAppMgrInitSafeMemoryById(uint name) => _sceAppMgrInitSafeMemoryById(name, 0);
+    [Hle] internal int sceAppMgrInitSafeMemoryById(uint name) => _sceAppMgrInitSafeMemoryByIdThroughEntry(name, 0);
 
     [Hle]
     internal int _sceAppMgrInitSafeMemoryById(uint name, uint opt)

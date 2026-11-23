@@ -355,7 +355,7 @@ public sealed partial class NpCommerce2
     {
         lock (_lock) if (!_inited) return ERR_LIB_NOT_INITIALIZED;
         if (mode is < 0 or > 2) return ERR_BAD_VALUE;
-        return StoreServiceRequest(reqId, a, b, outp);
+        return StoreServiceRequestThroughEntry(reqId, a, b, outp);
     }
 
     // ---- context operations

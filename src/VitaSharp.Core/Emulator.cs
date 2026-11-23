@@ -1881,6 +1881,12 @@ public sealed class Emulator : IDisposable
         ? LazyInitializer.EnsureInitialized(ref _firmwareKernel, () => new Hle.FirmwareKernelModules(this))
         : KernelHost.FirmwareKernel;
 
+    /// <summary><see cref="FirmwareKernel"/> when it already exists (null otherwise): reading it never makes the
+    /// kernel process (the check of every <see cref="Hle.HleEntryCalls"/> wrapper).</summary>
+    internal Hle.FirmwareKernelModules? FirmwareKernelIfShown => IsKernelProcess
+        ? Volatile.Read(ref _firmwareKernel)
+        : Vita?.KernelProcess?.FirmwareKernelIfShown;
+
     /// <summary>SCE_KERNEL_START_SUCCESS, _NO_RESIDENT and _FAILED: what module_start returns.</summary>
     public const int ModuleStartSuccess = 0, ModuleStartNoResident = 1, ModuleStartFailed = 2;
 

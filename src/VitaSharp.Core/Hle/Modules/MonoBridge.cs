@@ -226,7 +226,7 @@ public sealed unsafe partial class MonoBridge : HleModule
     }
 
     /// <summary>sched_yield: gives the core away (sceKernelDelayThread(0)), 0.</summary>
-    [Hle("sched_yield", Library = Lib)] int SchedYield() { Tm.sceKernelDelayThread(0); return 0; }
+    [Hle("sched_yield", Library = Lib)] int SchedYield() { Tm.sceKernelDelayThreadThroughEntry(0); return 0; }
 
     /// <summary>mono_security_enable_core_clr (SceLibMono, the one export of libmono.suprx in the VitaSDK list): turns on
     /// the CoreCLR security model (platform code trusted, the program's transparent), as the PSM runtime does at start.

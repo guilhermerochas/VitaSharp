@@ -253,7 +253,7 @@ public sealed partial class ThreadmgrKernel
         return 0;
     }
 
-    bool DebuggerSwitch() => Emu.Hle.Modules.OfType<SystemServicesVsh>().First().ksceKernelCheckDipsw(0xE4) != 0;
+    bool DebuggerSwitch() => Emu.Hle.Modules.OfType<SystemServicesVsh>().First().ksceKernelCheckDipswThroughEntry(0xE4) != 0;
 
     /// <summary>NID_385831A1(thid, kind, first, second): sets the thread's two debugger words (kind 5 only, else
     /// SCE_KERNEL_ERROR_INVALID_ARGUMENT).</summary>

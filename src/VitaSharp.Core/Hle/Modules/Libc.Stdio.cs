@@ -129,7 +129,7 @@ public sealed partial class Libc
     int Close(Stream s)
     {
         int r = 0;
-        if (!s.Std) r = Io.sceIoClose(s.Fd) < 0 ? EOF : 0;
+        if (!s.Std) r = Io.sceIoCloseThroughEntry(s.Fd) < 0 ? EOF : 0;
         lock (_streams)
         {
             if (s.Std) return r;
@@ -155,7 +155,7 @@ public sealed partial class Libc
         if (s == null) { SetErrno(EBADF); return 0; }
         if (path == 0) { SetErrno(EINVAL); return 0; } // mode change of the same file: not supported by the module either
         if (!ParseMode(mode, out int flags, out bool r, out bool w, out bool a)) { SetErrno(EINVAL); return 0; }
-        if (!s.Std) Io.sceIoClose(s.Fd);
+        if (!s.Std) Io.sceIoCloseThroughEntry(s.Fd);
         int fd = Io.sceIoOpen(GuestMemory.ReadCString(path), flags, 0x1B6);
         if (fd < 0) { SetErrno(IoErrno(fd)); if (!s.Std) Close(s); return 0; }
         s.Fd = fd; s.CanRead = r; s.CanWrite = w; s.Append = a; s.Eof = s.Error = false; s.Pushback.Clear(); s.Orientation = 0; s.Std = false;
@@ -186,12 +186,12 @@ public sealed partial class Libc
         {
             const uint chunk = 0x1000;
             if (_ioScratch == 0) _ioScratch = StaticAlloc(chunk);
-            if (s.Append && !s.Std) Io.sceIoLseek(s.Fd, 0, 2);
+            if (s.Append && !s.Std) Io.sceIoLseekThroughEntry(s.Fd, 0, 2);
             for (int off = 0; off < data.Length; off += (int)chunk)
             {
                 int n = Math.Min((int)chunk, data.Length - off);
                 data.Slice(off, n).CopyTo(GuestMemory.Span(_ioScratch, n));
-                int r = Io.sceIoWrite(s.Fd, _ioScratch, (uint)n);
+                int r = Io.sceIoWriteThroughEntry(s.Fd, _ioScratch, (uint)n);
                 if (r < n) { s.Error = true; if (r < 0) SetErrno(IoErrno(r)); return false; }
             }
         }
@@ -207,7 +207,7 @@ public sealed partial class Libc
         while (n < size && s.Pushback.Count > 0) GuestMemory.Write(buf + n++, s.Pushback.Pop());
         while (n < size)
         {
-            int r = Io.sceIoRead(s.Fd, buf + n, size - n);
+            int r = Io.sceIoReadThroughEntry(s.Fd, buf + n, size - n);
             if (r < 0) { s.Error = true; SetErrno(IoErrno(r)); break; }
             if (r == 0) { s.Eof = true; break; }
             n += (uint)r;
@@ -222,7 +222,7 @@ public sealed partial class Libc
         lock (_ioLock)
         {
             if (_ioScratch == 0) _ioScratch = StaticAlloc(0x1000);
-            int r = Io.sceIoRead(s.Fd, _ioScratch, 1);
+            int r = Io.sceIoReadThroughEntry(s.Fd, _ioScratch, 1);
             if (r < 0) { s.Error = true; SetErrno(IoErrno(r)); return EOF; }
             if (r == 0) { s.Eof = true; return EOF; }
             return B(_ioScratch);
@@ -337,7 +337,7 @@ public sealed partial class Libc
     long Tell(Stream s)
     {
         if (s.Std) { SetErrno(ESPIPE); return -1; }
-        long p = Io.sceIoLseek(s.Fd, 0, 1);
+        long p = Io.sceIoLseekThroughEntry(s.Fd, 0, 1);
         if (p < 0) { SetErrno(IoErrno((int)p)); return -1; }
         return Math.Max(0, p - s.Pushback.Count);
     }
@@ -347,7 +347,7 @@ public sealed partial class Libc
         if (whence is < 0 or > 2) { SetErrno(EINVAL); return -1; }
         if (s.Std) { SetErrno(ESPIPE); return -1; }
         if (whence == 1) off -= s.Pushback.Count;
-        long r = Io.sceIoLseek(s.Fd, off, whence);
+        long r = Io.sceIoLseekThroughEntry(s.Fd, off, whence);
         if (r < 0) { SetErrno(IoErrno((int)r)); return -1; }
         s.Pushback.Clear();
         s.Eof = false;
@@ -383,13 +383,13 @@ public sealed partial class Libc
     {
         if (file == 0) return 0;
         if (Get(file) is not { } s) { SetErrno(EBADF); return EOF; }
-        if (!s.Std && s.CanWrite) Io.sceIoSyncByFd(s.Fd, 0);
+        if (!s.Std && s.CanWrite) Io.sceIoSyncByFdThroughEntry(s.Fd, 0);
         return 0;
     }
 
     /// <summary>setvbuf(file, buf, mode, size): mode _IOFBF 0, _IOLBF 1, _IONBF 2; any other mode fails.</summary>
     [Hle] int setvbuf(uint file, uint buf, int mode, uint size) => Get(file) != null && mode is >= 0 and <= 2 ? 0 : -1;
-    [Hle] void setbuf(uint file, uint buf) => setvbuf(file, buf, buf == 0 ? 2 : 0, 0x200);
+    [Hle] void setbuf(uint file, uint buf) => setvbufThroughEntry(file, buf, buf == 0 ? 2 : 0, 0x200);
 
     [Hle]
     int fwide(uint file, int mode)
@@ -487,9 +487,9 @@ public sealed partial class Libc
     [Hle] int fwprintf(uint file, uint fmt, VarArgs va) => WPrintTo(Get(file), CFormat.Format(ReadWide(fmt), va));
     [Hle] int vfwprintf(uint file, uint fmt, uint va) => WPrintTo(Get(file), CFormat.Format(ReadWide(fmt), Va(va)));
     [Hle] int wprintf_s(uint fmt, VarArgs va) => fmt == 0 ? -Constraint("wprintf_s: bad format") : wprintf(fmt, va);
-    [Hle] int vwprintf_s(uint fmt, uint va) => fmt == 0 ? -Constraint("vwprintf_s: bad format") : vwprintf(fmt, va);
+    [Hle] int vwprintf_s(uint fmt, uint va) => fmt == 0 ? -Constraint("vwprintf_s: bad format") : vwprintfThroughEntry(fmt, va);
     [Hle] int fwprintf_s(uint file, uint fmt, VarArgs va) => fmt == 0 || file == 0 ? -Constraint("fwprintf_s: bad argument") : fwprintf(file, fmt, va);
-    [Hle] int vfwprintf_s(uint file, uint fmt, uint va) => fmt == 0 || file == 0 ? -Constraint("vfwprintf_s: bad argument") : vfwprintf(file, fmt, va);
+    [Hle] int vfwprintf_s(uint file, uint fmt, uint va) => fmt == 0 || file == 0 ? -Constraint("vfwprintf_s: bad argument") : vfwprintfThroughEntry(file, fmt, va);
 
     /// <summary>swprintf(buf, n, fmt, ...): at most n wide characters including the NUL; -1 when the result does
     /// not fit (C99), the buffer then holding the truncated text.</summary>

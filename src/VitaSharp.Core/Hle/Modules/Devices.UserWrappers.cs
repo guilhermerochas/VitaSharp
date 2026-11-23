@@ -9,43 +9,43 @@ namespace VitaSharp.Core.Hle.Modules;
 
 public sealed partial class Videodec
 {
-    [Hle("sceAvcdecCsc")] int CscUser(uint dst, uint src) => Csc(dst, src);
-    [Hle("sceM4vdecCsc")] int M4vCscUser(uint dst, uint src) => Csc(dst, src);
-    [Hle("sceAvcdecDecodeNalAu")] int DecodeNalAuUser(uint ctrl, uint au, uint array) => DecodeNalAu(ctrl, au, array);
-    [Hle("sceAvcdecDecodeNalAuWithWorkPicture")] int DecodeNalAuWithWorkUser(uint ctrl, uint au, uint work, uint array) => DecodeNalAu(ctrl, au, array);
-    [Hle("sceAvcdecDecodeAuNalAuNongameapp")] int DecodeAuNalAuUser(uint ctrl, uint au, uint ready) => DecodeAuNalAu(ctrl, au, ready);
-    [Hle("sceAvcdecDecodeWithWorkPicture")] int DecodeWithWorkUser(uint ctrl, uint au, uint work, uint array) => sceAvcdecDecode(ctrl, au, array);
+    [Hle("sceAvcdecCsc")] int CscUser(uint dst, uint src) => CscThroughEntry(dst, src);
+    [Hle("sceM4vdecCsc")] int M4vCscUser(uint dst, uint src) => CscThroughEntry(dst, src);
+    [Hle("sceAvcdecDecodeNalAu")] int DecodeNalAuUser(uint ctrl, uint au, uint array) => DecodeNalAuThroughEntry(ctrl, au, array);
+    [Hle("sceAvcdecDecodeNalAuWithWorkPicture")] int DecodeNalAuWithWorkUser(uint ctrl, uint au, uint work, uint array) => DecodeNalAuThroughEntry(ctrl, au, array);
+    [Hle("sceAvcdecDecodeAuNalAuNongameapp")] int DecodeAuNalAuUser(uint ctrl, uint au, uint ready) => DecodeAuNalAuThroughEntry(ctrl, au, ready);
+    [Hle("sceAvcdecDecodeWithWorkPicture")] int DecodeWithWorkUser(uint ctrl, uint au, uint work, uint array) => sceAvcdecDecodeThroughEntry(ctrl, au, array);
     [Hle("sceAvcdecDecodeSetUserDataSei1FieldMemSizeNongameapp")] int SetUserDataSeiMemSizeUser(uint ctrl, int size) => SetMode(ctrl, 5, size);
-    [Hle("sceAvcdecGetSeiUserDataNongameapp")] int GetSeiUserDataUser(uint ctrl, uint data, uint info) => GetSeiUserData(ctrl, data, info);
-    [Hle("sceAvcdecRegisterCallbackNongameapp")] int RegisterCallbackUser(uint ctrl, uint cb, uint arg) => RegisterCallback(ctrl, cb, arg);
+    [Hle("sceAvcdecGetSeiUserDataNongameapp")] int GetSeiUserDataUser(uint ctrl, uint data, uint info) => GetSeiUserDataThroughEntry(ctrl, data, info);
+    [Hle("sceAvcdecRegisterCallbackNongameapp")] int RegisterCallbackUser(uint ctrl, uint cb, uint arg) => RegisterCallbackThroughEntry(ctrl, cb, arg);
     [Hle("sceAvcdecSetRecoveryPointSEIMode")] int SetRecoveryPointSeiModeUser(uint ctrl, int mode) => SetMode(ctrl, 2, mode);
     [Hle("sceAvcdecUnregisterCallbackNongameapp")]
     [Hle("sceAvcdecUnregisterCallbackWithCbidInternal")]
     [Hle("sceAvcdecUnregisterCallbackWithCbidNongameapp")]
-    int UnregisterCallbackUser(uint ctrl, uint cbid) => UnregisterCallback(ctrl, cbid);
-    [Hle("sceM4vdecCreateDecoder")] int M4vCreateDecoderUser(uint codecType, uint ctrl, uint query) => M4vCreateDecoder(codecType, ctrl, query);
-    [Hle("sceM4vdecDecodeStop")] int M4vDecodeStopUser(uint ctrl, uint array) => sceAvcdecDecodeStop(ctrl, array);
-    [Hle("sceVideodecQueryInstanceNongameapp")] int QueryInstanceUser(uint query) => QueryInstance(query);
+    int UnregisterCallbackUser(uint ctrl, uint cbid) => UnregisterCallbackThroughEntry(ctrl, cbid);
+    [Hle("sceM4vdecCreateDecoder")] int M4vCreateDecoderUser(uint codecType, uint ctrl, uint query) => M4vCreateDecoderThroughEntry(codecType, ctrl, query);
+    [Hle("sceM4vdecDecodeStop")] int M4vDecodeStopUser(uint ctrl, uint array) => sceAvcdecDecodeStopThroughEntry(ctrl, array);
+    [Hle("sceVideodecQueryInstanceNongameapp")] int QueryInstanceUser(uint query) => QueryInstanceThroughEntry(query);
 }
 
 public sealed partial class AppMgr
 {
     // driver_us.suprx: the same arguments to the syscall (a scratch option block added where the kernel reads one)
-    [Hle("sceAppMgrAppMount")] int AppMountUser(uint param) => _sceAppMgrAppMount(param, 0);
-    [Hle("sceAppMgrAppUmount")] int AppUmountUser(uint mountPoint) => _sceAppMgrAppUmount(mountPoint, 0);
-    [Hle("sceAppMgrUmountByPid")] int UmountByPidUser(uint param) => _sceAppMgrUmountByPid(param);
-    [Hle("sceAppMgrGetUserDirPathById")] int GetUserDirPathByIdUser(uint param, uint path) => _sceAppMgrGetUserDirPathById(param, path);
-    [Hle("sceAppMgrGetVs0UserDataDrive")] int GetVs0UserDataDriveUser(uint id) => _sceAppMgrGetVs0UserDataDrive(id);
-    [Hle("sceAppMgrGetVs0UserModuleDrive")] int GetVs0UserModuleDriveUser(uint id) => _sceAppMgrGetVs0UserDataDrive(id);
-    [Hle("sceAppMgrGetSaveDataInfoForSpecialExport")] int GetSaveDataInfoForSpecialExportUser(uint path, uint accountId) => _sceAppMgrGetSaveDataInfoForSpecialExport(path, accountId, 0);
+    [Hle("sceAppMgrAppMount")] int AppMountUser(uint param) => _sceAppMgrAppMountThroughEntry(param, 0);
+    [Hle("sceAppMgrAppUmount")] int AppUmountUser(uint mountPoint) => _sceAppMgrAppUmountThroughEntry(mountPoint, 0);
+    [Hle("sceAppMgrUmountByPid")] int UmountByPidUser(uint param) => _sceAppMgrUmountByPidThroughEntry(param);
+    [Hle("sceAppMgrGetUserDirPathById")] int GetUserDirPathByIdUser(uint param, uint path) => _sceAppMgrGetUserDirPathByIdThroughEntry(param, path);
+    [Hle("sceAppMgrGetVs0UserDataDrive")] int GetVs0UserDataDriveUser(uint id) => _sceAppMgrGetVs0UserDataDriveThroughEntry(id);
+    [Hle("sceAppMgrGetVs0UserModuleDrive")] int GetVs0UserModuleDriveUser(uint id) => _sceAppMgrGetVs0UserDataDriveThroughEntry(id);
+    [Hle("sceAppMgrGetSaveDataInfoForSpecialExport")] int GetSaveDataInfoForSpecialExportUser(uint path, uint accountId) => _sceAppMgrGetSaveDataInfoForSpecialExportThroughEntry(path, accountId, 0);
 }
 
 public sealed partial class AppMgrShell
 {
-    [Hle("sceAppMgrGetCurrentBgmState")] int GetCurrentBgmStateUser(uint pid, uint state) => _sceAppMgrGetCurrentBgmState(pid, state);
-    [Hle("sceAppMgrGetFgAppInfo")] int GetFgAppInfoUser(uint info) => _sceAppMgrGetFgAppInfo(info);
-    [Hle("sceAppMgrGetRawPathOfApp0ByPidForShell")] int GetRawPathOfApp0ByPidUser(int pid, uint path) => _sceAppMgrGetRawPathOfApp0ByPidForShell(pid, path);
-    [Hle("sceAppMgrLaunchVideoStreamingApp")] int LaunchVideoStreamingAppUser(uint extra, uint size, uint opt) => _sceAppMgrLaunchVideoStreamingApp(extra, size, opt);
+    [Hle("sceAppMgrGetCurrentBgmState")] int GetCurrentBgmStateUser(uint pid, uint state) => _sceAppMgrGetCurrentBgmStateThroughEntry(pid, state);
+    [Hle("sceAppMgrGetFgAppInfo")] int GetFgAppInfoUser(uint info) => _sceAppMgrGetFgAppInfoThroughEntry(info);
+    [Hle("sceAppMgrGetRawPathOfApp0ByPidForShell")] int GetRawPathOfApp0ByPidUser(int pid, uint path) => _sceAppMgrGetRawPathOfApp0ByPidForShellThroughEntry(pid, path);
+    [Hle("sceAppMgrLaunchVideoStreamingApp")] int LaunchVideoStreamingAppUser(uint extra, uint size, uint opt) => _sceAppMgrLaunchVideoStreamingAppThroughEntry(extra, size, opt);
 
     /// <summary>(SceUID appId): the shell ends an application by application id (as DestroyAppByAppId, shell only).</summary>
     [Hle]
@@ -77,8 +77,8 @@ public sealed partial class AppMgrShell
     }
 
     /// <summary>(int port, int a, int b): form 1 of taking the audio output exclusively.</summary>
-    [Hle] int sceAppMgrAcquireSoundOutExclusive(int port, int a, int b) => sceAppMgrAcquireSoundOutExclusive2(port, a, b, 0);
-    [Hle] int sceAppMgrReleaseSoundOutExclusive(int port) => sceAppMgrReleaseSoundOutExclusive2(port);
+    [Hle] int sceAppMgrAcquireSoundOutExclusive(int port, int a, int b) => sceAppMgrAcquireSoundOutExclusive2ThroughEntry(port, a, b, 0);
+    [Hle] int sceAppMgrReleaseSoundOutExclusive(int port) => sceAppMgrReleaseSoundOutExclusive2ThroughEntry(port);
 
     /// <summary>(int priority): the music player takes the BGM port (the shell's playback).</summary>
     [Hle]
@@ -89,10 +89,10 @@ public sealed partial class AppMgrShell
     }
 
     /// <summary>(int appId, int priority): BGM priority under a system chat (kept like SetBgmSubPriority).</summary>
-    [Hle] int sceAppMgrSetBgmSubPriorityForSystemChat(int appId, int priority) => sceAppMgrSetBgmSubPriority(appId, priority);
+    [Hle] int sceAppMgrSetBgmSubPriorityForSystemChat(int appId, int priority) => sceAppMgrSetBgmSubPriorityThroughEntry(appId, priority);
 
     /// <summary>(int mode): the shell tells appmgr the LiveArea mode (form of NotifyLiveBoardModeForShell).</summary>
-    [Hle] int sceAppMgrSendLiveBoardMode(int mode) => sceAppMgrNotifyLiveBoardModeForShell(mode);
+    [Hle] int sceAppMgrSendLiveBoardMode(int mode) => sceAppMgrNotifyLiveBoardModeForShellThroughEntry(mode);
 
     /// <summary>(SceUID appId, int state): the info bar state of another application, set by the shell.</summary>
     [Hle]
@@ -211,10 +211,10 @@ public sealed partial class CodecEngine
     int _rpcCalls, _clock = 166;
     bool _pmon;
 
-    [Hle("_sceCodecEngineOpenUnmapMemBlock")] int OpenUnmapMemBlockSys(uint memBlock, uint size) => sceCodecEngineOpenUnmapMemBlock(memBlock, size);
-    [Hle("_sceCodecEngineCloseUnmapMemBlock")] int CloseUnmapMemBlockSys(int uid) => sceCodecEngineCloseUnmapMemBlock(uid);
-    [Hle("_sceCodecEngineAllocMemoryFromUnmapMemBlock")] uint AllocMemorySys(int uid, uint size, uint align) => sceCodecEngineAllocMemoryFromUnmapMemBlock(uid, size, align);
-    [Hle("_sceCodecEngineFreeMemoryFromUnmapMemBlock")] int FreeMemorySys(int uid, uint p) => sceCodecEngineFreeMemoryFromUnmapMemBlock(uid, p);
+    [Hle("_sceCodecEngineOpenUnmapMemBlock")] int OpenUnmapMemBlockSys(uint memBlock, uint size) => sceCodecEngineOpenUnmapMemBlockThroughEntry(memBlock, size);
+    [Hle("_sceCodecEngineCloseUnmapMemBlock")] int CloseUnmapMemBlockSys(int uid) => sceCodecEngineCloseUnmapMemBlockThroughEntry(uid);
+    [Hle("_sceCodecEngineAllocMemoryFromUnmapMemBlock")] uint AllocMemorySys(int uid, uint size, uint align) => sceCodecEngineAllocMemoryFromUnmapMemBlockThroughEntry(uid, size, align);
+    [Hle("_sceCodecEngineFreeMemoryFromUnmapMemBlock")] int FreeMemorySys(int uid, uint p) => sceCodecEngineFreeMemoryFromUnmapMemBlockThroughEntry(uid, p);
 
     /// <summary>The codec engine's worker cores (the Vita's media processor has 4): the requested count is accepted
     /// within 1..4 (0x80600009 otherwise); decoding here runs on the host either way.</summary>

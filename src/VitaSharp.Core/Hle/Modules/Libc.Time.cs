@@ -211,8 +211,8 @@ public sealed partial class Libc
     [Hle]
     uint ctime(uint t)
     {
-        uint tm = localtime(t);
-        return tm == 0 ? 0 : asctime(tm);
+        uint tm = localtimeThroughEntry(t);
+        return tm == 0 ? 0 : asctimeThroughEntry(tm);
     }
 
     /// <summary>asctime_s(buf, size, tm): size at least 26 and fields in range, else a constraint violation.</summary>
@@ -236,6 +236,6 @@ public sealed partial class Libc
         if (size < 26 || t == 0) { GuestMemory.Write(buf, (byte)0); return Constraint("ctime_s: bad argument"); }
         uint tm = PerThread(_threadTm, 36);
         LocaltimeTo(t, tm);
-        return asctime_s(buf, size, tm);
+        return asctime_sThroughEntry(buf, size, tm);
     }
 }

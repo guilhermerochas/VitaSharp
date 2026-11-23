@@ -22,7 +22,7 @@ public sealed partial class AppUtil
             return ERR_NOT_INITIALIZED;
         }
 
-        int r = AppMgrModule._sceAppMgrInitSafeMemoryById(psmTitleId, 0);
+        int r = AppMgrModule._sceAppMgrInitSafeMemoryByIdThroughEntry(psmTitleId, 0);
         return r switch
         {
             unchecked((int)0x80801001) or unchecked((int)0x80800001) => ERR_PARAMETER,

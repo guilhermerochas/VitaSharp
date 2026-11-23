@@ -488,7 +488,7 @@ public sealed partial class ThreadmgrKernel
             }
         }
 
-        return ksceKernelGetFastMutexInfo(work, info);
+        return ksceKernelGetFastMutexInfoThroughEntry(work, info);
     }
 
     /// <summary>The fast mutex class's unknown-ID error.</summary>

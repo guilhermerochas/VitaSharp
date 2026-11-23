@@ -106,7 +106,7 @@ public sealed partial class Rtc : HleModule
     [Hle]
     internal int sceRtcGetDayOfWeek(int year, int month, int day)
     {
-        int days = sceRtcGetDaysInMonth(year, month);
+        int days = sceRtcGetDaysInMonthThroughEntry(year, month);
         if (days < 0)
         {
             return days;
@@ -251,7 +251,7 @@ public sealed partial class Rtc : HleModule
     [Hle("_sceRtcFormatRFC3339LocalTime", Cost = HleCost.KernelEntry)]
     [Hle]
     internal int sceRtcFormatRFC3339LocalTime(uint buf, Ptr<ulong> tick) =>
-        sceRtcFormatRFC3339(buf, tick, (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes);
+        sceRtcFormatRFC3339ThroughEntry(buf, tick, (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes);
 
     [Hle("_sceRtcFormatRFC2822", Cost = HleCost.KernelEntry)]
     [Hle]
@@ -265,7 +265,7 @@ public sealed partial class Rtc : HleModule
     [Hle("_sceRtcFormatRFC2822LocalTime", Cost = HleCost.KernelEntry)]
     [Hle]
     int sceRtcFormatRFC2822LocalTime(uint buf, Ptr<ulong> tick) =>
-        sceRtcFormatRFC2822(buf, tick, (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes);
+        sceRtcFormatRFC2822ThroughEntry(buf, tick, (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes);
 
     [Hle(Nid = 0x0E7091D6, Library = "SceRtcForDriver")]
     [Hle]
@@ -299,7 +299,7 @@ public sealed partial class Rtc : HleModule
             return RTC_INVALID_YEAR;
         }
 
-        int days = sceRtcGetDaysInMonth(year, month);
+        int days = sceRtcGetDaysInMonthThroughEntry(year, month);
         if (days < 0)
         {
             return days;

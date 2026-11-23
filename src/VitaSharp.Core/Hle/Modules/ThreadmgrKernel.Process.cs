@@ -154,8 +154,12 @@ public sealed partial class ThreadmgrKernel
                 // worker alive was refused ("thread 'tworker: ...' (host) is busy")
                 using (Scheduler.Block())
                 {
+                    // the syscall's C# body, which this kernel function shares (on the Vita another function): a hook on
+                    // the syscall export does not see it
+#pragma warning disable VSHLE010
                     wait = UserThreadmgr.sceKernelWaitEventFlag(ProcessWorkerFlag(self, flag), WorkerEndBit | WorkerHandlerBit, EventFlag.WaitOr | EventFlag.WaitClear,
                         new Ptr<uint>(words), new Ptr<uint>(words + 4));
+#pragma warning restore VSHLE010
                 }
 
                 if (wait == SceError.WAIT_TIMEOUT)
@@ -186,7 +190,11 @@ public sealed partial class ThreadmgrKernel
             return;
         }
 
+        // the syscall's C# body, which this kernel function shares (on the Vita another function): a hook on
+        // the syscall export does not see it
+#pragma warning disable VSHLE010
         UserThreadmgr.sceKernelSetEventFlag(flag, 0x80000000);
+#pragma warning restore VSHLE010
         int worker = (int)GuestMemory.R32(process + 0x330);
         if (worker != -1 && K.Objects.Get<GuestThread>(worker) is { } thread)
         {
@@ -203,7 +211,11 @@ public sealed partial class ThreadmgrKernel
             _processWorkers.Remove(worker);
         }
 
+        // the syscall's C# body, which this kernel function shares (on the Vita another function): a hook on
+        // the syscall export does not see it
+#pragma warning disable VSHLE010
         UserThreadmgr.sceKernelDeleteEventFlag(flag);
+#pragma warning restore VSHLE010
     }
 
     /// <summary>NID_205506FC(process object): the cleanup of the process's thread manager objects; the firmware
@@ -558,7 +570,7 @@ public sealed partial class ThreadmgrKernel
     [Hle(Nid = 0x86DAE59B, Library = "SceThreadmgrForDriver")]
     int NID_86DAE59B()
     {
-        int permission = NID_332E127C();
+        int permission = NID_332E127CThroughEntry();
         return permission is 0x40 or KernelPermission ? 0xF : ErrnoNoSys;
     }
 

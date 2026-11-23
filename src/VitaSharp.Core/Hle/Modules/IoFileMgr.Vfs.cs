@@ -362,7 +362,7 @@ public sealed partial class IoFileMgr
             return VFS_ERR_INVAL;
         }
 
-        return vfsMount(param);
+        return vfsMountThroughEntry(param);
     }
 
     /// <summary>vfsUmountForPFS(param { path, flags }, 0, 0): the same checks, then vfsUmount through the request
@@ -375,7 +375,7 @@ public sealed partial class IoFileMgr
             return VFS_ERR_INVAL;
         }
 
-        return vfsUmount(param);
+        return vfsUmountThroughEntry(param);
     }
 
     /// <summary>
@@ -406,21 +406,21 @@ public sealed partial class IoFileMgr
     [Hle(Nid = 0x1AE14011, Library = "SceIofilemgrForDriver")]
     int vfsClose(uint args)
     {
-        return args == 0 ? VFS_ERR_INVAL : sceIoClose((int)GuestMemory.R32(args));
+        return args == 0 ? VFS_ERR_INVAL : sceIoCloseThroughEntry((int)GuestMemory.R32(args));
     }
 
     /// <summary>vfsRead(args { fd, buffer, size }).</summary>
     [Hle(Nid = 0x809892C1, Library = "SceIofilemgrForDriver")]
     int vfsRead(uint args)
     {
-        return args == 0 ? VFS_ERR_INVAL : sceIoRead((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), GuestMemory.R32(args + 8));
+        return args == 0 ? VFS_ERR_INVAL : sceIoReadThroughEntry((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), GuestMemory.R32(args + 8));
     }
 
     /// <summary>vfsWrite(args { fd, buffer, size }).</summary>
     [Hle(Nid = 0x8598ADC3, Library = "SceIofilemgrForDriver")]
     int vfsWrite(uint args)
     {
-        return args == 0 ? VFS_ERR_INVAL : sceIoWrite((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), GuestMemory.R32(args + 8));
+        return args == 0 ? VFS_ERR_INVAL : sceIoWriteThroughEntry((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), GuestMemory.R32(args + 8));
     }
 
     /// <summary>vfsPread(args { fd, buffer, size, pad, offset (64-bit, words 4 and 5) }).</summary>
@@ -432,7 +432,7 @@ public sealed partial class IoFileMgr
             return VFS_ERR_INVAL;
         }
 
-        return sceIoPread((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), GuestMemory.R32(args + 8), (long)GuestMemory.Read<ulong>(args + 0x10));
+        return sceIoPreadThroughEntry((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), GuestMemory.R32(args + 8), (long)GuestMemory.Read<ulong>(args + 0x10));
     }
 
     /// <summary>vfsPwrite(args { fd, buffer, size, pad, offset (64-bit, words 4 and 5) }).</summary>
@@ -444,7 +444,7 @@ public sealed partial class IoFileMgr
             return VFS_ERR_INVAL;
         }
 
-        return sceIoPwrite((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), GuestMemory.R32(args + 8), (long)GuestMemory.Read<ulong>(args + 0x10));
+        return sceIoPwriteThroughEntry((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), GuestMemory.R32(args + 8), (long)GuestMemory.Read<ulong>(args + 0x10));
     }
 
     /// <summary>vfsIoctl(args { fd, command, input, input size, output, output size }).</summary>
@@ -456,7 +456,7 @@ public sealed partial class IoFileMgr
             return VFS_ERR_INVAL;
         }
 
-        return sceIoIoctl((int)GuestMemory.R32(args), (int)GuestMemory.R32(args + 4), GuestMemory.R32(args + 8), GuestMemory.R32(args + 0xC), GuestMemory.R32(args + 0x10), GuestMemory.R32(args + 0x14));
+        return sceIoIoctlThroughEntry((int)GuestMemory.R32(args), (int)GuestMemory.R32(args + 4), GuestMemory.R32(args + 8), GuestMemory.R32(args + 0xC), GuestMemory.R32(args + 0x10), GuestMemory.R32(args + 0x14));
     }
 
     /// <summary>vfsChstat(args { path, stat, bits }).</summary>
@@ -475,7 +475,7 @@ public sealed partial class IoFileMgr
     [Hle(Nid = 0x7517FE29, Library = "SceIofilemgrForDriver")]
     int vfsChstatByFd(uint args)
     {
-        return args == 0 ? VFS_ERR_INVAL : sceIoChstatByFd((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), (int)GuestMemory.R32(args + 8));
+        return args == 0 ? VFS_ERR_INVAL : sceIoChstatByFdThroughEntry((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), (int)GuestMemory.R32(args + 8));
     }
 
     /// <summary>vfsBuffCacheCtl(vnode, ?, offset, size, buffer): the buffer cache of a guest file system's vnode:
@@ -629,21 +629,6 @@ public sealed partial class IoFileMgr
     int ksceVopLookup(uint vnode, uint vpp, uint path, uint flags)
     {
         return VopCall(vnode, 0x0C, [vnode, vpp, path, flags], VnodeActiveBelow);
-    }
-
-    /// <summary>SceIofilemgrForDriver's library NID (fixed by the firmware).</summary>
-    private const uint IofilemgrForDriverNid = 0x40FD29C7;
-
-    /// <summary>ksceVopLookup as iofilemgr's own path walks call it: by the function's address, so a hook on its entry
-    /// (a kernel plugin's, which on the Vita patches the function's code) sees these calls too.</summary>
-    int VopLookupThroughEntry(uint vnode, uint vpp, uint path, uint flags)
-    {
-        if (Emu.FirmwareKernel.TryCallPatched(IofilemgrForDriverNid, 0xA5A6A55C, out int hooked, vnode, vpp, path, flags))
-        {
-            return hooked;
-        }
-
-        return ksceVopLookup(vnode, vpp, path, flags);
     }
 
     /// <summary>ksceVopRead(vnode, file, buffer, size, result): op 0x10 from the file's position.</summary>

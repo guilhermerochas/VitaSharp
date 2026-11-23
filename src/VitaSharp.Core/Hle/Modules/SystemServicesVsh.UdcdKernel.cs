@@ -192,7 +192,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x4E55244D, Library = "SceUdcdForDriver")]
     int ksceUdcdRegister(uint driver)
     {
-        return ksceUdcdRegisterInternal(driver, UdcdDefaultBus);
+        return ksceUdcdRegisterInternalThroughEntry(driver, UdcdDefaultBus);
     }
 
     /// <summary>ksceUdcdUnregisterInternal(driver, bus): NULL 0x80243200, a bad name 0x80243201, the bus activated
@@ -237,7 +237,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x0DECE532, Library = "SceUdcdForDriver")]
     int ksceUdcdUnregister(uint driver)
     {
-        return ksceUdcdUnregisterInternal(driver, UdcdDefaultBus);
+        return ksceUdcdUnregisterInternalThroughEntry(driver, UdcdDefaultBus);
     }
 
     /// <summary>ksceUdcdGetDrvStateInternal(name, bus): 1 registered, 2 started, -1 unknown; a bad name 0x80243201.</summary>
@@ -269,7 +269,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0xC0CA5DDB, Library = "SceUdcdForDriver", ReturnsValue = true)]
     int ksceUdcdGetDrvState(uint name)
     {
-        return ksceUdcdGetDrvStateInternal(name, UdcdDefaultBus);
+        return ksceUdcdGetDrvStateInternalThroughEntry(name, UdcdDefaultBus);
     }
 
     // ---- start and stop
@@ -341,7 +341,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x9FD733EA, Library = "SceUdcdForDriver")]
     int ksceUdcdStart(uint name, uint size, uint args)
     {
-        return ksceUdcdStartInternal(name, size, args, UdcdDefaultBus);
+        return ksceUdcdStartInternalThroughEntry(name, size, args, UdcdDefaultBus);
     }
 
     /// <summary>ksceUdcdStopInternal(name, size, args, bus): the bus activated 0x80243004; the controller only with
@@ -416,7 +416,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x1494293B, Library = "SceUdcdForDriver")]
     int ksceUdcdStop(uint name, uint size, uint args)
     {
-        return ksceUdcdStopInternal(name, size, args, UdcdDefaultBus);
+        return ksceUdcdStopInternalThroughEntry(name, size, args, UdcdDefaultBus);
     }
 
     /// <summary>ksceUdcdStartCurrentInternal(?, bus): starts the bus controller (started already: 0).</summary>
@@ -514,7 +514,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x4FDEA423, Library = "SceUdcdForDriver")]
     int ksceUdcdActivate(uint productId)
     {
-        return ksceUdcdActivateInternal(productId, 0, UdcdDefaultBus);
+        return ksceUdcdActivateInternalThroughEntry(productId, 0, UdcdDefaultBus);
     }
 
     /// <summary>ksceUdcdDeactivateInternal(bus): not activated 0x80243009; the bus inactive again.</summary>
@@ -544,7 +544,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x8AE87657, Library = "SceUdcdForDriver")]
     int ksceUdcdDeactivate()
     {
-        return ksceUdcdDeactivateInternal(UdcdDefaultBus);
+        return ksceUdcdDeactivateInternalThroughEntry(UdcdDefaultBus);
     }
 
     // ---- state
@@ -568,7 +568,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0xE054B5E4, Library = "SceUdcdForDriver", ReturnsValue = true)]
     int ksceUdcdGetDeviceState()
     {
-        return ksceUdcdGetDeviceStateInternal(UdcdDefaultBus);
+        return ksceUdcdGetDeviceStateInternalThroughEntry(UdcdDefaultBus);
     }
 
     /// <summary>ksceUdcdGetDeviceInfoInternal(info, bus): 0x40 bytes zeroed, then the two words the host's
@@ -589,7 +589,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0xFBEA3703, Library = "SceUdcdForDriver")]
     int ksceUdcdGetDeviceInfo(uint info)
     {
-        return ksceUdcdGetDeviceInfoInternal(info, UdcdDefaultBus);
+        return ksceUdcdGetDeviceInfoInternalThroughEntry(info, UdcdDefaultBus);
     }
 
     /// <summary>The state a wait asks for is there: any of its bits set, and its driver (+0x14, optional) started.</summary>
@@ -634,7 +634,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0xD03017C0, Library = "SceUdcdForDriver", Cost = HleCost.SchedulerWait)]
     int ksceUdcdWaitState(uint wait, uint timeout)
     {
-        return ksceUdcdWaitStateInternal(wait, timeout, UdcdDefaultBus);
+        return ksceUdcdWaitStateInternalThroughEntry(wait, timeout, UdcdDefaultBus);
     }
 
     /// <summary>ksceUdcdWaitBusInitialized(timeout, bus): bus 0-2 (else 0x80243003); the bus is initialized: 0.</summary>
@@ -665,7 +665,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0xEBB1E86B, Library = "SceUdcdForDriver")]
     int ksceUdcdNotifyState()
     {
-        return ksceUdcdNotifyStateInternal(UdcdDefaultBus);
+        return ksceUdcdNotifyStateInternalThroughEntry(UdcdDefaultBus);
     }
 
     // ---- requests and endpoints: they need a connected cable
@@ -806,7 +806,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x38787672, Library = "SceUdcdForDriver")]
     int ksceUdcdReqCancelAll(uint endpoint)
     {
-        return ksceUdcdReqCancelInternal(endpoint, UdcdDefaultBus);
+        return ksceUdcdReqCancelInternalThroughEntry(endpoint, UdcdDefaultBus);
     }
 
     // ---- the controller hooks and settings
@@ -842,7 +842,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x78BF2A28, Library = "SceUdcdForDriver")]
     int ksceUdcdSetConfiguration(uint block)
     {
-        return ksceUdcdSetConfigurationInternal(block, UdcdDefaultBus);
+        return ksceUdcdSetConfigurationInternalThroughEntry(block, UdcdDefaultBus);
     }
 
     /// <summary>NID_28BFEC45(): re-enumerates bus 2 with its configuration (no host sees it); 0.</summary>

@@ -315,7 +315,7 @@ public sealed partial class Ssl
         {
             text.AsSpan(0, length).CopyTo(GuestMemory.Span(buffer, length));
             GuestMemory.Write(buffer + (uint)length, (byte)0);
-            return SslInternalBioWrite(bio, buffer, (uint)length);
+            return SslInternalBioWriteThroughEntry(bio, buffer, (uint)length);
         }
         finally
         {

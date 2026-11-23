@@ -42,7 +42,7 @@ public sealed partial class Paf
                 U(ctx + 0x18, hi);
                 if (hi == 0) U(ctx + 0x64, 1); // too long (corrupted)
             }
-            if (idx + 1 == 64) Sha1Process(ctx);
+            if (idx + 1 == 64) Sha1ProcessThroughEntry(ctx);
         }
         return 0;
     }
@@ -55,7 +55,7 @@ public sealed partial class Paf
         if (U(ctx + 0x64) != 0) return (int)U(ctx + 0x64);
         if (U(ctx + 0x60) == 0)
         {
-            Sha1Pad(ctx);
+            Sha1PadThroughEntry(ctx);
             GuestMemory.Fill(ctx + 0x1E, 0, 64);
             U(ctx + 0x14, 0); U(ctx + 0x18, 0);
             U(ctx + 0x60, 1);
@@ -75,14 +75,14 @@ public sealed partial class Paf
         {
             while (idx < 64) B(ctx + 0x1E + (uint)idx++, 0);
             H(ctx + 0x1C, (ushort)idx);
-            Sha1Process(ctx);
+            Sha1ProcessThroughEntry(ctx);
             idx = 0;
         }
         while (idx < 56) B(ctx + 0x1E + (uint)idx++, 0);
         uint hi = U(ctx + 0x18), lo = U(ctx + 0x14);
         for (int i = 0; i < 4; i++) { B(ctx + 0x1E + 56 + (uint)i, (byte)(hi >> (24 - 8 * i))); B(ctx + 0x1E + 60 + (uint)i, (byte)(lo >> (24 - 8 * i))); }
         H(ctx + 0x1C, 64);
-        Sha1Process(ctx);
+        Sha1ProcessThroughEntry(ctx);
     }
 
     [Hle("SHA1ProcessMessageBlock")]

@@ -96,7 +96,11 @@ public sealed partial class ThreadmgrKernel
         }
 
         GuestMemory.W32(info, 0x3C);
+        // the syscall's C# body, which this kernel function shares (on the Vita another function): a hook on
+        // the syscall export does not see it
+#pragma warning disable VSHLE010
         int result = UserThreadmgr.sceKernelGetMutexInfo(uid, info);
+#pragma warning restore VSHLE010
         GuestMemory.W32(info, 0x40);
         GuestMemory.W32(info + 0x3C, 0);
         return result;
@@ -113,7 +117,11 @@ public sealed partial class ThreadmgrKernel
         KernelObject? o = K.Objects.Get<KernelObject>(uid);
         if (o is SimpleEvent)
         {
+            // the syscall's C# body, which this kernel function shares (on the Vita another function): a hook on
+            // the syscall export does not see it
+#pragma warning disable VSHLE010
             return UserThreadmgr.sceKernelGetEventInfo(uid, info);
+#pragma warning restore VSHLE010
         }
 
         uint attr;

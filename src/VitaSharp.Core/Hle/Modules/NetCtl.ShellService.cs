@@ -297,7 +297,7 @@ public sealed partial class Net
             return CallHandler(h, (uint)code, info);
         }
 
-        return sceNetCtlInetGetInfo(code, info);
+        return sceNetCtlInetGetInfoThroughEntry(code, info);
     }
 
     /// <summary>(int a, struct *s with s->size == 0x40): handler +0x54, else method 0x20031 with (a, 0x40) in and the
@@ -596,7 +596,7 @@ public sealed partial class Net
         int sock = (int)GuestMemory.R32(ctx + 8);
         if (sock >= 0)
         {
-            sceNetSocketAbort(sock, 3);
+            sceNetSocketAbortThroughEntry(sock, 3);
         }
 
         return 0;
@@ -613,7 +613,7 @@ public sealed partial class Net
 
         if ((GuestMemory.R32(ctx + 4) & 1) != 0)
         {
-            NetAuthCtxAbort(ctx);
+            NetAuthCtxAbortThroughEntry(ctx);
         }
 
         GuestMemory.Fill(ctx, 0, 0x1F44);

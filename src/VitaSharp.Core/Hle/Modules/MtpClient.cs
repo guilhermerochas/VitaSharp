@@ -424,14 +424,14 @@ public sealed partial class MtpClient : HleModule
     uint StatusObserverVTable() => Stubs.VTable("StatusObserver", () =>
     [
         Stubs.Export(0xDD5400FF, Lib),
-        Stubs.Host("StatusObserver::~StatusObserver(D0)", c => { uint o = c.Gpr(0); StatusObserverTerm(o); c.Return(o); }),
+        Stubs.Host("StatusObserver::~StatusObserver(D0)", c => { uint o = c.Gpr(0); StatusObserverTermThroughEntry(o); c.Return(o); }),
         Stubs.Host("StatusObserver::OnStatus", c => c.Return(0)),
     ]);
 
     uint BgObserverVTable() => Stubs.VTable("BgObserver", () =>
     [
         Stubs.Export(0x55751AC1, Lib),
-        Stubs.Host("BgObserver::~BgObserver(D0)", c => { uint o = c.Gpr(0); BgObserverTerm(o); c.Return(o); }),
+        Stubs.Host("BgObserver::~BgObserver(D0)", c => { uint o = c.Gpr(0); BgObserverTermThroughEntry(o); c.Return(o); }),
         Stubs.Host("BgObserver::OnEvent", c => c.Return(0)),
     ]);
 
@@ -451,7 +451,7 @@ public sealed partial class MtpClient : HleModule
     [Hle("MtpStatusObserver::~MtpStatusObserver", Nid = 0xDD5400FF, Library = Lib)]
     uint StatusObserverTerm(uint me)
     {
-        StatusObserverUnregister(me, -1);
+        StatusObserverUnregisterThroughEntry(me, -1);
         lock (_strings)
         {
             if (_statusList != 0)
@@ -493,7 +493,7 @@ public sealed partial class MtpClient : HleModule
             {
                 uint entries = U(_statusList);
                 if (entries != 0) { Emu.Memory.Free(entries); U(_statusList, 0); U(_statusList + 4, 0); U(_statusList + 8, 0); }
-                int r = ClearStatusListener(client);
+                int r = ClearStatusListenerThroughEntry(client);
                 U(me + 0x10, 0);
                 return r;
             }
@@ -503,7 +503,7 @@ public sealed partial class MtpClient : HleModule
                 if ((int)U(e + i * 12 + 8) != id) continue;
                 GuestMemory.Copy(e + i * 12, e + (i + 1) * 12, (n - i - 1) * 12);
                 U(_statusList + 4, n - 1);
-                if (n == 1) ClearStatusListener(client);
+                if (n == 1) ClearStatusListenerThroughEntry(client);
                 break;
             }
             return 0;

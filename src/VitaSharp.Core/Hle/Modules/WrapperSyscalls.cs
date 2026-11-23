@@ -2,6 +2,11 @@ using VitaSharp.Core.Memory;
 
 namespace VitaSharp.Core.Hle.Modules;
 
+// VSHLE010: these syscalls share the C# body of the user-library function they stand behind. On the Vita the user
+// library's function calls the syscall, never the reverse, so a hook on the user library's export must not see the
+// syscall's calls: they stay direct.
+#pragma warning disable VSHLE010
+
 // Syscalls (and the SceFios2Kernel02 entries) that the 3.74 user libraries libkernel.suprx and driver_us.suprx only
 // forward to, with the caller's registers unchanged (push {r3, lr}; blx; pop): the same implementation as the
 // wrapper. Firmware modules loaded LLE call these directly.

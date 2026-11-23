@@ -43,7 +43,7 @@ public sealed partial class SystemFallback
                 break;
             }
 
-            T.sceKernelDelayThread(sleepUs);
+            T.sceKernelDelayThreadThroughEntry(sleepUs);
         }
         Span<uint> cell = stackalloc uint[1];
         int rr = resultOut == 0

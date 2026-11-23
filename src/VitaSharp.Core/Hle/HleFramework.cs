@@ -449,11 +449,47 @@ public sealed partial class HleRegistry : IImportResolver
 
     /// <summary>This process's import stubs bound to HLE function <paramref name="nid"/> of library
     /// <paramref name="libNid"/> from now on jump to <paramref name="target"/> (a user plugin's hook).</summary>
-    public void RedirectInProcess(uint libNid, uint nid, uint target) => _processRedirects[(libNid, nid)] = target;
+    public void RedirectInProcess(uint libNid, uint nid, uint target)
+    {
+        _processRedirects[(libNid, nid)] = target;
+        Volatile.Write(ref _processRedirectCount, _processRedirects.Count);
+    }
+
+    /// <summary>How many HLE functions a user plugin's hook took in this process (<see cref="_processRedirects"/>):
+    /// the field <see cref="HasProcessHooks"/> reads.</summary>
+    int _processRedirectCount;
+
+    /// <summary>A user plugin's hook took an HLE function in this process (one field read: the check every
+    /// <see cref="HleEntryCalls"/> wrapper makes first).</summary>
+    public bool HasProcessHooks => Volatile.Read(ref _processRedirectCount) != 0;
+
+    /// <summary>The thunk of the user plugin's hook that took function <paramref name="nid"/> in this process (in any
+    /// library: a user module's exports have one NID each), or 0.</summary>
+    public uint ProcessHookOf(uint nid)
+    {
+        if (!HasProcessHooks)
+        {
+            return 0;
+        }
+
+        foreach (KeyValuePair<(uint LibNid, uint Nid), uint> redirect in _processRedirects)
+        {
+            if (redirect.Key.Nid == nid)
+            {
+                return redirect.Value;
+            }
+        }
+
+        return 0;
+    }
 
     /// <summary>This process's import stubs of <paramref name="nid"/> of library <paramref name="libNid"/> bind to the
     /// HLE function again.</summary>
-    public void ClearRedirectInProcess(uint libNid, uint nid) => _processRedirects.TryRemove((libNid, nid), out _);
+    public void ClearRedirectInProcess(uint libNid, uint nid)
+    {
+        _processRedirects.TryRemove((libNid, nid), out _);
+        Volatile.Write(ref _processRedirectCount, _processRedirects.Count);
+    }
 
     /// <summary>A guest-code implementation (<see cref="HleGuestCode"/>) of an implemented NID, placed in the calling
     /// thread's address space; 0 when there is none (or VITASHARP_HLE_GUEST_CODE=0).</summary>

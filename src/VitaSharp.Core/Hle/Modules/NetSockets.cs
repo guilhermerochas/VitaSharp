@@ -159,7 +159,7 @@ public sealed partial class Net
     [Hle(Nid = 0x21F4428D, Library = "SceNetPsForDriver")]
     int ksceNetClose(int s)
     {
-        return sceNetSocketClose(s);
+        return sceNetSocketCloseThroughEntry(s);
     }
 
     [Hle]
@@ -778,7 +778,7 @@ public sealed partial class Net
     {
         if (!_netctlInited) return NETCTL_NOT_INITIALIZED;
         if (info == 0) return ERR_NETCTL_INVALID_ADDR;
-        return sceNetCtlInetGetInfo(code, info);
+        return sceNetCtlInetGetInfoThroughEntry(code, info);
     }
 
     /// <summary>libnetctl keeps six callback lists (8 slots each, the slot index is the id). The infrastructure and ad

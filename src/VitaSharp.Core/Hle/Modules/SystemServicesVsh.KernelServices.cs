@@ -291,11 +291,11 @@ public sealed partial class Sensors
 
     [Hle] int sceMotionInitLibraryExt(int port) => 0;
     [Hle] int sceMotionTermLibraryExt(int port) => 0;
-    [Hle] int sceMotionStartSamplingExt(int port) => port == 0 ? sceMotionStartSampling() : Port(port);
-    [Hle] int sceMotionStopSamplingExt(int port) => port == 0 ? sceMotionStopSampling() : Port(port);
-    [Hle] int sceMotionResetExt(int port) => port == 0 ? sceMotionReset() : Port(port);
-    [Hle] int sceMotionSetTiltCorrectionExt(int port, int e) => port == 0 ? sceMotionSetTiltCorrection(e) : Port(port);
-    [Hle] int sceMotionSetDeadbandExt(int port, int e) => port == 0 ? sceMotionSetDeadband(e) : Port(port);
+    [Hle] int sceMotionStartSamplingExt(int port) => port == 0 ? sceMotionStartSamplingThroughEntry() : Port(port);
+    [Hle] int sceMotionStopSamplingExt(int port) => port == 0 ? sceMotionStopSamplingThroughEntry() : Port(port);
+    [Hle] int sceMotionResetExt(int port) => port == 0 ? sceMotionResetThroughEntry() : Port(port);
+    [Hle] int sceMotionSetTiltCorrectionExt(int port, int e) => port == 0 ? sceMotionSetTiltCorrectionThroughEntry(e) : Port(port);
+    [Hle] int sceMotionSetDeadbandExt(int port, int e) => port == 0 ? sceMotionSetDeadbandThroughEntry(e) : Port(port);
     /// <summary>(int port, SceMotionState *state): sceMotionGetState of a port; for an external port the driver checks
     /// the range (0x8036020B), then the pointer (0x80360209), then the controller (0x80360202).</summary>
     [Hle("sceMotion_D87E2B64", Nid = 0xD87E2B64, Library = "SceMotion")]
@@ -303,7 +303,7 @@ public sealed partial class Sensors
     {
         if (port == 0)
         {
-            return sceMotionGetState(state);
+            return sceMotionGetStateThroughEntry(state);
         }
 
         if (port <= 4 && state == 0)
@@ -330,7 +330,7 @@ public sealed partial class Sensors
     [Hle] int sceMotionDevUpdateMagnStabilityLevel(int level) => 0;
 
     /// <summary>(void *loc 0x30): the sensor positions, as sceMotionGetDeviceLocation reports them.</summary>
-    [Hle] int sceMotionDevGetDeviceLocation(uint loc) => loc == 0 ? ERR_DEV_NULL : sceMotionGetDeviceLocation(loc);
+    [Hle] int sceMotionDevGetDeviceLocation(uint loc) => loc == 0 ? ERR_DEV_NULL : sceMotionGetDeviceLocationThroughEntry(loc);
     /// <summary>(void *bias 0x10): the gyro bias the driver measured at rest: none on the emulated (ideal) gyro.</summary>
     [Hle]
     int sceMotionDevGetGyroBias(uint bias)
@@ -365,7 +365,7 @@ public sealed partial class Sensors
         return 0;
     }
     /// <summary>(void *buf, int size &lt;= 0x40, int count): raw sensor records, as sceMotionDevReadForMagnCalib.</summary>
-    [Hle] int sceMotionDevRead(uint buf, int size, int count) => buf == 0 || count == 0 || size > 0x40 ? ERR_DEV_NULL : sceMotionDevReadForMagnCalib(buf, size, count);
+    [Hle] int sceMotionDevRead(uint buf, int size, int count) => buf == 0 || count == 0 || size > 0x40 ? ERR_DEV_NULL : sceMotionDevReadForMagnCalibThroughEntry(buf, size, count);
 }
 
 public sealed partial class SystemUtil

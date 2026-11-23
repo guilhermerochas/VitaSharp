@@ -355,7 +355,7 @@ public sealed partial class Audio : HleModule
     [Hle]
     int sceAudioInOpenPortForDiag(int type, int grain, int freq, int param)
     {
-        if (type != 14) return sceAudioInOpenPort(type, grain, freq, param);
+        if (type != 14) return sceAudioInOpenPortThroughEntry(type, grain, freq, param);
         if (param != 0) return IN_ERR_INVALID_PORT_PARAM;
         lock (this)
         {

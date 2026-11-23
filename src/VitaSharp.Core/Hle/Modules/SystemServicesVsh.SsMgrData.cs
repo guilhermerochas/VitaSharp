@@ -62,8 +62,8 @@ public sealed partial class SystemServicesVsh
         {
             uint chunk = Math.Min(value.Size - done, 0x10);
             int result = write
-                ? ksceSysconNvsWriteData(value.Offset + done, data + done, chunk)
-                : ksceSysconNvsReadData(value.Offset + done, data + done, chunk);
+                ? ksceSysconNvsWriteDataThroughEntry(value.Offset + done, data + done, chunk)
+                : ksceSysconNvsReadDataThroughEntry(value.Offset + done, data + done, chunk);
             if (result != 0)
             {
                 return result;

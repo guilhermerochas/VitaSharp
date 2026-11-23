@@ -313,14 +313,14 @@ public sealed partial class PervasiveKernel
     [Hle(Nid = 0x4F64DEF6, Library = "ScePervasiveForDriver")]
     int NID_4F64DEF6(uint port)
     {
-        NID_4AF7A01E(port, 0xB);
-        NID_AD1E81EB(port, 0xB);
+        NID_4AF7A01EThroughEntry(port, 0xB);
+        NID_AD1E81EBThroughEntry(port, 0xB);
         if (port < 3)
         {
             Switch(MiscPage + 0x84 + port * 4, 1);
         }
 
-        NID_13CC07C9(port, 8);
+        NID_13CC07C9ThroughEntry(port, 8);
         if (port < 3)
         {
             int shift = (int)port * 2;
@@ -335,7 +335,7 @@ public sealed partial class PervasiveKernel
     [Hle(Nid = 0xBB67EF58, Library = "ScePervasiveForDriver")]
     int NID_BB67EF58(uint port)
     {
-        NID_4AF7A01E(port, 8);
+        NID_4AF7A01EThroughEntry(port, 8);
         if (port < 3)
         {
             ChangeMisc(0x17C, 3u << ((int)port * 2), 0);

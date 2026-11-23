@@ -81,7 +81,7 @@ public sealed partial class Libc
             KCall(0x4B879059, "SceProcessmgr", tv, tv + 8);
             return (long)(int)GuestMemory.R32(tv) * 1_000_000 + (int)GuestMemory.R32(tv + 4);
         }
-        finally { free(tv); }
+        finally { freeThroughEntry(tv); }
     }
 
     /// <summary>The microseconds from now until the xtime (0 when it has passed), nanoseconds rounded up.</summary>
@@ -105,9 +105,9 @@ public sealed partial class Libc
     int _Mtx_init(uint mtx, uint type)
     {
         GuestMemory.W32(mtx, 0);
-        uint p = calloc(1, 0x30);
+        uint p = callocThroughEntry(1, 0x30);
         if (p == 0) return ThrdNomem;
-        if (CreateLwMutex(p + 8, ((type & 0x100) != 0 ? 2u : 0u) | 0x2000) != 0) { free(p); return ThrdError; }
+        if (CreateLwMutex(p + 8, ((type & 0x100) != 0 ? 2u : 0u) | 0x2000) != 0) { freeThroughEntry(p); return ThrdError; }
         GuestMemory.W32(p, type);
         GuestMemory.W32(mtx, p);
         return ThrdSuccess;
@@ -118,7 +118,7 @@ public sealed partial class Libc
     {
         if (mtx == 0 || GuestMemory.R32(mtx) is not (var p and not 0)) return;
         DeleteLwMutex(p + 8);
-        free(p);
+        freeThroughEntry(p);
         GuestMemory.W32(mtx, 0);
     }
 
@@ -156,7 +156,7 @@ public sealed partial class Libc
             if (r == 0) { MtxTaken(p); return ThrdSuccess; }
             return (uint)r == KErrTimeout ? ThrdTimedout : ThrdError;
         }
-        finally { free(t); }
+        finally { freeThroughEntry(t); }
     }
 
     [Hle]
@@ -202,10 +202,10 @@ public sealed partial class Libc
     [Hle]
     int _Cnd_init(uint cnd)
     {
-        uint p = calloc(1, 0x30);
+        uint p = callocThroughEntry(1, 0x30);
         if (p == 0) return ThrdNomem;
-        if (CreateLwMutex(p + 0x10, 0x2000) != 0) { free(p); return ThrdError; }
-        if (CreateLwCond(p, p + 0x10) != 0) { DeleteLwMutex(p + 0x10); free(p); return ThrdError; }
+        if (CreateLwMutex(p + 0x10, 0x2000) != 0) { freeThroughEntry(p); return ThrdError; }
+        if (CreateLwCond(p, p + 0x10) != 0) { DeleteLwMutex(p + 0x10); freeThroughEntry(p); return ThrdError; }
         GuestMemory.W32(cnd, p);
         return ThrdSuccess;
     }
@@ -216,7 +216,7 @@ public sealed partial class Libc
         if (cnd == 0 || GuestMemory.R32(cnd) is not (var p and not 0)) return;
         DeleteLwCond(p);
         DeleteLwMutex(p + 0x10);
-        free(p);
+        freeThroughEntry(p);
         GuestMemory.W32(cnd, 0);
     }
 
@@ -225,16 +225,16 @@ public sealed partial class Libc
         uint st = HeapAlloc(8, HeapAlign);
         try
         {
-            if (_Save_state(mtx, st) != 0) return ThrdError;
+            if (_Save_stateThroughEntry(mtx, st) != 0) return ThrdError;
             uint p = GuestMemory.R32(cnd);
             if (LockLwMutex(p + 0x10, 0) != 0) return ThrdError;
             int r = WaitLwCond(p, timeout);
             if (UnlockLwMutex(GuestMemory.R32(cnd) + 0x10) != 0) return ThrdError;
-            if (_Restore_state(mtx, st) != 0) return ThrdError;
+            if (_Restore_stateThroughEntry(mtx, st) != 0) return ThrdError;
             if (timeout != 0 && (uint)r == KErrTimeout) return ThrdTimedout;
             return r != 0 ? ThrdError : ThrdSuccess;
         }
-        finally { free(st); }
+        finally { freeThroughEntry(st); }
     }
 
     [Hle] int _Cnd_wait(uint cnd, uint mtx) => CndWait(cnd, mtx, 0);
@@ -244,7 +244,7 @@ public sealed partial class Libc
     {
         uint t = XCell(XtimeToUsec(xt));
         try { return CndWait(cnd, mtx, t); }
-        finally { free(t); }
+        finally { freeThroughEntry(t); }
     }
 
     [Hle] int _Cnd_signal(uint cnd) => SignalLwCond(GuestMemory.R32(cnd)) == 0 ? ThrdSuccess : ThrdError;
@@ -283,8 +283,8 @@ public sealed partial class Libc
         foreach (var e in mine)
         {
             if (e.Res != 0) GuestMemory.W32(e.Res, 1);
-            _Mtx_unlock(e.Mtx);
-            _Cnd_broadcast(e.Cnd);
+            _Mtx_unlockThroughEntry(e.Mtx);
+            _Cnd_broadcastThroughEntry(e.Cnd);
         }
         return ThrdSuccess;
     }
@@ -300,7 +300,7 @@ public sealed partial class Libc
         if (uid < 0) return ThrdError;
         uint a = XCell(arg);
         try { return KCall(0xF08DE149, "SceLibKernel", (uint)uid, 4, a) == 0 ? ThrdSuccess : ThrdError; }
-        finally { free(a); }
+        finally { freeThroughEntry(a); }
     }
 
     /// <summary>_Thrd_create(thr, func, arg): as in the module, the thread starts at an entry that only returns 0 while
@@ -311,9 +311,9 @@ public sealed partial class Libc
         uint started = XCell(0), cnd = XCell(0), mtx = XCell(0);
         try
         {
-            _Cnd_init(cnd);
-            _Mtx_init(mtx, 1);
-            _Mtx_lock(mtx);
+            _Cnd_initThroughEntry(cnd);
+            _Mtx_initThroughEntry(mtx, 1);
+            _Mtx_lockThroughEntry(mtx);
             int uid = KCall(0xC5C11EE7, "SceLibKernel", ConstString("SceLibc"), HostStub("_Thrd_create entry", c => c.Return(0)), 0xBF,
                 0x1000, 0, 0x70000, 0);
             GuestMemory.W32(thr, (uint)uid);
@@ -322,16 +322,16 @@ public sealed partial class Libc
             {
                 uint a = XCell(started);
                 r = KCall(0xF08DE149, "SceLibKernel", (uint)uid, 4, a) == 0 ? ThrdSuccess : ThrdError;
-                free(a);
+                freeThroughEntry(a);
                 if (r == ThrdSuccess)
-                    while (GuestMemory.R32(started) == 0) _Cnd_wait(cnd, mtx);
+                    while (GuestMemory.R32(started) == 0) _Cnd_waitThroughEntry(cnd, mtx);
             }
-            _Mtx_unlock(mtx);
-            _Cnd_destroy(cnd);
-            _Mtx_destroy(mtx);
+            _Mtx_unlockThroughEntry(mtx);
+            _Cnd_destroyThroughEntry(cnd);
+            _Mtx_destroyThroughEntry(mtx);
             return r;
         }
-        finally { free(started); free(cnd); free(mtx); }
+        finally { freeThroughEntry(started); freeThroughEntry(cnd); freeThroughEntry(mtx); }
     }
 
     /// <summary>_Thrd_join(thr, res): waits for the end, stores the exit status, deletes the thread.</summary>
@@ -345,7 +345,7 @@ public sealed partial class Libc
             if (res != 0) GuestMemory.W32(res, GuestMemory.R32(st));
             return KCall(0x1BBDE3D9, "SceThreadmgr", thr) == 0 ? ThrdSuccess : ThrdError;
         }
-        finally { free(st); }
+        finally { freeThroughEntry(st); }
     }
 
     [Hle] int _Thrd_detach(uint thr) => KCall(0x1BBDE3D9, "SceThreadmgr", thr) == 0 ? ThrdSuccess : ThrdError;
@@ -361,9 +361,9 @@ public sealed partial class Libc
     void _Thrd_abort(uint msg)
     {
         uint err = StderrFile().Addr;
-        fputs(msg, err);
-        fputc('\n', err);
-        abort();
+        fputsThroughEntry(msg, err);
+        fputcThroughEntry('\n', err);
+        abortThroughEntry();
     }
 
     // ------------------------------------------------------------------ std::_Pad
@@ -375,13 +375,13 @@ public sealed partial class Libc
     uint PadCtor(HleContext ctx, uint pad)
     {
         GuestMemory.W32(pad, PadVtable() + 8);
-        int r = _Cnd_init(pad + 4);
+        int r = _Cnd_initThroughEntry(pad + 4);
         if (r != 0) { ThrowCError(ctx, r); return pad; }
-        r = _Mtx_init(pad + 8, 1);
+        r = _Mtx_initThroughEntry(pad + 8, 1);
         if (r != 0) { ThrowCError(ctx, r); return pad; }
         GuestMemory.Write(pad + 0xC, (byte)0);
         GuestMemory.W32(pad + 0x10, pad + 0xC);
-        r = _Mtx_lock(pad + 8);
+        r = _Mtx_lockThroughEntry(pad + 8);
         if (r != 0) ThrowCError(ctx, r);
         return pad;
     }
@@ -409,10 +409,10 @@ public sealed partial class Libc
     uint PadDtor(HleContext ctx, uint pad)
     {
         GuestMemory.W32(pad, PadVtable() + 8);
-        int r = _Mtx_unlock(pad + 8);
+        int r = _Mtx_unlockThroughEntry(pad + 8);
         if (r != 0) ThrowCError(ctx, r);
-        _Mtx_destroy(pad + 8);
-        _Cnd_destroy(pad + 4);
+        _Mtx_destroyThroughEntry(pad + 8);
+        _Cnd_destroyThroughEntry(pad + 4);
         return pad;
     }
 
@@ -425,14 +425,14 @@ public sealed partial class Libc
         {
             uint self = GuestMemory.R32(c.Gpr(1));
             uint r = VCall(self, 0);
-            _Cnd_do_broadcast_at_thread_exit();
+            _Cnd_do_broadcast_at_thread_exitThroughEntry();
             c.Return(r);
         });
-        int s = _Thrd_start(thr, entry, pad);
+        int s = _Thrd_startThroughEntry(thr, entry, pad);
         if (s != 0) { ThrowCError(ctx, s == ThrdError ? 1 : s); return; }
         while (B(pad + 0xC) == 0)
         {
-            int r = _Cnd_wait(pad + 4, pad + 8);
+            int r = _Cnd_waitThroughEntry(pad + 4, pad + 8);
             if (r != 0) { ThrowCError(ctx, r); return; }
         }
     }
@@ -441,12 +441,12 @@ public sealed partial class Libc
     [Hle("_ZNSt4_Pad8_ReleaseEv")]
     void PadRelease(HleContext ctx, uint pad)
     {
-        int r = _Mtx_lock(pad + 8);
+        int r = _Mtx_lockThroughEntry(pad + 8);
         if (r == 0)
         {
             GuestMemory.Write(GuestMemory.R32(pad + 0x10), (byte)1);
-            r = _Cnd_signal(pad + 4);
-            if (r == 0) r = _Mtx_unlock(pad + 8);
+            r = _Cnd_signalThroughEntry(pad + 4);
+            if (r == 0) r = _Mtx_unlockThroughEntry(pad + 8);
         }
         if (r != 0) ThrowCError(ctx, r);
     }
@@ -510,7 +510,7 @@ public sealed partial class Libc
     void ThrowCppError(HleContext ctx, int index)
     {
         var (errc, text) = CppErrors[index];
-        uint obj = AllocateException(ExcSystemError.Size);
+        uint obj = AllocateExceptionThroughEntry(ExcSystemError.Size);
         Construct(obj, ExcSystemError, cstr: ConstString(text));
         GuestMemory.W32(obj + 0x24, (uint)errc);
         GuestMemory.W32(obj + 0x28, GenericCategory);
@@ -558,22 +558,22 @@ public sealed partial class Libc
     [Hle("_ZNSt6_MutexC2ESt14_Uninitialized")]
     uint MutexUninit(uint obj) { GuestMemory.W32(obj, 0xFFFFFFFF); return obj; }
 
-    [Hle("_ZNSt6_MutexC2Ev")] uint MutexC2(uint obj) => _ZNSt6_MutexC1Ev(obj);
-    [Hle("_ZNSt6_MutexD2Ev")] void MutexD2(uint obj) => _ZNSt6_MutexD1Ev(obj);
+    [Hle("_ZNSt6_MutexC2Ev")] uint MutexC2(uint obj) => _ZNSt6_MutexC1EvThroughEntry(obj);
+    [Hle("_ZNSt6_MutexD2Ev")] void MutexD2(uint obj) => _ZNSt6_MutexD1EvThroughEntry(obj);
 
     /// <summary>get_new_handler under the system lock 2.</summary>
     [Hle]
     uint _ZSt15get_new_handlerv()
     {
-        _Locksyslock(2);
+        _LocksyslockThroughEntry(2);
         uint h = _newHandler;
-        _Unlocksyslock(2);
+        _UnlocksyslockThroughEntry(2);
         return h;
     }
 
     // type_info's destructors only set its vptr (and the deleting one frees)
     [Hle("_ZNSt9type_infoD1Ev")] [Hle("_ZNSt9type_infoD2Ev")] uint StdTypeInfoDtor(uint obj) { GuestMemory.W32(obj, Rtti.Vptr(0x8E9879A7)); return obj; }
-    [Hle("_ZNSt9type_infoD0Ev")] uint TypeInfoDel(uint obj) { StdTypeInfoDtor(obj); free(obj); return obj; }
+    [Hle("_ZNSt9type_infoD0Ev")] uint TypeInfoDel(uint obj) { StdTypeInfoDtorThroughEntry(obj); freeThroughEntry(obj); return obj; }
 
     /// <summary>nested_exception (+4 the exception_ptr): the destructor drops the reference.</summary>
     [Hle("_ZNSt16nested_exceptionD1Ev")]
@@ -581,11 +581,11 @@ public sealed partial class Libc
     uint NestedDtor(uint obj)
     {
         GuestMemory.W32(obj, Rtti.Vptr(0xD7BE6282));
-        DecrementRefcount(GuestMemory.R32(obj + 4));
+        DecrementRefcountThroughEntry(GuestMemory.R32(obj + 4));
         return obj;
     }
 
-    [Hle("_ZNSt16nested_exceptionD0Ev")] uint NestedDel(uint obj) { NestedDtor(obj); free(obj); return obj; }
+    [Hle("_ZNSt16nested_exceptionD0Ev")] uint NestedDel(uint obj) { NestedDtorThroughEntry(obj); freeThroughEntry(obj); return obj; }
 
     /// <summary>out_of_range(const string&amp;).</summary>
     [Hle("_ZNSt12out_of_rangeC1ERKSs")] uint OutOfRangeFromString(uint obj, uint s) => Construct(obj, ExcOutOfRange, stringSrc: s);

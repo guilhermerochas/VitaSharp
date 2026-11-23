@@ -281,7 +281,7 @@ public sealed partial class Libc
         return 0;
     }
 
-    [Hle] int __aeabi_atexit(uint arg, uint func, uint dso) => __cxa_atexit(func, arg, dso);
+    [Hle] int __aeabi_atexit(uint arg, uint func, uint dso) => __cxa_atexitThroughEntry(func, arg, dso);
 
     [Hle] void __cxa_set_dso_handle_main(uint dso) => _mainDso = dso;
 
@@ -322,7 +322,7 @@ public sealed partial class Libc
     [Hle]
     void exit(int status)
     {
-        __cxa_finalize(0);
+        __cxa_finalizeThroughEntry(0);
         CloseAllStreams();
         Proc.ExitProcess(status);
     }
@@ -363,7 +363,7 @@ public sealed partial class Libc
         string text = (msg != 0 ? GuestMemory.ReadCString(msg) : "") + " -- " + (loc != 0 ? GuestMemory.ReadCString(loc) : "");
         Log.Error("[guest] assertion failed: " + text);
         WriteStream(StderrFile(), System.Text.Encoding.Latin1.GetBytes(text + "\n"));
-        abort();
+        abortThroughEntry();
     }
 
     /// <summary>_SCE_Assert(expr, file, line, func): "Assertion failed: ..." on stderr, then abort.</summary>
@@ -374,7 +374,7 @@ public sealed partial class Libc
         string text = $"Assertion failed: {S(expr)}, file {S(file)}, line {line}, function {S(func)}";
         Log.Error("[guest] " + text);
         WriteStream(StderrFile(), System.Text.Encoding.Latin1.GetBytes(text + "\n"));
-        abort();
+        abortThroughEntry();
     }
 
     // ------------------------------------------------------------------ C++ static guards

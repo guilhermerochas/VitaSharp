@@ -10,13 +10,13 @@ namespace VitaSharp.Core.Hle.Modules;
 
 public sealed partial class NpManager
 {
-    internal int XmlUnescape(uint destination, uint size, uint source, uint length, uint outLength) => NpCommonXmlUnescape(destination, size, source, length, outLength);
+    internal int XmlUnescape(uint destination, uint size, uint source, uint length, uint outLength) => NpCommonXmlUnescapeThroughEntry(destination, size, source, length, outLength);
 
-    internal int XmlEscape(uint destination, uint size, uint source, uint length, uint outLength) => NpCommonXmlEscape(destination, size, source, length, outLength);
+    internal int XmlEscape(uint destination, uint size, uint source, uint length, uint outLength) => NpCommonXmlEscapeThroughEntry(destination, size, source, length, outLength);
 
-    internal int DebugFlag() => NpCommonDebugFlag1();
+    internal int DebugFlag() => NpCommonDebugFlag1ThroughEntry();
 
-    internal int SystemSwVersionString(uint buffer) => sceNpCommonGetSystemSwVersionString(buffer);
+    internal int SystemSwVersionString(uint buffer) => sceNpCommonGetSystemSwVersionStringThroughEntry(buffer);
 }
 
 public sealed partial class NpUtility
@@ -113,7 +113,7 @@ public sealed partial class NpUtility
         while (list != 0)
         {
             uint next = GuestMemory.R32(list + 0xC);
-            UtilHeapFree(list, slot);
+            UtilHeapFreeThroughEntry(list, slot);
             list = next;
         }
 
@@ -126,7 +126,7 @@ public sealed partial class NpUtility
     int UtilBase64(uint output, uint data, uint size, int slot)
     {
         string text = Convert.ToBase64String(GuestMemory.Span(data, (int)size));
-        uint block = UtilHeapAlloc((uint)text.Length + 1, slot);
+        uint block = UtilHeapAllocThroughEntry((uint)text.Length + 1, slot);
         GuestMemory.WriteCString(block, text, text.Length + 1);
         GuestMemory.W32(output, block);
         return 0;
@@ -145,7 +145,7 @@ public sealed partial class NpUtility
         uint length = (uint)GuestMemory.ReadCString(text, 0x100000).Length;
         if (length == 0 && emptyAllowed)
         {
-            uint empty = UtilHeapAlloc(1, slot);
+            uint empty = UtilHeapAllocThroughEntry(1, slot);
             GuestMemory.Write<byte>(empty, 0);
             GuestMemory.W32(output, empty);
             return 0;
@@ -162,7 +162,7 @@ public sealed partial class NpUtility
             }
 
             uint size = GuestMemory.R32(needed);
-            uint block = UtilHeapAlloc(size, slot);
+            uint block = UtilHeapAllocThroughEntry(size, slot);
             GuestMemory.Fill(block, 0, size);
             result = transform(block, size, text, length, 0);
             GuestMemory.W32(output, result < 0 ? 0 : block);
@@ -183,7 +183,7 @@ public sealed partial class NpUtility
         {
             GuestMemory.WriteCString(name, "Sce-Np-Info-Length", 32);
             GuestMemory.WriteCString(name + 20, length.ToString(System.Globalization.CultureInfo.InvariantCulture), 12);
-            return Emu.Hle.Modules.OfType<Http>().First().sceHttpAddRequestHeader(request, name, name + 20, 0);
+            return Emu.Hle.Modules.OfType<Http>().First().sceHttpAddRequestHeaderThroughEntry(request, name, name + 20, 0);
         }
         finally
         {
@@ -255,14 +255,14 @@ public sealed partial class NpUtility
         GuestMemory.W32(response + 0x1C, 0);
         GuestMemory.W32(response + 0xC, 0);
         GuestMemory.W32(response + 0x14, 0);
-        return UtilInitRecord(record, 0, 0, 0);
+        return UtilInitRecordThroughEntry(record, 0, 0, 0);
     }
 
     [Hle("NID_2580CDAF", Nid = 0x2580CDAF, Library = "SceNpUtility", Default = true)]
     int UtilParser2580CDAF(uint record, uint response)
     {
         GuestMemory.W32(response + 4, 0);
-        return UtilInitRecord(record, 0, 0, 0);
+        return UtilInitRecordThroughEntry(record, 0, 0, 0);
     }
 
     [Hle("NID_67147C73", Nid = 0x67147C73, Library = "SceNpUtility", Default = true)]
@@ -270,7 +270,7 @@ public sealed partial class NpUtility
     {
         GuestMemory.W32(response + 0xC, 0);
         GuestMemory.W32(response + 0x10, 0);
-        return UtilInitRecord(record, 0, 0, 0);
+        return UtilInitRecordThroughEntry(record, 0, 0, 0);
     }
 
     [Hle("NID_839F805E", Nid = 0x839F805E, Library = "SceNpUtility", Default = true)]
@@ -287,7 +287,7 @@ public sealed partial class NpUtility
             GuestMemory.W32(body + 0xDC, 0xFFFFFFFF);
         }
 
-        return UtilInitRecord(record, 0, 0, response);
+        return UtilInitRecordThroughEntry(record, 0, 0, response);
     }
 
     [Hle("NID_15227842", Nid = 0x15227842, Library = "SceNpUtility", Default = true)]
@@ -303,7 +303,7 @@ public sealed partial class NpUtility
         }
 
         GuestMemory.W32(response + 0xC, 0);
-        return kind is 1 or 2 ? UtilInitRecord(record, 0, 0, 0) : UTIL_BAD_KIND;
+        return kind is 1 or 2 ? UtilInitRecordThroughEntry(record, 0, 0, 0) : UTIL_BAD_KIND;
     }
 
     /// <summary>NID_C02139E5 / NID_E9544993 (kind, ...): the parsers' element callbacks (kind 4: a text element)
@@ -407,7 +407,7 @@ public sealed partial class NpUtility
     int UtilAbortHttpRequest(uint id) => UnknownRequest("C63A0F6B");
 
     [Hle("NID_B4423DAF", Nid = 0xB4423DAF, Library = "SceNpUtility", Default = true)]
-    int UtilDeleteRequestB4423DAF(uint id, uint slot) => UtilDeleteRequestOn(id, slot);
+    int UtilDeleteRequestB4423DAF(uint id, uint slot) => UtilDeleteRequestOnThroughEntry(id, slot);
 
     /// <summary>NID_46543307 / NID_A15150C9 (request, item): appends an item to a request's list (NULL request
     /// 0x80550704 for the second; no item: 0); NID_75FD803B (request): drops a request reference; NID_200BBAC5 (slot):

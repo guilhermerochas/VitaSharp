@@ -33,8 +33,8 @@ public sealed partial class SysmemKernel
         return kernelObject switch
         {
             KernelData { Kind: KernelData.ClassObject } data => data.Aux,
-            KernelData { Kind: KernelData.Heap } => ksceKernelGetUIDHeapClass(),
-            MemBlock => ksceKernelGetUIDMemBlockClass(),
+            KernelData { Kind: KernelData.Heap } => ksceKernelGetUIDHeapClassThroughEntry(),
+            MemBlock => ksceKernelGetUIDMemBlockClassThroughEntry(),
             _ => RootClass(),
         };
     }
@@ -182,7 +182,7 @@ public sealed partial class SysmemKernel
     /// <summary>GUIDGetUIDVectorWeakByClass (0xE9957329)(cls, level, vector, max, count): the same walk, made 16 entries
     /// at a time without holding the table's lock; 0.</summary>
     [Hle(Nid = 0xE9957329, Library = "SceSysmemForKernel")]
-    int NID_E9957329(uint cls, uint level, uint vector, uint max, uint countOut) => ksceGUIDGetUIDVectorByClass(cls, level, vector, max, countOut);
+    int NID_E9957329(uint cls, uint level, uint vector, uint max, uint countOut) => ksceGUIDGetUIDVectorByClassThroughEntry(cls, level, vector, max, countOut);
 
     /// <summary>PUIDGetUIDVectorByClass (0x08C05493)(pid, cls, level, vector, max, count): the handles process
     /// <paramref name="pid"/> holds on objects of the class.</summary>
@@ -346,7 +346,7 @@ public sealed partial class SysmemKernel
             return InvalidPuid;
         }
 
-        return kscePUIDOpenByGUID(pid, guid);
+        return kscePUIDOpenByGUIDThroughEntry(pid, guid);
     }
 
     /// <summary>GUIDSet (0xBF275C5A)(guid, cls, name, object): puts an existing object behind a GUID sysmem made at
@@ -397,7 +397,7 @@ public sealed partial class SysmemKernel
     {
         if (name != 0)
         {
-            ksceGUIDSetName(kernelObject.Uid, name);
+            ksceGUIDSetNameThroughEntry(kernelObject.Uid, name);
         }
 
         if (body == 0 || kernelObject is not KernelData { Kind: KernelData.ClassObject } data)

@@ -156,7 +156,7 @@ public sealed partial class NpSnsFacebook
     /// <summary>NID_34A88B2D (a, b) / NID_9663A2EC (a, b: both required, 0x80559403) / NID_EF957AD0 (): the system
     /// slot's connection with a memory setting (0x80559401 when open).</summary>
     [Hle("NID_34A88B2D", Nid = 0x34A88B2D, Library = "SceNpSnsFacebook")]
-    int NpSnsFacebookSystemInitWith(uint a, uint b) => NpSnsFacebookSystemInit();
+    int NpSnsFacebookSystemInitWith(uint a, uint b) => NpSnsFacebookSystemInitThroughEntry();
 
     [Hle("NID_9663A2EC", Nid = 0x9663A2EC, Library = "SceNpSnsFacebook")]
     int NpSnsFacebookSystemInitWithPool(uint pool, uint size)
@@ -166,11 +166,11 @@ public sealed partial class NpSnsFacebook
             return FB_ALREADY_INITIALIZED;
         }
 
-        return pool == 0 || size == 0 ? FB_INVALID_ARGUMENT : NpSnsFacebookSystemInit();
+        return pool == 0 || size == 0 ? FB_INVALID_ARGUMENT : NpSnsFacebookSystemInitThroughEntry();
     }
 
     [Hle("NID_EF957AD0", Nid = 0xEF957AD0, Library = "SceNpSnsFacebook")]
-    int NpSnsFacebookSystemInit2() => NpSnsFacebookSystemInit();
+    int NpSnsFacebookSystemInit2() => NpSnsFacebookSystemInitThroughEntry();
 
     /// <summary>NID_8CB58B88 (int slot, a, b): opens a numbered slot's connection (open 0x80559401, NULL 0x80559403).</summary>
     [Hle("NID_8CB58B88", Nid = 0x8CB58B88, Library = "SceNpSnsFacebook")]
@@ -220,18 +220,18 @@ public sealed partial class NpSnsFacebook
     }
 
     [Hle("NID_D08701B6", Nid = 0xD08701B6, Library = "SceNpSnsFacebook")]
-    int NpSnsFacebookSystemTerm2() => NpSnsFacebookSystemTerm();
+    int NpSnsFacebookSystemTerm2() => NpSnsFacebookSystemTermThroughEntry();
 
     /// <summary>NID_836AA54A (): the system slot's request room (none: 0x80559404).</summary>
     [Hle("NID_836AA54A", Nid = 0x836AA54A, Library = "SceNpSnsFacebook", Default = true)]
-    int NpSnsFacebookSystemRequestRoom() => NpSnsFacebookRequestRoom(0);
+    int NpSnsFacebookSystemRequestRoom() => NpSnsFacebookRequestRoomThroughEntry(0);
 
     /// <summary>NID_249B3C57 / NID_72A0685C (): delete / abort of the system slot's request.</summary>
     [Hle("NID_249B3C57", Nid = 0x249B3C57, Library = "SceNpSnsFacebook")]
-    int NpSnsFacebookSystemDeleteRequest() => NpSnsFacebookDeleteRequestOn(0);
+    int NpSnsFacebookSystemDeleteRequest() => NpSnsFacebookDeleteRequestOnThroughEntry(0);
 
     [Hle("NID_72A0685C", Nid = 0x72A0685C, Library = "SceNpSnsFacebook")]
-    int NpSnsFacebookSystemAbortRequest() => NpSnsFacebookAbortRequestOn(0);
+    int NpSnsFacebookSystemAbortRequest() => NpSnsFacebookAbortRequestOnThroughEntry(0);
 
     // the service's requests (defaults: no Facebook account can be linked), on the system slot or a given one
     [Hle("NID_0CDD6B52", Nid = 0x0CDD6B52, Library = "SceNpSnsFacebook", Default = true)]

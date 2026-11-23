@@ -333,7 +333,7 @@ public sealed partial class AppMgrShell
         }
 
         int flags = optParam != 0 ? (int)GuestMemory.R32(optParam + 4) : 0;
-        return sceAppMgrLaunchAppByName(flags, name, param);
+        return sceAppMgrLaunchAppByNameThroughEntry(flags, name, param);
     }
 
     /// <summary>(const char *name, const char *param, SceAppMgrLaunchParam *launchParam 0x40[, opt]): the second form
@@ -358,7 +358,7 @@ public sealed partial class AppMgrShell
         }
 
         int flags = launchParam != 0 ? (int)GuestMemory.R32(launchParam + 4) : 0;
-        return sceAppMgrLaunchAppByName(flags, name, param);
+        return sceAppMgrLaunchAppByNameThroughEntry(flags, name, param);
     }
 
     /// <summary>(const void *extra, SceSize size, opt 0x40): starts the PS Vita TV video streaming application (PS Now /
@@ -586,9 +586,9 @@ public sealed partial class AppMgrShell
 
     /// <summary>(int port, int a, int b, int c, int d): the form 3 (the wrapper puts the 4th and 5th arguments in a
     /// 0x10 option block, the kernel reads them from there).</summary>
-    [Hle] int sceAppMgrAcquireSoundOutExclusive3(int port, int a, int b, int c, int d) => sceAppMgrAcquireSoundOutExclusive2(port, a, b, c);
-    [Hle] int _sceAppMgrAcquireSoundOutExclusive3(int port, int a, int b, uint opt) => sceAppMgrAcquireSoundOutExclusive2(port, a, b, opt != 0 ? (int)GuestMemory.R32(opt) : 0);
-    [Hle] int sceAppMgrReleaseSoundOutExclusive3(int port) => sceAppMgrReleaseSoundOutExclusive2(port);
+    [Hle] int sceAppMgrAcquireSoundOutExclusive3(int port, int a, int b, int c, int d) => sceAppMgrAcquireSoundOutExclusive2ThroughEntry(port, a, b, c);
+    [Hle] int _sceAppMgrAcquireSoundOutExclusive3(int port, int a, int b, uint opt) => sceAppMgrAcquireSoundOutExclusive2ThroughEntry(port, a, b, opt != 0 ? (int)GuestMemory.R32(opt) : 0);
+    [Hle] int sceAppMgrReleaseSoundOutExclusive3(int port) => sceAppMgrReleaseSoundOutExclusive2ThroughEntry(port);
 
     /// <summary>The PS Vita TV's Bluetooth remote/DualShock routing ("btrm"): a system program takes the input
     /// devices for itself (touch, camera, controllers, motion go to it only). Kept; the shell gives it back.</summary>
@@ -693,7 +693,7 @@ public sealed partial class AppMgr
     /// creates a loopback image: there is no loopback support to create it in (the format answers like a missing
     /// device, 0x80801002) after the kernel's checks.</summary>
     [Hle("sceAppMgrLoopBackFormat")]
-    int sceAppMgrLoopBackFormat(int id, uint partition, uint path, uint param) => _sceAppMgrLoopBackFormat(id, partition, path, 0);
+    int sceAppMgrLoopBackFormat(int id, uint partition, uint path, uint param) => _sceAppMgrLoopBackFormatThroughEntry(id, partition, path, 0);
 
     [Hle]
     int _sceAppMgrLoopBackFormat(int id, uint partition, uint path, uint opt)
@@ -780,7 +780,7 @@ public sealed partial class AppMgr
     /// <summary>(const char *titleId, const SceAppMgrAcidDirParam *param 0x10, const char *path 0x124): binds a
     /// directory to a title's access control (PFS acid dir) for installers; no PFS here: the path is checked.</summary>
     [Hle] int sceAppMgrAcidDirSet(uint titleId, uint path) => KString(path, 0x124) == null ? ERR_TOO_LONG : 0;
-    [Hle] int _sceAppMgrAcidDirSet(uint titleId, uint path, uint opt) => sceAppMgrAcidDirSet(titleId, path);
+    [Hle] int _sceAppMgrAcidDirSet(uint titleId, uint path, uint opt) => sceAppMgrAcidDirSetThroughEntry(titleId, path);
 
     /// <summary>(const SceAppMgrInstallDirMountParam *param): the package installer's work directory mount: the
     /// emulator installs packages on the host, nothing to mount for the guest: 0.</summary>
@@ -822,7 +822,7 @@ public sealed partial class AppMgr
         return 0;
     }
 
-    [Hle] int _sceAppMgrGetVs0UserModuleDrive(uint id) => _sceAppMgrGetVs0UserDataDrive(id);
+    [Hle] int _sceAppMgrGetVs0UserModuleDrive(uint id) => _sceAppMgrGetVs0UserDataDriveThroughEntry(id);
 
     /// <summary>(const SceAppMgrDriveByPidParam *in 0x10, int *mediaType): the media type of a process's drive
     /// (1 = memory card for ux0, 2 = game card): the media of the drive the process's app0: comes from.</summary>
@@ -838,7 +838,7 @@ public sealed partial class AppMgr
         uint drive = GuestMemory.R32(input + 4);
         if (drive != 0)
         {
-            return sceAppMgrGetMediaTypeFromDrive(drive, mediaType);
+            return sceAppMgrGetMediaTypeFromDriveThroughEntry(drive, mediaType);
         }
 
         mediaType.Value = 1;
@@ -854,14 +854,14 @@ public sealed partial class AppMgr
             return ERR_NULL_POINTER;
         }
 
-        return sceAppMgrGetUserDirPath((int)GuestMemory.R32(param), path, 0x10);
+        return sceAppMgrGetUserDirPathThroughEntry((int)GuestMemory.R32(param), path, 0x10);
     }
 
     // ---- save data helpers of the system applications
     /// <summary>(const char *path 0x124, void *paramSfo, SceSize size, opt): reads a save's sce_sys/param.sfo (Content
     /// Manager and Settings > Saved Data list saves with it). Up to size bytes are copied; returns the bytes read,
     /// 0x80801002 when the save has no param.sfo.</summary>
-    [Hle] int sceAppMgrLoadSaveDataSystemFile(uint path, uint buf, uint size) => _sceAppMgrLoadSaveDataSystemFile(path, buf, size, 0);
+    [Hle] int sceAppMgrLoadSaveDataSystemFile(uint path, uint buf, uint size) => _sceAppMgrLoadSaveDataSystemFileThroughEntry(path, buf, size, 0);
 
     [Hle]
     int _sceAppMgrLoadSaveDataSystemFile(uint path, uint buf, uint size, uint opt)

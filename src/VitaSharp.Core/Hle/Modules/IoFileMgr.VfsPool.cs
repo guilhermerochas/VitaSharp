@@ -259,14 +259,14 @@ public sealed partial class IoFileMgr
         uint parent = GuestMemory.R32(vnode + 0x50);
         if (!candidate || parent == 0 || TryLockVnode(parent) != 0)
         {
-            vfsUnlockVnode(vnode);
+            vfsUnlockVnodeThroughEntry(vnode);
             return false;
         }
 
-        ksceVopInactive(vnode);
+        ksceVopInactiveThroughEntry(vnode);
         GuestMemory.W32(vnode + 0x74, VnodeStateRecycled);
-        vfsUnlockVnode(vnode);
-        vfsUnlockVnode(parent);
+        vfsUnlockVnodeThroughEntry(vnode);
+        vfsUnlockVnodeThroughEntry(parent);
         UnlinkMountVnode(mount, vnode);
         return true;
     }
@@ -278,7 +278,7 @@ public sealed partial class IoFileMgr
         if (GuestMemory.R32(vnode + 4) == (uint)CurrentThreadId())
         {
             GuestMemory.W32(vnode + 8, 0);
-            vfsUnlockVnode(vnode);
+            vfsUnlockVnodeThroughEntry(vnode);
         }
     }
 

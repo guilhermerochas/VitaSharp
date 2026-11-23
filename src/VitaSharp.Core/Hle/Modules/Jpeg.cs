@@ -61,7 +61,7 @@ public sealed partial class Jpeg : HleModule
     int sceJpegInitMJpegWithParam(uint param)
     {
         if (param == 0) return ERR_INVALID_POINTER;
-        return sceJpegInitMJpeg((int)GuestMemory.R32(param + 4));
+        return sceJpegInitMJpegThroughEntry((int)GuestMemory.R32(param + 4));
     }
 
     [Hle("_sceJpegFinishMJpeg")]

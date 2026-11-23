@@ -430,54 +430,54 @@ public sealed partial class Display
 
     /// <summary>ksceDisplayRegisterFrameBufCallback (0x6E22990E)(callback): the same for the primary head.</summary>
     [Hle(Nid = 0x6E22990E, Library = "SceDisplayForDriver")]
-    int ksceDisplayRegisterFrameBufCallback(int callback) => ksceDisplayRegisterFrameBufCallbackInternal(0, callback);
+    int ksceDisplayRegisterFrameBufCallback(int callback) => ksceDisplayRegisterFrameBufCallbackInternalThroughEntry(0, callback);
 
     /// <summary>ksceDisplayRegisterVblankStartCallbackInternal (0x4AE2A2B1)(head, callback): the head's vblank start
     /// callback (the one vblank clock).</summary>
     [Hle(Nid = 0x4AE2A2B1, Library = "SceDisplayForDriver")]
     int ksceDisplayRegisterVblankStartCallbackInternal(uint head, int callback)
     {
-        return head >= 3 ? ErrorInvalidHead : sceDisplayRegisterVblankStartCallback(callback);
+        return head >= 3 ? ErrorInvalidHead : sceDisplayRegisterVblankStartCallbackThroughEntry(callback);
     }
 
     /// <summary>ksceDisplayUnregisterVblankStartCallbackInternal (0xB027433E)(head, callback).</summary>
     [Hle(Nid = 0xB027433E, Library = "SceDisplayForDriver")]
     int ksceDisplayUnregisterVblankStartCallbackInternal(uint head, int callback)
     {
-        return head >= 3 ? ErrorInvalidHead : sceDisplayUnregisterVblankStartCallback(callback);
+        return head >= 3 ? ErrorInvalidHead : sceDisplayUnregisterVblankStartCallbackThroughEntry(callback);
     }
 
     /// <summary>ksceDisplayWaitVblankStartInternal (0xB80CA224)(head).</summary>
     [Hle(Nid = 0xB80CA224, Library = "SceDisplayForDriver", Cost = HleCost.SchedulerWait)]
-    int ksceDisplayWaitVblankStartInternal(uint head) => head >= 3 ? ErrorInvalidHead : sceDisplayWaitVblankStart();
+    int ksceDisplayWaitVblankStartInternal(uint head) => head >= 3 ? ErrorInvalidHead : sceDisplayWaitVblankStartThroughEntry();
 
     /// <summary>ksceDisplayWaitVblankStartCBInternal (0x8F3C0E19)(head).</summary>
     [Hle(Nid = 0x8F3C0E19, Library = "SceDisplayForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true)]
-    int ksceDisplayWaitVblankStartCBInternal(uint head) => head >= 3 ? ErrorInvalidHead : sceDisplayWaitVblankStartCB();
+    int ksceDisplayWaitVblankStartCBInternal(uint head) => head >= 3 ? ErrorInvalidHead : sceDisplayWaitVblankStartCBThroughEntry();
 
     /// <summary>ksceDisplayWaitVblankStartMultiInternal (0x32287576)(head, count).</summary>
     [Hle(Nid = 0x32287576, Library = "SceDisplayForDriver", Cost = HleCost.SchedulerWait)]
-    int ksceDisplayWaitVblankStartMultiInternal(uint head, uint count) => head >= 3 ? ErrorInvalidHead : sceDisplayWaitVblankStartMulti(count);
+    int ksceDisplayWaitVblankStartMultiInternal(uint head, uint count) => head >= 3 ? ErrorInvalidHead : sceDisplayWaitVblankStartMultiThroughEntry(count);
 
     /// <summary>ksceDisplayWaitVblankStartMultiCBInternal (0x61421AAF)(head, count).</summary>
     [Hle(Nid = 0x61421AAF, Library = "SceDisplayForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true)]
-    int ksceDisplayWaitVblankStartMultiCBInternal(uint head, uint count) => head >= 3 ? ErrorInvalidHead : sceDisplayWaitVblankStartMultiCB(count);
+    int ksceDisplayWaitVblankStartMultiCBInternal(uint head, uint count) => head >= 3 ? ErrorInvalidHead : sceDisplayWaitVblankStartMultiCBThroughEntry(count);
 
     /// <summary>ksceDisplayWaitSetFrameBufInternal (0x12A77662)(head, plane).</summary>
     [Hle(Nid = 0x12A77662, Library = "SceDisplayForDriver", Cost = HleCost.SchedulerWait)]
-    int ksceDisplayWaitSetFrameBufInternal(uint head, uint plane) => head >= 3 ? ErrorInvalidHead : sceDisplayWaitSetFrameBuf();
+    int ksceDisplayWaitSetFrameBufInternal(uint head, uint plane) => head >= 3 ? ErrorInvalidHead : sceDisplayWaitSetFrameBufThroughEntry();
 
     /// <summary>ksceDisplayWaitSetFrameBufCBInternal (0x35466D63)(head, plane).</summary>
     [Hle(Nid = 0x35466D63, Library = "SceDisplayForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true)]
-    int ksceDisplayWaitSetFrameBufCBInternal(uint head, uint plane) => head >= 3 ? ErrorInvalidHead : sceDisplayWaitSetFrameBufCB();
+    int ksceDisplayWaitSetFrameBufCBInternal(uint head, uint plane) => head >= 3 ? ErrorInvalidHead : sceDisplayWaitSetFrameBufCBThroughEntry();
 
     /// <summary>ksceDisplayWaitSetFrameBufMultiInternal (0xF83C95B1)(head, plane, count).</summary>
     [Hle(Nid = 0xF83C95B1, Library = "SceDisplayForDriver", Cost = HleCost.SchedulerWait)]
-    int ksceDisplayWaitSetFrameBufMultiInternal(uint head, uint plane, uint count) => head >= 3 ? ErrorInvalidHead : sceDisplayWaitSetFrameBufMulti(count);
+    int ksceDisplayWaitSetFrameBufMultiInternal(uint head, uint plane, uint count) => head >= 3 ? ErrorInvalidHead : sceDisplayWaitSetFrameBufMultiThroughEntry(count);
 
     /// <summary>ksceDisplayWaitSetFrameBufMultiCBInternal (0x6DC8F0F5)(head, plane, count).</summary>
     [Hle(Nid = 0x6DC8F0F5, Library = "SceDisplayForDriver", Cost = HleCost.SchedulerWait, CallbackWait = true)]
-    int ksceDisplayWaitSetFrameBufMultiCBInternal(uint head, uint plane, uint count) => head >= 3 ? ErrorInvalidHead : sceDisplayWaitSetFrameBufMultiCB(count);
+    int ksceDisplayWaitSetFrameBufMultiCBInternal(uint head, uint plane, uint count) => head >= 3 ? ErrorInvalidHead : sceDisplayWaitSetFrameBufMultiCBThroughEntry(count);
 
     // ------------------------------------------------------------------ framebuffer capture
 

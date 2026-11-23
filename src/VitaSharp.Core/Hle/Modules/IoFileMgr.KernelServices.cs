@@ -75,14 +75,14 @@ public sealed partial class IoFileMgr
     [Hle(Nid = 0xCE397158, Library = "SceIofilemgrForDriver", ReturnsValue = true)]
     int ksceIoGetProcessDefaultPriorityForSystem()
     {
-        return sceIoGetProcessDefaultPriority();
+        return sceIoGetProcessDefaultPriorityThroughEntry();
     }
 
     /// <summary>ksceIoSetProcessDefaultPriorityForSystem(priority): sets it (a negative priority 0x80020066).</summary>
     [Hle(Nid = 0xABE65071, Library = "SceIofilemgrForDriver")]
     int ksceIoSetProcessDefaultPriorityForSystem(int priority)
     {
-        return sceIoSetProcessDefaultPriority(priority);
+        return sceIoSetProcessDefaultPriorityThroughEntry(priority);
     }
 
     /// <summary>ksceIoGetFileInfo(fd, pid, info, ?): NULL info 0x80010016, an fd not open 0x80010009; the file's
@@ -257,7 +257,7 @@ public sealed partial class IoFileMgr
     [Hle(Nid = 0x9FCDCE62, Library = "SceIofilemgrForDriver")]
     int ksceIofilemgr_9FCDCE62(int priority, uint first, uint second, uint third)
     {
-        return sceIoSetThreadDefaultPriority(priority);
+        return sceIoSetThreadDefaultPriorityThroughEntry(priority);
     }
 
     /// <summary>NID_CCE94599(fd, priority, ...): the system variant of an fd's priority: as sceIoSetPriority.</summary>
@@ -369,7 +369,7 @@ public sealed partial class IoFileMgr
         {
             GuestMemory.W32(param, path);
             GuestMemory.W32(param + 4, 1);
-            return vfsRmdev(param);
+            return vfsRmdevThroughEntry(param);
         }
         finally
         {

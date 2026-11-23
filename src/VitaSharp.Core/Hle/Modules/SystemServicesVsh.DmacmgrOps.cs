@@ -121,7 +121,7 @@ public sealed partial class SystemServicesVsh
             return DMAOP_ERR_INVALID_ARGUMENT;
         }
 
-        DmaThreads.sceKernelDeleteEventFlag(operation.EventFlag);
+        DmaThreads.sceKernelDeleteEventFlagThroughEntry(operation.EventFlag);
         _dmaOperations.Remove(handle);
         _dmaChains.Remove(handle);
         return 0;
@@ -352,12 +352,12 @@ public sealed partial class SystemServicesVsh
                 result = flag?.Poll(DmaDoneBit, DmaWaitMode, new Ptr<uint>(0)) ?? SceError.UNKNOWN_EVF_ID;
                 break;
             case 2:
-                result = DmaThreads.sceKernelWaitEventFlag(operation.EventFlag, DmaDoneBit, DmaWaitMode, new Ptr<uint>(0), new Ptr<uint>(0));
+                result = DmaThreads.sceKernelWaitEventFlagThroughEntry(operation.EventFlag, DmaDoneBit, DmaWaitMode, new Ptr<uint>(0), new Ptr<uint>(0));
                 break;
             case 3:
                 uint timeoutWord = Mem.Alloc(4, "SceDmacSync timeout", MemoryRegion.Kernel, 4);
                 GuestMemory.W32(timeoutWord, timeout);
-                result = DmaThreads.sceKernelWaitEventFlag(operation.EventFlag, DmaDoneBit, DmaWaitMode, new Ptr<uint>(0), new Ptr<uint>(timeoutWord));
+                result = DmaThreads.sceKernelWaitEventFlagThroughEntry(operation.EventFlag, DmaDoneBit, DmaWaitMode, new Ptr<uint>(0), new Ptr<uint>(timeoutWord));
                 Mem.Free(timeoutWord);
                 break;
             default:
@@ -487,7 +487,7 @@ public sealed partial class SystemServicesVsh
         _dmaChains.Remove(handle);
         operation.Done = true;
         _dmaOperations[handle] = operation;
-        DmaThreads.sceKernelSetEventFlag(operation.EventFlag, DmaDoneBit);
+        DmaThreads.sceKernelSetEventFlagThroughEntry(operation.EventFlag, DmaDoneBit);
         if (operation.Callback != 0 && GuestThread.Current is { } thread)
         {
             thread.CallGuest(operation.Callback, handle, 0, operation.CallbackArgument, 0, moved);

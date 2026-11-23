@@ -738,7 +738,11 @@ public sealed partial class SysmemKernel
 
     // ------------------------------------------------------------------ core lock (one turn per core, in core order)
 
+    // the syscall's C# body, which this kernel function shares (on the Vita another function): a hook on
+    // the syscall export does not see it
+#pragma warning disable VSHLE010
     int CurrentCpuId => UserSysMem.sceKernelGetCpuId();
+#pragma warning restore VSHLE010
 
     /// <summary>ksceKernelCorelockInitialize(lock): word +0 = 1 (the spinlock held), +4 = 4 (cores left), +6 = 4 (no
     /// core's turn).</summary>
@@ -806,7 +810,7 @@ public sealed partial class SysmemKernel
                 WaitForEvent(ref spin);
             }
 
-            ksceKernelCorelockInitialize(lockAddr);
+            ksceKernelCorelockInitializeThroughEntry(lockAddr);
             return;
         }
 

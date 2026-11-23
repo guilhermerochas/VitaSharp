@@ -54,7 +54,7 @@ public sealed partial class Net
 
     int LibnetControl(int kernelIndex, int cmd, uint data, int size)
     {
-        return KernelToNet(sceNetSyscallControl(kernelIndex, cmd, data, size));
+        return KernelToNet(sceNetSyscallControlThroughEntry(kernelIndex, cmd, data, size));
     }
 
     /// <summary>libnet's interface lookup: -1 is no interface (EINVAL); a name of IfNames found in the kernel's list
@@ -429,7 +429,7 @@ public sealed partial class Net
             return ENOTINIT;
         }
 
-        return KernelToNet(sceNetSyscallIoctl(s, cmd, argp));
+        return KernelToNet(sceNetSyscallIoctlThroughEntry(s, cmd, argp));
     }
 
     /// <summary>
@@ -480,7 +480,7 @@ public sealed partial class Net
             GuestMemory.W32(block, mib);
             GuestMemory.W32(block + 4, 6);
             GuestMemory.W32(block + 12, length);
-            int result = KernelToNet(sceNetSyscallSysctl(block));
+            int result = KernelToNet(sceNetSyscallSysctlThroughEntry(block));
             if (result < 0)
             {
                 return result;

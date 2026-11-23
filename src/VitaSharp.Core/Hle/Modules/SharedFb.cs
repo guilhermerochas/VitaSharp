@@ -168,7 +168,7 @@ public sealed partial class SharedFb : HleModule
         GuestMemory.W32(_frameBufDesc + 0x0C, 0); // SCE_DISPLAY_PIXELFORMAT_A8B8G8R8
         GuestMemory.W32(_frameBufDesc + 0x10, Width);
         GuestMemory.W32(_frameBufDesc + 0x14, Height);
-        Emu.Hle.Modules.OfType<Display>().First().SetFrameBuf(_frameBufDesc, 1);
+        Emu.Hle.Modules.OfType<Display>().First().SetFrameBufThroughEntry(_frameBufDesc, 1);
         return 0;
     }
 
