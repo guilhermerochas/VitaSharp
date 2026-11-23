@@ -42,6 +42,78 @@ public sealed partial class Emulator
         "PFS mount (ScePfsMgr with the title key)",
     ];
 
+    /// <summary>SceProcessmgrForKernel's library NID from FW 3.63 on and its ksceKernelCreateProcess (fixed by the
+    /// firmware's export table; 3.60 had 0x7A69DE86 and 0x71CF71FD, which 3.74 does not export).</summary>
+    private const uint ProcessmgrForKernelLibNid = 0xEB1F8EF7, KernelCreateProcessNid = 0x68068618;
+
+    /// <summary>The process types appmgr 3.74 creates an application (0x1000000) and a system application
+    /// (0x2000000) with.</summary>
+    private const uint ApplicationProcessType = 0x1000000, SystemProcessType = 0x2000000;
+
+    /// <summary>The size of ksceKernelCreateProcess's option block (its first word).</summary>
+    private const uint CreateProcessOptionSize = 0x40;
+
+    /// <summary>This process is the one the HLE's ksceKernelCreateProcess made: that call already went through the
+    /// function's entry, so its launch does not make it again (<see cref="CreateProcessThroughProcessmgr"/>).</summary>
+    private bool _createdByProcessmgr;
+
+    /// <summary>
+    /// The process's creation as appmgr 3.74 makes it at a launch (decompiled SceAppMgr, study only; also for a
+    /// LoadExec, which replaces the process with a new one): ksceKernelCreateProcess(title ID, type, the executable's
+    /// path, a 0x40-byte option) of SceProcessmgrForKernel, by the function's address, before app0 is mounted for the
+    /// process. VitaSharp makes the process on the host, so the call is made through the entry only when kernel code
+    /// hooked it (a kernel plugin loaded at the boot): the hook runs on a kernel thread with the launch's arguments, and
+    /// the original it may continue to answers with this process (<see cref="ProcessmgrKernel.CreateLaunchedProcess"/>).
+    /// An error the call returns fails the launch with it (<see cref="ProcessLoadException"/>), as appmgr's launch fails.
+    /// Without a hook nothing runs.
+    /// </summary>
+    private void CreateProcessThroughProcessmgr(string self)
+    {
+        bool createdByProcessmgr = _createdByProcessmgr;
+        _createdByProcessmgr = false;
+        if (createdByProcessmgr || IsKernelProcess || Vita.KernelProcess is not { } kernel)
+        {
+            return;
+        }
+
+        FirmwareKernelModules firmware = kernel.FirmwareKernel;
+        if (!firmware.IsPatched(ProcessmgrForKernelLibNid, KernelCreateProcessNid))
+        {
+            return;
+        }
+
+        ProcessmgrKernel processmgr = kernel.Hle.Modules.OfType<ProcessmgrKernel>().First();
+        string executable = FirmwareLayout.HostToGuest(Options.FsRoot, Path.Combine(AppPath, self)) ?? "app0:" + self.Replace('\\', '/');
+        string vs0 = Path.GetFullPath(Path.Combine(Options.FsRoot, "vs0")) + Path.DirectorySeparatorChar;
+        uint type = AppPath.StartsWith(vs0, StringComparison.OrdinalIgnoreCase) ? SystemProcessType : ApplicationProcessType;
+        const uint TitleIdSize = 0x20, PathSize = 0x400;
+        uint block;
+        using (ProcessScope.Enter(KernelSpace.KernelPid))
+        {
+            block = Memory.Alloc(TitleIdSize + PathSize + CreateProcessOptionSize, "appmgr:create process", MemoryRegion.Kernel, 16);
+        }
+
+        uint titleId = block;
+        uint path = block + TitleIdSize;
+        uint option = path + PathSize;
+        GuestMemory.Fill(block, 0, TitleIdSize + PathSize + CreateProcessOptionSize);
+        GuestMemory.WriteCString(titleId, TitleId, (int)TitleIdSize - 1);
+        GuestMemory.WriteCString(path, executable, (int)PathSize - 1);
+        GuestMemory.W32(option, CreateProcessOptionSize);
+        int result = 0;
+        RunOnKernelThread(kernel, "SceAppMgrLaunch", _ =>
+        {
+            result = processmgr.CreateLaunchedProcess(this, () => (int)firmware.Call(ProcessmgrForKernelLibNid, KernelCreateProcessNid,
+                () => (uint)Pid, titleId, type, path, option));
+        }, "the launch's ksceKernelCreateProcess");
+        Memory.Free(block);
+        if (result < 0)
+        {
+            Log.Error($"{TitleId}: the launch stopped at the process's creation: ksceKernelCreateProcess returned 0x{result:X8}");
+            throw new ProcessLoadException(result, new InvalidOperationException($"ksceKernelCreateProcess returned 0x{result:X8}"));
+        }
+    }
+
     /// <summary>
     /// The system's boot with the emulator option "Enable Kernel Plugins" on: the plugin configuration's <c>*KERNEL</c>
     /// modules load into the kernel and start, once per system, before any application is launched, as the Vita's
@@ -183,8 +255,8 @@ public sealed partial class Emulator
             }
 
             int count = (int)firmware.Call(IofilemgrForDriverLibNid, KernelIoReadNid,
-                () => (uint)io.sceIoRead(fd, buffer, LicenseTitleKey.LicenseSize), (uint)fd, buffer, LicenseTitleKey.LicenseSize);
-            firmware.Call(IofilemgrForDriverLibNid, KernelIoCloseNid, () => (uint)io.sceIoClose(fd), (uint)fd);
+                () => (uint)io.sceIoReadThroughEntry(fd, buffer, LicenseTitleKey.LicenseSize), (uint)fd, buffer, LicenseTitleKey.LicenseSize);
+            firmware.Call(IofilemgrForDriverLibNid, KernelIoCloseNid, () => (uint)io.sceIoCloseThroughEntry(fd), (uint)fd);
             result = count == LicenseTitleKey.LicenseSize ? count : LicenceReadError;
         }, "the launch's licence read");
 

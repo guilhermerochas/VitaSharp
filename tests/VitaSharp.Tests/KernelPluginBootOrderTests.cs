@@ -28,6 +28,7 @@ public sealed class KernelPluginBootOrderTests : IDisposable
 {
     private const string PsmTitle = "PFSB00001", RuntimeId = "PFSQ00001";
     private const uint IofilemgrForDriver = 0x40FD29C7, KernelIoOpen = 0x75192972, KernelIoRead = 0xE17EFC03, KernelIoClose = 0xF99DD8A3;
+    private const uint ProcessmgrForKernel = 0xEB1F8EF7, KernelCreateProcess = 0x68068618;
     private static readonly byte[] s_imageKey = Encoding.ASCII.GetBytes("boot-order-key!!");
     private readonly GuestMemoryFixture _fixture;
     private HleHarness _harness = null!;
@@ -240,6 +241,82 @@ public sealed class KernelPluginBootOrderTests : IDisposable
         Assert.True(_sink.IndexOf("plugin hook 1 called: ") < _sink.IndexOf($"{RuntimeId}: the launch stopped at app0's mount, step 3 of 4"));
     }
 
+    /// <summary>A synthetic SceProcessmgr in os0:kd exporting ksceKernelCreateProcess under SceProcessmgrForKernel's
+    /// NIDs of FW 3.63 and later, and the plugins with <paramref name="hooks"/> as the third kernel module, booted.</summary>
+    private (Emulator Kernel, uint HookFunction) BootWithCreateProcessHook(SceModuleBuilder hooks, int function, uint hookRef)
+    {
+        var processmgr = new SceModuleBuilder("SceProcessmgr");
+        int body = processmgr.ReturnConstant(0);
+        processmgr.Export("SceProcessmgrForKernel", ProcessmgrForKernel, 0x0001, (KernelCreateProcess, body));
+        string kd = Path.Combine(_harness.Root, "os0", "kd");
+        Directory.CreateDirectory(kd);
+        File.WriteAllBytes(Path.Combine(kd, "processmgr.skprx"), processmgr.Build());
+        FirmwareKernelImage.Forget(_harness.Root);
+        InstallPlugins(hooks);
+        Assert.Equal(3, _emu.BootKernelPlugins().Count);
+        Emulator kernel = KernelSpace.ProcessOf(_emu, KernelSpace.KernelPid)!;
+        uint hookFunction = hooks.AddressOf(KernelModules(_emu).Values.Single(m => m.Name == "VsBootHook").Segments[0].Address, function);
+        int uid = Call(kernel.Hle.Modules.OfType<PluginFramework>().Single(), "HookFunctionExportForKernel", KernelSpace.KernelPid, hookRef,
+            KernelString("SceProcessmgr"), ProcessmgrForKernel, KernelCreateProcess, hookFunction);
+        Assert.True(uid > 0, $"hook returned 0x{uid:X8}");
+        Assert.True(kernel.FirmwareKernel.IsPatched(ProcessmgrForKernel, KernelCreateProcess));
+        return (kernel, hookFunction);
+    }
+
+    /// <summary>
+    /// The launch creates the title's process through ksceKernelCreateProcess's entry, as appmgr 3.74 does: a kernel
+    /// hook on it is called on a kernel thread with the launch's arguments (the title ID, the application type
+    /// 0x1000000, the executable's path, the 0x40-byte option), continues to the original, which answers with the
+    /// launched process, and the title loads. Before, the launch made the process on the host and the hook was never
+    /// called.
+    /// </summary>
+    [Fact]
+    public void TheLaunchCreatesTheProcessThroughAHookedCreateProcessEntry()
+    {
+        Boot();
+        uint hookRef = KernelWord();
+        SceModuleBuilder hooks = new SceModuleBuilder("VsBootHook").Start(0);
+        int continuing = hooks.Arm(PluginHookContinuation(hookRef));
+        BootWithCreateProcessHook(hooks, continuing, hookRef);
+
+        _emu.LoadTitle(SyntheticTitle.Install(_harness.Root));
+
+        Assert.NotNull(_emu.MainModule);
+        string log = string.Join("\n", _sink.Messages());
+        int called = _sink.IndexOf("plugin hook 1 called: ksceKernelCreateProcess");
+        Assert.True(called >= 0, log);
+        Assert.True(_sink.IndexOf("plugin hook 1 continued to the original: ksceKernelCreateProcess") > called, log);
+        // the call's registers: r1 the application type; the title ID and the path are kernel strings
+        string trace = _sink.Messages().First(m => m.Contains("plugin hook 1 call 1: ", StringComparison.Ordinal));
+        Assert.Contains("r1=0x01000000", trace);
+        Assert.Contains($"returned 0x{_emu.Pid:X8}", trace);
+        Assert.True(called < _sink.IndexOf("Loaded module "), log);
+    }
+
+    /// <summary>A hook on ksceKernelCreateProcess that answers an error itself (here "too many processes") fails the
+    /// launch with that error, as appmgr's launch fails: no executable is loaded.</summary>
+    [Fact]
+    public void AnErrorTheCreateProcessHookAnswersFailsTheLaunch()
+    {
+        Boot();
+        uint hookRef = KernelWord();
+        SceModuleBuilder hooks = new SceModuleBuilder("VsBootHook").Start(0);
+        int refusing = hooks.Arm(
+        [
+            0xE3000082, // movw r0, #0x0082
+            0xE3480001, // movt r0, #0x8001
+            0xE12FFF1E, // bx lr
+        ]);
+        BootWithCreateProcessHook(hooks, refusing, hookRef);
+
+        ProcessLoadException e = Assert.Throws<ProcessLoadException>(() => _emu.LoadTitle(SyntheticTitle.Install(_harness.Root)));
+
+        Assert.Equal(unchecked((int)0x80010082), e.Error);
+        Assert.Equal(unchecked((int)0x80010082), Emulator.ModuleLoadError(e));
+        Assert.Null(_emu.MainModule);
+        Assert.True(_sink.IndexOf("plugin hook 1 called: ksceKernelCreateProcess") >= 0, string.Join("\n", _sink.Messages()));
+    }
+
     /// <summary>With the option off, the pure firmware: no plugin at all, and the launch fails the same way.</summary>
     [Fact]
     public void WithTheOptionOffNoPluginLoadsAndTheLaunchFailsTheSame()
@@ -255,6 +332,17 @@ public sealed class KernelPluginBootOrderTests : IDisposable
         Assert.Equal(-1, _sink.IndexOf("kernel plugin "));
         Assert.Null(_emu.Vita.KernelProcess);
         Assert.True(_sink.IndexOf($"{RuntimeId}: the launch stopped at app0's mount, step 3 of 4 (title key") >= 0);
+    }
+
+    /// <summary>A string in kernel memory (the user memory where the title's fixed segment goes stays free).</summary>
+    private uint KernelString(string text)
+    {
+        using (ProcessScope.Enter(KernelSpace.KernelPid))
+        {
+            uint address = _emu.Memory.Alloc(0x40, "test:string", MemoryRegion.Kernel, 16);
+            GuestMemory.WriteCString(address, text, 0x3F);
+            return address;
+        }
     }
 
     private uint KernelWord()

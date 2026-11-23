@@ -469,13 +469,14 @@ public sealed partial class Emulator : IDisposable
     /// when every process shares one space (VITASHARP_SHARED_ADDRESS_SPACE=1, or a host that cannot map memory twice) can
     /// such an executable not be placed: then it ends and <paramref name="cannotPlace"/> runs instead.
     /// <paramref name="processTitleId"/> is the title the launch names for the process, when it names one
-    /// (<see cref="LaunchedTitleId"/>).
+    /// (<see cref="LaunchedTitleId"/>). <paramref name="createdByProcessmgr"/>: the process is the one a call of
+    /// ksceKernelCreateProcess makes (that call already went through the function's entry).
     /// </summary>
     public Emulator SpawnProcess(string appDir, string self, string[] args, bool activate = false, Action? cannotPlace = null, bool background = false,
-        AppObject? reservedApp = null, Action<Emulator>? started = null, string? processTitleId = null)
+        AppObject? reservedApp = null, Action<Emulator>? started = null, string? processTitleId = null, bool createdByProcessmgr = false)
     {
         Gpu.SharedByProcesses = true; // from now on GPU scenes are arbitrated between the processes
-        var child = new Emulator(this, reservedApp) { _background = background };
+        var child = new Emulator(this, reservedApp) { _background = background, _createdByProcessmgr = createdByProcessmgr };
         _children.Add(child);
         child.TitleId = Path.GetFileName(Path.TrimEndingDirectorySeparator(appDir));
         if (!string.IsNullOrEmpty(processTitleId) && !processTitleId.Equals(child.TitleId, StringComparison.OrdinalIgnoreCase))
@@ -579,6 +580,11 @@ public sealed partial class Emulator : IDisposable
         if (e is TitleKeyException noKey)
         {
             return noKey.Error;
+        }
+
+        if (e is ProcessLoadException refused)
+        {
+            return refused.Error;
         }
 
         if (e is FileNotFoundException or DirectoryNotFoundException)
@@ -1151,6 +1157,8 @@ public sealed partial class Emulator : IDisposable
         Vfs.MountSaveData("savedata0", saveDir);
         Vfs.Mount("addcont0", Io.FirmwareLayout.AddCont.Host(Options.FsRoot, TitleId));
 
+        // appmgr creates the process (ksceKernelCreateProcess) before it mounts app0 for it
+        CreateProcessThroughProcessmgr(self);
         Klicensee = FindKlicensee();
         OpenApp0Image();
         string vs0 = Path.GetFullPath(Path.Combine(Options.FsRoot, "vs0")) + Path.DirectorySeparatorChar;

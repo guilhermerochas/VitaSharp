@@ -56,6 +56,54 @@ public sealed partial class ProcessmgrKernel
     [SnapshotIgnore]
     readonly SemaphoreSlim _processListLock = new(1, 1);
 
+    /// <summary>The launches the system is creating through this function's entry (<see cref="CreateLaunchedProcess"/>),
+    /// by the kernel thread making the call: a host-side launch that is already loading its executable.</summary>
+    [SnapshotIgnore]
+    readonly Dictionary<GuestThread, Emulator> _launches = new();
+
+    /// <summary>
+    /// The creation of a launch's process as SceAppMgr 3.74 makes it (decompiled, study only): appmgr calls
+    /// ksceKernelCreateProcess(title ID, type, executable path, 0x40-byte option) by its address on its own thread, and
+    /// launches nothing when it fails. In VitaSharp the launch (<paramref name="launched"/>) is made on the host, so the
+    /// call is made through the entry only when kernel code hooked it: <paramref name="call"/> runs on a kernel thread,
+    /// the hook first, and the original it continues to answers with the launch's own process instead of making a
+    /// second one (its argument checks are the same). Returns what the call returned: the pid, or an error.
+    /// </summary>
+    internal int CreateLaunchedProcess(Emulator launched, Func<int> call)
+    {
+        GuestThread thread = GuestThread.Current ?? throw new InvalidOperationException("the launch's process is created on a kernel thread");
+        lock (_launches)
+        {
+            _launches[thread] = launched;
+        }
+
+        try
+        {
+            return call();
+        }
+        finally
+        {
+            lock (_launches)
+            {
+                _launches.Remove(thread);
+            }
+        }
+    }
+
+    /// <summary>The launch the calling thread is creating through the entry, if it is making one.</summary>
+    Emulator? LaunchOfCaller()
+    {
+        if (GuestThread.Current is not { } thread)
+        {
+            return null;
+        }
+
+        lock (_launches)
+        {
+            return _launches.TryGetValue(thread, out Emulator? launched) ? launched : null;
+        }
+    }
+
     // ------------------------------------------------------------------ create, start, exit
 
     /// <summary>ksceKernelCreateProcess(titleid, type, path, opt): a process for the executable at the path, left
@@ -98,6 +146,12 @@ public sealed partial class ProcessmgrKernel
             }
         }
 
+        if (LaunchOfCaller() is { } launched)
+        {
+            // the system's launch calling through the entry: its process is the one being launched
+            return launched.Pid;
+        }
+
         string guestPath = GuestMemory.ReadCString(path, 0x400);
         string? host = Emu.Vfs.Resolve(guestPath);
         if (host == null || !File.Exists(host) || Path.GetDirectoryName(host) is not { } directory)
@@ -108,7 +162,7 @@ public sealed partial class ProcessmgrKernel
         Emulator process;
         try
         {
-            process = Emu.SpawnProcess(directory, Path.GetFileName(host), [], background: true);
+            process = Emu.SpawnProcess(directory, Path.GetFileName(host), [], background: true, createdByProcessmgr: true);
         }
         catch (ProcessLoadException e)
         {

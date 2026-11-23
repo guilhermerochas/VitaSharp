@@ -282,6 +282,16 @@ sceIoGetstat walk the path through the function's entry over the host vnodes (`I
 element, and what it answers counts (an error fails the call, another vnode sends it to that vnode's path, an open that
 creates still creates). Without such a hook nothing is walked and nothing is allocated (`IoVopLookupHookTests`).
 
+### The launch's process creation
+
+SceAppMgr 3.74 creates a title's process with ksceKernelCreateProcess(title ID, type 0x1000000 for an application or
+0x2000000 for a system application, the executable's path, a 0x40-byte option) before it mounts app0, and launches
+nothing when the call fails. When kernel code hooked that function (SceProcessmgrForKernel 0xEB1F8EF7 / 0x68068618 from
+FW 3.63 on; 3.60's 0x7A69DE86 / 0x71CF71FD is not exported by 3.74, so a hook on it is refused as on the console),
+every launch (the first title, the shell's launches, LoadExec) calls the entry on a kernel thread: the hook runs, the
+original it continues to answers with the launched process, and an error fails the launch with it
+(`KernelPluginBootOrderTests`). Without a hook nothing runs.
+
 ## Limits
 
 - A plugin that patches the firmware's own code by offset finds no firmware code there (VitaSharp implements the

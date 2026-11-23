@@ -292,6 +292,16 @@ usuário e o ksceIoOpen), sceIoDopen e sceIoGetstat percorrem o caminho pela ent
 leva ao caminho dele, uma abertura que cria continua criando). Sem esse hook nada é percorrido nem alocado
 (`IoVopLookupHookTests`).
 
+### A criação do processo no lançamento
+
+O SceAppMgr 3.74 cria o processo de um título com ksceKernelCreateProcess(ID do título, tipo 0x1000000 para aplicativo
+ou 0x2000000 para aplicativo do sistema, caminho do executável, opção de 0x40 bytes) antes de montar o app0, e não
+lança nada quando a chamada falha. Quando código de kernel enganchou essa função (SceProcessmgrForKernel 0xEB1F8EF7 /
+0x68068618 do FW 3.63 em diante; o 0x7A69DE86 / 0x71CF71FD do 3.60 o 3.74 não exporta, então um hook nele é recusado
+como no console), todo lançamento (o primeiro título, os do shell, LoadExec) chama a entrada numa thread de kernel: o
+hook roda, o original para o qual ele continua responde com o processo lançado, e um erro falha o lançamento com ele
+(`KernelPluginBootOrderTests`). Sem hook nada roda.
+
 ## Limites
 
 - Um plugin que corrige por deslocamento o código do próprio firmware não acha código do firmware ali (o VitaSharp

@@ -3194,6 +3194,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   PSM); no fim do `last.log` o resumo `plugin hook N ... ksceVopLookup ... installed by FdFix` mostra chamadas (não
   `never called`) e o jogo roda igual.
 
+- [ ] (23/11/2026, falta testar) [P1][M] Lançamento cria o processo pela entrada ksceKernelCreateProcess (fix/hookfn1):
+  no Vita o SceAppMgr 3.74 cria o processo do título com ksceKernelCreateProcess(título, tipo, caminho do executável,
+  opção de 0x40 bytes) antes de montar o app0; aqui o processo era criado só pelo host e um hook nela nunca era chamado.
+  Agora todo lançamento (o primeiro título, os do shell, LoadExec) chama a entrada numa thread de kernel quando código de
+  kernel a enganchou; o original responde com o processo do lançamento, e um erro do hook falha o lançamento com ele.
+  Teste: `KernelPluginBootOrderTests` (`TheLaunchCreatesTheProcessThroughAHookedCreateProcessEntry`,
+  `AnErrorTheCreateProcessHookAnswersFailsTheLaunch`). Testar: com os plugins de kernel ligados, abrir um título; o
+  `last.log` mostra `plugin hook N called: ksceKernelCreateProcess ...` antes de `Loading ...`, e o resumo do fim não
+  diz mais `never called` para esse hook.
+
 - [ ] (23/11/2026, falta testar) [P1][M] Plugins de kernel no boot do sistema, antes do lançamento do título
   (fix/bootord1): os módulos `*KERNEL` carregam e iniciam no boot (uma vez por sistema, qualquer que seja o título),
   antes do mount do app0; um título cujo app0 não monta continua falhando com 0x80020004 e a mesma mensagem, e o log diz
