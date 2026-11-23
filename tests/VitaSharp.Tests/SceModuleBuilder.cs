@@ -11,7 +11,7 @@ namespace VitaSharp.Tests;
 /// </summary>
 public sealed class SceModuleBuilder(string name)
 {
-    private const uint NidModuleStart = 0x935CD196;
+    private const uint NidModuleStart = 0x935CD196, NidModuleStop = 0x79F8E492;
     private const int CodeAt = 0x0, InfoAt = 0x400, ExportsAt = 0x500, ImportsAt = 0x700, StubsAt = 0x900, DataAt = 0xA00, ArmAt = 0xC00, Size = 0x1000;
 
     private readonly List<(string Name, uint Nid, ushort Attr, List<(uint Nid, int Function)> Functions)> _exports = [];
@@ -20,6 +20,7 @@ public sealed class SceModuleBuilder(string name)
     private readonly Dictionary<int, (int Offset, uint[] Words)> _arm = [];
     private int _armUsed;
     private int _startFunction = -1;
+    private int _stopFunction = -1;
     private uint _codeMemSize = Size;
     private uint _dataMemSize;
     private uint _moduleNid = 0x12345678;
@@ -95,6 +96,13 @@ public sealed class SceModuleBuilder(string name)
     public SceModuleBuilder Start(byte status)
     {
         _startFunction = ReturnConstant(status);
+        return this;
+    }
+
+    /// <summary>module_stop: function <paramref name="function"/> of the module (exported in the module's own library).</summary>
+    public SceModuleBuilder Stop(int function)
+    {
+        _stopFunction = function;
         return this;
     }
 
@@ -186,9 +194,20 @@ public sealed class SceModuleBuilder(string name)
 
         // exports: the module's own (module_start) library first
         var libs = new List<(string? Name, uint Nid, ushort Attr, List<(uint Nid, uint Addr)> F)>();
-        if (_startFunction >= 0)
+        if (_startFunction >= 0 || _stopFunction >= 0)
         {
-            libs.Add((null, 0, 0x8000, [(NidModuleStart, entryOf[_startFunction])]));
+            var own = new List<(uint Nid, uint Addr)>();
+            if (_startFunction >= 0)
+            {
+                own.Add((NidModuleStart, entryOf[_startFunction]));
+            }
+
+            if (_stopFunction >= 0)
+            {
+                own.Add((NidModuleStop, entryOf[_stopFunction]));
+            }
+
+            libs.Add((null, 0, 0x8000, own));
         }
 
         foreach ((string Name, uint Nid, ushort Attr, List<(uint Nid, int Function)> Functions) e in _exports)
