@@ -467,14 +467,20 @@ public sealed class Emulator : IDisposable
     /// (<see cref="Memory.GuestMemory.CreateSpace"/>), so an executable linked at the shell's addresses runs too; only
     /// when every process shares one space (VITASHARP_SHARED_ADDRESS_SPACE=1, or a host that cannot map memory twice) can
     /// such an executable not be placed: then it ends and <paramref name="cannotPlace"/> runs instead.
+    /// <paramref name="processTitleId"/> is the title the launch names for the process, when it names one
+    /// (<see cref="LaunchedTitleId"/>).
     /// </summary>
     public Emulator SpawnProcess(string appDir, string self, string[] args, bool activate = false, Action? cannotPlace = null, bool background = false,
-        AppObject? reservedApp = null, Action<Emulator>? started = null)
+        AppObject? reservedApp = null, Action<Emulator>? started = null, string? processTitleId = null)
     {
         Gpu.SharedByProcesses = true; // from now on GPU scenes are arbitrated between the processes
         var child = new Emulator(this, reservedApp) { _background = background };
         _children.Add(child);
         child.TitleId = Path.GetFileName(Path.TrimEndingDirectorySeparator(appDir));
+        if (!string.IsNullOrEmpty(processTitleId) && !processTitleId.Equals(child.TitleId, StringComparison.OrdinalIgnoreCase))
+        {
+            child.LaunchedTitleId = processTitleId;
+        }
         if (!ReferenceEquals(child.Space, Space))
         {
             child.Space.Label = child.Describe();
@@ -731,14 +737,26 @@ public sealed class Emulator : IDisposable
             }
         }
         int result = 0, failed = 0;
+        RunOnKernelThread(kernel, "SceProcessEvent", self =>
+        {
+            result = ProcessEvents.Run(self, handlers, Pid, eventId, eventType, param, stopAtFailure, stopAt, out failed);
+        }, $"the process event handlers (event {eventId})");
+
+        Memory.Free(param);
+        failedUid = failed;
+        return result;
+    }
+
+    /// <summary>Runs <paramref name="body"/> on a new kernel thread <paramref name="threadName"/> of the kernel process
+    /// <paramref name="kernel"/> (where processmgr runs its calls into other kernel modules) and waits for it; the
+    /// thread goes once it returned. <paramref name="what"/> names the call in the warning when it does not return.</summary>
+    private void RunOnKernelThread(Emulator kernel, string threadName, Action<GuestThread> body, string what)
+    {
         using (ProcessScope.Enter(kernel))
         {
-            GuestThread thread = kernel.Kernel.CreateThread("SceProcessEvent", 0, 0x40, 0x4000, 0, 0x70000);
+            GuestThread thread = kernel.Kernel.CreateThread(threadName, 0, 0x40, 0x4000, 0, 0x70000);
             thread.KernelMode = true;
-            thread.HostBody = self =>
-            {
-                result = ProcessEvents.Run(self, handlers, Pid, eventId, eventType, param, stopAtFailure, stopAt, out failed);
-            };
+            thread.HostBody = body;
             thread.Start(0, 0);
             bool finished;
             using (VitaSharp.Core.Kernel.Scheduler.Block())
@@ -752,13 +770,50 @@ public sealed class Emulator : IDisposable
             }
             else
             {
-                Log.Warn($"{Describe()}: the process event handlers (event {eventId}) did not return in time");
+                Log.Warn($"{Describe()}: {what} did not return in time");
             }
         }
+    }
 
-        Memory.Free(param);
-        failedUid = failed;
-        return result;
+    /// <summary>SceModulemgrForKernel's library NID from FW 3.65 on (the emulated firmware is 3.74): a fixed value of
+    /// the firmware's export table.</summary>
+    internal const uint ModulemgrForKernelLibNid = 0x92C9FFC2;
+
+    /// <summary>ksceKernelStartPreloadingModules(pid) of <see cref="ModulemgrForKernelLibNid"/>.</summary>
+    internal const uint StartPreloadingModulesNid = 0x998C7AE9;
+
+    /// <summary>
+    /// processmgr 3.74 starts a new process's preloaded modules by calling modulemgr's export
+    /// ksceKernelStartPreloadingModules(pid) by its address, once the process's main thread exists and before the
+    /// process start event (decompiled processmgr.skprx, study only). VitaSharp starts those modules itself
+    /// (<see cref="Start"/>), and the HLE of the export only answers, so the call is made through the export's entry
+    /// only when kernel code hooked it (a kernel plugin, as the PSP emulator's loader of a homebrew environment does to
+    /// add its module to a process): the hook runs on a kernel thread with the process's pid, its original part
+    /// reaching the HLE. Without a hook the call is the HLE's answer, and nothing runs.
+    /// </summary>
+    private void StartPreloadingModulesThroughModulemgr()
+    {
+        if (IsKernelProcess || Vita.KernelProcess is not { } kernel)
+        {
+            return;
+        }
+
+        FirmwareKernelModules firmware = kernel.FirmwareKernel;
+        if (!firmware.IsPatched(ModulemgrForKernelLibNid, StartPreloadingModulesNid))
+        {
+            return;
+        }
+
+        int result = 0;
+        uint pid = (uint)Pid;
+        RunOnKernelThread(kernel, "SceProcessStartPreload", _ =>
+        {
+            result = (int)firmware.Call(ModulemgrForKernelLibNid, StartPreloadingModulesNid, () => 0, pid);
+        }, "ksceKernelStartPreloadingModules");
+        if (result < 0)
+        {
+            Log.Warn($"{Describe()}: ksceKernelStartPreloadingModules returned 0x{result:X8}");
+        }
     }
 
     /// <summary>The process's executable loaded and the system was told about it (a process whose load failed never was).</summary>
@@ -1303,8 +1358,15 @@ public sealed class Emulator : IDisposable
     public const string ShellProcessTitleId = "main";
 
     /// <summary>The process's title ID as the kernel keeps it (sceKernelGetProcessTitleId, the plugin configuration's
-    /// sections): <see cref="ShellProcessTitleId"/> for the shell, the application's own otherwise.</summary>
-    public string ProcessTitleId => RunsOnSystemCore ? ShellProcessTitleId : TitleId;
+    /// sections): <see cref="ShellProcessTitleId"/> for the shell, the title the launch named when it named one
+    /// (<see cref="LaunchedTitleId"/>), the application's own otherwise.</summary>
+    public string ProcessTitleId => RunsOnSystemCore ? ShellProcessTitleId : LaunchedTitleId ?? TitleId;
+
+    /// <summary>The title ID the launch gave the process when it differs from the executable's application: the shell
+    /// starts the firmware's PSP emulator (vs0:app/NPXS10028/eboot.bin) by sceAppMgrLaunchAppByPath4 with the title of
+    /// the bubble it opens, and the kernel knows the emulator's process by that title (a PSP title's ID, or that of
+    /// the Vita application whose bubble the shell takes for a PSP one). Null: the application's own.</summary>
+    public string? LaunchedTitleId { get; private set; }
 
     /// <summary>What SceSblACMgr answers about the main executable (system, non-game, PSM program).</summary>
     public ProgramAccess Access { get; internal set; } = ProgramAccess.None;
@@ -2224,6 +2286,9 @@ public sealed class Emulator : IDisposable
             loadedModule.Started = true;
             RunOnNewThread($"start:{loadedModule.Name}", loadedModule.StartEntry);
         }
+
+        // the preloaded modules are started: processmgr's call of modulemgr's export, for a kernel hook on it
+        StartPreloadingModulesThroughModulemgr();
         // the launch posts the application's PARAM_NOTIFY event (FW 3.74 kernel appmgr, its launch path at 0x8100EC52):
         // Settings and Friends wait for it to open their first page and then read the launch parameter, which a launch
         // without one (the shell starting an application from its bubble passes NULL) leaves empty: the first

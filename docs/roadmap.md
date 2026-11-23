@@ -3662,8 +3662,18 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   de capability. Rodando sem janela (opção de plugins ligada, sem plugins na configuração, sem o shell), o eboot agora
   carrega e inicia o `adrenaline_kernel.skprx` (6 hooks de kernel instalados), carrega o `adrenaline_vsh.suprx` por
   ksceKernelLoadStartModuleForPid, chama sceAppMgrDestroyAppByName e a thread main termina no quadro 1 sem erro de HLE.
-  Falta: o passo seguinte do fluxo do Adrenaline (com o shell rodando: reiniciar no emulador de PSP do firmware) e
-  taiReloadConfig, taiReloadConfigForKernel e taiLoadPluginsForTitleForKernel.
+  Feito (adr2): o início de processo chama o export ksceKernelStartPreloadingModules pela entrada quando um módulo de
+  kernel o hookou (processmgr 3.74), e o processo que o shell lança por caminho (LaunchAppByPath4 e o 2ndStage de um
+  pedido) tem o título do launch como título de processo. Com o shell real sem janela (`boot-shell --kernel-plugins=on
+  --launch-app=PSPEMUCFW --launch-repeat=1`): o vsh do Adrenaline entra no SceShell, fecha o app; no segundo pedido o
+  shell trata a bolha como PSP e lança `vs0:app/NPXS10028/eboot.bin` com "originalpath=ux0:app/PSPEMUCFW&...&category=gd";
+  o hook do kernel injeta o `adrenaline_user.suprx` no processo do emulador de PSP e ele instala os 10 hooks de import.
+  Para aí: o `adrenaline_user` instalado é o 6.x público (só conhece o ScePspemu do 3.60 e do 3.65-3.70; o do 3.74 tem
+  NID 0x5459B715), então não instala os hooks por offset que trocam o parâmetro e o eboot; o pspemu recusa o parâmetro
+  (0x80010016), mostra o erro e volta (num Vita 3.74 com esse build seria igual; o Adrenaline 7 do fork isage conhece o
+  3.72-3.74). Falta: (1) testar com um Adrenaline que suporte o 3.74; (2) depois disso o pspemu chega ao
+  sceCompatInitEx, que precisa do núcleo de compatibilidade (pcbc, ver o item de jogos de PSP: o grande bloqueio até o
+  menu do Adrenaline); (3) taiReloadConfig, taiReloadConfigForKernel e taiLoadPluginsForTitleForKernel.
 - [ ] [P2][M] Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
   capturas de 21/11/2026, e um engasgo de 132 ms por leitura de arquivo (fileIo 134 ms; quadro 302 do dump da
   `_232150_tudo`). Achado (perf/ac3pace): fora das gravações o jogo fica em 30 fps (linhas `FPS frame` da sessão) e

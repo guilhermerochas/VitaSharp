@@ -387,7 +387,9 @@ public sealed partial class AppMgrShell : HleModule
         Emulator app;
         try
         {
-            app = Emu.SpawnProcess(dir, self, [], reservedApp: pl.App);
+            // the process is the requested title's, also when the shell starts another executable for it (the PSP
+            // emulator for a bubble of the PSP type): the kernel knows it by that title
+            app = Emu.SpawnProcess(dir, self, [], reservedApp: pl.App, processTitleId: pl.TitleId);
         }
         catch (ProcessLoadException e)
         {

@@ -108,7 +108,8 @@ public sealed partial class SystemSoftware : HleModule
         Emulator app;
         try
         {
-            app = Emu.SpawnProcess(dir, self, [], cannotPlace: () => launcher.RequestLaunch(dir, self, [], suspendCurrent: true));
+            // the process takes the title the launch names (the PSP emulator's process is the bubble's title)
+            app = Emu.SpawnProcess(dir, self, [], cannotPlace: () => launcher.RequestLaunch(dir, self, [], suspendCurrent: true), processTitleId: tid);
         }
         catch (ProcessLoadException e)
         {
