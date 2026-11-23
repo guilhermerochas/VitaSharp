@@ -2279,6 +2279,14 @@ public sealed partial class Emulator : IDisposable
             throw new InvalidOperationException("No title loaded");
         }
 
+        if (Vita.Ending)
+        {
+            // a child's start that came after its system's end began (SpawnProcess starts it on a host task): it
+            // stays stopped, with no thread
+            Log.Info($"Process {Describe()} not started: the system is ending");
+            return;
+        }
+
         using ProcessScope.Scope scope = ProcessScope.Enter(this);
         Running = true;
         if (Parent == null)
@@ -2416,6 +2424,11 @@ public sealed partial class Emulator : IDisposable
 
     public void Dispose()
     {
+        if (Parent == null)
+        {
+            Vita.BeginEnd(); // no process starts any more (a child's start may still be on its host task)
+        }
+
         Stop();
         HleGuestCode.CodePlaced -= OnHleGuestCodePlaced;
         _codeCache?.Stop();
@@ -2433,6 +2446,17 @@ public sealed partial class Emulator : IDisposable
 
         // the processes still starting, re-executing or ending finish first: what they free is this system's
         Vita.WaitForProcessTasks();
+        // what those tasks started before the end began stops too, and no guest thread of the system outlives it:
+        // one left running went on storing into memory its process no longer held
+        Stop();
+        foreach (Emulator process in Vita.Processes)
+        {
+            if (!process.Kernel.WaitAllThreadsExit(5_000))
+            {
+                Log.Warn($"system end: some threads of {process.Describe()} did not stop in time");
+            }
+        }
+
         Vita.EndKernelProcess();
 
         if (_jitBefore is { } jit)

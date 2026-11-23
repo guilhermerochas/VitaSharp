@@ -155,6 +155,22 @@ public sealed class VitaSystem
 
     private bool _waitingForProcessTasks;
 
+    private bool _ending;
+
+    /// <summary>
+    /// The system is ending (the first process's <see cref="Emulator.Dispose"/> began): no process starts any more. A
+    /// child's start runs on a host task (<see cref="Emulator.SpawnProcess"/>); one that came after the stop made the
+    /// child running again and created its main thread, which no stop ever reached: it went on running guest code
+    /// after the system ended, storing into memory its process no longer held (the next tests' kernel blocks).
+    /// </summary>
+    internal bool Ending => Volatile.Read(ref _ending);
+
+    /// <summary>The system's end begins (<see cref="Ending"/>).</summary>
+    internal void BeginEnd()
+    {
+        Volatile.Write(ref _ending, true);
+    }
+
     /// <summary>A process works on the host task <paramref name="task"/> (it starts, re-executes or ends there):
     /// <see cref="WaitForProcessTasks"/> waits for it.</summary>
     internal void TrackProcessTask(Task task)

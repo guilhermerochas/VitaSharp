@@ -3662,20 +3662,19 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   abaixo sempre visíveis, sem piscar.
 
 ## Bugs em aberto
-- [ ] [P1][M] Testes de hooks: interferência de memória compartilhada (23/11/2026, hookfix1): na suíte completa,
-  `PluginHookChainFuzzTests` e `PluginHookMatrixProcessTests` falham em 1-3 combinações por execução (registros do
-  framework lidos como 0, "jump to unmapped address 0x00000000"); isolados passam, e também falham na release sem o
-  log de hooks. Suspeita: outras classes do collection "guest" (Kernel*) liberam memória de kernel sob esses testes
-  (ex.: um FreeOwnedBy(KernelPid) tardio). Investigar se é só do teste (fixture compartilhada) ou um bug real (memória
-  de kernel liberada com hooks vivos), corrigir e tirar as duas classes da quarentena (Category=Slow desde 23/11).
-  Feito (cifix17): o fim do sistema não esperava as tarefas dos processos (fim de um processo terminado, LoadExec e
-  início de um filho rodam em `Task.Run`); o fim tardio fazia `FreeOwnedBy(pid)`, e o pid só é único dentro de um
-  sistema, então liberava blocos do sistema seguinte na mesma memória (`kernel:trap` realocado ao
-  `SceExcpmgrDefaultHandler` → "Undefined instruction 0xE7F000F0" no HleCostTests do CI; `__stack_chk_guard` e pilhas
-  → `__stack_chk_fail` no Piglet/NpCommerce2). Agora `VitaSystem.WaitForProcessTasks` (teste
-  `SystemEndProcessTasksTests`). Falta: 1 caso do fuzz por execução ainda falha sem nenhum free registrado — um
-  registro recém-alocado (página nunca usada antes) lê tudo zero ~6 ms depois de escrito, com o bloco intacto;
-  próximo passo é comparar a palavra por cada view do kernel (`AddressSpace.Base`) no momento da falha.
+- [x] [P1][M] Testes de hooks: interferência de memória compartilhada (23/11/2026, hookfix1/cifix17/hookmem1):
+  `PluginHookChainFuzzTests` e `PluginHookMatrixProcessTests` (e, raramente, HleCost, Piglet, NpCommerce2,
+  KernelThreadmgrControl) falhavam na suíte completa por dois defeitos do fim do sistema, ambos corrigidos com teste
+  (`SystemEndProcessTasksTests`), e as duas classes saíram da quarentena (Category=Slow):
+  1. (cifix17) o fim do sistema não esperava as tarefas dos processos (fim de processo terminado, LoadExec e início
+     de filho em `Task.Run`): o fim tardio fazia `FreeOwnedBy(pid)` — pid único só dentro de um sistema — e liberava
+     blocos do sistema seguinte na mesma memória (`kernel:trap` → "Undefined instruction 0xE7F000F0").
+  2. (hookmem1) o início de um filho deixado na sua tarefa, vindo depois do `Stop()`, punha o filho rodando de novo
+     e criava a thread `main`, que nenhuma parada alcançava: ela seguia executando código guest depois do fim e
+     gravava zeros nos blocos de kernel dos testes seguintes (registros do framework lidos como 0; achado com
+     `VITASHARP_WATCH`). Agora o sistema marca o fim (`VitaSystem.Ending`: `Emulator.Start` não inicia mais), para de
+     novo depois das tarefas e espera as threads de todos os processos.
+  Nada a testar em jogo (fim de sessão / suíte).
 - [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053) em 2x: textura da parede piscando e imagem embaçada (relato do
   usuário, 23/11/2026; captura `PCSE00053_20261123_134501_tudo`, build 793a9e96, resolução interna 2x por atalho no
   quadro 1587, dump da GPU de 34 quadros): o relatório marca 20 [flash] alternando quadro sim, quadro não (presents

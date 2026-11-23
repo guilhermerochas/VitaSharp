@@ -11,8 +11,11 @@ namespace VitaSharp.Tests;
 /// system freed, in a guest memory a later system uses, the blocks of that system with the same owner: the return
 /// trap of a thread ("kernel:trap"), reallocated to the exception manager's default handler, made a call return into
 /// an undefined instruction (CI, HleCostTests), and the hook tests read records of the plugin framework as zero.
-/// Synthetic: the shell's process of a system in the shared guest memory opens one application whose thread is held
-/// in host code, so the application's end is still running when its system ends.
+/// The end also leaves no guest thread of the system running: a child's start left on its host task made the child
+/// running again after the stop, and its main thread went on storing into the next tests' kernel blocks (the hook
+/// tests' framework records read as zero). Synthetic: the shell's process of a system in the shared guest memory opens
+/// one application whose thread is held in host code, so the application's end is still running when its system
+/// ends.
 /// </summary>
 [Collection("guest")]
 public sealed class SystemEndProcessTasksTests(GuestMemoryFixture fixture)
@@ -140,5 +143,43 @@ public sealed class SystemEndProcessTasksTests(GuestMemoryFixture fixture)
 
         Assert.Same(block, fixture.Memory.FindBlock(trap));
         Assert.Equal(0xEF000000u | Kernel.TrapSvc, GuestMemory.R32(trap));
+    }
+
+    [Fact]
+    public void AChildsStartAfterItsSystemsEndBeganMakesNoThread()
+    {
+        using var gate = new ManualResetEventSlim(true);
+        var system = new ShellAndApplication(fixture, "sysend3", gate);
+        Emulator app = system.App;
+        system.Dispose();
+        int threads = app.Kernel.Threads.Count();
+
+        // what a start left on its host task does when it comes after the end began
+        app.Start();
+        try
+        {
+            Assert.Equal(threads, app.Kernel.Threads.Count());
+            Assert.DoesNotContain(app.Kernel.Threads, thread => thread.IsLive);
+        }
+        finally
+        {
+            app.Stop();
+            app.Kernel.WaitAllThreadsExit(10_000);
+        }
+    }
+
+    [Fact]
+    public void NoGuestThreadOfTheSystemRunsAfterItsEnd()
+    {
+        using var gate = new ManualResetEventSlim(true);
+        var system = new ShellAndApplication(fixture, "sysend4", gate);
+        Emulator shell = system.Harness.Emu;
+        Emulator app = system.App;
+        HleHarness.Until(() => app.Kernel.MainThread is { IsLive: true }, "the application's main thread");
+
+        // the application is not stopped first: the system's end stops it and waits for its threads
+        system.Harness.Dispose();
+        Assert.DoesNotContain(app.Kernel.Threads, thread => thread.IsLive);
+        Assert.DoesNotContain(shell.Kernel.Threads, thread => thread.IsLive);
     }
 }
