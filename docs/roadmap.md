@@ -3183,6 +3183,26 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (23/11/2026, na release, falta testar) [P1][M] Falha ao abrir um jogo fecha o app sem aviso (relato do usuário, 22/11/2026: "ele nem me deu aviso do por
+  que"): uma exceção no carregamento do título (ex.: o `Not a SELF/ELF file` acima) termina o processo só com o log.
+  Mostrar uma mensagem na janela/launcher (PC e Android) com o motivo em linguagem simples e onde está o log, e voltar
+  ao launcher sem crash; teste com um título inválido.
+  Em andamento (feat/psmu1, o mínimo): no PC, qualquer falha do `LoadTitle` vira erro no log e no stderr com o motivo e
+  o caminho do log (`TitleLaunchFailure`, código de saída 4), e o launcher mostra essa linha no status; no Android a
+  falha da chave mostra o texto próprio. Feito (feat/loadui2, 22/11/2026): a mensagem na janela, no PC (a janela de
+  carregamento fica com o motivo, o caminho do log e "Fechar") e no Android (a tela de carregamento fica com o motivo
+  sob o diálogo); teste com um título inválido (`RunnerProcessTests`, `LauncherLoadingWindowTests`). Entrega movida
+  para "Corrigido, falta o usuário testar" (item da tela de carregamento); o resto foi feito em fix/quick2.
+  Feito (fix/quick2, 23/11/2026): o resto, uma falha fora do `LoadTitle` antes de o jogo rodar (a janela, o
+  dispositivo Vulkan, a montagem do emulador) também é uma abertura que falhou, como no Vita, onde o sistema mostra
+  um erro quando o aplicativo não abre: o motivo com o caminho do log no stderr, código 4 (a janela de carregamento
+  mostra a linha), em vez de um crash só com a pilha no log (`Runner.ReportStartFailure`, `BootProgress.Last`);
+  depois do `ready` uma exceção continua sendo crash. No Android o construtor e o Start da sessão já mostravam o
+  motivo. Testes: `RunnerStartFailureTests`, `RunnerProcessTests.AStartThatFailsAtTheGpuStepEndsWithTheFailureCodeAndItsReason`
+  (loader do Vulkan sem driver: antes saía com 0xE0434352). Testar: abrir um título que não carrega (ex.: o PSM em
+  Unity) e um jogo num PC sem driver Vulkan (ou com `VK_DRIVER_FILES` apontando para um arquivo inexistente): a
+  janela de carregamento fica com o motivo, o caminho do log e "Fechar", e o launcher segue aberto.
+
 - [ ] (23/11/2026, na release, falta testar) [P2][P] Resolução interna padrão (fix/quick2): uma opção global nas
   configurações (PC: Configurações > Gráficos > Resolução interna, 1x a 4x; Android: Ajustes > Resolução interna, 50%
   a 4x) com que todo jogo sem escolha própria abre; a escolha do jogo (inclusive "nativa") vence a global, e a página
@@ -3732,16 +3752,6 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   seguro → PFS conferido pelos ICVs do unicv.db, `PfsApp0View`/`LicenseTitleKey`). A licença do runtime é "free"
   (kind 0xD), cuja chave só sai do SceSblAuthMgr DecBindData: sem processador seguro o lançamento para com 0x80020004
   e mensagem clara. Falta: o título abrir de fato, o que depende de decidir como a chave chega sem processador seguro.
-- [ ] [P1][M] Falha ao abrir um jogo fecha o app sem aviso (relato do usuário, 22/11/2026: "ele nem me deu aviso do por
-  que"): uma exceção no carregamento do título (ex.: o `Not a SELF/ELF file` acima) termina o processo só com o log.
-  Mostrar uma mensagem na janela/launcher (PC e Android) com o motivo em linguagem simples e onde está o log, e voltar
-  ao launcher sem crash; teste com um título inválido.
-  Em andamento (feat/psmu1, o mínimo): no PC, qualquer falha do `LoadTitle` vira erro no log e no stderr com o motivo e
-  o caminho do log (`TitleLaunchFailure`, código de saída 4), e o launcher mostra essa linha no status; no Android a
-  falha da chave mostra o texto próprio. Feito (feat/loadui2, 22/11/2026): a mensagem na janela, no PC (a janela de
-  carregamento fica com o motivo, o caminho do log e "Fechar") e no Android (a tela de carregamento fica com o motivo
-  sob o diálogo); teste com um título inválido (`RunnerProcessTests`, `LauncherLoadingWindowTests`). Entrega movida
-  para "Corrigido, falta o usuário testar" (item da tela de carregamento); o resto segue aberto aqui.
 - [ ] [P1][G] Adrenaline (PSPEMUCFW) fecha logo ao abrir (relato do usuário, 21/11/2026; log `20261121_233018_PSPEMUCFW.log`):
   feito (adr1 565d5f71): a biblioteca `taihenUnsafe` do framework de plugins (taiLoadStartKernelModuleForUser e as
   outras chamadas de carga/descarga de módulo e de cópia user/kernel), e o ksceSblACMgrIsShell do ForDriver pelo bit 1

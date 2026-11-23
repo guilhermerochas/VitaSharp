@@ -157,6 +157,31 @@ public sealed class RunnerProcessTests : IDisposable
         Assert.NotEmpty(Directory.GetFiles(outDir, "frame_*.png"));
     }
 
+    /// <summary>A start that fails outside the title's load (here the window's Vulkan device: the loader is pointed at a
+    /// driver list with no driver, as on a PC without a Vulkan driver) ends like a load failure: the failure code, the
+    /// reason with the log's place as the last error line (what the launcher's loading window shows), no "ready" step and
+    /// no crash (RunnerStartFailureTests has the contract without a window).</summary>
+    [HiddenWindowVulkanFact]
+    public void AStartThatFailsAtTheGpuStepEndsWithTheFailureCodeAndItsReason()
+    {
+        string noDrivers = Path.Combine(_root, "no-vulkan-driver.json");
+        var env = new Dictionary<string, string>
+        {
+            ["VK_DRIVER_FILES"] = noDrivers,
+            ["VK_ICD_FILENAMES"] = noDrivers,
+        };
+        DesktopProcess.Result r = DesktopProcess.Run(_root, ["run", _app, "--no-vsync", "--frames=30", "--cpu=interp", "--loading-screen=launcher"],
+            env: env, softwareVulkan: false);
+        Assert.True(r.ExitCode == VitaSharp.Core.TitleLaunchFailure.ExitCode, $"exit code {r.ExitCode}:\n{Tail(r.Output)}");
+        List<VitaSharp.Core.Boot.BootStep> steps = BootSteps(r.Output);
+        Assert.Contains(VitaSharp.Core.Boot.BootStep.Gpu, steps);
+        Assert.DoesNotContain(VitaSharp.Core.Boot.BootStep.Ready, steps);
+        string log = Path.Combine(_root, "logs", "last.log");
+        string lastError = r.Output.Split('\n').Last(l => l.Contains(log, StringComparison.Ordinal) && !l.Contains(VitaSharp.Core.Boot.BootProgress.LogFileTag, StringComparison.Ordinal));
+        Assert.Contains("VSTS00001", lastError, StringComparison.Ordinal);
+        Assert.DoesNotContain("UNHANDLED EXCEPTION", r.Output, StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// A window run (the window is created hidden: VITASHARP_HIDDEN_WINDOW=1, nothing on screen) driven by the script's
     /// host keys: the swapchain presents the guest's frames (dumped), F5 / F7 save and load the quick state, F6 opens the

@@ -47,9 +47,16 @@ public static class BootProgress
     /// <summary>Raised (on the thread that runs the step) for every step reported.</summary>
     public static event Action<BootStep>? Reported;
 
+    private static volatile int s_last;
+
+    /// <summary>The step this process reported last (<see cref="BootStep.Starting"/> before any): before
+    /// <see cref="BootStep.Ready"/> the title is still being started, so a failure is a failed start.</summary>
+    public static BootStep Last => (BootStep)s_last;
+
     /// <summary>Logs <paramref name="step"/> and raises <see cref="Reported"/>.</summary>
     public static void Report(BootStep step)
     {
+        s_last = (int)step;
         Log.Info(Format(step));
         Reported?.Invoke(step);
     }

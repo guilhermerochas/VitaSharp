@@ -187,6 +187,14 @@ public static class Runner
                 s_launcherLoadingScreenDone = true;
             }
         }
+        catch (Exception failure) when (ReportStartFailure(appPath, failure, VitaSharp.Core.Boot.BootProgress.Last, Console.Error))
+        {
+            // a failed start: the reason is on the error output; the emulator's threads may still be up, so the
+            // process ends here with the failure code
+            Log.Flush();
+            Environment.Exit(TitleLaunchFailure.ExitCode);
+            return TitleLaunchFailure.ExitCode;
+        }
         finally
         {
             if (OperatingSystem.IsWindows())
@@ -1010,6 +1018,29 @@ public static class Runner
         string message = TitleLaunchFailure.Message(titleId, failure, Log.FilePath);
         Log.Error($"{message}{Environment.NewLine}{failure}");
         Console.Error.WriteLine(message);
+    }
+
+    /// <summary>
+    /// An exception that ended <see cref="RunCore"/> (on the thread that starts the title: the window's load, the
+    /// renderer's Vulkan device, the emulator's set-up) while the title was still being started (<paramref name="reached"/>
+    /// before <see cref="VitaSharp.Core.Boot.BootStep.Ready"/>) is a failed start, as a load failure: its reason in plain
+    /// words with the log's place on <paramref name="error"/> (the launcher's loading window shows that line for
+    /// <see cref="TitleLaunchFailure.ExitCode"/>) instead of a crash with only a stack in the log. On the Vita the system
+    /// shows an error dialog when an application does not start, and goes back to the home screen. Returns false (the
+    /// exception goes on as a crash) once the title is running.
+    /// </summary>
+    internal static bool ReportStartFailure(string appPath, Exception failure, VitaSharp.Core.Boot.BootStep reached, TextWriter error)
+    {
+        if (reached == VitaSharp.Core.Boot.BootStep.Ready || failure is OutOfMemoryException)
+        {
+            return false;
+        }
+
+        string titleId = Path.GetFileName(Path.TrimEndingDirectorySeparator(appPath));
+        string message = TitleLaunchFailure.Message(titleId, failure, Log.FilePath);
+        Log.Error($"Start failed at boot step {VitaSharp.Core.Boot.BootProgress.Name(reached)}: {message}{Environment.NewLine}{failure}");
+        error.WriteLine(message);
+        return true;
     }
 
     /// <summary>The launched application is encrypted and its license is not installed: the localized message with
