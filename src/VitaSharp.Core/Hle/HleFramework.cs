@@ -376,6 +376,13 @@ public sealed partial class HleRegistry : IImportResolver
         }
     }
 
+    /// <summary>Registers host code at an index every process of the system serves (code in shared kernel memory that
+    /// enters C# from a thread of any process, such as the plugin hooks' counting stubs). Returns the SVC number.</summary>
+    public uint RegisterSharedHostFunction(string name, Action<HleContext> body)
+    {
+        return (uint)Indexes.NewSharedHostIndex(name, body);
+    }
+
     /// <summary>Puts <paramref name="function"/> at <paramref name="index"/>, the slots before it unbound.</summary>
     void Place(int index, HleFunction function)
     {
@@ -558,6 +565,16 @@ public sealed partial class HleRegistry : IImportResolver
         uint nid = Indexes.NidAt(index);
         if (nid == 0)
         {
+            if (Indexes.SharedHostFunction(index, out string name, out Action<HleContext> body))
+            {
+                lock (_functions)
+                {
+                    var shared = new HleFunction { Nid = 0, Name = name, Library = "host", Invoke = body };
+                    Place((int)index, shared);
+                    return shared;
+                }
+            }
+
             return _functions[0];
         }
 

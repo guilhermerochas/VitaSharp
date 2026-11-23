@@ -42,6 +42,41 @@ public sealed class HleIndexTable
         }
     }
 
+    /// <summary>The host functions every process of the system serves at one index (code in shared kernel memory that
+    /// enters C#, such as the plugin hooks' counting stubs), by index.</summary>
+    private readonly Dictionary<int, (string Name, Action<HleContext> Body)> _sharedHost = new();
+
+    /// <summary>A new index for a host function that every process's registry serves (each binds it on its first
+    /// call, <see cref="SharedHostFunction"/>).</summary>
+    public int NewSharedHostIndex(string name, Action<HleContext> body)
+    {
+        lock (_lock)
+        {
+            _nids.Add(0);
+            int index = _nids.Count - 1;
+            _sharedHost[index] = (name, body);
+            return index;
+        }
+    }
+
+    /// <summary>The shared host function at <paramref name="index"/> (<see cref="NewSharedHostIndex"/>), if any.</summary>
+    public bool SharedHostFunction(uint index, out string name, out Action<HleContext> body)
+    {
+        lock (_lock)
+        {
+            if (_sharedHost.TryGetValue((int)index, out (string Name, Action<HleContext> Body) entry))
+            {
+                name = entry.Name;
+                body = entry.Body;
+                return true;
+            }
+
+            name = "";
+            body = null!;
+            return false;
+        }
+    }
+
     /// <summary>The NID index <paramref name="index"/> was given to (0: none or a host function).</summary>
     public uint NidAt(uint index)
     {

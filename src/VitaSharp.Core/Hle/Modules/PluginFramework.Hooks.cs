@@ -219,6 +219,42 @@ public sealed partial class PluginFramework
     /// hook's UID or an error.</summary>
     int HookAbsolute(int pid, uint hookRefOut, uint destination, uint hookFunction, uint redirectLibNid, uint redirectNid)
     {
+        string target = redirectNid != 0 ? $"{NidDatabase.NameOf(redirectNid)} of library 0x{redirectLibNid:X8}" : $"code at 0x{destination & ~1u:X8}";
+        return HookNamed(pid, hookRefOut, destination, hookFunction, redirectLibNid, redirectNid, "absolute", target);
+    }
+
+    /// <summary><see cref="HookAbsolute"/> for a hook of kind <paramref name="kind"/>
+    /// (export, import, offset, absolute) on <paramref name="target"/> (as the log and the summary name it).</summary>
+    int HookNamed(int pid, uint hookRefOut, uint destination, uint hookFunction, uint redirectLibNid, uint redirectNid, string kind, string target)
+    {
+        int result = HookAbsoluteCore(pid, hookRefOut, destination, hookFunction, redirectLibNid, redirectNid, kind, target);
+        if (result <= 0)
+        {
+            Refused(pid, kind, target, destination & ~1u, hookFunction, result);
+        }
+
+        return result;
+    }
+
+    /// <summary>A hook the framework refused: kept in the summary with its error.</summary>
+    void Refused(int pid, string kind, string target, uint address, uint hookFunction, int result)
+    {
+        string space = pid == KernelSpace.KernelPid ? "kernel" : "user";
+        PluginHookStats.Entry entry = Stats.Add(new PluginHookStats.Entry
+        {
+            Kind = $"{kind} hook, {space}",
+            Target = target,
+            Installer = ModuleNameAt(pid, hookFunction),
+            Pid = pid,
+            Address = address,
+            HookFunction = hookFunction,
+            Result = result,
+        });
+        Util.Log.Info($"plugin hook {entry.Number} refused (0x{result:X8}): {target}, hook function 0x{hookFunction:X8} (pid 0x{pid:X}, by {entry.Installer})");
+    }
+
+    int HookAbsoluteCore(int pid, uint hookRefOut, uint destination, uint hookFunction, uint redirectLibNid, uint redirectNid, string kind, string target)
+    {
         if (hookFunction >= 0xE0000000)
         {
             return pid == KernelSpace.KernelPid ? ErrorInvalidKernelAddr : unchecked((int)0x90010007);
@@ -265,9 +301,13 @@ public sealed partial class PluginFramework
                 _hooks.Add(patch);
             }
 
+            // the record's func and old are the hook's counting stub (PluginHookStats), which goes on to the hook
+            // function and to the trampoline
             uint record = KernelAllocation(12, "plugin hook reference");
-            GuestMemory.W32(record + 4, hookFunction);
-            GuestMemory.W32(record + 8, patch.Trampoline);
+            uint stub = KernelAllocation(StubSize, "plugin hook counter");
+            uint data = WriteCountingStub(stub, hookFunction, patch.Trampoline);
+            GuestMemory.W32(record + 4, stub);
+            GuestMemory.W32(record + 8, stub + StubOldWord * 4);
             if (patch.Records.Count == 0)
             {
                 GuestMemory.W32(record, 0);
@@ -285,9 +325,24 @@ public sealed partial class PluginFramework
                 patch.Records.Insert(1, record);
             }
 
+            LinkStubs(patch);
             GuestMemory.W32(hookRefOut, record);
-            string what = redirectNid != 0 ? $" ({NidDatabase.NameOf(redirectNid)} of library 0x{redirectLibNid:X8}, its import stubs too)" : "";
-            Util.Log.Info($"plugin hook {patch.Records.Count} on 0x{address:X8}{what}: hook function 0x{hookFunction:X8} (pid 0x{pid:X})");
+            string spaceName = pid == KernelSpace.KernelPid ? "kernel" : "user";
+            PluginHookStats.Entry entry = Stats.Add(new PluginHookStats.Entry
+            {
+                Kind = $"{kind} hook, {spaceName}",
+                Target = target,
+                Installer = ModuleNameAt(pid, hookFunction),
+                Pid = pid,
+                Address = address,
+                HookFunction = hookFunction,
+                Result = patch.Uid,
+                Record = record,
+                Data = data,
+                Owner = Emu,
+            });
+            string what = redirectNid != 0 ? ", its import stubs too" : "";
+            Util.Log.Info($"plugin hook {entry.Number} on 0x{address:X8} ({target}{what}; {entry.Kind}, {patch.Records.Count} on the address): hook function 0x{hookFunction:X8} (pid 0x{pid:X}, by {entry.Installer})");
             return patch.Uid;
         }
     }
@@ -427,6 +482,12 @@ public sealed partial class PluginFramework
             }
 
             patch.Records.RemoveAt(index);
+            LinkStubs(patch);
+            if (Stats.ByData(StubDataOf(hookRef)) is { } released)
+            {
+                released.Released = true;
+            }
+
             if (patch.Records.Count == 0)
             {
                 Uninstall(patch);
@@ -476,6 +537,17 @@ public sealed partial class PluginFramework
                 FreeKernelAllocation(patch.Trampoline & ~1u);
                 foreach (uint record in patch.Records)
                 {
+                    uint data = StubDataOf(record);
+                    if (data != 0)
+                    {
+                        if (Stats.ByData(data) is { } entry)
+                        {
+                            Stats.Freeze(entry);
+                        }
+
+                        FreeKernelAllocation(data - StubDataWord * 4);
+                    }
+
                     FreeKernelAllocation(record);
                 }
             }
@@ -517,40 +589,47 @@ public sealed partial class PluginFramework
 
     int HookExport(int pid, uint hookRefOut, uint namePtr, uint libraryNid, uint functionNid, uint hookFunction)
     {
+        string? module = namePtr == 0 ? null : GuestMemory.ReadCString(namePtr, MaxNameLength);
+        string target = $"{NidDatabase.NameOf(functionNid)} of library 0x{libraryNid:X8}" + (module != null ? $" (module {module})" : "");
         int result = ExportFunction(pid, namePtr, libraryNid, functionNid, out uint function, out uint exportLibNid);
         if (result != Success)
         {
+            Refused(pid, "export", target, 0, hookFunction, result);
             return result;
         }
 
         // an HLE stub: a firmware kernel module's entry (every process's calls) or a user shell's (that process's calls)
         using ProcessScope.Scope space = EnterPatchSpace(pid);
         uint redirect = HleNidOf(function);
-        return HookAbsolute(pid, hookRefOut, function, hookFunction, redirect != 0 ? exportLibNid : 0, redirect);
+        return HookNamed(pid, hookRefOut, function, hookFunction, redirect != 0 ? exportLibNid : 0, redirect, "export", target);
     }
 
     int HookImport(int pid, uint hookRefOut, uint namePtr, uint libraryNid, uint functionNid, uint hookFunction)
     {
         string? name = namePtr == 0 ? null : GuestMemory.ReadCString(namePtr, MaxNameLength);
         uint stub = 0;
+        string target = $"{NidDatabase.NameOf(functionNid)} of library 0x{libraryNid:X8}" + (name != null ? $" (import of module {name})" : "");
         int result = ImportStubOf(pid, name, libraryNid, functionNid, ref stub);
         if (result != Success)
         {
+            Refused(pid, "import", target, 0, hookFunction, result);
             return result;
         }
 
-        return HookAbsolute(pid, hookRefOut, stub, hookFunction, 0, 0);
+        return HookNamed(pid, hookRefOut, stub, hookFunction, 0, 0, "import", target);
     }
 
     int HookOffset(int pid, uint hookRefOut, int moduleId, int segment, uint offset, bool thumb, uint hookFunction)
     {
         int result = SegmentOffset(pid, moduleId, segment, offset, out uint address);
+        string target = $"code at module 0x{moduleId:X} segment {segment} + 0x{offset:X}";
         if (result != Success)
         {
+            Refused(pid, "offset", target, 0, hookFunction, result);
             return result;
         }
 
-        return HookAbsolute(pid, hookRefOut, thumb ? address | 1 : address, hookFunction, 0, 0);
+        return HookNamed(pid, hookRefOut, thumb ? address | 1 : address, hookFunction, 0, 0, "offset", $"{target} (0x{address:X8})");
     }
 
     /// <summary>Kernel: hooks the function at an absolute address of process <paramref name="pid"/>.</summary>

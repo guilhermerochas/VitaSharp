@@ -56,6 +56,12 @@ public static class CaptureContext
             sb.AppendLine(l);
         }
 
+        // the plugin hooks and their counters (report.txt's "Plugin hooks" compares the start and the stop)
+        foreach (string l in Hle.Modules.PluginFramework.HookContextLines(emu))
+        {
+            sb.AppendLine(l);
+        }
+
         return sb.ToString();
     }
 

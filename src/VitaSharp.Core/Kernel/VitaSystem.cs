@@ -139,6 +139,10 @@ public sealed class VitaSystem
     /// function (<see cref="Hle.HleRegistry.Redirect"/>).</summary>
     internal System.Collections.Concurrent.ConcurrentDictionary<(uint LibNid, uint Nid), uint> HookRedirects { get; } = new();
 
+    /// <summary>What the plugin hooks of the system did: each hook, its calls and continuations
+    /// (<see cref="Hle.Modules.PluginHookStats"/>).</summary>
+    internal Hle.Modules.PluginHookStats PluginHooks { get; } = new();
+
     private readonly object _kernelGate = new();
     private Emulator? _kernelProcess;
 

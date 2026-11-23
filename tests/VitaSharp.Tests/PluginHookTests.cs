@@ -54,6 +54,12 @@ public sealed class PluginHookTests(GuestMemoryFixture fixture) : IDisposable
         return functions.Select(f => SceModuleBuilder.FunctionAddress(module.Segments[0].Address, f)).ToArray();
     }
 
+    /// <summary>The hook function a reference record's counting stub goes on to.</summary>
+    internal static uint HookFunctionOf(uint record) => GuestMemory.R32(GuestMemory.R32(record + 4) + 54 * 4 + 12);
+
+    /// <summary>The trampoline a reference record's counting stub continues to (the original).</summary>
+    internal static uint TrampolineOf(uint record) => GuestMemory.R32(GuestMemory.R32(record + 4) + 54 * 4 + 16);
+
     [Fact]
     public void AnExportHookRunsTheHookAndOldRunsTheOriginal()
     {
@@ -69,14 +75,15 @@ public sealed class PluginHookTests(GuestMemoryFixture fixture) : IDisposable
             Assert.Equal(42u, t.CallGuest(target));
             uint first = GuestMemory.R32(firstRef);
             Assert.Equal(0u, GuestMemory.R32(first));
-            Assert.Equal(hooks[0], GuestMemory.R32(first + 4));
+            // func and old are the hook's counting stub, which goes on to the hook function and to the trampoline
+            Assert.Equal(hooks[0], HookFunctionOf(first));
             Assert.Equal(7u, t.CallGuest(GuestMemory.R32(first + 8)));
 
             // a second hook goes after the first: the first's next is its record, both share the trampoline
             Assert.Equal(uid, Call(Framework, "HookFunctionExportForKernel", KernelSpace.KernelPid, secondRef, _harness.Str("HookTarget"), TargetLib, TargetNid, hooks[1]));
             uint second = GuestMemory.R32(secondRef);
             Assert.Equal(second, GuestMemory.R32(first));
-            Assert.Equal(GuestMemory.R32(first + 8), GuestMemory.R32(second + 8));
+            Assert.Equal(TrampolineOf(first), TrampolineOf(second));
             Assert.Equal(42u, t.CallGuest(target));
 
             // releasing the first aims the function at the second; releasing the last puts the code back

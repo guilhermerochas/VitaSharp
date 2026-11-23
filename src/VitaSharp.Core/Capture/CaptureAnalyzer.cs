@@ -278,6 +278,16 @@ public static class CaptureAnalyzer
             sb.AppendLine("    " + l["audio: ".Length..]);
         }
 
+        List<string> hooks = VitaSharp.Core.Hle.Modules.PluginHookStats.ReportSection(ContextSection(dir, stop: false), ctxStop);
+        if (hooks.Count > 0)
+        {
+            sb.AppendLine();
+            foreach (string l in hooks)
+            {
+                sb.AppendLine(l);
+            }
+        }
+
         sb.AppendLine();
         sb.AppendLine("Re-run (desktop, headless): VitaSharp.Desktop rerun \"" + dir + "\"" +
                       (File.Exists(Path.Combine(dir, "state_preroll.vss")) ? "   (--from=start to begin at the recording start instead of the pre-roll)" : ""));
