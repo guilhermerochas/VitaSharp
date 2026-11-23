@@ -73,7 +73,7 @@ public sealed class HleSharedIndexTests(GuestMemoryFixture fixture) : IDisposabl
         // another process, created after the hook, whose registry binds other functions first
         var other = new HleRegistry(_harness.Emu);
         other.GetHleFunctionIndex(OtherNid, 0, "TestLib");
-        uint index = GuestMemory.R32(GuestMemory.R32(GuestMemory.R32(hookRef) + 8)) & 0xFFFFFF; // the trampoline's svc
+        uint index = GuestMemory.R32(PluginHookTests.TrampolineOf(GuestMemory.R32(hookRef))) & 0xFFFFFF; // the trampoline's svc
         Assert.Equal(GetThreadId, other.GetFunction(index).Nid);
     }
 }

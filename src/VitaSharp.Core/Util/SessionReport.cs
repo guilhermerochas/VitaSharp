@@ -127,6 +127,12 @@ public static class SessionReport
         {
             yield return l;
         }
+
+        // the plugin hooks: each one's installer, calls and continuations, "never called" for those no call entered
+        foreach (string l in VitaSharp.Core.Hle.Modules.PluginFramework.HookSummaryLines(emu))
+        {
+            yield return l;
+        }
     }
 
     /// <summary>

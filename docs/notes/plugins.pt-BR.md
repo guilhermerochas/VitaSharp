@@ -115,6 +115,37 @@ chamou, com o processo dela como o atual, como o código de kernel que um syscal
 processo de usuário). Um hook ou injeção de um plugin de kernel num processo de usuário é feito na memória desse
 processo, e os patches de um processo saem quando ele termina.
 
+### O hook é usado? (o log)
+
+Todo hook diz no log se as chamadas chegam nele, para qualquer plugin e qualquer tipo de hook (exportação, importação,
+deslocamento, absoluto; kernel e usuário; em código do guest e numa função servida pelo HLE, inclusive as chamadas dos
+programas de usuário por uma exportação de syscall):
+
+- ao instalar: `plugin hook N on 0xADDR (<função> of library 0xLIB; export hook, kernel, 1 on the address): hook
+  function 0x... (pid 0x..., by <módulo>)`; um hook que o framework recusa: `plugin hook N refused (0x9001xxxx): ...`;
+- a primeira chamada que entra nele: `plugin hook N called: <função> of library 0xLIB from pid 0x... (thread <nome>) ->
+  hook function 0x...`;
+- a primeira vez que ele continua a chamada: `plugin hook N continued to the original: ...` (o old do registro) ou
+  `plugin hook N continued to the next hook (plugin hook M): ...` (a função do próximo hook);
+- no fim da sessão, depois das linhas PERF (no log do desktop e no do app Android): `Plugin hooks: I installed,
+  C called, U never called, R refused` e uma linha por hook com o módulo que o instalou, as chamadas (e quem chamou
+  primeiro), as continuações para a original e para o próximo hook, `never called` para um hook em que nenhuma chamada
+  entrou, `released` para um que o plugin liberou.
+
+N numera os hooks da sessão na ordem de instalação. A contagem é código do guest: o func e o old do registro são uma
+pequena stub ARM do hook (na memória do kernel) que soma um no contador do hook (ldrex/strex, todos os núcleos) e segue
+para a função do hook ou para o trampolim, mantendo os registradores e a pilha de quem chamou; por isso vale em todo
+backend da CPU (interpretador, JIT IL e nativo, código pré-compilado) e em todo caminho até o hook. Só a chamada que
+leva um contador de 0 a 1 entra no C# para a linha do log; depois disso uma chamada custa poucas instruções e não aloca
+nada. Um save state guarda os contadores (são memória do guest); um estado salvo por uma versão antiga ganha as stubs ao
+carregar.
+
+Uma gravação (F8) também guarda os hooks: o context.txt lista cada hook com os contadores no início e no fim (uma linha
+`plugin hook:` separada por tabulações para cada um), o log.txt tem as linhas `called` e o report.txt tem a seção
+"Plugin hooks" com o tipo, a função, o processo, o endereço, quem instalou, a função do hook, as chamadas e as
+continuações durante a gravação e na sessão inteira, e `never called` ou o erro de um hook recusado. A análise lê só a
+gravação, então quem a examina não precisa nem do jogo nem dos plugins.
+
 As chamadas de módulo do framework para programas de usuário (taiLoadKernelModule, taiLoadStartKernelModuleForUser,
 taiStartKernelModuleForUser, taiLoadStartModuleForPidForUser, as quatro chamadas de stop, taiUnloadKernelModule,
 taiUnloadModuleForPid, taiMemcpyUserToKernel e taiMemcpyKernelToUser) seguem o contrato publicado dele: só um programa

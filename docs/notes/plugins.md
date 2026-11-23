@@ -107,6 +107,36 @@ the current one, as kernel code a syscall runs does (ksceKernelGetProcessId give
 plugin's hook or data injection in a user process is made in that process's memory, and the patches of a process go
 when it ends.
 
+### Is a hook used? (the log)
+
+Every hook says in the log whether calls reach it, for any plugin and any kind of hook (export, import, offset,
+absolute; kernel and user; on guest code and on a function the HLE serves, the calls of user programs through a syscall
+export included):
+
+- installing it: `plugin hook N on 0xADDR (<function> of library 0xLIB; export hook, kernel, 1 on the address): hook
+  function 0x... (pid 0x..., by <module>)`; a hook the framework refuses: `plugin hook N refused (0x9001xxxx): ...`;
+- the first call that enters it: `plugin hook N called: <function> of library 0xLIB from pid 0x... (thread <name>) ->
+  hook function 0x...`;
+- the first time it continues the call: `plugin hook N continued to the original: ...` (its record's old) or
+  `plugin hook N continued to the next hook (plugin hook M): ...` (the next hook's function);
+- at the end of the session, after the PERF lines (the desktop's log and the Android app's): `Plugin hooks: I installed,
+  C called, U never called, R refused` and one line per hook with the module that installed it, its calls (and the
+  first caller), its continuations to the original and to the next hook, `never called` for a hook no call entered,
+  `released` for one the plugin released.
+
+N numbers the hooks of the session in installation order. The count is guest code: the record's func and old are a small
+ARM stub of the hook (in kernel memory) that adds one to the hook's counter (ldrex/strex, every core) and jumps on to
+the hook function or to the trampoline, keeping the caller's registers and stack, so it holds in every CPU backend
+(interpreter, IL and native JIT, precompiled code) and on every path into the hook. Only the call that takes a counter
+from 0 to 1 enters C# for its log line; after that a call costs a few instructions and allocates nothing. A save state
+keeps the counters (they are guest memory); a state saved by an older build gets the stubs when it loads.
+
+A recording (F8) keeps the hooks too: its context.txt lists each hook with its counters at the start and at the stop
+(one tab-separated `plugin hook:` line each), its log.txt has the `called` lines, and report.txt has a "Plugin hooks"
+section with each hook's kind, function, process, address, installer, hook function, calls and continuations during the
+recording and in the whole session, and `never called` or the error of a refused hook. The analysis reads only the
+recording, so whoever looks at it needs neither the game nor the plugins.
+
 The framework's module calls for user programs (taiLoadKernelModule, taiLoadStartKernelModuleForUser,
 taiStartKernelModuleForUser, taiLoadStartModuleForPidForUser, the four stop calls, taiUnloadKernelModule,
 taiUnloadModuleForPid, taiMemcpyUserToKernel and taiMemcpyKernelToUser) follow its published contract: only a program

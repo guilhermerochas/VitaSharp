@@ -80,6 +80,7 @@ public sealed partial class PluginFramework
             }
 
             _redirectsBeforeLoad.Clear();
+            RestoreCountingStubs();
             foreach (HookPatch patch in _hooks)
             {
                 if (patch.RedirectedNid != 0)
