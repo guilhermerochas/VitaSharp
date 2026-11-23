@@ -3662,6 +3662,13 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   abaixo sempre visíveis, sem piscar.
 
 ## Bugs em aberto
+- [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053) em 2x: textura da parede piscando e imagem embaçada (relato do
+  usuário, 23/11/2026; captura `PCSE00053_20261123_134501_tudo`, build 793a9e96, resolução interna 2x por atalho no
+  quadro 1587, dump da GPU de 34 quadros): o relatório marca 20 [flash] alternando quadro sim, quadro não (presents
+  3632-3660) na célula 2,0 (parede no alto, ao centro), e a imagem inteira sai borrada. Verificar no replay a 1x e a 2x
+  se o pisca e o borrão só aparecem a 2x (ex.: uma passada da cena — TAA/reprojeção, desfoque, reamostragem de
+  profundidade ou de uma textura intermediária — ainda na escala 1x ou com amostragem errada ao escalar) e corrigir
+  genericamente com teste. Os painéis do HUD já saem translúcidos (correção do ac3hud confirmada nessa captura).
 - [ ] [P2][P] Resolução interna padrão (pedido do usuário, 22/11/2026): uma opção global nas configurações (PC e Android)
   para escolher a resolução interna (1x, 2x, 3x, 4x) com que todo jogo já abre, sem precisar trocar no atalho a cada
   sessão; a escolha por jogo (quando existir) vence a global. Mostrar o valor efetivo na tela de carregamento e no log
