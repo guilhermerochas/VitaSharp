@@ -2,6 +2,7 @@ using VitaSharp.Core.Hle;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Loader;
+using VitaSharp.Core.Util;
 using Mutex = VitaSharp.Core.Kernel.Mutex;
 using Semaphore = VitaSharp.Core.Kernel.Semaphore;
 
@@ -17,7 +18,7 @@ internal static class KernelSnapshot
     internal const string Thread = "thread", Sema = "sema", Evf = "evf", Mtx = "mutex", Cond = "cond", Pipe = "msgpipe",
         Rw = "rwlock", Cb = "callback", Timer = "timer", SEvent = "simpleevent", ThEvent = "threadevent",
         Block = "memblock", Async = "ioasync", Process = "process", App = "app", Module = "module", Data = "kerneldata",
-        PluginHook = "pluginhook", PluginInjection = "plugininject", UltRecord = "ult";
+        PluginHook = "pluginhook", PluginInjection = "plugininject", PluginShell = "pluginshell", UltRecord = "ult";
 
     /// <summary>The record kind of each type of kernel object the table can hold (the first entry the type is or derives
     /// from). Every concrete KernelObject has one (KernelSnapshotCoverageTests), except the ones marked
@@ -43,6 +44,7 @@ internal static class KernelSnapshot
         (typeof(KernelData), Data),
         (typeof(PluginFramework.HookPatch), PluginHook),
         (typeof(PluginFramework.Injection), PluginInjection),
+        (typeof(PluginFramework.FirmwareUserShell), PluginShell),
         (typeof(Ult.UltObject), UltRecord),
     ];
 
@@ -134,9 +136,10 @@ internal static class KernelSnapshot
                     w.Write(d.References);
                     break;
                 case IoAsyncOp a:
-                    if (!a.Done)
+                    if (!a.Done && a.State is not IoAsyncState.InDevice)
                     {
-                        throw new SnapshotException("an asynchronous I/O request is in flight");
+                        // its host work is not done yet: the state waits for it (the I/O scheduler is not held)
+                        throw new SnapshotRetryException("an asynchronous I/O request is being served");
                     }
 
                     w.Write(a.Fd);
@@ -144,12 +147,24 @@ internal static class KernelSnapshot
                     w.Write(a.Cancelled);
                     w.Write(a.Pattern);
                     w.Write(a.UserData);
+                    // a request in the device (its result known, its completion time ahead): it completes after the
+                    // load at the same guest time (states of builds before this have none)
+                    w.Write(!a.Done);
+                    if (!a.Done)
+                    {
+                        w.Write(GuestClock.ToMicroseconds(a.DueTicks));
+                        w.Write(a.Param);
+                    }
+
                     break;
                 case PluginFramework.HookPatch hook:
                     hook.Save(w);
                     break;
                 case PluginFramework.Injection injection:
                     injection.Save(w);
+                    break;
+                case PluginFramework.FirmwareUserShell shell:
+                    shell.Save(w);
                     break;
                 case Ult.UltObject ultObject:
                     ultObject.Save(w);
@@ -245,9 +260,86 @@ internal static class KernelSnapshot
         }
     }
 
-    /// <summary>Replaces the object table; returns the restored live threads, to start once everything else is loaded.</summary>
+    /// <summary>Replaces the object table; returns the restored live threads, to start once everything else is loaded.
+    /// The saved service threads this session does not run are given to their owners at once (a load of the object
+    /// table alone; a state load gives them after the modules' states, <see cref="AdoptServiceThreads"/>).</summary>
     public static List<GuestThread> Load(Emulator emu, SnapshotReader r)
     {
+        List<GuestThread> live = Load(emu, r, out List<GuestThread> unclaimed);
+        AdoptServiceThreads(emu, unclaimed);
+        return live;
+    }
+
+    /// <summary>
+    /// Save states (<see cref="IServiceThreadOwner"/>): gives each saved service thread the running session did not have
+    /// to its owner, once the modules' states are loaded (an owner knows its loaded state: which callout context a
+    /// thread serves, which process a worker is of). Fails the load when no owner takes one.
+    /// </summary>
+    internal static void AdoptServiceThreads(Emulator emu, List<GuestThread> threads)
+    {
+        if (threads.Count == 0)
+        {
+            return;
+        }
+
+        List<IServiceThreadOwner> owners = ServiceThreadOwners(emu);
+        foreach (GuestThread thread in threads)
+        {
+            bool adopted = false;
+            foreach (IServiceThreadOwner owner in owners)
+            {
+                using (ProcessScope.Enter(thread.Process))
+                {
+                    adopted = owner.AdoptServiceThread(thread);
+                }
+
+                if (adopted)
+                {
+                    break;
+                }
+            }
+
+            if (!adopted)
+            {
+                throw new SnapshotException($"the service thread '{thread.Name}' does not exist in this session yet; let the game start further, then load the state");
+            }
+        }
+    }
+
+    /// <summary>The running session's live service thread a saved one is: the one of the same name in the same process
+    /// (the shell's and an application's GXM display queues are both "SceGxmDisplayQueue"), else, for a state of a
+    /// build before the kernel process, the kernel process's (its service threads were the application process's
+    /// then).</summary>
+    private static GuestThread? RunningServiceThread(List<KernelObject> current, GuestThread saved, HashSet<GuestThread> kept)
+    {
+        GuestThread? other = null;
+        foreach (KernelObject o in current)
+        {
+            if (o is not GuestThread { HostBody: not null, IsLive: true } running || running.Name != saved.Name || kept.Contains(running))
+            {
+                continue;
+            }
+
+            if (ReferenceEquals(running.Process, saved.Process))
+            {
+                return running;
+            }
+
+            if (running.Process.IsKernelProcess && other == null)
+            {
+                other = running;
+            }
+        }
+
+        return other;
+    }
+
+    /// <summary>Replaces the object table; returns the restored live threads, to start once everything else is loaded,
+    /// and, in <paramref name="unclaimed"/>, the saved service threads the running session does not run (for
+    /// <see cref="AdoptServiceThreads"/>).</summary>
+    public static List<GuestThread> Load(Emulator emu, SnapshotReader r, out List<GuestThread> unclaimed)
+    {
+        unclaimed = new List<GuestThread>();
         ObjectTable table = emu.Kernel.Objects;
         List<KernelObject> current = table.Snapshot();
         // which process's list each loaded module is in (the lists are rebuilt from the saved UIDs below)
@@ -287,7 +379,7 @@ internal static class KernelSnapshot
                     if (k == GuestThread.SafeKind.HostBody)
                     {
                         // a module's service thread: the running session's own one carries on under the saved UID
-                        GuestThread? host = current.OfType<GuestThread>().FirstOrDefault(x => x.HostBody != null && x.IsLive && x.Name == t.Name && !hostKept.Contains(x));
+                        GuestThread? host = RunningServiceThread(current, t, hostKept);
                         if (host != null)
                         {
                             t.Dispose();
@@ -298,13 +390,9 @@ internal static class KernelSnapshot
                         }
 
                         // not running here (made after the moment this session is at): its owner takes the saved record
-                        // back, and it starts with the restored threads
-                        if (owners.FirstOrDefault(serviceOwner => serviceOwner.AdoptServiceThread(t)) == null)
-                        {
-                            t.Dispose();
-                            throw new SnapshotException($"the service thread '{t.Name}' does not exist in this session yet; let the game start further, then load the state");
-                        }
-
+                        // back once the modules' states are loaded (AdoptServiceThreads), and it starts with the restored
+                        // threads
+                        unclaimed.Add(t);
                         live.Add(t);
                         o = t;
                         break;
@@ -400,14 +488,28 @@ internal static class KernelSnapshot
                     o = new KernelData { Name = name, Kind = b.ReadStringNotNull(), Address = b.ReadUInt32(), Size = b.ReadUInt32(), Aux = b.ReadUInt32(), References = b.ReadInt32() };
                     break;
                 case Async:
-                    o = new IoAsyncOp
+                {
+                    var op = new IoAsyncOp
                     { Name = name, Fd = b.ReadInt32(), Result = b.ReadInt64(), Done = true, Cancelled = b.ReadBool(), Pattern = b.ReadUInt32(), UserData = b.ReadUInt64() };
+                    if (!b.AtEnd && b.ReadBool())
+                    {
+                        op.Done = false;
+                        op.State = IoAsyncState.InDevice;
+                        op.DueTicks = GuestClock.FromMicroseconds(b.ReadInt64());
+                        op.Param = b.ReadUInt32();
+                    }
+
+                    o = op;
                     break;
+                }
                 case PluginHook:
                     o = PluginFramework.HookPatch.Load(b, name);
                     break;
                 case PluginInjection:
                     o = PluginFramework.Injection.Load(b, name);
+                    break;
+                case PluginShell:
+                    o = PluginFramework.FirmwareUserShell.Load(b, name);
                     break;
                 case UltRecord:
                     o = Ult.LoadObject(b, name);

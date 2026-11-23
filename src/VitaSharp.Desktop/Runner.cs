@@ -171,7 +171,21 @@ public static class Runner
         HostThreads.Enabled = OnOff(options, "--host-prio") ?? true;
         try
         {
-            return RunCore(appPath, options);
+            // a reboot of the emulated system (kscePowerRequestSoftReset, the syscon's reset) ends the session and
+            // boots the same target again, as the console's boot runs again after a reset
+            while (true)
+            {
+                s_rebootRequested = false;
+                int result = RunCore(appPath, options);
+                if (!s_rebootRequested)
+                {
+                    return result;
+                }
+
+                Log.Info("The emulated system rebooted: booting it again");
+                // the launcher's loading window is only for the first boot: a reboot shows its window as before
+                s_launcherLoadingScreenDone = true;
+            }
         }
         finally
         {
@@ -180,6 +194,25 @@ public static class Runner
                 timeEndPeriod(1);
             }
         }
+    }
+
+    /// <summary>The session ended because the emulated system rebooted: <see cref="Run"/> boots it again.</summary>
+    static volatile bool s_rebootRequested;
+
+    /// <summary>The launcher's loading window was shown for this process's first boot (<see cref="VitaSharp.Core.Boot.BootProgress.LauncherScreenOption"/>).</summary>
+    static bool s_launcherLoadingScreenDone;
+
+    /// <summary>--window-pos=X,Y: where the game window opens (the launcher's loading window's place), null when unset or invalid.</summary>
+    internal static Silk.NET.Maths.Vector2D<int>? WindowPositionOpt(string[] options)
+    {
+        if (Opt(options, "--window-pos")?.Split(',') is [var xs, var ys]
+            && int.TryParse(xs, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int x)
+            && int.TryParse(ys, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int y))
+        {
+            return new Silk.NET.Maths.Vector2D<int>(x, y);
+        }
+
+        return null;
     }
 
     [System.Runtime.InteropServices.DllImport("winmm.dll")] static extern uint timeBeginPeriod(uint ms);
@@ -339,6 +372,9 @@ public static class Runner
             : $"Storage: {VitaSharp.Core.Util.IoTiming.BytesPerSecond / 1e6:0.#} MB/s (the Vita memory card's speed is {VitaSharp.Core.Util.IoTiming.VitaBytesPerSecond / 1e6:0} MB/s)");
         // --cpu=native|il|interp selects the CPU backend (default: VITASHARP_CPU, else the best one the host supports)
         (bool ShaderCache, bool Code) bootWait = BootWaitOpts(options);
+        // where this session's log is: a start that fails shows it on the launcher's loading window
+        VitaSharp.Core.Boot.BootProgress.ReportLogFile(Log.FilePath);
+        VitaSharp.Core.Boot.BootProgress.Report(VitaSharp.Core.Boot.BootStep.Firmware);
         using var emu = new Emulator(new EmulatorOptions
         {
             FsRoot = Program.FsRoot,
@@ -420,8 +456,14 @@ public static class Runner
             Log.Info($"Frame dumps: {windowDumpDir}");
         }
 
-        using var window = new WindowHost("VitaSharp", Opt(options, "--scale") is { } s ? int.Parse(s) : 1, options.Contains("--fullscreen"));
+        // the launcher shows its loading window from the click on (--loading-screen=launcher): this window stays hidden
+        // until the game is ready, at the loading window's place (--window-pos), on the first boot of the process
+        bool launcherScreen = options.Contains(VitaSharp.Core.Boot.BootProgress.LauncherScreenOption) && !s_launcherLoadingScreenDone;
+        VitaSharp.Core.Boot.BootProgress.Report(VitaSharp.Core.Boot.BootStep.Input);
+        using var window = new WindowHost("VitaSharp", Opt(options, "--scale") is { } s ? int.Parse(s) : 1, options.Contains("--fullscreen"),
+            startHidden: launcherScreen, position: launcherScreen ? WindowPositionOpt(options) : null);
         // a hidden test window (VITASHARP_HIDDEN_WINDOW=1) stays silent too: the PC may be in use
+        VitaSharp.Core.Boot.BootProgress.Report(VitaSharp.Core.Boot.BootStep.Audio);
         using var audio = Environment.GetEnvironmentVariable(EnvVars.HiddenWindow) == "1" ? null : OpenAlAudio.TryCreate(Opt(options, "--audio-device"));
         // scripted input also works in a window (automated checks of the windowed path: swapchain, LoadExec)
         var scripted = Opt(options, "--input") is { } windowScript ? new ScriptedInput(windowScript) : null;
@@ -763,10 +805,12 @@ public static class Runner
         }
 
         bool licenseMissing = false;
+        bool loadFailed = false;
         window.Loaded += () =>
         {
             rendererOptions.Surface = window;
             rendererOptions.KeepDevice = true; // state loads and LoadExec keep the window's Vulkan device
+            VitaSharp.Core.Boot.BootProgress.Report(VitaSharp.Core.Boot.BootStep.Gpu);
             renderer = new VulkanRenderer(rendererOptions);
             renderer.AnomalyDetected += diag.OnAnomaly;
             renderer.DeviceLost += OnDeviceLost;
@@ -786,6 +830,15 @@ public static class Runner
                 window.Close();
                 return;
             }
+            catch (Exception failure) when (failure is not OutOfMemoryException)
+            {
+                // any other load failure (a key that does not open the files, an executable that is no SELF): the
+                // process never started; the window closes and the launcher shows the reason for this exit code
+                ReportLoadFailure(appPath, failure);
+                loadFailed = true;
+                window.Close();
+                return;
+            }
 
             // the system's start-up picture (the app's sce_sys/pic0.png) until the game's first frame; the system
             // software (run from vs0:) has none
@@ -796,6 +849,11 @@ public static class Runner
 
             window.TitleId = emu.TitleId; // its saved mouse mode (input.json)
             emu.Start();
+            // the boot steps are over (the ARM code precompilation ran in Start): the window appears (it waited hidden
+            // behind the launcher's loading window) and the loading window goes
+            s_launcherLoadingScreenDone |= window.HiddenUntilReady;
+            window.ShowWhenReady();
+            VitaSharp.Core.Boot.BootProgress.Report(VitaSharp.Core.Boot.BootStep.Ready);
             StartShellLaunch(emu, options);
             // --start-paused: the threads stop right after the start (debugging: attach, set up captures, then P)
             if (options.Contains("--start-paused"))
@@ -891,6 +949,13 @@ public static class Runner
             Log.Info("Window: the system turned off: closing the window");
             Volatile.Write(ref processExited, 1);
         };
+        // the system rebooted: this session ends and Run boots the system again
+        emu.Vita.Power.Rebooted += () =>
+        {
+            Log.Info("Window: the system rebooted: ending the session to boot again");
+            s_rebootRequested = true;
+            Volatile.Write(ref processExited, 1);
+        };
         // standby: the picture stays, with the standby notice until POWER wakes the system
         emu.Vita.Power.StandbyChanged += _ =>
         {
@@ -923,7 +988,22 @@ public static class Runner
         // the renderer (its swapchain and window surface) goes before the window: the window is disposed first at the
         // end of this method (declared after the emulator), and a surface must not outlive its window
         emu.Gpu.ReplaceBackend(null);
-        return licenseMissing ? TitleLicense.ExitCode : 0;
+        if (licenseMissing)
+        {
+            return TitleLicense.ExitCode;
+        }
+
+        return loadFailed ? TitleLaunchFailure.ExitCode : 0;
+    }
+
+    /// <summary>The launched title could not be loaded: the reason in plain words, in the log and as the last line on
+    /// the error output (the launcher shows it for <see cref="TitleLaunchFailure.ExitCode"/>).</summary>
+    static void ReportLoadFailure(string appPath, Exception failure)
+    {
+        string titleId = Path.GetFileName(Path.TrimEndingDirectorySeparator(appPath));
+        string message = TitleLaunchFailure.Message(titleId, failure, Log.FilePath);
+        Log.Error($"{message}{Environment.NewLine}{failure}");
+        Console.Error.WriteLine(message);
     }
 
     /// <summary>The launched application is encrypted and its license is not installed: the localized message with
@@ -1400,8 +1480,14 @@ public static class Runner
             ReportLicenseMissing(noLicense);
             return TitleLicense.ExitCode;
         }
+        catch (Exception failure) when (failure is not OutOfMemoryException)
+        {
+            ReportLoadFailure(appPath, failure);
+            return TitleLaunchFailure.ExitCode;
+        }
 
         emu.Start();
+        VitaSharp.Core.Boot.BootProgress.Report(VitaSharp.Core.Boot.BootStep.Ready);
         StartShellLaunch(emu, options);
         if (options.Contains("--start-paused"))
         {
@@ -1452,6 +1538,12 @@ public static class Runner
         emu.Vita.Power.PoweredOff += () =>
         {
             Log.Info("Headless: the system turned off: the run ends");
+            processExited.Set();
+        };
+        emu.Vita.Power.Rebooted += () =>
+        {
+            Log.Info("Headless: the system rebooted: the run boots it again");
+            s_rebootRequested = true;
             processExited.Set();
         };
         while (!fatal.Wait(50) && !processExited.IsSet && nav?.Quit != true && playback?.Done != true && (frameLimit <= 0 || VitaSharp.Core.Hle.Modules.Display.FramesPresented < frameLimit) && wall.Elapsed.TotalSeconds < seconds)

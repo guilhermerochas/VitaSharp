@@ -7,7 +7,13 @@ evidence and the alternatives worth doing instead.
 
 ## What happens today (main 45edc3d, GeneratorVersion 16)
 - `IGpuBackend.Prefetch` runs on the submitting guest thread. It queues shader translate+compile jobs and one
-  pipeline job per new draw signature to the shader workers (`VulkanRenderer.AsyncShaders.cs`).
+  pipeline job per new draw signature to the shader workers (`VulkanRenderer.AsyncShaders.cs`). The workers take
+  shader jobs first, except that the oldest pipeline job whose shaders are no longer pending goes ahead of the shader
+  jobs queued after it (perf/uber4, 21/11/2026): the work finishes in submission order, as the GPU thread needs it.
+  Before, a frame of new draws left every pipeline behind all the shaders and the GPU thread built the first ones
+  itself although they had been predicted. In debug mode, "pipeline built on the GPU thread" names the closest
+  prediction (program load or draw prefetch) and the jobs still queued, and "... reached a pipeline the GPU thread
+  built itself" marks a right prediction that came too late.
 - The GPU thread never skips. In `GetModule`, a shader that is in flight is waited for, or run on the GPU thread if
   no worker started it yet. In `ResolvePipeline`, a pipeline is taken from the shared table, waited for if a worker
   is building it (`WaitPrefetchedPipeline`), or built on the GPU thread.

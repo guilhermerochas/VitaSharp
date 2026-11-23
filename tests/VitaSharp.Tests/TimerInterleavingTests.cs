@@ -139,8 +139,8 @@ public sealed class TimerInterleavingTests(GuestMemoryFixture fixture) : IDispos
             GuestRun secondRun = _h.Start(_ => second = Call(Tm, "sceKernelWaitEvent", uid, EventBits.Timer, new Ptr<uint>(results + 4), new Ptr<ulong>(0), new Ptr<uint>(0)), "pulse-second");
             Soon(() => timer.NumWaiters == 2, "the second waiter behind it");
             clock.Advance(1_001);
-            _h.Join(firstRun, 5_000);
-            _h.Join(secondRun, 5_000);
+            _h.Join(firstRun);
+            _h.Join(secondRun);
             Assert.Equal((0, 0), (first, second));
             Assert.Equal((EventBits.Timer, EventBits.Timer), (GuestMemory.R32(results), GuestMemory.R32(results + 4)));
             Assert.Equal(SceError.EVENT_COND, Call(Tm, "sceKernelPollEvent", uid, EventBits.Timer, new Ptr<uint>(0), new Ptr<ulong>(0)));
@@ -168,7 +168,7 @@ public sealed class TimerInterleavingTests(GuestMemoryFixture fixture) : IDispos
             GuestRun singleRun = _h.Start(_ => single = Call(Tm, "sceKernelWaitEvent", uid, EventBits.Timer, new Ptr<uint>(0), new Ptr<ulong>(0), new Ptr<uint>(0)), "single-timer-wait");
             Soon(() => timer.NumWaiters == 2, "the single wait behind it");
             clock.Advance(1_001);
-            _h.Join(multiRun, 5_000);
+            _h.Join(multiRun);
             Assert.Equal(1, multi);
             Assert.Equal((uint)uid, GuestMemory.R32(results));
             Assert.Equal(0u, GuestMemory.R32(results + 4));
@@ -176,7 +176,7 @@ public sealed class TimerInterleavingTests(GuestMemoryFixture fixture) : IDispos
             Assert.Equal(1, timer.NumWaiters); // the single waiter waits for the next fire
             Assert.Equal(1, single);
             clock.Advance(1_000);
-            _h.Join(singleRun, 5_000);
+            _h.Join(singleRun);
             Assert.Equal(0, single);
         });
     }
@@ -198,7 +198,7 @@ public sealed class TimerInterleavingTests(GuestMemoryFixture fixture) : IDispos
             GuestRun multiRun = _h.Start(_ => multi = Call(Tm, "sceKernelWaitMultipleEvents", array, 1u, 1u, results, new Ptr<uint>(0)), "multi-pulse-wait");
             Soon(() => timer.NumWaiters == 1, "the multiple-events call in the timer's queue");
             clock.Advance(1_001);
-            _h.Join(multiRun, 5_000);
+            _h.Join(multiRun);
             Assert.Equal(1, multi);
             Assert.Equal(EventBits.Timer, GuestMemory.R32(results + 8));
         });
@@ -232,7 +232,7 @@ public sealed class TimerInterleavingTests(GuestMemoryFixture fixture) : IDispos
             GuestRun waiter = _h.Start(_ => woken = Call(Tm, "sceKernelWaitEvent", timer, UserBit, new Ptr<uint>(result), new Ptr<ulong>(result + 8), new Ptr<uint>(0)), "user-bit-wait");
             Soon(() => timerObject.NumWaiters == 1, "the wait for the user bit");
             Assert.Equal(0, Call(Tm, "sceKernelPulseEventWithNotifyCallback", timer, UserBit, 4UL, 8));
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal(0, woken);
             Assert.Equal(UserBit, GuestMemory.R32(result));
             Assert.Equal(4UL, GuestMemory.Read<ulong>(result + 8));

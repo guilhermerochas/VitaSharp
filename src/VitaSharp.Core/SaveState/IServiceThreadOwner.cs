@@ -6,14 +6,15 @@ namespace VitaSharp.Core.SaveState;
 /// The owner of service threads: guest threads whose body is the emulator's own code (<see cref="GuestThread.HostBody"/>)
 /// that a system module makes when it first needs one (the global work queue's worker, the interrupt thread). A save
 /// state keeps them by their record (UID, stack, TLS); a load matches each saved one with the running session's thread
-/// of the same name, and asks the owner for the rest:
+/// of the same name in the same process, and asks the owners for the rest:
 /// <list type="bullet">
 /// <item>a saved service thread the running session does not have (it was made after the moment this session is at, or
-/// this session never needed it): the owner takes the restored record back and gives it its body, so the thread runs on
+/// this session never needed it): once every module's state is loaded (the owner knows what its loaded state serves:
+/// a callout context, a process), the owner takes the restored record back and gives it its body, so the thread runs on
 /// with the saved UID, as the firmware's thread would have;</item>
 /// <item>a running service thread the state does not have (made after the save): the owner lets it go and makes a new
-/// one the next time it needs one, as the firmware would from that point. The thread is asked to stop and must not take
-/// any more work.</item>
+/// one the next time it needs one, as the firmware would from that point. This is asked before the modules' states are
+/// loaded (the owner still has the running session's). The thread is asked to stop and must not take any more work.</item>
 /// </list>
 /// The name is the identity of a service thread: it is fixed by the firmware (the thread the module makes there).
 /// </summary>

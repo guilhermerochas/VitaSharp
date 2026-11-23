@@ -74,11 +74,8 @@ public sealed partial class Gxm : HleModule
         _notificationRegion = Emu.Memory.Alloc(1 << 20, "SceGxmNotificationRegion", MemoryRegion.User);
         GuestMemory.Fill(_notificationRegion, 0, 1 << 20);
         _displayMaxInFlight = (int)Math.Clamp(pendingMax, 1u, 3u);
-        int capacity = Math.Max(_displayMaxInFlight - 1, 1);
-        _displayQueue = new BoundedQueue<(uint, GpuQueue.Fence, GxmSyncObject?, long)>(capacity);
-        FrameRate.EarlyHold = 0; // a new display queue: no early hold measured yet
-        if (UbLate) GpuQueue.LateUniformCopy = CopyLateUniforms;
-        var t = K.CreateThread("SceGxmDisplayQueue", 0, 64, 0x4000, 0, 0);
+        CreateDisplayQueue();
+        var t = K.CreateThread(DisplayQueueThreadName, 0, 64, 0x4000, 0, 0);
         t.HostBody = DisplayQueueThread;
         _displayThread = t;
         t.Start(0, 0);
@@ -87,16 +84,38 @@ public sealed partial class Gxm : HleModule
         return 0;
     }
 
+    /// <summary>The display queue thread's name (fixed: its identity in a save state, SaveState.IServiceThreadOwner).</summary>
+    internal const string DisplayQueueThreadName = "SceGxmDisplayQueue";
+
+    /// <summary>The display queue of <see cref="_displayMaxInFlight"/> entries (sceGxmInitialize, or a state load of a
+    /// state that had one while this session has none yet).</summary>
+    void CreateDisplayQueue()
+    {
+        int capacity = Math.Max(_displayMaxInFlight - 1, 1);
+        _displayQueue = new BoundedQueue<(uint, GpuQueue.Fence, GxmSyncObject?, long)>(capacity);
+        FrameRate.EarlyHold = 0; // a new display queue: no early hold measured yet
+        if (UbLate)
+        {
+            GpuQueue.LateUniformCopy = CopyLateUniforms;
+        }
+    }
+
     void DisplayQueueThread(GuestThread self)
     {
         while (true)
         {
             (uint data, GpuQueue.Fence done, GxmSyncObject? old, long oldDisplays) entry;
+            // a thread a state load let go, or a queue a state load dropped (the state had none): no more entries
+            if (_displayQueue is not { } queue || self.Core.StopRequested)
+            {
+                break;
+            }
+
             using (Scheduler.Block()) // blocked on the queue: do not hold an emulated core
             {
                 // a process ended by the shell never calls sceGxmTerminate: its threads are asked to stop instead, and
                 // this one waiting for an entry kept the process (its end event to the shell) 10 s past the shell's close
-                try { if (!_displayQueue!.TryTake(out entry, () => !self.Core.StopRequested)) break; }
+                try { if (!queue.TryTake(out entry, () => !self.Core.StopRequested)) break; }
                 catch (InvalidOperationException) { break; } // queue completed
             }
             var (data, done, oldSync, oldDisplays) = entry;

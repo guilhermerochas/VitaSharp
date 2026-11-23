@@ -59,15 +59,16 @@ public sealed unsafe partial class VulkanRenderer
         _texLayoutF = TextureSetLayout(ShaderStageFlags.FragmentBit, _texUnitsF);
         // binding 0: single-sampled framebuffer copy, binding 1: multisampled copy (real MSAA scenes), binding 2: the
         // multisampled colour attachment as input attachment (real MSAA scenes rendered in render passes); 3/4: the
-        // scene's tile-word attachment as input attachment / a copy of it (VulkanRenderer.TileWord1.cs; written only
-        // by the sets of draws whose shaders read it: descriptors no pipeline uses need not be valid)
-        DescriptorSetLayoutBinding* fb = stackalloc DescriptorSetLayoutBinding[5];
+        // scene's tile-word attachment as input attachment / a copy of it, 5: its multisampled copy (VulkanRenderer.TileWord1.cs;
+        // written only by the sets of draws whose shaders read it: descriptors no pipeline uses need not be valid)
+        DescriptorSetLayoutBinding* fb = stackalloc DescriptorSetLayoutBinding[6];
         fb[0] = new DescriptorSetLayoutBinding(0, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit);
         fb[1] = new DescriptorSetLayoutBinding(1, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit);
         fb[2] = new DescriptorSetLayoutBinding(2, DescriptorType.InputAttachment, 1, ShaderStageFlags.FragmentBit);
         fb[3] = new DescriptorSetLayoutBinding(3, DescriptorType.InputAttachment, 1, ShaderStageFlags.FragmentBit);
         fb[4] = new DescriptorSetLayoutBinding(4, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit);
-        var fbci = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = 5, PBindings = fb };
+        fb[5] = new DescriptorSetLayoutBinding(5, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit);
+        var fbci = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = 6, PBindings = fb };
         _vk.CreateDescriptorSetLayout(_dev, in fbci, null, out _fbLayout).Ok("set layout");
 
         DescriptorSetLayout* layouts = stackalloc DescriptorSetLayout[4] { _uboLayout, _texLayoutV, _texLayoutF, _fbLayout };
@@ -1290,7 +1291,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         bool tw1 = _tw1Active && fs.Gen!.TileWord1 != 0 && fs.Gen.RawColorBits == 0;
-        bool inputFetch = (fs.Gen!.UsesFragColor || tw1) && _multisampled && s_msaaInputFetch && fs.Gen.RawColorBits == 0;
+        bool inputFetch = (fs.Gen!.UsesFragColor || tw1) && _multisampled && _msaaInputFetch && fs.Gen.RawColorBits == 0;
         PrimitiveTopology topology = Formats.Topology(d.PrimitiveType);
         if (topology == PrimitiveTopology.PointList && !_pointsSeen)
         {

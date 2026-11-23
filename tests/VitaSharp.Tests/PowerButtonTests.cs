@@ -1,4 +1,5 @@
 using VitaSharp.Core;
+using VitaSharp.Core.Hle;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Kernel;
@@ -278,5 +279,75 @@ public sealed class PowerButtonTests(GuestMemoryFixture fixture) : IDisposable
         _harness.Emu.IsSystemProgram = true;
         Assert.Equal(0, Call(bridge, "vshPowerSetStandbyButtonPushTime", 5_000_000));
         Assert.Equal(5_000_000, _harness.Emu.Vita.Power.Button.StandbyPushTimeUs);
+    }
+
+    // ---------------------------------------------------------------- reboot (the syscon's reset)
+
+    /// <summary>Counts the system's reboots (the event found by name, so the proof without it still builds).</summary>
+    private Func<int> CountReboots()
+    {
+        int raised = 0;
+        System.Reflection.EventInfo rebooted = typeof(SystemPower).GetEvent("Rebooted") ?? throw new InvalidOperationException("no Rebooted event");
+        rebooted.AddEventHandler(_harness.Emu.Vita.Power, new Action(() => raised++));
+        return () => raised;
+    }
+
+    private HleModule KernelModule(string name) => _harness.Emu.Hle.Modules.Single(module => module.GetType().Name == name);
+
+    [Fact]
+    public void ASoftResetRequestRebootsTheSystemOnceAndDoesNotPowerItOff()
+    {
+        _harness.Emu.Running = true;
+        Func<int> reboots = CountReboots();
+        int poweredOff = 0;
+        _harness.Emu.Vita.Power.PoweredOff += () => poweredOff++;
+        Assert.Equal(0, Call(KernelModule("PowerKernel"), "kscePowerRequestSoftReset"));
+        Assert.Equal(1, reboots());
+        Assert.Equal(0, poweredOff);
+        // a second request while the session ends changes nothing
+        Assert.Equal(0, Call(KernelModule("PowerKernel"), "kscePowerRequestSoftReset"));
+        Assert.Equal(1, reboots());
+        Assert.Equal(0, Call(KernelModule("PowerKernel"), "kscePowerEncodeUBattery"));
+    }
+
+    [Fact]
+    public void ARebootWithNoHostToBootAgainEndsTheSessionAsAPowerOff()
+    {
+        _harness.Emu.Running = true;
+        int poweredOff = 0;
+        _harness.Emu.Vita.Power.PoweredOff += () => poweredOff++;
+        Assert.Equal(0, Call(KernelModule("PowerKernel"), "kscePowerRequestSoftReset"));
+        Assert.Equal(1, poweredOff);
+    }
+
+    [Theory]
+    [InlineData(0u, "off")]
+    [InlineData(3u, "off")]
+    [InlineData(4u, "off")]
+    [InlineData(0x10u, "off")]
+    [InlineData(1u, "standby")]
+    [InlineData(2u, "reboot")]
+    [InlineData(5u, "reboot")]
+    [InlineData(0x11u, "reboot")]
+    [InlineData(7u, "none")]
+    public void TheSysconPowerModeTypesPowerOffSuspendOrRebootTheSystem(uint type, string expected)
+    {
+        _harness.Emu.Running = true;
+        Func<int> reboots = CountReboots();
+        int poweredOff = 0;
+        _harness.Emu.Vita.Power.PoweredOff += () => poweredOff++;
+        Assert.Equal(0, Call(KernelModule("SysconKernel"), "ksceSysconSetPowerMode", type, 0u));
+        Assert.Equal(expected == "off" ? 1 : 0, poweredOff);
+        Assert.Equal(expected == "reboot" ? 1 : 0, reboots());
+        Assert.Equal(expected == "standby", _harness.Emu.Vita.Power.Suspended);
+    }
+
+    [Fact]
+    public void TheSysconsColdResetAndUpdateRestartEntriesReboot()
+    {
+        _harness.Emu.Running = true;
+        Func<int> reboots = CountReboots();
+        Assert.Equal(0, Call(KernelModule("SysconKernel"), "NID_14B99945"));
+        Assert.Equal(1, reboots());
     }
 }

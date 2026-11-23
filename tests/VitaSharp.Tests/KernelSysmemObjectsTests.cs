@@ -240,7 +240,7 @@ public sealed class KernelSysmemObjectsTests(GuestMemoryFixture fixture) : IDisp
             Assert.Equal(InvalidArgument, R0(t, 0x9C23DFF7, (uint)t.Pid, uid, 0, 0));
             Assert.Equal(uid, R0(t, 0x201E970B, (uint)t.Pid, _harness.Str("ScePuidRefer")));
             Assert.Equal(uid, R0(t, 0xBDE00106, _harness.Str("ScePuidRefer")));
-            Assert.Equal(0x80027101u, R0(t, 0x4E6D8BC3));
+            Assert.Equal(0u, R0(t, 0x4E6D8BC3)); // the VM domain is closed
         });
     }
 

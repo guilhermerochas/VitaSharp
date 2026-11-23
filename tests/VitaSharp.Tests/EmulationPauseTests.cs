@@ -31,14 +31,19 @@ public sealed class EmulationPauseTests(GuestMemoryFixture fixture)
             long host0 = EmulationPause.ActiveHostTicks;
             Thread.Sleep(150);
             Assert.Equal(atPause, GuestClock.Ticks);
-            // host time spent paused is left out of the "active" host clock (audio gap statistics)
-            Assert.True(Ms(EmulationPause.ActiveHostTicks - host0) < 30);
+            // host time spent paused is left out of the "active" host clock (audio gap statistics): it stands still
+            Assert.Equal(host0, EmulationPause.ActiveHostTicks);
 
+            // after the resume the guest clock has moved at most the host time since the resume began (however slow the
+            // host): the 150 ms spent paused never reach it
+            long hostBeforeResume = Stopwatch.GetTimestamp();
             Assert.True(EmulationPause.Resume("test"));
             Assert.False(GuestClock.Frozen);
             long afterResume = GuestClock.Ticks;
+            long hostSinceResume = Stopwatch.GetTimestamp() - hostBeforeResume;
             Assert.True(afterResume >= atPause);
-            Assert.True(Ms(afterResume - atPause) < 30, $"the clock jumped {Ms(afterResume - atPause):F1} ms on resume");
+            Assert.True(afterResume - atPause <= (long)(hostSinceResume * GuestClock.Speed) + 1,
+                $"the clock jumped {Ms(afterResume - atPause):F1} ms on resume ({Ms(hostSinceResume):F1} ms of host time passed)");
             Thread.Sleep(30);
             Assert.True(GuestClock.Ticks > afterResume); // running again
         }
@@ -62,8 +67,10 @@ public sealed class EmulationPauseTests(GuestMemoryFixture fixture)
                 Thread.Sleep(120); // the guest blocked on the GPU while the emulation is paused
             }
             Assert.True(EmulationPause.Resume("test"));
+            // the scope itself adds nothing (the active host clock stands still while paused); the bound is the paused
+            // sleep, which a counted pause reaches whatever the host's speed, and leaves room for other tests' GPU waits
             double counted = Ms(FrameLedger.Total(FrameLedger.Cat.GuestGpuWait) - before);
-            Assert.True(counted < 60, $"the paused time was counted as a GPU wait: {counted:F1} ms");
+            Assert.True(counted < 120, $"the paused time was counted as a GPU wait: {counted:F1} ms");
         }
         finally
         {
@@ -81,7 +88,7 @@ public sealed class EmulationPauseTests(GuestMemoryFixture fixture)
             var wait = Task.Run(() => GuestClock.WaitUntil(deadline));
             Assert.NotSame(wait, await Task.WhenAny(wait, Task.Delay(200))); // a 1 ms guest wait must not end while paused
             EmulationPause.Resume("test");
-            Assert.Same(wait, await Task.WhenAny(wait, Task.Delay(2000))); // and ends after the resume
+            await wait.WaitAsync(TimeSpan.FromMinutes(2)); // and ends after the resume (the 2 min is only a hang guard)
         }
         finally
         {
@@ -157,25 +164,26 @@ public sealed class EmulationPauseTests(GuestMemoryFixture fixture)
         try
         {
             t.Start(0, 0);
-            Assert.True(WaitFor(() => Count() > 1000, 10_000), "the guest loop did not run");
+            Assert.True(WaitFor(() => Count() > 1000, 120_000), "the guest loop did not run");
 
             EmulationPause.Pause("test");
-            Thread.Sleep(100); // the thread leaves its guest code at the next block boundary
+            // the thread leaves its guest code at the next block boundary
+            Assert.True(WaitFor(() => t.IsParked, 120_000), "the thread did not park");
             uint parked = Count();
             Thread.Sleep(250);
             Assert.Equal(parked, Count());
 
             // the thread that has a GPU scene open runs on until it closes it
             emu.OpenSceneThread = t;
-            Assert.True(WaitFor(() => Count() > parked + 1000, 5000), "the thread finishing a scene stayed parked");
+            Assert.True(WaitFor(() => Count() > parked + 1000, 120_000), "the thread finishing a scene stayed parked");
             emu.OpenSceneThread = null;
-            Thread.Sleep(100);
+            Assert.True(WaitFor(() => t.IsParked, 120_000), "the thread did not park after its scene");
             uint parkedAgain = Count();
             Thread.Sleep(200);
             Assert.Equal(parkedAgain, Count());
 
             EmulationPause.Resume("test");
-            Assert.True(WaitFor(() => Count() > parkedAgain + 1000, 5000), "the thread did not continue after the resume");
+            Assert.True(WaitFor(() => Count() > parkedAgain + 1000, 120_000), "the thread did not continue after the resume");
         }
         finally
         {

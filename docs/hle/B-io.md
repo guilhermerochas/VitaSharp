@@ -519,6 +519,17 @@ real e ficam fora desta lista.
 
 > **Implementado (2026-10-19), fase 1:** `Hle/Modules/IoFileMgr.Async.cs`. `IoAsyncOp : KernelObject` (UID = opid, `Pattern` recebe o bit 0x1 na conclusão e o objeto recebe `PulseAll`, pronto para o `sceKernelWaitEvent` do pacote A); cada `XxxAsync` executa a versão síncrona na hora e devolve o opid; fd desconhecido → `IO_EBADF` imediato. `sceIoComplete` devolve o resultado (32 bits baixos no Lseek) e libera o opid (`UNKNOWN_EVENT_ID` se desconhecido). `sceIoCancel` aceita opid ou fd e devolve 0 (nada fica pendente na fase 1). `sceIoCompleteMultiple` continua sem registro até o layout ser confirmado. **07/11/2026:** confirmado no libpaf (gravação da foto da Câmera) que toda `sceIoXxxAsync` tem um último argumento `SceIoAsyncParam *`: o resultado (64 bits, fd do open, bytes, offset ou erro) vai para o +0 dele quando o pedido termina, e o paf lê o fd ali depois do `sceKernelWaitEvent(opid, 1)`, antes do `sceIoComplete`. Os protótipos abaixo, inferidos sem esse argumento, ficam com ele no fim. Prioridades: guardadas e devolvidas; padrão do processo 0 e faixa (só negativos rejeitados) a confirmar.
 
+> **Fase 2 (22/11/2026):** confirmado no decomp do iofilemgr 3.74 que cada `sceIoXxxAsync` cria o objeto
+> "SceIoAsyncEvent" (classe "SceUIDIoAsyncEventClass"), põe o pedido na fila do "SceIoScheduler" e volta na hora; a
+> thread do scheduler faz a E/S e marca o evento. Agora o VitaSharp faz igual (`Hle/Modules/IoScheduler.cs`): a
+> chamada volta com o opid, uma thread do host faz o trabalho no arquivo (na ordem de envio, uma fila por processo)
+> com o modelo do cartão (`IoTiming`) adiado, e o pedido termina quando o tempo do dispositivo acaba, no relógio do
+> guest, pelo `TimerDispatcher` (resultado no param, bit de conclusão, `sceIoComplete`/`WaitEvent`). Ninguém fica
+> bloqueado pelo tempo do cartão. Pedidos num mount de driver do guest rodam código do guest e continuam na thread que
+> chama. `sceIoCancel` cancela pedido ainda na fila (ECANCELED). Save state: pedido na fila ou rodando faz o save
+> tentar de novo; pedido "no dispositivo" é salvo com resultado e hora de conclusão e termina depois do load na mesma
+> hora do guest (`IoAsyncSchedulerTests`).
+
 ### Tabela das variantes Async
 
 Todas as linhas seguem o mesmo template. Protótipo **inferido**, a não ser quando houver header indicado.

@@ -2,13 +2,32 @@ using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
+using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Hle.Modules;
 
+/// <summary>Where an asynchronous request is (guarded by the I/O scheduler's lock).</summary>
+public enum IoAsyncState
+{
+    /// <summary>Submitted, waiting for the I/O scheduler.</summary>
+    Queued,
+
+    /// <summary>The I/O scheduler is doing its host work (reading or writing the host file).</summary>
+    Running,
+
+    /// <summary>The host work is done; the request ends when the modelled device time does (<see cref="IoAsyncOp.DueTicks"/>).</summary>
+    InDevice,
+
+    /// <summary>Completed: the result is in the param and the completion bit is set.</summary>
+    Done,
+}
+
 /// <summary>
-/// One asynchronous I/O request (sceIoXxxAsync). The opid returned to the guest is this object's UID. It is an event
-/// object: <see cref="Pattern"/> gets <see cref="CompletionBit"/> when the request finishes and waiters on the object
-/// (sceKernelWaitEvent-style, Monitor on the instance) are pulsed; sceIoComplete then returns <see cref="Result"/>.
+/// One asynchronous I/O request (sceIoXxxAsync). The opid returned to the guest is this object's UID. It is an object of
+/// an event class iofilemgr derives from threadmgr's (SceThreadmgrForDriver 0xDBB77032, "SceUIDIoAsyncEventClass"), so
+/// it has the event core every such object has (<see cref="EventObject"/>): the request's end sets
+/// <see cref="CompletionBit"/> in its pattern through the class's set, handing it to the waits queued there
+/// (sceKernelWaitEvent, sceKernelWaitMultipleEvents); sceIoComplete then returns <see cref="Result"/>.
 /// </summary>
 public sealed class IoAsyncOp : EventObject
 {
@@ -17,8 +36,35 @@ public sealed class IoAsyncOp : EventObject
     public int Fd = -1;
     public long Result;
     public bool Done, Cancelled;
-    public uint Pattern;
-    public ulong UserData;
+
+    /// <summary>Where the request is (see <see cref="IoAsyncState"/>; the I/O scheduler's lock guards it).</summary>
+    internal IoAsyncState State = IoAsyncState.Done;
+
+    /// <summary>The request's work (the synchronous call), run by the I/O scheduler; null once it ran.</summary>
+    internal Func<long>? Request;
+
+    /// <summary>The SceIoAsyncParam the result goes to on completion (0: none).</summary>
+    internal uint Param;
+
+    /// <summary>The address space of the process that submitted it (its buffers and its param).</summary>
+    internal AddressSpace? Space;
+
+    /// <summary>Guest clock ticks: when it was submitted, and when the device finishes it (<see cref="IoAsyncState.InDevice"/>).</summary>
+    internal long SubmitTicks, DueTicks;
+
+    /// <summary>The event pattern (the core's word; a write does not wake anyone, as the kernel's raw setter).</summary>
+    public uint Pattern
+    {
+        get => CorePattern;
+        set => CorePattern = value;
+    }
+
+    /// <summary>The last set's user data.</summary>
+    public ulong UserData
+    {
+        get => CoreUserData;
+        set => CoreUserData = value;
+    }
 
     public void Finish(long result)
     {
@@ -26,55 +72,34 @@ public sealed class IoAsyncOp : EventObject
         {
             Result = result;
             Done = true;
-            Pattern |= CompletionBit;
-            Monitor.PulseAll(this);
-            PokeWatchers();
+            State = IoAsyncState.Done;
+            CoreSet(CompletionBit, CoreUserData);
         }
     }
 
     /// <summary>sceKernelPollEvent on the opid: the completion bit once the request finished, EVENT_COND before.</summary>
-    public int PollEvent(uint waitPattern, Ptr<uint> resultPattern, Ptr<ulong> userData)
-    {
-        if (waitPattern == 0) return SceError.INVALID_ARGUMENT;
-        lock (this)
-        {
-            if ((Pattern & waitPattern) == 0) return SceError.EVENT_COND;
-            resultPattern.TrySet(Pattern & waitPattern);
-            userData.TrySet(UserData);
-            return 0;
-        }
-    }
+    public int PollEvent(uint waitPattern, Ptr<uint> resultPattern, Ptr<ulong> userData) => PollCoreEvent(waitPattern, resultPattern, userData);
 
     /// <summary>
     /// sceKernelWaitEvent on the opid, as libpaf's file reader waits for each sceIoReadAsync before sceIoComplete (the
-    /// shell copying a pic0.png into ur0:temp/appmeta for a game's LiveArea). Requests run to completion when they are
-    /// submitted, so the wait normally returns at once; otherwise it waits for <see cref="Finish"/> or the timeout
-    /// (microseconds).
+    /// shell copying a pic0.png into ur0:temp/appmeta for a game's LiveArea): waits in the queue for <see cref="Finish"/>
+    /// or the timeout (guest microseconds).
     /// </summary>
     public int WaitEvent(uint waitPattern, Ptr<uint> resultPattern, Ptr<ulong> userData, Ptr<uint> timeout)
-    {
-        if (waitPattern == 0) return SceError.INVALID_ARGUMENT;
-        lock (this)
-        {
-            long deadline = timeout.IsNull ? long.MaxValue : Environment.TickCount64 + Math.Max(1, timeout.Value / 1000);
-            while ((Pattern & waitPattern) == 0)
-            {
-                long left = deadline - Environment.TickCount64;
-                if (left <= 0) { if (!timeout.IsNull) timeout.Value = 0; return SceError.WAIT_TIMEOUT; }
-                Monitor.Wait(this, (int)Math.Min(left, 100));
-            }
-            resultPattern.TrySet(Pattern & waitPattern);
-            userData.TrySet(UserData);
-            return 0;
-        }
-    }
+        => WaitCoreEvent(GuestThread.Current, waitPattern, resultPattern, userData, timeout);
+
+    /// <summary>sceKernelSet/PulseEventWithNotifyCallback on the opid: the user bits go into its event pattern.</summary>
+    protected override void SetForNotify(uint setPattern, ulong userData, bool pulse) => CoreSet(setPattern, userData, pulse);
 }
 
 /// <summary>
-/// Asynchronous I/O and I/O priorities. Phase 1 of the spec (docs/hle/B-io.md section 4): every request runs to
-/// completion inside the submitting call, on the caller's thread, so the observable result (read only through
-/// sceIoComplete) is the synchronous one and no new concurrency is introduced. Arguments that are invalid without
-/// doing any I/O (unknown fd) fail immediately; every other error is the request's result.
+/// Asynchronous I/O and I/O priorities. As in the firmware (3.74 iofilemgr: each sceIoXxxAsync makes its
+/// "SceIoAsyncEvent" object, queues the request to the "SceIoScheduler" and returns the opid; the scheduler's thread
+/// does the I/O and sets the event), a request returns at once and runs on the I/O scheduler (<see cref="IoScheduler"/>),
+/// off the guest thread: the device time of the storage model (<see cref="IoTiming"/>) is spent by the request, not by
+/// the thread that submitted it. Arguments that are invalid without doing any I/O (unknown fd) fail immediately; every
+/// other error is the request's result. A request on a guest driver's mount runs the driver's guest code, which needs
+/// a guest thread: it still runs in the submitting call.
 /// </summary>
 public sealed partial class IoFileMgr
 {
@@ -83,34 +108,87 @@ public sealed partial class IoFileMgr
     readonly ConcurrentDictionary<int, IoAsyncOp> _ops = new();
     int _nextLocalOp = 0x7000_0001; // UIDs when no kernel is attached (unit tests)
 
+    IoScheduler? _scheduler;
+
+    IoScheduler AsyncScheduler => LazyInitializer.EnsureInitialized(ref _scheduler, static () => new IoScheduler());
+
     bool IsKnownFd(int fd) => _files.ContainsKey(fd) || _dirs.ContainsKey(fd) || IsSpecialFd(fd);
 
-    /// <summary>
-    /// Runs <paramref name="op"/> now and returns the opid holding its result. Every async call takes a trailing
-    /// <c>SceIoAsyncParam *</c> (<paramref name="param"/>) whose first 8 bytes receive the result (sign-extended to 64
-    /// bits: the fd of an open, the bytes of a read, the offset of a seek, or an error) when the request completes:
-    /// libpaf's file object passes its +0x10, waits with sceKernelWaitEvent(opid, 1) and reads the fd there before
-    /// sceIoComplete, so without it the Camera wrote its picture to fd 0 and failed (0x80AF5021, "Could not save the
-    /// image").
-    /// </summary>
-    int Submit(int fd, Func<long> op, uint param = 0)
+    /// <summary>The request has to run guest code (a guest driver's file system): it cannot leave the guest thread.</summary>
+    bool NeedsGuestThread(int fd, string? path, string? otherPath)
     {
-        if (fd >= 0 && !IsKnownFd(fd)) return SceError.IO_EBADF;
-        var o = new IoAsyncOp { Fd = fd, Name = "SceIoAsync" };
-        int uid = Emu?.Kernel != null ? K.Objects.Register(o) : (o.Uid = Interlocked.Add(ref _nextLocalOp, 2));
-        _ops[uid] = o;
-        long r;
-        Util.IoTiming.InAsyncRequest = true;
-        try { r = op(); }
-        catch (IOException) { r = SceError.IO_EINVAL; }
-        catch (UnauthorizedAccessException) { r = SceError.IO_EACCES; }
-        finally { Util.IoTiming.InAsyncRequest = false; }
-        if (param != 0 && GuestMemory.IsMapped(param)) new Ptr<long>(param).Value = r;
-        o.Finish(r);
+        if (t_inHostVop)
+        {
+            return true;
+        }
+
+        if (fd >= 0 && _files.TryGetValue(fd, out OpenFile? file) && file.GuestFile != 0)
+        {
+            return true;
+        }
+
+        if (fd >= 0 && _dirs.TryGetValue(fd, out OpenDir? dir) && dir.GuestFile != 0)
+        {
+            return true;
+        }
+
+        return (path != null && ResolveGuestMount(path, out _) != null) || (otherPath != null && ResolveGuestMount(otherPath, out _) != null);
+    }
+
+    /// <summary>
+    /// Queues <paramref name="op"/> to the I/O scheduler and returns the opid that will hold its result. Every async
+    /// call takes a trailing <c>SceIoAsyncParam *</c> (<paramref name="param"/>) whose first 8 bytes receive the result
+    /// (sign-extended to 64 bits: the fd of an open, the bytes of a read, the offset of a seek, or an error) when the
+    /// request completes: libpaf's file object passes its +0x10, waits with sceKernelWaitEvent(opid, 1) and reads the
+    /// fd there before sceIoComplete, so without it the Camera wrote its picture to fd 0 and failed (0x80AF5021, "Could
+    /// not save the image"). <paramref name="path"/>/<paramref name="otherPath"/>: the paths the request names (one on
+    /// a guest driver's mount keeps the request on the calling thread).
+    /// </summary>
+    int Submit(int fd, Func<long> op, uint param = 0, string? path = null, string? otherPath = null)
+    {
+        if (fd >= 0 && !IsKnownFd(fd))
+        {
+            return SceError.IO_EBADF;
+        }
+
+        var request = new IoAsyncOp { Fd = fd, Name = "SceIoAsyncEvent", Param = param, Space = AddressSpace.Current, SubmitTicks = GuestClock.Ticks };
+        int uid = Emu?.Kernel != null ? K.Objects.Register(request) : (request.Uid = Interlocked.Add(ref _nextLocalOp, 2));
+        _ops[uid] = request;
+        if (NeedsGuestThread(fd, path, otherPath))
+        {
+            IoScheduler.Complete(request, IoScheduler.Execute(op));
+            return uid;
+        }
+
+        request.Request = op;
+        AsyncScheduler.Enqueue(request);
         return uid;
     }
 
-    [Hle] int sceIoOpenAsync(string path, int flags, int mode, uint param) => Submit(-1, () => sceIoOpen(path, flags, mode), param);
+    /// <summary>Tests: waits until the I/O scheduler has done the host work of every queued request (their completion
+    /// still waits for the device time, in guest time).</summary>
+    internal void WaitForAsyncHostWork() => _scheduler?.WaitHostIdle();
+
+    /// <summary>A load waits for the host work of this session's queued requests: the I/O scheduler would write a
+    /// read's data into the loaded memory.</summary>
+    public string? CheckLoad() => _scheduler is { HostBusy: true } ? "an asynchronous I/O request is being served" : null;
+
+    /// <summary>A loaded state replaces this session's requests: the ones the state has in the device go on to their
+    /// saved completion time (their host work was done before the save; the state holds the result).</summary>
+    void AfterAsyncLoad()
+    {
+        _scheduler?.Reset();
+        foreach (IoAsyncOp op in _ops.Values)
+        {
+            if (!op.Done)
+            {
+                op.Space = Emu?.Space;
+                AsyncScheduler.Resume(op);
+            }
+        }
+    }
+
+    [Hle] int sceIoOpenAsync(string path, int flags, int mode, uint param) => Submit(-1, () => sceIoOpen(path, flags, mode), param, path);
     [Hle] int sceIoCloseAsync(int fd, uint param) => Submit(fd, () => _dirs.ContainsKey(fd) ? sceIoDclose(fd) : sceIoClose(fd), param);
     [Hle] int sceIoReadAsync(int fd, uint buf, uint size, uint param) => Submit(fd, () => sceIoRead(fd, buf, size), param);
     [Hle] int sceIoWriteAsync(int fd, uint buf, uint size, uint param) => Submit(fd, () => sceIoWrite(fd, buf, size), param);
@@ -119,21 +197,21 @@ public sealed partial class IoFileMgr
     [Hle] int sceIoLseekAsync(int fd, long offset, int whence, uint param) => Submit(fd, () => sceIoLseek(fd, offset, whence), param);
     [Hle] int sceIoSyncAsync(uint device, int flags, uint param) => Submit(-1, () => sceIoSync(device, flags), param);
     [Hle] int sceIoSyncByFdAsync(int fd, int flag, uint param) => Submit(fd, () => sceIoSyncByFd(fd, flag), param);
-    [Hle] int sceIoGetstatAsync(string path, uint stat, uint param) => Submit(-1, () => sceIoGetstat(path, stat), param);
+    [Hle] int sceIoGetstatAsync(string path, uint stat, uint param) => Submit(-1, () => sceIoGetstat(path, stat), param, path);
     [Hle] int sceIoGetstatByFdAsync(int fd, uint stat, uint param) => Submit(fd, () => sceIoGetstatByFd(fd, stat), param);
-    [Hle] int sceIoChstatAsync(string path, uint stat, int bits, uint param) => Submit(-1, () => sceIoChstat(path, stat, bits), param);
+    [Hle] int sceIoChstatAsync(string path, uint stat, int bits, uint param) => Submit(-1, () => sceIoChstat(path, stat, bits), param, path);
     [Hle] int sceIoChstatByFdAsync(int fd, uint stat, int bits, uint param) => Submit(fd, () => sceIoChstatByFd(fd, stat, bits), param);
-    [Hle] int sceIoMkdirAsync(string path, int mode, uint param) => Submit(-1, () => sceIoMkdir(path, mode), param);
-    [Hle] int sceIoRmdirAsync(string path, uint param) => Submit(-1, () => sceIoRmdir(path), param);
-    [Hle] int sceIoRemoveAsync(string path, uint param) => Submit(-1, () => sceIoRemove(path), param);
-    [Hle] int sceIoRenameAsync(string oldPath, string newPath, uint param) => Submit(-1, () => sceIoRename(oldPath, newPath), param);
-    [Hle] int sceIoDopenAsync(string path, uint param) => Submit(-1, () => sceIoDopen(path), param);
+    [Hle] int sceIoMkdirAsync(string path, int mode, uint param) => Submit(-1, () => sceIoMkdir(path, mode), param, path);
+    [Hle] int sceIoRmdirAsync(string path, uint param) => Submit(-1, () => sceIoRmdir(path), param, path);
+    [Hle] int sceIoRemoveAsync(string path, uint param) => Submit(-1, () => sceIoRemove(path), param, path);
+    [Hle] int sceIoRenameAsync(string oldPath, string newPath, uint param) => Submit(-1, () => sceIoRename(oldPath, newPath), param, oldPath, newPath);
+    [Hle] int sceIoDopenAsync(string path, uint param) => Submit(-1, () => sceIoDopen(path), param, path);
     [Hle] int sceIoDreadAsync(int fd, uint dirent, uint param) => Submit(fd, () => sceIoDread(fd, dirent), param);
     [Hle] int sceIoDcloseAsync(int fd, uint param) => Submit(fd, () => sceIoDclose(fd), param);
 
     [Hle]
     int sceIoDevctlAsync(string dev, int cmd, uint arg, uint argLen, uint buf, uint bufLen, uint param)
-        => Submit(-1, () => sceIoDevctl(dev, cmd, arg, argLen, buf, bufLen), param);
+        => Submit(-1, () => sceIoDevctl(dev, cmd, arg, argLen, buf, bufLen), param, dev);
 
     [Hle]
     int sceIoIoctlAsync(int fd, int cmd, uint arg, uint argLen, uint buf, uint bufLen, uint param)
@@ -180,21 +258,37 @@ public sealed partial class IoFileMgr
         return r;
     }
 
-    /// <summary>Cancels pending requests by opid or by fd. Phase 1 requests are already complete when the opid is
-    /// returned, so there is never anything left to cancel: a known opid/fd returns 0, anything else EBADF.</summary>
+    /// <summary>Cancels requests by opid or by fd: a request the I/O scheduler has not started ends with ECANCELED
+    /// (sceIoComplete returns it); one already done or in the device is left to finish. A known opid/fd returns 0,
+    /// anything else EBADF.</summary>
     [Hle]
     int sceIoCancel(int id)
     {
-        if (_ops.TryGetValue(id, out var op))
+        if (_ops.TryGetValue(id, out IoAsyncOp? op))
         {
-            lock (op) if (!op.Done) { op.Cancelled = true; op.Finish(IO_ECANCELED); }
+            _scheduler?.Cancel(op, IO_ECANCELED);
             return 0;
         }
-        return IsKnownFd(id) ? 0 : SceError.IO_EBADF;
+
+        if (!IsKnownFd(id))
+        {
+            return SceError.IO_EBADF;
+        }
+
+        foreach (IoAsyncOp pending in _ops.Values)
+        {
+            if (pending.Fd == id)
+            {
+                _scheduler?.Cancel(pending, IO_ECANCELED);
+            }
+        }
+
+        return 0;
     }
 
     // ------------------------------------------------------------------ I/O priority
-    // VitaSharp has no I/O queue (requests complete synchronously), so priorities are only stored and reported.
+    // The I/O scheduler serves requests in submission order (one device queue), so priorities are only stored and
+    // reported.
     // The valid range and the initial process default are not documented; values are kept as given (negative ones
     // are rejected) and the process default starts at 0 until a title shows otherwise.
     // The getters and setters only read or store a value: a kernel entry, not the module's blocking-I/O wait.

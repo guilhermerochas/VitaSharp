@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=e8288c58895f953eb61c4e70df455f9dd10b271457c0b65eed01e0744506ade8 -->
+<!-- pair: README.pt-BR.md sha256=5474041cb9f54baa78ccf6922dde4a7d7bc50e7bf7ce272a181ac7e5275822ca -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -106,8 +106,8 @@ other kernel code (what a kernel plugin can import), from the census in
 
 38 games tested so far ([`docs/compatibility.md`](docs/compatibility.md), with each one's state and test scenario):
 25 reach gameplay (among them Killzone: Mercenary, Uncharted: Golden Abyss, Gravity Rush, God of War Collection,
-FIFA 13, Persona 4 Golden, LittleBigPlanet, Tearaway, WRC 4, Skullgirls and Devious Dungeon, several that do not
-boot on Vita3K) and the rest reach the menus. Known issues and future work are in the [roadmap](docs/roadmap.md).
+FIFA 13, Persona 4 Golden, LittleBigPlanet, Tearaway, WRC 4, Skullgirls and Devious Dungeon) and the
+rest reach the menus. Known issues and future work are in the [roadmap](docs/roadmap.md).
 
 ## Platforms
 
@@ -391,6 +391,15 @@ Shell scripts follow the Google Shell Style Guide and must pass ShellCheck (CI j
   Dozen, phone drivers) pipelines are compiled whole either way. The
   `[shadercache] session` log line counts what the GPU thread compiled; see
   [`docs/notes/pipeline-skip.md`](docs/notes/pipeline-skip.md).
+- Loading window: a click on a game opens its window at once (960x544 times `--scale`), before the game process does
+  any of its start-up, with the game's start-up picture (`sce_sys/pic0.png`), its icon and name, the current step
+  (firmware, controls, audio, GPU, the game, the shader cache, the ARM code) with a bar and, during the shader cache
+  and the ARM code waits, "Cancelar". The game's own window waits hidden at the same place
+  (`--loading-screen=launcher --window-pos=X,Y`) and appears when the game is ready; the steps are the game process's
+  `[boot-step] <step>` log lines and `[boot-log] <path>` its log file. A second click on the game brings the same
+  window back; its X stops the game. A start that fails (a title that cannot be loaded, a missing license, an error
+  exit) leaves the reason and the log's place on the window, with "Fechar". Android shows the same screen over the
+  game. Nothing extra to install, every OS.
 - "Carregar o cache de shaders antes de jogar" / "Load the shader cache before playing" (launcher: Configurações, next
   to "Compilar shaders em segundo plano", and each game's page; `--load-shader-cache=on|off`, default on; the earlier
   name `--precompile-shaders` is still accepted with a warning): before a game starts, its shader cache (the shaders
@@ -419,8 +428,8 @@ Shell scripts follow the Google Shell Style Guide and must pass ShellCheck (CI j
   low-priority threads translate the code near what the game runs (a few blocks past every block it reaches, and the
   rest of its function, found through the `.ARM.exidx` function index), at most 64 MB of the code arena. Precompiled
   code is published when the game first reaches it. The log lines `ARM code precompilation: boot step ...` and, at the
-  end, `... % of the run blocks were precompiled` give the time and the coverage. Android runs the same translation in
-  the background without waiting (the option is in the app's settings and each game's settings). Nothing extra to
+  end, `... % of the run blocks were precompiled` give the time and the coverage. Android waits for the same step behind
+  its loading screen (the option is in the app's settings and each game's settings). Nothing extra to
   install, every OS.
 - Profiling: `dotnet-trace` / `dotnet-counters` (`dotnet tool install -g dotnet-trace`, every OS); on Windows also
   PerfView and WPR/WPA (Windows Performance Toolkit).
@@ -433,7 +442,7 @@ What `dotnet test tests/VitaSharp.Tests` needs per system; a test whose requirem
 |---|---|---|---|
 | SDK | .NET 10 SDK | .NET 10 SDK | .NET 10 SDK |
 | Vulkan device (renderer, GPU dump and game-run tests) | Mesa lavapipe (Vulkan 1.4, the Linux CI's driver): unpack the `x64` folder of a [mesa-dist-win](https://github.com/pal1000/mesa-dist-win/releases) release (`vulkan_lvp.dll` + `lvp_icd.x86_64.json`) into `%LOCALAPPDATA%\VitaSharpTools\mesa\<version>\x64`; without it, or when the system loader `vulkan-1.dll` cannot take it, SwiftShader as Microsoft Edge or Google Chrome ship it (both found by themselves) | Mesa lavapipe: `sudo apt install mesa-vulkan-drivers libvulkan1` (Fedora: `mesa-vulkan-drivers vulkan-loader`) | MoltenVK: the LunarG Vulkan SDK, or `brew install molten-vk vulkan-loader` |
-| shaderc (renderer and shader-compile tests; the renderer needs it too) | from the Silk.NET.Shaderc.Native package | from the package; when that copy does not load: `sudo apt install libshaderc-dev` (Fedora, Arch: `shaderc`) | from the package |
+| shaderc (renderer and shader-compile tests; the renderer needs it too) | from the Silk.NET.Shaderc.Native package | from the package (found under `runtimes/linux-x64` also where Silk.NET's search misses it, as on Ubuntu); when that copy does not load: `sudo apt install libshaderc-dev` (Fedora, Arch: `shaderc`; loaded as `libshaderc.so.1`) | from the package, else Homebrew's `brew install shaderc` |
 | A desktop window (game overlay tests) | always | an X11 or Wayland display; headless: `xvfb-run dotnet test tests/VitaSharp.Tests` (`sudo apt install xvfb`) | skipped: AppKit creates windows only on the main thread, and the tests run on worker threads |
 | FFmpeg (video and audio decode tests) | downloaded by the first build | downloaded by the first build | the system's: `brew install ffmpeg` |
 
@@ -461,6 +470,10 @@ What `dotnet test tests/VitaSharp.Tests` needs per system; a test whose requirem
   Google APIs image and the `android-x64` build). `build/android-media-parity.sh` (or `.ps1`) records the trace on the
   device; `VITASHARP_ANDROID_MEDIA_TRACE=<trace> dotnet test tests/VitaSharp.Tests --filter MediaParityTests` compares
   it with the desktop's (skipped without the variable). `SYNC=0` (`-Sync 0`) records the old MediaCodec timing.
+- .NET 11 (optional, for comparisons; the default and the CI stay on .NET 10): `-p:VitaSharpDotnet=net11.0` builds
+  every project against .NET 11 on any system. It needs the .NET 11 SDK (and, for Android, its `maui-android` workload
+  and the Android API 37 platform; .NET 11 has no Mono, so only `VitaSharpAndroidRuntime=coreclr` or `nativeaot`
+  build). An SDK installed outside the default location runs the desktop app with `DOTNET_ROOT` set to it.
 
 ## Releases
 

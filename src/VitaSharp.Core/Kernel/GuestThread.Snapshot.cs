@@ -20,6 +20,10 @@ public sealed unsafe partial class GuestThread
 {
     /// <summary>Call depth at which the thread is parked at a block boundary; -1 while it is not parked.</summary>
     private volatile int _parkedDepth = -1;
+
+    /// <summary>The thread is parked at a safe point (a suspended process, a paused emulation, a save state): it runs
+    /// no guest code until it is let go. Tests wait for it instead of sleeping for a while.</summary>
+    internal bool IsParked => _parkedDepth >= 0;
     /// <summary>Incremented on entering and on leaving an HLE call: odd while inside one.</summary>
     private volatile int _hleSeq;
     /// <summary>The mutex lock count a condition wait released (given back to the thread when its wait is reissued).</summary>

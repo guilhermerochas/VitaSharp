@@ -236,7 +236,7 @@ public sealed partial class ModulemgrKernel : HleModule
 
     /// <summary>ksceKernelStopModuleForPid(pid, modid, args, argp, flags, opt, int *status).</summary>
     [Hle]
-    int ksceKernelStopModuleForPid(int pid, int modid, uint args, uint argp, int flags, uint opt, uint status)
+    internal int ksceKernelStopModuleForPid(int pid, int modid, uint args, uint argp, int flags, uint opt, uint status)
     {
         if (pid == KernelSpace.KernelPid)
         {
@@ -259,7 +259,7 @@ public sealed partial class ModulemgrKernel : HleModule
 
     /// <summary>ksceKernelUnloadModuleForPid(pid, modid, flags, opt).</summary>
     [Hle]
-    int ksceKernelUnloadModuleForPid(int pid, int modid, int flags, uint opt)
+    internal int ksceKernelUnloadModuleForPid(int pid, int modid, int flags, uint opt)
     {
         if (pid == KernelSpace.KernelPid)
         {
@@ -277,7 +277,7 @@ public sealed partial class ModulemgrKernel : HleModule
 
     /// <summary>ksceKernelStopUnloadModuleForPid(pid, modid, args, argp, flags, opt, int *status).</summary>
     [Hle]
-    int ksceKernelStopUnloadModuleForPid(int pid, int modid, uint args, uint argp, int flags, uint opt, uint status)
+    internal int ksceKernelStopUnloadModuleForPid(int pid, int modid, uint args, uint argp, int flags, uint opt, uint status)
     {
         int r = ksceKernelStopModuleForPid(pid, modid, args, argp, flags, opt, status);
         return r < 0 ? r : ksceKernelUnloadModuleForPid(pid, modid, flags, opt);

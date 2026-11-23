@@ -16,9 +16,9 @@ namespace VitaSharp.Core.Hle.Modules;
 // rename 0x40, pread 0x48, pwrite 0x4C, inactive 0x50, link 0x54, unlink 0x58, sync 0x5C, fgetstat 0x60, fchstat
 // 0x64, whiteout 0x68, cleanup 0x6C, zerofill 0x70); a NULL entry is 0x80010030, a NULL vnode 0x80010016.
 // The emulator's own devices (ux0:, app0:, savedata0:...) are served from host folders by IoFileMgr, not by guest
-// drivers: a driver's registration, its vnodes, files and locks work, and its operations run through ksceVop*, but
-// mounting a guest file system on a path (vfsMount, the PFS mounts, removing a block device) is not wired into the
-// emulator's path resolution and answers 0x80010030 (the operation is not supported) after its argument checks.
+// drivers. A driver's registration, its vnodes, files and locks work, its operations run through ksceVop*, and a file
+// system it mounts with vfsMount (or vfsMountForPFS) serves the I/O on its paths (IoFileMgr.VfsMount.cs); removing a
+// block device answers 0x80010030 (the operation is not supported) after its argument check.
 public sealed partial class IoFileMgr
 {
     const int VFS_ERR_PERM = unchecked((int)0x80010001);
@@ -35,9 +35,6 @@ public sealed partial class IoFileMgr
     /// <summary>The size of a vnode the I/O manager hands out.</summary>
     const uint VnodeSize = 0x100;
 
-    /// <summary>The size of a file object.</summary>
-    const uint VfsFileSize = 0x80;
-
     /// <summary>The state of a fresh vnode (+0x74).</summary>
     const uint VnodeStateNew = 0x8000;
 
@@ -45,7 +42,7 @@ public sealed partial class IoFileMgr
     [SnapshotMissing] // states of builds before it: none registered
     readonly List<uint> _vfsDrivers = new();
 
-    /// <summary>The vnodes and file objects handed out (address to kind: 1 vnode, 2 file).</summary>
+    /// <summary>The vnodes handed out (address to kind: 1 vnode).</summary>
     [SnapshotMissing]
     readonly Dictionary<uint, int> _vfsObjects = new();
 
@@ -121,140 +118,62 @@ public sealed partial class IoFileMgr
         return 0;
     }
 
-    /// <summary>vfsGetNewVnode(mount, vops, ?, vpp): a fresh vnode (the area from +0x40 zeroed, state 0x8000, its
-    /// op table, mount and the mount's driver data, one reference); *vpp the vnode; 0.</summary>
-    [Hle(Nid = 0xD60B5C63, Library = "SceIofilemgrForDriver")]
-    int vfsGetNewVnode(uint mount, uint vops, uint unused, uint vpp)
+    /// <summary>Takes <paramref name="vnode"/> off the vnode list of <paramref name="mount"/> (+0x54, its number at
+    /// +0x58), as 0x8100a9d8 does.</summary>
+    static void UnlinkMountVnode(uint mount, uint vnode)
     {
-        if (vpp == 0)
+        if (mount == 0 || GuestMemory.R32(mount + 0x54) == 0)
         {
-            return VFS_ERR_INVAL;
+            return;
         }
 
-        uint vnode = Emu.Memory.Alloc(VnodeSize, "vfs vnode", MemoryRegion.Kernel);
-        GuestMemory.Fill(vnode, 0, VnodeSize);
-        GuestMemory.W32(vnode + 0x40, vops);
-        GuestMemory.W32(vnode + 0x4C, mount);
-        GuestMemory.W32(vnode + 0x58, 1);
-        GuestMemory.W32(vnode + 0x74, VnodeStateNew);
-        if (mount != 0)
+        uint at = GuestMemory.R32(mount + 0x54);
+        if (at == vnode)
         {
-            GuestMemory.W32(vnode + 0x6C, GuestMemory.R32(mount + 0x44));
-            GuestMemory.W32(vnode + 0xD0, (uint)(int)GuestMemory.Read<short>(mount + 0x4E));
+            GuestMemory.W32(mount + 0x54, GuestMemory.R32(vnode + 0x54));
         }
-
-        lock (_vfsObjects)
+        else
         {
-            _vfsObjects[vnode] = 1;
-        }
-
-        GuestMemory.W32(vpp, vnode);
-        return 0;
-    }
-
-    /// <summary>vfsFreeVnode(vnode): returns it; 0.</summary>
-    [Hle(Nid = 0x21D57633, Library = "SceIofilemgrForDriver")]
-    int vfsFreeVnode(uint vnode)
-    {
-        return VfsFree(vnode, 1);
-    }
-
-    int VfsFree(uint address, int kind)
-    {
-        lock (_vfsObjects)
-        {
-            if (!_vfsObjects.TryGetValue(address, out int known) || known != kind)
+            while (at != 0 && GuestMemory.R32(at + 0x54) != vnode)
             {
-                return VFS_ERR_INVAL;
+                at = GuestMemory.R32(at + 0x54);
             }
 
-            _vfsObjects.Remove(address);
+            if (at == 0)
+            {
+                return;
+            }
+
+            GuestMemory.W32(at + 0x54, GuestMemory.R32(vnode + 0x54));
         }
 
-        Emu.Memory.Free(address);
-        return 0;
+        GuestMemory.W32(vnode + 0x54, 0);
+        GuestMemory.W32(mount + 0x58, GuestMemory.R32(mount + 0x58) - 1);
     }
 
-    /// <summary>vfsAllocateFile(vnode, file out, ...): a file object for the vnode (+0 the vnode); 0.</summary>
-    [Hle(Nid = 0xBBAC1751, Library = "SceIofilemgrForDriver")]
-    int vfsAllocateFile(uint vnode, uint file)
+    /// <summary>One more reference to a vnode (+0x58).</summary>
+    static void HoldVnode(uint vnode)
     {
-        if (file == 0)
+        if (vnode != 0)
         {
-            return VFS_ERR_INVAL;
+            GuestMemory.W32(vnode + 0x58, GuestMemory.R32(vnode + 0x58) + 1);
         }
-
-        uint block = Emu.Memory.Alloc(VfsFileSize, "vfs file", MemoryRegion.Kernel);
-        GuestMemory.Fill(block, 0, VfsFileSize);
-        GuestMemory.W32(block, vnode);
-        lock (_vfsObjects)
-        {
-            _vfsObjects[block] = 2;
-        }
-
-        GuestMemory.W32(file, block);
-        return 0;
     }
 
-    /// <summary>vfsAllocateFileDummy(vnode, file out, ?): the same kind of file object, without the driver's open.</summary>
-    [Hle(Nid = 0xCDF3EF52, Library = "SceIofilemgrForDriver")]
-    int vfsAllocateFileDummy(uint vnode, uint file, uint unused)
-    {
-        return vfsAllocateFile(vnode, file);
-    }
-
-    /// <summary>vfsFreeFile(vnode, file): returns it.</summary>
-    [Hle(Nid = 0xC85E33A2, Library = "SceIofilemgrForDriver")]
-    int vfsFreeFile(uint vnode, uint file)
-    {
-        return VfsFree(file, 2);
-    }
-
-    /// <summary>vfsLockVnode(vnode): the vnode's lock for the calling thread (recursive: +8 the depth); 0.</summary>
-    [Hle(Nid = 0xAA45010B, Library = "SceIofilemgrForDriver")]
-    int vfsLockVnode(uint vnode)
+    /// <summary>A reference dropped (+0x58; the I/O manager's `vnode->refs--` after a lookup's use). A vnode left
+    /// with none stays on its mount's list, cached for the next lookup, until the unmount inactivates it.</summary>
+    static void ReleaseVnode(uint vnode)
     {
         if (vnode == 0)
         {
-            return VFS_ERR_INVAL;
+            return;
         }
 
-        GuestMemory.W32(vnode, 1);
-        GuestMemory.W32(vnode + 4, (uint)CurrentThreadId());
-        GuestMemory.W32(vnode + 8, GuestMemory.R32(vnode + 8) + 1);
-        return 0;
-    }
-
-    /// <summary>vfsUnlockVnode(vnode): a thread that does not own the lock 0x80010001; the last unlock frees it.</summary>
-    [Hle(Nid = 0x6048F245, Library = "SceIofilemgrForDriver")]
-    int vfsUnlockVnode(uint vnode)
-    {
-        if (vnode == 0)
+        uint references = GuestMemory.R32(vnode + 0x58);
+        if (references > 0)
         {
-            return VFS_ERR_INVAL;
+            GuestMemory.W32(vnode + 0x58, references - 1);
         }
-
-        if (GuestMemory.R32(vnode) == 0 || GuestMemory.R32(vnode + 4) != (uint)CurrentThreadId())
-        {
-            return VFS_ERR_PERM;
-        }
-
-        uint depth = GuestMemory.R32(vnode + 8) - 1;
-        GuestMemory.W32(vnode + 8, depth);
-        if (depth == 0)
-        {
-            GuestMemory.W32(vnode, 0);
-            GuestMemory.W32(vnode + 4, 0);
-        }
-
-        return 0;
-    }
-
-    /// <summary>vfsIsOwnerVnode(vnode): 1 when the calling thread holds the vnode's lock.</summary>
-    [Hle(Nid = 0xC3AE93A2, Library = "SceIofilemgrForDriver", ReturnsValue = true)]
-    int vfsIsOwnerVnode(uint vnode)
-    {
-        return vnode != 0 && GuestMemory.R32(vnode) != 0 && GuestMemory.R32(vnode + 4) == (uint)CurrentThreadId() ? 1 : 0;
     }
 
     /// <summary>vfsLockMnt(mount): the mount's lock for the calling thread; 0.</summary>
@@ -303,130 +222,260 @@ public sealed partial class IoFileMgr
         return 0;
     }
 
-    /// <summary>vfsGetMntInfo(path, info): the mount behind a path: the emulator's devices are not guest mounts
-    /// (0x80010002).</summary>
+    /// <summary>The size of one vfsGetMntList entry.</summary>
+    const uint MntListEntrySize = 0x34;
+
+    /// <summary>
+    /// vfsGetMntInfo(mount, info) as iofilemgr 3.74 has it (0x81009c18): a mount block that is not in the mount list
+    /// is 0x80010002; otherwise the info block gets the mount's fields: +0 the mount, +4 the misc block's +0x10, +8 the
+    /// assign name (0x20 bytes), +0x28 mount+0x64, +0x2C its state (+0x48), +0x30 its flags (+0x50), +0x34 its fs type
+    /// (+0x4C), +0x38 the mount, +0x3C the covered vnode (+0x40), +0x40 the default ops (+0x44), +0x44 the references
+    /// (+0x60), +0x48..+0x54 mount+0x58 / +0x54 / +0x70 / +0x74, +0x58 / +0x5C mount+0xC0 / its data (+0xC4), +0x60..+0x70
+    /// the block at +0xC8 (its address, then its first four words), +0x74..+0x80 the block at +0xCC (its address, its
+    /// +4 and what its +8 and +0xC point to), +0x84 the address of mount+0x7C, +0x88 the root path (0x400 bytes),
+    /// +0x488 the misc block, and its strings at +4, +8 and +0xC (0x40 bytes each, empty when NULL). Only the guest
+    /// mounts are in the list: the emulator's own devices are served from host folders, not by mount blocks.
+    /// </summary>
     [Hle(Nid = 0xB987450D, Library = "SceIofilemgrForDriver")]
-    int vfsGetMntInfo(uint path, uint info)
+    int vfsGetMntInfo(uint mount, uint info)
     {
-        return VFS_ERR_NOENT;
+        GuestMount? found = FindMountByBlock(mount);
+        if (found == null || info == 0)
+        {
+            return VFS_ERR_NOENT;
+        }
+
+        uint misc = GuestMemory.R32(mount + 0x7C);
+        uint extra = GuestMemory.R32(mount + 0xCC);
+        uint driverBlock = GuestMemory.R32(mount + 0xC8);
+        GuestMemory.W32(info + 0x00, mount);
+        GuestMemory.W32(info + 0x04, misc == 0 ? 0 : GuestMemory.R32(misc + 0x10));
+        CopyGuestString(info + 0x08, misc == 0 ? 0 : GuestMemory.R32(misc), 0x20);
+        GuestMemory.W32(info + 0x28, GuestMemory.R32(mount + 0x64));
+        GuestMemory.W32(info + 0x2C, GuestMemory.R32(mount + 0x48));
+        GuestMemory.W32(info + 0x30, GuestMemory.R32(mount + 0x50));
+        GuestMemory.W32(info + 0x34, GuestMemory.R32(mount + 0x4C));
+        GuestMemory.W32(info + 0x38, mount);
+        GuestMemory.W32(info + 0x3C, GuestMemory.R32(mount + 0x40));
+        GuestMemory.W32(info + 0x40, GuestMemory.R32(mount + 0x44));
+        GuestMemory.W32(info + 0x44, GuestMemory.R32(mount + 0x60));
+        GuestMemory.W32(info + 0x48, GuestMemory.R32(mount + 0x58));
+        GuestMemory.W32(info + 0x4C, GuestMemory.R32(mount + 0x54));
+        GuestMemory.W32(info + 0x50, GuestMemory.R32(mount + 0x70));
+        GuestMemory.W32(info + 0x54, GuestMemory.R32(mount + 0x74));
+        GuestMemory.W32(info + 0x58, GuestMemory.R32(mount + 0xC0));
+        GuestMemory.W32(info + 0x5C, GuestMemory.R32(mount + 0xC4));
+        GuestMemory.W32(info + 0x60, driverBlock);
+        for (uint word = 0; word < 4; word++)
+        {
+            GuestMemory.W32(info + 0x64 + word * 4, driverBlock == 0 ? 0 : GuestMemory.R32(driverBlock + word * 4));
+        }
+
+        GuestMemory.W32(info + 0x74, extra);
+        GuestMemory.W32(info + 0x78, extra == 0 ? 0 : GuestMemory.R32(extra + 4));
+        GuestMemory.W32(info + 0x7C, DereferenceOrZero(extra == 0 ? 0 : GuestMemory.R32(extra + 8)));
+        GuestMemory.W32(info + 0x80, DereferenceOrZero(extra == 0 ? 0 : GuestMemory.R32(extra + 0xC)));
+        GuestMemory.W32(info + 0x84, mount + 0x7C);
+        CopyGuestString(info + 0x88, mount + 0x80, 0x400);
+        GuestMemory.W32(info + 0x488, misc);
+        CopyGuestString(info + 0x48C, misc == 0 ? 0 : GuestMemory.R32(misc + 4), 0x40);
+        CopyGuestString(info + 0x4CC, misc == 0 ? 0 : GuestMemory.R32(misc + 8), 0x40);
+        CopyGuestString(info + 0x50C, misc == 0 ? 0 : GuestMemory.R32(misc + 0xC), 0x40);
+        return 0;
     }
 
-    /// <summary>vfsGetMntList(list, count): the guest mounts: none (count 0); 0.</summary>
+    /// <summary>
+    /// vfsGetMntList(list, max, count out) as iofilemgr 3.74 has it (0x81009b6c): a NULL list returns the number of
+    /// mounts; otherwise up to <paramref name="max"/> entries of 0x34 bytes, in the list's order ({ +0 the mount, +4 the
+    /// misc block's +0x10 (-1 for a device file system, fs type 3), +8 the assign name (0x20 bytes), +0x28 mount+0x64,
+    /// +0x2C 1 for a device file system, +0x30 the driver's data (+0xC4) }), the number written in *count, and 0.
+    /// </summary>
     [Hle(Nid = 0xC20C621C, Library = "SceIofilemgrForDriver")]
-    int vfsGetMntList(uint list, uint count)
+    int vfsGetMntList(uint list, uint max, uint count)
     {
+        uint[] mounts;
+        lock (_guestMounts)
+        {
+            mounts = new uint[_guestMounts.Count];
+            for (int i = 0; i < mounts.Length; i++)
+            {
+                mounts[i] = _guestMounts[i].Mount;
+            }
+        }
+
+        if (list == 0)
+        {
+            return mounts.Length;
+        }
+
+        int written = 0;
+        if ((int)max > 0)
+        {
+            while (written < mounts.Length && written < (int)max)
+            {
+                uint mount = mounts[written];
+                uint entry = list + (uint)written * MntListEntrySize;
+                uint misc = GuestMemory.R32(mount + 0x7C);
+                bool deviceFileSystem = (GuestMemory.R32(mount + 0x4C) & 0xFF) == 3;
+                GuestMemory.W32(entry, mount);
+                GuestMemory.W32(entry + 4, deviceFileSystem ? 0xFFFFFFFF : misc == 0 ? 0 : GuestMemory.R32(misc + 0x10));
+                CopyGuestString(entry + 8, misc == 0 ? 0 : GuestMemory.R32(misc), 0x20);
+                GuestMemory.W32(entry + 0x28, GuestMemory.R32(mount + 0x64));
+                GuestMemory.W32(entry + 0x2C, deviceFileSystem ? 1u : 0u);
+                GuestMemory.W32(entry + 0x30, GuestMemory.R32(mount + 0xC4));
+                written++;
+            }
+        }
+
         if (count != 0)
         {
-            GuestMemory.W32(count, 0);
+            GuestMemory.W32(count, (uint)written);
         }
 
         return 0;
     }
 
-    /// <summary>A mount request of a guest file system: NULL 0x80010016; not wired into the emulator's paths
-    /// (0x80010030).</summary>
-    static int VfsMountRequest(uint argument)
+    /// <summary>strncpy: the string at <paramref name="source"/> (NULL: empty) and zeros up to <paramref name="size"/>.</summary>
+    static void CopyGuestString(uint destination, uint source, uint size)
     {
-        return argument == 0 ? VFS_ERR_INVAL : VFS_ERR_UNSUP;
+        string text = source == 0 ? "" : GuestMemory.ReadCString(source, (int)size);
+        GuestMemory.Fill(destination, 0, size);
+        GuestMemory.WriteCString(destination, text, (int)size);
     }
 
-    /// <summary>vfsMount(param): mounts a registered driver on a path.</summary>
-    [Hle(Nid = 0xB62DE9A6, Library = "SceIofilemgrForDriver", Default = true)]
-    int vfsMount(uint param)
+    static uint DereferenceOrZero(uint address)
     {
-        return VfsMountRequest(param);
+        return address == 0 ? 0 : GuestMemory.R32(address);
     }
 
-    /// <summary>vfsUmount(param): unmounts it.</summary>
-    [Hle(Nid = 0x9C7E7B76, Library = "SceIofilemgrForDriver", Default = true)]
-    int vfsUmount(uint param)
+    /// <summary>
+    /// vfsMountForPFS(param, 0, 0) as iofilemgr 3.74 has it (0x8101960c): a second or third argument that is not 0 is
+    /// 0x80010016; otherwise the I/O manager's request thread (request kind 3, 0x810182e8) copies the SceVfsMountParam
+    /// (8 words) and runs vfsMount on it in the caller's process, and its result is the call's. Here vfsMount runs on
+    /// the calling thread (the request thread only serialises the mounts; the guest sees the same result).
+    /// </summary>
+    [Hle(Nid = 0xFEEE44A9, Library = "SceIofilemgrForDriver")]
+    int vfsMountForPFS(uint param, uint second, uint third)
     {
-        return VfsMountRequest(param);
+        if (second != 0 || third != 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        return vfsMount(param);
     }
 
-    /// <summary>vfsMountForPFS(?, path, param): the PFS overlay mount.</summary>
-    [Hle(Nid = 0xFEEE44A9, Library = "SceIofilemgrForDriver", Default = true)]
-    int vfsMountForPFS(uint unused, uint path, uint param)
+    /// <summary>vfsUmountForPFS(param { path, flags }, 0, 0): the same checks, then vfsUmount through the request
+    /// thread (request kind 4, 0x810184b8).</summary>
+    [Hle(Nid = 0xD220539D, Library = "SceIofilemgrForDriver")]
+    int vfsUmountForPFS(uint param, uint second, uint third)
     {
-        return path == 0 || param == 0 ? VFS_ERR_INVAL : VFS_ERR_UNSUP;
+        if (second != 0 || third != 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        return vfsUmount(param);
     }
 
-    /// <summary>vfsUmountForPFS(?, path, param): its undo.</summary>
-    [Hle(Nid = 0xD220539D, Library = "SceIofilemgrForDriver", Default = true)]
-    int vfsUmountForPFS(uint unused, uint path, uint param)
-    {
-        return path == 0 || param == 0 ? VFS_ERR_INVAL : VFS_ERR_UNSUP;
-    }
-
-    /// <summary>vfsRmdev(param): removes a block device's mounts.</summary>
-    [Hle(Nid = 0x69A7E076, Library = "SceIofilemgrForDriver", Default = true)]
-    int vfsRmdev(uint param)
-    {
-        return VfsMountRequest(param);
-    }
-
-    /// <summary>The I/O manager's file operations on a guest file system's file (one argument block): NULL
-    /// 0x80010016; guest file systems are not mounted (0x80010030).</summary>
-    [Hle(Nid = 0x0E518FA9, Library = "SceIofilemgrForDriver", Default = true)]
+    /// <summary>
+    /// The argument-block forms of the I/O calls (iofilemgr 3.74: vfsOpen 0x81008b30 and its neighbours), what the
+    /// I/O manager's request thread and ScePfsMgr run: each reads the call's arguments from one block of words and runs
+    /// the same operation as the plain call on every device (the emulator's and the guest-mounted ones), its result the
+    /// call's. A NULL block 0x80010016.
+    /// </summary>
+    [Hle(Nid = 0x0E518FA9, Library = "SceIofilemgrForDriver")]
     int vfsOpen(uint args)
     {
-        return VfsMountRequest(args);
+        if (args == 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        uint flags = GuestMemory.R32(args + 4);
+        if (flags >> 28 != 0)
+        {
+            // the top nibble is the caller's request kind, not an open flag
+            flags &= 0x0FFFFFFF;
+        }
+
+        return sceIoOpen(GuestMemory.ReadCString(GuestMemory.R32(args)), (int)flags, (int)GuestMemory.R32(args + 8));
     }
 
-    /// <summary>vfsClose(args).</summary>
-    [Hle(Nid = 0x1AE14011, Library = "SceIofilemgrForDriver", Default = true)]
+    /// <summary>vfsClose(args { fd }).</summary>
+    [Hle(Nid = 0x1AE14011, Library = "SceIofilemgrForDriver")]
     int vfsClose(uint args)
     {
-        return VfsMountRequest(args);
+        return args == 0 ? VFS_ERR_INVAL : sceIoClose((int)GuestMemory.R32(args));
     }
 
-    /// <summary>vfsRead(args).</summary>
-    [Hle(Nid = 0x809892C1, Library = "SceIofilemgrForDriver", Default = true)]
+    /// <summary>vfsRead(args { fd, buffer, size }).</summary>
+    [Hle(Nid = 0x809892C1, Library = "SceIofilemgrForDriver")]
     int vfsRead(uint args)
     {
-        return VfsMountRequest(args);
+        return args == 0 ? VFS_ERR_INVAL : sceIoRead((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), GuestMemory.R32(args + 8));
     }
 
-    /// <summary>vfsWrite(args).</summary>
-    [Hle(Nid = 0x8598ADC3, Library = "SceIofilemgrForDriver", Default = true)]
+    /// <summary>vfsWrite(args { fd, buffer, size }).</summary>
+    [Hle(Nid = 0x8598ADC3, Library = "SceIofilemgrForDriver")]
     int vfsWrite(uint args)
     {
-        return VfsMountRequest(args);
+        return args == 0 ? VFS_ERR_INVAL : sceIoWrite((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), GuestMemory.R32(args + 8));
     }
 
-    /// <summary>vfsPread(args).</summary>
-    [Hle(Nid = 0x0B54F9E0, Library = "SceIofilemgrForDriver", Default = true)]
+    /// <summary>vfsPread(args { fd, buffer, size, pad, offset (64-bit, words 4 and 5) }).</summary>
+    [Hle(Nid = 0x0B54F9E0, Library = "SceIofilemgrForDriver")]
     int vfsPread(uint args)
     {
-        return VfsMountRequest(args);
+        if (args == 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        return sceIoPread((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), GuestMemory.R32(args + 8), (long)GuestMemory.Read<ulong>(args + 0x10));
     }
 
-    /// <summary>vfsPwrite(args).</summary>
-    [Hle(Nid = 0xE5DEA6B7, Library = "SceIofilemgrForDriver", Default = true)]
+    /// <summary>vfsPwrite(args { fd, buffer, size, pad, offset (64-bit, words 4 and 5) }).</summary>
+    [Hle(Nid = 0xE5DEA6B7, Library = "SceIofilemgrForDriver")]
     int vfsPwrite(uint args)
     {
-        return VfsMountRequest(args);
+        if (args == 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        return sceIoPwrite((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), GuestMemory.R32(args + 8), (long)GuestMemory.Read<ulong>(args + 0x10));
     }
 
-    /// <summary>vfsIoctl(args).</summary>
-    [Hle(Nid = 0xC1DD4317, Library = "SceIofilemgrForDriver", Default = true)]
+    /// <summary>vfsIoctl(args { fd, command, input, input size, output, output size }).</summary>
+    [Hle(Nid = 0xC1DD4317, Library = "SceIofilemgrForDriver")]
     int vfsIoctl(uint args)
     {
-        return VfsMountRequest(args);
+        if (args == 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        return sceIoIoctl((int)GuestMemory.R32(args), (int)GuestMemory.R32(args + 4), GuestMemory.R32(args + 8), GuestMemory.R32(args + 0xC), GuestMemory.R32(args + 0x10), GuestMemory.R32(args + 0x14));
     }
 
-    /// <summary>vfsChstat(args).</summary>
-    [Hle(Nid = 0xBCE4865B, Library = "SceIofilemgrForDriver", Default = true)]
+    /// <summary>vfsChstat(args { path, stat, bits }).</summary>
+    [Hle(Nid = 0xBCE4865B, Library = "SceIofilemgrForDriver")]
     int vfsChstat(uint args)
     {
-        return VfsMountRequest(args);
+        if (args == 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        return sceIoChstat(GuestMemory.ReadCString(GuestMemory.R32(args)), GuestMemory.R32(args + 4), (int)GuestMemory.R32(args + 8));
     }
 
-    /// <summary>vfsChstatByFd(args).</summary>
-    [Hle(Nid = 0x7517FE29, Library = "SceIofilemgrForDriver", Default = true)]
+    /// <summary>vfsChstatByFd(args { fd, stat, bits }).</summary>
+    [Hle(Nid = 0x7517FE29, Library = "SceIofilemgrForDriver")]
     int vfsChstatByFd(uint args)
     {
-        return VfsMountRequest(args);
+        return args == 0 ? VFS_ERR_INVAL : sceIoChstatByFd((int)GuestMemory.R32(args), GuestMemory.R32(args + 4), (int)GuestMemory.R32(args + 8));
     }
 
     /// <summary>vfsBuffCacheCtl(vnode, ?, offset, size, buffer): the buffer cache of a guest file system's vnode:
@@ -445,6 +494,11 @@ public sealed partial class IoFileMgr
     }
 
     // ---- the vnode operations
+
+    /// <summary>The vnode states an operation accepts (+0x74): the path operations only an active vnode (below 0x100),
+    /// the ones on an open file anything below 0x1000; a vnode past it is 0x80010001.</summary>
+    const uint VnodeActiveBelow = 0x100;
+    const uint VnodeOpenBelow = 0x1000;
 
     /// <summary>Calls entry <paramref name="offset"/> of the op table at <paramref name="table"/> with an argument
     /// block of <paramref name="words"/> built on the calling thread's stack: NULL entry 0x80010030.</summary>
@@ -471,64 +525,183 @@ public sealed partial class IoFileMgr
         return (int)thread.CallGuestOnStack(entry, block, block);
     }
 
-    /// <summary>A vnode operation: NULL vnode 0x80010016; entry <paramref name="offset"/> of its op table (+0x40).</summary>
-    static int VopCall(uint vnode, uint offset, ReadOnlySpan<uint> words)
+    /// <summary>A vnode operation: NULL vnode 0x80010016; a vnode whose state is not below
+    /// <paramref name="stateBelow"/> 0x80010001 (0: any state); entry <paramref name="offset"/> of its op table
+    /// (+0x40).</summary>
+    static int VopCall(uint vnode, uint offset, ReadOnlySpan<uint> words, uint stateBelow = 0)
     {
         if (vnode == 0)
         {
             return VFS_ERR_INVAL;
         }
 
+        if (stateBelow != 0 && GuestMemory.R32(vnode + 0x74) >= stateBelow)
+        {
+            return VFS_ERR_PERM;
+        }
+
         return VfsCallOp(GuestMemory.R32(vnode + 0x40), offset, words);
     }
 
-    /// <summary>ksceVopOpen(vnode, path, flags, file): op 0.</summary>
+    /// <summary>
+    /// The read / write family as the module has it (0x570388A5, 0x9A68378D, 0xABBC80E3, 0xA53C040D): the file's state
+    /// first (0x8100ada4), then a vnode at 0x1000 or past it 0x80010001, a NULL op 0x80010030, a size of 0 writes 0
+    /// in *result without the op; a read at or past the vnode's size (+0x80; the file's position, or the offset of a
+    /// pread) is 0 without the op too, except on a device (type 0x2010); a NULL buffer 0x80010016. The driver's op gets
+    /// { vnode, file, buffer, size[, offset] } and returns the count or an error; the wrapper writes that into
+    /// *result and returns 0 or the error.
+    /// </summary>
+    static int VopTransfer(uint vnode, uint file, uint offset, ReadOnlySpan<uint> words, uint buffer, uint size, long? at, bool read, uint result)
+    {
+        if (vnode == 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        int state = CheckFileUsable(file);
+        if (state < 0)
+        {
+            return state;
+        }
+
+        if (GuestMemory.R32(vnode + 0x74) >= VnodeOpenBelow)
+        {
+            return VFS_ERR_PERM;
+        }
+
+        uint table = GuestMemory.R32(vnode + 0x40);
+        if (table == 0 || GuestMemory.R32(table + offset) == 0)
+        {
+            return VFS_ERR_UNSUP;
+        }
+
+        bool device = (GuestMemory.R32(vnode + 0x78) & VnodeTypeDevice) == VnodeTypeDevice;
+        long position = at ?? GuestMemory.Read<long>(file + 8);
+        bool atEnd = read && !device && position >= GuestMemory.Read<long>(vnode + 0x80);
+        if (size == 0 || atEnd)
+        {
+            if (result != 0)
+            {
+                GuestMemory.W32(result, 0);
+            }
+
+            return 0;
+        }
+
+        if (buffer == 0 && !device)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        int count = VfsCallOp(table, offset, words);
+        if (result != 0)
+        {
+            GuestMemory.W32(result, (uint)count);
+        }
+
+        return Math.Min(count, 0);
+    }
+
+    /// <summary>ksceVopOpen(vnode, path, flags, file): an active vnode; op 0.</summary>
     [Hle(Nid = 0x76B79BEC, Library = "SceIofilemgrForDriver")]
     int ksceVopOpen(uint vnode, uint path, uint flags, uint file)
     {
-        return VopCall(vnode, 0x00, [vnode, path, flags, file]);
+        return VopCall(vnode, 0x00, [vnode, path, flags, file], VnodeActiveBelow);
     }
 
-    /// <summary>ksceVopCreate(dvnode, vpp, path, flags, mode): op 4.</summary>
+    /// <summary>ksceVopCreate(dvnode, vpp, path, flags, mode): an active vnode; op 4.</summary>
     [Hle(Nid = 0x9E347C7D, Library = "SceIofilemgrForDriver")]
     int ksceVopCreate(uint vnode, uint vpp, uint path, uint flags, uint mode)
     {
-        return VopCall(vnode, 0x04, [vnode, vpp, path, flags, mode]);
+        return VopCall(vnode, 0x04, [vnode, vpp, path, flags, mode], VnodeActiveBelow);
     }
 
-    /// <summary>ksceVopClose(vnode, file): op 8.</summary>
+    /// <summary>ksceVopClose(vnode, file): the file's state (0x8100add8), a vnode below 0x1000; op 8.</summary>
     [Hle(Nid = 0x40944C2E, Library = "SceIofilemgrForDriver")]
     int ksceVopClose(uint vnode, uint file)
     {
-        return VopCall(vnode, 0x08, [vnode, file]);
+        int state = CheckFileClosable(file);
+        return state < 0 ? state : VopCall(vnode, 0x08, [vnode, file], VnodeOpenBelow);
     }
 
-    /// <summary>ksceVopLookup(dvnode, vpp, path, flags): op 0xC.</summary>
+    /// <summary>ksceVopLookup(dvnode, vpp, path, flags): an active vnode; op 0xC.</summary>
     [Hle(Nid = 0xA5A6A55C, Library = "SceIofilemgrForDriver")]
     int ksceVopLookup(uint vnode, uint vpp, uint path, uint flags)
     {
-        return VopCall(vnode, 0x0C, [vnode, vpp, path, flags]);
+        return VopCall(vnode, 0x0C, [vnode, vpp, path, flags], VnodeActiveBelow);
     }
 
-    /// <summary>ksceVopRead(vnode, file, buffer, size, result): op 0x10.</summary>
+    /// <summary>ksceVopRead(vnode, file, buffer, size, result): op 0x10 from the file's position.</summary>
     [Hle(Nid = 0x570388A5, Library = "SceIofilemgrForDriver")]
     int ksceVopRead(uint vnode, uint file, uint buffer, uint size, uint result)
     {
-        return VopCall(vnode, 0x10, [vnode, file, buffer, size, result]);
+        return VopTransfer(vnode, file, 0x10, [vnode, file, buffer, size], buffer, size, null, true, result);
     }
 
     /// <summary>ksceVopWrite(vnode, file, buffer, size, result): op 0x14.</summary>
     [Hle(Nid = 0x9A68378D, Library = "SceIofilemgrForDriver")]
     int ksceVopWrite(uint vnode, uint file, uint buffer, uint size, uint result)
     {
-        return VopCall(vnode, 0x14, [vnode, file, buffer, size, result]);
+        return VopTransfer(vnode, file, 0x14, [vnode, file, buffer, size], buffer, size, null, false, result);
     }
 
-    /// <summary>ksceVopLseek(vnode, file, offset (64-bit), whence): op 0x18 with { vnode, file, offset, whence }.</summary>
+    /// <summary>
+    /// ksceVopLseek(vnode, file, offset (64-bit, r2:r3), whence) as iofilemgr 3.74 has it (0x8100e938): the file's
+    /// state first (0x8100ada4) and a vnode below 0x1000; the position it asks for (from 0, the file's position at +8
+    /// for SEEK_CUR, the vnode's size at +0x80 for SEEK_END) is checked: another whence, a negative position or the
+    /// largest one is 0x80010016; then op 0x18 with { vnode, file, offset (64-bit at +8), whence (+0x10) }, whose
+    /// 64-bit result (r0:r1, the new position or an error) is the call's. A NULL op 0x80010030.
+    /// </summary>
     [Hle(Nid = 0xB2B13818, Library = "SceIofilemgrForDriver")]
-    int ksceVopLseek(uint vnode, uint file, uint offsetLow, uint offsetHigh, uint whence)
+    long ksceVopLseek(uint vnode, uint file, uint offsetLow, uint offsetHigh, uint whence)
     {
-        return VopCall(vnode, 0x18, [vnode, file, offsetLow, offsetHigh, whence]);
+        if (vnode == 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        int state = CheckFileUsable(file);
+        if (state < 0)
+        {
+            return state;
+        }
+
+        if (GuestMemory.R32(vnode + 0x74) >= VnodeOpenBelow)
+        {
+            return VFS_ERR_PERM;
+        }
+
+        long offset = (long)(((ulong)offsetHigh << 32) | offsetLow);
+        long origin;
+        switch (whence)
+        {
+            case 0:
+                origin = 0;
+                break;
+            case 1:
+                origin = GuestMemory.Read<long>(file + 8);
+                break;
+            case 2:
+                origin = GuestMemory.Read<long>(vnode + 0x80);
+                break;
+            default:
+                return VFS_ERR_INVAL;
+        }
+
+        long position = unchecked(origin + offset);
+        if (position < 0 || position == long.MaxValue)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        uint table = GuestMemory.R32(vnode + 0x40);
+        if (table == 0 || GuestMemory.R32(table + 0x18) == 0 || GuestThread.Current is not { } thread)
+        {
+            return VFS_ERR_UNSUP;
+        }
+
+        uint low = (uint)VfsCallOp(table, 0x18, [vnode, file, offsetLow, offsetHigh, whence]);
+        return (long)(((ulong)thread.LastCallR1 << 32) | low);
     }
 
     /// <summary>ksceVopIoctl(vnode, file, command, input, inputSize, output, outputSize): op 0x1C.</summary>
@@ -538,46 +711,54 @@ public sealed partial class IoFileMgr
         return VopCall(vnode, 0x1C, [vnode, file, command, input, inputSize, output, outputSize]);
     }
 
-    /// <summary>ksceVopRemove(dvnode, vnode, path, flags): op 0x20.</summary>
+    /// <summary>ksceVopRemove(dvnode, vnode, path, flags): an active vnode; op 0x20.</summary>
     [Hle(Nid = 0xDC1E7EE4, Library = "SceIofilemgrForDriver")]
     int ksceVopRemove(uint vnode, uint target, uint path, uint flags)
     {
-        return VopCall(vnode, 0x20, [vnode, target, path, flags]);
+        return VopCall(vnode, 0x20, [vnode, target, path, flags], VnodeActiveBelow);
     }
 
-    /// <summary>ksceVopMkdir(dvnode, vpp, path, mode): op 0x24.</summary>
+    /// <summary>ksceVopMkdir(dvnode, vpp, path, mode): an active vnode; op 0x24.</summary>
     [Hle(Nid = 0x2F3F8C70, Library = "SceIofilemgrForDriver")]
     int ksceVopMkdir(uint vnode, uint vpp, uint path, uint mode)
     {
-        return VopCall(vnode, 0x24, [vnode, vpp, path, mode]);
+        return VopCall(vnode, 0x24, [vnode, vpp, path, mode], VnodeActiveBelow);
     }
 
-    /// <summary>ksceVopRmdir(dvnode, vnode, path, flags): op 0x28.</summary>
+    /// <summary>ksceVopRmdir(dvnode, vnode, path, flags): an active vnode; op 0x28.</summary>
     [Hle(Nid = 0x1D551105, Library = "SceIofilemgrForDriver")]
     int ksceVopRmdir(uint vnode, uint target, uint path, uint flags)
     {
-        return VopCall(vnode, 0x28, [vnode, target, path, flags]);
+        return VopCall(vnode, 0x28, [vnode, target, path, flags], VnodeActiveBelow);
     }
 
-    /// <summary>ksceVopDopen(vnode, path, file): op 0x2C.</summary>
+    /// <summary>ksceVopDopen(vnode, path, file): an active vnode; op 0x2C.</summary>
     [Hle(Nid = 0x00C9C2DD, Library = "SceIofilemgrForDriver")]
     int ksceVopDopen(uint vnode, uint path, uint file)
     {
-        return VopCall(vnode, 0x2C, [vnode, path, file]);
+        return VopCall(vnode, 0x2C, [vnode, path, file], VnodeActiveBelow);
     }
 
-    /// <summary>ksceVopDclose(vnode, file): op 0x30.</summary>
+    /// <summary>ksceVopDclose(vnode, file): the file's state (0x8100add8), a vnode below 0x1000; op 0x30.</summary>
     [Hle(Nid = 0x1350F5C7, Library = "SceIofilemgrForDriver")]
     int ksceVopDclose(uint vnode, uint file)
     {
-        return VopCall(vnode, 0x30, [vnode, file]);
+        int state = CheckFileClosable(file);
+        return state < 0 ? state : VopCall(vnode, 0x30, [vnode, file], VnodeOpenBelow);
     }
 
-    /// <summary>ksceVopDread(vnode, file, dirent): NULL dirent 0x80010016; op 0x34.</summary>
+    /// <summary>ksceVopDread(vnode, file, dirent): the file's state (0x8100ada4), a vnode below 0x1000, NULL dirent
+    /// 0x80010016; op 0x34.</summary>
     [Hle(Nid = 0x77584C8F, Library = "SceIofilemgrForDriver")]
     int ksceVopDread(uint vnode, uint file, uint dirent)
     {
-        return dirent == 0 ? VFS_ERR_INVAL : VopCall(vnode, 0x34, [vnode, file, dirent]);
+        int state = vnode == 0 ? VFS_ERR_INVAL : CheckFileUsable(file);
+        if (state < 0)
+        {
+            return state;
+        }
+
+        return dirent == 0 ? VFS_ERR_INVAL : VopCall(vnode, 0x34, [vnode, file, dirent], VnodeOpenBelow);
     }
 
     /// <summary>ksceVopGetstat(vnode, path, stat): NULL stat 0x80010016; op 0x38.</summary>
@@ -594,25 +775,29 @@ public sealed partial class IoFileMgr
         return stat == 0 ? VFS_ERR_INVAL : VopCall(vnode, 0x3C, [vnode, path, stat, bits]);
     }
 
-    /// <summary>ksceVopRename(odvnode, ovnode, opath, ndvnode, nvpp, npath): op 0x40.</summary>
+    /// <summary>ksceVopRename(odvnode, ovnode, opath, ndvnode, nvpp, npath): an active vnode; op 0x40.</summary>
     [Hle(Nid = 0x36A794C7, Library = "SceIofilemgrForDriver")]
     int ksceVopRename(uint vnode, uint oldVnode, uint oldPath, uint newDirectory, uint newVpp, uint newPath)
     {
-        return VopCall(vnode, 0x40, [vnode, oldVnode, oldPath, newDirectory, newVpp, newPath]);
+        return VopCall(vnode, 0x40, [vnode, oldVnode, oldPath, newDirectory, newVpp, newPath], VnodeActiveBelow);
     }
 
-    /// <summary>ksceVopPread(vnode, file, buffer, size, offset (64-bit), result): op 0x48.</summary>
+    /// <summary>ksceVopPread(vnode, file, buffer, size, offset (64-bit), result): a negative offset 0x80010016; op
+    /// 0x48 (offset at +0x10) up to the vnode's size.</summary>
     [Hle(Nid = 0xABBC80E3, Library = "SceIofilemgrForDriver")]
     int ksceVopPread(uint vnode, uint file, uint buffer, uint size, uint offsetLow, uint offsetHigh, uint result)
     {
-        return VopCall(vnode, 0x48, [vnode, file, buffer, size, offsetLow, offsetHigh, result]);
+        long offset = (long)(((ulong)offsetHigh << 32) | offsetLow);
+        return offset < 0 ? VFS_ERR_INVAL : VopTransfer(vnode, file, 0x48, [vnode, file, buffer, size, offsetLow, offsetHigh], buffer, size, offset, true, result);
     }
 
-    /// <summary>ksceVopPwrite(vnode, file, buffer, size, offset (64-bit), result): op 0x4C.</summary>
+    /// <summary>ksceVopPwrite(vnode, file, buffer, size, offset (64-bit), result): a negative offset 0x80010016; op
+    /// 0x4C (offset at +0x10).</summary>
     [Hle(Nid = 0xA53C040D, Library = "SceIofilemgrForDriver")]
     int ksceVopPwrite(uint vnode, uint file, uint buffer, uint size, uint offsetLow, uint offsetHigh, uint result)
     {
-        return VopCall(vnode, 0x4C, [vnode, file, buffer, size, offsetLow, offsetHigh, result]);
+        long offset = (long)(((ulong)offsetHigh << 32) | offsetLow);
+        return offset < 0 ? VFS_ERR_INVAL : VopTransfer(vnode, file, 0x4C, [vnode, file, buffer, size, offsetLow, offsetHigh], buffer, size, offset, false, result);
     }
 
     /// <summary>ksceVopInactive(vnode): op 0x50.</summary>
@@ -664,11 +849,11 @@ public sealed partial class IoFileMgr
         return VopCall(vnode, 0x68, [vnode, target, oldPath, newPath]);
     }
 
-    /// <summary>ksceVopCleanup(vnode, file): op 0x6C.</summary>
+    /// <summary>ksceVopCleanup(vnode, file): a vnode below 0x1000; op 0x6C.</summary>
     [Hle(Nid = 0x0F7E1718, Library = "SceIofilemgrForDriver")]
     int ksceVopCleanup(uint vnode, uint file)
     {
-        return VopCall(vnode, 0x6C, [vnode, file]);
+        return VopCall(vnode, 0x6C, [vnode, file], VnodeOpenBelow);
     }
 
     /// <summary>ksceVopZerofill(vnode, ?, ?, ?, ?): op 0x70.</summary>

@@ -32,6 +32,50 @@ public static class CodePrecompileLog
         s_cancel = new CancellationTokenSource();
     }
 
+    /// <summary>The progress of the running boot step, raised (on the thread that starts the game) for every line
+    /// <see cref="Reporter"/> logs, the last one with <see cref="CodePrecompileProgress.Finished"/>: the Android game
+    /// screen shows it over the game, as the desktop launcher shows the log lines.</summary>
+    public static event Action<CodePrecompileProgress>? Reported;
+
+    /// <summary>The progress of one boot step: logged (at most every 250 ms, and always the end) as
+    /// <see cref="ProgressPrefix"/> / <see cref="FinishedPrefix"/> lines and raised as <see cref="Reported"/>. A step
+    /// that ends without its own finished progress (cancelled, nothing to wait for) still gets one from
+    /// <see cref="End"/>, so whoever shows the progress always sees the end.</summary>
+    public sealed class Reporter
+    {
+        private long _last;
+        private bool _finishedReported;
+        private int _done, _total;
+
+        public void Progress(CodePrecompileProgress progress)
+        {
+            long now = Environment.TickCount64;
+            _done = progress.Done;
+            _total = progress.Total;
+            if (progress.Finished || _last == 0 || now - _last >= 250)
+            {
+                _last = now;
+                _finishedReported |= progress.Finished;
+                Report(progress);
+            }
+        }
+
+        public void End()
+        {
+            if (!_finishedReported)
+            {
+                _finishedReported = true;
+                Report(new CodePrecompileProgress(_done, _total, true));
+            }
+        }
+    }
+
+    private static void Report(CodePrecompileProgress progress)
+    {
+        Util.Log.Info(Format(progress));
+        Reported?.Invoke(progress);
+    }
+
     /// <summary>Parses a <see cref="ProgressPrefix"/> or <see cref="FinishedPrefix"/> line (anywhere in a log line).</summary>
     public static bool TryParse(string line, out CodePrecompileProgress progress)
     {

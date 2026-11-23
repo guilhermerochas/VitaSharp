@@ -1155,14 +1155,14 @@ SceIofilemgrForDriver	0xC468B5EF	vfsIsLockedMnt	impl	IoFileMgr.vfsIsLockedMnt
 SceIofilemgrForDriver	0xC3AE93A2	vfsIsOwnerVnode	impl	IoFileMgr.vfsIsOwnerVnode	
 SceIofilemgrForDriver	0x6B3CA9F7	vfsLockMnt	impl	IoFileMgr.vfsLockMnt	
 SceIofilemgrForDriver	0xAA45010B	vfsLockVnode	impl	IoFileMgr.vfsLockVnode	SceExfatfs,ScePfsMgr,SceSdstor,SceTty2uart
-SceIofilemgrForDriver	0xB62DE9A6	vfsMount	default	IoFileMgr.vfsMount	SceTty2uart
+SceIofilemgrForDriver	0xB62DE9A6	vfsMount	impl	IoFileMgr.vfsMount	SceTty2uart
 SceIofilemgrForDriver	0xFEEE44A9	vfsMountForPFS	default	IoFileMgr.vfsMountForPFS	ScePfsMgr
 SceIofilemgrForDriver	0x0E518FA9	vfsOpen	default	IoFileMgr.vfsOpen	
 SceIofilemgrForDriver	0x0B54F9E0	vfsPread	default	IoFileMgr.vfsPread	ScePfsMgr
 SceIofilemgrForDriver	0xE5DEA6B7	vfsPwrite	default	IoFileMgr.vfsPwrite	ScePfsMgr
 SceIofilemgrForDriver	0x809892C1	vfsRead	default	IoFileMgr.vfsRead	
 SceIofilemgrForDriver	0x69A7E076	vfsRmdev	default	IoFileMgr.vfsRmdev	SceSdstor
-SceIofilemgrForDriver	0x9C7E7B76	vfsUmount	default	IoFileMgr.vfsUmount	SceTty2uart
+SceIofilemgrForDriver	0x9C7E7B76	vfsUmount	impl	IoFileMgr.vfsUmount	SceTty2uart
 SceIofilemgrForDriver	0xD220539D	vfsUmountForPFS	default	IoFileMgr.vfsUmountForPFS	ScePfsMgr
 SceIofilemgrForDriver	0xDC2D8BCE	vfsUnlockMnt	impl	IoFileMgr.vfsUnlockMnt	
 SceIofilemgrForDriver	0x6048F245	vfsUnlockVnode	impl	IoFileMgr.vfsUnlockVnode	SceExfatfs,ScePfsMgr

@@ -18,7 +18,9 @@ public enum NetMode
 /// With <see cref="NetMode.Real"/> every destination still goes through <see cref="Permits(string, out string)"/>:
 /// <list type="bullet">
 /// <item>Sony's PSN/PlayStation domains are always blocked (most are shut down, and a game must never talk to them on the
-/// user's behalf); the request fails like an unreachable server and the attempt is logged.</item>
+/// user's behalf); the request fails like an unreachable server and the attempt is logged. The exception is the PSP
+/// system update image servers (<see cref="PublicFirmwareDomains"/>): a real Vita downloads the PSP 6.61 update from
+/// them for the PSP emulator (Adrenaline's installer does), and they serve a public file with no account or login.</item>
 /// <item>With an allow list only the listed hosts (or IP addresses) are reachable; "localhost" also allows the loopback
 /// addresses. Tests always run with an allow list of localhost.</item>
 /// </list>
@@ -57,6 +59,26 @@ public sealed class NetConfig
         "scea.com", "scee.com", "scei.co.jp", "sie.com", "siedev.net", "station.sony.com",
     ];
 
+    /// <summary>Sony hosts a real Vita reaches without an account: the PSP system update image servers
+    /// (de01/us/jp/... .psp.update.playstation.org). Allowed even though they are under a blocked domain.</summary>
+    public static readonly string[] PublicFirmwareDomains =
+    [
+        "psp.update.playstation.org",
+    ];
+
+    static bool IsPublicFirmwareHost(string host)
+    {
+        foreach (string domain in PublicFirmwareDomains)
+        {
+            if (DomainMatch(host, domain))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     static bool DomainMatch(string host, string domain) =>
         host.Equals(domain, StringComparison.OrdinalIgnoreCase) || host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase);
 
@@ -76,8 +98,16 @@ public sealed class NetConfig
         host = host.Trim().TrimEnd('.').Trim('[', ']');
         if (!Real) { why = "real internet is off (--net=off)"; return false; }
         if (IPAddress.TryParse(host, out var ip)) return PermitsAddress(ip, out why);
+        bool publicFirmware = IsPublicFirmwareHost(host);
         foreach (var d in BlockedDomains)
-            if (DomainMatch(host, d)) { why = $"{host} is a Sony/PSN server (always blocked)"; return false; }
+        {
+            if (!publicFirmware && DomainMatch(host, d))
+            {
+                why = $"{host} is a Sony/PSN server (always blocked)";
+                return false;
+            }
+        }
+
         if (Allow == null) return true;
         foreach (var a in Allow)
             if (DomainMatch(host, a)) return true;

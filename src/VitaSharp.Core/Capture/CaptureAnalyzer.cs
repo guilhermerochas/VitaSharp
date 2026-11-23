@@ -85,6 +85,7 @@ public static class CaptureAnalyzer
 
         // the GPU dump's presents
         var dumpPresents = new Dictionary<long, int>();
+        GpuDumpHeader? dumpSummary = null;
         string dumpPath = Path.Combine(dir, "gpu" + GpuDumpFormat.Extension);
         if (File.Exists(dumpPath))
         {
@@ -106,6 +107,7 @@ public static class CaptureAnalyzer
                         }
                     }
                 }
+                dumpSummary = r.Summary;
             }
             catch (Exception e) when (e is IOException or InvalidDataException or EndOfStreamException)
             {
@@ -129,6 +131,10 @@ public static class CaptureAnalyzer
             sb.AppendLine(dumpPresents.Count > 0
                 ? $"GPU dump: {dumpPresents.Count} frames, presents {dumpPresents.Keys.Min()}-{dumpPresents.Keys.Max()}"
                 : "GPU dump: none");
+            if (dumpPresents.Count > 0 && DumpCostNote(dumpSummary, med) is { } costNote)
+            {
+                sb.AppendLine(costNote);
+            }
             sb.AppendLine($"input: {input.Count(e => e.Kind == "pad")} pad, {input.Count(e => e.Kind == "touch")} touch, {input.Count(e => e.Kind == "motion")} motion, {input.Count(e => e.Kind == "rng")} random, {input.Count(e => e.Kind == "key")} hotkey events");
             sb.AppendLine(FpsLine(stats));
         }
@@ -297,6 +303,18 @@ public static class CaptureAnalyzer
     /// </summary>
     public static string Compare(string original, string rerun, double threshold = 6)
     {
+        // A capture recorded without the frames stream ("Gravar tudo" with pictures off, an input-only capture)
+        // has nothing to compare against: say so instead of throwing, so the re-run still ends and prints its summary.
+        if (!File.Exists(Path.Combine(original, "frames.vsfr")))
+        {
+            return "compare: skipped, the original capture has no frames.vsfr (no recorded frames)";
+        }
+
+        if (!File.Exists(Path.Combine(rerun, "frames.vsfr")))
+        {
+            return "compare: skipped, the re-run recorded no frames.vsfr";
+        }
+
         static List<(long Us, long Present, byte[] T)> Load(string dir) =>
             FramesFile.ReadAll(Path.Combine(dir, "frames.vsfr"))
                 .Where(x => x.Picture != null && x.Frame.Info.Flip >= 0)
@@ -600,6 +618,39 @@ public static class CaptureAnalyzer
 
     /// <summary>Host time in (<paramref name="fromNs"/>, <paramref name="toNs"/>] the emulation spent paused, from the
     /// pause and resume marks (a resume without a pause before it: paused since before the input starts).</summary>
+    /// <summary>GPU worker time of the dump's recorder per frame (its end summary) from which the report warns that the
+    /// recording's fps is not the game's: it is a share of the frame budget the worker spends on the dump only.</summary>
+    internal const double DumpCostWarnMs = 4;
+
+    /// <summary>
+    /// The GPU dump recorder's cost per frame on the GPU worker, from the dump's end summary, and, when it reaches
+    /// <see cref="DumpCostWarnMs"/>, that the fps and stalls of the recording are lowered by the dump itself. The
+    /// recorder runs on the GPU worker (each command encoded, each guest page the backend reads compared): in the
+    /// Assassin's Creed III Liberation captures it took 21-28 ms per frame on top of the worker's ~12 ms, and the game,
+    /// at 30 fps before and after, showed 21-27 fps while recording. Null without a summary (a dump cut short).
+    /// </summary>
+    internal static string? DumpCostNote(GpuDumpHeader? summary, double medianIntervalMs)
+    {
+        if (summary == null
+            || !long.TryParse(summary["frames"], NumberStyles.Integer, CultureInfo.InvariantCulture, out long frames)
+            || frames <= 0
+            || !double.TryParse(summary["recorder-worker-ms"], NumberStyles.Float, CultureInfo.InvariantCulture, out double workerMs))
+        {
+            return null;
+        }
+
+        double perFrame = workerMs / frames;
+        string line = FormattableString.Invariant($"  dump recorder: {perFrame:F1} ms/frame on the GPU worker");
+        if (perFrame < DumpCostWarnMs)
+        {
+            return line;
+        }
+
+        string share = medianIntervalMs > 0 ? FormattableString.Invariant($" ({100 * perFrame / medianIntervalMs:F0}% of the median interval)") : "";
+        return line + share + ": the fps and stalls of this recording include the dump's own cost, not only the game's;"
+            + " the game's speed is the session log's FPS lines outside the recording, or a re-run without --rerun-gpu-dump";
+    }
+
     internal static long PausedNs(List<InputEvent> input, long fromNs, long toNs)
     {
         long total = 0;

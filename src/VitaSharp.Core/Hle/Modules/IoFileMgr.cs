@@ -23,12 +23,16 @@ public sealed partial class IoFileMgr : HleModule
         public int Tty = -1;
         /// <summary>I/O priority set with sceIoSetPriority, -1 = inherit the thread/process default.</summary>
         public int Priority = -1;
+        /// <summary>A file on a guest driver's mount: its vnode and file object (0: a host file).</summary>
+        public uint GuestVnode, GuestFile;
     }
 
     sealed class OpenDir
     {
         public required string[] Entries;
         public int Index;
+        /// <summary>A directory on a guest driver's mount: its vnode and file object (0: a host folder).</summary>
+        public uint GuestVnode, GuestFile;
     }
 
     readonly ConcurrentDictionary<int, OpenFile> _files = new();
@@ -77,6 +81,11 @@ public sealed partial class IoFileMgr : HleModule
             _files[tfd] = new OpenFile { VitaPath = path, Tty = tty };
             return tfd;
         }
+        if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
+        {
+            return GuestOpen(guestMount, path, guestPath, flags, mode);
+        }
+
         if (Emu.IsShell) NoteShellLiveArea(path);
         var host = HostPath(path, (flags & O_WRONLY) != 0);
         if (host == null) return SceError.IO_ENOENT;
@@ -127,6 +136,11 @@ public sealed partial class IoFileMgr : HleModule
     {
         if (fd is >= 0x10 and <= 0x12) return 0;
         if (!_files.TryRemove(fd, out var f)) return SceError.IO_EBADF;
+        if (f.GuestFile != 0)
+        {
+            return GuestClose(f);
+        }
+
         f.Stream?.Dispose();
         return 0;
     }
@@ -138,16 +152,26 @@ public sealed partial class IoFileMgr : HleModule
     {
         if (fd is >= 0x10 and <= 0x12) return 0; // no console input: EOF
         if (_files.TryGetValue(fd, out var t) && t.Tty >= 0) return 0;
+        if (t is { GuestFile: not 0 })
+        {
+            return GuestTransfer(t, 0x10, buf, size);
+        }
+
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
         int n;
         long pos;
-        using var ledger = FrameLedger.Time(FrameLedger.Cat.FileIo);
-        lock (f)
+        // the hitch ledger counts the host read only: the device model's wait below (IoTiming) blocks this thread off
+        // its core, as a read on the Vita does, and the other threads go on; counted, a streaming thread's modelled
+        // reads were the "cause" of every frame and hid the real stall (a 98 ms shader stall shown as fileIo 134 ms)
+        using (FrameLedger.Time(FrameLedger.Cat.FileIo))
         {
-            pos = f.Stream.Position;
-            n = f.Stream.Read(GuestMemory.Span(buf, (int)size));
-            DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
-            Interlocked.Add(ref BytesRead, n);
+            lock (f)
+            {
+                pos = f.Stream.Position;
+                n = f.Stream.Read(GuestMemory.Span(buf, (int)size));
+                DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
+                Interlocked.Add(ref BytesRead, n);
+            }
         }
         IoTiming.Read(f, pos, n);
         return n;
@@ -167,6 +191,11 @@ public sealed partial class IoFileMgr : HleModule
             Log.Info((tf.Tty == 1 ? "[guest stderr] " : "[guest stdout] ") + System.Text.Encoding.UTF8.GetString(GuestMemory.ReadSpan(buf, (int)size)).TrimEnd('\n'));
             return (int)size;
         }
+        if (tf is { GuestFile: not 0 })
+        {
+            return GuestTransfer(tf, 0x14, buf, size);
+        }
+
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
         lock (f)
         {
@@ -180,6 +209,11 @@ public sealed partial class IoFileMgr : HleModule
     internal long sceIoLseek(
 int fd, long offset, int whence)
     {
+        if (_files.TryGetValue(fd, out var guest) && guest.GuestFile != 0)
+        {
+            return ksceVopLseek(guest.GuestVnode, guest.GuestFile, (uint)offset, (uint)(offset >> 32), (uint)whence);
+        }
+
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
         lock (f) return f.Stream.Seek(offset, (SeekOrigin)whence);
     }
@@ -190,10 +224,14 @@ int fd, long offset, int whence)
     internal int sceIoPread(int fd, uint buf, uint size, long offset)
     {
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
-        using var ledger = FrameLedger.Time(FrameLedger.Cat.FileIo);
-        int n = RandomAccess.Read(f.Stream.SafeFileHandle, GuestMemory.Span(buf, (int)size), offset);
-        DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
-        Interlocked.Add(ref BytesRead, n);
+        int n;
+        // the host read only, as in sceIoRead: the device model's wait is not a hitch of the frame
+        using (FrameLedger.Time(FrameLedger.Cat.FileIo))
+        {
+            n = RandomAccess.Read(f.Stream.SafeFileHandle, GuestMemory.Span(buf, (int)size), offset);
+            DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
+            Interlocked.Add(ref BytesRead, n);
+        }
         IoTiming.Read(f, offset, n);
         return n;
     }
@@ -240,6 +278,11 @@ int fd, long offset, int whence)
     [Hle]
     internal int sceIoRemove(string path)
     {
+        if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
+        {
+            return GuestRemove(guestMount, guestPath, directoryToo: false);
+        }
+
         var host = HostPath(path, true);
         if (host == null || !File.Exists(host)) return SceError.IO_ENOENT;
         File.Delete(host);
@@ -249,6 +292,11 @@ int fd, long offset, int whence)
     [Hle]
     internal int sceIoMkdir(string path, int mode)
     {
+        if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
+        {
+            return GuestMkdir(guestMount, guestPath, mode);
+        }
+
         var host = HostPath(path, true);
         if (host == null) return SceError.IO_ENOENT;
         if (Directory.Exists(host)) return SceError.IO_EEXIST;
@@ -259,6 +307,11 @@ int fd, long offset, int whence)
     [Hle]
     internal int sceIoRmdir(string path)
     {
+        if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
+        {
+            return GuestRemove(guestMount, guestPath, directoryToo: true);
+        }
+
         var host = HostPath(path, true);
         if (host == null || !Directory.Exists(host)) return SceError.IO_ENOENT;
         try { Directory.Delete(host); return 0; }
@@ -280,6 +333,11 @@ int fd, long offset, int whence)
     [Hle]
     internal int sceIoDopen(string path)
     {
+        if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
+        {
+            return GuestDopen(guestMount, guestPath);
+        }
+
         var host = HostPath(path);
         if (host == null || !Directory.Exists(host)) return SceError.IO_ENOENT;
         int fd = Interlocked.Increment(ref _nextFd);
@@ -291,6 +349,11 @@ int fd, long offset, int whence)
     internal int sceIoDread(int fd, uint dirent)
     {
         if (!_dirs.TryGetValue(fd, out var d)) return SceError.IO_EBADF;
+        if (d.GuestFile != 0)
+        {
+            return ksceVopDread(d.GuestVnode, d.GuestFile, dirent);
+        }
+
         if (d.Index >= d.Entries.Length) return 0;
         var e = d.Entries[d.Index++];
         GuestMemory.Span(dirent, 352).Clear();
@@ -299,7 +362,16 @@ int fd, long offset, int whence)
         return 1;
     }
 
-    [Hle] internal int sceIoDclose(int fd) => _dirs.TryRemove(fd, out _) ? 0 : SceError.IO_EBADF;
+    [Hle]
+    internal int sceIoDclose(int fd)
+    {
+        if (!_dirs.TryRemove(fd, out OpenDir? directory))
+        {
+            return SceError.IO_EBADF;
+        }
+
+        return directory.GuestFile != 0 ? GuestDclose(directory) : 0;
+    }
 
     static void WriteDateTime(uint p, DateTime t)
     {
@@ -327,6 +399,11 @@ int fd, long offset, int whence)
     [Hle]
     internal int sceIoGetstat(string path, uint stat)
     {
+        if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
+        {
+            return GuestGetstat(guestMount, guestPath, stat);
+        }
+
         var host = HostPath(path);
         if (host == null || (!File.Exists(host) && !Directory.Exists(host))) return SceError.IO_ENOENT;
         GuestMemory.Span(stat, 88).Clear();
@@ -337,6 +414,11 @@ int fd, long offset, int whence)
     [Hle]
     internal int sceIoGetstatByFd(int fd, uint stat)
     {
+        if (_files.TryGetValue(fd, out var guest) && guest.GuestFile != 0)
+        {
+            return ksceVopFgetstat(guest.GuestVnode, guest.GuestFile, stat);
+        }
+
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
         GuestMemory.Span(stat, 88).Clear();
         WriteStat(stat, f.Stream.Name);

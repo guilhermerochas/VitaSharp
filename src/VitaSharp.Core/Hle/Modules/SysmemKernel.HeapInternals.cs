@@ -963,9 +963,10 @@ public sealed partial class SysmemKernel
         return 0;
     }
 
-    /// <summary>NID_8FD11E02(): a word of sysmem's context (+0x8C) no FW 3.74 module writes; its boot value 0.</summary>
-    [Hle(Nid = 0x8FD11E02, Library = "SceSysmemForKernel", ReturnsValue = true, Default = true)]
-    uint NID_8FD11E02() => 0;
+    /// <summary>NID_8FD11E02(): the word +0x8C of sysmem's context (module private word 3), which the boot leaves
+    /// 0 and no FW 3.74 module writes.</summary>
+    [Hle(Nid = 0x8FD11E02, Library = "SceSysmemForKernel", ReturnsValue = true)]
+    uint NID_8FD11E02() => GuestMemory.R32(SysmemContext() + 0x8C);
 
     /// <summary>NID_7CDB7655(cls, name, parent, itemsize, create, destroy): ksceKernelCreateClass.</summary>
     [Hle(Nid = 0x7CDB7655, Library = "SceSysmemForKernel")]

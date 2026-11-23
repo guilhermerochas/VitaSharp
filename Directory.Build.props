@@ -8,6 +8,14 @@
     Developer builds use their own obj-dev/bin-dev folders: generated files of one flavour (the Android Java wrappers of
     developer activities) never leak into the other's incremental build.
   -->
+  <!--
+    .NET version of the app and its libraries: -p:VitaSharpDotnet=net11.0 builds everything against .NET 11 (needs the
+    .NET 11 SDK and, for Android, its android workload); the default is .NET 10.
+  -->
+  <PropertyGroup>
+    <VitaSharpDotnet Condition="'$(VitaSharpDotnet)' == ''">net10.0</VitaSharpDotnet>
+  </PropertyGroup>
+
   <PropertyGroup>
     <DefaultItemExcludes>$(DefaultItemExcludes);obj-dev/**;bin-dev/**</DefaultItemExcludes>
   </PropertyGroup>

@@ -82,7 +82,7 @@ public sealed class RwLockInterleavingTests(GuestMemoryFixture fixture) : IDispo
             List<int> order = [];
             GuestRun writer = Waiter(uid, true, results, 0, order);
             GuestRun tryReader = _h.Start(_ => results[2] = Call(Tm, "sceKernelTryLockReadRWLock", uid), "rwlock-try");
-            _h.Join(tryReader, 5_000);
+            _h.Join(tryReader);
             Assert.Equal(SceError.RW_LOCK_FAILED_TO_LOCK, results[2]);
             GuestRun reader = Waiter(uid, false, results, 1, order);
             Assert.Equal((1, 0, 1, 1), Info(main, uid));
@@ -92,8 +92,8 @@ public sealed class RwLockInterleavingTests(GuestMemoryFixture fixture) : IDispo
                 Assert.Equal((1, writer.Thread.Uid, 1, 0), Info(main, uid));
                 Assert.Equal(unchecked((uint)SceError.RW_LOCK_FAILED_TO_LOCK), main.DispatchForTest("sceKernelTryLockWriteRWLock", (uint)uid));
             }
-            _h.Join(writer, 5_000);
-            _h.Join(reader, 5_000);
+            _h.Join(writer);
+            _h.Join(reader);
             Assert.Equal([0, 0], results[..2]);
             Assert.Equal([0, 1], order);
             Assert.Equal((0, 0, 0, 0), Info(main, uid));
@@ -129,9 +129,9 @@ public sealed class RwLockInterleavingTests(GuestMemoryFixture fixture) : IDispo
             Until(() => rwLock.Writer == null, "the writer's unlock");
             Assert.Equal((2, 0, 0, 0), Info(main, uid)); // both readers at once, still holding it
             readersRelease.Set();
-            _h.Join(firstReader, 5_000);
-            _h.Join(writer, 5_000);
-            _h.Join(secondReader, 5_000);
+            _h.Join(firstReader);
+            _h.Join(writer);
+            _h.Join(secondReader);
             Assert.Equal([0, 0, 0], results);
             Assert.Equal(1, order[0]);
             Assert.Equal((0, 0, 0, 0), Info(main, uid));
@@ -164,9 +164,9 @@ public sealed class RwLockInterleavingTests(GuestMemoryFixture fixture) : IDispo
                 Assert.Equal(0u, main.DispatchForTest("sceKernelUnlockWriteRWLock", (uint)uid));
                 Assert.Equal((1, first.Thread.Uid, 0, 2), Info(main, uid));
             }
-            _h.Join(low, 5_000);
-            _h.Join(highFirst, 5_000);
-            _h.Join(highSecond, 5_000);
+            _h.Join(low);
+            _h.Join(highFirst);
+            _h.Join(highSecond);
             Assert.Equal([0, 0, 0], results);
             Assert.Equal(threadPriority ? [1, 2, 0] : [0, 1, 2], order);
         });
@@ -233,8 +233,8 @@ public sealed class RwLockInterleavingTests(GuestMemoryFixture fixture) : IDispo
                 clock.Advance(1);
                 Assert.Equal((2, 0, 0, 0), Info(main, uid));
             }
-            _h.Join(writer, 5_000);
-            _h.Join(reader, 5_000);
+            _h.Join(writer);
+            _h.Join(reader);
             Assert.Equal(SceError.WAIT_TIMEOUT, results[0]);
             Assert.Equal(0u, GuestMemory.R32(timeout));
             Assert.Equal(0, results[1]);
@@ -275,7 +275,7 @@ public sealed class RwLockInterleavingTests(GuestMemoryFixture fixture) : IDispo
             }
             foreach (GuestRun waiter in waiters)
             {
-                _h.Join(waiter, 5_000);
+                _h.Join(waiter);
             }
 
             int error = flag < 0 ? SceError.WAIT_DELETE : SceError.WAIT_CANCEL;
@@ -344,7 +344,7 @@ public sealed class RwLockInterleavingTests(GuestMemoryFixture fixture) : IDispo
             Assert.Equal(0, Call(Tm, "sceKernelSignalSema", gates[0], 1)); // the writer unlocks: the reader gets it
             foreach (GuestRun run in runs)
             {
-                _h.Join(run, 5_000);
+                _h.Join(run);
             }
 
             Assert.Equal([0, SceError.WAIT_CANCEL], first);

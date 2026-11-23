@@ -165,7 +165,12 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
         _h.OnGuest(self =>
         {
             // a worker that ends with sceKernelExitThread(0x1234)
-            GuestRun worker = _h.Start(_ => { Thread.Sleep(20); Invoke(Tm, "sceKernelExitThread", 0x1234); }, "ender");
+            // the worker ends once this thread waits for it (not after a host sleep, which a slow host could outlast)
+            GuestRun worker = _h.Start(_ =>
+            {
+                Until(() => self.Status == ThreadStatus.Waiting, "the wait for the thread's end");
+                Invoke(Tm, "sceKernelExitThread", 0x1234);
+            }, "ender");
             uint stat = _h.Word(0), timeout = _h.Word(5_000_000);
             exitCode = Call(Tm, "sceKernelWaitThreadEnd", worker.Thread.Uid, new Ptr<int>(stat), new Ptr<uint>(timeout));
             Assert.Equal(0x1234u, GuestMemory.R32(stat));
@@ -174,10 +179,12 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(SceError.ILLEGAL_THREAD_ID, Call(Tm, "sceKernelWaitThreadEnd", self.Uid, new Ptr<int>(0), new Ptr<uint>(0)));
             Assert.Equal(SceError.UNKNOWN_THREAD_ID, Call(Tm, "sceKernelWaitThreadEnd", 0x7FFF0001, new Ptr<int>(0), new Ptr<uint>(0)));
             // a thread that does not end in time: WAIT_TIMEOUT with the remaining time 0
-            GuestRun stuck = _h.Start(_ => Thread.Sleep(400), "slow");
+            using var release = new ManualResetEventSlim();
+            GuestRun stuck = _h.Start(_ => release.Wait(TimeSpan.FromMinutes(2)), "slow"); // ends only after the timeout
             uint t2 = _h.Word(1000);
             Assert.Equal(SceError.WAIT_TIMEOUT, Call(Tm, "_sceKernelWaitThreadEnd", stuck.Thread.Uid, new Ptr<int>(stat), new Ptr<uint>(t2)));
             Assert.Equal(0u, GuestMemory.R32(t2));
+            release.Set();
             _h.Join(stuck);
             Assert.Equal(0, Call(Tm, "sceKernelGetThreadExitStatus", worker.Thread.Uid, new Ptr<int>(stat)));
             Assert.Equal(0x1234u, GuestMemory.R32(stat));
@@ -727,7 +734,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
                 Assert.Equal(0x2u, flag.Pattern); // the waiter's clear pattern took bit 0 inside the set
                 Assert.Equal(0, Call(Tm, "sceKernelClearEventFlag", uid, 0u));
             }
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal(0, result);
             Assert.Equal(0x3u, GuestMemory.R32(outBits)); // the pattern when the set satisfied it
             Assert.Equal(0u, flag.Pattern);
@@ -752,7 +759,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
                 Assert.Equal(0, Call(Tm, "sceKernelCancelEventFlag", uid, 0u, new Ptr<int>(0)));
                 Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", uid, 0x1u));
             }
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal(SceError.WAIT_CANCEL, result);
             Assert.Equal(0x1u, flag.Pattern);
         });
@@ -776,7 +783,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
                 Assert.Equal(0x4u, flag.Pattern);
                 Assert.Equal(0x5u, flag.SnapshotPattern); // the waiter cannot have returned: the flag is locked
             }
-            _h.Join(waiter, 5_000);
+            _h.Join(waiter);
             Assert.Equal(0x4u, flag.SnapshotPattern);
         });
     }
@@ -832,7 +839,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0, Call(Tm, "sceKernelClearEventFlag", uid, ~0x2u));
             uint timeout = _h.Word(2_000_000);
             Assert.Equal(0, Call(Tm, "sceKernelWaitEventFlag", uid, 0x2u, EventFlag.WaitAnd, new Ptr<uint>(0), new Ptr<uint>(timeout)));
-            _h.Join(endFrame, 5_000);
+            _h.Join(endFrame);
         });
     }
 
@@ -900,7 +907,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.False(doneWhileStopped);
             Assert.True(heldAtItsCall);
             Assert.Equal(0, Call(Tm, "sceKernelDelayThread", 1000u)); // main blocks: the woken thread goes on
-            _h.Join(woken, 5_000);
+            _h.Join(woken);
             Assert.True(Volatile.Read(ref nextCallDone));
         });
     }
@@ -952,7 +959,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.False(doneWhileStopped);
             Assert.True(heldAtItsCall);
             Assert.Equal(0, Call(Tm, "sceKernelDelayThread", 1000u)); // main blocks: the woken thread goes on
-            _h.Join(woken, 5_000);
+            _h.Join(woken);
             Assert.True(Volatile.Read(ref nextCallDone));
             Assert.Equal(kind == "cancel" ? SceError.WAIT_CANCEL : SceError.WAIT_DELETE, result);
         });
@@ -1122,7 +1129,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.False(doneWhileStopped);
             Assert.True(heldAtItsCall);
             Assert.Equal(0, Call(Tm, "sceKernelDelayThread", 1000u)); // main blocks: the woken thread goes on
-            _h.Join(woken, 5_000);
+            _h.Join(woken);
             Assert.True(Volatile.Read(ref nextCallDone));
             Assert.Equal(expected, result);
         });
@@ -1175,7 +1182,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0, Call(Tm, "sceKernelClearEventFlag", uid, ~0x2u));
             uint timeout = _h.Word(2_000_000);
             Assert.Equal(0, Call(Tm, "sceKernelWaitEventFlag", uid, 0x2u, EventFlag.WaitAnd, new Ptr<uint>(0), new Ptr<uint>(timeout)));
-            _h.Join(endFrame, 5_000);
+            _h.Join(endFrame);
         });
     }
 
@@ -1198,7 +1205,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             }, "woken-by-host");
             Until(() => woken.Thread.Status == ThreadStatus.Waiting, "the wait");
             Task.Run(() => flag.Set(0x1)).Wait(); // a host thread, not a guest one
-            _h.Join(woken, 5_000);
+            _h.Join(woken);
             Assert.Equal(0, waits);
         });
     }
@@ -1226,7 +1233,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.False(Volatile.Read(ref released)); // main has not moved since the set
             self.Core.ChargeInstructions(GuestThread.WakerReleaseCycles); // main keeps running, without blocking
             Until(() => Volatile.Read(ref released), "the worker going on");
-            _h.Join(worker, 5_000);
+            _h.Join(worker);
         });
     }
 
@@ -1266,7 +1273,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
                 GuestThread.HleReturned = null;
             }
             Assert.True(Interlocked.Read(ref GuestThread.WakerWaitTimeouts) > timeoutsBefore);
-            _h.Join(woken, 5_000);
+            _h.Join(woken);
         });
     }
 
@@ -1278,6 +1285,8 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void EventFlagSetGrantsTheWaitersInQueueOrder()
     {
+        // the second waiter's 200 ms timeout is guest time that never passes here: a slow host cannot time it out
+        using var clock = ControlledGuestClock.Stop();
         _h.OnGuest(_ =>
         {
             foreach (bool byPriority in new[] { false, true })
@@ -1295,11 +1304,11 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
                 Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", uid, 0x1u));
                 GuestRun winner = byPriority ? second : first;
                 GuestRun loser = byPriority ? first : second;
-                _h.Join(winner, 5_000);
+                _h.Join(winner);
                 Assert.Equal(0, byPriority ? secondResult : firstResult);
                 Assert.Equal(ThreadStatus.Waiting, loser.Thread.Status);
                 Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", uid, 0x1u));
-                _h.Join(loser, 5_000);
+                _h.Join(loser);
                 Assert.Equal(0, byPriority ? firstResult : secondResult);
             }
         });
@@ -1317,6 +1326,9 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
     {
         int savedLatency = Wait.SyscallLatencyUs;
         Wait.SyscallLatencyUs = 1_000_000;
+        using var inLatency = new ManualResetEventSlim();
+        using var endLatency = new ManualResetEventSlim();
+        bool latencyTimedOut = false;
         try
         {
             _h.OnGuest(_ =>
@@ -1325,20 +1337,36 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
                 GuestRun waiter = _h.Start(_ => Call(Tm, "sceKernelWaitEventFlag", uid, 0x1u, EventFlag.WaitAnd | EventFlag.WaitClearPat,
                     new Ptr<uint>(0), new Ptr<uint>(0)), "evf-latency");
                 Until(() => waiter.Thread.Status == ThreadStatus.Waiting, "the event flag wait");
+                // the woken waiter's latency lasts until the test ends it, not a span of host time; the 30 s is only a
+                // guard against a hang, reached when the clear waits for the latency (the bug)
+                Wait.LatencyForTest = () =>
+                {
+                    if (GuestThread.Current != waiter.Thread)
+                    {
+                        return;
+                    }
+
+                    inLatency.Set();
+                    if (!endLatency.Wait(TimeSpan.FromSeconds(30)))
+                    {
+                        Volatile.Write(ref latencyTimedOut, true);
+                    }
+                };
                 Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", uid, 0x1u));
                 using (VitaSharp.Core.Kernel.Scheduler.Block())
                 {
-                    Thread.Sleep(150); // the waiter has woken up and is serving its one-second latency
+                    Assert.True(inLatency.Wait(TimeSpan.FromMinutes(2)), "the woken waiter never served its latency");
                 }
 
-                var clearTime = System.Diagnostics.Stopwatch.StartNew();
-                Assert.Equal(0, Call(Tm, "sceKernelClearEventFlag", uid, ~0x2u));
-                Assert.True(clearTime.ElapsedMilliseconds < 400, $"sceKernelClearEventFlag waited {clearTime.ElapsedMilliseconds} ms for the woken thread");
-                _h.Join(waiter, 5_000);
+                Assert.Equal(0, Call(Tm, "sceKernelClearEventFlag", uid, ~0x2u)); // while the waiter is still in its latency
+                endLatency.Set();
+                _h.Join(waiter);
+                Assert.False(Volatile.Read(ref latencyTimedOut), "sceKernelClearEventFlag waited for the woken thread's latency");
             });
         }
         finally
         {
+            Wait.LatencyForTest = null;
             Wait.SyscallLatencyUs = savedLatency;
         }
     }
@@ -1818,10 +1846,12 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(SceError.WAIT_CANCEL, got);
             Assert.Equal(0u, GuestMemory.R32(ns));
             Assert.Equal(1u, GuestMemory.R32(nr));
-            // the pipe as an event object: OUT while there is room, IN once there is data
+            // the pipe as an event object (threadmgr 3.74's event core): the send and the receive above left IN and OUT
+            // set (sticky edges, no auto reset), until sceKernelClearEvent
             uint pat = _h.Word(0);
             Assert.Equal(0, Call(Tm, "sceKernelPollEvent", p, MsgPipe.EventIn | MsgPipe.EventOut, new Ptr<uint>(pat), new Ptr<ulong>(0)));
-            Assert.Equal(MsgPipe.EventOut, GuestMemory.R32(pat));
+            Assert.Equal(MsgPipe.EventIn | MsgPipe.EventOut, GuestMemory.R32(pat));
+            Assert.Equal(0, Call(Tm, "sceKernelClearEvent", p, 0u));
             Assert.Equal(SceError.EVENT_COND, Call(Tm, "sceKernelPollEvent", p, MsgPipe.EventIn, new Ptr<uint>(pat), new Ptr<ulong>(0)));
             Call(Tm, "sceKernelSendMsgPipe", p, src, 2u, 0u, new Ptr<uint>(0), new Ptr<uint>(0));
             Assert.Equal(0, Call(Tm, "sceKernelWaitEvent", p, MsgPipe.EventIn, new Ptr<uint>(pat), new Ptr<ulong>(0), new Ptr<uint>(_h.Word(1000))));

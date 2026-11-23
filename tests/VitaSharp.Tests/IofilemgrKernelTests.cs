@@ -108,13 +108,15 @@ public sealed class IofilemgrKernelTests(GuestMemoryFixture fixture) : IDisposab
         Assert.Equal(0, Call(Io, "vfsIsLockedMnt", mount));
 
         uint filep = _harness.Alloc(4);
-        Assert.Equal(0, Call(Io, "vfsAllocateFile", vnode, filep));
+        int uid = Call(Io, "vfsAllocateFile", vnode, filep, 0u);
+        Assert.True(uid > 0); // the file object's UID, the descriptor the module keeps
         uint file = GuestMemory.R32(filep);
-        Assert.Equal(vnode, GuestMemory.R32(file));
+        Assert.Equal(vnode, GuestMemory.R32(file + 0x18));
         Assert.Equal(Inval, Call(Io, "vfsFreeVnode", file));
-        Assert.Equal(0, Call(Io, "vfsFreeFile", vnode, file));
+        Assert.Equal(0, Call(Io, "vfsFreeFile", vnode, (uint)uid));
 
-        // an operation the driver does not provide, and no vnode at all
+        // an operation the driver does not provide on an active vnode, and no vnode at all
+        GuestMemory.W32(vnode + 0x74, 1);
         Assert.Equal(Unsup, Call(Io, "ksceVopOpen", vnode, 0u, 0u, 0u));
         Assert.Equal(Inval, Call(Io, "ksceVopOpen", 0u, 0u, 0u, 0u));
         Assert.Equal(Inval, Call(Io, "ksceVopGetstat", vnode, 0u, 0u));
@@ -125,7 +127,7 @@ public sealed class IofilemgrKernelTests(GuestMemoryFixture fixture) : IDisposab
         Assert.Equal(Inval, Call(Io, "vfsFreeVnode", vnode));
 
         Assert.Equal(Inval, Call(Io, "vfsMount", 0u));
-        Assert.Equal(Unsup, Call(Io, "vfsMount", mount));
+        Assert.Equal(Inval, Call(Io, "vfsMount", mount)); // no root path
     }
 
     [Fact]

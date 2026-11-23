@@ -226,6 +226,7 @@ public static class Strings
     public static string PrecompileCodeTip => T();
     public static string PrecompileCodeStatus(int done, int total) => F(T(), done, total);
     public static string PrecompileCodeCancel => T();
+    public static string LoadingWindowTitle(string title) => F(T(), title);
     public static string ControlsDetail => T();
     public static string AppliesOnStart => T();
     public static string AppliesNextStart => T();

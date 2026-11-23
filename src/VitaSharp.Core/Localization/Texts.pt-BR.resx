@@ -2934,6 +2934,9 @@
   <data name="MMsaaNative" xml:space="preserve">
     <value>Nativo (como o jogo pede)</value>
   </data>
+  <data name="MMsaaSs" xml:space="preserve">
+    <value>Superamostragem 2x (mais nítido, mais trabalho da GPU)</value>
+  </data>
   <data name="MMsaaOff" xml:space="preserve">
     <value>Desligado (mais rápido, bordas serrilhadas)</value>
   </data>
@@ -2974,7 +2977,7 @@
     <value>{0} FPS · {1}</value>
   </data>
   <data name="MMsaaDetail" xml:space="preserve">
-    <value>Desligado desenha o jogo com uma amostra por pixel: menos trabalho para a GPU, bordas serrilhadas. Vale na hora</value>
+    <value>Superamostragem 2x desenha as cenas com MSAA no dobro do tamanho; Desligado desenha com uma amostra por pixel (menos trabalho para a GPU, bordas serrilhadas). Vale na hora</value>
   </data>
   <data name="MDefaultParen" xml:space="preserve">
     <value>Padrão ({0})</value>
@@ -3172,7 +3175,7 @@
     <value>Cancelar</value>
   </data>
   <data name="PrecompileCode" xml:space="preserve">
-    <value>Precompilar código ARM</value>
+    <value>Pré-compilar código ARM</value>
   </data>
   <data name="PrecompileCodeDetail" xml:space="preserve">
     <value>Traduz o código do jogo antes de ele começar, em todos os núcleos livres</value>
@@ -3181,10 +3184,46 @@
     <value>Ligado (padrão): ao iniciar um jogo, o código ARM dele é traduzido primeiro, com uma barra de progresso (Cancelar inicia o jogo na hora): o código que as sessões anteriores rodaram (o cache de código) e o código achado analisando os módulos do jogo. Assim o jogo quase não compila nada enquanto roda e não engasga na primeira vez que chega em código novo. Desligado: o código é compilado quando o jogo chega nele.</value>
   </data>
   <data name="PrecompileCodeStatus" xml:space="preserve">
-    <value>Precompilando código ARM: {0} de {1}</value>
+    <value>Pré-compilando código ARM: {0} de {1}</value>
   </data>
   <data name="PrecompileCodeCancel" xml:space="preserve">
     <value>Cancelar</value>
+  </data>
+  <data name="BootStepStarting" xml:space="preserve">
+    <value>Abrindo o jogo...</value>
+  </data>
+  <data name="BootStepFirmware" xml:space="preserve">
+    <value>Iniciando o firmware</value>
+  </data>
+  <data name="BootStepInput" xml:space="preserve">
+    <value>Preparando os controles</value>
+  </data>
+  <data name="BootStepAudio" xml:space="preserve">
+    <value>Iniciando o áudio</value>
+  </data>
+  <data name="BootStepGpu" xml:space="preserve">
+    <value>Iniciando a GPU (Vulkan)</value>
+  </data>
+  <data name="BootStepGame" xml:space="preserve">
+    <value>Carregando o jogo</value>
+  </data>
+  <data name="BootStepShaderCache" xml:space="preserve">
+    <value>Carregando o cache de shaders</value>
+  </data>
+  <data name="BootStepCodePrecompile" xml:space="preserve">
+    <value>Pré-compilando código ARM</value>
+  </data>
+  <data name="BootStepReady" xml:space="preserve">
+    <value>Iniciando o jogo</value>
+  </data>
+  <data name="LoadingWindowTitle" xml:space="preserve">
+    <value>{0}: carregando</value>
+  </data>
+  <data name="LoadingFailureLog" xml:space="preserve">
+    <value>Log completo: {0}</value>
+  </data>
+  <data name="LoadingFailureClose" xml:space="preserve">
+    <value>Fechar</value>
   </data>
   <data name="LicenseMissing" xml:space="preserve">
     <value>A licença deste jogo ({0}) não está instalada, então o sistema não consegue iniciá-lo (erro {1}). Reinstale com o work.bin, zRIF ou .rif do seu console.</value>
@@ -3194,5 +3233,11 @@
   </data>
   <data name="LicenseMissingBadge" xml:space="preserve">
     <value>Sem licença</value>
+  </data>
+  <data name="TitleKeyNotOpened" xml:space="preserve">
+    <value>Os arquivos de {0} estão cifrados e o sistema não consegue obter a chave deles pela licença instalada (erro {1}): o console verifica a licença e a ativação, e decifra a chave, no processador de segurança, que o emulador não tem.</value>
+  </data>
+  <data name="TitleLoadFailed" xml:space="preserve">
+    <value>Não foi possível iniciar {0}: {1}. Os detalhes estão no log ({2}).</value>
   </data>
 </root>

@@ -267,10 +267,10 @@ public sealed partial class SysmemKernel
     [Hle(Nid = 0x0164D817, Library = "SceSysmemForKernel", ReturnsValue = true)]
     uint NID_0164D817() => KernelPhyMemPart();
 
-    /// <summary>NID_0B1B4ACA(): ScePhyMemPartTool, the physical partition of a development kit's extra memory (the
-    /// boot loader's parameter); a retail console has none: 0.</summary>
-    [Hle(Nid = 0x0B1B4ACA, Library = "SceSysmemForKernel", ReturnsValue = true, Default = true)]
-    uint NID_0B1B4ACA() => 0;
+    /// <summary>NID_0B1B4ACA(): ScePhyMemPartTool, the physical partition of a development kit's extra memory: the
+    /// word sysmem's boot takes from its context (+0x14); a retail console's boot sets none: 0.</summary>
+    [Hle(Nid = 0x0B1B4ACA, Library = "SceSysmemForKernel", ReturnsValue = true)]
+    uint NID_0B1B4ACA() => GuestMemory.R32(SysmemContext() + SysmemContextToolPartition);
 
     /// <summary>NID_BC36755F(): the bytes NID_36FDA794 added to the partition processmgr registered (0 after
     /// NID_9B7E673F empties it).</summary>
@@ -952,10 +952,22 @@ public sealed partial class SysmemKernel
     }
 
     /// <summary>NID_456ECB54(SceKernelMMUContext *context, va): the coarse page table of the 1 MB section holding the
-    /// address (its first-level descriptor when it is a page table, else 0); VitaSharp keeps no translation tables
-    /// in guest memory: 0.</summary>
-    [Hle(Nid = 0x456ECB54, Library = "SceSysmemForKernel", ReturnsValue = true, Default = true)]
-    uint NID_456ECB54(uint context, uint address) => 0;
+    /// address: the first-level descriptor of the section (the table at the context's +0x1C record, +0x10, one word
+    /// per MB) when its type is a page table (bits 1:0 = 1), without the type bits; any other descriptor 0. A context
+    /// without a first-level table (VitaSharp's MMU contexts until kernel code gives them one) answers 0.</summary>
+    [Hle(Nid = 0x456ECB54, Library = "SceSysmemForKernel", ReturnsValue = true)]
+    uint NID_456ECB54(uint context, uint address)
+    {
+        uint record = context == 0 ? 0 : GuestMemory.R32(context + 0x1C);
+        uint table = record == 0 ? 0 : GuestMemory.R32(record + 0x10);
+        if (table == 0)
+        {
+            return 0;
+        }
+
+        uint descriptor = GuestMemory.R32(table + (address >> 20) * 4);
+        return (descriptor & 3) == 1 ? descriptor & 0xFFFFFFFC : 0;
+    }
 
     /// <summary>NID_0B5A3E93(va): the partition of the kernel's address space that holds the address, or 0.</summary>
     [Hle(Nid = 0x0B5A3E93, Library = "SceSysmemForKernel", ReturnsValue = true)]

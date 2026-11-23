@@ -90,12 +90,77 @@ the NID table only): module information by name or module NID (the 0x38-byte rec
 segment offsets, its export and import entries, data injections (the original bytes kept and written back on release)
 and the framework's error codes (0x9001xxxx). A listed module that exports those libraries (the user's copy of the
 framework) is not loaded: the log says `not loaded (the emulator provides its libraries)`. With the option off the
-functions do nothing, as imports nothing provides. Function hooks are the next step.
+functions do nothing, as imports nothing provides.
+
+Function hooks (export, import, offset and absolute address; kernel and user) follow the framework's published
+contract: the hooked function's first instructions become a jump to the first hook; each hook gets a reference record
+(next, func, old) and continues the call as the framework's continuation macro does (the next hook's function, or,
+after the last one, a trampoline that runs the replaced instructions and the rest of the original). Hooks on one
+function are linked as the framework links them: the first stays the one the function jumps to and each new one goes
+right after it (so they run first, newest, ..., second; the framework leaves the order undefined). Releasing a hook
+keeps the others; releasing the last writes the original bytes back. Every patch drops only the translated code it
+covers, in every process. A hook works the same on a guest (LLE) function and on a firmware function the HLE serves:
+a kernel hook on a firmware export also takes, in every process (those made later too), the import stubs of that
+library's function, so a hook on a syscall export sees the user programs' calls; the kernel library's function with
+the same NID (a kernel twin) is another function. The hook runs on the calling thread with the caller's process as
+the current one, as kernel code a syscall runs does (ksceKernelGetProcessId gives the user process). A kernel
+plugin's hook or data injection in a user process is made in that process's memory, and the patches of a process go
+when it ends.
+
+The framework's module calls for user programs (taiLoadKernelModule, taiLoadStartKernelModuleForUser,
+taiStartKernelModuleForUser, taiLoadStartModuleForPidForUser, the four stop calls, taiUnloadKernelModule,
+taiUnloadModuleForPid, taiMemcpyUserToKernel and taiMemcpyKernelToUser) follow its published contract: only a program
+with the system class may call them (ksceSblACMgrIsShell: capability bit 1, which homebrew built as an unsafe fake SELF
+has and safe homebrew and retail games do not; otherwise 0x90010009); the arguments come in the 0x14-byte record (size,
+pid, args, argp, flags), up to 256 bytes of argp are copied to a kernel buffer that module_start/module_stop receive,
+the path is at most 255 characters and opt must be NULL, with the framework's error codes for each check. The module
+loads through the firmware's kernel module manager, the loader of the `*KERNEL` plugins: a kernel module goes to the
+kernel and outlives the program that loaded it; the stop calls write module_stop's status to `*res`. The UID returned
+is the module's own (VitaSharp has one UID space for the kernel and the processes). This is how a homebrew program
+loads its own kernel module (Adrenaline's eboot does it first). taiReloadConfig, taiReloadConfigForKernel and
+taiLoadPluginsForTitleForKernel are not offered yet.
+
+The firmware's user modules the HLE serves (the os0:us modules every process has preloaded, such as SceLibKernel, and
+the vs0 modules a process loads) are in the process's module list as the framework sees it: the first time the
+framework looks at a process's modules, each firmware user module exporting a library the process imports, that no
+loaded module of the process exports, is listed with the firmware module's name, module NID and export tables, at a
+fixed address of the process's memory, each exported function's entry an HLE stub. They come before the loaded modules
+(they were preloaded), so the newest module is still the program's. A user plugin's export hook on one patches its
+entry and takes that process's import stubs of the function (those bound later too); other processes are not
+affected, as on the Vita a user module's code is its process's. These modules are not linked: imports keep binding to
+the HLE as before. They need the firmware installed (os0 and vs0 from PSVUPDAT.PUP); without it the search finds no
+such module (0x90010002), as before.
+
+The framework keeps no list of patches by module: a plugin releases its hooks and injections itself, normally in its
+module_stop, in any order, while the patched code is still in place; a plugin that stops and unloads without
+releasing them leaves them installed (as the framework's published source does; a hook whose code went with the
+module then jumps to freed memory, as on the Vita). Only when a process ends are its patches dropped, without writing
+the original bytes back (the code went with the process); kernel patches stay until they are released.
+
+| Mechanism | Status |
+| --- | --- |
+| Export hook, kernel (kernel modules, the firmware's included) | Done |
+| Export hook, user, on a loaded user module | Done |
+| Export hook, user, on a firmware user module the HLE serves | Done (listed in the process's module list; needs the firmware) |
+| Import hook (kernel and user) | Done |
+| Offset and absolute-address hooks (kernel and user, ARM and Thumb) | Done |
+| Hook chain with continuation (next/func/old), in the framework's order | Done |
+| Release in the middle, at the head, of the last one | Done |
+| Data injection (absolute and by segment offset), restored on release | Done |
+| Kernel hook on a firmware syscall export: every process's calls, those made later too | Done |
+| A process ends: its patches are dropped, nothing written back | Done |
+| A plugin stops and unloads: its module_stop releases its patches; nothing is released for it | Done (as the framework) |
+| Translated code: each patch drops the blocks it covers; a block decoded during a patch is checked again | Done |
+| Module calls for user programs (load, start, stop, unload a kernel or process module; user/kernel copies) | Done |
+| Patching the firmware's own code by offset | Not possible (no firmware code: the HLE serves it) |
 
 ## Limits
 
 - A plugin that patches the firmware's own code by offset finds no firmware code there (VitaSharp implements the
   firmware's libraries itself).
+- The firmware user modules the HLE serves are listed only in the plugin framework's searches (module information,
+  exports, hooks, offsets); the module manager's own list of the process (sceKernelGetModuleList) shows the loaded
+  modules only. Their exported variables are not in the tables.
 - Undefined instructions and prefetch aborts (jumps to unmapped addresses) reach the handlers registered with
   SceExcpmgr, in undefined/abort mode with the banked registers and SPSR of the ARM exception modes; with no handler,
   or when no handler takes it, the fault is reported as a crash as before. Data aborts are not delivered yet (an

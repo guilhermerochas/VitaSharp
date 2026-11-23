@@ -56,9 +56,10 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>
     /// Programmable blending in multisampled scenes reads the colour attachment as an input attachment (render pass
     /// with a subpass self-dependency, a by-region barrier before each such draw), unless VITASHARP_MSAA_FETCH=copy:
-    /// then, like raw integer renderings always, the samples are copied for every such draw.
+    /// then, like raw integer renderings always, the samples are copied for every such draw
+    /// (<see cref="VulkanRendererOptions.MsaaFetch"/>).
     /// </summary>
-    private static readonly bool s_msaaInputFetch = !string.Equals(Environment.GetEnvironmentVariable(EnvVars.MsaaFetch)?.Trim(), "copy", StringComparison.OrdinalIgnoreCase);
+    private readonly bool _msaaInputFetch;
 
     private sealed class MsaaImage
     {

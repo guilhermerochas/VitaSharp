@@ -291,6 +291,24 @@ public sealed class FirmwareKernelModules(Emulator emu)
         }
     }
 
+    /// <summary>The library whose export of function <paramref name="nid"/> has its entry at <paramref name="entry"/>,
+    /// or 0.</summary>
+    public uint LibraryOfEntry(uint entry, uint nid)
+    {
+        lock (_lock)
+        {
+            foreach (KeyValuePair<(uint LibNid, uint Nid), (uint Entry, uint Svc)> e in _entries)
+            {
+                if (e.Key.Nid == nid && e.Value.Entry == entry)
+                {
+                    return e.Key.LibNid;
+                }
+            }
+
+            return 0;
+        }
+    }
+
     /// <summary>Guest code rewrote the start of the function (a hook): its entry no longer is the SVC into the HLE.</summary>
     public bool IsPatched(uint libNid, uint nid)
     {
@@ -332,7 +350,7 @@ public sealed class FirmwareKernelModules(Emulator emu)
     /// <summary>
     /// A call firmware module <paramref name="module"/> makes through its import of function <paramref name="nid"/> of
     /// library <paramref name="libNid"/>: when guest code hooked the import stub, the call runs the stub on the calling
-    /// thread in kernel mode; otherwise it is the call of the export (<see cref="Call"/>: the export's own hook, else
+    /// thread (<see cref="RunGuest"/>); otherwise it is the call of the export (<see cref="Call"/>: the export's own hook, else
     /// <paramref name="direct"/>).
     /// </summary>
     public uint CallImport(string module, uint libNid, uint nid, Func<uint> direct, params ReadOnlySpan<uint> args)
@@ -345,24 +363,20 @@ public sealed class FirmwareKernelModules(Emulator emu)
         return RunGuest(thread, ImportStubOf(module, libNid, nid), args);
     }
 
+    /// <summary>Runs the kernel code at <paramref name="address"/> on the calling thread. A kernel thread stays the
+    /// kernel's; a user thread in a syscall stays its process's, as on the Vita, where kernel code a syscall runs sees
+    /// the calling process as the current one (ksceKernelGetProcessId, the user/kernel copies, the access level).
+    /// The emulated CPU has no privilege levels to switch: kernel memory is mapped in every process.</summary>
     private static uint RunGuest(GuestThread thread, uint address, ReadOnlySpan<uint> args)
     {
-        bool wasKernel = thread.KernelMode;
-        thread.KernelMode = true;
-        try
-        {
-            return thread.CallGuest(address, args);
-        }
-        finally
-        {
-            thread.KernelMode = wasKernel;
-        }
+        return thread.CallGuest(address, args);
     }
 
     /// <summary>
     /// A call of the firmware's function <paramref name="nid"/> of library <paramref name="libNid"/> the way the firmware
     /// makes it, by its address: when guest code hooked the function, the call runs the guest code at its entry on the
-    /// calling thread, in kernel mode (as the kernel runs a syscall's driver call) and returns its r0; otherwise
+    /// calling thread, in the calling thread's process (as the kernel runs a syscall's driver call: <see cref="RunGuest"/>)
+    /// and returns its r0; otherwise
     /// <paramref name="direct"/>, the HLE function itself, with no guest round trip.
     /// </summary>
     public uint Call(uint libNid, uint nid, Func<uint> direct, params ReadOnlySpan<uint> args)

@@ -3328,14 +3328,14 @@
 0xC3AE93A2	kvfsIsOwnerVnode	IoFileMgr	SceIofilemgrForDriver	-
 0x6B3CA9F7	kvfsLockMnt	IoFileMgr	SceIofilemgrForDriver	-
 0xAA45010B	kvfsLockVnode	IoFileMgr	SceIofilemgrForDriver	-
-0xB62DE9A6	kvfsMount	IoFileMgr	SceIofilemgrForDriver	-	default
+0xB62DE9A6	kvfsMount	IoFileMgr	SceIofilemgrForDriver	-
 0xFEEE44A9	kvfsMountForPFS	IoFileMgr	SceIofilemgrForDriver	-	default
 0x0E518FA9	kvfsOpen	IoFileMgr	SceIofilemgrForDriver	-	default
 0x0B54F9E0	kvfsPread	IoFileMgr	SceIofilemgrForDriver	-	default
 0xE5DEA6B7	kvfsPwrite	IoFileMgr	SceIofilemgrForDriver	-	default
 0x809892C1	kvfsRead	IoFileMgr	SceIofilemgrForDriver	-	default
 0x69A7E076	kvfsRmdev	IoFileMgr	SceIofilemgrForDriver	-	default
-0x9C7E7B76	kvfsUmount	IoFileMgr	SceIofilemgrForDriver	-	default
+0x9C7E7B76	kvfsUmount	IoFileMgr	SceIofilemgrForDriver	-
 0xD220539D	kvfsUmountForPFS	IoFileMgr	SceIofilemgrForDriver	-	default
 0xDC2D8BCE	kvfsUnlockMnt	IoFileMgr	SceIofilemgrForDriver	-
 0x6048F245	kvfsUnlockVnode	IoFileMgr	SceIofilemgrForDriver	-

@@ -58,6 +58,9 @@ public sealed partial class EmulationSession : IDisposable
     /// screen.</summary>
     public event Action? Exited;
 
+    /// <summary>The emulated system rebooted: the session is over and a new one boots the same title.</summary>
+    public event Action? Rebooted;
+
     /// <summary>Raised (on an emulator thread) on a trophy unlock.</summary>
     public event Action<TrophyUnlockedEvent>? TrophyUnlocked;
 
@@ -93,7 +96,10 @@ public sealed partial class EmulationSession : IDisposable
         VitaSharp.Core.Gpu.ShaderCacheLoad.Reset(); // a "Cancelar" of an earlier session in this process does not carry over
         VitaSharp.Core.Cpu.CodePrecompileLog.Reset();
         Performance = new GamePerformance(AppServices.AppContext);
-        var (psn, net, rpcn) = prefs.Network.ToOptions(rpcnPassword);
+        // VITASHARP_NET_ALLOW in env.txt limits real internet to those hosts (the desktop's --net-allow)
+        var (psn, net, rpcn) = prefs.Network.ToOptions(rpcnPassword, Environment.GetEnvironmentVariable(EnvVars.NetAllow));
+        // the game screen's loading screen (GameActivity.LoadingScreen.cs) follows these steps, as the desktop's does
+        VitaSharp.Core.Boot.BootProgress.Report(VitaSharp.Core.Boot.BootStep.Firmware);
         _emu = new Emulator(new EmulatorOptions
         {
             FsRoot = data.Fs,
@@ -108,11 +114,10 @@ public sealed partial class EmulationSession : IDisposable
             // "Carregar o cache de shaders antes de jogar" (global and per game): the progress and "Cancelar" are the game
             // screen's banner (GameActivity.ShaderCacheLoad.cs)
             LoadShaderCacheBeforeStart = _settings.LoadShaderCacheBeforePlaying,
-            // "Precompilar codigo ARM" (global and per game): on the phone all of it runs in the background (the blocks
-            // earlier sessions ran first, then the code near what the game runs); the game does not wait for it
+            // "Precompilar codigo ARM" (global and per game): the boot step waits for the code as on the desktop, with
+            // the progress and "Cancelar" in the game screen's banner (GameActivity.CodePrecompile.cs)
             CodeCacheDir = data.CodeCache,
             PrecompileCode = _settings.PrecompileCode,
-            PrecompileCodeWaits = false,
         });
         _emu.Fatal += (t, e) =>
         {
@@ -130,9 +135,16 @@ public sealed partial class EmulationSession : IDisposable
             Log.Info("The system turned off: leaving the game screen");
             Exited?.Invoke();
         };
+        // the system rebooted (kscePowerRequestSoftReset, the syscon's reset): the screen boots it again
+        _emu.Vita.Power.Rebooted += () =>
+        {
+            Log.Info("The system rebooted: booting it again");
+            Rebooted?.Invoke();
+        };
         _emu.Host.Input = input;
         _emu.Host.Motion = input.Keyboard; // the keyboard's tilt keys (VirtualMotion), from their first use
         _stats = new SessionStatistics(_emu, () => Paused);
+        VitaSharp.Core.Boot.BootProgress.Report(VitaSharp.Core.Boot.BootStep.Audio);
         _emu.Host.Audio = _audio = AndroidAudioBackend.TryCreate(AppServices.AppContext);
         // VITASHARP_AUDIO_DUMP=<folder, relative to the data folder>: per-port WAVs of what the guest output (--audio-dump)
         if (System.Environment.GetEnvironmentVariable(EnvVars.AudioDump) is { Length: > 0 } dump)
@@ -174,7 +186,7 @@ public sealed partial class EmulationSession : IDisposable
             VSync = _settings.VSync,
             GpuProfile = _settings.GpuProfile.Length > 0 ? _settings.GpuProfile : null,
             ResScale = _settings.ResScaleValue, // per-game internal resolution (0: VITASHARP_RES_SCALE in env.txt, else native)
-            Msaa = _settings.Msaa == "off" ? "off" : null, // per-game MSAA (null: VITASHARP_MSAA in env.txt, else native)
+            Msaa = _settings.MsaaValue, // per-game MSAA, ss or off (null: VITASHARP_MSAA in env.txt, else native)
             // Ajustes > shaders, as the desktop launcher (VITASHARP_SHADERC_OPT / VITASHARP_ASYNC_SHADERS in env.txt win)
             ShaderOptimization = prefs.ShaderOptimization,
             AsyncShaders = prefs.BackgroundShaderCompile,
@@ -311,6 +323,7 @@ public sealed partial class EmulationSession : IDisposable
                     _started = false;
                     return;
                 }
+                VitaSharp.Core.Boot.BootProgress.Report(VitaSharp.Core.Boot.BootStep.Gpu);
                 _renderer = new VulkanRenderer(_rendererOptions);
             }
             Log.Info($"Renderer: {_renderer.DeviceName}");
@@ -320,6 +333,8 @@ public sealed partial class EmulationSession : IDisposable
             _played.Start();
             _emu.Start();
             _emuStarted = true;
+            // the boot steps are over (the ARM code precompilation ran in Start): the loading screen goes
+            VitaSharp.Core.Boot.BootProgress.Report(VitaSharp.Core.Boot.BootStep.Ready);
             LoadStartSlot();
             ScheduleGpuDump();
 #if VITASHARP_DEVELOPER
@@ -345,6 +360,8 @@ public sealed partial class EmulationSession : IDisposable
             {
                 // the system refuses the launch: the license of this encrypted game is not installed
                 TitleLicenseMissingException noLicense => noLicense.UserMessage,
+                // the title's files are encrypted and its licence's key does not open them
+                TitleKeyException noKey => noKey.UserMessage,
                 DllNotFoundException => Loc.Format("MNativeLibraryMissing", e.Message),
                 _ => Loc.Format("MStartFailed", e.Message),
             });
@@ -609,33 +626,49 @@ public sealed partial class EmulationSession : IDisposable
     /// before the activity finishes: the screens' activity resumes (and re-reads the statistics) as soon as this one
     /// finishes, before its onDestroy runs, so recording only there showed the previous numbers.
     /// </summary>
-    /// <summary>The game's multisampled scenes render with one sample (the per-game MSAA option).</summary>
-    public bool MsaaOff => _rendererOptions.Msaa == "off";
+    /// <summary>The per-game MSAA option now: "" (native), "ss" (2x supersampling) or "off" (one sample).</summary>
+    public string MsaaValue => _rendererOptions.Msaa ?? "";
 
-    /// <summary>Changes the per-game MSAA option while the game runs: saved for the title, and the renderer is replaced
-    /// between two scenes with the new mode (as a state load does; its caches are built again).</summary>
-    public void SetMsaaOff(bool off)
+    /// <summary>Changes the per-game MSAA option while the game runs (the pause menu's "MSAA", the desktop's F3): saved
+    /// for the title, and the renderer is replaced between two scenes with the new mode (as a state load does; its
+    /// caches are built again).</summary>
+    public void SetMsaa(string mode)
     {
+        string? value = mode.Length > 0 ? mode : null;
         try
         {
             var gs = GameSettings.Load(AppServices.Data.GameSettingsFile(_game.TitleId));
-            gs.Msaa = off ? "off" : null;
+            gs.Msaa = value;
             AppServices.SaveGameSettings(_game.TitleId, gs);
         }
         catch (Exception e)
         {
             Log.Warn($"MSAA setting: {e.Message}");
         }
-        _rendererOptions.Msaa = off ? "off" : null;
+        _rendererOptions.Msaa = value;
         if (!_started)
+        {
             return;
+        }
+
+        string name = value ?? "native";
         Task.Run(() =>
         {
-            var why = SaveStates.ReplaceBackendBetweenScenes(_emu, () => { lock (_surfaceLock) return _renderer = new VulkanRenderer(_rendererOptions); });
+            var why = SaveStates.ReplaceBackendBetweenScenes(_emu, () =>
+            {
+                lock (_surfaceLock)
+                {
+                    return _renderer = new VulkanRenderer(_rendererOptions);
+                }
+            });
             if (why != null)
-                Log.Warn($"MSAA {(off ? "off" : "native")} applies at the next start: {why}");
+            {
+                Log.Warn($"MSAA {name} applies at the next start: {why}");
+            }
             else
-                Log.Info($"MSAA {(off ? "off" : "native")}: renderer replaced");
+            {
+                Log.Info($"MSAA {name}: renderer replaced");
+            }
         });
     }
 

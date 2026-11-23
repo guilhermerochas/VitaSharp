@@ -406,6 +406,16 @@ happened with `mono-aot` and in the earlier phone runs, so it is a driver issue,
 - **Lifecycle**: `onPause` suspends the guest process (`Emulator.Suspend`) and pauses the AAudio streams; `onResume`
   resumes both. The guest clock keeps running meanwhile (as the Vita's RTC across a suspend). Leaving the game
   (pause menu > Sair) records the play time and average FPS in the game's statistics.
+- **Loading screen** (`GameActivity.LoadingScreen.cs`, the same `Core.Boot.LoadingScreen` model as the desktop
+  launcher's loading window): from the tap on, over the game, the game's start-up picture (`sce_sys/pic0.png`), its
+  icon and name and the current boot step (`BootProgress.Reported`: firmware, audio, GPU, the game, the shader cache,
+  the ARM code) with a bar. During the two boot waits, "Carregar o cache de shaders antes de jogar"
+  (`ShaderCacheLoad.Reported`) and "Precompilar código ARM" (the code cache of earlier sessions, or the code reached
+  from the entry points in a first one; `CodePrecompileLog.Reported`), the bar counts and "Cancelar" starts the game at
+  once while the rest goes on in the background. It goes when the game is ready; a start that fails keeps the screen
+  with the reason and the log's place (`logs/last.log`) under the error dialog.
+- **MSAA** (the game's settings and the pause menu, the desktop's F3 modes): native, 2x supersampling (`ss`) or off;
+  a change in the pause menu replaces the renderer between two scenes and is saved for the game.
 - **Input** (`AndroidInput`, the core's `IInputBackend`): the on-screen pad (`OnScreenPad`, drawn by
   `OnScreenControlsView`) combined with every physical controller (`AndroidGamepads`): `InputDevice` hot-plug,
   `KeyEvent` buttons and `MotionEvent` axes become a standard-layout `PadSnapshot` mapped through the same controller
@@ -596,6 +606,7 @@ ignored). It applies to the next game started; the log shows each one (`env.txt:
 ```
 # VITASHARP_GPU_QUIRKS=-TextureCompressionBC  (ASTC transcoding on a GPU with BC)
 # VITASHARP_GPU_PROFILE=adreno-vk11           (render passes + static state)
+# VITASHARP_NET_ALLOW=localhost,example.org   (with "Internet real": only these hosts, the desktop's --net-allow)
 VITASHARP_NATIVE_VERIFY=1
 ```
 ```

@@ -148,17 +148,28 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         Silk.NET.Input.Glfw.GlfwInput.RegisterPlatform();
     }
 
-    public WindowHost(string title, int scale = 1, bool fullscreen = false)
+    /// <param name="startHidden">The launcher shows its loading window while the game starts: this window stays hidden
+    /// until <see cref="ShowWhenReady"/> (the game's first picture), so the user never sees a frozen, empty window.</param>
+    /// <param name="position">Where the window opens (screen coordinates of its client area): over the launcher's
+    /// loading window. Null: the system's default place.</param>
+    public WindowHost(string title, int scale = 1, bool fullscreen = false, bool startHidden = false, Vector2D<int>? position = null)
     {
         SelectGlfwPlatform();
+        bool testHidden = Environment.GetEnvironmentVariable(VitaSharp.Core.Util.EnvVars.HiddenWindow) == "1";
+        _hiddenUntilReady = startHidden && !testHidden;
         var opts = WindowOptions.DefaultVulkan with
         {
             Size = new Vector2D<int>(960 * scale, 544 * scale),
             Title = title,
             VSync = false,
             WindowState = fullscreen ? WindowState.Fullscreen : WindowState.Normal,
-            IsVisible = Environment.GetEnvironmentVariable(VitaSharp.Core.Util.EnvVars.HiddenWindow) != "1",
+            IsVisible = !testHidden && !startHidden,
         };
+        if (position is { } at)
+        {
+            opts.Position = at;
+        }
+
         _window = Window.Create(opts);
         _title = title;
         _windowedSize = opts.Size;
@@ -583,6 +594,32 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     }
 
     public void Close() => _window.Close();
+
+    bool _hiddenUntilReady;
+
+    /// <summary>Whether the window waits hidden for <see cref="ShowWhenReady"/>.</summary>
+    public bool HiddenUntilReady => _hiddenUntilReady;
+
+    /// <summary>The game is ready (window thread): a window started hidden (the launcher's loading window was shown
+    /// meanwhile) appears with the focus. Nothing for a window that was already shown or a hidden test window.</summary>
+    public void ShowWhenReady()
+    {
+        if (!_hiddenUntilReady)
+        {
+            return;
+        }
+
+        _hiddenUntilReady = false;
+        _window.IsVisible = true;
+        try
+        {
+            _window.Focus();
+        }
+        catch (Exception e) when (e is InvalidOperationException or NotSupportedException)
+        {
+            Log.Warn($"Window: could not take the focus: {e.Message}");
+        }
+    }
 
     /// <summary>Closes the window as its X button does: <see cref="CloseVeto"/> may keep it open (a recording being
     /// saved), which <see cref="Close"/> skips. Window thread (scripted "Close" key).</summary>

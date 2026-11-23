@@ -45,6 +45,7 @@ public sealed partial class PervasiveKernel : HleModule
                 }
 
                 GuestMemory.Fill(_registers, 0, RegisterSpan);
+                PowerOnMiscWords(_registers);
             }
 
             return _registers + (physical - PhysicalBase);

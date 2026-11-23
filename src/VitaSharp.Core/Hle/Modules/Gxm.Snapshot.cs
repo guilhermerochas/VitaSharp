@@ -1,5 +1,6 @@
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm;
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.SaveState;
 
 namespace VitaSharp.Core.Hle.Modules;
@@ -12,8 +13,48 @@ namespace VitaSharp.Core.Hle.Modules;
 /// </summary>
 [GenerateSnapshot, SnapshotIgnoreFields("_contexts", "_renderTargets", "_patchers", "_vertexPrograms", "_fragmentPrograms",
     "_syncObjects", "_displayQueue", "_commandLists")]
-public sealed partial class Gxm : ISnapshotState
+public sealed partial class Gxm : ISnapshotState, IServiceThreadOwner
 {
+    /// <summary>Save states: the display queue thread of a state that had one, while this session runs none (GXM not
+    /// initialised here yet), is the queue's again, with its saved UID; LoadExtra made the queue.</summary>
+    bool IServiceThreadOwner.AdoptServiceThread(GuestThread thread)
+    {
+        if (!ReferenceEquals(thread.Process, Emu) || thread.Name != DisplayQueueThreadName)
+        {
+            return false;
+        }
+
+        lock (_displayLock)
+        {
+            if (_displayQueue == null || (_displayThread is { IsLive: true } running && !ReferenceEquals(running, thread)))
+            {
+                return false;
+            }
+
+            thread.HostBody = DisplayQueueThread;
+            _displayThread = thread;
+        }
+
+        return true;
+    }
+
+    /// <summary>Save states: the display queue thread made after the save (GXM initialised after it) is let go: it takes
+    /// no more entries and ends.</summary>
+    bool IServiceThreadOwner.ReleaseServiceThread(GuestThread thread)
+    {
+        lock (_displayLock)
+        {
+            if (!ReferenceEquals(thread, _displayThread))
+            {
+                return false;
+            }
+
+            _displayThread = null;
+        }
+
+        return true;
+    }
+
     /// <summary>
     /// A load waits for the display queue to drain, as a save does: the display queue thread is kept across a load,
     /// and an entry of the running session it holds (waiting for its frame's GPU fence, or in the game's callback)
@@ -133,7 +174,19 @@ public sealed partial class Gxm : ISnapshotState
     void LoadExtra(SnapshotReader r)
     {
         bool hadQueue = r.ReadBool();
-        if (hadQueue && _displayQueue == null) throw new SnapshotException("GXM is not initialised in this session yet; let the game start further, then load the state");
+        if (hadQueue && _displayQueue == null)
+        {
+            // GXM initialised after the moment this session is at: the state's queue (empty, as a save waits for it)
+            // with its saved size; its thread comes back with the restored threads (AdoptServiceThread)
+            CreateDisplayQueue();
+        }
+        else if (!hadQueue && _displayQueue != null)
+        {
+            // initialised after the save: the queue goes with its thread (let go before the modules' states load)
+            _displayQueue.CompleteAdding();
+            _displayQueue = null;
+        }
+
         _ubBlock = null;
 
         _renderTargets.Clear();

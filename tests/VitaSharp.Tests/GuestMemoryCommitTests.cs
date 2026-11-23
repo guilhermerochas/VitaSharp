@@ -85,9 +85,17 @@ public sealed unsafe partial class GuestMemoryCommitTests(GuestMemoryFixture fix
     [Theory]
     [InlineData(0x6C00_0000u)]
     [InlineData(0x4C00_0000u)]
-    public void ANewSharedBlockTakesNoHostMemoryUntilTouched(uint addr)
+    public void ANewSharedBlockTakesNoHostMemoryUntilTouched(uint region)
     {
         const uint UsedOffset = 8u << 20, UsedSize = 8u << 20;
+        uint? untouched = MostlyUntouchedBlock(region);
+        if (untouched is not { } addr)
+        {
+            // every block of the segment was used earlier in this test process (a long suite run): the residency of a
+            // fresh block cannot be measured here; the zero-reading contract is covered by the AllocatedAgain tests
+            return;
+        }
+
         AllocWriteAndFree(addr + UsedOffset, UsedSize);
         byte* host = fixture.Memory.Primary.Base + addr;
         bool[]? mayHoldData = PagesThatMayHoldData(host, BlockSize);
@@ -130,6 +138,36 @@ public sealed unsafe partial class GuestMemoryCommitTests(GuestMemoryFixture fix
         {
             fixture.Memory.Free(addr);
         }
+    }
+
+    /// <summary>The first free 32 MB block (null when none is left) from <paramref name="region"/> on whose pages at least half were never used
+    /// in this test process: other tests share the one guest memory, and a Windows section page they used stays
+    /// committed, so a fixed address can be wholly used before this test runs.</summary>
+    private uint? MostlyUntouchedBlock(uint region)
+    {
+        // the 8 blocks of the region's 256 MB segment (CDRAM or kernel memory), starting at the region: a block past
+        // the segment's end is not the same kind of memory
+        const uint SegmentSize = 0x1000_0000;
+        const int Candidates = (int)(SegmentSize / BlockSize);
+        uint segment = region & ~(SegmentSize - 1);
+        for (uint i = 0; i < Candidates; i++)
+        {
+            uint addr = segment + ((region - segment + (i * BlockSize)) % SegmentSize);
+            bool[]? mayHoldData = PagesThatMayHoldData(fixture.Memory.Primary.Base + addr, BlockSize);
+            if (mayHoldData == null)
+            {
+                return addr;
+            }
+
+            int untouched = mayHoldData.Count(used => !used);
+            bool free = !fixture.Memory.Blocks().Any(block => block.Address < addr + BlockSize && addr < block.Address + block.Size);
+            if (free && untouched * 2 >= mayHoldData.Length)
+            {
+                return addr;
+            }
+        }
+
+        return null;
     }
 
     private void AllocWriteAndFree(uint addr, uint size)

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.IO.Compression;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Media;
@@ -205,19 +204,99 @@ public sealed class AndroidMediaDriverTests : IDisposable
         Assert.True(sinks[2].FramesWritten > 0);
     }
 
+    /// <summary>A pacing clock the test moves: a wait jumps the clock by the time asked (unless <see cref="Stopped"/>,
+    /// a paused emulation), so the guest's pace is measured in this clock's time, never in the host's.</summary>
+    private sealed class FakePacingClock : IPcmPacingClock
+    {
+        public double Now;
+        public double Waited;
+        public int Waits;
+        public bool Turbo;
+        /// <summary>The clock does not move (the emulation is paused): a wait passes no time.</summary>
+        public bool Stopped;
+
+        public double Seconds => Now;
+
+        public bool SkipPacing => Turbo;
+
+        public void Wait(object gate, double seconds)
+        {
+            Assert.True(Monitor.IsEntered(gate), "the wait releases the stream's lock, so it must hold it");
+            Waits++;
+            if (!Stopped)
+            {
+                Now += seconds;
+                Waited += seconds;
+            }
+        }
+    }
+
     [Fact]
     public void WithoutADeviceTheGuestIsPacedByTheClock()
     {
-        using var s = new BufferedPcmStream(_ => null, 48000, 2, 480);
-        var sw = Stopwatch.StartNew();
+        var clock = new FakePacingClock();
+        using var s = new BufferedPcmStream(_ => null, 48000, 2, 480, pacingClock: clock);
+        // time between making the stream and its first grain is no credit: every grain still takes its 10 ms
+        clock.Now += 0.05;
         for (int i = 0; i < 10; i++)
         {
-            s.Submit(Grain(480)); // 10 x 10 ms
+            double before = clock.Now;
+            s.Submit(Grain(480)); // 10 ms of audio
+            Assert.InRange(clock.Now - before, 0.0099, 0.0101);
         }
 
-        Assert.True(sw.ElapsedMilliseconds >= 60, $"{sw.ElapsedMilliseconds} ms");
+        Assert.InRange(clock.Waited, 0.0999, 0.1001);
         Assert.Equal(0, s.PendingSamples);
         Assert.Contains("no output device", s.Describe());
+    }
+
+    [Fact]
+    public void WithoutADeviceALateGuestGetsNoBurstAndTurboIsNotPaced()
+    {
+        var clock = new FakePacingClock();
+        using var s = new BufferedPcmStream(_ => null, 48000, 2, 480, pacingClock: clock);
+        s.Submit(Grain(480));
+        // the guest came back a second late (a loading screen): it is not let through for that second, the schedule
+        // restarts and each grain takes its 10 ms again
+        clock.Now += 1.0;
+        double waitedBefore = clock.Waited;
+        for (int i = 0; i < 5; i++)
+        {
+            s.Submit(Grain(480));
+        }
+
+        Assert.InRange(clock.Waited - waitedBefore, 0.0499, 0.0501);
+        // a guest slightly late (under the 0.1 s slack) catches up without waiting for that grain
+        clock.Now += 0.02;
+        waitedBefore = clock.Waited;
+        s.Submit(Grain(480));
+        s.Submit(Grain(480));
+        s.Submit(Grain(480));
+        Assert.InRange(clock.Waited - waitedBefore, 0.0099, 0.0101);
+        // turbo: no pacing at all
+        clock.Turbo = true;
+        waitedBefore = clock.Waited;
+        int waits = clock.Waits;
+        for (int i = 0; i < 10; i++)
+        {
+            s.Submit(Grain(480));
+        }
+
+        Assert.Equal(waitedBefore, clock.Waited);
+        Assert.Equal(waits, clock.Waits);
+    }
+
+    [Fact]
+    public void WithoutADeviceAStoppedClockHoldsTheGrainUntilTheThreadIsStopped()
+    {
+        // the emulation is paused (the guest clock stops): the grain waits; a stop of the submitting thread (a save
+        // state load) lets it go instead of keeping the audio thread there
+        var clock = new FakePacingClock { Stopped = true };
+        int asked = 0;
+        using var s = new BufferedPcmStream(_ => null, 48000, 2, 480, stopRequested: () => ++asked > 3, pacingClock: clock);
+        s.Submit(Grain(480));
+        Assert.Equal(3, clock.Waits);
+        Assert.Equal(0, clock.Waited);
     }
 
     [Fact]

@@ -20,6 +20,10 @@ public static class Wait
     /// sync object's lock.</summary>
     public static void WakeLatency() => Latency();
 
+    /// <summary>Tests: serves a wake-up latency in place of the host sleep (null: the sleep), so a test decides when the
+    /// latency ends instead of measuring how long a call took on the host's clock.</summary>
+    internal static Action? LatencyForTest { get; set; }
+
     private static void Latency()
     {
         if (SyscallLatencyUs <= 0 || GuestClock.Turbo)
@@ -28,6 +32,12 @@ public static class Wait
         }
 
         Interlocked.Increment(ref Latencies);
+        if (LatencyForTest is { } served)
+        {
+            served();
+            return;
+        }
+
         PreciseSleep.Until(System.Diagnostics.Stopwatch.GetTimestamp() + SyscallLatencyUs * System.Diagnostics.Stopwatch.Frequency / 1_000_000);
     }
 
@@ -2718,6 +2728,11 @@ public sealed partial class MsgPipe : EventObject, ICallbackInterruptedWait
     /// the senders behind take their turn, runs its callbacks and tries again.</summary>
     public void InterruptForCallbacks(GuestThread thread)
     {
+        if (CoreInterruptForCallbacks(thread))
+        {
+            return;
+        }
+
         foreach (Transfer transfer in _queue)
         {
             if (transfer.Thread == thread && transfer.Completed == null)
@@ -2942,20 +2957,14 @@ public sealed partial class MsgPipe : EventObject, ICallbackInterruptedWait
     private int Transmit(bool send, Segments buffers, uint mode, Ptr<uint> result, Ptr<uint> timeout, bool poll)
     {
         int code = TransmitCore(send, buffers, mode, result, timeout, poll, out Transfer? transfer);
-        if (transfer == null || transfer.Moved == 0)
+        if (transfer == null || (transfer.Moved == 0 && (code >= 0 || poll)))
         {
             return code;
         }
 
         lock (this)
         {
-            uint raised = send ? EventIn | (ReceivableBytes() > 0 ? EventReceivable : 0) : EventOut;
-            if (code < 0)
-            {
-                raised |= EventBits.Error;
-            }
-
-            NotifyRegisteredCallbacks((int)raised);
+            RaiseTransferEvent(send, transfer.Moved, code);
         }
 
         return code;
@@ -3222,6 +3231,7 @@ public sealed partial class MsgPipe : EventObject, ICallbackInterruptedWait
         {
             _deleted = true;
             ReleaseAll(SceError.WAIT_DELETE);
+            CoreDelete();
             WakeWaiters();
         }
     }
@@ -3307,19 +3317,53 @@ public sealed partial class MsgPipe : EventObject, ICallbackInterruptedWait
         }
     }
 
-    // ---- sceKernelWaitEvent / PollEvent on a message pipe (SCE_KERNEL_EVENT_*): IN while data can be received, OUT
-    // while there is room to send, DELETE once deleted, and OPEN / CLOSE when a handle was opened or closed by name
-    // (latched until a wait reports them). The Browser's web engine (SceWebKitProcess) creates its IPC pipe and waits
-    // for OPEN | DELETE until the Browser opens it; the wait failed with UNKNOWN_EVENT_ID and its IPC thread ended.
+    // ---- the pipe's event (SCE_KERNEL_EVENT_*), the event core every event-class object has (threadmgr 3.74): a send
+    // that moved bytes sets IN (with the "can receive" bit while bytes wait in the buffer), a receive OUT (the receive
+    // that empties the buffer clears "can receive" first), either one ERROR as well when it ended in an error; a
+    // handle opened or closed by name sets OPEN / CLOSE. The bits stay until a take with the pipe's AUTO_RESET
+    // attribute (0x100) or sceKernelClearEvent removes them; the pattern starts at 0. The Browser's web engine
+    // (SceWebKitProcess) creates its IPC pipe and waits for OPEN | DELETE until the Browser opens it, then waits for
+    // 0x10218 (received data | CLOSE | ERROR | DELETE).
     public const uint EventIn = 0x1, EventOut = 0x2, EventOpen = 0x100, EventClose = 0x200;
-    /// <summary>The message pipe's own "can receive" / "can send" bits: the web engine's IPC loop waits for 0x10218
-    /// (received data | CLOSE | ERROR | DELETE).</summary>
+    /// <summary>The message pipe's own "can receive" bit (cleared only by the pipe, never by an auto-reset take) and
+    /// "can send" bit.</summary>
     public const uint EventReceivable = 0x10000, EventSendable = 0x20000;
-    private uint _latched;
 
-    private uint Pattern => (ReceivableBytes() > 0 ? EventIn | EventReceivable : 0)
-        | (_held < BufferSize ? EventOut | EventSendable : 0)
-        | (_deleted ? EventBits.Delete : 0) | _latched;
+    protected override bool CoreAutoReset => (Attr & EventBits.AttrAutoReset) != 0;
+
+    /// <summary>
+    /// The pipe's event set after a transfer (the end of 0x81013dfc / 0x8101456c): the bits of the send or receive,
+    /// ERROR when it ended in an error other than 0x8002802C / 0x8002802D, user data { the result, the bytes moved
+    /// (all ones when the result is an error) }; then the registered callbacks are notified with those bits. Nothing
+    /// happens when no byte moved and no error is to report. The caller holds the lock.
+    /// </summary>
+    private void RaiseTransferEvent(bool send, int moved, int code)
+    {
+        uint raised = 0;
+        if (!send && ReceivableBytes() == 0)
+        {
+            CoreDrop(EventReceivable);
+        }
+
+        if (moved != 0)
+        {
+            raised = send ? EventIn | (ReceivableBytes() > 0 ? EventReceivable : 0) : EventOut;
+        }
+
+        if (code < 0 && (uint)code != 0x8002802Cu && (uint)code != 0x8002802Du)
+        {
+            raised |= EventBits.Error;
+        }
+
+        if (raised == 0)
+        {
+            return;
+        }
+
+        uint high = (uint)moved | (code < 0 ? 0xFFFFFFFFu : 0u);
+        CoreSet(raised, ((ulong)high << 32) | (uint)code);
+        NotifyRegisteredCallbacks((int)raised);
+    }
 
     /// <summary>A handle to the pipe was opened or closed (<see cref="EventOpen"/>, <see cref="EventClose"/>): the event
     /// class's set (threadmgr 3.74, 0x8101dcf8), which notifies the callbacks registered to the pipe with those bits.</summary>
@@ -3327,58 +3371,18 @@ public sealed partial class MsgPipe : EventObject, ICallbackInterruptedWait
     {
         lock (this)
         {
-            _latched |= ev;
+            CoreSet(ev, CoreUserData);
             WakeWaiters();
             NotifyRegisteredCallbacks((int)ev);
         }
     }
 
-    private int TakeEvent(uint waitPattern, Ptr<uint> result)
-    {
-        uint hit = Pattern & waitPattern;
-        result.TrySet(hit);
-        if (hit == 0)
-        {
-            return SceError.EVENT_COND;
-        }
+    /// <summary>sceKernelSet/PulseEventWithNotifyCallback on the pipe: the user bits go into its event pattern.</summary>
+    protected override void SetForNotify(uint setPattern, ulong userData, bool pulse) => CoreSet(setPattern, userData, pulse);
 
-        _latched &= ~hit;
-        return SceError.OK;
-    }
+    public int PollEvent(uint waitPattern, Ptr<uint> result) => PollCoreEvent(waitPattern, result, default);
 
-    public int PollEvent(uint waitPattern, Ptr<uint> result)
-    {
-        if (waitPattern == 0)
-        {
-            return SceError.INVALID_ARGUMENT;
-        }
-
-        lock (this)
-        {
-            return TakeEvent(waitPattern, result);
-        }
-    }
-
-    public int WaitEvent(uint waitPattern, Ptr<uint> result, Ptr<uint> timeout)
-    {
-        if (waitPattern == 0)
-        {
-            return SceError.INVALID_ARGUMENT;
-        }
-
-        lock (this)
-        {
-            int gen = _cancelled;
-            int r = Wait.Until(this, (p: this, waitPattern, gen), static t => (t.p.Pattern & t.waitPattern) != 0, timeout,
-                static t => t.p._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
-            if (r != SceError.OK)
-            {
-                result.TrySet(r == SceError.WAIT_TIMEOUT ? 0 : EventBits.Error);
-                return r;
-            }
-            return TakeEvent(waitPattern, result);
-        }
-    }
+    public int WaitEvent(uint waitPattern, Ptr<uint> result, Ptr<uint> timeout) => WaitCoreEvent(GuestThread.Current, waitPattern, result, default, timeout);
 }
 
 /// <summary>

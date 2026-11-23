@@ -369,7 +369,7 @@ public sealed unsafe partial class VulkanRenderer
         PredictedScene predictedScene = j.Scene;
         bool ms = predictedScene.Samples != SampleCountFlags.Count1Bit;
         ulong fsKey = j.Fk;
-        if (fsM.Gen.UsesFragColor && ms && s_msaaInputFetch && fsM.Gen.RawColorBits == 0)
+        if (fsM.Gen.UsesFragColor && ms && _msaaInputFetch && fsM.Gen.RawColorBits == 0)
         {
             fsM = ModuleFor(j.Fs, j.FetchKey, j.FetchHints);
             fsKey = j.FetchKey;
@@ -381,8 +381,12 @@ public sealed unsafe partial class VulkanRenderer
         Format attach = predictedScene.Attach;
         if (fsM.Gen.RawColorBits != 0 && predictedScene.HasColor)
         {
-            // integer views: as the draw does (Draw: RawAttachmentFormat); draw-predicted ones stay with the GPU thread
-            attach = j.ProgramLoad ? RawAttachmentFormat(predictedScene.RtFormat, fsM.Gen.RawColorBits) : Format.Undefined;
+            // integer views: as the draw does (Draw: RawAttachmentFormat, from the surface format the prediction shares
+            // with GetRenderTarget), for program load and the draw prefetch alike; the draw prefetch, which sees the
+            // draw's exact textures, used to leave them to the GPU thread (a cold replay of a dump with raw G-buffer
+            // outputs on an F32F32 surface: 37 built there without program load, 1 with it, its textures of another
+            // class than the program-load prediction)
+            attach = RawAttachmentFormat(predictedScene.RtFormat, fsM.Gen.RawColorBits);
             if (attach == Format.Undefined || !_core.SupportsUnblendedColorAttachment(attach)
                 || ms && (_core.ImageSampleCounts(attach, ImageUsageFlags.ColorAttachmentBit) & predictedScene.Samples) == 0)
             {
@@ -406,10 +410,7 @@ public sealed unsafe partial class VulkanRenderer
         var key = new PipelineKey(vs.Module.Handle, fs.Module.Handle, vs.LayoutHash, attach, predictedScene.HasColor,
             blendOn, j.Blend?.ColorFunc ?? 0, j.Blend?.AlphaFunc ?? 0, j.Blend?.ColorSrc ?? 1, j.Blend?.ColorDst ?? 0, j.Blend?.AlphaSrc ?? 1, j.Blend?.AlphaDst ?? 0,
             mask, TopologyClass(topology), Formats.Polygon(j.PolygonMode), predictedScene.Samples, j.Static);
-        if (j.ProgramLoad)
-        {
-            DbgProgramLoadPipeline(j.Fs.Hash, fsKey, key);
-        }
+        DbgPredictedPipeline(j.Fs.Hash, fsKey, key, j.ProgramLoad);
 
         // (recorded in pipelines.list when the GPU thread first uses it, not here: a misprediction is never recorded)
         if (_pipelineLibrary && key.Static == 0)
@@ -595,11 +596,35 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
+    /// <summary>Pipeline jobs a worker ran while shader jobs queued after them were still waiting.</summary>
+    private int _statPipelinesAheadOfShaders;
+
+    /// <summary>Tests: when set, the workers wait for it before taking each job (null otherwise).</summary>
+    private ManualResetEventSlim? TestWorkerGate { get; set; }
+
     private void WorkerLoop()
     {
         while (true)
         {
-            // shader jobs first: pipeline jobs need their modules
+            TestWorkerGate?.Wait();
+            // shader jobs first: pipeline jobs need their modules; but a pipeline whose shaders are no longer pending goes
+            // ahead of the shader jobs queued after it, so the work finishes in the order it was submitted, as the GPU
+            // thread needs it (a cold replay of a dump: a first frame with 127 new shaders and 40 pipelines left every
+            // pipeline queued behind all the shaders, and the GPU thread built the 8-13 it reached first itself)
+            if (PipelineJobReadyFirst())
+            {
+                bool shadersQueued = !_shaderJobs.IsEmpty;
+                if (TryRunPipelineJob())
+                {
+                    if (shadersQueued)
+                    {
+                        Interlocked.Increment(ref _statPipelinesAheadOfShaders);
+                    }
+
+                    continue;
+                }
+            }
+
             if (_shaderJobs.TryDequeue(out ShaderJob? shaderJob))
             {
                 if (_stopShaderJobs || _deviceLost)
@@ -613,22 +638,8 @@ public sealed unsafe partial class VulkanRenderer
 
                 continue;
             }
-            if (_pipelineJobs.TryDequeue(out PipelineJob? pipelineJob))
+            if (TryRunPipelineJob())
             {
-                Interlocked.Increment(ref _pipelineJobsRunning);
-                if (!_stopShaderJobs && !_deviceLost)
-                {
-                    try
-                    {
-                        RunPipelineJob(pipelineJob);
-                    }
-                    catch (Exception e)
-                    {
-                        Log.WarnOnce("pipeline-prefetch", $"[shader worker] pipeline prefetch failed: {e.Message}");
-                    }
-                }
-
-                Interlocked.Decrement(ref _pipelineJobsRunning);
                 continue;
             }
             // the boot rebuild comes last: whatever the running game asks for goes first
@@ -663,6 +674,43 @@ public sealed unsafe partial class VulkanRenderer
 
             _workAvailable.Wait(50);
         }
+    }
+
+    /// <summary>Worker: the oldest pipeline job can run now (no shader job of its vertex or fragment module is queued or
+    /// running), so it goes ahead of the shader jobs queued after it.</summary>
+    private bool PipelineJobReadyFirst()
+    {
+        if (!_pipelineJobs.TryPeek(out PipelineJob? head))
+        {
+            return false;
+        }
+
+        return !_inflight.ContainsKey((head.Vp.Info.Program.Hash, head.Vk)) && !_inflight.ContainsKey((head.Fs.Hash, head.Fk));
+    }
+
+    /// <summary>Worker: runs the oldest pipeline job (false when there is none).</summary>
+    private bool TryRunPipelineJob()
+    {
+        if (!_pipelineJobs.TryDequeue(out PipelineJob? pipelineJob))
+        {
+            return false;
+        }
+
+        Interlocked.Increment(ref _pipelineJobsRunning);
+        if (!_stopShaderJobs && !_deviceLost)
+        {
+            try
+            {
+                RunPipelineJob(pipelineJob);
+            }
+            catch (Exception e)
+            {
+                Log.WarnOnce("pipeline-prefetch", $"[shader worker] pipeline prefetch failed: {e.Message}");
+            }
+        }
+
+        Interlocked.Decrement(ref _pipelineJobsRunning);
+        return true;
     }
 
     private readonly SemaphoreSlim _workAvailable = new(0);

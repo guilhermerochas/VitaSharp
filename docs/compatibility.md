@@ -1,4 +1,4 @@
-<!-- pair: compatibility.pt-BR.md sha256=825fb8565573ad93c40190d4f5da76d2c71a4140bc56e378c68e0decc69b603c -->
+<!-- pair: compatibility.pt-BR.md sha256=80b457ef2610a02ce4181fab321fdb7ad7bd3f276188376bad8c472d5972b95c -->
 # Compatibility
 
 **English** | [Português](compatibility.pt-BR.md)
@@ -55,12 +55,12 @@ point a scenario reaches is not the end of the game.
 | Blast 'Em Bunnies | PCSE00328 | Playable | First level and tutorial | `bunnies_boot` |
 | Call of Duty: Black Ops Declassified | PCSB00232 | Menus | Logos and title screen | `cod_boot` |
 | Crazy Market | PCSE00291 | Menus | Logos and the terms of service (16 fps on that screen, to confirm) | `crazymarket` |
-| Croixleur Sigma | PCSG00537 | Playable | Help pages, opening, title menu, character select with the 3D model, story dialogue over the 3D scene at ~30 fps (Japanese release: Circle confirms; Vita3K crashes generating its shaders) | `croixleur_boot` |
+| Croixleur Sigma | PCSG00537 | Playable | Help pages, opening, title menu, character select with the 3D model, story dialogue over the 3D scene at ~30 fps (Japanese release: Circle confirms) | `croixleur_boot` |
 | Devious Dungeon | PCSB01240 | Playable | 60 fps; also starts from the real shell's LiveArea | `dd_boot` |
 | F1 2011 | PCSE00002 | Playable | Races with HUD, menus and video (from an existing profile: with fresh data the scenario stops at the driver name keyboard) | `f1_drive` |
-| FIFA 13 | PCSE00093 | Playable | Title screen, menus and Arena training with the players skinned correctly (Vita3K does not boot it); the players' reflection cubes read with the right face spacing since 04/11/2026 (cyan/green blocks on the kits, to confirm in game) | `fifa13` |
+| FIFA 13 | PCSE00093 | Playable | Title screen, menus and Arena training with the players skinned correctly; the players' reflection cubes read with the right face spacing since 04/11/2026 (cyan/green blocks on the kits, to confirm in game) | `fifa13` |
 | Final Fantasy X HD Remaster | PCSE00293 | Menus | Launcher menu, then the game's opening scene with credits | `ffx_boot` |
-| Gal Gunvolt | PCSG00704 | Playable | Title, file select and the first stage at 60 fps; the playfield background shows since 04/11/2026 (RGBA surfaces sampled in memory order) (Vita3K hangs at start) | — |
+| Gal Gunvolt | PCSG00704 | Playable | Title, file select and the first stage at 60 fps; the playfield background shows since 04/11/2026 (RGBA surfaces sampled in memory order) | — |
 | God of War Collection | PCSA00126 | Playable | Combat, cutscenes and audio in God of War I and II; on Mali phones since 31/10/2026 (misaligned vertex attributes) | `gow_game` |
 | Gravity Rush | PCSF00024 | Playable | Opening and first gameplay; a tap on the "Tap the Apple" title does not always advance | `gr_boot` |
 | Invizimals: The Resistance | PCSA00552 | Menus | Title and main menu; uses the webcam and motion sensors | `inv_boot` |
@@ -87,7 +87,7 @@ point a scenario reaches is not the end of the game.
 | Unit 13 | PCSF00034 | Playable | First mission with HUD | `unit13_boot` |
 | Uncharted: Golden Abyss | PCSA00029 | Playable | First level | `uc_walk` |
 | WRC 4 FIA World Rally Championship | PCSE00411 | Playable | Fresh profile to a stage start and driving | `wrc4_boot` |
-| Zero Escape: Zero Time Dilemma | PCSE00781 | Playable | Logos, title menu at 60 fps, New Game, opening and the first ~2.5 minutes of story cutscenes at 30 fps (does not boot on Vita3K) | `ztd_boot` |
+| Zero Escape: Zero Time Dilemma | PCSE00781 | Playable | Logos, title menu at 60 fps, New Game, opening and the first ~2.5 minutes of story cutscenes at 30 fps | `ztd_boot` |
 
 Missing system functions are tracked one by one in [`docs/hle`](hle/README.md), with priorities based on what
 the tested games actually import. Known bugs and future work are in the [roadmap](roadmap.md).
