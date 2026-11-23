@@ -54,6 +54,9 @@ public sealed class SessionCaptureOptions
     /// (0 = no limit).</summary>
     public long MaxBytes = 1L << 30;
     public const double DefaultMaxSeconds = 60;
+    /// <summary>What the capture's texts must not carry (paths, user, computer and account names): null = this
+    /// computer's (<see cref="CapturePrivacy.ForThisComputer"/>, the data folder above <see cref="Root"/>).</summary>
+    public CapturePrivacy? Privacy;
     /// <summary>Hotkey name in the messages ("F8"; Android: the pause menu).</summary>
     public string StopHint = Localization.Loc.Get("CaptureStopHint");
 }
@@ -71,6 +74,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 {
     private readonly Emulator _emu;
     private readonly SessionCaptureOptions _options;
+    private readonly CapturePrivacy _privacy;
     private readonly object _lock = new();
     private InputRecorder? _input;
     private BlockingCollection<Work>? _queue;
@@ -161,6 +165,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     {
         _emu = emu;
         _options = options;
+        _privacy = options.Privacy ?? CapturePrivacy.ForThisComputer(Path.GetDirectoryName(Path.GetFullPath(options.Root)), emu.Options.Psn);
         // the last button and touch changes are always kept (a compare per poll): the report says what the player did
         // just before pressing F8 even without the pre-roll
         lock (_lock)
@@ -826,6 +831,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         }
 
         DebugMode.CollectHleErrors = true;
+        HleCallTrace.Begin();
         CaptureHooks.Random ??= this;
         WriteText(dir, "threads_start.txt", _options.Threads);
         WriteText(dir, "context.txt", () => SafeDescribe("start of the recording"));
@@ -867,7 +873,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             r.Dump = GpuDumpRecorder.Start(new GpuDumpOptions
             {
                 Path = Path.Combine(dir, "gpu" + GpuDumpFormat.Extension),
-                Header = _options.DumpHeader?.Invoke() ?? new GpuDumpHeader(),
+                Header = RedactHeader(_options.DumpHeader?.Invoke() ?? new GpuDumpHeader()),
                 MaxFrames = _options.DumpMaxFrames,
                 Finished = res =>
                 {
@@ -961,6 +967,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             }
         });
         DebugMode.CollectHleErrors = false;
+        HleCallTrace.End();
         if (ReferenceEquals(CaptureHooks.Random, this))
         {
             CaptureHooks.Random = null;
@@ -1038,7 +1045,9 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             }
         });
         Step(r, "timeline.tsv", () => WriteTimeline(r));
-        Step(r, "hle_errors.txt", () => File.WriteAllLines(Path.Combine(dir, "hle_errors.txt"), DebugMode.HleSummary().DefaultIfEmpty("(no HLE error returns or unimplemented calls recorded)")));
+        List<string> callSummary = [];
+        Step(r, HleCallTrace.FileName, () => callSummary = HleCallTrace.Write(Path.Combine(dir, HleCallTrace.FileName)));
+        Step(r, "hle_errors.txt", () => File.WriteAllLines(Path.Combine(dir, "hle_errors.txt"), DebugMode.HleSummary().DefaultIfEmpty("(no HLE error returns or unimplemented calls recorded)").Concat(callSummary)));
         if (wavs.Count > 0)
         {
             Step(r, "audio/files.txt", () => File.WriteAllLines(Path.Combine(dir, "audio", "files.txt"), wavs.Select(x => FormattableString.Invariant($"{Path.GetFileName(x.File)}	{x.StartMs:F1}")).Prepend("# file	startMs (after the recording start)")));
@@ -1081,6 +1090,8 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         double analysisS = analysisClock.Elapsed.TotalSeconds;
         // last before the zip, so it lists every step that failed
         Step(r, "session.txt", () => WriteSession(r, cpuMs));
+        // nothing of the person who recorded it leaves with the capture (paths, user, computer and account names)
+        Step(r, "privacy", () => _privacy.RedactFolder(dir));
         string? zip = null;
         if (_options.Zip)
         {
@@ -1142,9 +1153,14 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         sb.AppendLine("VitaSharp session capture (Gravar tudo)");
         sb.AppendLine($"title-id: {_emu.TitleId}");
         sb.AppendLine($"title: {_emu.Title}");
-        sb.AppendLine($"app-path: {_emu.AppPath}");
+        sb.AppendLine($"app-path: {_privacy.Redact(_emu.AppPath)}");
         sb.AppendLine($"platform: {_options.Platform}");
-        sb.AppendLine($"options: {string.Join('\t', _options.RunOptions)}");
+        sb.AppendLine($"options: {string.Join('\t', _privacy.RedactOptions(_options.RunOptions))}");
+        foreach (string line in CaptureIdentity.Describe(_emu))
+        {
+            sb.AppendLine(_privacy.Redact(line));
+        }
+
         sb.AppendLine(FormattableString.Invariant($"start: {r.StartTime:yyyy-MM-dd HH:mm:ss.fff}, guest frame {r.StartFlip}, guest time {r.StartUs / 1e6:F3} s"));
         sb.AppendLine(FormattableString.Invariant($"stop: {r.StopTime:yyyy-MM-dd HH:mm:ss.fff}, guest frame {r.StopFlip}, guest time {r.StopUs / 1e6:F3} s"));
         sb.AppendLine(FormattableString.Invariant($"recorded: {secs:F1} s, {r.StopFlip - r.StartFlip} guest frames ({(r.StopFlip - r.StartFlip) / Math.Max(secs, 0.001):F1} fps)"));
@@ -1200,12 +1216,25 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         sb.AppendLine($"  gpu{GpuDumpFormat.Extension}              GPU dump from the start (replay-gpu)");
         sb.AppendLine("  audio/, audio_mix.wav guest audio ports and NGS voices as WAVs (files.txt: start times), and their mix");
         sb.AppendLine("  threads_*.txt         guest threads at the start and stop; hle_errors.txt; log.txt");
+        sb.AppendLine($"  {HleCallTrace.FileName}         every HLE call of the recording: thread, function, r0-r3, result, return address");
         sb.AppendLine("  context.txt           where the player is (screen, application in front, processes) and the audio ports with");
         sb.AppendLine("                        their owners, at the start and the stop; frames.png: a contact sheet of the recording");
         sb.AppendLine("  input_before.tsv      the last button and touch changes before the recording started");
         sb.AppendLine("Re-run (desktop): VitaSharp.Desktop rerun <this folder> [--from=preroll|start] [--window]");
         sb.AppendLine("Analyze again: vitasharp-perf capture <this folder>");
         File.WriteAllText(Path.Combine(r.Dir, "session.txt"), sb.ToString());
+    }
+
+    /// <summary>The GPU dump's header without the personal items (its app path, the command line).</summary>
+    private GpuDumpHeader RedactHeader(GpuDumpHeader header)
+    {
+        for (int i = 0; i < header.Entries.Count; i++)
+        {
+            KeyValuePair<string, string> entry = header.Entries[i];
+            header.Entries[i] = new(entry.Key, _privacy.Redact(entry.Value));
+        }
+
+        return header;
     }
 
     private static double Median(List<double> v)

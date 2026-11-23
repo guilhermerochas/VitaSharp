@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=138dd516188219bbcde64839eef710777311d2054cecab1ff05328595659f85a -->
+<!-- pair: README.md sha256=ac70da15681edeb82157f91e76af3be5f7d991072c9d5a94595e6eec892efdff -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -325,7 +325,9 @@ os controles, todas as imagens com seus tempos, o dump da GPU, o áudio (mix e c
 problema sem jogar de novo. No Android: menu de pausa > **Gravar tudo**. Para defeitos rápidos, ligue a
 **Pré-gravação** (Configurações > Geral, ou o modo de depuração com F9): o arquivo inclui os segundos antes da tecla.
 
-Envie o `.zip` com o nome do jogo (title ID) e o que aconteceu. Toda sessão também grava `logs/last.log`. Detalhes
+Envie o `.zip` com o nome do jogo (title ID) e o que aconteceu. Toda sessão também grava `logs/last.log`. A
+gravação não leva nada pessoal (caminhos, nomes de usuário, computador e conta viram marcadores) e pode ser analisada
+e reexecutada sem o jogo e sem os plugins: veja [`docs/captures.pt-BR.md`](docs/captures.pt-BR.md). Detalhes
 em [`docs/notes/session-capture.md`](docs/notes/session-capture.md); quem analisa usa `vitasharp-perf capture <zip>` e
 `VitaSharp.Desktop rerun <pasta>`.
 

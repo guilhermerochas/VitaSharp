@@ -13,6 +13,12 @@ public sealed class LoadedModule
     public uint TlsInit, TlsInitSize, TlsAreaSize;
     public uint ExidxTop, ExidxEnd, ExtabTop, ExtabEnd;
     public uint ModuleInfoAddr;
+    /// <summary>The segment module_info is in (the two top bits of e_entry).</summary>
+    public int ModuleInfoSegment;
+    /// <summary>A kernel module's syscall libraries are linked to user modules (<see cref="ModuleLoader.Load"/>).</summary>
+    public bool SyscallsForUsers = true;
+    /// <summary>Each imported function's stub: library NID, function NID, stub address.</summary>
+    public List<(uint LibNid, uint Nid, uint Stub)> ImportStubs = new();
     /// <summary>Guest address ranges of the export and import tables (taiGetModuleInfo).</summary>
     public uint ExportsStart, ExportsEnd, ImportsStart, ImportsEnd;
     public ushort Attributes, Version;
@@ -929,9 +935,44 @@ public static class ModuleLoader
 
         // module_info
         int infoSeg = (int)(entry >> 30);
+        m.ModuleInfoSegment = infoSeg;
+        ReadTables(m, infoSeg, m.Segments[infoSeg].Address + (entry & 0x3FFFFFFF), linker, kernel, syscallsForUsers);
+        return m;
+    }
+
+    /// <summary>
+    /// A module that is already in guest memory, loaded and relocated (a save state's memory: the module's segments
+    /// hold its code and tables as the loader left them): its module info, exports and imports are read from there and
+    /// registered with <paramref name="linker"/> as <see cref="Load"/> does, without the module's file. The import stubs
+    /// are bound again (the stubs of the state's memory are overwritten by its load afterwards). A re-run of a capture
+    /// boots the program this way on a computer that does not have the game (docs/notes/session-capture.md).
+    /// </summary>
+    public static LoadedModule FromMemory(string path, IReadOnlyDictionary<int, SegmentInfo> segments,
+        IReadOnlyDictionary<int, (uint Flags, uint MemSz, uint FileSz)> segmentFlags, int infoSegment, uint moduleInfoAddress,
+        Linker linker, bool kernel, bool syscallsForUsers)
+    {
+        var m = new LoadedModule { Path = path, IsKernel = kernel, ModuleInfoSegment = infoSegment };
+        foreach (KeyValuePair<int, SegmentInfo> segment in segments)
+        {
+            m.Segments[segment.Key] = segment.Value;
+        }
+
+        foreach (KeyValuePair<int, (uint Flags, uint MemSz, uint FileSz)> flags in segmentFlags)
+        {
+            m.SegmentFlags[flags.Key] = flags.Value;
+        }
+
+        ReadTables(m, infoSegment, moduleInfoAddress, linker, kernel, syscallsForUsers);
+        return m;
+    }
+
+    /// <summary>Reads module_info at <paramref name="mi"/> and the export and import tables it points at, registering
+    /// them with <paramref name="linker"/>.</summary>
+    private static void ReadTables(LoadedModule m, int infoSeg, uint mi, Linker linker, bool kernel, bool syscallsForUsers)
+    {
         uint infoBase = m.Segments[infoSeg].Address;
-        uint mi = infoBase + (entry & 0x3FFFFFFF);
         m.ModuleInfoAddr = mi;
+        m.SyscallsForUsers = syscallsForUsers;
         Span<byte> info = GuestMemory.Span(mi, 0x5C);
         m.Attributes = U16LE(info, 0);
         m.Version = U16LE(info, 2);
@@ -1054,6 +1095,7 @@ public static class ModuleLoader
             for (int i = 0; i < nfunc; i++)
             {
                 linker.BindFunctionImport(fn[i], libNid, lib, fe[i], m.Segments, kernel);
+                m.ImportStubs.Add((libNid, fn[i], fe[i]));
             }
 
             if (nvar > 0)
@@ -1073,6 +1115,5 @@ public static class ModuleLoader
 
             p += size;
         }
-        return m;
     }
 }

@@ -8,6 +8,17 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
 
 ## Diagnóstico
 
+- [ ] [P2][M] **Gravar tudo sem o jogo, o que falta** (o resto em "Corrigido, falta o usuário testar", feat/capself1):
+  - Entradas do áudio: gravar os fluxos que entram nos decodificadores (sceAudiodec, ATRAC/AT9, MP3/AAC) e nos
+    buffers das vozes NGS durante a gravação, para o rerun sem o jogo reproduzir buracos e erros de decodificação
+    (hoje só a saída em WAV).
+  - Arquivos que o jogo lê do app0 durante a gravação: o rerun sem o jogo recebe "não encontrado" e diverge dali;
+    gravar ao menos caminho, posição, tamanho e hash de cada leitura para o compare apontar a divergência pela leitura.
+  - Estados de vários processos (o shell com aplicativos abertos) ainda não sobem sem os programas
+    (`SaveStates.BootFromState` recusa); e a gravação do shell pode sair sem `state_start.vss` quando uma thread do
+    shell está em código do guest ("not at a safe point": tentar de novo até um ponto seguro).
+  - Módulos de firmware carregados pela primeira vez durante a gravação vêm do firmware de quem analisa.
+
 - [ ] [P3][G] **O log e a captura F8 dizem a causa de uma trava de cara:**
   - **Histórico de cada objeto de sincronização** (event flag, semáforo, mutex, cond, msgpipe): um anel barato com as
     últimas operações (Set/Clear/Wait/Signal, thread, padrão de bits, ciclo de guest e tempo de host), despejado no
@@ -3169,6 +3180,23 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo analisável e reexecutável sem o jogo (feat/capself1,
+  `docs/captures.md`): (1) nenhum arquivo da gravação leva dado pessoal: uma última etapa troca, em todo texto e no
+  cabeçalho do `gpu.vsgd`, a pasta de dados por `<data>`, a pasta e o nome do usuário por `<user>`, o computador por
+  `<pc>`, o online id e as opções de conta por `<psn-id>`, MAC por `<mac>` e e-mail por `<email>`
+  (`CapturePrivacy`); (2) o `session.txt` identifica título e versão sem o jogo (`app-guest-path`, `app-version`
+  do update e da base, categoria, content id, firmware, plugins de kernel, variáveis `VITASHARP_*`, todo módulo
+  carregado com hash); (3) todo save state leva a seção `boot` (módulos como o carregador os pôs: caminho no guest,
+  segmentos, module_info; nenhum arquivo) e `rerun` sobe o programa só do `state_start.vss`/`state_preroll.vss`
+  (`SaveStates.BootFromState`: jogo, módulos do firmware e plugins reconstruídos da memória do estado), nunca abre um
+  caminho gravado na captura (`--boot=title` usa o jogo instalado); (4) `hle_calls.tsv`: toda chamada HLE da gravação
+  (thread, função, r0-r3, resultado, lr), e o `compare.txt` do rerun diz a primeira chamada diferente. Testes:
+  `SessionCapturePrivacyTests`, `SaveStateBootFromStateTests`, `SessionCaptureRerunTests` (SyntheticTitle gravado,
+  reexecutado numa pasta de dados sem o título: 100% dos quadros iguais e as mesmas chamadas HLE). Testar: gravar com
+  F8 num jogo com plugins de kernel ligados, abrir o `.zip` e procurar o nome do usuário/computador (não deve
+  aparecer); copiar a pasta da gravação para outro lugar e rodar `VitaSharp.Desktop --data=<pasta vazia> rerun
+  <pasta>`: o jogo volta a rodar do estado sem estar instalado nessa pasta de dados.
 
 - [ ] (22/11/2026, falta testar) [P1][M] Adrenaline, carga do módulo de kernel (adr1 565d5f71): o framework de plugins
   oferece as chamadas de módulo para programas (taiLoadStartKernelModuleForUser e afins) e o homebrew unsafe tem a

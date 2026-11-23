@@ -136,8 +136,9 @@ sealed class SessionCaptureControl : IDisposable
     // ------------------------------------------------------------------ re-run
 
     /// <summary>
-    /// <c>rerun DIR [--from=preroll|start] [--window] [--seconds=N] [options]</c>: boots the capture's game with the
-    /// capture's options, loads its state (the pre-roll's by default), plays the recorded input back by guest clock and
+    /// <c>rerun DIR [--from=preroll|start] [--window] [--boot=title] [--seconds=N] [options]</c>: brings up the capture's
+    /// program from its state alone (no file of the game or the plugins; --boot=title: boots the installed game and
+    /// loads the state into it) with the capture's options, loads its state (the pre-roll's by default), plays the recorded input back by guest clock and
     /// records the re-run as a capture of its own (no state, no GPU dump unless --rerun-gpu-dump) into
     /// DIR/reruns/, then analyzes it. Headless unless --window.
     /// </summary>
@@ -158,26 +159,36 @@ sealed class SessionCaptureControl : IDisposable
             return 1;
         }
         string titleId = session.GetValueOrDefault("title-id", "");
+        // the program comes from the state itself (its memory holds the game's modules and the plugins), so the re-run
+        // needs neither the game nor the plugins of the computer that recorded it, and gives the same result whether
+        // they are installed here or not; --boot=title boots the installed game instead and loads the state into it.
+        // A path recorded in the capture is never opened: the title is looked up in this data folder.
+        bool fromState = !extra.Contains("--boot=title") && SaveStates.CanBootFromState(state);
         string app;
-        try
+        if (fromState)
         {
-            app = Program.ResolveApp(titleId);
+            string guest = session.GetValueOrDefault("app-guest-path", "") is { Length: > 0 } g && g.Contains(':') ? g : $"ux0:app/{titleId}";
+            app = Path.GetFullPath(Core.Io.FirmwareLayout.GuestToHost(Program.FsRoot, guest));
         }
-        catch (DirectoryNotFoundException)
+        else
         {
-            app = session.GetValueOrDefault("app-path", "");
+            try
+            {
+                app = Program.ResolveApp(titleId);
+            }
+            catch (DirectoryNotFoundException)
+            {
+                Console.Error.WriteLine($"game {titleId} is not installed in {Program.DataRoot} and the capture's state cannot boot without it (saved by an earlier build)");
+                return 1;
+            }
         }
-        if (!Directory.Exists(app))
-        {
-            Console.Error.WriteLine($"game {titleId} not installed (and {app} not found)");
-            return 1;
-        }
-        string[] drop = ["--capture", "--load-state", "--save-state", "--gpu-dump-at", "--diag-at", "--input=", "--nav", "--seconds", "--frames", "--fullscreen", "--headless", "--start-paused", "--debug-mode-at"];
+
+        string[] drop = ["--capture", "--load-state", "--boot-state", "--boot=", "--save-state", "--gpu-dump-at", "--diag-at", "--input=", "--nav", "--seconds", "--frames", "--fullscreen", "--headless", "--start-paused", "--debug-mode-at"];
         var original = session.GetValueOrDefault("options", "").Split('\t', StringSplitOptions.RemoveEmptyEntries).Where(o => !drop.Any(o.StartsWith));
         bool window = extra.Contains("--window");
         var opts = original
-            .Concat(extra.Where(e => e != "--window" && !e.StartsWith("--from=")))
-            .Append($"--load-state={state}")
+            .Concat(extra.Where(e => e != "--window" && !e.StartsWith("--from=") && !e.StartsWith("--boot=")))
+            .Append(fromState ? $"--boot-state={state}" : $"--load-state={state}")
             .Append($"--capture-playback={dir}@{from}")
             .ToList();
         if (!window)

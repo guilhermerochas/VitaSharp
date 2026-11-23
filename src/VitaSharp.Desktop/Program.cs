@@ -1002,7 +1002,7 @@ public static class Program
         ReplayGpu.PrintUsage();
         Console.WriteLine("  run options: --gpu-dump-at=F1:F2[:file]  record frames F1..F2 as a GPU dump (Ctrl+F8 in the window starts/stops one)");
         Console.WriteLine("  run options: --capture-preroll[=S] --capture-at=A:B  Gravar tudo (F8): keep the last S s / record guest frames A..B");
-        Console.WriteLine("  rerun <capture folder> [--from=preroll|start] [--window] [--rerun-gpu-dump]  replay a Gravar tudo capture's input from its save state");
+        Console.WriteLine("  rerun <capture folder> [--from=preroll|start] [--window] [--rerun-gpu-dump] [--boot=title]  replay a Gravar tudo capture's input from its save state (the game and plugins are not needed)");
         Console.WriteLine("  run options: --nav=<file> [--nav-live] [--nav-out=<dir>]  screen-driven input script (NavScript: tap/press/stable/shot/quit)");
         Console.WriteLine("  hle-implemented [--vitasdk=<tsv>]   list every NID the HLE implements (docs/hle/data/vitasharp-implemented.tsv)");
         Console.WriteLine("  hle-abi-check --headers=<dir> [--fewer]  HLE bindings whose argument registers differ from the vita-headers prototypes");
