@@ -103,7 +103,7 @@ public sealed partial class GameActivity
 
     /// <summary>The start failed: the screen keeps the game's picture and shows the reason with the log's place (the
     /// error dialog over it says the same and goes back to the screens), as the desktop's loading window does.</summary>
-    void FailLoadingScreen(string message) => _loadingScreen?.Fail(message, System.IO.Path.Combine(AppServices.Data.Logs, "last.log"));
+    void FailLoadingScreen(string message) => _loadingScreen?.Fail(message, VitaSharp.Core.Util.Log.FilePath ?? System.IO.Path.Combine(AppServices.Data.Logs, "last.log"));
 
     // the events come on the thread that runs the step: the screen changes on the UI thread
     void OnBootStepReported(BootStep step) => RunOnUiThread(() => _loadingScreen?.OnStep(step));

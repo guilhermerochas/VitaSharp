@@ -206,4 +206,25 @@ public sealed class AndroidDeliveryParityTests : IDisposable
         string session = AndroidSource("Platforms", "Android", "Game", "EmulationSession.cs");
         Assert.Contains("EnvVars.NetAllow", session, StringComparison.Ordinal);
     }
+
+    /// <summary>A title that cannot be started says the same on Android as on the desktop (the [P1] "Falha ao abrir um
+    /// jogo fecha o app sem aviso"): the reason in plain words and the place of the session's log, not a bare exception
+    /// text; the system's refusals (no license, a key that does not open the files) keep their own words.</summary>
+    [Fact]
+    public void AFailedStartOnAndroidGivesTheDesktopReasonWithTheLogOfTheSession()
+    {
+        using var language = new LanguageScope(VitaSharp.Core.Localization.Loc.Portuguese);
+        string reason = TitleLaunchFailure.Message("ABCD00001", new InvalidDataException("Not a SELF/ELF file"), "logs/last.log");
+        Assert.Equal("Não foi possível iniciar ABCD00001: Not a SELF/ELF file. Os detalhes estão no log (logs/last.log).", reason);
+
+        string session = AndroidSource("Platforms", "Android", "Game", "EmulationSession.cs");
+        Assert.Contains("TitleLaunchFailure.Message(_game.TitleId, e, Log.FilePath)", session, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"MStartFailed\"", session, StringComparison.Ordinal);
+        // the loading screen points at the file the session really writes (a stamped one when last.log is locked)
+        string loading = AndroidSource("Platforms", "Android", "Game", "GameActivity.LoadingScreen.cs");
+        Assert.Contains("Log.FilePath ??", loading, StringComparison.Ordinal);
+        // the dialog over it names the log once, not again after a reason that already says where it is
+        string activity = AndroidSource("Platforms", "Android", "Game", "GameActivity.cs");
+        Assert.Contains("message.Contains(log, StringComparison.Ordinal)", activity, StringComparison.Ordinal);
+    }
 }

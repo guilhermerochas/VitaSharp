@@ -620,9 +620,13 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     void ShowFatal(string message)
     {
         _session?.Pause();
+        // the file this session writes (a stamped one when last.log was locked); a reason that already names it
+        // (TitleLaunchFailure) does not get it twice
+        string log = VitaSharp.Core.Util.Log.FilePath ?? System.IO.Path.Combine(AppServices.Data.Logs, "last.log");
+        string text = message.Contains(log, StringComparison.Ordinal) ? message : message + Loc.Get("MFullLogAt") + log;
         new AlertDialog.Builder(this)
             .SetTitle("VitaSharp")!
-            .SetMessage(message + Loc.Get("MFullLogAt") + System.IO.Path.Combine(AppServices.Data.Logs, "last.log"))!
+            .SetMessage(text)!
             .SetPositiveButton(Loc.Get("MQuit"), (_, _) => Leave())!
             .SetCancelable(false)!
             .Show();

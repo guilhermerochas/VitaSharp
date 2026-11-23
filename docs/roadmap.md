@@ -3181,6 +3181,18 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (23/11/2026, falta testar) [P1][M] Falha ao abrir um jogo fecha o app sem aviso: uma exceção no carregamento do
+  título terminava o processo só com o log. Feito: no PC, a falha do `LoadTitle` vira erro no log e no stderr com o
+  motivo e o caminho do log (`TitleLaunchFailure`, código de saída 4) e a janela de carregamento fica com o motivo, o
+  log e "Fechar" (feat/psmu1, feat/loadui2); no Android (fix/quick3) a falha ao iniciar dá o mesmo texto do PC
+  (`TitleLaunchFailure.Message`: motivo e caminho do log da sessão, em vez de "Não foi possível iniciar o jogo:
+  <exceção>"), e a tela de carregamento e o aviso por cima dela apontam para o arquivo que a sessão grava de fato
+  (o datado quando o last.log está preso), sem repetir o caminho. As recusas do sistema (sem licença, chave que não
+  abre) mantêm o texto próprio. Testes: `RunnerProcessTests`, `LauncherLoadingWindowTests`, `LoadingScreenTests`,
+  `AndroidDeliveryParityTests.AFailedStartOnAndroidGivesTheDesktopReasonWithTheLogOfTheSession`. Testar: no PC e no
+  Android, abrir um título que não carrega (ex.: o PSM em Unity NPOA00239): a tela de carregamento fica com o motivo
+  e o caminho do log (uma vez só no aviso), o app não fecha, e o botão do aviso volta para a biblioteca.
+
 - [ ] (23/11/2026, falta testar) [P1][P] NpDrm: ksceNpDrmGetRifVitaKey e ksceNpDrmGetRifPspKey não dão mais o campo
   +0x50 da licença como chave (fix/rifkey1): a chave é do processador seguro (SceSblAuthMgr no SceNpDrm 3.74), então
   uma licença que passa nas verificações recebe 0x80020004 com o buffer da chave zerado; os metadados (SKU, tempos,

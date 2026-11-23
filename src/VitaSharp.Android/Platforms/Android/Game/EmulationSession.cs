@@ -356,14 +356,12 @@ public sealed partial class EmulationSession : IDisposable
         catch (Exception e)
         {
             Log.Error($"Could not start {_game.TitleId}: {e}");
+            // the desktop's words for the same failure: the system's refusals (no license, a key that does not open
+            // the files) keep their text, anything else is the reason with the place of this session's log
             Failed?.Invoke(e switch
             {
-                // the system refuses the launch: the license of this encrypted game is not installed
-                TitleLicenseMissingException noLicense => noLicense.UserMessage,
-                // the title's files are encrypted and its licence's key does not open them
-                TitleKeyException noKey => noKey.UserMessage,
                 DllNotFoundException => Loc.Format("MNativeLibraryMissing", e.Message),
-                _ => Loc.Format("MStartFailed", e.Message),
+                _ => TitleLaunchFailure.Message(_game.TitleId, e, Log.FilePath),
             });
         }
     }

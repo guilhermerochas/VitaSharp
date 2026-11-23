@@ -2625,9 +2625,6 @@
   <data name="MNativeLibraryMissing" xml:space="preserve">
     <value>Uma biblioteca nativa está faltando: {0}</value>
   </data>
-  <data name="MStartFailed" xml:space="preserve">
-    <value>Não foi possível iniciar o jogo: {0}</value>
-  </data>
   <data name="MStateSaved" xml:space="preserve">
     <value>Estado salvo no slot {0}</value>
   </data>
