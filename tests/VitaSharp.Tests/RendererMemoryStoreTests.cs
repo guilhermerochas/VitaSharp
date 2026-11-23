@@ -47,21 +47,22 @@ public sealed class RendererMemoryStoreTests(GuestMemoryFixture fx)
         W32(8, (uint)d.Length);
         W32(0x14, GxpProgram.FlagFragment | (nativeColour ? GxpProgram.FlagNativeColorUsed : 0));
         W32(0x24, 1);             // one parameter
-        W32(0x28, 0x80 - 0x28);   // parameters at 0x80
-        W32(0x2C, 0x60 - 0x2C);   // varyings at 0x60
+        // the header's fields run to 0x98 (dependent samplers at 0x80, containers at 0x90): the tables come after it
+        W32(0x28, 0xC0 - 0x28);   // parameters at 0xC0
+        W32(0x2C, 0xA0 - 0x2C);   // varyings at 0xA0
         d[0x30] = 4;              // primary registers (symbols not stripped)
-        d[0x60 + 10] = (byte)(nativeColour ? ParamType.U8 : ParamType.F32);
-        d[0x60 + 11] = 4;
+        d[0xA0 + 10] = (byte)(nativeColour ? ParamType.U8 : ParamType.F32);
+        d[0xA0 + 11] = 4;
         W32(0x3C, (uint)code.Length);
         W32(0x40, 0x100 - 0x40);  // primary program
         W32(0x78, 1);             // one uniform buffer info
-        W32(0x7C, 0xC0 - 0x7C);   // at 0xC0: buffer 0, its pointer at sa0
+        W32(0x7C, 0xE0 - 0x7C);   // at 0xE0: buffer 0, its pointer at sa0
         // the parameter: uniform buffer 0, BufferBytes long
-        W32(0x80, 0x90 - 0x80);
-        d[0x84] = (byte)ParamCategory.UniformBuffer;
-        W32(0x88, BufferBytes);
-        W32(0x8C, 0);
-        "buf"u8.CopyTo(d.AsSpan(0x90));
+        W32(0xC0, 0xD0 - 0xC0);
+        d[0xC4] = (byte)ParamCategory.UniformBuffer;
+        W32(0xC8, BufferBytes);
+        W32(0xCC, 0);
+        "buf"u8.CopyTo(d.AsSpan(0xD0));
         for (int i = 0; i < code.Length; i++)
         {
             W32(0x100 + i * 8, (uint)code[i]);
@@ -74,6 +75,27 @@ public sealed class RendererMemoryStoreTests(GuestMemoryFixture fx)
     internal static byte[] StoringGxp() => BufferProgramGxp([StoreImmediate(0, 0, 7), StoreImmediate(2, 5, 0x2A), StoreImmediate(1, 3, 0x15)], nativeColour: false);
 
     internal static byte[] ReadingGxp(uint word) => BufferProgramGxp([LoadWordToPa0(word), s_movPa0ToO0], nativeColour: true);
+
+    /// <summary>The test programs read no texture: with their tables inside the header's fields, the parameter's
+    /// bytes were read as 16 dependent samplers (texture units up to 24) and garbage containers, and on a device that
+    /// binds 14 fragment units (MoltenVK in the macOS CI) the renderer skipped every draw of the test.</summary>
+    [Fact]
+    public void TheTestProgramsAreWellFormed()
+    {
+        foreach (byte[] gxp in new[] { StoringGxp(), ReadingGxp(0), ReadingGxp(1) })
+        {
+            var program = new GxpProgram(gxp, 0x81000000);
+            Assert.Equal(0u, program.TexturesUsed());
+            Assert.Empty(program.DependentSamplers);
+            Assert.Empty(program.Containers);
+            Assert.Empty(program.Literals);
+            GxpParameter parameter = Assert.Single(program.Parameters);
+            Assert.Equal((ParamCategory.UniformBuffer, "buf", BufferBytes), (parameter.Category, parameter.RawName, parameter.ArraySize));
+            GxpUniformBufferInfo info = Assert.Single(program.UniformBuffers);
+            Assert.Equal((0, 0, 0), ((int)info.ResideBuffer, (int)info.LdstBaseOffset, info.LdstBaseValue));
+            Assert.Equal(0, program.VaryingsCount);
+        }
+    }
 
     [Fact]
     public void StoresOfEverySizeAreTranslated()
