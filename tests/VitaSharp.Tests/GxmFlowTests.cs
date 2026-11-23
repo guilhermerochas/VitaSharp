@@ -197,6 +197,15 @@ public sealed class GxmFlowTests : IDisposable
 
     private void Finish() => Assert.Equal(0, Call(Gxm, "sceGxmFinish", 0u));
 
+    /// <summary>An enabled U8U8U8U8 colour surface of <paramref name="width"/> x <paramref name="height"/> over its own
+    /// memory: what a scene needs at least when it has no depth/stencil surface.</summary>
+    private uint SceneColor(uint width, uint height)
+    {
+        uint surface = _harness.Alloc(0x40);
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceInit", surface, 0u, 0u, 0u, 0u, width, height, width, _harness.Alloc(width * height * 4)));
+        return surface;
+    }
+
     [Fact]
     public void InitializeAndTerminate()
     {
@@ -437,6 +446,40 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
         Assert.Equal(0, Call(Gxm, "sceGxmTransferFinish"));
         Assert.NotNull(_rec.LastBegin!.Color);
+    }
+
+    /// <summary>
+    /// sceGxmMidSceneFlush (libgxm, FW 3.74) only inside a scene of the immediate context: a NULL or unknown context and
+    /// a vertex sync object are SCE_GXM_ERROR_INVALID_POINTER, flags other than PRESERVE_DEFAULT_UNIFORM_BUFFERS (1) are
+    /// SCE_GXM_ERROR_INVALID_VALUE (the old SDK's _sceGxmMidSceneFlush masks them instead), outside a scene
+    /// SCE_GXM_ERROR_NOT_WITHIN_SCENE; a refused flush neither reaches the GPU nor writes its vertex notification.
+    /// </summary>
+    [Fact]
+    public void MidSceneFlushRefusesWhatLibgxmRefuses()
+    {
+        Init();
+        uint ctx = Context(), rt = RenderTarget(64, 64), color = SceneColor(64, 64);
+        uint word = _harness.Word(0), notif = _harness.Alloc(8);
+        GuestMemory.W32(notif, word);
+        GuestMemory.W32(notif + 4, 0x55);
+
+        Assert.Equal(NOT_WITHIN_SCENE, Call(Gxm, "sceGxmMidSceneFlush", ctx, 0u, 0u, notif));
+        Assert.Equal(NOT_WITHIN_SCENE, Call(Gxm, "_sceGxmMidSceneFlush", ctx, 0u, 0u, notif));
+        Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, 0u, color, 0u));
+        Assert.Equal(INVALID_POINTER, Call(Gxm, "sceGxmMidSceneFlush", 0u, 0u, 0u, notif));
+        Assert.Equal(INVALID_POINTER, Call(Gxm, "sceGxmMidSceneFlush", 0x1234u, 0u, 0u, notif));
+        Assert.Equal(INVALID_POINTER, Call(Gxm, "sceGxmMidSceneFlush", ctx, 0u, _harness.Alloc(16), notif));
+        Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmMidSceneFlush", ctx, 2u, 0u, notif));
+        Finish();
+        Assert.Equal(0u, GuestMemory.R32(word));
+        Assert.DoesNotContain("MidSceneFlushCommand", _rec.Kinds);
+
+        Assert.Equal(0, Call(Gxm, "_sceGxmMidSceneFlush", ctx, 2u, 0u, 0u));
+        Assert.Equal(0, Call(Gxm, "sceGxmMidSceneFlush", ctx, 1u, 0u, notif));
+        Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+        Finish();
+        Assert.Equal(0x55u, GuestMemory.R32(word));
+        Assert.Equal(2, _rec.Kinds.Count(kind => kind == "MidSceneFlushCommand"));
     }
 
     /// <summary>

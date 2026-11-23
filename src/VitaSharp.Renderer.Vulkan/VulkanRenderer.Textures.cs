@@ -681,7 +681,7 @@ public sealed unsafe partial class VulkanRenderer
                 continue;
             }
             // the surface being rendered, read where the draw itself renders: those tiles are still on chip, so the
-            // texture sees the memory, i.e. the content from the start of the scene (or the last mid-scene flush)
+            // texture sees the memory, i.e. the content from the start of the scene (a mid-scene flush stores nothing)
             if (target == _renderTarget && _inScene && SamplesOwnTiles(x0, y0, w, h))
             {
                 rt = SceneStartSource(target);

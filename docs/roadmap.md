@@ -3200,6 +3200,17 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `GpuDumpTests.CommandsRoundTripThroughAFile`. Testar: jogos que usam o BeginSceneEx (no trace de cenas da GPU,
   `loadDs` diferente de `ds`) sem sombras, reflexos ou profundidade faltando ou piscando onde
   antes apareciam; Injustice (HUD da luta), MGS3 e LBP continuam com a profundidade carregada certa.
+- [ ] (23/11/2026, falta testar) [P2][P] sceGxmMidSceneFlush como o libgxm 3.74 (fix/gxmex2): envia só o trabalho de
+  vértices da cena (sem fragmentos) e não grava nem recarrega cor ou profundidade; o renderizador não trata mais o
+  flush como ponto de gravação da cor (a superfície da própria cena continua amostrando o conteúdo de antes da cena).
+  Recusa como o firmware: contexto NULL/desconhecido ou objeto de sync de vértices → INVALID_POINTER, contexto
+  diferido ou flags além de PRESERVE_DEFAULT_UNIFORM_BUFFERS → INVALID_VALUE (o `_sceGxmMidSceneFlush` antigo mascara
+  as flags), fora da cena → NOT_WITHIN_SCENE, sem notificação nem comando à GPU. Não emulado: o envio parcial interno
+  do libgxm quando o anel de fragmentos do contexto enche (grava e recarrega no meio da cena); os anéis da HLE não
+  enchem. Testes: `GxmFlowTests.MidSceneFlushRefusesWhatLibgxmRefuses`,
+  `RendererMidSceneFlushTests.MidSceneFlushStoresNothingTheSceneSamples` (com e sem +TileBased); `replay-gpu
+  --compare` nos 12 dumps de captura (2.725 quadros) pixel-idêntico. Testar: jogos que usam o MidSceneFlush com
+  notificação no meio da cena (vita2d, Uncharted) sem tela preta, travada ou piscando onde antes funcionavam.
 
 - [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo analisável e reexecutável sem o jogo (feat/capself1,
   `docs/captures.md`): (1) nenhum arquivo da gravação leva dado pessoal: uma última etapa troca, em todo texto e no
