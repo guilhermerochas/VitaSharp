@@ -1198,7 +1198,7 @@
     <value>Home screen music, themes and factory data</value>
   </data>
   <data name="PerGameGraphicsNote" xml:space="preserve">
-    <value>Internal resolution and frame rate are on each game's page.</value>
+    <value>Frame rate is on each game's page; the internal resolution here is every game's default, and each game can have its own on its page.</value>
   </data>
   <data name="PickFolderTitle" xml:space="preserve">
     <value>Choose the folder of a decrypted game (with eboot.bin and sce_sys)</value>
@@ -3239,5 +3239,14 @@
   </data>
   <data name="TitleLoadFailed" xml:space="preserve">
     <value>{0} could not be started: {1}. Details are in the log ({2}).</value>
+  </data>
+  <data name="LoadingResolution" xml:space="preserve">
+    <value>Internal resolution: {0}</value>
+  </data>
+  <data name="MInternalResolutionGlobalDetail" xml:space="preserve">
+    <value>Default of every game (each game can have its own on its page). Below native is faster on a busy GPU, and softer; 2x is sharper but costs ~4x the GPU work</value>
+  </data>
+  <data name="InternalResolutionGlobalDetail" xml:space="preserve">
+    <value>Default of every game (each game can have its own on its page). Sharper, costs GPU time</value>
   </data>
 </root>

@@ -3183,6 +3183,18 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (23/11/2026, na release, falta testar) [P2][P] Resolução interna padrão (fix/quick2): uma opção global nas
+  configurações (PC: Configurações > Gráficos > Resolução interna, 1x a 4x; Android: Ajustes > Resolução interna, 50%
+  a 4x) com que todo jogo sem escolha própria abre; a escolha do jogo (inclusive "nativa") vence a global, e a página
+  do jogo mostra "Padrão (...)" com o valor global. O launcher.json antigo (sem a chave global) continua
+  valendo: o 1 que todo jogo com outro ajuste guardava era o padrão e passa a seguir a global; 2x-4x ficam como
+  escolha do jogo. A tela de carregamento (PC e Android) mostra "Resolução interna: 2x (1920×1088)" e o log da
+  sessão tem a linha Internal resolution: ... do renderizador. Testes: InternalResolutionDefaultTests,
+  LauncherLoadingWindowTests.TheLoadingWindowShowsAndTheGameGetsTheResolutionItStartsWith,
+  AndroidOptionParityTests. Testar: em Configurações > Gráficos escolher 2x e abrir um jogo sem ajuste próprio
+  (a tela de carregamento diz 2x e a imagem sai mais nítida); na página de outro jogo escolher "1x nativa" e abrir:
+  abre na nativa. No Android, o mesmo em Ajustes e na página do jogo.
+
 - [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo analisável e reexecutável sem o jogo (feat/capself1,
   `docs/captures.md`): (1) nenhum arquivo da gravação leva dado pessoal: uma última etapa troca, em todo texto e no
   cabeçalho do `gpu.vsgd`, a pasta de dados por `<data>`, a pasta e o nome do usuário por `<user>`, o computador por
@@ -3710,10 +3722,6 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   cópia no fim da cena pega dados de outro quadro e o oclusor fica deslocado em quadros alternados. Rodar o jogo no
   ponto do relato com VITASHARP_UB_SCENE_END=audit (e o A/B =frame) e ver se o vs 724271F2CFC4A93C aparece com
   buffers reescritos depois do fim da cena e se o pisca some com =frame.
-- [ ] [P2][P] Resolução interna padrão (pedido do usuário, 22/11/2026): uma opção global nas configurações (PC e Android)
-  para escolher a resolução interna (1x, 2x, 3x, 4x) com que todo jogo já abre, sem precisar trocar no atalho a cada
-  sessão; a escolha por jogo (quando existir) vence a global. Mostrar o valor efetivo na tela de carregamento e no log
-  da sessão. Teste: um jogo sem escolha própria abre na resolução global; com escolha própria, na dele.
 - [ ] [P1][G] PSM em Unity não abre (relato do usuário, 22/11/2026; log de 19:33, NPOA00239): o título traz o próprio
   runtime (`ux0:psm/<título>/runtime/eboot.bin`, PCSI00010 "Unity Runtime for PlayStation Mobile", mais mono_prx e
   bridge_prx), que está cifrado com a chave do conteúdo, e o carregador o lê como SELF comum: `InvalidDataException: Not

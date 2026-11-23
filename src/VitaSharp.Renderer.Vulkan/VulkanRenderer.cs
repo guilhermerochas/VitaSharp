@@ -229,6 +229,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     {
         _options = options;
         _resScale = options.ResScale > 0 ? ParseResScale(options.ResScale.ToString(System.Globalization.CultureInfo.InvariantCulture)) : s_envResScale;
+        Log.Info(InternalResolutionLine(_resScale)); // the resolution the session runs at (launcher/Ajustes, --res-scale=, env)
         _msaaSetting = ParseMsaa(options.Msaa ?? Environment.GetEnvironmentVariable(EnvVars.Msaa));
         _msaaInputFetch = !string.Equals((options.MsaaFetch ?? Environment.GetEnvironmentVariable(EnvVars.MsaaFetch))?.Trim(), "copy", StringComparison.OrdinalIgnoreCase);
         _presentCount = Math.Max(0, options.FirstPresent);

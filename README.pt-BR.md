@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=ac70da15681edeb82157f91e76af3be5f7d991072c9d5a94595e6eec892efdff -->
+<!-- pair: README.md sha256=6816d2a39ddfb7c7fbae246d1c98a400d108667112746e6810c27ee9a0cbb0ad -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -308,6 +308,12 @@ abaixo ficam as gravações do **Gravar tudo** do jogo, com data e tamanho; toca
 (**Nativo**, o ritmo do próprio jogo, por padrão; **Fixo em 30**, **Fixo em 60** ou **Sem limite**, como o `--frame-rate`
 do desktop; também no menu de pausa, vale na hora, e aparece ao lado do contador de FPS), VSync, o contador de FPS,
 backend de CPU, clock, perfil de GPU e o idioma do sistema que o jogo vê (**Idioma do sistema**), salvos por jogo (**Voltar ao padrão de Ajustes** volta aos ajustes gerais).
+
+**Resolução interna padrão.** A resolução interna com que abre todo jogo sem escolha própria também é um ajuste geral:
+no launcher do desktop **Configurações > Gráficos > Resolução interna** (1x-4x), no Android **Ajustes > Resolução
+interna** (50%-4x). A escolha do próprio jogo na página dele (inclusive a nativa) vence; a página mostra **Padrão (...)**
+com o valor geral. A tela de carregamento mostra a resolução com que o jogo abre, e o log da sessão tem a linha
+`Internal resolution: ...`.
 
 **Limitações conhecidas.**
 

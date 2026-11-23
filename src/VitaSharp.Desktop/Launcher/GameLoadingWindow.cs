@@ -21,6 +21,7 @@ public sealed class GameLoadingWindow : Window
 {
     readonly Kit _k = new();
     readonly TextBlock _step;
+    readonly TextBlock? _detail;
     readonly ProgressBar _bar;
     readonly Button _cancel;
     readonly TextBlock _log;
@@ -83,6 +84,14 @@ public sealed class GameLoadingWindow : Window
         picture.HorizontalAlignment = HorizontalAlignment.Center;
         card.Children.Add(picture);
         card.Children.Add(name);
+        if (screen.Detail is { } detailText)
+        {
+            var detail = _detail = _k.Text(detailText, 12, FontWeight.Normal, static p => p.Muted);
+            detail.HorizontalAlignment = HorizontalAlignment.Center;
+            detail.Name = "LoadingDetail";
+            card.Children.Add(detail);
+        }
+
         card.Children.Add(_step);
         card.Children.Add(_bar);
         card.Children.Add(_cancel);
@@ -123,6 +132,9 @@ public sealed class GameLoadingWindow : Window
 
     /// <summary>What the window shows now (the headless tests).</summary>
     internal string StepTextShown => _step.Text ?? "";
+
+    /// <summary>The line under the game's name (<see cref="LoadingScreen.Detail"/>), null when the window has none.</summary>
+    internal string? DetailTextShown => _detail?.Text;
 
     internal bool CancelShown => _cancel.IsVisible;
 

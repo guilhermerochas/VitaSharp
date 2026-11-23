@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=40118b7921a7edc523d31f2e69c4c36ad658ea6e4c06f6cfa9a311e493411314 -->
+<!-- pair: README.pt-BR.md sha256=4be3ac6251926a6ebfa8a5cb289d48de5b5a42b1fc7d5b3c29f9f9a39fc82ea0 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -305,6 +305,12 @@ game's own pacing, by default; **Fixo em 30**, **Fixo em 60** or **Sem limite**,
 the pause menu, applied right away, and shown next to the FPS counter), VSync, the FPS counter, CPU backend, clock and
 GPU profile and the system language the game sees (**Idioma do sistema**), saved per game (**Voltar ao padrão de Ajustes**
 goes back to the global settings).
+
+**Default internal resolution.** The internal resolution every game without its own choice starts with is a global
+setting too: desktop launcher **Configurações > Gráficos > Resolução interna** (1x-4x), Android **Ajustes > Resolução
+interna** (50%-4x). A game's own choice on its page (native included) wins; the page shows **Padrão (...)** with the
+global value. The loading screen shows the resolution the game starts with, and the session log has an
+`Internal resolution: ...` line.
 
 **Known limitations.**
 

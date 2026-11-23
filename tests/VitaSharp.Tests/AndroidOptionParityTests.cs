@@ -73,7 +73,11 @@ public sealed class AndroidOptionParityTests : IDisposable
             Assert.Contains(SettingsChoices.ResScales, c => c.Value == value);
             var effective = EffectiveSettings.Resolve(new AppPreferences(), new GameSettings { ResScale = value });
             Assert.Equal(factor, effective.ResScaleValue);
-            Assert.Contains($"--res-scale={factor}", new GameOptions { ResScale = factor }.RunOptions());
+            var desktop = new LauncherSettings { Games = { ["PCSB00001"] = new GameOptions { ResScale = factor } } };
+            Assert.Contains($"--res-scale={factor}", desktop.RunOptions("PCSB00001"));
+            // the global default the same way on both
+            Assert.Equal(factor, EffectiveSettings.Resolve(new AppPreferences { ResScale = value }, null).ResScaleValue);
+            Assert.Contains($"--res-scale={factor}", new LauncherSettings { ResScale = factor }.RunOptions("PCSB00001"));
         }
     }
 
@@ -124,7 +128,7 @@ public sealed class AndroidOptionParityTests : IDisposable
     private static readonly string[] s_sameOnAndroid =
     [
         nameof(LauncherSettings.VSync), nameof(LauncherSettings.CameraFront), nameof(LauncherSettings.CameraBack),
-        nameof(LauncherSettings.CpuBackend), nameof(LauncherSettings.CpuMhz), nameof(LauncherSettings.FastLoading),
+        nameof(LauncherSettings.CpuBackend), nameof(LauncherSettings.CpuMhz), nameof(LauncherSettings.FastLoading), nameof(LauncherSettings.ResScale),
         nameof(LauncherSettings.FastShaderCompile), nameof(LauncherSettings.BackgroundShaderCompile),
         nameof(LauncherSettings.LoadShaderCacheBeforePlaying), nameof(LauncherSettings.PrecompileCode), nameof(LauncherSettings.DebugMode),
         nameof(LauncherSettings.KernelPlugins), nameof(LauncherSettings.StartupView), nameof(LauncherSettings.TrophySound),
@@ -241,6 +245,14 @@ public sealed class AndroidOptionParityTests : IDisposable
         {
             if (name == nameof(LauncherSettings.Language))
             {
+                continue;
+            }
+
+            if (name == nameof(LauncherSettings.ResScale))
+            {
+                // native on both, written as the factor 1 on the desktop and as the empty choice on Android
+                Assert.Equal(1, desktop.ResScale);
+                Assert.Equal(0f, EffectiveSettings.Resolve(android, null).ResScaleValue);
                 continue;
             }
 

@@ -63,6 +63,18 @@ public sealed unsafe partial class VulkanRenderer
         return k is >= 2f and <= MaxResScale && MathF.Abs(v - k) < 0.01f ? k : 1f;
     }
 
+    /// <summary>The session log's line for a renderer's scale: "Internal resolution: 2x (1920x1088)", or "native".</summary>
+    public static string InternalResolutionLine(float scale)
+    {
+        if (scale == 1f)
+        {
+            return "Internal resolution: native (960x544)";
+        }
+
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"Internal resolution: {scale:0.##}x ({ScaleDim(960, scale)}x{ScaleDim(544, scale)})");
+    }
+
     /// <summary>A guest dimension at scale <paramref name="s"/> (at least 1 pixel).</summary>
     private static uint ScaleDim(uint v, float s) => s == 1f ? v : Math.Max(1u, (uint)MathF.Round(v * s));
 

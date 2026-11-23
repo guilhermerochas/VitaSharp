@@ -17,11 +17,33 @@ namespace VitaSharp.Core.Boot;
 /// </summary>
 public sealed class LoadingScreen
 {
-    public LoadingScreen(string title, string? iconPath = null, string? backgroundPath = null)
+    public LoadingScreen(string title, string? iconPath = null, string? backgroundPath = null, string? detail = null)
     {
         Title = title;
         IconPath = iconPath;
         BackgroundPath = backgroundPath;
+        Detail = detail;
+    }
+
+    /// <summary>A line under the game's name with what it starts with (<see cref="ResolutionDetail"/>); null when none.</summary>
+    public string? Detail { get; }
+
+    /// <summary>The internal resolution a game starts with, for <see cref="Detail"/>: "Resolucao interna: 2x
+    /// (1920x1088)". <paramref name="scale"/> is the render-target multiple of the Vita's 960x544 (0 or 1 = native,
+    /// 0.5/0.75 below it, 2-4 above it; VulkanRenderer.ResScale.cs).</summary>
+    public static string ResolutionDetail(float scale)
+    {
+        if (scale <= 0f)
+        {
+            scale = 1f;
+        }
+
+        int width = (int)MathF.Round(960 * scale);
+        int height = (int)MathF.Round(544 * scale);
+        string factor = scale < 1f
+            ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{scale * 100:0}%")
+            : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{scale:0.##}x");
+        return Loc.Format("LoadingResolution", $"{factor} ({width}\u00D7{height})");
     }
 
     /// <summary>The game's name.</summary>

@@ -1198,7 +1198,7 @@
     <value>Música da tela inicial, temas e dados de fábrica</value>
   </data>
   <data name="PerGameGraphicsNote" xml:space="preserve">
-    <value>Resolução interna e taxa de quadros ficam na página de cada jogo.</value>
+    <value>A taxa de quadros fica na página de cada jogo; a resolução interna daqui é o padrão de todos os jogos, e cada jogo pode ter a sua na página dele.</value>
   </data>
   <data name="PickFolderTitle" xml:space="preserve">
     <value>Escolha a pasta de um jogo descriptografado (com eboot.bin e sce_sys)</value>
@@ -3239,5 +3239,14 @@
   </data>
   <data name="TitleLoadFailed" xml:space="preserve">
     <value>Não foi possível iniciar {0}: {1}. Os detalhes estão no log ({2}).</value>
+  </data>
+  <data name="LoadingResolution" xml:space="preserve">
+    <value>Resolução interna: {0}</value>
+  </data>
+  <data name="MInternalResolutionGlobalDetail" xml:space="preserve">
+    <value>Padrão de todos os jogos (cada jogo pode ter a sua na página dele). Abaixo da nativa é mais rápido com a GPU ocupada, e mais suave; 2x é mais nítido mas custa ~4x o trabalho da GPU</value>
+  </data>
+  <data name="InternalResolutionGlobalDetail" xml:space="preserve">
+    <value>Padrão de todos os jogos (cada jogo pode ter a sua na página dele). Mais nítido, custa placa de vídeo</value>
   </data>
 </root>

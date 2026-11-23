@@ -60,9 +60,10 @@ public sealed class DesktopLogicTests : IDisposable
 
         Assert.DoesNotContain(opts, o => o.StartsWith("--rpcn", StringComparison.Ordinal)); // no RPCN account configured
 
-        // a game's own options come first, and only for that game
+        // a game's own options come first, its resolution (own or global, InternalResolutionDefaultTests) right after,
+        // and only for that game
         s.Games["PCSA00001"] = new GameOptions { ResScale = 2, FrameRate = "30" };
-        Assert.Equal(["--res-scale=2", "--frame-rate=30"], s.RunOptions("PCSA00001").Take(2).ToArray());
+        Assert.Equal(["--frame-rate=30", "--res-scale=2"], s.RunOptions("PCSA00001").Take(2).ToArray());
         Assert.DoesNotContain("--res-scale=2", s.RunOptions("PCSB00002"));
         Assert.False(s.Games["PCSA00001"].IsDefault);
         Assert.True(new GameOptions().IsDefault);

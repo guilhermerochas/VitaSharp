@@ -139,7 +139,7 @@ public sealed class GamePage : Screen<GameState, GameProps>
                             () => Pick(Loc.Get("MGpuProfile"), SettingsChoices.GpuProfiles, app.GpuProfile, v => s.GpuProfile = v)),
                         Divider(),
                         Row(Loc.Get("MInternalResolution"), ValueText(SettingsChoices.ResScales, s.ResScale, SettingsChoices.LabelOf(SettingsChoices.ResScales, eff.ResScale)),
-                            () => Pick(Loc.Get("MInternalResolution"), SettingsChoices.ResScales, "", v => s.ResScale = string.IsNullOrEmpty(v) ? null : v),
+                            () => Pick(Loc.Get("MInternalResolution"), SettingsChoices.ResScales, app.ResScale, v => s.ResScale = v),
                             detail: Loc.Get("MInternalResolutionDetail")),
                         Divider(),
                         Row(Loc.Get("MMsaa"), ValueText(SettingsChoices.MsaaModes, s.Msaa, SettingsChoices.LabelOf(SettingsChoices.MsaaModes, eff.Msaa)),

@@ -47,7 +47,9 @@ public sealed partial class MainWindow
         CloseLoadingWindow();
         string? icon = g?.IconPath;
         string? picture = g != null ? VitaSharp.Core.Io.Vfs.ResolveCaseInsensitive(g.Path, "sce_sys/pic0.png") : null;
-        var screen = new LoadingScreen(title, icon, picture != null && File.Exists(picture) ? picture : null);
+        // the resolution the game starts with: its own choice, else the global one (Configuracoes > Graficos)
+        string? detail = g != null ? LoadingScreen.ResolutionDetail(_settings.EffectiveResScale(g.TitleId)) : null;
+        var screen = new LoadingScreen(title, icon, picture != null && File.Exists(picture) ? picture : null, detail);
         // the game window is 960x544 pixels (GLFW); this one the same size on the screen it opens on
         double scaling = Screens.ScreenFromWindow(this)?.Scaling ?? Screens.Primary?.Scaling ?? 1;
         if (scaling <= 0)

@@ -335,9 +335,13 @@ public sealed class SettingsPage : UserControl
         // ---------------------------------------------------------- Graficos
         s.Children.Add(Anchor(SectionGraphics, S.SectionGraphics));
         string[] scales = ["1x (960\u00D7544)", "2x (1920\u00D71088)", "3x (2880\u00D71632)"];
+        (int Factor, string Label)[] resScales = GameOptions.ResScales;
         s.Children.Add(_k.Group(
             _k.Row("monitor", S.Fullscreen, S.FullscreenDetail, _k.Switch(_settings.Fullscreen, v => Set(() => _settings.Fullscreen = v))),
             _k.Row("image", S.WindowSize, S.WindowSizeDetail, _k.Dropdown(scales, Math.Clamp(_settings.Scale - 1, 0, 2), i => Set(() => _settings.Scale = i + 1), 180)),
+            _k.Row("monitor", S.InternalResolution, S.InternalResolutionGlobalDetail, _k.Dropdown(resScales.Select(c => c.Label).ToArray(),
+                Math.Max(0, Array.FindIndex(resScales, c => c.Factor == _settings.ResScale)), i => Set(() => _settings.ResScale = resScales[i].Factor), 180),
+                tip: S.InternalResolutionTip),
             _k.Row("gauge", S.VSync, S.VSyncDetail, _k.Switch(_settings.VSync, v => Set(() => _settings.VSync = v))),
             _k.Row("zap", S.FastShaders, S.FastShadersDetail, _k.Switch(_settings.FastShaderCompile, v => Set(() => _settings.FastShaderCompile = v))),
             _k.Row("layers", S.AsyncShaders, S.AsyncShadersDetail, _k.Switch(_settings.BackgroundShaderCompile, v => Set(() => _settings.BackgroundShaderCompile = v))),
