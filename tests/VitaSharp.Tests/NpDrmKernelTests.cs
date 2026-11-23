@@ -11,7 +11,8 @@ namespace VitaSharp.Tests;
 /// SceNpDrmForDriver's license queries (GetRifInfo, GetRifVitaKey, GetRifPspKey) as SceNpDrm 3.74 answers them on a
 /// retail unit: the fields of the license, the kind check, the unit and game card bindings and the activation check
 /// (an account license without tm0:npdrm/act.dat is 0x80870003, the answer the plugins of the scene hook), the
-/// signature check of the secure module failing, and the key the emulator's loader uses for a license that passes.
+/// signature check of the secure module failing, and the key of a license that passes, which is the secure
+/// processor's (not available: 0x80020004, nothing written).
 /// </summary>
 [Collection("guest")]
 public sealed class NpDrmKernelTests(GuestMemoryFixture fixture) : IDisposable
@@ -20,6 +21,7 @@ public sealed class NpDrmKernelTests(GuestMemoryFixture fixture) : IDisposable
     private const int BadLicense = unchecked((int)0x80870004), BadData = unchecked((int)0x80870005);
     private const int NoActivationData = unchecked((int)0x80870006), OtherAccount = unchecked((int)0x80870008);
     private const int OtherUnit = unchecked((int)0x80870009), GameCard = unchecked((int)0x8087000A);
+    private const int SecureProcessorUnavailable = unchecked((int)0x80020004);
     private const ulong Epoch1970 = 0xDCBFFEFF2BC000, Year2001 = 0xE039BB591E1C00, Never = 0x7FFFFFFFFFFFFFFF;
 
     private readonly HleHarness _harness = new(fixture, "npdrmk");
@@ -98,23 +100,49 @@ public sealed class NpDrmKernelTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(NotActivated, Call(Services, "ksceNpDrmGetRifPspKey", license, key, 0u, 0u, 0u));
     }
 
-    [Fact]
-    public void AnActivatedUnitGetsTheLicensesKey()
+    /// <summary>A license that passes the checks has its key decrypted by the secure processor (SceSblAuthMgr in
+    /// SceNpDrm 3.74), which the emulated unit has not: the key queries answer "not supported" and never write the
+    /// license's +0x50 field (or anything) into the key buffer, for every kind that passes (an account license on an
+    /// activated unit, the activated account's license, a free one) and for both the PS Vita and the PSP query.</summary>
+    [Theory]
+    [InlineData((ushort)0, 0x1122334455667788UL, true)]
+    [InlineData((ushort)2, 0x42UL, true)]
+    [InlineData(RifKindFree, 0UL, false)]
+    public void ALicenseThatPassesGetsNoKeyWithoutTheSecureProcessor(ushort kind, ulong accountId, bool activate)
     {
-        Activate(0x1122334455667788);
-        uint license = License(0), key = _harness.Alloc(0x10);
-        Assert.Equal(0, Call(Services, "ksceNpDrmGetRifVitaKey", license, key, 0u, 0u, 0u, 0u));
-        Assert.Equal(0xA0, GuestMemory.ReadSpan(key, 0x10)[0]);
-        Assert.Equal(0xAF, GuestMemory.ReadSpan(key, 0x10)[15]);
-        Assert.Equal(0, RifInfo(license, 0x200, 0));
+        if (activate)
+        {
+            Activate(accountId);
+        }
+
+        uint license = License(kind, accountId: accountId);
+        Assert.Equal(0, RifInfo(license, 0x200, 0)); // the license passes the module's own checks
+
+        uint vitaKey = _harness.Alloc(0x10);
+        GuestMemory.Fill(vitaKey, 0x5A, 0x10);
+        Assert.Equal(SecureProcessorUnavailable, Call(Services, "ksceNpDrmGetRifVitaKey", license, vitaKey, 0u, 0u, 0u, 0u));
+        Assert.True(GuestMemory.ReadSpan(vitaKey, 0x10).SequenceEqual(new byte[0x10]));
+
+        uint pspKey = _harness.Alloc(0x10);
+        GuestMemory.Fill(pspKey, 0x5A, 0x10);
+        Assert.Equal(SecureProcessorUnavailable, Call(Services, "ksceNpDrmGetRifPspKey", license, pspKey, 0u, 0u, 0u));
+        Assert.True(GuestMemory.ReadSpan(pspKey, 0x10).SequenceEqual(new byte[0x10]));
     }
 
+    /// <summary>The key query still reports the license's metadata (not secret: SKU flag, times, derived flags) before
+    /// the secure step, as the module writes them before its checks.</summary>
     [Fact]
-    public void AFreeLicenseNeedsNoActivation()
+    public void TheKeyQueryReportsTheMetadataButNoKey()
     {
-        uint license = License(RifKindFree), key = _harness.Alloc(0x10);
-        Assert.Equal(0, Call(Services, "ksceNpDrmGetRifVitaKey", license, key, 0u, 0u, 0u, 0u));
-        Assert.Equal(0xA0, GuestMemory.ReadSpan(key, 1)[0]);
+        uint license = License(RifKindFree, skuFlag: 1, expirationMs: 1000), key = _harness.Alloc(0x10);
+        uint flags = _harness.Word(0), sku = _harness.Word(0), start = _harness.Alloc(8), expiration = _harness.Alloc(8);
+        Assert.Equal(SecureProcessorUnavailable, Call(Services, "ksceNpDrmGetRifVitaKey", license, key, flags, sku, start,
+            expiration));
+        Assert.Equal(1u, GuestMemory.R32(sku));
+        Assert.Equal(1u, GuestMemory.R32(flags));
+        Assert.Equal(Year2001, GuestMemory.Read<ulong>(start));
+        Assert.Equal(1000UL * 1000 + Epoch1970, GuestMemory.Read<ulong>(expiration));
+        Assert.True(GuestMemory.ReadSpan(key, 0x10).SequenceEqual(new byte[0x10]));
     }
 
     private const ushort RifKindFree = 0xD;

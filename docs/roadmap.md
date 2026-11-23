@@ -3183,6 +3183,12 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (23/11/2026, falta testar) [P1][P] NpDrm: ksceNpDrmGetRifVitaKey e ksceNpDrmGetRifPspKey não dão mais o campo
+  +0x50 da licença como chave (fix/rifkey1): a chave é do processador seguro (SceSblAuthMgr no SceNpDrm 3.74), então
+  uma licença que passa nas verificações recebe 0x80020004 com o buffer da chave zerado; os metadados (SKU, tempos,
+  flags) continuam. Testes: `NpDrmKernelTests`. Testar: um jogo PS Vita que o usuário já abre pelo Sistema do Vita
+  continua abrindo do mesmo jeito.
+
 - [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo analisável e reexecutável sem o jogo (feat/capself1,
   `docs/captures.md`): (1) nenhum arquivo da gravação leva dado pessoal: uma última etapa troca, em todo texto e no
   cabeçalho do `gpu.vsgd`, a pasta de dados por `<data>`, a pasta e o nome do usuário por `<user>`, o computador por

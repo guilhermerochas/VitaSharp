@@ -12,7 +12,9 @@ namespace VitaSharp.Core.Hle.Modules;
 // account; 0xD a free one. Bit 0x100 binds it to one unit, bit 0x400 to a game card.
 // What the secure module does is not here: the signature check (the module then answers 0x80870004, 0x80870005 for
 // a PSP license checked by RSA) and the game card authentication (0x8087000A). The key of a license that passes the
-// checks is the one the emulator's loader uses for the title (the license's key field).
+// checks is decrypted by the secure processor (SceSblAuthMgrForDriver, from the license's encrypted key and the
+// activation's keys), which the emulated unit does not have: GetRifVitaKey and GetRifPspKey answer its "not
+// supported" (0x80020004) with the key buffer zeroed; the license's +0x50 field is never given as a key.
 public sealed partial class SystemServicesVsh
 {
     /// <summary>SceNpDrm: a license that needs the unit's activation data when the unit has none.</summary>
@@ -268,8 +270,10 @@ public sealed partial class SystemServicesVsh
         }
     }
 
-    /// <summary>The key query shared by GetRifVitaKey and GetRifPspKey: the outputs, the checks, then the key (an
-    /// account license's key field; 0xAA bytes for a license kind without one, as the module fills it).</summary>
+    /// <summary>The key query shared by GetRifVitaKey and GetRifPspKey: the key buffer zeroed, the license's
+    /// metadata outputs (SKU flag, times, derived flags), the checks, then the key. The key is the secure processor's
+    /// work (SceSblAuthMgrForDriver decrypts it in SceNpDrm 3.74), so a license that passes the checks gets its
+    /// "not supported" 0x80020004 and the key buffer stays zeroed.</summary>
     int RifKey(uint license, uint key, uint flags, uint skuFlag, uint start, uint expiration)
     {
         if (license == 0 || key == 0)
@@ -298,12 +302,12 @@ public sealed partial class SystemServicesVsh
             return check;
         }
 
-        rif.Slice(0x50, 0x10).CopyTo(GuestMemory.Span(key, 0x10));
-        return 0;
+        return KERNEL_ERR_UNSUP;
     }
 
     /// <summary>ksceNpDrmGetRifVitaKey (0x723322B5)(const SceNpDrmLicense *license, void *key 0x10, int *flags,
-    /// int *skuFlag, SceRtcTick *start, SceRtcTick *expiration): the title key of a PS Vita license.</summary>
+    /// int *skuFlag, SceRtcTick *start, SceRtcTick *expiration): the title key of a PS Vita license (the secure
+    /// processor's: not available, see <see cref="RifKey"/>).</summary>
     [Hle(Nid = 0x723322B5, Library = "SceNpDrmForDriver")]
     int ksceNpDrmGetRifVitaKey(uint license, uint key, uint flags, uint skuFlag, uint start, uint expiration)
     {
@@ -311,7 +315,8 @@ public sealed partial class SystemServicesVsh
     }
 
     /// <summary>ksceNpDrmGetRifPspKey (0xDACB71F4)(const SceNpDrmLicense *license, void *key 0x10, int *flags,
-    /// SceRtcTick *start, SceRtcTick *expiration): the title key of a PSP license.</summary>
+    /// SceRtcTick *start, SceRtcTick *expiration): the title key of a PSP license (the secure processor's: not
+    /// available, see <see cref="RifKey"/>).</summary>
     [Hle(Nid = 0xDACB71F4, Library = "SceNpDrmForDriver")]
     int ksceNpDrmGetRifPspKey(uint license, uint key, uint flags, uint start, uint expiration)
     {
