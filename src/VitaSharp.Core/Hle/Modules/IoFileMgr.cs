@@ -113,6 +113,7 @@ public sealed partial class IoFileMgr : HleModule
             if ((flags & O_APPEND) != 0) fs.Seek(0, SeekOrigin.End);
             int fd = Interlocked.Increment(ref _nextFd);
             _files[fd] = new OpenFile { VitaPath = path, Stream = fs };
+            Capture.CaptureHooks.Files?.Opened(Emu, path, host);
             Log.Debug($"sceIoOpen({path}, 0x{flags:X}) = {fd}");
             return fd;
         }
@@ -169,6 +170,7 @@ public sealed partial class IoFileMgr : HleModule
             {
                 pos = f.Stream.Position;
                 n = f.Stream.Read(GuestMemory.Span(buf, (int)size));
+                Capture.CaptureHooks.Files?.Read(Emu, f.VitaPath, f.Stream.Length, pos, GuestMemory.Span(buf, Math.Max(n, 0)));
                 DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
                 Interlocked.Add(ref BytesRead, n);
             }
@@ -229,6 +231,7 @@ int fd, long offset, int whence)
         using (FrameLedger.Time(FrameLedger.Cat.FileIo))
         {
             n = RandomAccess.Read(f.Stream.SafeFileHandle, GuestMemory.Span(buf, (int)size), offset);
+            Capture.CaptureHooks.Files?.Read(Emu, f.VitaPath, f.Stream.Length, offset, GuestMemory.Span(buf, Math.Max(n, 0)));
             DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
             Interlocked.Add(ref BytesRead, n);
         }
@@ -342,6 +345,7 @@ int fd, long offset, int whence)
         if (host == null || !Directory.Exists(host)) return SceError.IO_ENOENT;
         int fd = Interlocked.Increment(ref _nextFd);
         _dirs[fd] = new OpenDir { Entries = Directory.GetFileSystemEntries(host) };
+        Capture.CaptureHooks.Files?.Listed(Emu, path, host);
         return fd;
     }
 
@@ -408,6 +412,7 @@ int fd, long offset, int whence)
         if (host == null || (!File.Exists(host) && !Directory.Exists(host))) return SceError.IO_ENOENT;
         GuestMemory.Span(stat, 88).Clear();
         WriteStat(stat, host);
+        Capture.CaptureHooks.Files?.Opened(Emu, path, host);
         return 0;
     }
 

@@ -1824,8 +1824,23 @@ public sealed partial class Emulator : IDisposable
     internal LoadedModule LoadModule(string vitaPath, bool kernel, string? hostFile)
     {
         // a missing file or folder is the guest's error (the callers return it), never a host exception that ends the thread
-        string host = hostFile ?? (Vfs.Resolve(vitaPath) is { } h && File.Exists(h) ? h : throw new FileNotFoundException(vitaPath));
-        byte[] elf = SelfDecryptor.ToElf(File.ReadAllBytes(host), Klicensee);
+        byte[] elf;
+        // the re-run of a capture: a module the recording loaded from the title's mounts is its decrypted image as
+        // recorded (the game is not installed here, and no licence leaves with a capture)
+        if (hostFile == null && Capture.CaptureHooks.Files?.RecordedModule(this, vitaPath) is { } recorded)
+        {
+            elf = recorded;
+        }
+        else
+        {
+            string host = hostFile ?? (Vfs.Resolve(vitaPath) is { } h && File.Exists(h) ? h : throw new FileNotFoundException(vitaPath));
+            elf = SelfDecryptor.ToElf(File.ReadAllBytes(host), Klicensee);
+            if (hostFile == null)
+            {
+                Capture.CaptureHooks.Files?.ModuleLoaded(this, vitaPath, elf);
+            }
+        }
+
         if (kernel && !IsKernelProcess)
         {
             // the path is the caller's (its app0, its mounts): the module goes to the one kernel every process shares

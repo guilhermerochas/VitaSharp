@@ -198,19 +198,28 @@ public static class HleCallTrace
                 continue;
             }
 
-            // the re-run records from the state's moment on, the capture from a little after it (the recording starts
-            // once its state is saved and the game runs again): the re-run's first calls may come before the capture's
-            int offset = Align(calls, other);
+            // the capture's trace starts before its state is saved (the game runs until a safe point), the re-run's at
+            // the state's moment: the capture's calls from before the re-run's first one (the state restores the guest
+            // clock) are not compared. A pre-roll state is older than the capture: the re-run's first calls then come
+            // before the capture's and are skipped by the alignment.
+            int skip = 0;
+            while (skip < calls.Count - 1 && calls[skip].Us < other[0].Us)
+            {
+                skip++;
+            }
+
+            int offset = Align(calls, skip, other);
             if (offset < 0)
             {
-                differences.Add((calls[0].Us, $"thread '{thread}': the capture's first calls ({calls[0].Function}...) are not among the re-run's first {AlignWindow}"));
+                differences.Add((calls[skip].Us, $"thread '{thread}': the capture's first calls ({calls[skip].Function}...) are not among the re-run's first {AlignWindow}"));
                 continue;
             }
 
-            int n = Math.Min(calls.Count, other.Count - offset);
-            for (int i = 0; i < n; i++)
+            int n = Math.Min(calls.Count - skip, other.Count - offset);
+            for (int k = 0; k < n; k++)
             {
-                (long Us, string Function, string Result) mine = calls[i], theirs = other[i + offset];
+                int i = skip + k;
+                (long Us, string Function, string Result) mine = calls[i], theirs = other[k + offset];
                 if (mine.Function != theirs.Function)
                 {
                     differences.Add((mine.Us, $"thread '{thread}' call {i + 1}: {mine.Function} in the capture, {theirs.Function} in the re-run"));
@@ -231,36 +240,42 @@ public static class HleCallTrace
     /// <summary>How many of the re-run's first calls of a thread may come before the capture's first one.</summary>
     private const int AlignWindow = 256;
 
-    /// <summary>The index of the re-run's call where the capture's calls start: the first one from which the next
-    /// calls (up to 8) are to the same functions, else the first call to the capture's first function (the difference
-    /// is then within the first calls); -1 when there is none in the first <see cref="AlignWindow"/>.</summary>
-    private static int Align(List<(long Us, string Function, string Result)> capture, List<(long Us, string Function, string Result)> rerun)
+    /// <summary>The index of the re-run's call where the capture's calls (from <paramref name="from"/>) start: of the
+    /// re-run's calls from which the next ones (up to 8) are to the same functions, the closest in guest time (a game
+    /// repeats the same calls every frame: the first match can be another frame's), else the first call to the
+    /// capture's first function (the difference is then within the first calls); -1 when there is none in the first
+    /// <see cref="AlignWindow"/>.</summary>
+    private static int Align(List<(long Us, string Function, string Result)> capture, int from, List<(long Us, string Function, string Result)> rerun)
     {
         int firstFunction = -1;
         for (int start = 0; start < Math.Min(AlignWindow, rerun.Count); start++)
         {
-            if (firstFunction < 0 && rerun[start].Function == capture[0].Function)
+            if (firstFunction < 0 && rerun[start].Function == capture[from].Function)
             {
                 firstFunction = start;
             }
         }
 
+        int best = -1;
+        long bestDistance = long.MaxValue;
         for (int start = 0; start < Math.Min(AlignWindow, rerun.Count); start++)
         {
-            int length = Math.Min(8, Math.Min(capture.Count, rerun.Count - start));
+            int length = Math.Min(8, Math.Min(capture.Count - from, rerun.Count - start));
             bool same = true;
             for (int i = 0; i < length && same; i++)
             {
-                same = capture[i].Function == rerun[start + i].Function;
+                same = capture[from + i].Function == rerun[start + i].Function;
             }
 
-            if (same)
+            long distance = Math.Abs(rerun[start].Us - capture[from].Us);
+            if (same && distance < bestDistance)
             {
-                return start;
+                best = start;
+                bestDistance = distance;
             }
         }
 
-        return firstFunction;
+        return best >= 0 ? best : firstFunction;
     }
 
     private static Dictionary<string, List<(long Us, string Function, string Result)>> Read(string file)

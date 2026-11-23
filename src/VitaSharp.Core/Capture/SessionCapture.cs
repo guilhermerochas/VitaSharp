@@ -53,6 +53,15 @@ public sealed class SessionCaptureOptions
     /// <summary>Largest recording: it stops by itself once its encoded pictures (frames.vsfr) pass this many bytes
     /// (0 = no limit).</summary>
     public long MaxBytes = 1L << 30;
+    /// <summary>Most bytes of distinct file contents a recording keeps of what the guest read from its title's mounts
+    /// (files/; <see cref="CaptureFileRecorder"/>): 256 MB on the desktop, 64 MB on Android; VITASHARP_CAPTURE_FILES_MB /
+    /// --capture-files-mb=MB. Reads past it are listed with their hash only.</summary>
+    public long MaxFileBytes = 256L << 20;
+    /// <summary>Keeps the bytes read from the title's save data too (by default only their hashes: a save is the
+    /// player's); VITASHARP_CAPTURE_SAVEDATA=1 / --capture-savedata.</summary>
+    public bool KeepSaveData;
+    /// <summary>Records the title's file reads (files/; a re-run's own recording does not).</summary>
+    public bool Files = true;
     public const double DefaultMaxSeconds = 60;
     /// <summary>What the capture's texts must not carry (paths, user, computer and account names): null = this
     /// computer's (<see cref="CapturePrivacy.ForThisComputer"/>, the data folder above <see cref="Root"/>).</summary>
@@ -84,6 +93,8 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     private int _busy;
     private Recording? _rec;
     private bool _disposed;
+    /// <summary>The title's file reads (on while armed or recording, as the tap).</summary>
+    private CaptureFileRecorder? _files;
 
     // pre-roll
     private double _preRollSeconds;
@@ -124,6 +135,8 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         public PreRollState? PreRoll;
         public (long GuestUs, long Ns, long Flip)? StartState;
         public bool OwnsAudio;
+        public CaptureFileRecorder? Files;
+        public string? FilesSummary;
         public GpuDumpRecorder? Dump;
         public GpuDumpResult? DumpResult;
         public readonly ManualResetEventSlim DumpDone = new(true);
@@ -165,6 +178,15 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     {
         _emu = emu;
         _options = options;
+        if (Environment.GetEnvironmentVariable(EnvVars.CaptureFilesMegabytes) is { } filesMb && long.TryParse(filesMb, NumberStyles.Integer, CultureInfo.InvariantCulture, out long megabytes))
+        {
+            options.MaxFileBytes = Math.Max(0, megabytes) << 20;
+        }
+
+        if (Environment.GetEnvironmentVariable(EnvVars.CaptureSaveData) == "1")
+        {
+            options.KeepSaveData = true;
+        }
         _privacy = options.Privacy ?? CapturePrivacy.ForThisComputer(Path.GetDirectoryName(Path.GetFullPath(options.Root)), emu.Options.Psn);
         // the last button and touch changes are always kept (a compare per poll): the report says what the player did
         // just before pressing F8 even without the pre-roll
@@ -292,11 +314,22 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         InstallInput();
         _input!.RecordMotion = true;
         _options.SetPresentTap(this);
+        if (_options.Files && _files == null)
+        {
+            _files = new CaptureFileRecorder(_options.MaxFileBytes, _options.KeepSaveData);
+            CaptureHooks.Files ??= _files;
+        }
     }
 
     private void StopRunning()
     {
         _options.SetPresentTap(null);
+        if (_files != null && ReferenceEquals(CaptureHooks.Files, _files))
+        {
+            CaptureHooks.Files = null;
+        }
+
+        _files = null;
         if (_disposed)
         {
             UninstallInput();
@@ -462,6 +495,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         while (_ringInput.First is { } i && i.Value.Ns < keepFrom)
         {
             _ringInput.RemoveFirst();
+        }
+
+        if (_states.Count > 0)
+        {
+            _files?.Trim(_states[0].StartNs);
         }
     }
 
@@ -797,6 +835,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 
             _ringInput.Clear();
             r.Before = _recent.ToList();
+            r.Files = _files;
             _recent.Clear();
             r.Input.Add(InputEvent.Now("mark", $"start {reason}"));
             r.Input.Add(InputEvent.Now("ctx", where));
@@ -1047,6 +1086,13 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         Step(r, "timeline.tsv", () => WriteTimeline(r));
         List<string> callSummary = [];
         Step(r, HleCallTrace.FileName, () => callSummary = HleCallTrace.Write(Path.Combine(dir, HleCallTrace.FileName)));
+        Step(r, CaptureFileRecorder.Folder + "/", () =>
+        {
+            if (r.Files != null)
+            {
+                r.FilesSummary = r.Files.Write(dir, r.PreRoll?.StartNs ?? r.StartNs).ToString();
+            }
+        });
         Step(r, "hle_errors.txt", () => File.WriteAllLines(Path.Combine(dir, "hle_errors.txt"), DebugMode.HleSummary().DefaultIfEmpty("(no HLE error returns or unimplemented calls recorded)").Concat(callSummary)));
         if (wavs.Count > 0)
         {
@@ -1187,6 +1233,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         int pre = r.Frames.Count(f => (f.Flags & FramesFile.FlagPreRoll) != 0);
         sb.AppendLine(FormattableString.Invariant($"frames: {r.Frames.Count} presented ({pre} from the pre-roll), {r.FrameBytes / 1048576.0:F1} MB of pictures (QOI key pictures + deltas), {r.Frames.Count(f => (f.Flags & FramesFile.FlagNoPicture) != 0)} without a picture (the encoder fell behind)"));
         sb.AppendLine($"input: {r.Input.Count} events, {r.RandomCalls} random-number results");
+        sb.AppendLine($"files: {r.FilesSummary ?? "none recorded"}");
         lock (_stateStopMs)
         {
             if (_stateStopMs.Count > 0)
@@ -1216,6 +1263,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         sb.AppendLine($"  gpu{GpuDumpFormat.Extension}              GPU dump from the start (replay-gpu)");
         sb.AppendLine("  audio/, audio_mix.wav guest audio ports and NGS voices as WAVs (files.txt: start times), and their mix");
         sb.AppendLine("  threads_*.txt         guest threads at the start and stop; hle_errors.txt; log.txt");
+        sb.AppendLine("  files/                what the game read from its own mounts (app0, savedata0, addcont0...): files.tsv, blobs.bin");
         sb.AppendLine($"  {HleCallTrace.FileName}         every HLE call of the recording: thread, function, r0-r3, result, return address");
         sb.AppendLine("  context.txt           where the player is (screen, application in front, processes) and the audio ports with");
         sb.AppendLine("                        their owners, at the start and the stop; frames.png: a contact sheet of the recording");

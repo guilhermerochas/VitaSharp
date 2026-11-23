@@ -1,4 +1,4 @@
-<!-- pair: captures.pt-BR.md sha256=782bf75159042c077594d851c18c63a721956ef2efc7a1c28ca2a42b4e644765 -->
+<!-- pair: captures.pt-BR.md sha256=bea37c97906c9c5ed04e12ad4026b4236dc5a9a617d91b766e39f9a028df5299 -->
 # Analysing a Record everything capture without the game
 
 **English** | [Português](captures.pt-BR.md)
@@ -21,8 +21,14 @@ lists, `hle_calls.tsv`, `audio/files.txt`) and the GPU dump's header go through 
 | MAC addresses | `<mac>` |
 | e-mail addresses | `<email>` |
 
-No licence, key, serial or password is written. No file of the game or of a plugin is copied: the save state holds the
-guest memory as the game had it, which is what the re-run needs.
+No licence, key, serial or password is written. No file of a plugin is copied, and no whole file of the game: the save
+state holds the guest memory as the game had it, and `files/` holds only the bytes the game read from its own mounts
+(app0, addcont0) during the recording, each distinct content once, up to 256 MB (64 MB on Android;
+`VITASHARP_CAPTURE_FILES_MB=<MB>` or `--capture-files-mb=<MB>`; 0 keeps only the paths, positions and hashes).
+That is what the re-run needs; `report.txt` says when a capture holds data of the game, so it is shared only where
+that may go. The save data (savedata0) is the player's: only the paths, positions and hashes of its reads are kept,
+unless the recording is made with `--capture-savedata` (or `VITASHARP_CAPTURE_SAVEDATA=1`); the re-run reads the
+save of its own data folder.
 
 ## What the capture says about the setup
 
@@ -51,9 +57,12 @@ given (`--data=<folder>`). `--boot=title` boots the installed game instead and l
 `hle_calls.tsv` has one line per HLE call of the recording (guest time, thread, function, library, r0-r3, result,
 return address); `hle_errors.txt` sums them by function with the error returns.
 
-What still needs the game: files the game reads from its folder during the recording (the re-run gets "not found" for
-them and diverges from there; `hle_calls.tsv` shows where), firmware modules the game loads for the first time
-during the recording (they come from the analyst's firmware), and captures of the system shell with applications open
-(several processes; booting them from the state is not supported yet).
+The files the game read during the recording are put back over its mounts for the re-run, so it reads the same
+bytes without the game; the re-run's summary says whether it read anything the recording did not (`files:` line), and
+`report.txt` lists what was read and whether it all left with the capture.
+
+What still needs the game: reads past the `files/` limit (the re-run reads zeros there), firmware modules the game
+loads for the first time during the recording (they come from the analyst's firmware), and captures of the system
+shell with applications open (several processes; booting them from the state is not supported yet).
 
 Details for developers: [`docs/notes/session-capture.md`](notes/session-capture.md).

@@ -278,6 +278,16 @@ public static class CaptureAnalyzer
             sb.AppendLine("    " + l["audio: ".Length..]);
         }
 
+        List<string> fileLines = CaptureFileRecorder.ReportSection(dir);
+        if (fileLines.Count > 0)
+        {
+            sb.AppendLine();
+            foreach (string l in fileLines)
+            {
+                sb.AppendLine(l);
+            }
+        }
+
         List<string> hooks = VitaSharp.Core.Hle.Modules.PluginHookStats.ReportSection(ContextSection(dir, stop: false), ctxStop);
         if (hooks.Count > 0)
         {

@@ -70,4 +70,37 @@ public sealed class HleCallTraceTests : IDisposable
         Assert.Equal("thread 'main' call 9: sceCtrlPeekBufferPositive in the capture, sceKernelExitProcess in the re-run (guest time 0.001 s)",
             HleCallTrace.FirstDifference(a, c));
     }
+
+    /// <summary>
+    /// The capture's trace starts before its state is saved (the game runs on to a safe point), so its first frames
+    /// are not in a re-run from that state; and a game makes the same calls every frame, so the first frame of the
+    /// re-run whose functions match is not the same frame. Every frame here opens a file (the fd goes up by one per
+    /// frame): the capture's calls from the re-run's first guest time on are paired with the re-run's at the same
+    /// guest time, and nothing differs. Paired by the first match, frame 3 of the capture met frame 1 of the re-run and
+    /// "sceIoOpen returned 0x0000012A ..., 0x0000012C" looked like a divergence.
+    /// </summary>
+    [Fact]
+    public void TheCapturesFramesFromBeforeTheStateAreNotPairedWithTheReRunsFirstOnes()
+    {
+        string[] Frame(int frame, long us) =>
+        [
+            Call(us, "main", "sceCtrlPeekBufferPositive", "0x00000001"),
+            Call(us + 100, "main", "sceIoOpen", $"0x{0x128 + frame:X8}"),
+            Call(us + 200, "main", "sceIoRead", "0x00000004"),
+            Call(us + 300, "main", "sceIoClose", "0x00000000"),
+            Call(us + 400, "main", "sceDisplaySetFrameBuf", "0x00000000"),
+            Call(us + 500, "main", "sceDisplayWaitVblankStart", "0x00000000"),
+        ];
+
+        // the capture: frames 0..9 (the state is saved during frame 2); the re-run: frames 2..9 from the state, its
+        // clock a few microseconds off the recording's
+        string a = Write("a.tsv", Enumerable.Range(0, 10).SelectMany(f => Frame(f, 1_000_000 + f * 16_667L)).ToArray());
+        string b = Write("b.tsv", Enumerable.Range(2, 8).SelectMany(f => Frame(f, 1_000_000 + f * 16_667L + 37)).ToArray());
+        Assert.Null(HleCallTrace.FirstDifference(a, b));
+
+        // a real divergence after the state is still found, at its call of the capture
+        string c = Write("c.tsv", Enumerable.Range(2, 8).SelectMany(f => Frame(f == 6 ? 99 : f, 1_000_000 + f * 16_667L + 37)).ToArray());
+        Assert.Equal("thread 'main' call 38: sceIoOpen returned 0x0000012E in the capture, 0x0000018B in the re-run (guest time 1.100 s)",
+            HleCallTrace.FirstDifference(a, c));
+    }
 }

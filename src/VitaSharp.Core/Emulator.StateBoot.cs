@@ -34,6 +34,8 @@ public sealed partial class Emulator
         Title = image.Title;
         Vfs.MountSaveData("savedata0", FirmwareLayout.SaveData.Host(Options.FsRoot, TitleId));
         Vfs.Mount("addcont0", FirmwareLayout.AddCont.Host(Options.FsRoot, TitleId));
+        // the re-run of a capture: the files the recording read go over the title's mounts
+        Capture.CapturedFiles.Active?.Apply(this);
         IsSystemProgram = image.IsSystemProgram;
         RunsOnSystemCore = image.RunsOnSystemCore;
         ProgramAuthorityId = image.AuthorityId;

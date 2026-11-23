@@ -324,6 +324,12 @@ public static class EnvVars
     /// <summary>=SECONDS (0 = no limit; default 60): "Gravar tudo" stops and saves by itself after that long
     /// (--capture-max=SECONDS; SessionCaptureOptions.MaxSeconds).</summary>
     public const string CaptureMaxSeconds = "VITASHARP_CAPTURE_MAX_SECONDS";
+    /// <summary>=MB: most bytes of distinct file contents "Gravar tudo" keeps of what the game read from its own mounts
+    /// (files/; default 256 on the desktop, 64 on Android; 0 = only paths, offsets and hashes; --capture-files-mb=MB).</summary>
+    public const string CaptureFilesMegabytes = "VITASHARP_CAPTURE_FILES_MB";
+    /// <summary>=1: "Gravar tudo" keeps the bytes the game read from its save data too (by default only their paths,
+    /// positions and hashes: a save is the player's data; --capture-savedata).</summary>
+    public const string CaptureSaveData = "VITASHARP_CAPTURE_SAVEDATA";
 
 
 
