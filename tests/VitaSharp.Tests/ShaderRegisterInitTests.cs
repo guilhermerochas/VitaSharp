@@ -76,6 +76,13 @@ public sealed class ShaderRegisterInitTests
 
             foreach (string bank in s_banks)
             {
+                // a fragment program's output registers keep what the tile holds (TileWord1: the word an earlier
+                // program of the scene left), so they are not cleared
+                if (bank == "o" && !generated.IsVertex)
+                {
+                    continue;
+                }
+
                 if (!Initialized(generated.Glsl, bank))
                 {
                     undefined.Add($"{name}: {bank}");

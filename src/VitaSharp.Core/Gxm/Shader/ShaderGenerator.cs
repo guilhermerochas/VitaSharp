@@ -266,7 +266,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 34;
+    public const int GeneratorVersion = 35;
 
     /// <summary>Clip distances the generated vertex shaders may write (index 0 the far plane, 1-7 the GXM user clip
     /// planes 0-6): the Vulkan minimum of maxClipDistances.</summary>
@@ -875,9 +875,12 @@ float packC10(vec3 c) {
         }
 
         // ---- the programs: secondary (sample-rate) phase first, then primary
-        // outputs and temporaries of both stages start at zero (a fragment program may read an output register before
-        // writing it as well)
-        t.Line("for (int k = 0; k < o.length(); k++) o[k] = vec4(0.0);");
+        // a vertex program's outputs start at zero; a fragment program's output registers are not cleared: they may
+        // hold the word an earlier program of the scene left in the tile (TileWord1), loaded before this point
+        if (vertex)
+        {
+            t.Line("for (int k = 0; k < o.length(); k++) o[k] = vec4(0.0);");
+        }
         // Temporaries start at zero: programs write parts of a register (a 16-bit VBW into the low half) and read the
         // whole word back; an uninitialised GLSL local made those upper bits undefined (driver-dependent garbage that
         // changed every frame: Tearaway's skinned meshes indexed bone matrices far out of range).
