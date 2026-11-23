@@ -71,6 +71,12 @@ public sealed class HleEntryCallTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(7 + 3, probe.ProbeWordsThroughEntry(7, 3, false, 0));
         Assert.False(probe.ProbeFlagThroughEntry(EntryProbeColor.Red));
         Assert.Equal(2, probe.Calls);
+
+        // an emulator whose registry was never made (unit tests make modules on such an emulator)
+        var bare = (Core.Emulator)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Core.Emulator));
+        var onBare = new EntryProbeModule { Emu = bare };
+        Assert.Equal(1 + 2, onBare.ProbeWordsThroughEntry(1, 2, false, 0));
+        Assert.Equal(1, onBare.Calls);
     }
 
     /// <summary>A user plugin's hook on the function in this process takes the HLE's own call: the hook sees the words
