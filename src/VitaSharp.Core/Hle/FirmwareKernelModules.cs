@@ -372,6 +372,63 @@ public sealed class FirmwareKernelModules(Emulator emu)
         return thread.CallGuest(address, args);
     }
 
+    /// <summary>How many exported functions' entries guest code had patched when <see cref="_patchesCheckedAt"/> was
+    /// <see cref="Cpu.BlockCache.CodeChanges"/> (-1: never counted).</summary>
+    private int _patchedEntries;
+
+    private long _patchesCheckedAt = -1;
+
+    /// <summary>
+    /// Whether any exported function's entry is patched (a hook): the fast check of <see cref="TryCallPatched"/>. Guest
+    /// code that patches code drops its translations (the framework does, and so does a plugin's own copy followed by
+    /// the cache maintenance the hardware needs), which moves <see cref="Cpu.BlockCache.CodeChanges"/>; only then are
+    /// the entries counted again. With nothing patched and no code change since, it reads two fields.
+    /// </summary>
+    private bool AnyEntryPatched()
+    {
+        long changes = Cpu.BlockCache.CodeChanges;
+        if (Volatile.Read(ref _patchesCheckedAt) == changes)
+        {
+            return Volatile.Read(ref _patchedEntries) != 0;
+        }
+
+        lock (_lock)
+        {
+            int patched = 0;
+            foreach ((uint Entry, uint Svc) e in _entries.Values)
+            {
+                if (GuestMemory.R32(e.Entry) != e.Svc || GuestMemory.R32(e.Entry + 4) != BxLr)
+                {
+                    patched++;
+                }
+            }
+
+            Volatile.Write(ref _patchedEntries, patched);
+            Volatile.Write(ref _patchesCheckedAt, changes);
+            return patched != 0;
+        }
+    }
+
+    /// <summary>
+    /// A call the HLE makes to the firmware's own exported function <paramref name="nid"/> of library
+    /// <paramref name="libNid"/> (the firmware calls it by its address, so a hook on its entry sees the call, as a hook
+    /// on the Vita patches the function's code itself): when guest code patched the entry, runs it on the calling
+    /// thread with <paramref name="a0"/>-<paramref name="a3"/>, puts its r0 in <paramref name="result"/> and returns
+    /// true; otherwise returns false and the caller runs the HLE function directly. Without a patch it allocates
+    /// nothing and reads two fields (<see cref="AnyEntryPatched"/>).
+    /// </summary>
+    public bool TryCallPatched(uint libNid, uint nid, out int result, uint a0, uint a1 = 0, uint a2 = 0, uint a3 = 0)
+    {
+        result = 0;
+        if (!AnyEntryPatched() || GuestThread.Current is not { } thread || !IsPatched(libNid, nid))
+        {
+            return false;
+        }
+
+        result = (int)RunGuest(thread, EntryOf(libNid, nid), [a0, a1, a2, a3]);
+        return true;
+    }
+
     /// <summary>
     /// A call of the firmware's function <paramref name="nid"/> of library <paramref name="libNid"/> the way the firmware
     /// makes it, by its address: when guest code hooked the function, the call runs the guest code at its entry on the

@@ -274,6 +274,14 @@ public sealed unsafe class BlockCache
     /// </summary>
     private long _invalidations;
 
+    /// <summary>Counts the code changes of every cache of the process (each <see cref="Invalidate"/>,
+    /// <see cref="Revalidate"/> and <see cref="Clear"/>): whoever caches a fact about guest code (whether a firmware
+    /// function's entry is patched, <see cref="Hle.FirmwareKernelModules"/>) checks it again only when this moved.</summary>
+    private static long s_codeChanges;
+
+    /// <summary>See <see cref="s_codeChanges"/>.</summary>
+    public static long CodeChanges => Volatile.Read(ref s_codeChanges);
+
     /// <summary>Test point: called in <see cref="Get"/> between decoding a block and adding it to the cache.</summary>
     internal Action<Block>? AfterDecode { get; set; }
 
@@ -363,6 +371,7 @@ public sealed unsafe class BlockCache
     public void Invalidate(uint addr, uint size)
     {
         Interlocked.Increment(ref _invalidations);
+        Interlocked.Increment(ref s_codeChanges);
         foreach (KeyValuePair<ulong, Block> kv in _blocks)
         {
             Block b = kv.Value;
@@ -385,6 +394,7 @@ public sealed unsafe class BlockCache
     {
         using AddressSpace.Activation activation = AddressSpace.Use(Space ?? AddressSpace.Current);
         Interlocked.Increment(ref _invalidations);
+        Interlocked.Increment(ref s_codeChanges);
         var unchanged = new HashSet<(uint Start, uint End)>();
         var changed = new List<KeyValuePair<ulong, Block>>();
         var withDeps = new List<KeyValuePair<ulong, Block>>();
@@ -452,6 +462,7 @@ public sealed unsafe class BlockCache
     public void Clear()
     {
         Interlocked.Increment(ref _invalidations);
+        Interlocked.Increment(ref s_codeChanges);
         foreach (KeyValuePair<ulong, Block> kv in _blocks)
         {
             Retire(kv.Value);

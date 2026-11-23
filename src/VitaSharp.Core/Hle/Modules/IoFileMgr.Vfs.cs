@@ -631,6 +631,21 @@ public sealed partial class IoFileMgr
         return VopCall(vnode, 0x0C, [vnode, vpp, path, flags], VnodeActiveBelow);
     }
 
+    /// <summary>SceIofilemgrForDriver's library NID (fixed by the firmware).</summary>
+    private const uint IofilemgrForDriverNid = 0x40FD29C7;
+
+    /// <summary>ksceVopLookup as iofilemgr's own path walks call it: by the function's address, so a hook on its entry
+    /// (a kernel plugin's, which on the Vita patches the function's code) sees these calls too.</summary>
+    int VopLookupThroughEntry(uint vnode, uint vpp, uint path, uint flags)
+    {
+        if (Emu.FirmwareKernel.TryCallPatched(IofilemgrForDriverNid, 0xA5A6A55C, out int hooked, vnode, vpp, path, flags))
+        {
+            return hooked;
+        }
+
+        return ksceVopLookup(vnode, vpp, path, flags);
+    }
+
     /// <summary>ksceVopRead(vnode, file, buffer, size, result): op 0x10 from the file's position.</summary>
     [Hle(Nid = 0x570388A5, Library = "SceIofilemgrForDriver")]
     int ksceVopRead(uint vnode, uint file, uint buffer, uint size, uint result)

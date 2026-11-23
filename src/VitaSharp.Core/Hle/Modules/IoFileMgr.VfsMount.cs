@@ -449,7 +449,7 @@ public sealed partial class IoFileMgr
         }
 
         GuestMemory.W32(block.VnodeOut, 0);
-        result = ksceVopLookup(parent, block.VnodeOut, block.VfsPath, 0);
+        result = VopLookupThroughEntry(parent, block.VnodeOut, block.VfsPath, 0);
         uint vnode = result < 0 ? 0 : GuestMemory.R32(block.VnodeOut);
         if (result < 0 || vnode == 0)
         {
@@ -750,7 +750,7 @@ public sealed partial class IoFileMgr
         {
             path.Element(elements[i].Start, elements[i].Length);
             GuestMemory.W32(path.VnodeOut, 0);
-            int result = ksceVopLookup(vnode, path.VnodeOut, path.VfsPath, 0);
+            int result = VopLookupThroughEntry(vnode, path.VnodeOut, path.VfsPath, 0);
             uint next = result < 0 ? 0 : GuestMemory.R32(path.VnodeOut);
             ReleaseVnode(vnode);
             if (result < 0)
@@ -834,7 +834,7 @@ public sealed partial class IoFileMgr
         if (lastStart >= 0)
         {
             GuestMemory.W32(path.VnodeOut, 0);
-            result = ksceVopLookup(directory, path.VnodeOut, path.VfsPath, 0);
+            result = VopLookupThroughEntry(directory, path.VnodeOut, path.VfsPath, 0);
             if (result >= 0 && (flags & O_CREAT) != 0 && (flags & O_EXCL) != 0)
             {
                 ReleaseVnode(GuestMemory.R32(path.VnodeOut));
@@ -1024,7 +1024,7 @@ public sealed partial class IoFileMgr
         }
 
         GuestMemory.W32(path.VnodeOut, 0);
-        result = ksceVopLookup(directory, path.VnodeOut, path.VfsPath, 0);
+        result = VopLookupThroughEntry(directory, path.VnodeOut, path.VfsPath, 0);
         if (result < 0)
         {
             ReleaseVnode(directory);
