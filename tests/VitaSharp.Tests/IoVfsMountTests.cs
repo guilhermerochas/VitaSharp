@@ -331,7 +331,9 @@ public sealed class IoVfsMountTests(GuestMemoryFixture fixture) : IDisposable
             Assert.True(_h.Emu.FirmwareKernel.Load() > 0);
             uint entry = _h.Emu.FirmwareKernel.EntryOf(IofilemgrForDriver, VopLookup);
             Assert.NotEqual(0u, entry);
-            var hooked = new List<(uint Vnode, uint Path)>();
+            // the path element is read while the hook runs: the SceVfsPath lives in the walk's own block, which
+            // iofilemgr frees when the call returns (freed kernel memory reads zero on Linux and Android)
+            var hooked = new List<(uint Vnode, string Element)>();
             uint hook = _h.Emu.Memory.Alloc(16, "vfs test hook");
             Linker.WriteHleStub(hook, _h.Emu.Hle.RegisterHostFunction("vfstest:vop lookup hook", context =>
             {
@@ -339,7 +341,7 @@ public sealed class IoVfsMountTests(GuestMemoryFixture fixture) : IDisposable
                 uint vpp = context.Gpr(1);
                 uint path = context.Gpr(2);
                 uint flags = context.Gpr(3);
-                hooked.Add((vnode, path));
+                hooked.Add((vnode, Element(path)));
                 context.Return(Call(Io, "ksceVopLookup", vnode, vpp, path, flags));
             }), 0);
             _h.Emu.Code.Invalidate(hook, 16);
@@ -356,15 +358,16 @@ public sealed class IoVfsMountTests(GuestMemoryFixture fixture) : IDisposable
                 _calls.Clear();
                 int fd = Io.sceIoOpen("tvfs0:hello.txt", (int)ORdOnly, 0);
                 Assert.True(fd > 0, $"open through the hook 0x{fd:X8}");
-                (uint vnode, uint path) = Assert.Single(hooked);
+                (uint vnode, string element) = Assert.Single(hooked);
                 Assert.Equal(_root, vnode);
-                Assert.Equal("hello.txt", Element(path));
+                Assert.Equal("hello.txt", element);
                 Assert.Equal(["lookup", "open"], _calls); // the hook's continuation reached the driver
                 uint buffer = _h.Alloc(32);
                 Assert.Equal(11, Io.sceIoRead(fd, buffer, 32));
                 Assert.Equal(0, Io.sceIoClose(fd));
                 Assert.Equal(NoEnt, Io.sceIoOpen("tvfs0:missing.txt", (int)ORdOnly, 0));
                 Assert.Equal(2, hooked.Count);
+                Assert.Equal((_root, "missing.txt"), hooked[1]);
             });
         }
         finally
