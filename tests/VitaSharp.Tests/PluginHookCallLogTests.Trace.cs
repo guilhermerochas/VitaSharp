@@ -27,7 +27,7 @@ public sealed partial class PluginHookCallLogTests
     ];
 
     /// <summary>A hook that answers itself and writes 0x55 to the word its second argument points to (A32).</summary>
-    private static readonly uint[] WritesOutput =
+    private static readonly uint[] s_writesOutput =
     [
         0xE3A02055, // mov r2, #0x55
         0xE5812000, // str r2, [r1]
@@ -99,7 +99,7 @@ public sealed partial class PluginHookCallLogTests
     [Fact]
     public void AHookThatAnswersItselfAndWritesTheOutputShowsTheWrite()
     {
-        (Rig rig, uint target, _, _, _) = HookWith(_ => WritesOutput);
+        (Rig rig, uint target, _, _, _) = HookWith(_ => s_writesOutput);
         using (rig)
         {
             uint output = rig.Harness.Word(0);

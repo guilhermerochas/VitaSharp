@@ -2133,7 +2133,7 @@ public sealed class Emulator : IDisposable
             string text = File.ReadAllText(host);
             // the recordings keep which configuration was read, the build and the firmware (PluginHookStats)
             string vitaPath = path == PluginFolderConfig ? "ur0:kernel_plugins/config.txt" : path;
-            FirmwareInfo? firmware = FirmwareInfo.Read(Options.FsRoot);
+            var firmware = FirmwareInfo.Read(Options.FsRoot);
             string firmwareText = firmware == null ? "not installed" : $"{firmware.Version ?? "unknown"} (build {firmware.Build})";
             PluginHookStats.Of(this).RecordConfig(vitaPath + (PluginConfig.IsValid(text) ? "" : " (not valid: no plugin loads)"), text,
                 global::VitaSharp.Core.SaveState.SaveStateFile.EmulatorVersion, firmwareText);
