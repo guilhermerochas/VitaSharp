@@ -3204,6 +3204,14 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `last.log` mostra `plugin hook N called: ksceKernelCreateProcess ...` antes de `Loading ...`, e o resumo do fim não
   diz mais `never called` para esse hook.
 
+- [x] (23/11/2026) Censo das exportações do FW 3.74 nas bibliotecas de kernel pedidas (fix/hookfn1, tabelas de
+  exportação dos módulos decifrados contra `docs/hle/data/kernel-exports.tsv` e `user-exports.tsv`): SceProcessmgr 137
+  funções (SceProcessmgr 31, ForDriver 46, ForKernel 60), SceIofilemgr 207 (ForDriver 148, syscall 59), SceSysmem
+  1.011 (as 22 bibliotecas do módulo), SceThreadmgr 497, SceModulemgr 83, SceAppMgr 279, SceNpDrm 62: 0 faltando
+  em todas. O hook recusado `NID_71CF71FD of library 0x7A69DE86 (module SceProcessmgr)` é o ksceKernelCreateProcess do
+  FW 3.60 (SceProcessmgrForKernel era 0x7A69DE86; no 3.63+ é 0xEB1F8EF7 / 0x68068618); o 3.74 não exporta essa
+  biblioteca, então a recusa (0x90010002) é o que o console faz e o plugin cai no NID do 3.74 (o hook seguinte).
+
 - [ ] (23/11/2026, falta testar) [P1][M] Plugins de kernel no boot do sistema, antes do lançamento do título
   (fix/bootord1): os módulos `*KERNEL` carregam e iniciam no boot (uma vez por sistema, qualquer que seja o título),
   antes do mount do app0; um título cujo app0 não monta continua falhando com 0x80020004 e a mesma mensagem, e o log diz
