@@ -1,4 +1,4 @@
-<!-- pair: captures.md sha256=23cb83c2b4ee5bfba119ab790d25c4590a3dc67d281ed4443b26efb6595a6aae -->
+<!-- pair: captures.md sha256=e524d01580430e8442f786942aa601049c7ceec16319432a287a213c22facb35 -->
 # Analisar uma gravação do Gravar tudo sem o jogo
 
 [English](captures.md) | **Português**
@@ -21,14 +21,13 @@ threads, `hle_calls.tsv`, `audio/files.txt`) e o cabeçalho do dump da GPU passa
 | endereços MAC | `<mac>` |
 | endereços de e-mail | `<email>` |
 
-Nenhuma licença, chave, número de série ou senha é gravada. Nenhum arquivo de plugin é copiado, nem arquivo inteiro
-do jogo: o estado salvo guarda a memória do guest como o jogo estava, e `files/` guarda só os bytes que o jogo leu das
-montagens dele (app0, addcont0) durante a gravação, cada conteúdo distinto uma vez, até 256 MB (64 MB no Android;
-`VITASHARP_CAPTURE_FILES_MB=<MB>` ou `--capture-files-mb=<MB>`; 0 guarda só os caminhos, posições e hashes). É o
-que a reexecução precisa; o `report.txt` avisa quando a gravação leva dados do jogo, para ela ser compartilhada só
-onde isso pode ir. Os dados salvos (savedata0) são do jogador: deles ficam só os caminhos, posições e hashes das
-leituras, a não ser que a gravação seja feita com `--capture-savedata` (ou `VITASHARP_CAPTURE_SAVEDATA=1`); a
-reexecução lê o save da própria pasta de dados.
+Nenhuma licença, chave, número de série ou senha é gravada. Nenhum arquivo do jogo ou de plugin é copiado: o estado
+salvo guarda a memória do guest como o jogo estava, e `files/` lista o que o jogo leu das montagens dele (app0,
+addcont0) durante a gravação, só por caminho, posição, tamanho e hash. Os bytes só vão junto quando a gravação é
+feita com `--capture-files-mb=<MB>` (ou `VITASHARP_CAPTURE_FILES_MB=<MB>`), cada conteúdo distinto uma vez até esse
+tamanho, e o `report.txt` então avisa que a gravação leva dados do jogo, para ela ser compartilhada só onde isso pode
+ir. Os dados salvos (savedata0) são do jogador: deles ficam só os hashes, a não ser que a gravação seja feita com
+`--capture-savedata` (ou `VITASHARP_CAPTURE_SAVEDATA=1`); a reexecução lê o save da própria pasta de dados.
 
 ## O que a gravação diz sobre o ambiente
 
@@ -57,11 +56,12 @@ indicada (`--data=<pasta>`). `--boot=title` sobe o jogo instalado e carrega o es
 O `hle_calls.tsv` tem uma linha por chamada HLE da gravação (tempo do guest, thread, função, biblioteca, r0-r3,
 resultado, endereço de retorno); o `hle_errors.txt` soma por função, com os retornos de erro.
 
-Os arquivos que o jogo leu durante a gravação voltam sobre as montagens dele na reexecução, então ela lê os mesmos
-bytes sem o jogo; o resumo da reexecução diz se ela leu algo que a gravação não leu (linha `files:`), e o
-`report.txt` lista o que foi lido e se tudo saiu junto com a gravação.
+Os arquivos que o jogo leu durante a gravação voltam sobre as montagens dele na reexecução, no tamanho que tinham e,
+quando a gravação guardou, com os bytes lidos, então ela lê os mesmos bytes sem o jogo; o resumo da reexecução (linhas
+`files:`) diz se ela leu algo que a gravação não leu e quais leituras não pôde repor (guardadas só com hash: a
+reexecução lê zeros ali). O `report.txt` lista o que foi lido e se os bytes saíram junto com a gravação.
 
-O que ainda precisa do jogo: leituras além do limite de `files/` (a reexecução lê zeros ali), módulos do firmware
+O que ainda precisa do jogo: os bytes de uma gravação feita sem `--capture-files-mb`, módulos do firmware
 que o jogo carrega pela primeira vez durante a gravação (vêm do firmware de quem analisa), e gravações do shell do
 sistema com aplicativos abertos (vários processos; subir esses a partir do estado ainda não é suportado).
 

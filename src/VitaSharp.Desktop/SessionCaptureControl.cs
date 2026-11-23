@@ -62,7 +62,7 @@ sealed class SessionCaptureControl : IDisposable
         }
 
         Capture = new SessionCapture(emu, o);
-        // the file contents kept of what the game reads (default 256 MB): --capture-files-mb=MB, over VITASHARP_CAPTURE_FILES_MB
+        // the file contents kept of what the game reads (default 0: hashes only): --capture-files-mb=MB, over VITASHARP_CAPTURE_FILES_MB
         // (which the core reads when the capture is made)
         if (Runner.Opt(options, "--capture-files-mb") is { } filesMb && long.TryParse(filesMb, NumberStyles.Integer, CultureInfo.InvariantCulture, out long megabytes))
         {
@@ -333,6 +333,10 @@ sealed class SessionCaptureControl : IDisposable
                         cmp += files.ReadsOutside == 0
                             ? $"\nfiles: every read of the title's files was one the recording made"
                             : $"\nfiles: {files.ReadsOutside} reads the recording did not make (the log names the first of each file): the re-run diverged there";
+                        if (files.ReadsWithoutBytes > 0)
+                        {
+                            cmp += $"\nfiles: {files.ReadsWithoutBytes} reads could not be put back, the recording kept their hashes only (the log names the first of each file; record with --capture-files-mb=MB to keep the bytes): the re-run read zeros there";
+                        }
                     }
 
                     Log.Info($"[capture] re-run recorded: {control.Capture.Dir} (report.txt there; compare.txt against the original); {cmp}");

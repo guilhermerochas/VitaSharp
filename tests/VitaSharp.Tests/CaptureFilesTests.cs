@@ -167,6 +167,29 @@ public sealed class CaptureFilesTests : IDisposable
         Assert.Equal(4, files.ReadsOutside);
     }
 
+    /// <summary>The default (no bytes, hashes only: a capture is posted in public reports): the re-run still knows every
+    /// read the recording made, and counts the ones whose bytes it could not put back.</summary>
+    [Fact]
+    public void ByDefaultTheRerunSaysWhichReadsItCouldNotPutBack()
+    {
+        var options = new SessionCaptureOptions { Root = _root, SetPresentTap = null! };
+        Assert.Equal(0, options.MaxFileBytes);
+        var recorder = new CaptureFileRecorder(options.MaxFileBytes);
+        recorder.RecordRead(Title, "app0:a.bin", 4096, 0, Bytes("DATA"));
+        string capture = Capture("default");
+        recorder.Write(capture, long.MinValue);
+        Assert.Equal(0, BlobLength(capture));
+
+        CapturedFiles files = CapturedFiles.Materialize(capture, Path.Combine(_root, "out"))!;
+        Assert.Equal(1, files.MissingContents);
+        Assert.Equal(4096, new FileInfo(Path.Combine(files.Layers[Title]["app0"], "a.bin")).Length);
+        Assert.True(files.Check(Title, "app0:a.bin", 0, 4));
+        Assert.True(files.Check(Title, "app0:a.bin", 2, 2));
+        Assert.Equal(0, files.ReadsOutside);
+        Assert.Equal(2, files.ReadsWithoutBytes);
+        Assert.DoesNotContain(CaptureFileRecorder.ReportSection(capture), l => l.Contains("NOTE: this capture holds data of the game", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void ACaptureWithoutFilesIsNotARerunWithFiles()
     {

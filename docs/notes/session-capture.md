@@ -93,7 +93,7 @@ Folder `<data>/captures/<TITLEID>_<yyyyMMdd_HHmmss>_tudo/` and its zip:
 | `threads_start.txt`, `threads_stop.txt` | guest threads (wait state, backtrace, recent HLE calls in debug mode), held mutexes, GPU queue |
 | `hle_errors.txt` | HLE error returns and unimplemented calls by count (counted while recording, as debug mode does), and the calls of `hle_calls.tsv` by function |
 | `hle_calls.tsv` | every HLE call of the recording: guest µs, thread, function, library, r0-r3, result (`-`: still inside it at the stop), return address (`HleCallTrace`: per-thread chunks of 4096 calls, nothing allocated per call, at most 1,000,000 calls kept); `#state` lines say how many calls each thread had made when a save state was taken (the re-run, whose trace starts when its state is put back, is compared from there; a thread blocked in a call at the state makes it again in the re-run) |
-| `files/files.tsv`, `files/blobs.bin` | what the guest touched on its title's own mounts (app0, savedata0, addcont0, a PFS or game data mount; `Vfs.IsTitleDevice`; never ux0, os0, vs0): every file opened or whose status was read (its size), every folder listed (its entries), every read from the start of the recording (or of the pre-roll) on (path, offset, length, SHA-256, guest µs) and the decrypted image of every module loaded from them; `blobs.bin` holds each distinct content once, up to `VITASHARP_CAPTURE_FILES_MB` / `--capture-files-mb` (256 MB on the desktop, 64 MB on Android; 0 = hashes only), the rest is listed with its hash (`CaptureFileRecorder`); the save data mounts (`Vfs.IsSaveDataDevice`) only with their hashes (`hashdir`/`hashfile`/`hashread` lines, never put back by a re-run) unless `--capture-savedata` / `VITASHARP_CAPTURE_SAVEDATA=1`; `report.txt` notes when the capture holds the game's data |
+| `files/files.tsv`, `files/blobs.bin` | what the guest touched on its title's own mounts (app0, savedata0, addcont0, a PFS or game data mount; `Vfs.IsTitleDevice`; never ux0, os0, vs0): every file opened or whose status was read (its size), every folder listed (its entries), every read from the start of the recording (or of the pre-roll) on (path, offset, length, SHA-256, guest µs) and the decrypted image of every module loaded from them; `blobs.bin` holds each distinct content once, up to `VITASHARP_CAPTURE_FILES_MB` / `--capture-files-mb` (default 0: no bytes, every read listed with its hash only; a capture goes to public reports), the rest is listed with its hash (`CaptureFileRecorder`); the save data mounts (`Vfs.IsSaveDataDevice`) only with their hashes (`hashdir`/`hashfile`/`hashread` lines, never put back by a re-run) unless `--capture-savedata` / `VITASHARP_CAPTURE_SAVEDATA=1`; `report.txt` notes when the capture holds the game's data |
 | `log.txt` | the session log up to the stop |
 
 ### Pre-roll
@@ -127,7 +127,7 @@ Measured on the desktop (GTX 1650 laptop, 4 logical CPUs given to the emulator, 
 | States | 30-50 MB each (start, and pre-roll) |
 | Audio | 11.5 MB/min per stereo 48 kHz port or voice WAV |
 | Input, timeline, text | < 1 MB/min |
-| Files read (`files/`) | the distinct bytes the game read from its own mounts while recording, up to the limit (256 MB / 64 MB); a SHA-256 per `sceIoRead` (off: one static field read) |
+| Files read (`files/`) | the index (path, offset, length, hash per read); the distinct bytes only up to `--capture-files-mb` (default 0); a SHA-256 per `sceIoRead` (off: one static field read) |
 | CPU while recording | the GPU dump's (~0.2-7 ms/frame on the GPU worker + compression on other threads), the frame encoder (~1 ms/frame on its own thread), the per-frame downscale copy on the GPU (the debug-mode replay ring's), a compare per input poll |
 | Start | one save state: the game stops 0.1-0.35 s |
 | Pre-roll armed | the same frame encoding, the input rings, and a save state every 30 s (0.1-0.35 s stop each) |
@@ -163,7 +163,8 @@ into `<capture>/reruns/.files/`: each file at its recorded size, sparse, with th
 and go over the title's mounts as a layer read before the device's own folder (`Vfs.AddReplayLayer`; a file of the
 layer opened for writing is moved to the device's folder first), so the game reads the same bytes without being
 installed; a module it loads from them is the recorded decrypted image (no licence leaves with the capture). A read the
-recording did not make is logged with its path and counted ("files:" line of the re-run's summary). A received
+recording did not make is logged with its path and counted ("files:" line of the re-run's summary), and so is a read
+whose bytes the recording kept as a hash only (the default: the re-run reads zeros there). A received
 capture is untrusted: a line whose path would leave `.files/` (a drive or root path, `..`, a device that is not a
 plain name) or does not parse is skipped. States of several
 processes (the shell with applications) are refused. `--boot=title` boots the installed game instead and loads the

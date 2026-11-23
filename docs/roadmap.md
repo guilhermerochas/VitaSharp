@@ -3184,9 +3184,10 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 - [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo: os arquivos que o jogo lê das montagens dele saem com a gravação
   (feat/capself2, `docs/captures.md`): `files/files.tsv` lista cada arquivo aberto ou consultado (tamanho), pasta
   listada e leitura de app0/savedata0/addcont0/montagens PFS (caminho do guest, posição, tamanho, SHA-256) e a imagem
-  decifrada de cada módulo carregado de lá; `files/blobs.bin` guarda cada conteúdo distinto uma vez, até
-  `VITASHARP_CAPTURE_FILES_MB`/`--capture-files-mb` (256 MB no PC, 64 MB no Android; 0 = só hashes); do savedata só os
-  hashes, salvo `--capture-savedata`/`VITASHARP_CAPTURE_SAVEDATA=1`, e o `report.txt` avisa que a gravação leva dados
+  decifrada de cada módulo carregado de lá; `files/blobs.bin` guarda cada conteúdo distinto uma vez só com
+  `VITASHARP_CAPTURE_FILES_MB`/`--capture-files-mb` (padrão 0: só hashes, nenhum arquivo do jogo; o rerun diz quais
+  leituras não pôde repor); do savedata só os hashes, salvo `--capture-savedata`/`VITASHARP_CAPTURE_SAVEDATA=1`, e
+  com bytes o `report.txt` avisa que a gravação leva dados
   do jogo. O `rerun` põe
   esses arquivos de volta (esparsos, no tamanho gravado) numa camada sobre as montagens (`Vfs.AddReplayLayer`) e diz
   na linha `files:` se leu algo que a gravação não leu; o `report.txt` tem a seção dos arquivos. Uma gravação recebida

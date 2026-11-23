@@ -216,7 +216,6 @@ public sealed partial class EmulationSession : IDisposable
             RunOptions = [$"--cpu-mhz={_settings.ClockHz / 1_000_000}"],
             // a phone has less memory and slower cores than a PC
             PreRollMaxBytes = 64L << 20,
-            MaxFileBytes = 64L << 20,
             EncoderQueueFrames = 48,
             DumpMaxFrames = 1800,
             StopHint = Loc.Get("MStopHint"),

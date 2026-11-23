@@ -54,9 +54,11 @@ public sealed class SessionCaptureOptions
     /// (0 = no limit).</summary>
     public long MaxBytes = 1L << 30;
     /// <summary>Most bytes of distinct file contents a recording keeps of what the guest read from its title's mounts
-    /// (files/; <see cref="CaptureFileRecorder"/>): 256 MB on the desktop, 64 MB on Android; VITASHARP_CAPTURE_FILES_MB /
-    /// --capture-files-mb=MB. Reads past it are listed with their hash only.</summary>
-    public long MaxFileBytes = 256L << 20;
+    /// (files/; <see cref="CaptureFileRecorder"/>). 0, the default: none, every read is listed with its path, offset,
+    /// length and hash only (a capture is posted in public reports: it carries no file of the game); a size chosen
+    /// with VITASHARP_CAPTURE_FILES_MB / --capture-files-mb=MB keeps the bytes up to it, and the report says the capture
+    /// holds data of the game.</summary>
+    public long MaxFileBytes;
     /// <summary>Keeps the bytes read from the title's save data too (by default only their hashes: a save is the
     /// player's); VITASHARP_CAPTURE_SAVEDATA=1 / --capture-savedata.</summary>
     public bool KeepSaveData;

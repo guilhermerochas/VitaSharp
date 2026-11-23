@@ -505,6 +505,10 @@ public sealed class CapturedFiles : IFileHook
     private readonly HashSet<string> _warned = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lock = new();
     private long _outside;
+    private long _withoutBytes;
+    /// <summary>Per file, the recorded reads whose bytes the capture does not hold (hashes only).</summary>
+    private readonly Dictionary<string, List<(long Offset, long End)>> _hashOnly = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _warnedHashOnly = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The re-run's files: every process brought up from a state puts its title's over its mounts.</summary>
     public static CapturedFiles? Active { get; set; }
@@ -518,6 +522,9 @@ public sealed class CapturedFiles : IFileHook
     public int Skipped { get; private set; }
     /// <summary>Reads of the re-run the recording did not make.</summary>
     public long ReadsOutside => Interlocked.Read(ref _outside);
+    /// <summary>Reads of the re-run the recording made but kept with their hash only: their bytes could not be put back
+    /// (the re-run read zeros there).</summary>
+    public long ReadsWithoutBytes => Interlocked.Read(ref _withoutBytes);
 
     private CapturedFiles()
     {
@@ -642,7 +649,8 @@ public sealed class CapturedFiles : IFileHook
                 }
 
                 Reads++;
-                AddRange(title + "|" + CaptureFileRecorder.Canonical(path), offset, length);
+                string key = title + "|" + CaptureFileRecorder.Canonical(path);
+                AddRange(key, offset, length);
                 if (Content(blobs, f[6], length) is { } data)
                 {
                     WriteAt(host, offset, data);
@@ -650,6 +658,13 @@ public sealed class CapturedFiles : IFileHook
                 else
                 {
                     MissingContents++;
+                    if (!_hashOnly.TryGetValue(key, out List<(long Offset, long End)>? missing))
+                    {
+                        missing = [];
+                        _hashOnly[key] = missing;
+                    }
+
+                    missing.Add((offset, offset + length));
                 }
 
                 return true;
@@ -833,6 +848,15 @@ public sealed class CapturedFiles : IFileHook
         {
             if (_ranges.TryGetValue(key, out List<(long Offset, long End)>? list) && Covered(list, offset, end))
             {
+                if (_hashOnly.TryGetValue(key, out List<(long Offset, long End)>? missing) && Overlaps(missing, offset, end))
+                {
+                    _withoutBytes++;
+                    if (_warnedHashOnly.Add(key))
+                    {
+                        Log.Warn($"[capture] re-run: {guestPath} read at {offset} ({length} bytes): the recording kept its hash only, the re-run reads zeros there (record with --capture-files-mb=MB to keep the bytes)");
+                    }
+                }
+
                 return true;
             }
 
@@ -844,6 +868,19 @@ public sealed class CapturedFiles : IFileHook
 
             return false;
         }
+    }
+
+    private static bool Overlaps(List<(long Offset, long End)> list, long offset, long end)
+    {
+        foreach ((long from, long to) in list)
+        {
+            if (from < end && to > offset)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool Covered(List<(long Offset, long End)> list, long offset, long end)
