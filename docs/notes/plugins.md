@@ -153,6 +153,36 @@ the original bytes back (the code went with the process); kernel patches stay un
 | Translated code: each patch drops the blocks it covers; a block decoded during a patch is checked again | Done |
 | Module calls for user programs (load, start, stop, unload a kernel or process module; user/kernel copies) | Done |
 | Patching the firmware's own code by offset | Not possible (no firmware code: the HLE serves it) |
+| A firmware function's own internal callers (the HLE calling it) go through a hook on its entry | In progress: the routing (no cost without a hook) is in place; ksceVopLookup (iofilemgr's path walks) uses it, the other functions' internal calls not yet |
+
+### Validation matrix
+
+Each cell is a test that warms the caller's code on the path, installs the hook, checks the hook runs with the
+caller's arguments, its continuation reaches the original and its result reaches the caller, releases it and checks
+the original bytes and result are back (`PluginHookMatrixTests`, `PluginHookMatrixProcessTests`); the chain order is
+fuzzed against a model of the framework (`PluginHookChainFuzzTests`, fixed seeds, 300 steps on the interpreter, 40
+with compiled code). Paths: the interpreter, the IL backend, the host's native backend (x64 on x64; ARM64 on ARM64
+hosts, the macOS runners and Android, the same core) and code translated ahead (the code cache's precompilation:
+translated before it ever ran, then hooked).
+
+| Hook | Interpreter | IL | Native | Precompiled |
+| --- | --- | --- | --- | --- |
+| Kernel export, A32 and Thumb | ok | ok | ok | ok |
+| Kernel import (stub) | ok | ok | ok | ok |
+| Kernel offset (Thumb), absolute (A32) | ok | ok | ok | ok |
+| Kernel export of a kernel module's syscall library, user caller | ok | ok | ok | ok |
+| Kernel export of a firmware syscall the HLE serves, user caller (sees the calling process) | ok | ok | ok | ok |
+| User export, A32 and Thumb; user import; user offset (A32 and Thumb) | ok | ok | ok | ok |
+| User export of a firmware user module the HLE serves (shell) | ok | ok | ok | ok |
+| Kernel hooks seen by an application opened after them, on its threads | ok | ok | ok | ok |
+| Save state with the hooks: loads them active; one from before loads without | ok | ok | ok | ok |
+| Chain fuzz (kernel and user, 3 seeds each) | ok | ok | ok | ok |
+| Firmware-internal caller (the HLE's own call of the hooked function) | fixed for ksceVopLookup (test `IoVfsMountTests.AHookOnTheVopLookupEntrySeesTheModulesOwnPathWalks`) | same | same | same |
+
+The ARM64 sandbox (Unicorn) runs single translated blocks, not the dispatcher, so it is not a path of the matrix; the
+matrix runs on ARM64 natively where the host is ARM64. Loading a state with `VITASHARP_LOAD_KEEP_CODE=1` (translations
+kept and revalidated by their bytes) is read once per process and is not a cell (the default load drops every
+translation).
 
 ## Limits
 
