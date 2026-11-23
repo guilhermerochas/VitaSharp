@@ -205,6 +205,7 @@ public static class Strings
     public static string InternalResolution => T();
     public static string InternalResolutionDetail => T();
     public static string InternalResolutionTip => T();
+    public static string InternalResolutionGlobalDetail => T();
     public static string FrameRate => T();
     public static string FrameRateDetail => T();
     public static string FrameRateTip => T();

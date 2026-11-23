@@ -438,7 +438,7 @@ public sealed partial class MainWindow
         }
 
         s.Children.Add(head);
-        var res = GameOptions.ResScales;
+        var res = GameOptions.ResScalesWithDefault(_settings.ResScale);
         var rates = GameOptions.FrameRates;
         var fast = GameOptions.FastLoadings(_settings.FastLoading);
         var shaderCacheLoad = GameOptions.FastLoadings(_settings.LoadShaderCacheBeforePlaying); // (the same "default (on/off)", on, off choices)

@@ -134,6 +134,33 @@ public sealed class LauncherLoadingWindowTests : IDisposable
 
     private static GameLoadingWindow Loading(MainWindow main) => main.LoadingWindowForTests ?? throw new Xunit.Sdk.XunitException("no loading window");
 
+    [Theory]
+    [InlineData("{ \"CheckUpdates\": false, \"ResScale\": 2 }", 2)] // no choice of its own: the global one
+    [InlineData("{ \"CheckUpdates\": false, \"ResScale\": 2, \"Games\": { \"" + TitleId + "\": { \"ResScale\": 1 } } }", 1)] // its own native
+    [InlineData("{ \"CheckUpdates\": false, \"ResScale\": 1, \"Games\": { \"" + TitleId + "\": { \"ResScale\": 3 } } }", 3)] // its own 3x
+    public void TheLoadingWindowShowsAndTheGameGetsTheResolutionItStartsWith(string launcherJson, int expected)
+    {
+        File.WriteAllText(Path.Combine(_root, "data", "launcher.json"), launcherJson);
+        MainWindow main = NewLauncher(Loc.English);
+        Assert.True(main.LaunchForTests(TitleId));
+        Pump();
+        GameLoadingWindow loading = Loading(main);
+        Assert.Equal(LoadingScreen.ResolutionDetail(expected), loading.DetailTextShown);
+        string[] arguments = [.. Assert.Single(_asked).ArgumentList];
+        if (expected == 1)
+        {
+            Assert.DoesNotContain(arguments, a => a.StartsWith("--res-scale", StringComparison.Ordinal));
+        }
+        else
+        {
+            Assert.Contains($"--res-scale={expected}", arguments);
+        }
+
+        // the stand-in ends when its input closes
+        main.RunningProcessForTests!.StandardInput.Close();
+        PumpUntil(() => !main.IsRunning, "the stand-in's exit");
+    }
+
     [Fact]
     public void TheClickOpensTheLoadingWindowFirstAndItFollowsTheStepsAndCancel()
     {

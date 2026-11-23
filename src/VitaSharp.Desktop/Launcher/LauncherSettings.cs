@@ -28,6 +28,10 @@ public sealed class LauncherSettings
     /// storage reads with no speed limit (--fast-loading). Off by default: games load at the Vita memory card's speed,
     /// which some of them need (Core/Util/IoTiming.cs).</summary>
     public bool FastLoading { get; set; }
+    /// <summary>"Resolucao interna" of every game without its own choice (<see cref="GameOptions.ResScale"/>): render
+    /// targets at this multiple of the Vita's resolution (1 = native 960x544, the default; 2-4), --res-scale=
+    /// (VulkanRenderer.ResScale.cs).</summary>
+    public int ResScale { get; set; } = 1;
     /// <summary>"Compilacao rapida de shaders": shaderc optimisation Zero (on) or Performance (off), --shaderc-opt=.</summary>
     public bool FastShaderCompile { get; set; } = true;
     /// <summary>"Compilar shaders e pipelines em segundo plano": shader/pipeline prefetch workers, --async-shaders=.</summary>
@@ -150,7 +154,7 @@ public sealed class LauncherSettings
     {
         try
         {
-            if (File.Exists(FilePath) && JsonSerializer.Deserialize(File.ReadAllText(FilePath), LauncherJson.Default.LauncherSettings) is { } s)
+            if (File.Exists(FilePath) && FromJson(File.ReadAllText(FilePath)) is { } s)
             {
                 // the old launcher's home view switch: keep offering it
                 if (s.View == ViewHome)
@@ -166,6 +170,54 @@ public sealed class LauncherSettings
         catch (JsonException) { }
         catch (IOException) { }
         return new();
+    }
+
+    /// <summary>The settings in <paramref name="json"/> (launcher.json's text), with a file from before the global
+    /// "Resolucao interna" moved to it (<see cref="MigrateResScale"/>).</summary>
+    public static LauncherSettings? FromJson(string json)
+    {
+        LauncherSettings? settings = JsonSerializer.Deserialize(json, LauncherJson.Default.LauncherSettings);
+        if (settings == null)
+        {
+            return null;
+        }
+
+        using JsonDocument document = JsonDocument.Parse(json);
+        bool hasGlobalResScale = document.RootElement.ValueKind == JsonValueKind.Object
+            && document.RootElement.TryGetProperty(nameof(ResScale), out _);
+        if (!hasGlobalResScale)
+        {
+            settings.MigrateResScale();
+        }
+
+        return settings;
+    }
+
+    /// <summary>A launcher.json from before the global <see cref="ResScale"/>: a game's resolution was 1 (native) unless
+    /// chosen, and 1 was then the only default, so a game's 1 becomes "follow the global choice" (null); 2-4 stay the
+    /// game's own. (A newer file always has the global key, and there a game's 1 is its own choice of native.)</summary>
+    public void MigrateResScale()
+    {
+        foreach (GameOptions game in Games.Values)
+        {
+            if (game.ResScale is not (>= 2 and <= 4))
+            {
+                game.ResScale = null;
+            }
+        }
+    }
+
+    /// <summary>The internal resolution <paramref name="titleId"/> starts with: its own choice, else the global one
+    /// (1 = native; 2-4).</summary>
+    public int EffectiveResScale(string? titleId)
+    {
+        int scale = ResScale;
+        if (titleId != null && Games.TryGetValue(titleId, out GameOptions? game) && game.ResScale is int own)
+        {
+            scale = own;
+        }
+
+        return scale is >= 2 and <= 4 ? scale : 1;
     }
 
     /// <summary>The old single camera setting becomes the setting of both cameras.</summary>
@@ -225,6 +277,12 @@ public sealed class LauncherSettings
             {
                 yield return o;
             }
+        }
+
+        int resScale = EffectiveResScale(titleId);
+        if (resScale > 1)
+        {
+            yield return $"--res-scale={resScale}";
         }
 
         if (game?.FastLoading ?? FastLoading)
@@ -323,8 +381,18 @@ public sealed class LauncherSettings
 public sealed class GameOptions
 {
     /// <summary>"Resolucao interna": render targets at this multiple of the Vita's resolution (1 = native 960x544, the
-    /// default; 2-4 like PCSX2's upscaling), --res-scale= (VulkanRenderer.ResScale.cs). Costs GPU time with the pixel count.</summary>
-    public int ResScale { get; set; } = 1;
+    /// default; 2-4 like PCSX2's upscaling), --res-scale= (VulkanRenderer.ResScale.cs). Costs GPU time with the pixel count.
+    /// Null = the global default (<see cref="LauncherSettings.ResScale"/>); passed by <see cref="LauncherSettings.RunOptions"/>.</summary>
+    public int? ResScale { get; set; }
+
+    /// <summary>The per-game choices: "Padrao (the global one)" (null) first, then <see cref="ResScales"/>.</summary>
+    public static (int? Factor, string Label)[] ResScalesWithDefault(int global)
+    {
+        (int Factor, string Label)[] scales = ResScales;
+        int globalIndex = Math.Max(0, Array.FindIndex(scales, c => c.Factor == global));
+        string globalLabel = scales[globalIndex].Label;
+        return [(null, Core.Localization.Loc.Format("MDefaultParen", globalLabel)), .. scales.Select(c => ((int?)c.Factor, c.Label))];
+    }
 
     /// <summary>Internal resolution choices: factor and label.</summary>
     public static (int Factor, string Label)[] ResScales =>
@@ -370,11 +438,6 @@ public sealed class GameOptions
 
     public IEnumerable<string> RunOptions()
     {
-        if (ResScale is >= 2 and <= 4)
-        {
-            yield return $"--res-scale={ResScale}";
-        }
-
         if (SystemLanguage is int language && Core.Firmware.SystemLanguage.IsValid(language))
         {
             yield return $"--system-language={language}";
@@ -388,7 +451,7 @@ public sealed class GameOptions
 
     /// <summary>Every option at its default: the entry can be dropped.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
-    public bool IsDefault => ResScale is < 2 or > 4 && FrameRate is not ("30" or "60" or "unlimited") && FastLoading == null
+    public bool IsDefault => ResScale == null && FrameRate is not ("30" or "60" or "unlimited") && FastLoading == null
         && SystemLanguage == null && LoadShaderCacheBeforePlaying == null && PrecompileCode == null;
 }
 

@@ -25,6 +25,10 @@ public sealed class AppPreferences
     /// <summary>"Carregamento rapido" of every game without its own choice: storage reads with no speed limit
     /// (Core/Util/IoTiming.cs FastLoading). Off by default: games load at the Vita memory card's speed, which some need.</summary>
     public bool FastLoading { get; set; }
+    /// <summary>"Resolucao interna" of every game without its own choice (<see cref="GameSettings.ResScale"/>): "" =
+    /// native (the default), "0.75", "0.5", "2", "3" or "4" (<see cref="SettingsChoices.ResScales"/>; the desktop
+    /// launcher's global option of the same name).</summary>
+    public string ResScale { get; set; } = "";
     /// <summary>"Compilacao rapida de shaders": shaderc without optimisation ("zero", fewer hitches when new shaders
     /// appear) or with it ("perf"); the desktop launcher's option of the same name (--shaderc-opt=, VITASHARP_SHADERC_OPT
     /// in env.txt wins).</summary>
@@ -109,8 +113,8 @@ public sealed class GameSettings
     public string? GpuProfile { get; set; }
     public bool? VSync { get; set; }
     public bool? ShowFps { get; set; }
-    /// <summary>"Resolucao interna": render-target scale, "0.75", "0.5", "2", "3" or "4" (null = native; per game
-    /// only, VulkanRenderer.ResScale.cs; 2-4 are the desktop launcher's choices). Lower is faster on GPU-bound games, and
+    /// <summary>"Resolucao interna": render-target scale, "" (native), "0.75", "0.5", "2", "3" or "4" (null = the
+    /// global <see cref="AppPreferences.ResScale"/>; VulkanRenderer.ResScale.cs; 2-4 are the desktop launcher's choices). Lower is faster on GPU-bound games, and
     /// softer; 2x is sharper and costs about four times the GPU work, 3x nine, 4x sixteen.</summary>
     public string? ResScale { get; set; }
     /// <summary>"MSAA": the desktop's modes (its F3 key): "ss" renders the game's multisampled scenes 2x supersampled,
@@ -178,12 +182,24 @@ public sealed record EffectiveSettings(string CpuBackend, int CpuMhz, string Gpu
         }
 
         string gpu = SettingsChoices.GpuProfiles.Any(c => c.Value == (game?.GpuProfile ?? app.GpuProfile)) ? game?.GpuProfile ?? app.GpuProfile : "";
-        string res = SettingsChoices.ResScales.Any(c => c.Value == game?.ResScale) ? game!.ResScale! : "";
+        string res = ResolveResScale(app.ResScale, game?.ResScale);
         string msaa = SettingsChoices.MsaaModes.Any(c => c.Value.Length > 0 && c.Value == game?.Msaa) ? game!.Msaa! : "";
         string rate = SettingsChoices.FrameRates.Any(c => c.Value.Length > 0 && c.Value == game?.FrameRate) ? game!.FrameRate! : "";
         string language = SettingsChoices.SystemLanguages.Any(c => c.Value.Length > 0 && c.Value == game?.SystemLanguage) ? game!.SystemLanguage! : "";
         return new(cpu, mhz, gpu, game?.VSync ?? app.VSync, game?.ShowFps ?? app.ShowFps, res, msaa, game?.FastLoading ?? app.FastLoading, rate, language,
             game?.LoadShaderCacheBeforePlaying ?? app.LoadShaderCacheBeforePlaying, game?.PrecompileCode ?? app.PrecompileCode);
+    }
+
+    /// <summary>The internal resolution a game runs at: its own valid choice (<paramref name="own"/>, "" = native),
+    /// else the global one, else native ("").</summary>
+    private static string ResolveResScale(string global, string? own)
+    {
+        if (own != null && SettingsChoices.ResScales.Any(c => c.Value == own))
+        {
+            return own;
+        }
+
+        return SettingsChoices.ResScales.Any(c => c.Value == global) ? global : "";
     }
 
     /// <summary>EmulatorOptions.SystemLanguage for <see cref="SystemLanguage"/> (null = the system's language).</summary>

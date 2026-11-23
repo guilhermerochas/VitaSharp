@@ -31,7 +31,10 @@ public sealed partial class GameActivity
     void AddLoadingScreen(FrameLayout root, GameEntry game)
     {
         string picture = VitaSharp.Core.Io.Vfs.ResolveCaseInsensitive(game.AppDir, "sce_sys/pic0.png");
-        var screen = _loadingScreen = new LoadingScreen(game.Title, game.IconPath, File.Exists(picture) ? picture : null);
+        // the resolution the game starts with: its own choice, else the global one (Ajustes)
+        var effective = VitaSharp.Mobile.Core.Settings.EffectiveSettings.Resolve(AppServices.Prefs, AppServices.GameSettingsFor(game.TitleId));
+        string detail = LoadingScreen.ResolutionDetail(effective.ResScaleValue);
+        var screen = _loadingScreen = new LoadingScreen(game.Title, game.IconPath, File.Exists(picture) ? picture : null, detail);
         var view = _loadingView = new FrameLayout(this) { Clickable = true };
         view.SetBackgroundColor(Color.Black);
         if (screen.BackgroundPath is { } path && BitmapFactory.DecodeFile(path) is { } bitmap)
@@ -65,6 +68,10 @@ public sealed partial class GameActivity
         title.SetTextColor(Color.ParseColor("#E8ECF2"));
         title.SetMaxLines(2);
         card.AddView(title, new LinearLayout.LayoutParams(Dp(300), ViewGroup.LayoutParams.WrapContent));
+
+        var detailView = new TextView(this) { Text = screen.Detail, TextSize = 12, Gravity = GravityFlags.Center };
+        detailView.SetTextColor(Color.ParseColor("#9AA4B2"));
+        card.AddView(detailView, new LinearLayout.LayoutParams(Dp(300), ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(4) });
 
         _loadingStep = new TextView(this) { TextSize = 14, Gravity = GravityFlags.Center };
         _loadingStep.SetTextColor(Color.ParseColor("#C9D1DC"));
