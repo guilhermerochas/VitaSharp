@@ -429,6 +429,82 @@ public sealed partial class IoFileMgr
         return position;
     }
 
+    /// <summary>
+    /// The path walk of an open, a directory open or a stat on the emulator's own devices (ux0:, app0:, ...), as
+    /// iofilemgr 3.74 makes it for every path (0x81004bb8, read in the decompiled module, study only): from the
+    /// device's root vnode, one ksceVopLookup per element by the function's address, each returning the next vnode
+    /// with a reference and dropping the one before. The emulator's files answer the same without the walk, so it is
+    /// made only when a hook took ksceVopLookup (a kernel plugin's, which on the Vita sees every path walk of every
+    /// open): the hook runs on the calling thread with the device's vnodes and the element, and may continue to the
+    /// original. What it answers counts as it would on the Vita: an error fails the call with it (a "not found" only
+    /// for a path the device has; a missing file is the call's own answer, so an open that creates still creates), and
+    /// a vnode of these devices other than the one the path names sends the call to that vnode's path. Never inside a
+    /// host vnode op (a stacked driver walked its own path to the vnode already). Returns 0 or the error.
+    /// </summary>
+    int HostWalk(ref string path)
+    {
+        if (t_inHostVop || !HleEntryCalls.IsTaken(this, s_hleEntry_ksceVopLookup))
+        {
+            return 0;
+        }
+
+        string normalized = NormalizeHostPath(path);
+        int colon = normalized.IndexOf(':');
+        if (colon <= 0)
+        {
+            return 0;
+        }
+
+        uint vnode = HostVnode(normalized[..(colon + 1)]);
+        if (vnode == 0)
+        {
+            // a device the emulator does not have: the call itself answers
+            return 0;
+        }
+
+        using var block = new GuestPathBlock(this, normalized);
+        int position = colon + 1;
+        while (position < normalized.Length)
+        {
+            int start = position;
+            while (position < normalized.Length && normalized[position] != '/')
+            {
+                position++;
+            }
+
+            block.Element(start, position - start);
+            GuestMemory.W32(block.VnodeOut, 0);
+            int result = ksceVopLookupThroughEntry(vnode, block.VnodeOut, block.VfsPath, 0);
+            uint next = result < 0 ? 0 : GuestMemory.R32(block.VnodeOut);
+            ReleaseVnode(vnode);
+            if (result < 0 || next == 0)
+            {
+                int error = result < 0 ? result : VFS_ERR_NOENT;
+                bool present = HostPathExists(normalized[..position]);
+                return error == VFS_ERR_NOENT && !present ? 0 : error;
+            }
+
+            vnode = next;
+            position++;
+        }
+
+        string reached = HostVnodePath(vnode);
+        ReleaseVnode(vnode);
+        if (reached.Length > 0 && !reached.Equals(normalized, StringComparison.OrdinalIgnoreCase))
+        {
+            path = reached;
+        }
+
+        return 0;
+    }
+
+    /// <summary>Whether the emulator's devices have a file or folder at the Vita path.</summary>
+    bool HostPathExists(string vitaPath)
+    {
+        string? host = Emu.Vfs.Resolve(vitaPath, false);
+        return host != null && (File.Exists(host) || Directory.Exists(host));
+    }
+
     /// <summary>The vnode at <paramref name="path"/> a kind 1 mount covers (one reference): on a guest mount the
     /// walk through its driver, on the emulator's devices the host vnode; 0x80010002 when nothing is there.</summary>
     int CoveredVnode(string path, out uint vnode)

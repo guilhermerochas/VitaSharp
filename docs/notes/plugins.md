@@ -273,6 +273,15 @@ title key step is the secure processor's and answers 0x80020004 on the emulated 
 step: `<title>: the launch stopped at app0's mount, step N of 4 (<step>): ... (0x........)` (1 licence, 2 licence read,
 3 title key, 4 PFS mount); the message to the user is unchanged.
 
+### Path walks on the emulator's devices
+
+On the Vita iofilemgr walks every path element by element with ksceVopLookup from the device's root vnode (3.74,
+0x81004bb8, study only), so a kernel hook on it (fd_fix's) sees every open. In VitaSharp ux0:, app0: and the other
+devices are host folders; when a hook took ksceVopLookup, sceIoOpen (the user's syscall and ksceIoOpen), sceIoDopen and
+sceIoGetstat walk the path through the function's entry over the host vnodes (`IoFileMgr.VfsHost.cs`): the hook gets each
+element, and what it answers counts (an error fails the call, another vnode sends it to that vnode's path, an open that
+creates still creates). Without such a hook nothing is walked and nothing is allocated (`IoVopLookupHookTests`).
+
 ## Limits
 
 - A plugin that patches the firmware's own code by offset finds no firmware code there (VitaSharp implements the

@@ -3183,6 +3183,17 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (23/11/2026, falta testar) [P1][M] Hook de kernel no ksceVopLookup vê toda abertura nos dispositivos do emulador
+  (fix/hookfn1): no Vita o iofilemgr 3.74 percorre cada caminho elemento por elemento com o ksceVopLookup (0x81004bb8)
+  em toda abertura, e um hook nele (fd_fix) vê tudo; aqui só os mounts de drivers do guest eram percorridos e as
+  aberturas em ux0:/app0:/... iam direto aos arquivos do host (`never called` nas duas sessões). Agora sceIoOpen
+  (syscall do usuário e ksceIoOpen), sceIoDopen e sceIoGetstat fazem a caminhada pelos vnodes do host através da entrada
+  quando um hook pegou o ksceVopLookup (sem hook nada muda nem aloca); o que o hook responde vale: erro falha a chamada,
+  outro vnode leva a chamada para o caminho dele, e uma abertura que cria continua criando. Teste:
+  `IoVopLookupHookTests`. Testar: com "Ativar Plugins do Kernel" e o fd_fix ligados, abrir um jogo (ex.: um título
+  PSM); no fim do `last.log` o resumo `plugin hook N ... ksceVopLookup ... installed by FdFix` mostra chamadas (não
+  `never called`) e o jogo roda igual.
+
 - [ ] (23/11/2026, falta testar) [P1][M] Plugins de kernel no boot do sistema, antes do lançamento do título
   (fix/bootord1): os módulos `*KERNEL` carregam e iniciam no boot (uma vez por sistema, qualquer que seja o título),
   antes do mount do app0; um título cujo app0 não monta continua falhando com 0x80020004 e a mesma mensagem, e o log diz

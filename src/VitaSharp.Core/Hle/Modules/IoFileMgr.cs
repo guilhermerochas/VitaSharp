@@ -86,6 +86,13 @@ public sealed partial class IoFileMgr : HleModule
             return GuestOpen(guestMount, path, guestPath, flags, mode);
         }
 
+        // the walk the vfs makes before the open (a hook on ksceVopLookup sees it)
+        int walk = HostWalk(ref path);
+        if (walk < 0)
+        {
+            return walk;
+        }
+
         if (Emu.IsShell) NoteShellLiveArea(path);
         var host = HostPath(path, (flags & O_WRONLY) != 0);
         if (host == null) return SceError.IO_ENOENT;
@@ -338,6 +345,12 @@ int fd, long offset, int whence)
             return GuestDopen(guestMount, guestPath);
         }
 
+        int walk = HostWalk(ref path);
+        if (walk < 0)
+        {
+            return walk;
+        }
+
         var host = HostPath(path);
         if (host == null || !Directory.Exists(host)) return SceError.IO_ENOENT;
         int fd = Interlocked.Increment(ref _nextFd);
@@ -402,6 +415,12 @@ int fd, long offset, int whence)
         if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
         {
             return GuestGetstat(guestMount, guestPath, stat);
+        }
+
+        int walk = HostWalk(ref path);
+        if (walk < 0)
+        {
+            return walk;
         }
 
         var host = HostPath(path);

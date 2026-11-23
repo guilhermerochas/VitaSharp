@@ -93,11 +93,34 @@ public static class HleEntryCalls
             return false;
         }
 
+        uint target = HookTargetOf(module, export);
+        if (target == 0)
+        {
+            return false;
+        }
+
+        uint low = thread.CallGuest(target, args);
+        result = low | ((ulong)thread.LastCallR1 << 32);
+        return true;
+    }
+
+    /// <summary>Whether a call of <paramref name="export"/> made now, on this thread, would run a hook
+    /// (<see cref="TryCall"/> would take it): for work the firmware does only around such calls, which the HLE can
+    /// leave out when nothing would see it (the I/O manager's path walk over the emulator's own devices).</summary>
+    public static bool IsTaken(HleModule module, HleExportRef export)
+    {
+        return AnyHook() && GuestThread.Current != null && HookTargetOf(module, export) != 0;
+    }
+
+    /// <summary>Where a call of <paramref name="export"/> goes when a hook took it, else 0: a user plugin's hook in the
+    /// module's process first, as the process's code is what the hook patched; then a patched firmware kernel entry.</summary>
+    private static uint HookTargetOf(HleModule module, HleExportRef export)
+    {
         // a module that is not in a process (made on its own, or on an emulator not built, as unit tests make them)
         // has no hook to see
         if (module.Emu is not { } emu || emu.Hle is not { } hle)
         {
-            return false;
+            return 0;
         }
 
         FirmwareKernelModules? firmware = emu.FirmwareKernelIfShown;
@@ -109,16 +132,12 @@ public static class HleEntryCalls
                 target = firmware.PatchedEntryOf(nid, library);
             }
 
-            if (target == 0)
+            if (target != 0)
             {
-                continue;
+                return target;
             }
-
-            uint low = thread.CallGuest(target, args);
-            result = low | ((ulong)thread.LastCallR1 << 32);
-            return true;
         }
 
-        return false;
+        return 0;
     }
 }

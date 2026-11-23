@@ -282,6 +282,16 @@ processador seguro e responde 0x80020004 na unidade emulada, com ou sem hook. Um
 `<título>: the launch stopped at app0's mount, step N of 4 (<passo>): ... (0x........)` (1 licença, 2 leitura da
 licença, 3 chave do título, 4 mount PFS); a mensagem ao usuário não muda.
 
+### Caminhadas de caminho nos dispositivos do emulador
+
+No Vita o iofilemgr percorre cada caminho elemento por elemento com o ksceVopLookup a partir do vnode raiz do
+dispositivo (3.74, 0x81004bb8, só estudo), então um hook de kernel nele (o do fd_fix) vê toda abertura. No VitaSharp
+ux0:, app0: e os outros dispositivos são pastas do host; quando um hook pegou o ksceVopLookup, sceIoOpen (a syscall do
+usuário e o ksceIoOpen), sceIoDopen e sceIoGetstat percorrem o caminho pela entrada da função sobre os vnodes do host
+(`IoFileMgr.VfsHost.cs`): o hook recebe cada elemento e o que ele responde vale (um erro falha a chamada, outro vnode a
+leva ao caminho dele, uma abertura que cria continua criando). Sem esse hook nada é percorrido nem alocado
+(`IoVopLookupHookTests`).
+
 ## Limites
 
 - Um plugin que corrige por deslocamento o código do próprio firmware não acha código do firmware ali (o VitaSharp
