@@ -259,8 +259,8 @@ public sealed partial class Emulator
             }
 
             int count = (int)firmware.Call(IofilemgrForDriverLibNid, KernelIoReadNid,
-                () => (uint)io.sceIoReadThroughEntry(fd, buffer, LicenseTitleKey.LicenseSize), (uint)fd, buffer, LicenseTitleKey.LicenseSize);
-            firmware.Call(IofilemgrForDriverLibNid, KernelIoCloseNid, () => (uint)io.sceIoCloseThroughEntry(fd), (uint)fd);
+                () => (uint)io.sceIoRead(fd, buffer, LicenseTitleKey.LicenseSize), (uint)fd, buffer, LicenseTitleKey.LicenseSize);
+            firmware.Call(IofilemgrForDriverLibNid, KernelIoCloseNid, () => (uint)io.sceIoClose(fd), (uint)fd);
             result = count == LicenseTitleKey.LicenseSize ? count : LicenceReadError;
         }, "the launch's licence read");
 #pragma warning restore VSHLE010
