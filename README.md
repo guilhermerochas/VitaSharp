@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=5474041cb9f54baa78ccf6922dde4a7d7bc50e7bf7ce272a181ac7e5275822ca -->
+<!-- pair: README.pt-BR.md sha256=40118b7921a7edc523d31f2e69c4c36ad658ea6e4c06f6cfa9a311e493411314 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -323,7 +323,9 @@ problem can be reproduced without playing again. On Android: pause menu > **Reco
 turn on **Pre-recording** (Settings > General, or debug mode with F9): the file then includes the seconds before the key.
 
 Send the `.zip` with the game's name (title ID) and what happened. Every session also writes `logs/last.log`.
-Details in [`docs/notes/session-capture.md`](docs/notes/session-capture.md); whoever analyses it uses
+The capture carries nothing personal (paths, user, computer and account names become placeholders) and can be
+analysed and re-run without the game or the plugins: see [`docs/captures.md`](docs/captures.md). Details in
+[`docs/notes/session-capture.md`](docs/notes/session-capture.md); whoever analyses it uses
 `vitasharp-perf capture <zip>` and `VitaSharp.Desktop rerun <folder>`.
 
 ## Build and test

@@ -9,7 +9,8 @@ Code: `src/VitaSharp.Core/Capture/` (shared by the desktop and Android), the ren
 (`VulkanRendererOptions.PresentTap`, `VulkanRenderer.Replay.cs`), `src/VitaSharp.Desktop/SessionCaptureControl.cs`
 (F8, `--capture-*`, `rerun`), the Android pause menu (`GameActivity.cs`, `EmulationSession.cs`), the analyzer
 `vitasharp-perf capture` (`tools/VitaSharp.PerfTools/Commands/CaptureCommand.cs`, `Core/Capture/CaptureAnalyzer.cs`).
-Tests: `tests/VitaSharp.Tests/SessionCaptureTests.cs`.
+Tests: `tests/VitaSharp.Tests/SessionCaptureTests.cs`, `SessionCapturePrivacyTests.cs`, `SaveStateBootFromStateTests.cs`,
+`SessionCaptureRerunTests.cs`.
 
 ## Para o usuário
 
@@ -80,7 +81,7 @@ Folder `<data>/captures/<TITLEID>_<yyyyMMdd_HHmmss>_tudo/` and its zip:
 
 | File | Content |
 |---|---|
-| `session.txt` | title, app path, platform, run options (reused by the re-run), start/stop (time, guest frame, guest clock), the states, the GPU dump result, frame counts and sizes, process CPU while recording, build, CPU and renderer description |
+| `session.txt` | title, the app's guest folder (`app-guest-path`), its version (`app-version`: the update's APP_VER and the application's own), category, content id, firmware, kernel plugins on/off, the `VITASHARP_*` variables set, every loaded module with its image hash, platform, run options (reused by the re-run), start/stop (time, guest frame, guest clock), the states, the GPU dump result, frame counts and sizes, process CPU while recording, build, CPU and renderer description |
 | `report.txt`, `findings/*.png` | the analyzer's report, and a strip of the 5 frames around each finding |
 | `frames.vsfr` | every presented frame as shown (downscaled to fit 480x272 on the GPU), with the renderer present number, the guest flip number, the vblank count, the guest clock and the host times of the flip and of the present |
 | `timeline.tsv` | one line per presented frame: those numbers plus frame interval, GPU ms, draws, scenes, new shaders/pipelines, the biggest stall cause (FrameLedger) and its ms, framebuffer address and size, pre-roll flag |
@@ -90,7 +91,8 @@ Folder `<data>/captures/<TITLEID>_<yyyyMMdd_HHmmss>_tudo/` and its zip:
 | `gpu.vsgd` | GPU dump from the start (the Ctrl+F8 format; `replay-gpu`); up to 5400 frames on the desktop, 1800 on Android |
 | `audio/*.wav`, `audio/files.txt`, `audio_mix.wav` | every guest audio port and every NGS source voice as a WAV (`AudioDump`), the time each opened, and their mix at 48 kHz as the device would play it |
 | `threads_start.txt`, `threads_stop.txt` | guest threads (wait state, backtrace, recent HLE calls in debug mode), held mutexes, GPU queue |
-| `hle_errors.txt` | HLE error returns and unimplemented calls by count (counted while recording, as debug mode does) |
+| `hle_errors.txt` | HLE error returns and unimplemented calls by count (counted while recording, as debug mode does), and the calls of `hle_calls.tsv` by function |
+| `hle_calls.tsv` | every HLE call of the recording: guest µs, thread, function, library, r0-r3, result (`-`: still inside it at the stop), return address (`HleCallTrace`: per-thread chunks of 4096 calls, nothing allocated per call, at most 1,000,000 calls kept) |
 | `log.txt` | the session log up to the stop |
 
 ### Pre-roll
@@ -129,19 +131,43 @@ Measured on the desktop (GTX 1650 laptop, 4 logical CPUs given to the emulator, 
 | Pre-roll armed | the same frame encoding, the input rings, and a save state every 30 s (0.1-0.35 s stop each) |
 | Off | nothing: no tap, no input wrapper, no thread; the HLE dispatch reads one static flag (`DebugMode.CollectHleErrors`) and the RNG one static field |
 
+## Privacy
+
+A capture is meant to be posted (a GitHub issue). After every file is written and before the zip, `CapturePrivacy`
+rewrites every text file of the folder (`.txt`, `.tsv`, `.log`...), and the GPU dump's header is redacted when the
+dump starts: the data folder becomes `<data>`, the home folder and the user name `<user>`, the computer name `<pc>`,
+the online id (unless it is the default `VitaSharp`) and the `--psn-id` / `--rpcn-user` / `--rpcn-token` values
+`<psn-id>`, MAC addresses `<mac>`, e-mail addresses `<email>`. Secrets in `VITASHARP_*` variables (`PASSWORD`,
+`TOKEN`) are written as `<secret>`. `SessionCapturePrivacyTests` records a synthetic capture with a made-up person's
+paths and names in the log, the options and the notes and scans every file of the folder and of the zip.
+
 ## Re-run
 
 ```
-VitaSharp.Desktop rerun <capture folder> [--from=preroll|start] [--window] [--rerun-gpu-dump] [run options]
+VitaSharp.Desktop rerun <capture folder> [--from=preroll|start] [--window] [--rerun-gpu-dump] [--boot=title] [run options]
 ```
 
-Boots the capture's game with the capture's run options (Jak 1's `--cpu-mhz=0` comes along), loads
-`state_preroll.vss` (default when present) or `state_start.vss` after 120 frames, and replaces the host input with
+Brings the capture's program up from the capture's own state (`--boot-state=<state>`, `SaveStates.BootFromState`):
+every save state has a `boot` section (`StateBootImage`: title, executable, the app's guest folder, param.sfo, the
+program's authority, and every module of the process and the kernel in load order with its guest path, segments and
+module_info address). The modules' code and tables are in the state's memory, so after the memory is put back each
+module is rebuilt from there (`ModuleLoader.FromMemory`: module_info, exports and imports read from guest memory and
+registered with the linker, as a load from the file does), the firmware kernel modules' entries and stubs too
+(`FirmwareKernelModules.AdoptFromState`). Nothing runs until `SaveStates.Load` brings the threads, objects and HLE
+state. No file of the game, its update, the plugins or the firmware is read, so the re-run is the same whether they
+are installed or not; app0 is the title's folder of the data folder given (`--data`), never a path recorded in the
+capture (it may not exist: the game's reads during the re-run then fail as missing files). States of several
+processes (the shell with applications) are refused. `--boot=title` boots the installed game instead and loads the
+state after 120 frames (states of earlier builds, without the boot section, need it).
+
+With the capture's run options (Jak 1's `--cpu-mhz=0` comes along), from `state_preroll.vss` (default when present)
+or `state_start.vss`, the re-run replaces the host input with
 `InputPlayback`: from the load on, the guest reads each recorded pad, touch and motion change at the same guest
 clock time it read it while recording (a save state restores the guest clock exactly), and
 `sceKernelGetRandomNumber` returns the recorded numbers in order. The re-run records itself as a capture into
 `<capture>/reruns/` (no state, no GPU dump unless `--rerun-gpu-dump`), analyzes it, and pairs its frames with the
-original's by guest time (`compare.txt`: which pictures match, the first that differs). It ends 2 s after the last
+original's by guest time (`compare.txt`: which pictures match, the first that differs, and the first HLE call that
+differs thread by thread: another function, or another result). It ends 2 s after the last
 recorded event. Headless unless `--window`.
 
 Not deterministic: guest threads run on host threads, so their interleaving, and with it every guest clock read,

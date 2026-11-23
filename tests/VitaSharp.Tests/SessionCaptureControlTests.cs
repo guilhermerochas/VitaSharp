@@ -94,7 +94,8 @@ public sealed class SessionCaptureControlTests(GuestMemoryFixture fixture) : IDi
     }
 
     /// <summary><c>rerun DIR</c> refuses (exit 1, nothing started) a folder that is not a capture, a capture without
-    /// the save state it starts from, and a capture whose game is neither installed nor at its recorded path.</summary>
+    /// the save state it starts from, and a capture whose state cannot boot by itself (an earlier build's) and whose
+    /// game is not installed in this data folder (a path recorded in the capture is never opened).</summary>
     [Fact]
     public void ARerunNeedsACaptureItsStateAndItsGame()
     {

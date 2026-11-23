@@ -14,7 +14,7 @@ namespace VitaSharp.Core.SaveState;
 /// new backend that rebuilds them from guest memory, as after a LoadExec.
 /// See docs/notes/save-states.md.
 /// </summary>
-public static class SaveStates
+public static partial class SaveStates
 {
     private const string SysSection = "system", FunctionsSection = "hle.functions", ObjectsSection = "kernel.objects",
         BlocksSection = "memory.blocks", MemPrefix = "mem:", WordPagesMemPrefix = "memw:", ModulePrefix = "hle:", LayoutsSection = "layouts",
@@ -421,6 +421,8 @@ public static class SaveStates
         sys.Write(emu.Vita.AppMgrState);
         sys.Write(emu.BgmPriority); // the BGM priority of the process (was the BGM port owner: same slot)
         list.Add((SysSection, sys.Data.ToArray()));
+        // what a computer without the game needs to load this state (BootFromState): the modules as loaded, no file
+        list.Add((BootSection, StateBootImage.Of(emu).Write()));
 
         var fn = new SnapshotWriter();
         emu.Hle.SaveState(fn);
@@ -1275,50 +1277,7 @@ public static class SaveStates
         AudioDiagnostics.ProcessEnded();
 
         List<Emulator> processes = SavedProcesses(emu, list);
-        var sections = new Dictionary<string, byte[]>(StringComparer.Ordinal);
-        // blocks by address and the process whose address space holds them (0: the first process's space, or CDRAM and
-        // kernel memory, in every space)
-        Dictionary<(uint Address, int SpacePid), GuestMemory.Block>? blocks = null;
-        int[]? spacePids = null;
-        foreach ((string? name, byte[]? data) in list)
-        {
-            if (name == SpacesSection)
-            {
-                var spaces = new SnapshotReader(data);
-                spacePids = new int[spaces.ReadInt32()];
-                for (int i = 0; i < spacePids.Length; i++)
-                {
-                    int spacePid = spaces.ReadInt32();
-                    spacePids[i] = spacePid == emu.Pid ? 0 : spacePid;
-                }
-            }
-            else if (name == BlocksSection)
-            {
-                blocks = RestoreBlocks(emu, GuestMemory.ReadBlockTable(new SnapshotReader(data)), spacePids);
-            }
-            else if (name.StartsWith(MemPrefix, StringComparison.Ordinal) || name.StartsWith(WordPagesMemPrefix, StringComparison.Ordinal))
-            {
-                bool wordPages = name.StartsWith(WordPagesMemPrefix, StringComparison.Ordinal);
-                string key = name[(wordPages ? WordPagesMemPrefix : MemPrefix).Length..];
-                int at = key.IndexOf('@', StringComparison.Ordinal);
-                uint addr = Convert.ToUInt32(at < 0 ? key : key[..at], 16);
-                int spacePid = at < 0 ? 0 : Convert.ToInt32(key[(at + 1)..], 16);
-                if (blocks == null || !blocks.TryGetValue((addr, spacePid), out GuestMemory.Block? b))
-                {
-                    throw new SnapshotException($"memory block 0x{addr:X8} is missing from the block table");
-                }
-
-                emu.Memory.RestoreContents(b, data, wordPages);
-            }
-            else
-            {
-                sections[name] = data;
-            }
-        }
-        if (blocks == null)
-        {
-            throw new SnapshotException("the save state has no memory");
-        }
+        Dictionary<string, byte[]> sections = RestoreMemory(emu, list);
 
         byte[] Need(string n) => sections.GetValueOrDefault(n) ?? throw new SnapshotException($"the save state has no {n} section");
 
@@ -1429,6 +1388,58 @@ public static class SaveStates
             using Kernel.ProcessScope.Scope scope = Kernel.ProcessScope.Enter(process);
             timers.RearmTimers();
         }
+    }
+
+    /// <summary>Puts the state's memory blocks and their contents in place (every address space of the system) and
+    /// returns the state's other sections by name.</summary>
+    private static Dictionary<string, byte[]> RestoreMemory(Emulator emu, List<(string Name, byte[] Data)> list)
+    {
+        var sections = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        // blocks by address and the process whose address space holds them (0: the first process's space, or CDRAM and
+        // kernel memory, in every space)
+        Dictionary<(uint Address, int SpacePid), GuestMemory.Block>? blocks = null;
+        int[]? spacePids = null;
+        foreach ((string? name, byte[]? data) in list)
+        {
+            if (name == SpacesSection)
+            {
+                var spaces = new SnapshotReader(data);
+                spacePids = new int[spaces.ReadInt32()];
+                for (int i = 0; i < spacePids.Length; i++)
+                {
+                    int spacePid = spaces.ReadInt32();
+                    spacePids[i] = spacePid == emu.Pid ? 0 : spacePid;
+                }
+            }
+            else if (name == BlocksSection)
+            {
+                blocks = RestoreBlocks(emu, GuestMemory.ReadBlockTable(new SnapshotReader(data)), spacePids);
+            }
+            else if (name.StartsWith(MemPrefix, StringComparison.Ordinal) || name.StartsWith(WordPagesMemPrefix, StringComparison.Ordinal))
+            {
+                bool wordPages = name.StartsWith(WordPagesMemPrefix, StringComparison.Ordinal);
+                string key = name[(wordPages ? WordPagesMemPrefix : MemPrefix).Length..];
+                int at = key.IndexOf('@', StringComparison.Ordinal);
+                uint addr = Convert.ToUInt32(at < 0 ? key : key[..at], 16);
+                int spacePid = at < 0 ? 0 : Convert.ToInt32(key[(at + 1)..], 16);
+                if (blocks == null || !blocks.TryGetValue((addr, spacePid), out GuestMemory.Block? b))
+                {
+                    throw new SnapshotException($"memory block 0x{addr:X8} is missing from the block table");
+                }
+
+                emu.Memory.RestoreContents(b, data, wordPages);
+            }
+            else
+            {
+                sections[name] = data;
+            }
+        }
+        if (blocks == null)
+        {
+            throw new SnapshotException("the save state has no memory");
+        }
+
+        return sections;
     }
 
     /// <summary>

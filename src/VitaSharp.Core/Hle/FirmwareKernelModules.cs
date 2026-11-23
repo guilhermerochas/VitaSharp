@@ -232,6 +232,63 @@ public sealed class FirmwareKernelModules(Emulator emu)
         }
     }
 
+    /// <summary>
+    /// The firmware modules a save state booted without its files brought back (<see cref="SaveState.SaveStates.BootFromState"/>):
+    /// they are already loaded, from the state's memory, as <see cref="Load"/> had loaded them; their entries, import
+    /// stubs and code segments are taken from there, so no firmware has to be installed for the state to run.
+    /// </summary>
+    public void AdoptFromState(IReadOnlyList<LoadedModule> modules)
+    {
+        lock (_lock)
+        {
+            _loaded = true;
+            var codeSegments = new List<(uint Start, uint End, string Module, uint ModuleNid)>(_codeSegments);
+            foreach (LoadedModule loadedModule in modules)
+            {
+                Modules.Add(loadedModule);
+                for (int library = 0; library < loadedModule.ExportLibraries.Count && library < loadedModule.Exports.Count; library++)
+                {
+                    ExportLibrary export = loadedModule.ExportLibraries[library];
+                    string libName = loadedModule.Exports[library].Library;
+                    for (int function = 0; function < export.FuncCount; function++)
+                    {
+                        uint nid = export.Nids[function], entry = export.Entries[function];
+                        uint svc = emu.Hle.GetHleFunctionIndex(nid, export.LibNid, libName);
+                        Linker.WriteHleStub(entry, svc, nid);
+                        _entries[(export.LibNid, nid)] = (entry, SvcOpcode | (svc & 0xFFFFFF));
+                    }
+                }
+
+                foreach ((uint libNid, uint nid, uint stub) in loadedModule.ImportStubs)
+                {
+                    _imports[(loadedModule.Name, libNid, nid)] = (stub, GuestMemory.Span<uint>(stub, StubWords).ToArray());
+                }
+
+                // the code segments come before the tables segment (the one module_info is in)
+                foreach (KeyValuePair<int, SegmentInfo> segment in loadedModule.Segments)
+                {
+                    if (segment.Key < loadedModule.ModuleInfoSegment && loadedModule.SegmentFlags.TryGetValue(segment.Key, out (uint Flags, uint MemSz, uint FileSz) flags)
+                        && (flags.Flags & ExecutableFlag) != 0)
+                    {
+                        codeSegments.Add((segment.Value.Address, segment.Value.Address + segment.Value.Size, loadedModule.Name, loadedModule.ModuleNid));
+                    }
+                }
+            }
+
+            codeSegments.Sort((a, b) => a.Start.CompareTo(b.Start));
+            Volatile.Write(ref _codeSegments, codeSegments.ToArray());
+            foreach (HleModule module in emu.Hle.Modules)
+            {
+                if (module is IFirmwareInternalFunctions internals)
+                {
+                    internals.RegisterInternalFunctions(this);
+                }
+            }
+
+            Log.Info($"Firmware kernel modules: {modules.Count} taken from the save state ({_entries.Count} exported functions, {_imports.Count} imports)");
+        }
+    }
+
     /// <summary>Loads one firmware module's tables as a kernel module and writes its function entries.</summary>
     private LoadedModule LoadShell(string path, ModuleImage image, List<(string Library, uint LibNid, ushort Attributes, uint[] FuncNids)> libraries,
         List<(string Library, uint LibNid, uint[] FuncNids)> imports)

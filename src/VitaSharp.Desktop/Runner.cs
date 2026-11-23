@@ -819,7 +819,7 @@ public static class Runner
             emu.Gpu.ReplaceOn = window.RunOnWindowThread;
             try
             {
-                emu.LoadTitle(appPath, BootSelf(options));
+                LoadTitleOrState(emu, appPath, options);
             }
             catch (TitleLicenseMissingException noLicense)
             {
@@ -848,7 +848,13 @@ public static class Runner
             }
 
             window.TitleId = emu.TitleId; // its saved mouse mode (input.json)
-            emu.Start();
+            if (!StartTitleOrState(emu, options))
+            {
+                loadFailed = true;
+                window.Close();
+                return;
+            }
+
             // the boot steps are over (the ARM code precompilation ran in Start): the window appears (it waited hidden
             // behind the launcher's loading window) and the loading window goes
             s_launcherLoadingScreenDone |= window.HiddenUntilReady;
@@ -1293,6 +1299,42 @@ public static class Runner
 
     /// <summary>The Vita shows an application's sce_sys/pic0.png (an indexed PNG) while its process loads: handed to the
     /// renderer, which shows it until the guest's first present (VulkanRenderer.BootSplash.cs).</summary>
+    /// <summary>Loads the title, or with --boot-state=FILE brings up the program of that save state from the state alone
+    /// (<see cref="VitaSharp.Core.SaveState.SaveStates.BootFromState"/>: no file of the game, its update or the
+    /// plugins is read; the re-run of a capture on a computer without them).</summary>
+    static void LoadTitleOrState(Emulator emu, string appPath, string[] options)
+    {
+        if (Opt(options, "--boot-state") is { } state)
+        {
+            VitaSharp.Core.SaveState.SaveStates.BootFromState(emu, state);
+            return;
+        }
+
+        emu.LoadTitle(appPath, BootSelf(options));
+    }
+
+    /// <summary>Starts the title, or loads the --boot-state state into the program it brought up (its threads, objects
+    /// and HLE state); false when that load failed (logged).</summary>
+    static bool StartTitleOrState(Emulator emu, string[] options)
+    {
+        if (Opt(options, "--boot-state") is not { } state)
+        {
+            emu.Start();
+            return true;
+        }
+
+        try
+        {
+            VitaSharp.Core.SaveState.SaveStates.Load(emu, state);
+            return true;
+        }
+        catch (VitaSharp.Core.SaveState.SnapshotException failure)
+        {
+            Log.Error($"--boot-state={state}: the state did not load: {failure.Message}");
+            return false;
+        }
+    }
+
     static void ShowBootSplash(VulkanRenderer r, string appDir)
     {
         var path = VitaSharp.Core.Io.Vfs.ResolveCaseInsensitive(appDir, "sce_sys/pic0.png");
@@ -1510,7 +1552,7 @@ public static class Runner
         var wall = Stopwatch.StartNew();
         try
         {
-            emu.LoadTitle(appPath, BootSelf(options));
+            LoadTitleOrState(emu, appPath, options);
         }
         catch (TitleLicenseMissingException noLicense)
         {
@@ -1523,7 +1565,11 @@ public static class Runner
             return TitleLaunchFailure.ExitCode;
         }
 
-        emu.Start();
+        if (!StartTitleOrState(emu, options))
+        {
+            return TitleLaunchFailure.ExitCode;
+        }
+
         VitaSharp.Core.Boot.BootProgress.Report(VitaSharp.Core.Boot.BootStep.Ready);
         StartShellLaunch(emu, options);
         if (options.Contains("--start-paused"))

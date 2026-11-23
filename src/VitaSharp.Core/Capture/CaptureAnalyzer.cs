@@ -373,9 +373,25 @@ public static class CaptureAnalyzer
         string summary = n == 0 ? "compare: the re-run does not overlap the capture in guest time"
             : FormattableString.Invariant($"compare: {n} original frames from guest time {from / 1e6:F2} s to {to / 1e6:F2} s; {100.0 * same / n:F0}% look the same in the re-run (mean difference < {threshold}), median difference {diffs[n / 2]:F2}; ") +
               (double.IsNaN(firstDiverge) ? "no divergence" : FormattableString.Invariant($"first different picture at guest time {firstDiverge:F2} s"));
-        sb.Insert(0, "# " + summary + "\n");
+        summary += "\n" + CompareCalls(original, rerun);
+        sb.Insert(0, "# " + summary.Replace("\n", "\n# ", StringComparison.Ordinal) + "\n");
         File.WriteAllText(Path.Combine(rerun, "compare.txt"), sb.ToString());
         return summary;
+    }
+
+    /// <summary>The HLE calls of a capture and its re-run (<see cref="HleCallTrace"/>): the first call where a
+    /// thread did something else, or got another result.</summary>
+    public static string CompareCalls(string original, string rerun)
+    {
+        string a = Path.Combine(original, HleCallTrace.FileName), b = Path.Combine(rerun, HleCallTrace.FileName);
+        if (!File.Exists(a) || !File.Exists(b))
+        {
+            return $"HLE calls: not compared ({(File.Exists(a) ? "the re-run" : "the capture")} has no {HleCallTrace.FileName})";
+        }
+
+        return HleCallTrace.FirstDifference(a, b) is { } difference
+            ? $"HLE calls: first difference: {difference}"
+            : "HLE calls: the same calls and results in every thread";
     }
 
     private static List<InputEvent> ReadInput(string dir) => File.Exists(Path.Combine(dir, "input.tsv"))
