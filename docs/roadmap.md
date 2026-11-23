@@ -3668,6 +3668,14 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   log de hooks. Suspeita: outras classes do collection "guest" (Kernel*) liberam memória de kernel sob esses testes
   (ex.: um FreeOwnedBy(KernelPid) tardio). Investigar se é só do teste (fixture compartilhada) ou um bug real (memória
   de kernel liberada com hooks vivos), corrigir e tirar as duas classes da quarentena (Category=Slow desde 23/11).
+  Feito (cifix17): o fim do sistema não esperava as tarefas dos processos (fim de um processo terminado, LoadExec e
+  início de um filho rodam em `Task.Run`); o fim tardio fazia `FreeOwnedBy(pid)`, e o pid só é único dentro de um
+  sistema, então liberava blocos do sistema seguinte na mesma memória (`kernel:trap` realocado ao
+  `SceExcpmgrDefaultHandler` → "Undefined instruction 0xE7F000F0" no HleCostTests do CI; `__stack_chk_guard` e pilhas
+  → `__stack_chk_fail` no Piglet/NpCommerce2). Agora `VitaSystem.WaitForProcessTasks` (teste
+  `SystemEndProcessTasksTests`). Falta: 1 caso do fuzz por execução ainda falha sem nenhum free registrado — um
+  registro recém-alocado (página nunca usada antes) lê tudo zero ~6 ms depois de escrito, com o bloco intacto;
+  próximo passo é comparar a palavra por cada view do kernel (`AddressSpace.Base`) no momento da falha.
 - [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053) em 2x: textura da parede piscando e imagem embaçada (relato do
   usuário, 23/11/2026; captura `PCSE00053_20261123_134501_tudo`, build 793a9e96, resolução interna 2x por atalho no
   quadro 1587, dump da GPU de 34 quadros): o relatório marca 20 [flash] alternando quadro sim, quadro não (presents
