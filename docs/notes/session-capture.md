@@ -171,12 +171,17 @@ state after 120 frames (states of earlier builds, without the boot section, need
 
 With the capture's run options (Jak 1's `--cpu-mhz=0` comes along), from `state_preroll.vss` (default when present)
 or `state_start.vss`, the re-run replaces the host input with
-`InputPlayback`: from the load on, the guest reads each recorded pad, touch and motion change at the same guest
-clock time it read it while recording (a save state restores the guest clock exactly), and
-`sceKernelGetRandomNumber` returns the recorded numbers in order. The re-run records itself as a capture into
-`<capture>/reruns/` (no state, no GPU dump unless `--rerun-gpu-dump`), analyzes it, and pairs its frames with the
-original's by guest time (`compare.txt`: which pictures match, the first that differs, and the first HLE call that
-differs thread by thread: another function, or another result). It ends 2 s after the last
+`InputPlayback`: from the load on, the guest's read that first saw each pad and touch change while recording sees
+it again: the controller and touch drivers number the guest's reads of each port and panel (`IGuestReadInput`; the
+count is part of the save state), `input.tsv` notes the read (`read=N`) and the re-run hands the change to that
+read, however fast the host runs it (the guest clock follows the host: under load a change matched by guest time
+landed a frame early or late). Motion samples, and captures without read numbers, play back by guest clock time (a
+save state restores the guest clock exactly); `sceKernelGetRandomNumber` returns the recorded numbers in order. The
+re-run records itself as a capture into `<capture>/reruns/` (no state, no GPU dump unless `--rerun-gpu-dump`),
+analyzes it, and pairs its frames with the original's by guest frame from the state (the re-run's first frame is the
+recording's first after the state's guest time; `SaveStates.FramesPresentedAtLastLoad`), by guest time for a
+re-run that does not say where it started (`compare.txt`: which pictures match, the first that differs, and the
+first HLE call that differs thread by thread: another function, or another result). It ends 2 s after the last
 recorded event. Headless unless `--window`.
 
 Not deterministic: guest threads run on host threads, so their interleaving, and with it every guest clock read,
