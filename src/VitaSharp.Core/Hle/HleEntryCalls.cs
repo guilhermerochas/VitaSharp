@@ -71,7 +71,12 @@ public static class HleEntryCalls
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool AnyHook(HleModule module)
     {
-        Emulator emu = module.Emu;
+        // a module that is not in a process (made on its own, as unit tests make one) has no hook to see
+        if (module.Emu is not { } emu)
+        {
+            return false;
+        }
+
         if (emu.Hle.HasProcessHooks)
         {
             return true;

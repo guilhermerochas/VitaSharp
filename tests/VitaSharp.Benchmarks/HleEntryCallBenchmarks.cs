@@ -21,6 +21,11 @@ public class HleEntryCallBenchmarks
     private string _root = "";
     private IoFileMgr _io = null!;
 
+    // the arguments come from fields, so the JIT cannot fold either call into a constant
+    private readonly int _fd = -1;
+    private readonly long _offset;
+    private readonly int _whence;
+
     [GlobalSetup]
     public void Setup()
     {
@@ -50,10 +55,10 @@ public class HleEntryCallBenchmarks
     }
 
     [Benchmark(Baseline = true)]
-    public long DirectCall() => _io.sceIoLseek(-1, 0, 0);
+    public long DirectCall() => _io.sceIoLseek(_fd, _offset, _whence);
 
     [Benchmark]
-    public long ThroughEntry() => _io.sceIoLseekThroughEntry(-1, 0, 0);
+    public long ThroughEntry() => _io.sceIoLseekThroughEntry(_fd, _offset, _whence);
 
     [Benchmark]
     public bool AnyHookCheck() => HleEntryCalls.AnyHook(_io);

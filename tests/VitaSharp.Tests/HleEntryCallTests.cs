@@ -47,12 +47,12 @@ public sealed class HleEntryCallTests(GuestMemoryFixture fixture) : IDisposable
         EntryProbeModule probe = Probe();
         _h.OnGuest(_ =>
         {
-            Assert.Equal(7 + 3, probe.probeWordsThroughEntry(7, 3, true, 0x1_0000_0000));
+            Assert.Equal(7 + 3, probe.ProbeWordsThroughEntry(7, 3, true, 0x1_0000_0000));
             long before = GC.GetAllocatedBytesForCurrentThread();
             int sum = 0;
             for (int i = 0; i < 1000; i++)
             {
-                sum += probe.probeWordsThroughEntry((uint)i, 1, false, 2);
+                sum += probe.ProbeWordsThroughEntry((uint)i, 1, false, 2);
             }
 
             long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
@@ -60,6 +60,17 @@ public sealed class HleEntryCallTests(GuestMemoryFixture fixture) : IDisposable
             Assert.True(sum > 0);
             Assert.Equal(1001, probe.Calls);
         });
+    }
+
+    /// <summary>A module that is not in a process (made on its own, as unit tests make one; no emulator) has no hook
+    /// to see: the wrapper calls the C# method, on any thread.</summary>
+    [Fact]
+    public void AModuleOutsideAProcessCallsTheMethod()
+    {
+        var probe = new EntryProbeModule();
+        Assert.Equal(7 + 3, probe.ProbeWordsThroughEntry(7, 3, false, 0));
+        Assert.False(probe.ProbeFlagThroughEntry(EntryProbeColor.Red));
+        Assert.Equal(2, probe.Calls);
     }
 
     /// <summary>A user plugin's hook on the function in this process takes the HLE's own call: the hook sees the words
@@ -73,14 +84,14 @@ public sealed class HleEntryCallTests(GuestMemoryFixture fixture) : IDisposable
         _h.OnGuest(_ =>
         {
             _h.Emu.Hle.RedirectInProcess(0x1234, EntryProbeModule.WordsNid, hook);
-            Assert.Equal(-16, probe.probeWordsThroughEntry(0x11, 0xFFFF_FFFE, true, 0x0000_0002_0000_0003));
+            Assert.Equal(-16, probe.ProbeWordsThroughEntry(0x11, 0xFFFF_FFFE, true, 0x0000_0002_0000_0003));
             uint[] words = Assert.Single(seen);
             // a, b, c in r0-r2; d (64-bit) skips r3 for the even pair and goes on the stack as a 0x8-aligned pair
             Assert.Equal([0x11u, 0xFFFF_FFFEu, 1u, 0u, 3u], words);
             Assert.Equal(0, probe.Calls);
 
             _h.Emu.Hle.ClearRedirectInProcess(0x1234, EntryProbeModule.WordsNid);
-            Assert.Equal(0x13, probe.probeWordsThroughEntry(0x11, 2, false, 0));
+            Assert.Equal(0x13, probe.ProbeWordsThroughEntry(0x11, 2, false, 0));
             Assert.Single(seen);
             Assert.Equal(1, probe.Calls);
         });
@@ -103,12 +114,12 @@ public sealed class HleEntryCallTests(GuestMemoryFixture fixture) : IDisposable
         _h.OnGuest(_ =>
         {
             _h.Emu.Hle.RedirectInProcess(OtherUserLib, EntryProbeModule.FlagNid, hook);
-            Assert.False(probe.probeFlagThroughEntry(EntryProbeColor.Red));
+            Assert.False(probe.ProbeFlagThroughEntry(EntryProbeColor.Red));
             Assert.Empty(seen);
             Assert.Equal(1, probe.Calls);
 
             _h.Emu.Hle.RedirectInProcess(ProbeUserLib, EntryProbeModule.FlagNid, hook);
-            Assert.True(probe.probeFlagThroughEntry(EntryProbeColor.Blue));
+            Assert.True(probe.ProbeFlagThroughEntry(EntryProbeColor.Blue));
             Assert.Equal(2u, Assert.Single(seen)[0]);
             Assert.Equal(1, probe.Calls);
             _h.Emu.Hle.ClearRedirectInProcess(OtherUserLib, EntryProbeModule.FlagNid);
@@ -129,11 +140,11 @@ public sealed class HleEntryCallTests(GuestMemoryFixture fixture) : IDisposable
             _h.Emu.Hle.RedirectInProcess(0x1234, EntryProbeModule.WideNid, hook);
             _h.Emu.Hle.RedirectInProcess(0x1234, EntryProbeModule.FlagNid, hook);
             _h.Emu.Hle.RedirectInProcess(0x1234, EntryProbeModule.FiveNid, hook);
-            Assert.Equal(0x0123_4567_89AB_CDEFL, probe.probeWideThroughEntry(5, new Ptr<uint>(0x8100_0000)));
+            Assert.Equal(0x0123_4567_89AB_CDEFL, probe.ProbeWideThroughEntry(5, new Ptr<uint>(0x8100_0000)));
             Assert.Equal([5u, 0u, 0x8100_0000u], seen[^1][..3]); // the 64-bit argument in r0:r1, the pointer in r2
-            Assert.True(probe.probeFlagThroughEntry(EntryProbeColor.Blue));
+            Assert.True(probe.ProbeFlagThroughEntry(EntryProbeColor.Blue));
             Assert.Equal(2u, seen[^1][0]);
-            probe.probeFiveThroughEntry(1, 2, 3, 4, 5);
+            probe.ProbeFiveThroughEntry(1, 2, 3, 4, 5);
             Assert.Equal([1u, 2u, 3u, 4u, 5u], seen[^1]);
             Assert.Equal(0, probe.Calls);
         });
@@ -165,16 +176,16 @@ public sealed class HleEntryCallTests(GuestMemoryFixture fixture) : IDisposable
             uint hook = Hook(seen, 77);
             _h.OnGuest(_ =>
             {
-                Assert.Equal(3, probe.probeWordsThroughEntry(1, 2, false, 0));
+                Assert.Equal(3, probe.ProbeWordsThroughEntry(1, 2, false, 0));
                 Linker.WriteJumpStub(words, hook);
                 Linker.WriteJumpStub(flag, hook);
                 _h.Emu.InvalidateCode(words, 16);
                 _h.Emu.InvalidateCode(flag, 16);
-                Assert.Equal(77, probe.probeWordsThroughEntry(4, 5, false, 0));
+                Assert.Equal(77, probe.ProbeWordsThroughEntry(4, 5, false, 0));
                 Assert.Equal([4u, 5u], Assert.Single(seen)[..2]);
                 // the probe's flag function is SceEntryProbeForDriver's: the patched SceOtherForDriver export of its NID
                 // is not it
-                Assert.False(probe.probeFlagThroughEntry(EntryProbeColor.Red));
+                Assert.False(probe.ProbeFlagThroughEntry(EntryProbeColor.Red));
                 Assert.Single(seen);
                 Assert.Equal(2, probe.Calls);
             });
@@ -295,28 +306,28 @@ public sealed partial class EntryProbeModule : HleModule
     public int Calls;
 
     [Hle(Nid = WordsNid, Library = "SceEntryProbeForDriver")]
-    internal int probeWords(uint a, uint b, bool c, long d)
+    internal int ProbeWords(uint a, uint b, bool c, long d)
     {
         Calls++;
         return (int)(a + b);
     }
 
     [Hle(Nid = WideNid)]
-    internal long probeWide(long value, Ptr<uint> pointer)
+    internal long ProbeWide(long value, Ptr<uint> pointer)
     {
         Calls++;
         return value;
     }
 
     [Hle(Nid = FlagNid, Library = "SceEntryProbeForDriver")]
-    internal bool probeFlag(EntryProbeColor color)
+    internal bool ProbeFlag(EntryProbeColor color)
     {
         Calls++;
         return false;
     }
 
     [Hle(Nid = FiveNid)]
-    internal void probeFive(uint a, uint b, int c, short d, byte e)
+    internal void ProbeFive(uint a, uint b, int c, short d, byte e)
     {
         Calls++;
     }
