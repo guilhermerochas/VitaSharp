@@ -391,11 +391,11 @@ public sealed partial class SysconKernel
 
     /// <summary>NID_4278E614(): ksceSysconSetPowerMode(5, 0), the restart ScePower asks for after an update.</summary>
     [Hle(Nid = 0x4278E614, Library = "SceSysconForDriver")]
-    int NID_4278E614() => ksceSysconSetPowerMode(5, 0);
+    int NID_4278E614() => ksceSysconSetPowerModeThroughEntry(5, 0);
 
     /// <summary>NID_14B99945(): ksceSysconSetPowerMode(2, 0), the cold reset.</summary>
     [Hle(Nid = 0x14B99945, Library = "SceSysconForDriver")]
-    int NID_14B99945() => ksceSysconSetPowerMode(2, 0);
+    int NID_14B99945() => ksceSysconSetPowerModeThroughEntry(2, 0);
 
     /// <summary>ksceSysconCtrlLED(led, on): command 0x891 {led | 0x80 when on}.</summary>
     [Hle(Nid = 0x04EC7579, Library = "SceSysconForDriver")]
@@ -460,8 +460,8 @@ public sealed partial class SysconKernel
 
     int PowerUnlessDownloader(ushort command, uint on)
     {
-        NID_0D0B6D25();
-        if (ksceSysconIsDownLoaderMode() != 0)
+        NID_0D0B6D25ThroughEntry();
+        if (ksceSysconIsDownLoaderModeThroughEntry() != 0)
         {
             return 0;
         }
@@ -1512,22 +1512,22 @@ public sealed partial class SysconKernel
 
     int ConfigTransaction(uint mode, bool set)
     {
-        int result = ksceSysconBeginConfigstorageTransaction();
+        int result = ksceSysconBeginConfigstorageTransactionThroughEntry();
         if (result < 0)
         {
             return result;
         }
 
         // the scripts are the module's own data; the chip keeps what they turn on
-        result = ksceSysconCommitConfigstorageTransaction();
+        result = ksceSysconCommitConfigstorageTransactionThroughEntry();
         if (result < 0)
         {
-            ksceSysconEndConfigstorageTransaction();
+            ksceSysconEndConfigstorageTransactionThroughEntry();
             return result;
         }
 
         Chip.ConfigModes = set ? Chip.ConfigModes | mode : Chip.ConfigModes & ~mode;
-        return Math.Min(ksceSysconEndConfigstorageTransaction(), 0);
+        return Math.Min(ksceSysconEndConfigstorageTransactionThroughEntry(), 0);
     }
 
     // ------------------------------------------------------------------ the updater

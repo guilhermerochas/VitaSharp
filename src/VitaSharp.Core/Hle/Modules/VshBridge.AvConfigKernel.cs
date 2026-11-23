@@ -118,7 +118,7 @@ public sealed partial class VshBridge
     [Hle("NID_3817CDA1", Nid = 0x3817CDA1, Library = "SceAVConfigForDriver")]
     int AvcKernelRequestOutputAlias(uint slot, uint enable, uint mode, int param)
     {
-        return AvcKernelRequestOutput(slot, enable, mode, param);
+        return AvcKernelRequestOutputThroughEntry(slot, enable, mode, param);
     }
 
     /// <summary>NID_91792D6F (SceAVConfigForDriver)(uint slot): drops a slot's request (0x803A0101 when it holds

@@ -396,7 +396,7 @@ public sealed partial class PowerKernel : HleModule
     [Hle(Nid = 0xD8759B55, Library = "ScePowerForDriver", ReturnsValue = true)]
     uint kscePowerGetDisplayMaxBrightness()
     {
-        if (Emu.Hle.Modules.OfType<SystemServicesVsh>().First().ksceSblAimgrIsDolce() != 0)
+        if (Emu.Hle.Modules.OfType<SystemServicesVsh>().First().ksceSblAimgrIsDolceThroughEntry() != 0)
         {
             return 0x10000;
         }
@@ -652,7 +652,7 @@ public sealed partial class PowerKernel : HleModule
             return POWER_ERR_INVALID;
         }
 
-        return Misc.scePowerSetArmClockFrequency(Highest(State.ArmClockByProcess, pid, mhz));
+        return Misc.scePowerSetArmClockFrequencyThroughEntry(Highest(State.ArmClockByProcess, pid, mhz));
     }
 
     /// <summary>kscePowerSetBusClockFrequencyProc(pid, MHz): 1..222.</summary>
@@ -664,7 +664,7 @@ public sealed partial class PowerKernel : HleModule
             return POWER_ERR_INVALID;
         }
 
-        return Misc.scePowerSetBusClockFrequency(Highest(State.BusClockByProcess, pid, mhz));
+        return Misc.scePowerSetBusClockFrequencyThroughEntry(Highest(State.BusClockByProcess, pid, mhz));
     }
 
     /// <summary>kscePowerSetGpuXbarClockFrequencyProc(pid, MHz): 1..166.</summary>
@@ -676,7 +676,7 @@ public sealed partial class PowerKernel : HleModule
             return POWER_ERR_INVALID;
         }
 
-        return Misc.scePowerSetGpuXbarClockFrequency(Highest(State.GpuXbarClockByProcess, pid, mhz));
+        return Misc.scePowerSetGpuXbarClockFrequencyThroughEntry(Highest(State.GpuXbarClockByProcess, pid, mhz));
     }
 
     /// <summary>kscePowerSetGpuClockFrequencyProc(pid, MHz): 1..222: both GPU clocks at the highest process's, and
@@ -690,7 +690,7 @@ public sealed partial class PowerKernel : HleModule
         }
 
         int highest = Highest(State.GpuClockByProcess, pid, mhz);
-        int result = kscePowerSetGpuClockFrequencyInternal(highest, highest);
+        int result = kscePowerSetGpuClockFrequencyInternalThroughEntry(highest, highest);
         State.GpuClock = highest;
         ApplyBrightnessCap();
         return result;
@@ -745,7 +745,7 @@ public sealed partial class PowerKernel : HleModule
             }
         }
 
-        kscePowerSetDisplayMaxBrightness(gpu >= 0xA6 && (any & ProcessFlagsBrightnessCap) != 0 ? 0xC4ECu : 0x10000u);
+        kscePowerSetDisplayMaxBrightnessThroughEntry(gpu >= 0xA6 && (any & ProcessFlagsBrightnessCap) != 0 ? 0xC4ECu : 0x10000u);
     }
 
     /// <summary>NID_4A69163A(pid, on): the process's power flag bit 0.</summary>

@@ -226,7 +226,7 @@ public sealed partial class SystemServicesVsh
     [Hle("ksceSblPostSsMgrGetExpireDate", Nid = 0x4FF2682F, Library = "SceSblPostSsMgrForDriver")]
     int ksceSblPostSsMgrGetExpireDate(uint date, uint current)
     {
-        bool retail = (ksceSblAimgrIsTool() == 0 || ksceSblAimgrIsToolRev4() != 0) && ksceSblAimgrIsDEX() == 0;
+        bool retail = (ksceSblAimgrIsToolThroughEntry() == 0 || ksceSblAimgrIsToolRev4ThroughEntry() != 0) && ksceSblAimgrIsDEXThroughEntry() == 0;
         if (retail)
         {
             GuestMemory.W32(date, 0xFFFFFFFF);
@@ -241,12 +241,12 @@ public sealed partial class SystemServicesVsh
     [Hle("ksceSblPostSsMgrActivate", Nid = 0x0298382B, Library = "SceSblPostSsMgrForDriver", Default = true)]
     int ksceSblPostSsMgrActivate(uint path)
     {
-        if (ksceSblAimgrIsTool() == 0)
+        if (ksceSblAimgrIsToolThroughEntry() == 0)
         {
-            return ksceSblAimgrIsDEX() == 0 ? LICMGR_ERR_NOT_TOOL : KERNEL_ERR_UNSUP;
+            return ksceSblAimgrIsDEXThroughEntry() == 0 ? LICMGR_ERR_NOT_TOOL : KERNEL_ERR_UNSUP;
         }
 
-        if (ksceSblAimgrIsToolRev4() != 0 && ksceSblAimgrIsDEX() == 0)
+        if (ksceSblAimgrIsToolRev4ThroughEntry() != 0 && ksceSblAimgrIsDEXThroughEntry() == 0)
         {
             return LICMGR_ERR_NOT_TOOL;
         }
@@ -306,7 +306,7 @@ public sealed partial class SystemServicesVsh
         string name = GuestMemory.ReadCString(path, 0x101);
         bool device = name.StartsWith("gro0:", StringComparison.Ordinal) || name.StartsWith("ur0:", StringComparison.Ordinal)
             || name.StartsWith("ux0:", StringComparison.Ordinal)
-            || (ksceSblQafMgrIsAllowHost0Access() != 0 && ksceSblAimgrIsCEX() == 0 && name.StartsWith("host0:", StringComparison.Ordinal));
+            || (ksceSblQafMgrIsAllowHost0AccessThroughEntry() != 0 && ksceSblAimgrIsCEXThroughEntry() == 0 && name.StartsWith("host0:", StringComparison.Ordinal));
         if (!device || name.Length > 0xFF)
         {
             return SPSFO_ERR_PATH;

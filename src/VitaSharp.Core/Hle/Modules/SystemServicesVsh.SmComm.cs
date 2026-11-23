@@ -59,6 +59,6 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x0631F8ED, Library = "SceSblSmCommForKernel")]
     int ksceSblSmCommStopSm(int id, uint result)
     {
-        return ksceSblSmCommCallFunc(id, -1, 0, 0, 0);
+        return ksceSblSmCommCallFuncThroughEntry(id, -1, 0, 0, 0);
     }
 }

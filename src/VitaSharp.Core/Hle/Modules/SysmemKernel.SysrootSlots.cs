@@ -164,7 +164,7 @@ public sealed partial class SysmemKernel
     {
         if (IsKernelHeapPid(context.Gpr(0)))
         {
-            context.Return(ksceKernelAlloc(context.Gpr(1)));
+            context.Return(ksceKernelAllocThroughEntry(context.Gpr(1)));
             return;
         }
 
@@ -178,7 +178,7 @@ public sealed partial class SysmemKernel
     {
         if (IsKernelHeapPid(context.Gpr(0)))
         {
-            context.Return(ksceKernelFree(context.Gpr(1)));
+            context.Return(ksceKernelFreeThroughEntry(context.Gpr(1)));
             return;
         }
 

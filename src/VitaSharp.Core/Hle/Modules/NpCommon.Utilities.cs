@@ -333,7 +333,7 @@ public sealed partial class NpManager
                 uint scratch = Emu.Memory.Alloc(8, "np_common scratch", MemoryRegion.User, 8);
                 try
                 {
-                    r = NpCommonXmlUnescape(scratch, 7, src, len, 0);
+                    r = NpCommonXmlUnescapeThroughEntry(scratch, 7, src, len, 0);
                     if (r < 0)
                     {
                         return r;
@@ -606,7 +606,7 @@ public sealed partial class NpManager
 
     /// <summary>atoll: NID_37954C1F with base 0.</summary>
     [Hle("sceNpCommon_E1FF4E70", Nid = 0xE1FF4E70, Library = "SceNpCommon")]
-    long NpCommonAtoll(uint s) => NpCommonStrtoll(s, 0, 0);
+    long NpCommonAtoll(uint s) => NpCommonStrtollThroughEntry(s, 0, 0);
 
     // ---- small helpers
 

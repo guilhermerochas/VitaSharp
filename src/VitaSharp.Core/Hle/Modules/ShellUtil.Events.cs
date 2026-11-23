@@ -19,7 +19,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// requests that wait for the shell to act (launching an application, the synchronous queries) answer what they
 /// answer with no shell service and are marked default.
 /// </summary>
-public sealed class ShellUtil : HleModule
+public sealed partial class ShellUtil : HleModule
 {
     public override bool FirmwareFallbackOnly => true;
 
@@ -158,7 +158,7 @@ public sealed class ShellUtil : HleModule
                 return 0;
             }
         }
-        while (Poll() == 0)
+        while (PollThroughEntry() == 0)
         {
             lock (_lock)
             {

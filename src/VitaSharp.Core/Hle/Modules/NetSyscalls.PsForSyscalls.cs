@@ -9,17 +9,17 @@ public sealed partial class Net
 {
     static uint W(uint p, int i) => GuestMemory.R32(p + (uint)i * 4);
 
-    [Hle] int sceNetSyscallBind(int s, uint addr, uint len) => Kerr(sceNetBind(s, addr, len));
-    [Hle] int sceNetSyscallListen(int s, int backlog) => Kerr(sceNetListen(s, backlog));
-    [Hle] int sceNetSyscallAccept(int s, uint addr, uint len) => Kerr(sceNetAccept(s, addr, len));
-    [Hle] int sceNetSyscallConnect(int s, uint addr, uint len) => Kerr(sceNetConnect(s, addr, len));
-    [Hle] int sceNetSyscallShutdown(int s, int how) => Kerr(sceNetShutdown(s, how));
-    [Hle] int sceNetSyscallGetsockname(int s, uint addr, uint len) => Kerr(sceNetGetsockname(s, addr, len));
-    [Hle] int sceNetSyscallGetpeername(int s, uint addr, uint len) => Kerr(sceNetGetpeername(s, addr, len));
-    [Hle] int sceNetSyscallSendmsg(int s, uint msg, int flags) => Kerr(sceNetSendmsg(s, msg, flags));
-    [Hle] int sceNetSyscallRecvmsg(int s, uint msg, int flags) => Kerr(sceNetRecvmsg(s, msg, flags));
-    [Hle] int sceNetSyscallSocketAbort(int s, int flags) => Kerr(sceNetSocketAbort(s, flags));
-    [Hle] int sceNetSyscallGetSockinfo(int s, uint info, int n, int flags) => Kerr(sceNetGetSockInfo(s, info, n, flags));
+    [Hle] int sceNetSyscallBind(int s, uint addr, uint len) => Kerr(sceNetBindThroughEntry(s, addr, len));
+    [Hle] int sceNetSyscallListen(int s, int backlog) => Kerr(sceNetListenThroughEntry(s, backlog));
+    [Hle] int sceNetSyscallAccept(int s, uint addr, uint len) => Kerr(sceNetAcceptThroughEntry(s, addr, len));
+    [Hle] int sceNetSyscallConnect(int s, uint addr, uint len) => Kerr(sceNetConnectThroughEntry(s, addr, len));
+    [Hle] int sceNetSyscallShutdown(int s, int how) => Kerr(sceNetShutdownThroughEntry(s, how));
+    [Hle] int sceNetSyscallGetsockname(int s, uint addr, uint len) => Kerr(sceNetGetsocknameThroughEntry(s, addr, len));
+    [Hle] int sceNetSyscallGetpeername(int s, uint addr, uint len) => Kerr(sceNetGetpeernameThroughEntry(s, addr, len));
+    [Hle] int sceNetSyscallSendmsg(int s, uint msg, int flags) => Kerr(sceNetSendmsgThroughEntry(s, msg, flags));
+    [Hle] int sceNetSyscallRecvmsg(int s, uint msg, int flags) => Kerr(sceNetRecvmsgThroughEntry(s, msg, flags));
+    [Hle] int sceNetSyscallSocketAbort(int s, int flags) => Kerr(sceNetSocketAbortThroughEntry(s, flags));
+    [Hle] int sceNetSyscallGetSockinfo(int s, uint info, int n, int flags) => Kerr(sceNetGetSockInfoThroughEntry(s, info, n, flags));
 
     /// <summary>(const struct { int s; void *buf; uint len; int flags; SceNetSockaddr *from; uint *fromlen; } *p).</summary>
     [Hle]
@@ -30,7 +30,7 @@ public sealed partial class Net
             return -14; // EFAULT
         }
 
-        return Kerr(sceNetRecvfrom((int)W(p, 0), W(p, 1), W(p, 2), (int)W(p, 3), W(p, 4), W(p, 5)));
+        return Kerr(sceNetRecvfromThroughEntry((int)W(p, 0), W(p, 1), W(p, 2), (int)W(p, 3), W(p, 4), W(p, 5)));
     }
 
     /// <summary>(const struct { int s; int level; int name; const void *val; uint len; } *p).</summary>
@@ -42,7 +42,7 @@ public sealed partial class Net
             return -14;
         }
 
-        return Kerr(sceNetSetsockopt((int)W(p, 0), (int)W(p, 1), (int)W(p, 2), W(p, 3), W(p, 4)));
+        return Kerr(sceNetSetsockoptThroughEntry((int)W(p, 0), (int)W(p, 1), (int)W(p, 2), W(p, 3), W(p, 4)));
     }
 
     /// <summary>(const struct { int s; int level; int name; void *val; uint *len; } *p).</summary>
@@ -54,13 +54,13 @@ public sealed partial class Net
             return -14;
         }
 
-        return Kerr(sceNetGetsockopt((int)W(p, 0), (int)W(p, 1), (int)W(p, 2), W(p, 3), W(p, 4)));
+        return Kerr(sceNetGetsockoptThroughEntry((int)W(p, 0), (int)W(p, 1), (int)W(p, 2), W(p, 3), W(p, 4)));
     }
 
     [Hle] int sceNetSyscallEpollCreate(string name, int flags) => Kerr(sceNetEpollCreate(name, flags));
-    [Hle] int sceNetSyscallEpollCtl(int eid, int op, int id, uint ev) => Kerr(sceNetEpollControl(eid, op, id, ev));
-    [Hle] int sceNetSyscallEpollClose(int eid) => Kerr(sceNetEpollDestroy(eid));
-    [Hle] int sceNetSyscallEpollAbort(int eid, int flags) => Kerr(sceNetEpollAbort(eid, flags));
+    [Hle] int sceNetSyscallEpollCtl(int eid, int op, int id, uint ev) => Kerr(sceNetEpollControlThroughEntry(eid, op, id, ev));
+    [Hle] int sceNetSyscallEpollClose(int eid) => Kerr(sceNetEpollDestroyThroughEntry(eid));
+    [Hle] int sceNetSyscallEpollAbort(int eid, int flags) => Kerr(sceNetEpollAbortThroughEntry(eid, flags));
 
     /// <summary>(const struct { int eid; SceNetEpollEvent *events; int max; int timeout; int 0; } *p).</summary>
     [Hle]
@@ -71,13 +71,13 @@ public sealed partial class Net
             return -14;
         }
 
-        return Kerr(sceNetEpollWait((int)W(p, 0), W(p, 1), (int)W(p, 2), (int)W(p, 3)));
+        return Kerr(sceNetEpollWaitThroughEntry((int)W(p, 0), W(p, 1), (int)W(p, 2), (int)W(p, 3)));
     }
 
     [Hle] int sceNetSyscallDumpCreate(string name, int len, int flags) => Kerr(sceNetDumpCreate(name, len, flags));
-    [Hle] int sceNetSyscallDumpRead(int id, uint buf, int len, uint pflags) => Kerr(sceNetDumpRead(id, buf, len, pflags));
-    [Hle] int sceNetSyscallDumpClose(int id) => Kerr(sceNetDumpDestroy(id));
-    [Hle] int sceNetSyscallDumpAbort(int id, int flags) => Kerr(sceNetDumpAbort(id, flags));
+    [Hle] int sceNetSyscallDumpRead(int id, uint buf, int len, uint pflags) => Kerr(sceNetDumpReadThroughEntry(id, buf, len, pflags));
+    [Hle] int sceNetSyscallDumpClose(int id) => Kerr(sceNetDumpDestroyThroughEntry(id));
+    [Hle] int sceNetSyscallDumpAbort(int id, int flags) => Kerr(sceNetDumpAbortThroughEntry(id, flags));
 
     // ---- generic descriptors: SceNetInternal's handles on kernel network objects (statistics, interfaces)
     readonly HashSet<int> _descriptors = new();

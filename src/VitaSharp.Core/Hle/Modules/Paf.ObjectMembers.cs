@@ -838,7 +838,7 @@ public sealed partial class Paf
 
         if (type == 0)
         {
-            U(outp, (uint)SurfacePreviousPage(me));
+            U(outp, (uint)SurfacePreviousPageThroughEntry(me));
         }
         else if (type == 1)
         {
@@ -1324,37 +1324,37 @@ public sealed partial class Paf
     Gxm Gx => _gxm ??= Emu.Hle.Modules.OfType<Gxm>().First();
 
     /// <summary>http::Transaction: the libhttp request id at +0xC.</summary>
-    [Hle("_ZN3paf4http11Transaction16GetContentLengthERy")] int HttpTxContentLength(uint me, uint outp) => Ht.sceHttpGetResponseContentLength((int)U(me + 0xC), outp);
-    [Hle("_ZN3paf4http11Transaction13GetStatusCodeERi")] int HttpTxStatusCode(uint me, uint outp) => Ht.sceHttpGetStatusCode((int)U(me + 0xC), outp);
-    [Hle("_ZN3paf4http11Transaction15SetAutoRedirectEb")] int HttpTxSetAutoRedirect(uint me, bool on) => Ht.sceHttpSetAutoRedirect((int)U(me + 0xC), on ? 1 : 0);
-    [Hle("_ZN3paf4http11Transaction11SendRequestEPKvj")] int HttpTxSend(uint me, uint data, uint size) => Ht.sceHttpSendRequest((int)U(me + 0xC), data, size);
+    [Hle("_ZN3paf4http11Transaction16GetContentLengthERy")] int HttpTxContentLength(uint me, uint outp) => Ht.sceHttpGetResponseContentLengthThroughEntry((int)U(me + 0xC), outp);
+    [Hle("_ZN3paf4http11Transaction13GetStatusCodeERi")] int HttpTxStatusCode(uint me, uint outp) => Ht.sceHttpGetStatusCodeThroughEntry((int)U(me + 0xC), outp);
+    [Hle("_ZN3paf4http11Transaction15SetAutoRedirectEb")] int HttpTxSetAutoRedirect(uint me, bool on) => Ht.sceHttpSetAutoRedirectThroughEntry((int)U(me + 0xC), on ? 1 : 0);
+    [Hle("_ZN3paf4http11Transaction11SendRequestEPKvj")] int HttpTxSend(uint me, uint data, uint size) => Ht.sceHttpSendRequestThroughEntry((int)U(me + 0xC), data, size);
 
     /// <summary>(year, month): the days of the month (sceRtcGetDaysInMonth).</summary>
-    [Hle("NID_3D21E902", Nid = 0x3D21E902, Library = "ScePafMisc")] int DaysInMonth(ushort year, ushort month) => R.sceRtcGetDaysInMonth(year, month);
+    [Hle("NID_3D21E902", Nid = 0x3D21E902, Library = "ScePafMisc")] int DaysInMonth(ushort year, ushort month) => R.sceRtcGetDaysInMonthThroughEntry(year, month);
 
     /// <summary>(SceUID *evf): sets bit 1.</summary>
-    [Hle("NID_AEE8496E", Nid = 0xAEE8496E, Library = "ScePafThread")] int EventFlagSet2(uint p) => Tm.sceKernelSetEventFlag((int)U(p), 2);
+    [Hle("NID_AEE8496E", Nid = 0xAEE8496E, Library = "ScePafThread")] int EventFlagSet2(uint p) => Tm.sceKernelSetEventFlagThroughEntry((int)U(p), 2);
 
     /// <summary>(SceUID *evf): waits for bit 0 or 1 (OR) and sets bit 0.</summary>
     [Hle("NID_39B3F3CA", Nid = 0x39B3F3CA, Library = "ScePafThread")]
     int EventFlagWaitSet1(uint p)
     {
-        Tm.sceKernelWaitEventFlag((int)U(p), 3, 4, new Memory.Ptr<uint>(0), new Memory.Ptr<uint>(0));
-        return Tm.sceKernelSetEventFlag((int)U(p), 1);
+        Tm.sceKernelWaitEventFlagThroughEntry((int)U(p), 3, 4, new Memory.Ptr<uint>(0), new Memory.Ptr<uint>(0));
+        return Tm.sceKernelSetEventFlagThroughEntry((int)U(p), 1);
     }
 
     /// <summary>A 10 ms sleep.</summary>
-    [Hle("NID_83FFAFCA", Nid = 0x83FFAFCA, Library = "ScePafCommon")] void Sleep10() => ThreadSleep(10);
+    [Hle("NID_83FFAFCA", Nid = 0x83FFAFCA, Library = "ScePafCommon")] void Sleep10() => ThreadSleepThroughEntry(10);
 
     /// <summary>ArlInstance::CullMode: kept at +0x768 and set on the GXM context (+0x68C).</summary>
     [Hle("_ZN3paf5graph3arl11ArlInstance8CullModeENS1_12CullModeEnumE")]
     void ArlCullMode(uint me, uint mode)
     {
         U(me + 0x768, mode);
-        Gx.sceGxmSetCullMode(U(me + 0x68C), mode);
+        Gx.sceGxmSetCullModeThroughEntry(U(me + 0x68C), mode);
     }
     [Hle("_ZN3paf4http11Transaction16SetRequestHeaderEPKcS3_")]
-    int HttpTxSetHeader(uint me, uint name, uint value) => Ht.sceHttpAddRequestHeader((int)U(me + 0xC), name, value, 0) is var r and < 0 ? r : 0;
+    int HttpTxSetHeader(uint me, uint name, uint value) => Ht.sceHttpAddRequestHeaderThroughEntry((int)U(me + 0xC), name, value, 0) is var r and < 0 ? r : 0;
 
     /// <summary>Surface::operator new / SurfaceCLUT::operator new: the paf heap.</summary>
     [Hle("_ZN3paf5graph7SurfacenwEj")]
@@ -1363,8 +1363,8 @@ public sealed partial class Paf
 
     /// <summary>TextureObject::setWrapS/T: mirror modes (5, 7) fall back to clamp (2) on a texture without the mirror
     /// capability (+4 → +0xC bit 7); the GXM texture is at +0x7C.</summary>
-    [Hle("_ZN3paf5graph3arl13TextureObject8setWrapSENS1_11TextureWrapE")] void TexSetWrapS(uint me, uint mode) => Gx.sceGxmTextureSetUAddrMode(U(me + 0x7C), TexWrap(me, mode));
-    [Hle("_ZN3paf5graph3arl13TextureObject8setWrapTENS1_11TextureWrapE")] void TexSetWrapT(uint me, uint mode) => Gx.sceGxmTextureSetVAddrMode(U(me + 0x7C), TexWrap(me, mode));
+    [Hle("_ZN3paf5graph3arl13TextureObject8setWrapSENS1_11TextureWrapE")] void TexSetWrapS(uint me, uint mode) => Gx.sceGxmTextureSetUAddrModeThroughEntry(U(me + 0x7C), TexWrap(me, mode));
+    [Hle("_ZN3paf5graph3arl13TextureObject8setWrapTENS1_11TextureWrapE")] void TexSetWrapT(uint me, uint mode) => Gx.sceGxmTextureSetVAddrModeThroughEntry(U(me + 0x7C), TexWrap(me, mode));
     static uint TexWrap(uint me, uint mode) => mode is 5 or 7 && (U(U(me + 4) + 0xC) & 0x80) == 0 ? 2 : mode;
 
     /// <summary>ArlInstance state per face (bit 0 front, bit 1 back) on the GXM context at +0x68C. The depth function is
@@ -1377,7 +1377,7 @@ public sealed partial class Paf
             U(me + 0x75C, func);
             if (B(me + 0x792) != 0)
             {
-                Gx.sceGxmSetFrontDepthFunc(U(me + 0x68C), func);
+                Gx.sceGxmSetFrontDepthFuncThroughEntry(U(me + 0x68C), func);
             }
         }
         if ((face & 2) != 0)
@@ -1385,7 +1385,7 @@ public sealed partial class Paf
             U(me + 0x760, func);
             if (B(me + 0x792) != 0)
             {
-                Gx.sceGxmSetFrontDepthFunc(U(me + 0x68C), func);
+                Gx.sceGxmSetFrontDepthFuncThroughEntry(U(me + 0x68C), func);
             }
         }
     }
@@ -1396,12 +1396,12 @@ public sealed partial class Paf
         if ((face & 1) != 0)
         {
             U(me + 0x754, mode);
-            Gx.sceGxmSetFrontPolygonMode(U(me + 0x68C), mode);
+            Gx.sceGxmSetFrontPolygonModeThroughEntry(U(me + 0x68C), mode);
         }
         if ((face & 2) != 0)
         {
             U(me + 0x750, mode);
-            Gx.sceGxmSetBackPolygonMode(U(me + 0x68C), mode);
+            Gx.sceGxmSetBackPolygonModeThroughEntry(U(me + 0x68C), mode);
         }
     }
 
@@ -1413,12 +1413,12 @@ public sealed partial class Paf
         if ((face & 1) != 0)
         {
             B(me + 0x764, (byte)(write ? 1 : 0));
-            Gx.sceGxmSetFrontDepthWriteEnable(U(me + 0x68C), v);
+            Gx.sceGxmSetFrontDepthWriteEnableThroughEntry(U(me + 0x68C), v);
         }
         if ((face & 2) != 0)
         {
             B(me + 0x765, (byte)(write ? 1 : 0));
-            Gx.sceGxmSetBackDepthWriteEnable(U(me + 0x68C), v);
+            Gx.sceGxmSetBackDepthWriteEnableThroughEntry(U(me + 0x68C), v);
         }
     }
 }

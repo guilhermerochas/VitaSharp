@@ -19,27 +19,27 @@ public sealed partial class Paf
     {
         Memory.GuestMemory.Fill(me + 4, 0, 0x34);
         U(me, UrlVtable);
-        CStrCtor(me + 0x38);
+        CStrCtorThroughEntry(me + 0x38);
         return me;
     }
 
     [Hle("_ZN3paf3UrlC1ERKS0_")]
     [Hle("_ZN3paf3UrlC2ERKS0_")]
-    uint UrlCopy(uint me, uint other) { UrlCtor(me); StrAssign(me + 0x38, UrlText(other)); return me; }
+    uint UrlCopy(uint me, uint other) { UrlCtorThroughEntry(me); StrAssign(me + 0x38, UrlText(other)); return me; }
 
     [Hle("_ZN3paf3UrlC1ERKNS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEE")]
     [Hle("_ZN3paf3UrlC2ERKNS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEE")]
-    uint UrlFromString(uint me, uint s) { UrlCtor(me); StrAssign(me + 0x38, StrRead(s)); return me; }
+    uint UrlFromString(uint me, uint s) { UrlCtorThroughEntry(me); StrAssign(me + 0x38, StrRead(s)); return me; }
 
     [Hle("_ZN3paf3UrlC1ERKNS_12basic_stringIwNS_11char_traitsIwEENS_9allocatorIwEEEE")]
     [Hle("_ZN3paf3UrlC2ERKNS_12basic_stringIwNS_11char_traitsIwEENS_9allocatorIwEEEE")]
-    uint UrlFromWString(uint me, uint s) { UrlCtor(me); StrAssign(me + 0x38, WStrRead(s)); return me; }
+    uint UrlFromWString(uint me, uint s) { UrlCtorThroughEntry(me); StrAssign(me + 0x38, WStrRead(s)); return me; }
 
     [Hle("_ZN3paf3UrlD1Ev")]
     [Hle("_ZN3paf3UrlD2Ev")]
-    uint UrlDtor(uint me) { CStrDtor(me + 0x38); return me; }
+    uint UrlDtor(uint me) { CStrDtorThroughEntry(me + 0x38); return me; }
 
-    [Hle("_ZN3paf3UrlD0Ev")] void UrlDelete(uint me) { UrlDtor(me); Free(me); }
+    [Hle("_ZN3paf3UrlD0Ev")] void UrlDelete(uint me) { UrlDtorThroughEntry(me); Free(me); }
 
     [Hle("_ZN3paf3UrlaSERKS0_")] uint UrlAssign(uint me, uint other) { StrAssign(me + 0x38, UrlText(other)); WStrAssign(me + 0x44, ""); return me; }
     [Hle("_ZN3paf3UrlaSERKNS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEE")] uint UrlAssignS(uint me, uint s) { StrAssign(me + 0x38, StrRead(s)); WStrAssign(me + 0x44, ""); return me; }

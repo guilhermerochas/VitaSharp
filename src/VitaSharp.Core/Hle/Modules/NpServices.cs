@@ -108,7 +108,7 @@ public sealed partial class NpWebApi : HleModule
     /// <summary>(const SceNpTitleId *titleId, const SceNpTitleSecret *secret, ...): the title id the system
     /// software's requests carry ("NPXS19999_00" for the shell): both are required.</summary>
     [Hle("sceNpWebApi_4699EF17", Nid = 0x4699EF17, Library = "SceNpWebApi")]
-    int sceNpWebApiSetNpTitleIdForSystem(uint titleId, uint secret) => titleId == 0 || secret == 0 ? ERR_WEBAPI_ARG : sceNpWebApiSetNpTitleId(titleId, secret);
+    int sceNpWebApiSetNpTitleIdForSystem(uint titleId, uint secret) => titleId == 0 || secret == 0 ? ERR_WEBAPI_ARG : sceNpWebApiSetNpTitleIdThroughEntry(titleId, secret);
 
     /// <summary>(uint poolSize, const void *param, ...): a library context with its own pool (0 is refused); its id.</summary>
     [Hle("sceNpWebApi_E8FBA9B8", Nid = 0xE8FBA9B8, Library = "SceNpWebApi")]

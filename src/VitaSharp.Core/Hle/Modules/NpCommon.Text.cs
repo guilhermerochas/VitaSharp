@@ -18,7 +18,7 @@ public sealed partial class NpManager
     [Hle(Nid = 0x619FB198, Library = "SceNpCommon")]
     int NID_619FB198(uint size, uint memory)
     {
-        _commonHeap = ClibModule.sceClibMspaceCreate(memory, size);
+        _commonHeap = ClibModule.sceClibMspaceCreateThroughEntry(memory, size);
         return 0;
     }
 
@@ -28,7 +28,7 @@ public sealed partial class NpManager
     {
         if (_commonHeap != 0)
         {
-            ClibModule.sceClibMspaceDestroy(_commonHeap);
+            ClibModule.sceClibMspaceDestroyThroughEntry(_commonHeap);
         }
 
         _commonHeap = 0;

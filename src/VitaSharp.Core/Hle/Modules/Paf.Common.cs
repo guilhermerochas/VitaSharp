@@ -181,19 +181,19 @@ public sealed partial class Paf
 
     [Hle("_ZN3paf6common6StringC1EPKc")]
     [Hle("_ZN3paf6common6StringC2EPKc")]
-    uint CStrCtorC(uint me, uint s) { CStrCtor(me); if (s != 0) StrAssign(me, GuestMemory.ReadSpan(s, (int)StrLen(s))); return me; }
+    uint CStrCtorC(uint me, uint s) { CStrCtorThroughEntry(me); if (s != 0) StrAssign(me, GuestMemory.ReadSpan(s, (int)StrLen(s))); return me; }
 
     [Hle("_ZN3paf6common6StringC1EPKw")]
     [Hle("_ZN3paf6common6StringC2EPKw")]
-    uint CStrCtorW(uint me, uint s) { CStrCtor(me); if (s != 0) WStrAssign(me + 0xC, WRead(s)); return me; }
+    uint CStrCtorW(uint me, uint s) { CStrCtorThroughEntry(me); if (s != 0) WStrAssign(me + 0xC, WRead(s)); return me; }
 
     [Hle("_ZN3paf6common6StringC1ERKNS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEE")]
     [Hle("_ZN3paf6common6StringC2ERKNS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEE")]
-    uint CStrCtorS(uint me, uint s) { CStrCtor(me); StrAssign(me, StrRead(s)); return me; }
+    uint CStrCtorS(uint me, uint s) { CStrCtorThroughEntry(me); StrAssign(me, StrRead(s)); return me; }
 
     [Hle("_ZN3paf6common6StringC1ERKNS_12basic_stringIwNS_11char_traitsIwEENS_9allocatorIwEEEE")]
     [Hle("_ZN3paf6common6StringC2ERKNS_12basic_stringIwNS_11char_traitsIwEENS_9allocatorIwEEEE")]
-    uint CStrCtorWs(uint me, uint s) { CStrCtor(me); WStrAssign(me + 0xC, WStrRead(s)); return me; }
+    uint CStrCtorWs(uint me, uint s) { CStrCtorThroughEntry(me); WStrAssign(me + 0xC, WStrRead(s)); return me; }
 
     [Hle("_ZN3paf6common6StringD1Ev")]
     [Hle("_ZN3paf6common6StringD2Ev")]
@@ -231,7 +231,7 @@ public sealed partial class Paf
     [Hle("_ZN3paf6common6StringneERKS1_")] bool CStrNe(uint me, uint other) => CStrText(me) != CStrText(other);
 
     [Hle("_ZN3paf6common6StringplERKS1_")]
-    void CStrPlus(uint ret, uint me, uint other) { CStrCtor(ret); StrAssign(ret, CStrText(me) + CStrText(other)); }
+    void CStrPlus(uint ret, uint me, uint other) { CStrCtorThroughEntry(ret); StrAssign(ret, CStrText(me) + CStrText(other)); }
 
     [Hle("_ZN3paf6common6String18SetFormattedStringEPKcz")]
     void CStrSetFormatted(uint me, string fmt, VarArgs va)

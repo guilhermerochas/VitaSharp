@@ -158,8 +158,8 @@ public sealed partial class ModulemgrKernel : HleModule
     [Hle]
     internal int ksceKernelStopUnloadModule(int modid, uint args, uint argp, int flags, uint opt, uint status)
     {
-        int r = ksceKernelStopModule(modid, args, argp, flags, opt, status);
-        return r < 0 ? r : ksceKernelUnloadModule(modid, flags, opt);
+        int r = ksceKernelStopModuleThroughEntry(modid, args, argp, flags, opt, status);
+        return r < 0 ? r : ksceKernelUnloadModuleThroughEntry(modid, flags, opt);
     }
 
     void Forget(LoadedModule m)
@@ -240,7 +240,7 @@ public sealed partial class ModulemgrKernel : HleModule
     {
         if (pid == KernelSpace.KernelPid)
         {
-            return ksceKernelStopModule(modid, args, argp, flags, opt, status);
+            return ksceKernelStopModuleThroughEntry(modid, args, argp, flags, opt, status);
         }
 
         if (ModulesOf(pid)?.FirstOrDefault(m => m.Uid == modid) is not { } module)
@@ -263,7 +263,7 @@ public sealed partial class ModulemgrKernel : HleModule
     {
         if (pid == KernelSpace.KernelPid)
         {
-            return ksceKernelUnloadModule(modid, flags, opt);
+            return ksceKernelUnloadModuleThroughEntry(modid, flags, opt);
         }
 
         if (ProcessOf(pid) is not { } process || ModulesOf(pid)?.FirstOrDefault(m => m.Uid == modid) is not { } module || module == process.MainModule)
@@ -279,8 +279,8 @@ public sealed partial class ModulemgrKernel : HleModule
     [Hle]
     internal int ksceKernelStopUnloadModuleForPid(int pid, int modid, uint args, uint argp, int flags, uint opt, uint status)
     {
-        int r = ksceKernelStopModuleForPid(pid, modid, args, argp, flags, opt, status);
-        return r < 0 ? r : ksceKernelUnloadModuleForPid(pid, modid, flags, opt);
+        int r = ksceKernelStopModuleForPidThroughEntry(pid, modid, args, argp, flags, opt, status);
+        return r < 0 ? r : ksceKernelUnloadModuleForPidThroughEntry(pid, modid, flags, opt);
     }
 
     /// <summary>ksceKernelGetModuleInfo(pid, modid, SceKernelModuleInfo *info): the 0x1B8-byte record of a module of

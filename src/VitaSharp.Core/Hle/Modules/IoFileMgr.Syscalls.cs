@@ -3,6 +3,11 @@ using VitaSharp.Core.Memory;
 
 namespace VitaSharp.Core.Hle.Modules;
 
+// VSHLE010: these syscalls share the C# body of the user-library function they stand behind. On the Vita the user
+// library's function calls the syscall, never the reverse, so a hook on the user library's export must not see the
+// syscall's calls: they stay direct.
+#pragma warning disable VSHLE010
+
 /// <summary>
 /// The SceIofilemgr syscalls (<c>_sceIo*</c>) behind the SceLibKernel wrappers, for firmware modules loaded LLE that
 /// call them directly. Packing read from the 3.74 libkernel wrappers: the last argument points to a small struct on

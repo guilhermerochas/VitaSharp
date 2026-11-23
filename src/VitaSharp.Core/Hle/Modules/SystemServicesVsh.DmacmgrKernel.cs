@@ -16,7 +16,7 @@ public sealed partial class SystemServicesVsh
     {
         foreach (uint bit in DmacSixthControllerSwitches)
         {
-            if (ksceKernelCheckDipsw(bit) != 0)
+            if (ksceKernelCheckDipswThroughEntry(bit) != 0)
             {
                 return true;
             }

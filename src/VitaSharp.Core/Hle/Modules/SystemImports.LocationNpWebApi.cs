@@ -741,11 +741,11 @@ public sealed partial class NpManager : IServiceThreadOwner
     /// <summary>NID_A7EC5CDB (SceNpCommon)(stackSize, priority): starts the library's own callout context
     /// ("SceNetCallout").</summary>
     [Hle("NID_A7EC5CDB", Nid = 0xA7EC5CDB, Library = "SceNpCommon")]
-    int NpCommonNetCalloutStart(uint stackSize, int priority) => NpCommonCalloutStart(NetCallout(), 0, stackSize, priority, 0);
+    int NpCommonNetCalloutStart(uint stackSize, int priority) => NpCommonCalloutStartThroughEntry(NetCallout(), 0, stackSize, priority, 0);
 
     /// <summary>NID_E2743C07 (SceNpCommon)(): stops the library's callout context.</summary>
     [Hle("NID_E2743C07", Nid = 0xE2743C07, Library = "SceNpCommon")]
-    int NpCommonNetCalloutStop() => _netCallout == 0 ? 0 : NpCommonCalloutStop(_netCallout);
+    int NpCommonNetCalloutStop() => _netCallout == 0 ? 0 : NpCommonCalloutStopThroughEntry(_netCallout);
 
     /// <summary>NID_659ED07E (SceNpCommon)(): the library's callout context while it runs, else NULL.</summary>
     [Hle("NID_659ED07E", Nid = 0x659ED07E, Library = "SceNpCommon")]
@@ -755,11 +755,11 @@ public sealed partial class NpManager : IServiceThreadOwner
     /// callout context.</summary>
     [Hle("NID_540B307E", Nid = 0x540B307E, Library = "SceNpCommon")]
     int NpCommonNetCalloutQueue(uint item, uint unused, ulong delay, uint function, uint argument) =>
-        NpCommonCalloutQueue(NetCallout(), item, delay, function, argument);
+        NpCommonCalloutQueueThroughEntry(NetCallout(), item, delay, function, argument);
 
     /// <summary>NID_38B88BA3 (SceNpCommon)(item, int *removed): cancels on the library's callout context.</summary>
     [Hle("NID_38B88BA3", Nid = 0x38B88BA3, Library = "SceNpCommon")]
-    int NpCommonNetCalloutCancel(uint item, uint removed) => NpCommonCalloutCancel(NetCallout(), item, removed);
+    int NpCommonNetCalloutCancel(uint item, uint removed) => NpCommonCalloutCancelThroughEntry(NetCallout(), item, removed);
 
     // ---- JIDs ("user@domain/resource") and NP ids as JIDs
 

@@ -43,7 +43,7 @@ public sealed partial class Paf
 
     [Hle("_ZN3paf4cxml8DocumentD1Ev")]
     [Hle("_ZN3paf4cxml8DocumentD2Ev")]
-    uint CxDocDtor(uint doc) { CxClear(doc); return doc; }
+    uint CxDocDtor(uint doc) { CxClearThroughEntry(doc); return doc; }
 
     int CxCheckHeader(ReadOnlySpan<byte> h)
     {
@@ -67,12 +67,12 @@ public sealed partial class Paf
         for (int i = 0; i < 9; i++)
         {
             uint off = U(doc + 0xC + (uint)i * 8), len = U(doc + 0x10 + (uint)i * 8);
-            if ((ulong)off + len > size) { CxClear(doc); return CxBadArg; }
+            if ((ulong)off + len > size) { CxClearThroughEntry(doc); return CxBadArg; }
             uint p = buf + off;
             if (copy)
             {
                 p = Alloc(Math.Max(len, 4));
-                if (p == 0) { CxClear(doc); return CxNoMem; }
+                if (p == 0) { CxClearThroughEntry(doc); return CxNoMem; }
                 GuestMemory.Copy(p, buf + off, len);
             }
             U(doc + CxTables + (uint)i * 8, p); U(doc + CxTables + 4 + (uint)i * 8, len);
@@ -84,14 +84,14 @@ public sealed partial class Paf
     int FileRead(uint file, uint buf, uint n)
     {
         if (Lf(file) is { } s)
-            return s.Fd >= 0 ? LfRead(file, buf, n) : MfRead(file, buf, n);
+            return s.Fd >= 0 ? LfReadThroughEntry(file, buf, n) : MfReadThroughEntry(file, buf, n);
         if (Kernel.GuestThread.Current is not { } t) return FileNoImpl;
         return (int)t.CallGuest(U(U(file) + 10 * 4), file, buf, n);
     }
 
     long FileSeek(uint file, long off, int whence)
     {
-        if (Lf(file) is { } s) return s.Fd >= 0 ? LfSeek(file, off, whence) : MfSeek(file, off, whence);
+        if (Lf(file) is { } s) return s.Fd >= 0 ? LfSeekThroughEntry(file, off, whence) : MfSeekThroughEntry(file, off, whence);
         if (Kernel.GuestThread.Current is not { } t) return FileNoImpl;
         return (int)t.CallGuest(U(U(file) + 14 * 4), file, 0, (uint)off, (uint)(off >> 32), (uint)whence);
     }
@@ -114,10 +114,10 @@ public sealed partial class Paf
             uint off = U(doc + 0xC + (uint)i * 8), len = U(doc + 0x10 + (uint)i * 8);
             if (i == 8 && !copyFiles) continue;
             uint p = Alloc(Math.Max(len, 4));
-            if (p == 0) { CxClear(doc); return CxNoMem; }
+            if (p == 0) { CxClearThroughEntry(doc); return CxNoMem; }
             U(doc + CxTables + (uint)i * 8, p); U(doc + CxTables + 4 + (uint)i * 8, len);
             if (len == 0) continue;
-            if (FileSeek(file, off, 0) < 0 || FileRead(file, p, len) != len) { CxClear(doc); return CxBadArg; }
+            if (FileSeek(file, off, 0) < 0 || FileRead(file, p, len) != len) { CxClearThroughEntry(doc); return CxBadArg; }
         }
         return 0;
     }
@@ -332,7 +332,7 @@ public sealed partial class Paf
 
     // ---- cxml::util: the element helpers
     [Hle("_ZN3paf4cxml4util16CheckElementNameERKNS0_7ElementEPKc")]
-    bool CxCheckName(uint elem, uint name) => name != 0 && CxName(elem) is var n and not 0 && GuestMemory.ReadCString(n, 1024) == CRead(name);
+    bool CxCheckName(uint elem, uint name) => name != 0 && CxNameThroughEntry(elem) is var n and not 0 && GuestMemory.ReadCString(n, 1024) == CRead(name);
 
     [Hle("_ZN3paf4cxml4util16FindChildElementERKNS0_7ElementEPKc")]
     void CxFindChild(uint ret, uint parent, uint name) => CxFind(ret, parent, name, null);
@@ -357,7 +357,7 @@ public sealed partial class Paf
     int CxAttrOf(uint elem, uint name, out uint attr)
     {
         attr = Scratch(0) + 0xE0;
-        return CxAttrByName(elem, name, attr);
+        return CxAttrByNameThroughEntry(elem, name, attr);
     }
 
     [Hle("_ZN3paf4cxml4util16FindChildElementERKNS0_7ElementEPKcS6_S6_")]
@@ -387,37 +387,37 @@ public sealed partial class Paf
     [Hle("_ZN3paf4cxml4util18FindEmptyAttributeERKNS0_7ElementEPNS0_9AttributeE")]
     int CxFindEmpty(uint elem, uint attr)
     {
-        int n = CxNumAttr(elem);
+        int n = CxNumAttrThroughEntry(elem);
         if (n < 0) return n;
         for (int i = 0; i < n; i++)
-            if (CxAttrAt(elem, i, attr) == 0 && CxAttrType(attr) == 0) return 0;
+            if (CxAttrAtThroughEntry(elem, i, attr) == 0 && CxAttrTypeThroughEntry(attr) == 0) return 0;
         return CxNoAttr;
     }
 
     [Hle("_ZN3paf4cxml4util6GetIntERKNS0_7ElementEPKcPi", Nid = 0xE59C9265)]
-    int CxUtilInt(uint elem, uint name, uint v) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetInt(a, v);
+    int CxUtilInt(uint elem, uint name, uint v) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetIntThroughEntry(a, v);
     [Hle("_ZN3paf4cxml4util8GetFloatERKNS0_7ElementEPKcPf", Nid = 0xBE772869)]
-    int CxUtilFloat(uint elem, uint name, uint v) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetFloat(a, v);
+    int CxUtilFloat(uint elem, uint name, uint v) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetFloatThroughEntry(a, v);
     [Hle("_ZN3paf4cxml4util9GetStringERKNS0_7ElementEPKcPS6_Pj", Nid = 0xD2438FA7)]
-    int CxUtilString(uint elem, uint name, uint v, uint len) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetString(a, v, len);
+    int CxUtilString(uint elem, uint name, uint v, uint len) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetStringThroughEntry(a, v, len);
     [Hle("_ZN3paf4cxml4util10GetWStringERKNS0_7ElementEPKcPPKwPj", Nid = 0x1546336D)]
-    int CxUtilWString(uint elem, uint name, uint v, uint len) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetWString(a, v, len);
+    int CxUtilWString(uint elem, uint name, uint v, uint len) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetWStringThroughEntry(a, v, len);
     [Hle("_ZN3paf4cxml4util7GetHashERKNS0_7ElementEPKcPj", Nid = 0x15ADAAB4)]
-    int CxUtilHash(uint elem, uint name, uint v) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetHash(a, v);
+    int CxUtilHash(uint elem, uint name, uint v) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetHashThroughEntry(a, v);
     [Hle("_ZN3paf4cxml4util11GetIntArrayERKNS0_7ElementEPKcPPKiPj", Nid = 0xD09CE709)]
-    int CxUtilIntArray(uint elem, uint name, uint v, uint n) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetIntArray(a, v, n);
+    int CxUtilIntArray(uint elem, uint name, uint v, uint n) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetIntArrayThroughEntry(a, v, n);
     [Hle("_ZN3paf4cxml4util13GetFloatArrayERKNS0_7ElementEPKcPPKfPj", Nid = 0x7B360965)]
-    int CxUtilFloatArray(uint elem, uint name, uint v, uint n) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetFloatArray(a, v, n);
+    int CxUtilFloatArray(uint elem, uint name, uint v, uint n) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetFloatArrayThroughEntry(a, v, n);
     [Hle("_ZN3paf4cxml4util7GetFileERKNS0_7ElementEPKcPNS0_4FileE", Nid = 0x37720983)]
-    int CxUtilFile(uint elem, uint name, uint f) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetFile(a, f);
+    int CxUtilFile(uint elem, uint name, uint f) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetFileThroughEntry(a, f);
     [Hle("_ZN3paf4cxml4util5GetIDERKNS0_7ElementEPKcPS6_", Nid = 0x445BCAAB)]
-    int CxUtilId(uint elem, uint name, uint v) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetId(a, v);
+    int CxUtilId(uint elem, uint name, uint v) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetIdThroughEntry(a, v);
     [Hle("_ZN3paf4cxml4util8GetIDRefERKNS0_7ElementEPKcPS6_PS2_", Nid = 0xBD3A6015)]
-    int CxUtilIdRef(uint elem, uint name, uint v, uint ent) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetIdRef(a, v, ent);
+    int CxUtilIdRef(uint elem, uint name, uint v, uint ent) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetIdRefThroughEntry(a, v, ent);
     [Hle("_ZN3paf4cxml4util9GetIDHashERKNS0_7ElementEPKcPj")]
-    int CxUtilIdHash(uint elem, uint name, uint v) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetIdHash(a, v);
+    int CxUtilIdHash(uint elem, uint name, uint v) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetIdHashThroughEntry(a, v);
     [Hle("_ZN3paf4cxml4util12GetIDHashRefERKNS0_7ElementEPKcPjPS2_", Nid = 0xABFA169F)]
-    int CxUtilIdHashRef(uint elem, uint name, uint v, uint ent) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetIdHashRef(a, v, ent);
+    int CxUtilIdHashRef(uint elem, uint name, uint v, uint ent) => CxAttrOf(elem, name, out uint a) is var r and not 0 ? r : CxGetIdHashRefThroughEntry(a, v, ent);
 
     /// <summary>Whether an element owns the id (string) or id hash.</summary>
     [Hle("_ZN3paf4cxml8Document14IsRegisteredIDEPKc")]

@@ -2,6 +2,11 @@ using VitaSharp.Core.Memory;
 
 namespace VitaSharp.Core.Hle.Modules;
 
+// VSHLE010: these syscalls share the C# body of the user-library function they stand behind. On the Vita the user
+// library's function calls the syscall, never the reverse, so a hook on the user library's export must not see the
+// syscall's calls: they stay direct.
+#pragma warning disable VSHLE010
+
 // Syscall forms of functions the HLE already had under their user name (the 3.74 driver_us/avcodec_us/libnet wrappers
 // pass the arguments unchanged), and small services of np_common, the error history and the application list.
 

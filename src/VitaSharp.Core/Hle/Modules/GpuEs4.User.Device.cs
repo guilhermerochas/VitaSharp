@@ -105,7 +105,7 @@ public sealed partial class GpuEs4
         int result = ServicesBridgeResult(ServicesOfDevice(device), 0x07, 0x28, 8);
         if (result == 0)
         {
-            GpuEs4UserHeapFree(memory);
+            GpuEs4UserHeapFreeThroughEntry(memory);
         }
 
         return result;

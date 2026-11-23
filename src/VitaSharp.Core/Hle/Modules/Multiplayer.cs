@@ -408,7 +408,7 @@ public sealed partial class Rudp : HleModule
     [Hle] int sceRudpEnableInternalIOThread(uint stackSize, uint priority) { if (!_initialized) return ERR_NOT_INITIALIZED; _internalIoThread = true; return 0; }
 
     /// <summary>Inferred: (stackSize, priority, cpuAffinityMask). No traffic offline, so no thread is created.</summary>
-    [Hle] int sceRudpEnableInternalIOThread2(uint stackSize, uint priority, int cpuAffinityMask) => sceRudpEnableInternalIOThread(stackSize, priority);
+    [Hle] int sceRudpEnableInternalIOThread2(uint stackSize, uint priority, int cpuAffinityMask) => sceRudpEnableInternalIOThreadThroughEntry(stackSize, priority);
 
     internal bool InternalIoThread => _internalIoThread;
 

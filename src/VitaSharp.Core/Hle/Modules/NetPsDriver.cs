@@ -907,7 +907,7 @@ public sealed partial class Net
         byte[] one = [1, 0, 0, 0];
         if (SetSocketOption(socket, 0, 2, one) < 0 || SetSocketOption(socket, SOL_SOCKET, 0x1002, one) < 0 || SetSocketOption(socket, 0, 0x19, one) < 0)
         {
-            sceNetSocketClose(socket);
+            sceNetSocketCloseThroughEntry(socket);
             return NetPsErrGatewaySetup;
         }
 
@@ -915,7 +915,7 @@ public sealed partial class Net
         {
             if (_netPsGateway != 0)
             {
-                sceNetSocketClose(socket);
+                sceNetSocketCloseThroughEntry(socket);
                 return NetPsErrInvalid;
             }
 
@@ -966,7 +966,7 @@ public sealed partial class Net
 
         if (socket >= 0)
         {
-            sceNetSocketClose(socket);
+            sceNetSocketCloseThroughEntry(socket);
         }
 
         return 0;
@@ -998,7 +998,7 @@ public sealed partial class Net
             GuestMemory.Write<byte>(sockaddr, 0x10);
             GuestMemory.Write<byte>(sockaddr + 1, 2);
             GuestMemory.W32(sockaddr + 4, address);
-            return sceNetSendto(socket, buffer, length, 0, sockaddr, 0x10);
+            return sceNetSendtoThroughEntry(socket, buffer, length, 0, sockaddr, 0x10);
         }
         finally
         {

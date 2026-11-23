@@ -2544,7 +2544,7 @@ public sealed partial class Gxm : HleModule
         return 0;
     }
 
-    [Hle] int sceGxmShaderPatcherForceUnregisterProgram(uint patcher, uint id) => sceGxmShaderPatcherUnregisterProgram(patcher, id);
+    [Hle] int sceGxmShaderPatcherForceUnregisterProgram(uint patcher, uint id) => sceGxmShaderPatcherUnregisterProgramThroughEntry(patcher, id);
     [Hle] uint sceGxmShaderPatcherGetProgramFromId(uint id) => id == 0 ? 0 : GuestMemory.R32(id);
 
     [Hle]
@@ -2669,7 +2669,7 @@ public sealed partial class Gxm : HleModule
 
         if (remap == 0)
         {
-            return sceGxmShaderPatcherCreateFragmentProgram(patcher, programId, outputFormat, multisampleMode, blendInfo, vertexProgram, outFp);
+            return sceGxmShaderPatcherCreateFragmentProgramThroughEntry(patcher, programId, outputFormat, multisampleMode, blendInfo, vertexProgram, outFp);
         }
 
         if (!_patchers.ContainsKey(patcher))

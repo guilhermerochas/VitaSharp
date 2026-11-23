@@ -137,7 +137,7 @@ public sealed partial class Libc
     int _Atomic_compare_exchange_strong(uint flag, uint size, uint obj, uint expected, uint desired)
     {
         FlagLock(flag);
-        int r = memcmp(obj, expected, size) == 0 ? 1 : 0;
+        int r = memcmpThroughEntry(obj, expected, size) == 0 ? 1 : 0;
         if (r == 1) { if (size != 0) GuestMemory.Copy(obj, desired, size); }
         else if (size != 0) GuestMemory.Copy(expected, obj, size);
         FlagUnlock(flag);

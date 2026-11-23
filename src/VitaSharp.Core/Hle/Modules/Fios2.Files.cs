@@ -181,7 +181,7 @@ public sealed partial class Fios2
         return 0;
     }
 
-    [Hle] int sceFiosArchiveUnmount(uint attr, int fh) => Complete(attr, sceFiosArchiveUnmountSync(attr, fh));
+    [Hle] int sceFiosArchiveUnmount(uint attr, int fh) => Complete(attr, sceFiosArchiveUnmountSyncThroughEntry(attr, fh));
 
     int _decompressorThreads = 1;
     [Hle] int sceFiosArchiveGetDecompressorThreadCount() => _decompressorThreads;
@@ -265,7 +265,7 @@ public sealed partial class Fios2
         FileH? f;
         lock (_lock) { if (!_files.Remove(fh, out f)) return ERR_BAD_FH; }
         if (f.MountedArchive != null) lock (_lock) _mounts.RemoveAll(m => m.Archive == f.MountedArchive);
-        if (f.Fd >= 0) Io.sceIoClose(f.Fd);
+        if (f.Fd >= 0) Io.sceIoCloseThroughEntry(f.Fd);
         return 0;
     }
 
@@ -291,7 +291,7 @@ public sealed partial class Fios2
         while (total < len)
         {
             uint chunk = (uint)Math.Min(len - total, 0x40000000);
-            int r = Io.sceIoPread(f.Fd, buf + (uint)total, chunk, offset + total);
+            int r = Io.sceIoPreadThroughEntry(f.Fd, buf + (uint)total, chunk, offset + total);
             if (r < 0) return total > 0 ? total : FromIo(r);
             if (r == 0) break;
             total += r;
@@ -311,7 +311,7 @@ public sealed partial class Fios2
         while (total < len)
         {
             uint chunk = (uint)Math.Min(len - total, 0x40000000);
-            int r = Io.sceIoPwrite(f.Fd, buf + (uint)total, chunk, offset + total);
+            int r = Io.sceIoPwriteThroughEntry(f.Fd, buf + (uint)total, chunk, offset + total);
             if (r < 0) return total > 0 ? total : FromIo(r);
             if (r == 0) break;
             total += r;
@@ -430,7 +430,7 @@ public sealed partial class Fios2
         return StatPath(f.MountedArchive?.HostPath != null ? f.Path : f.Path, stat);
     }
 
-    [Hle] int sceFiosFHStat(uint attr, int fh, uint stat) => Complete(attr, sceFiosFHStatSync(attr, fh, stat));
+    [Hle] int sceFiosFHStat(uint attr, int fh, uint stat) => Complete(attr, sceFiosFHStatSyncThroughEntry(attr, fh, stat));
 
     [Hle]
     int sceFiosFHTruncateSync(uint attr, int fh, long len)
@@ -441,9 +441,9 @@ public sealed partial class Fios2
         return FromIo(Io.Truncate(f.Fd, len));
     }
 
-    [Hle] int sceFiosFHTruncate(uint attr, int fh, long len) => Complete(attr, sceFiosFHTruncateSync(attr, fh, len));
-    [Hle] int sceFiosFHSyncSync(uint attr, int fh) => GetFile(fh) is { } f ? (f.Fd >= 0 ? FromIo(Math.Min(0, Io.sceIoSyncByFd(f.Fd, 0))) : 0) : ERR_BAD_FH;
-    [Hle] int sceFiosFHSync(uint attr, int fh) => Complete(attr, sceFiosFHSyncSync(attr, fh));
+    [Hle] int sceFiosFHTruncate(uint attr, int fh, long len) => Complete(attr, sceFiosFHTruncateSyncThroughEntry(attr, fh, len));
+    [Hle] int sceFiosFHSyncSync(uint attr, int fh) => GetFile(fh) is { } f ? (f.Fd >= 0 ? FromIo(Math.Min(0, Io.sceIoSyncByFdThroughEntry(f.Fd, 0))) : 0) : ERR_BAD_FH;
+    [Hle] int sceFiosFHSync(uint attr, int fh) => Complete(attr, sceFiosFHSyncSyncThroughEntry(attr, fh));
     [Hle] int sceFiosSyncSync(uint attr, string path, int flag) => 0;
     [Hle] int sceFiosSync(uint attr, string path, int flag) => Complete(attr, 0, path: path);
 
@@ -451,7 +451,7 @@ public sealed partial class Fios2
     int sceFiosFHIoctlSync(uint attr, int fh, int cmd, uint arg, uint argLen, uint buf, uint bufLen)
         => GetFile(fh) is { Fd: >= 0 } f ? FromIo(Io.Ioctl(f.Fd, cmd, arg, argLen, buf, bufLen)) : ERR_BAD_FH;
 
-    [Hle] int sceFiosFHIoctl(uint attr, int fh, int cmd, uint arg, uint argLen, uint buf, uint bufLen) => Complete(attr, sceFiosFHIoctlSync(attr, fh, cmd, arg, argLen, buf, bufLen));
+    [Hle] int sceFiosFHIoctl(uint attr, int fh, int cmd, uint arg, uint argLen, uint buf, uint bufLen) => Complete(attr, sceFiosFHIoctlSyncThroughEntry(attr, fh, cmd, arg, argLen, buf, bufLen));
     [Hle] int sceFiosDevctlSync(uint attr, string dev, int cmd, uint arg, uint argLen, uint buf, uint bufLen) => FromIo(Io.Devctl(dev, cmd, arg, argLen, buf, bufLen));
     [Hle] int sceFiosDevctl(uint attr, string dev, int cmd, uint arg, uint argLen, uint buf, uint bufLen) => Complete(attr, sceFiosDevctlSync(attr, dev, cmd, arg, argLen, buf, bufLen));
 
@@ -578,7 +578,7 @@ public sealed partial class Fios2
         int fd = Io.sceIoOpen(path, 2, 0);
         if (fd < 0) return FromIo(fd);
         int r = Io.Truncate(fd, len);
-        Io.sceIoClose(fd);
+        Io.sceIoCloseThroughEntry(fd);
         return FromIo(r);
     }
 
@@ -595,8 +595,8 @@ public sealed partial class Fios2
     [Hle] int sceFiosCacheFlushFileRangeSync(uint attr, string path, long off, long len) => 0;
     [Hle] int sceFiosCachePrefetchFHSync(uint attr, int fh) => GetFile(fh) != null ? 0 : ERR_BAD_FH;
     [Hle] int sceFiosCachePrefetchFHRangeSync(uint attr, int fh, long off, long len) => GetFile(fh) != null ? 0 : ERR_BAD_FH;
-    [Hle] int sceFiosCachePrefetchFH(uint attr, int fh) => Complete(attr, sceFiosCachePrefetchFHSync(attr, fh));
-    [Hle] int sceFiosCachePrefetchFHRange(uint attr, int fh, long off, long len) => Complete(attr, sceFiosCachePrefetchFHRangeSync(attr, fh, off, len));
+    [Hle] int sceFiosCachePrefetchFH(uint attr, int fh) => Complete(attr, sceFiosCachePrefetchFHSyncThroughEntry(attr, fh));
+    [Hle] int sceFiosCachePrefetchFHRange(uint attr, int fh, long off, long len) => Complete(attr, sceFiosCachePrefetchFHRangeSyncThroughEntry(attr, fh, off, len));
     [Hle] int sceFiosCachePrefetchFile(uint attr, string path) => Complete(attr, Exists(path, 1) ? 0 : ERR_BAD_PATH, path: path);
     [Hle] int sceFiosCachePrefetchFileRange(uint attr, string path, long off, long len) => Complete(attr, Exists(path, 1) ? 0 : ERR_BAD_PATH, path: path);
 
@@ -664,10 +664,10 @@ public sealed partial class Fios2
         return 0;
     }
 
-    [Hle] int sceFiosDHRead(uint attr, int dh, uint entry) => Complete(attr, sceFiosDHReadSync(attr, dh, entry));
+    [Hle] int sceFiosDHRead(uint attr, int dh, uint entry) => Complete(attr, sceFiosDHReadSyncThroughEntry(attr, dh, entry));
 
     [Hle] int sceFiosDHCloseSync(uint attr, int dh) { lock (_lock) return _dirs.Remove(dh) ? 0 : ERR_BAD_DH; }
-    [Hle] int sceFiosDHClose(uint attr, int dh) => Complete(attr, sceFiosDHCloseSync(attr, dh));
+    [Hle] int sceFiosDHClose(uint attr, int dh) => Complete(attr, sceFiosDHCloseSyncThroughEntry(attr, dh));
     [Hle] uint sceFiosDHGetPath(int dh) { lock (_lock) return _dirs.TryGetValue(dh, out var d) ? d.PathCopy : 0; }
 
 

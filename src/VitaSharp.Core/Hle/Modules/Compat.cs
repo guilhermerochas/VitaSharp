@@ -160,7 +160,7 @@ public sealed class Compat : HleModule
     {
         if (!Allowed) return ERR_PERM;
         if (channel >= 16 || kind >= 3) return ERR_ARG;
-        int r = Tm.sceKernelWaitSema(Sema(_requestSema, (int)channel, "SceCompatRequest"), 1, new Ptr<uint>(0));
+        int r = Tm.sceKernelWaitSemaThroughEntry(Sema(_requestSema, (int)channel, "SceCompatRequest"), 1, new Ptr<uint>(0));
         return r < 0 ? r : _coreRunning ? 0 : ERR_INVAL;
     }
 
@@ -171,7 +171,7 @@ public sealed class Compat : HleModule
     {
         if (!Allowed) return ERR_PERM;
         if (which is < 1 or > 3) return 0;
-        Tm.sceKernelDelayThread(which == 1 ? 5_000_000u : 30_000_000u);
+        Tm.sceKernelDelayThreadThroughEntry(which == 1 ? 5_000_000u : 30_000_000u);
         return ERR_TIMEOUT;
     }
 
@@ -181,7 +181,7 @@ public sealed class Compat : HleModule
     {
         if (!Allowed) return ERR_PERM;
         if (which >= 3) return ERR_ARG;
-        return Tm.sceKernelWaitSema(Sema(_intrSema, (int)which, "SceCompatIntr"), 1, new Ptr<uint>(0));
+        return Tm.sceKernelWaitSemaThroughEntry(Sema(_intrSema, (int)which, "SceCompatIntr"), 1, new Ptr<uint>(0));
     }
 
     /// <summary>(int line 1..15): raises an interrupt on the core; no core running: 0x80010086.</summary>
@@ -269,7 +269,7 @@ public sealed class Compat : HleModule
         GuestMemory.W32(_fbParam + 16, 480);
         GuestMemory.W32(_fbParam + 20, 272);
         GuestMemory.W32(_fbParam + 24, wide != 0 ? 0x100000u : 0);
-        return Emu.Hle.Modules.OfType<Display>().First().SetFrameBuf(_fbParam, 1);
+        return Emu.Hle.Modules.OfType<Display>().First().SetFrameBufThroughEntry(_fbParam, 1);
     }
 
     /// <summary>Waits for the LCD controller's next frame (the PSP's vsync).</summary>

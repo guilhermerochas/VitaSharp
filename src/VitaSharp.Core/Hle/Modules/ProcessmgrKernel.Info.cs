@@ -129,7 +129,7 @@ public sealed partial class ProcessmgrKernel
             {
                 uint entry = buffer + (uint)written * ProcessInfoSize;
                 GuestMemory.W32(entry, ProcessInfoSize);
-                int result = ksceKernelGetProcessInfo(pid, entry);
+                int result = ksceKernelGetProcessInfoThroughEntry(pid, entry);
                 if (result < 0)
                 {
                     GuestMemory.W32(count, 0);
@@ -157,7 +157,7 @@ public sealed partial class ProcessmgrKernel
         uint address = KernelAlloc(4, "kernel:pls-out");
         try
         {
-            int result = ksceKernelGetProcessLocalStorageAddrForPid(0, key, address, 1);
+            int result = ksceKernelGetProcessLocalStorageAddrForPidThroughEntry(0, key, address, 1);
             return result < 0 ? 0 : GuestMemory.R32(address);
         }
         finally

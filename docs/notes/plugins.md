@@ -198,7 +198,7 @@ the original bytes back (the code went with the process); kernel patches stay un
 | Translated code: each patch drops the blocks it covers; a block decoded during a patch is checked again | Done |
 | Module calls for user programs (load, start, stop, unload a kernel or process module; user/kernel copies) | Done |
 | Patching the firmware's own code by offset | Not possible (no firmware code: the HLE serves it) |
-| A firmware function's own internal callers (the HLE calling it) go through a hook on its entry | In progress: the routing (no cost without a hook) is in place; ksceVopLookup (iofilemgr's path walks) uses it, the other functions' internal calls not yet |
+| A firmware function's own internal callers (the HLE calling it) go through a hook on its entry | Yes: every internal call of an exported function goes through its generated `XxxThroughEntry` wrapper (see below) |
 
 ### Validation matrix
 
@@ -222,12 +222,31 @@ translated before it ever ran, then hooked).
 | Kernel hooks seen by an application opened after them, on its threads | ok | ok | ok | ok |
 | Save state with the hooks: loads them active; one from before loads without | ok | ok | ok | ok |
 | Chain fuzz (kernel and user, 3 seeds each) | ok | ok | ok | ok |
-| Firmware-internal caller (the HLE's own call of the hooked function) | fixed for ksceVopLookup (test `IoVfsMountTests.AHookOnTheVopLookupEntrySeesTheModulesOwnPathWalks`) | same | same | same |
+| Firmware-internal caller (the HLE's own call of the hooked function) | ok (`HleEntryCallTests`, `HleEntryCallLibraryTests`, `IoVfsMountTests.AHookOnTheVopLookupEntrySeesTheModulesOwnPathWalks`) | same | same | same |
 
 The ARM64 sandbox (Unicorn) runs single translated blocks, not the dispatcher, so it is not a path of the matrix; the
 matrix runs on ARM64 natively where the host is ARM64. Loading a state with `VITASHARP_LOAD_KEEP_CODE=1` (translations
 kept and revalidated by their bytes) is read once per process and is not a cell (the default load drops every
 translation).
+
+### The firmware's own calls of a hooked function
+
+On the Vita a hook on an export patches the function's code, so every caller runs it, the firmware module's own
+calls included. The firmware functions the HLE serves are C# methods; when one calls another exported function it calls
+the generated wrapper `XxxThroughEntry` (source generator `HleEntryCallGenerator`, made for every `[Hle]` method some code
+calls that way). Without a hook the wrapper reads three static fields (how many processes of the host have a user
+hook, and whether the firmware kernel modules of any emulated system have a patched entry, counted again only when
+guest code changes) and calls the C# method, allocating nothing (`HleEntryCallBenchmarks`, `HleEntryCallTests`). With a hook it finds it where the framework put it: the patched
+entry of the function in the firmware kernel modules (a kernel plugin's hook, or any code written over the entry) or the
+thunk of a user plugin's hook on the function in the module's process (found by library and NID: a NID two libraries
+export is two functions, and a hook on one is not the other's); the hooked code runs on the calling thread with
+the arguments as AAPCS words (64-bit values in an even register pair or an aligned stack slot) and its r0/r1 is the
+result. A function the guest cannot be called with by address (it takes a C# string, a float, the HLE context or
+variadic arguments) has no wrapper. The analyzer VSHLE010 reports a direct call of an exported function in VitaSharp.Core;
+the calls that are not the firmware's call of that function stay direct with a `#pragma` saying why: the syscall forms
+behind a user library's wrappers (`_sceIo*`, `_sceKernel*`, ...) and the kernel entries that share the C# body of the
+user call of the same name (on the Vita the user call reaches the kernel by its syscall, so a hook on one is not seen by
+the other).
 
 The firmware's process start calls modulemgr's export ksceKernelStartPreloadingModules(pid) by its address once a new
 process's main thread exists (processmgr 3.74). VitaSharp starts the preloaded modules itself, so the call is made

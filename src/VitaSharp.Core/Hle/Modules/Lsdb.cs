@@ -105,7 +105,7 @@ public sealed partial class Lsdb : HleModule
     [Hle]
     uint sceLsdbGetTitle(uint info)
     {
-        int lang = sceLsdbGetSystemLanguageIndex();
+        int lang = sceLsdbGetSystemLanguageIndexThroughEntry();
         uint key = lang is >= 0 and < 20 ? TitleKeys[lang] : KeyTitle;
         return Find(info, key) != 0 ? Str(info, key) : Str(info, KeyTitle);
     }
@@ -113,7 +113,7 @@ public sealed partial class Lsdb : HleModule
     [Hle]
     uint sceLsdbGetStitle(uint info)
     {
-        uint key = sceLsdbGetStitleKeyForLanguage(sceLsdbGetSystemLanguageIndex());
+        uint key = sceLsdbGetStitleKeyForLanguageThroughEntry(sceLsdbGetSystemLanguageIndexThroughEntry());
         return Find(info, key) != 0 ? Str(info, key) : Str(info, KeyStitle);
     }
 
@@ -143,13 +143,13 @@ public sealed partial class Lsdb : HleModule
 
     static readonly string[] GameCategories = ["gd", "gp", "gdc", "gdd", "gpc", "gpd"];
 
-    string? Category(uint info) => sceLsdbGetCategory(info) is var p and not 0 ? GuestMemory.ReadCString(p, 64) : null;
+    string? Category(uint info) => sceLsdbGetCategoryThroughEntry(info) is var p and not 0 ? GuestMemory.ReadCString(p, 64) : null;
 
     [Hle] bool sceLsdbIsCategoryGda(uint info) => Category(info) == "gda";
 
     [Hle]
     bool sceLsdbIsGameCategoryOrLiveAreaSystemVersion1Or2(uint info) =>
-        Category(info) is { } c && GameCategories.Contains(c) || sceLsdbGetLiveAreaSystemVersion(info) is 1 or 2;
+        Category(info) is { } c && GameCategories.Contains(c) || sceLsdbGetLiveAreaSystemVersionThroughEntry(info) is 1 or 2;
 
     [Hle] bool sceLsdbIsGameOrEgCategory(uint info) => Category(info) is { } c && (GameCategories.Contains(c) || c == "EG");
 
@@ -262,7 +262,7 @@ public sealed partial class Lsdb : HleModule
     int sceLsdbMapLanguageIndex(int source, int lang)
     {
         if (source == 1) return RegStr("/CONFIG/NP", "lang", 6) is { } code ? Array.IndexOf(LanguageCodes, code) : -1;
-        return lang is < 0 or > 19 ? sceLsdbGetSystemLanguageIndex() : lang;
+        return lang is < 0 or > 19 ? sceLsdbGetSystemLanguageIndexThroughEntry() : lang;
     }
 
     /// <summary>An AppDatabase handle: a one-byte object from the paf heap (operator new); End frees it.</summary>

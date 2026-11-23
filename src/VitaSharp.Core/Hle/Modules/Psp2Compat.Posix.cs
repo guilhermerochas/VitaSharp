@@ -700,7 +700,7 @@ public sealed unsafe partial class Psp2Compat
     {
         MutexLock(c, w + 8);
         W8(w + 0x44, 1);
-        T.sceKernelUnlockLwMutex(w + 8, 1);
+        T.sceKernelUnlockLwMutexThroughEntry(w + 8, 1);
         Sys(c, SetEvent, R32(w + 0x38), 0x1000000, 0, 0);
     }
 
@@ -717,7 +717,7 @@ public sealed unsafe partial class Psp2Compat
         }
 
         W32(w + 0x40, obj);
-        T.sceKernelUnlockLwMutex(w + 8, 1);
+        T.sceKernelUnlockLwMutexThroughEntry(w + 8, 1);
         Sys(c, SetEvent, R32(w + 0x38), 0x1000000, 0, 0);
     }
 
@@ -733,7 +733,7 @@ public sealed unsafe partial class Psp2Compat
         }
 
         W32(w + 0x40, 0);
-        T.sceKernelUnlockLwMutex(w + 8, 1);
+        T.sceKernelUnlockLwMutexThroughEntry(w + 8, 1);
         Sys(c, SetEvent, R32(w + 0x38), 0x1000000, 0, 0);
     }
 

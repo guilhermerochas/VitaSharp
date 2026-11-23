@@ -145,7 +145,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x71608CA3, Library = "SceSblAIMgrForDriver")]
     internal int ksceSblAimgrIsDolce()
     {
-        return AimgrIsGenuineDolce() || ksceKernelCheckDipsw(DipswRunAsDolce) != 0 ? 1 : 0;
+        return AimgrIsGenuineDolce() || ksceKernelCheckDipswThroughEntry(DipswRunAsDolce) != 0 ? 1 : 0;
     }
 
     /// <summary>A tool unit (0x101) of the given revision (its sub code).</summary>

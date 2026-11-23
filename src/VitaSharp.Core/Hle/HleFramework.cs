@@ -411,6 +411,11 @@ public sealed partial class HleRegistry : IImportResolver
 
     public uint GetHleFunctionIndex(uint nid, uint libNid, string libName)
     {
+        if (libNid != 0 && !string.IsNullOrEmpty(libName))
+        {
+            _libraryNames.TryAdd(libNid, libName);
+        }
+
         lock (_functions)
         {
             if (_indexByNid.TryGetValue(nid, out var idx)) return (uint)idx;
@@ -464,11 +469,93 @@ public sealed partial class HleRegistry : IImportResolver
 
     /// <summary>This process's import stubs bound to HLE function <paramref name="nid"/> of library
     /// <paramref name="libNid"/> from now on jump to <paramref name="target"/> (a user plugin's hook).</summary>
-    public void RedirectInProcess(uint libNid, uint nid, uint target) => _processRedirects[(libNid, nid)] = target;
+    public void RedirectInProcess(uint libNid, uint nid, uint target)
+    {
+        lock (_processRedirects)
+        {
+            _processRedirects[(libNid, nid)] = target;
+            CountProcessRedirects();
+        }
+    }
+
+    /// <summary>How many registries (processes) have a user plugin's hook on an HLE function: the one static field the
+    /// <see cref="HleEntryCalls"/> wrappers read for user hooks (0 in a session without them).</summary>
+    static int s_registriesWithProcessHooks;
+
+    /// <summary>A user plugin's hook took an HLE function in some process of this host (the wrappers' first check;
+    /// <see cref="ProcessHookOf"/> then looks in the calling module's own process).</summary>
+    internal static bool AnyProcessHooks => Volatile.Read(ref s_registriesWithProcessHooks) != 0;
+
+    /// <summary>Publishes this registry's redirect count and keeps <see cref="s_registriesWithProcessHooks"/> (called
+    /// under the lock of <see cref="_processRedirects"/>).</summary>
+    void CountProcessRedirects()
+    {
+        int before = _processRedirectCount;
+        int after = _processRedirects.Count;
+        Volatile.Write(ref _processRedirectCount, after);
+        if (before == 0 && after != 0)
+        {
+            Interlocked.Increment(ref s_registriesWithProcessHooks);
+        }
+        else if (before != 0 && after == 0)
+        {
+            Interlocked.Decrement(ref s_registriesWithProcessHooks);
+        }
+    }
+
+    /// <summary>How many HLE functions a user plugin's hook took in this process (<see cref="_processRedirects"/>):
+    /// the field <see cref="HasProcessHooks"/> reads.</summary>
+    int _processRedirectCount;
+
+    /// <summary>A user plugin's hook took an HLE function in this process (one field read: the check every
+    /// <see cref="HleEntryCalls"/> wrapper makes first).</summary>
+    public bool HasProcessHooks => Volatile.Read(ref _processRedirectCount) != 0;
+
+    /// <summary>The name of each library an import or export bound to this registry's functions belongs to, by its
+    /// library NID (<see cref="GetHleFunctionIndex"/>: the user shells' export tables and the modules' imports): what
+    /// <see cref="ProcessHookOf"/> tells two libraries exporting the same function NID apart by.</summary>
+    readonly System.Collections.Concurrent.ConcurrentDictionary<uint, string> _libraryNames = new();
+
+    /// <summary>
+    /// The thunk of the user plugin's hook that took function <paramref name="nid"/> of library
+    /// <paramref name="library"/> in this process, or 0. A NID can be exported by two libraries (two functions, in
+    /// two modules' code): a hook on one is not the other's, so the hook's library (its NID, named by the export
+    /// table the hook was resolved in) has to be <paramref name="library"/>; null takes the NID in any library. A
+    /// hook whose library NID was never bound here (no name known) is taken for any library.
+    /// </summary>
+    public uint ProcessHookOf(uint nid, string? library)
+    {
+        if (!HasProcessHooks)
+        {
+            return 0;
+        }
+
+        foreach (KeyValuePair<(uint LibNid, uint Nid), uint> redirect in _processRedirects)
+        {
+            if (redirect.Key.Nid != nid)
+            {
+                continue;
+            }
+
+            if (library == null || !_libraryNames.TryGetValue(redirect.Key.LibNid, out string? hookLibrary) || hookLibrary == library)
+            {
+                return redirect.Value;
+            }
+        }
+
+        return 0;
+    }
 
     /// <summary>This process's import stubs of <paramref name="nid"/> of library <paramref name="libNid"/> bind to the
     /// HLE function again.</summary>
-    public void ClearRedirectInProcess(uint libNid, uint nid) => _processRedirects.TryRemove((libNid, nid), out _);
+    public void ClearRedirectInProcess(uint libNid, uint nid)
+    {
+        lock (_processRedirects)
+        {
+            _processRedirects.TryRemove((libNid, nid), out _);
+            CountProcessRedirects();
+        }
+    }
 
     /// <summary>A guest-code implementation (<see cref="HleGuestCode"/>) of an implemented NID, placed in the calling
     /// thread's address space; 0 when there is none (or VITASHARP_HLE_GUEST_CODE=0).</summary>

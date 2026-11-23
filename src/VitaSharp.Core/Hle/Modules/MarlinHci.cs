@@ -235,7 +235,7 @@ public sealed partial class SystemServicesVsh
     /// <summary>NID_4DADE2FD (SceUID *handle): the key object of the console's second key; as NID_C3E201D5.</summary>
     [Hle("NID_4DADE2FD", Nid = 0x4DADE2FD, Library = "SceMarlinHci", Default = true)]
     [Hle("NID_0E46FA73", Nid = 0x0E46FA73, Library = "SceMarlinHci", Default = true)]
-    private int MarlinMakeSecondKeyObject(uint handle) => MarlinMakeKeyObject(0, handle);
+    private int MarlinMakeSecondKeyObject(uint handle) => MarlinMakeKeyObjectThroughEntry(0, handle);
 
     /// <summary>NID_68315912 (SceUID handle, SceUID *derived), NID_527EB697 (SceUID handle, u32 *value): the handle is
     /// not in the table, the word written is 0 and the entry returns the copy's result.</summary>
@@ -322,7 +322,7 @@ public sealed partial class SystemServicesVsh
 
     /// <summary>NID_52985887 (block of 0x20): the second set's NID_24D94277 (a NULL block is passed on and fails its copy).</summary>
     [Hle("NID_52985887", Nid = 0x52985887, Library = "SceMarlinHci", Default = true)]
-    private int Marlin52985887(uint block) => Marlin24D94277(block);
+    private int Marlin52985887(uint block) => Marlin24D94277ThroughEntry(block);
 
     /// <summary>NID_00F544DF (block of 0x2C: a, b, four (size, pointer) pairs at +8, +0x10, +0x18, +0x20, output +0x28):
     /// a license is processed with the console's keys.</summary>

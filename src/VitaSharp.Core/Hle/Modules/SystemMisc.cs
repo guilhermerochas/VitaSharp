@@ -820,7 +820,7 @@ public sealed partial class SystemMisc : HleModule
         GuestMemory.Span(info + 4, 0x60).Clear();
         return 0;
     }
-    [Hle] int sceAppMgrGetRunningAppIdListForShell(uint list, int count) => GetRunningAppIdListForShell(list, count, 0);
+    [Hle] int sceAppMgrGetRunningAppIdListForShell(uint list, int count) => GetRunningAppIdListForShellThroughEntry(list, count, 0);
 
     // ------------------------------------------------------------------ ScePower
 
@@ -921,7 +921,7 @@ public sealed partial class SystemMisc : HleModule
     {
         if (PowerState.FakeBattery)
         {
-            return (int)(scePowerGetBatteryRemainCapacity() * 100L / Math.Max(1u, PowerState.FakeFullCapacity));
+            return (int)(scePowerGetBatteryRemainCapacityThroughEntry() * 100L / Math.Max(1u, PowerState.FakeFullCapacity));
         }
 
         return BatteryValue(Battery.LifePercent);

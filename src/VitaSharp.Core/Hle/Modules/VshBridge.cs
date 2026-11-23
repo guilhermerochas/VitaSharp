@@ -75,7 +75,7 @@ public sealed partial class VshBridge : HleModule
 
     /// <summary>(int capability): the same sysroot capability word through SceSysmem for user modules (the PS Vita TV
     /// teleport client asks for 10 and fails with 0x8010840A unless the answer is 1).</summary>
-    [Hle] int sceKernelCheckModelCapability(int capability) => vshKernelCheckModelCapability(capability);
+    [Hle] int sceKernelCheckModelCapability(int capability) => vshKernelCheckModelCapabilityThroughEntry(capability);
 
     /// <summary>(int event): the shell tells SceSysroot it is up (event 0, vitasdk vshbridge.h); nothing waits on it here.</summary>
     [Hle] int vshKernelSendSysEvent(int ev) => 0;
@@ -118,7 +118,7 @@ public sealed partial class VshBridge : HleModule
             return VSH_ERR_PERM;
         }
 
-        return KernelServices.ksceCtrlSetIdleCancelKey(keys, keys2, third, fourth);
+        return KernelServices.ksceCtrlSetIdleCancelKeyThroughEntry(keys, keys2, third, fourth);
     }
 
     /// <summary>(int leftStick, int rightStick): stick travel that cancels the auto-dim timer: for system programs
@@ -131,7 +131,7 @@ public sealed partial class VshBridge : HleModule
             return VSH_ERR_PERM;
         }
 
-        return KernelServices.ksceCtrlSetIdleCancelThreshold(left, right);
+        return KernelServices.ksceCtrlSetIdleCancelThresholdThroughEntry(left, right);
     }
 
     /// <summary>The kernel side of the bridge's calls (the module that holds the kernel libraries' state).</summary>

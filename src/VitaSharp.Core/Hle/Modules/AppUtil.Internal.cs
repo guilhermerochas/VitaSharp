@@ -76,7 +76,7 @@ public sealed partial class AppUtil
         uint status = Mem.Alloc(0x700, "apputil:bgdl");
         try
         {
-            int result = Am.BgdlGetQueueStatus(status);
+            int result = Am.BgdlGetQueueStatusThroughEntry(status);
             if (result != 0)
             {
                 return result;

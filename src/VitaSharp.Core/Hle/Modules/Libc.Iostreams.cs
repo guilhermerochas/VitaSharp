@@ -92,7 +92,7 @@ public sealed partial class Libc
             if (free0 == 0 && GuestMemory.R32(n + 8) == 0 && GuestMemory.R32(n + 0xC) == 0) free0 = n;
         }
         if (free0 != 0) { GuestMemory.W32(free0 + 4, (uint)idx); return free0; }
-        uint node = malloc(0x10);
+        uint node = mallocThroughEntry(0x10);
         if (node != 0)
         {
             GuestMemory.W32(node, GuestMemory.R32(ios + IosArr));
@@ -108,7 +108,7 @@ public sealed partial class Libc
     [Hle("_ZNSt8ios_base17register_callbackEPFvNS_5eventERS_iEi")]
     void IosRegisterCallback(uint ios, uint fn, int idx)
     {
-        uint node = malloc(0xC);
+        uint node = mallocThroughEntry(0xC);
         if (node != 0)
         {
             GuestMemory.W32(node, GuestMemory.R32(ios + IosCalls));
@@ -130,10 +130,10 @@ public sealed partial class Libc
     [Hle("_ZNSt8ios_base5_TidyEv")]
     void IosTidy(uint ios)
     {
-        IosCallfns(ios, 0);
-        for (uint n = GuestMemory.R32(ios + IosArr); n != 0;) { uint next = GuestMemory.R32(n); free(n); n = next; }
+        IosCallfnsThroughEntry(ios, 0);
+        for (uint n = GuestMemory.R32(ios + IosArr); n != 0;) { uint next = GuestMemory.R32(n); freeThroughEntry(n); n = next; }
         GuestMemory.W32(ios + IosArr, 0);
-        for (uint n = GuestMemory.R32(ios + IosCalls); n != 0;) { uint next = GuestMemory.R32(n); free(n); n = next; }
+        for (uint n = GuestMemory.R32(ios + IosCalls); n != 0;) { uint next = GuestMemory.R32(n); freeThroughEntry(n); n = next; }
         GuestMemory.W32(ios + IosCalls, 0);
     }
 
@@ -143,7 +143,7 @@ public sealed partial class Libc
     uint IosCopyfmt(HleContext ctx, uint ios, uint rhs)
     {
         if (ios == rhs) return ios;
-        IosTidy(ios);
+        IosTidyThroughEntry(ios);
         GuestMemory.W32(ios + IosFmtfl, GuestMemory.R32(rhs + IosFmtfl));
         GuestMemory.W32(ios + IosPrec, GuestMemory.R32(rhs + IosPrec));
         GuestMemory.W32(ios + IosWide, GuestMemory.R32(rhs + IosWide));
@@ -153,14 +153,14 @@ public sealed partial class Libc
             uint lo = GuestMemory.R32(n + 8), vp = GuestMemory.R32(n + 0xC);
             if (lo == 0 && vp == 0) continue;
             int idx = (int)GuestMemory.R32(n + 4);
-            uint a = IosFindarr(ios, idx);
+            uint a = IosFindarrThroughEntry(ios, idx);
             if (a != 0) GuestMemory.W32(a + 8, lo);
-            a = IosFindarr(ios, idx);
+            a = IosFindarrThroughEntry(ios, idx);
             if (a != 0) GuestMemory.W32(a + 0xC, vp);
         }
         for (uint n = GuestMemory.R32(rhs + IosCalls); n != 0; n = GuestMemory.R32(n))
-            IosRegisterCallback(ios, GuestMemory.R32(n + 8), (int)GuestMemory.R32(n + 4));
-        IosCallfns(ios, 1);
+            IosRegisterCallbackThroughEntry(ios, GuestMemory.R32(n + 8), (int)GuestMemory.R32(n + 4));
+        IosCallfnsThroughEntry(ios, 1);
         GuestMemory.W32(ios + IosExcept, GuestMemory.R32(rhs + IosExcept) & 0x17);
         IosClear(ctx, ios, GuestMemory.R32(ios + IosState), false);
         return ios;
@@ -171,13 +171,13 @@ public sealed partial class Libc
     uint BasicIosDtor(uint ios, bool w)
     {
         GuestMemory.W32(ios, Rtti.Vptr(w ? VtIosW : VtIosC));
-        return IosBaseDtor(ios);
+        return IosBaseDtorThroughEntry(ios);
     }
 
     [Hle("_ZNSt9basic_iosIcSt11char_traitsIcEED1Ev")] uint IosDtorC(uint ios) => BasicIosDtor(ios, false);
     [Hle("_ZNSt9basic_iosIwSt11char_traitsIwEED1Ev")] uint IosDtorW(uint ios) => BasicIosDtor(ios, true);
-    [Hle("_ZNSt9basic_iosIcSt11char_traitsIcEED0Ev")] uint IosDelC(uint ios) { BasicIosDtor(ios, false); free(ios); return ios; }
-    [Hle("_ZNSt9basic_iosIwSt11char_traitsIwEED0Ev")] uint IosDelW(uint ios) { BasicIosDtor(ios, true); free(ios); return ios; }
+    [Hle("_ZNSt9basic_iosIcSt11char_traitsIcEED0Ev")] uint IosDelC(uint ios) { BasicIosDtor(ios, false); freeThroughEntry(ios); return ios; }
+    [Hle("_ZNSt9basic_iosIwSt11char_traitsIwEED0Ev")] uint IosDelW(uint ios) { BasicIosDtor(ios, true); freeThroughEntry(ios); return ios; }
 
     /// <summary>basic_ios::init(sb, isstd) as the inline constructors run it: ios_base::_Init, the buffer, no tie, fill
     /// widen(' '); no buffer sets badbit; a standard stream is registered with _Addstd.</summary>
@@ -188,7 +188,7 @@ public sealed partial class Libc
         GuestMemory.W32(ios + IosTie, 0);
         WrE(ios + IosFill, ' ', w);
         if (sb == 0) IosClear(ctx, ios, GuestMemory.R32(ios + IosState) | 4, false);
-        if (isstd) IosAddstd(ios);
+        if (isstd) IosAddstdThroughEntry(ios);
     }
 
     // ------------------------------------------------------------------ basic_istream / basic_ostream / basic_iostream
@@ -199,7 +199,7 @@ public sealed partial class Libc
         GuestMemory.W32(obj, prim);
         GuestMemory.W32(obj + VbaseOffset(prim), sec);
         GuestMemory.W32(obj + 8, Rtti.Vptr(w ? VtIosW : VtIosC));
-        IosBaseDtor(obj + 8);
+        IosBaseDtorThroughEntry(obj + 8);
         return obj;
     }
 
@@ -209,29 +209,29 @@ public sealed partial class Libc
         GuestMemory.W32(obj, prim);
         GuestMemory.W32(obj + VbaseOffset(prim), sec);
         GuestMemory.W32(obj + 4, Rtti.Vptr(w ? VtIosW : VtIosC));
-        IosBaseDtor(obj + 4);
+        IosBaseDtorThroughEntry(obj + 4);
         return obj;
     }
 
     static uint VirtualThunkThis(uint obj) => obj + VbaseOffset(GuestMemory.R32(obj));
 
     [Hle("_ZNSiD1Ev")] uint IstreamDtorC(uint obj) => IstreamDtor(obj, false);
-    [Hle("_ZNSiD0Ev")] uint IstreamDelC(uint obj) { IstreamDtor(obj, false); free(obj); return obj; }
-    [Hle("_ZTv0_n12_NSiD1Ev")] uint IstreamThunkDtorC(uint obj) => IstreamDtorC(VirtualThunkThis(obj));
-    [Hle("_ZTv0_n12_NSiD0Ev")] uint IstreamThunkDelC(uint obj) => IstreamDelC(VirtualThunkThis(obj));
+    [Hle("_ZNSiD0Ev")] uint IstreamDelC(uint obj) { IstreamDtor(obj, false); freeThroughEntry(obj); return obj; }
+    [Hle("_ZTv0_n12_NSiD1Ev")] uint IstreamThunkDtorC(uint obj) => IstreamDtorCThroughEntry(VirtualThunkThis(obj));
+    [Hle("_ZTv0_n12_NSiD0Ev")] uint IstreamThunkDelC(uint obj) => IstreamDelCThroughEntry(VirtualThunkThis(obj));
     [Hle("_ZNSt13basic_istreamIwSt11char_traitsIwEED1Ev")] uint IstreamDtorW(uint obj) => IstreamDtor(obj, true);
-    [Hle("_ZNSt13basic_istreamIwSt11char_traitsIwEED0Ev")] uint IstreamDelW(uint obj) { IstreamDtor(obj, true); free(obj); return obj; }
-    [Hle("_ZTv0_n12_NSt13basic_istreamIwSt11char_traitsIwEED1Ev")] uint IstreamThunkDtorW(uint obj) => IstreamDtorW(VirtualThunkThis(obj));
-    [Hle("_ZTv0_n12_NSt13basic_istreamIwSt11char_traitsIwEED0Ev")] uint IstreamThunkDelW(uint obj) => IstreamDelW(VirtualThunkThis(obj));
+    [Hle("_ZNSt13basic_istreamIwSt11char_traitsIwEED0Ev")] uint IstreamDelW(uint obj) { IstreamDtor(obj, true); freeThroughEntry(obj); return obj; }
+    [Hle("_ZTv0_n12_NSt13basic_istreamIwSt11char_traitsIwEED1Ev")] uint IstreamThunkDtorW(uint obj) => IstreamDtorWThroughEntry(VirtualThunkThis(obj));
+    [Hle("_ZTv0_n12_NSt13basic_istreamIwSt11char_traitsIwEED0Ev")] uint IstreamThunkDelW(uint obj) => IstreamDelWThroughEntry(VirtualThunkThis(obj));
 
     [Hle("_ZNSoD1Ev")] uint OstreamDtorC(uint obj) => OstreamDtor(obj, false);
-    [Hle("_ZNSoD0Ev")] uint OstreamDelC(uint obj) { OstreamDtor(obj, false); free(obj); return obj; }
-    [Hle("_ZTv0_n12_NSoD1Ev")] uint OstreamThunkDtorC(uint obj) => OstreamDtorC(VirtualThunkThis(obj));
-    [Hle("_ZTv0_n12_NSoD0Ev")] uint OstreamThunkDelC(uint obj) => OstreamDelC(VirtualThunkThis(obj));
+    [Hle("_ZNSoD0Ev")] uint OstreamDelC(uint obj) { OstreamDtor(obj, false); freeThroughEntry(obj); return obj; }
+    [Hle("_ZTv0_n12_NSoD1Ev")] uint OstreamThunkDtorC(uint obj) => OstreamDtorCThroughEntry(VirtualThunkThis(obj));
+    [Hle("_ZTv0_n12_NSoD0Ev")] uint OstreamThunkDelC(uint obj) => OstreamDelCThroughEntry(VirtualThunkThis(obj));
     [Hle("_ZNSt13basic_ostreamIwSt11char_traitsIwEED1Ev")] uint OstreamDtorW(uint obj) => OstreamDtor(obj, true);
-    [Hle("_ZNSt13basic_ostreamIwSt11char_traitsIwEED0Ev")] uint OstreamDelW(uint obj) { OstreamDtor(obj, true); free(obj); return obj; }
-    [Hle("_ZTv0_n12_NSt13basic_ostreamIwSt11char_traitsIwEED1Ev")] uint OstreamThunkDtorW(uint obj) => OstreamDtorW(VirtualThunkThis(obj));
-    [Hle("_ZTv0_n12_NSt13basic_ostreamIwSt11char_traitsIwEED0Ev")] uint OstreamThunkDelW(uint obj) => OstreamDelW(VirtualThunkThis(obj));
+    [Hle("_ZNSt13basic_ostreamIwSt11char_traitsIwEED0Ev")] uint OstreamDelW(uint obj) { OstreamDtor(obj, true); freeThroughEntry(obj); return obj; }
+    [Hle("_ZTv0_n12_NSt13basic_ostreamIwSt11char_traitsIwEED1Ev")] uint OstreamThunkDtorW(uint obj) => OstreamDtorWThroughEntry(VirtualThunkThis(obj));
+    [Hle("_ZTv0_n12_NSt13basic_ostreamIwSt11char_traitsIwEED0Ev")] uint OstreamThunkDelW(uint obj) => OstreamDelWThroughEntry(VirtualThunkThis(obj));
 
     /// <summary>basic_ostream(sb, isstd): the vtables, then basic_ios::init.</summary>
     uint OstreamCtor(HleContext ctx, uint obj, uint sb, bool isstd, bool w)
@@ -273,16 +273,16 @@ public sealed partial class Libc
         GuestMemory.W32(obj, v[1]);
         GuestMemory.W32(obj + VbaseOffset(v[1]), v[2]);
         GuestMemory.W32(obj + 0xC, Rtti.Vptr(VtIosC));
-        IosBaseDtor(obj + 0xC);
+        IosBaseDtorThroughEntry(obj + 0xC);
         return obj;
     }
 
     [Hle("_ZNSdD1Ev")] uint IostreamDtorC(uint obj) => IostreamDtor(obj);
-    [Hle("_ZNSdD0Ev")] uint IostreamDelC(uint obj) { IostreamDtor(obj); free(obj); return obj; }
-    [Hle("_ZThn8_NSdD1Ev")] uint IostreamThn8Dtor(uint obj) => IostreamDtorC(obj - 8);
-    [Hle("_ZThn8_NSdD0Ev")] uint IostreamThn8Del(uint obj) => IostreamDelC(obj - 8);
-    [Hle("_ZTv0_n12_NSdD1Ev")] uint IostreamThunkDtor(uint obj) => IostreamDtorC(VirtualThunkThis(obj));
-    [Hle("_ZTv0_n12_NSdD0Ev")] uint IostreamThunkDel(uint obj) => IostreamDelC(VirtualThunkThis(obj));
+    [Hle("_ZNSdD0Ev")] uint IostreamDelC(uint obj) { IostreamDtor(obj); freeThroughEntry(obj); return obj; }
+    [Hle("_ZThn8_NSdD1Ev")] uint IostreamThn8Dtor(uint obj) => IostreamDtorCThroughEntry(obj - 8);
+    [Hle("_ZThn8_NSdD0Ev")] uint IostreamThn8Del(uint obj) => IostreamDelCThroughEntry(obj - 8);
+    [Hle("_ZTv0_n12_NSdD1Ev")] uint IostreamThunkDtor(uint obj) => IostreamDtorCThroughEntry(VirtualThunkThis(obj));
+    [Hle("_ZTv0_n12_NSdD0Ev")] uint IostreamThunkDel(uint obj) => IostreamDelCThroughEntry(VirtualThunkThis(obj));
 
     /// <summary>basic_ostream::flush: under the buffer's lock (sentry), a good stream flushes its tie, then pubsync
     /// (-1 sets badbit); the sentry's end syncs again for unitbuf (no exception in flight).</summary>
@@ -295,7 +295,7 @@ public sealed partial class Libc
         if (GuestMemory.R32(ios + IosState) == 0 && GuestMemory.R32(ios + IosTie) is var tie and not 0) OstreamFlush(ctx, tie);
         if (GuestMemory.R32(ios + IosState) == 0 && VCall(sb, VsSync) == EofE)
             IosClear(ctx, ios, GuestMemory.R32(ios + IosState) | 4, false);
-        if (_ZSt18uncaught_exceptionv() == 0 && GuestMemory.R32(ios + IosState) == 0 && (GuestMemory.R32(ios + IosFmtfl) & 2) != 0
+        if (_ZSt18uncaught_exceptionvThroughEntry() == 0 && GuestMemory.R32(ios + IosState) == 0 && (GuestMemory.R32(ios + IosFmtfl) & 2) != 0
             && VCall(sb, VsSync) == EofE)
             IosClear(ctx, ios, GuestMemory.R32(ios + IosState) | 4, false);
         VCall(sb, VsUnlock);
@@ -344,14 +344,14 @@ public sealed partial class Libc
     {
         var s = Std(w);
         bool first;
-        _Locksyslock(0);
+        _LocksyslockThroughEntry(0);
         try
         {
             int n = (int)GuestMemory.R32(s.Count);
             first = n < 0;
             GuestMemory.W32(s.Count, first ? 1u : (uint)(n + 1));
         }
-        finally { _Unlocksyslock(0); }
+        finally { _UnlocksyslockThroughEntry(0); }
         if (!first) return;
         FilebufCtor(s.FbIn, StdinFile().Addr, w);
         FilebufCtor(s.FbOut, StdoutFile().Addr, w);
@@ -371,14 +371,14 @@ public sealed partial class Libc
     {
         var s = Std(w);
         bool last;
-        _Locksyslock(0);
+        _LocksyslockThroughEntry(0);
         try
         {
             uint n = GuestMemory.R32(s.Count) - 1;
             GuestMemory.W32(s.Count, n);
             last = n == 0;
         }
-        finally { _Unlocksyslock(0); }
+        finally { _UnlocksyslockThroughEntry(0); }
         if (!last) return;
         OstreamFlush(ctx, s.Out);
         OstreamFlush(ctx, s.Err);

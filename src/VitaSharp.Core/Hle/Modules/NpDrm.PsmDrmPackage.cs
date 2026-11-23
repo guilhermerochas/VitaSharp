@@ -27,21 +27,21 @@ public sealed partial class SystemServicesVsh
     /// 0: the current one, 0x8087000C without one).</summary>
     [Hle("_sceNpDrmGetRifName")]
     int NpDrmGetRifName(uint name, uint unused, uint accountLow, uint accountHigh) =>
-        ThroughRifNameExport(name, 0xDF62F3B8, () => ksceNpDrmGetRifName(name, unused, accountLow, accountHigh), unused,
+        ThroughRifNameExport(name, 0xDF62F3B8, () => ksceNpDrmGetRifNameThroughEntry(name, unused, accountLow, accountHigh), unused,
             accountLow, accountHigh);
 
     /// <summary>(char name[0x30], SceUInt64 aid): the fixed license name (free and game card licenses) of the account,
     /// by ksceNpDrmGetFixedRifName.</summary>
     [Hle("_sceNpDrmGetFixedRifName")]
     int NpDrmGetFixedRifName(uint name, uint unused, uint accountLow, uint accountHigh) =>
-        ThroughRifNameExport(name, 0x5D73448C, () => ksceNpDrmGetFixedRifName(name, unused, accountLow, accountHigh),
+        ThroughRifNameExport(name, 0x5D73448C, () => ksceNpDrmGetFixedRifNameThroughEntry(name, unused, accountLow, accountHigh),
             unused, accountLow, accountHigh);
 
     /// <summary>(char name[0x30], const SceNpDrmLicense *license, int useAccount): the name a license is installed
     /// under, by ksceNpDrmGetRifNameForInstall.</summary>
     [Hle("_sceNpDrmGetRifNameForInstall")]
     int NpDrmGetRifNameForInstall(uint name, uint license, uint useAccount) =>
-        ThroughRifNameExport(name, 0x17573133, () => ksceNpDrmGetRifNameForInstall(name, license, useAccount), license,
+        ThroughRifNameExport(name, 0x17573133, () => ksceNpDrmGetRifNameForInstallThroughEntry(name, license, useAccount), license,
             useAccount, 0);
 
     /// <summary>(char name[0x30], SceUInt64 aid): the PSM license file name of the account: the module's own name
@@ -95,7 +95,7 @@ public sealed partial class SystemServicesVsh
     /// <summary>(SceUInt64 *accountId): the PSM activation data's removal, through kscePsmDrmRemoveActData.</summary>
     [Hle("scePsmDrmRemoveActData")]
     int PsmDrmRemoveActData(uint accountId) =>
-        ThroughPsmDrmExport(0x4CD5375C, () => kscePsmDrmRemoveActData(accountId), accountId);
+        ThroughPsmDrmExport(0x4CD5375C, () => kscePsmDrmRemoveActDataThroughEntry(accountId), accountId);
 
     /// <summary>(5 outputs): the PSM activation's fields, through kscePsmDrmGetActInfo.</summary>
     [Hle("scePsmDrmGetActInfo", Default = true)]
@@ -106,7 +106,7 @@ public sealed partial class SystemServicesVsh
             return NPDRM_ERR_INVALID;
         }
 
-        return ThroughPsmDrmExport(0xB09003A7, () => kscePsmDrmGetActInfo(first), first, second, third, fourth);
+        return ThroughPsmDrmExport(0xB09003A7, () => kscePsmDrmGetActInfoThroughEntry(first), first, second, third, fourth);
     }
 
     [Hle("_sceNpDrmCheckActData", Default = true)]
@@ -128,13 +128,13 @@ public sealed partial class SystemServicesVsh
     [Hle("scePsmDrmGetRifKey")]
     int PsmDrmGetRifKey(uint license, uint keydata, uint versionFlag, uint startTime, uint expirationTime)
     {
-        if (ksceSblACMgrIsPSMRuntime(0) == 0)
+        if (ksceSblACMgrIsPSMRuntimeThroughEntry(0) == 0)
         {
             return PSMDRM_ERR_NOT_PSM_RUNTIME;
         }
 
         return ThroughPsmDrmExport(0x8C8CFD01,
-            () => kscePsmDrmGetRifKey(license, keydata, versionFlag, startTime, expirationTime),
+            () => kscePsmDrmGetRifKeyThroughEntry(license, keydata, versionFlag, startTime, expirationTime),
             license, keydata, versionFlag, startTime, expirationTime);
     }
 
@@ -155,7 +155,7 @@ public sealed partial class SystemServicesVsh
             uint keys = buffer + Package.PsmLicense.Size;
             license[..Package.PsmLicense.Size].CopyTo(GuestMemory.Span(buffer, Package.PsmLicense.Size));
             GuestMemory.Fill(keys, 0, Package.PsmLicense.KeySetSize);
-            if (PsmDrmGetRifKey(buffer, keys, 0, 0, 0) != 0)
+            if (PsmDrmGetRifKeyThroughEntry(buffer, keys, 0, 0, 0) != 0)
             {
                 return null;
             }
@@ -174,7 +174,7 @@ public sealed partial class SystemServicesVsh
     /// (SceNpDrm 3.74), through its export entry; the checks and the fields are the kernel function's.</summary>
     [Hle("scePsmDrmGetRifInfo")]
     int PsmDrmGetRifInfo(uint license, uint contentId, uint accountId, uint startTime, uint expirationTime) =>
-        ThroughPsmDrmExport(0x984F9017, () => kscePsmDrmGetRifInfo(license, contentId, accountId, startTime, expirationTime),
+        ThroughPsmDrmExport(0x984F9017, () => kscePsmDrmGetRifInfoThroughEntry(license, contentId, accountId, startTime, expirationTime),
             license, contentId, accountId, startTime, expirationTime);
 
     /// <summary>

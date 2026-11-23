@@ -142,11 +142,11 @@ public sealed partial class Fios2 : HleModule
     Op? GetOp(int op) { lock (_lock) return _ops.GetValueOrDefault(op); }
 
     [Hle] int sceFiosOpWait(int op) => GetOp(op) is { } o ? o.Err : ERR_BAD_OP;
-    [Hle] int sceFiosOpWaitUntil(int op, long deadline) => sceFiosOpWait(op);
+    [Hle] int sceFiosOpWaitUntil(int op, long deadline) => sceFiosOpWaitThroughEntry(op);
     /// <summary>Waits, deletes the op and returns its count, or its error (SCE_FIOS_ERROR_EOF counts as success, as in
     /// libfios2.suprx: a sync read at the end of a file returns the bytes it got, 0 at the very end).</summary>
-    [Hle] long sceFiosOpSyncWait(int op) { var o = GetOp(op); if (o == null) return ERR_BAD_OP; long r = o.Err < 0 && o.Err != ERR_EOF ? o.Err : o.Actual; sceFiosOpDelete(op); return r; }
-    [Hle] long sceFiosOpSyncWaitForIO(int op) => sceFiosOpSyncWait(op);
+    [Hle] long sceFiosOpSyncWait(int op) { var o = GetOp(op); if (o == null) return ERR_BAD_OP; long r = o.Err < 0 && o.Err != ERR_EOF ? o.Err : o.Actual; sceFiosOpDeleteThroughEntry(op); return r; }
+    [Hle] long sceFiosOpSyncWaitForIO(int op) => sceFiosOpSyncWaitThroughEntry(op);
     [Hle] int sceFiosOpIsDone(int op) => GetOp(op) != null ? 1 : 0;
     /// <summary>Operations finish when issued, so none is ever cancelled.</summary>
     [Hle] int sceFiosOpIsCancelled(int op) => 0;
@@ -237,7 +237,7 @@ public sealed partial class Fios2 : HleModule
     [Hle]
     void sceFiosTerminate()
     {
-        sceFiosCloseAllFiles();
+        sceFiosCloseAllFilesThroughEntry();
         lock (_lock) { _initialized = false; _ops.Clear(); _dirs.Clear(); _mounts.Clear(); }
     }
 
@@ -273,13 +273,13 @@ public sealed partial class Fios2 : HleModule
 
     [Hle] int sceFiosGetGlobalDefaultOpAttr(uint outAttr) { if (outAttr == 0) return 0; GuestMemory.Copy(outAttr, DefaultAttr(), 0x20); return 1; }
     [Hle] int sceFiosSetGlobalDefaultOpAttr(uint attr) { if (attr == 0) return 0; GuestMemory.Copy(DefaultAttr(), attr, 0x20); return 1; }
-    [Hle] int sceFiosGetDefaultOpAttr(uint outAttr) => sceFiosGetGlobalDefaultOpAttr(outAttr);
+    [Hle] int sceFiosGetDefaultOpAttr(uint outAttr) => sceFiosGetGlobalDefaultOpAttrThroughEntry(outAttr);
 
     [Hle] void sceFiosSuspend() { lock (_lock) _suspend++; }
     [Hle] void sceFiosResume() { lock (_lock) if (_suspend > 0) _suspend--; }
     [Hle] int sceFiosIsSuspended() { lock (_lock) return _suspend > 0 ? 1 : 0; }
     [Hle] uint sceFiosGetSuspendCount() { lock (_lock) return (uint)_suspend; }
-    [Hle] void sceFiosShutdownAndCancelOps() { sceFiosCancelAllOps(); sceFiosCloseAllFiles(); }
+    [Hle] void sceFiosShutdownAndCancelOps() { sceFiosCancelAllOpsThroughEntry(); sceFiosCloseAllFilesThroughEntry(); }
 
     [Hle]
     void sceFiosCloseAllFiles()
@@ -403,7 +403,7 @@ public sealed partial class Fios2 : HleModule
         return 0;
     }
 
-    [Hle] int sceFiosResolve(uint attr, uint inTuple, uint outTuple) => Complete(attr, sceFiosResolveSync(attr, inTuple, outTuple));
+    [Hle] int sceFiosResolve(uint attr, uint inTuple, uint outTuple) => Complete(attr, sceFiosResolveSyncThroughEntry(attr, inTuple, outTuple));
 
     // ------------------------------------------------------------------ overlays (the user-side wrappers of SceFios2User)
 

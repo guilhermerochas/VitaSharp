@@ -103,9 +103,9 @@ public sealed unsafe partial class Psp2Compat : HleModule
     void MutexInit(uint m) => T.sceKernelCreateLwMutex(m, PthreadName, 0x2000, 0, 0);
 
     [Hle("NID_9BAEB8BC", Nid = 0x9BAEB8BC, Library = Lib)]
-    int MutexUnlock(uint m) { T.sceKernelUnlockLwMutex(m, 1); return 0; }
+    int MutexUnlock(uint m) { T.sceKernelUnlockLwMutexThroughEntry(m, 1); return 0; }
 
-    [Hle("NID_51DD290C", Nid = 0x51DD290C, Library = Lib)] int MutexDestroy(uint m) { T.sceKernelDeleteLwMutex(m); return 0; }
+    [Hle("NID_51DD290C", Nid = 0x51DD290C, Library = Lib)] int MutexDestroy(uint m) { T.sceKernelDeleteLwMutexThroughEntry(m); return 0; }
 
     /// <summary>(SceKernelLwCondWork *c, SceKernelLwMutexWork *m): sceKernelCreateLwCond(c, "SceWebKitPosixPthread", 0, m, NULL).</summary>
     [Hle("NID_CE37A53C", Nid = 0xCE37A53C, Library = Lib)]
@@ -114,7 +114,7 @@ public sealed unsafe partial class Psp2Compat : HleModule
     [Hle("NID_CED4C61B", Nid = 0xCED4C61B, Library = Lib)] void CondDestroy(HleContext c) => Fwd(c, 0x721F6CB3);
     [Hle("NID_54F5F245", Nid = 0x54F5F245, Library = Lib)] void CondSignal(HleContext c) => Fwd(c, 0x3AC63B9A);
     [Hle("NID_B99DDCE0", Nid = 0xB99DDCE0, Library = Lib)] void CondBroadcast(HleContext c) => Fwd(c, 0xE5241A0C);
-    [Hle("NID_49784A13", Nid = 0x49784A13, Library = Lib)] void CondWait(uint cond) => T.sceKernelWaitLwCond(cond, new Ptr<uint>(0));
+    [Hle("NID_49784A13", Nid = 0x49784A13, Library = Lib)] void CondWait(uint cond) => T.sceKernelWaitLwCondThroughEntry(cond, new Ptr<uint>(0));
 
     /// <summary>(SceUID *lock): sceKernelDeleteRWLock(*lock).</summary>
     [Hle("NID_1AC7666C", Nid = 0x1AC7666C, Library = Lib)] void RwLockDestroy(HleContext c) { c.Cpu->R[0] = R32(c.Cpu->R[0]); Fwd(c, 0xE73649CA); }

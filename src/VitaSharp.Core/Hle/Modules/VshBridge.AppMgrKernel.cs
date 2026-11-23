@@ -26,7 +26,7 @@ public sealed partial class VshBridge
     [Hle(Nid = 0x474AABDF, Library = "SceAppMgrForDriver")]
     int ksceAppMgrAcInstGetAcdirParam(uint titleId, uint addcontId, uint result)
     {
-        return _vshAppMgrAcInstGetAcdirParam(titleId, addcontId, result);
+        return _vshAppMgrAcInstGetAcdirParamThroughEntry(titleId, addcontId, result);
     }
 
     /// <summary>ksceAppMgrBgdlSetQueueStatus(status): NULL 0x80801001; the 0x700-byte status is taken; 0.</summary>
@@ -40,7 +40,7 @@ public sealed partial class VshBridge
     [Hle(Nid = 0x193784A9, Library = "SceAppMgrForDriver")]
     int ksceAppMgrCheckContentInstallPeriod(int pid)
     {
-        return vshAppMgrCheckContentInstallPeriod();
+        return vshAppMgrCheckContentInstallPeriodThroughEntry();
     }
 
     /// <summary>ksceAppMgrCheckPfsMounted(path): NULL or a path of 0x124 bytes or more 0x80800001; nothing is
@@ -60,7 +60,7 @@ public sealed partial class VshBridge
     [Hle(Nid = 0xEC408FEF, Library = "SceAppMgrForDriver")]
     int ksceAppMgrCloudDataClearMcId(int unused)
     {
-        return vshAppMgrCloudDataClearMcId();
+        return vshAppMgrCloudDataClearMcIdThroughEntry();
     }
 
     /// <summary>ksceAppMgrCloudDataCreateHeader(setupKey, dataSize, digest, header): NULLs or more than 1 GiB
@@ -73,14 +73,14 @@ public sealed partial class VshBridge
             return APPMGR_KERNEL_ERR_ARGUMENT;
         }
 
-        return _vshAppMgrCloudDataCreateHeader(setupKey, dataSize, digest, header);
+        return _vshAppMgrCloudDataCreateHeaderThroughEntry(setupKey, dataSize, digest, header);
     }
 
     /// <summary>ksceAppMgrCloudDataDstCreateMount(param, result): as the bridge's call.</summary>
     [Hle(Nid = 0xB3816B42, Library = "SceAppMgrForDriver")]
     int ksceAppMgrCloudDataDstCreateMount(uint param, uint result)
     {
-        return param == 0 ? APPMGR_KERNEL_ERR_ARGUMENT : _vshAppMgrCloudDataDstCreateMount(param, result);
+        return param == 0 ? APPMGR_KERNEL_ERR_ARGUMENT : _vshAppMgrCloudDataDstCreateMountThroughEntry(param, result);
     }
 
     /// <summary>ksceAppMgrCloudDataGetMcId(?, mcId): as the bridge's call.</summary>
@@ -99,14 +99,14 @@ public sealed partial class VshBridge
     [Hle(Nid = 0x0B94BB90, Library = "SceAppMgrForDriver")]
     int ksceAppMgrCloudDataSetMcId(int unused, uint mcId)
     {
-        return _vshAppMgrCloudDataSetMcId(unused, mcId);
+        return _vshAppMgrCloudDataSetMcIdThroughEntry(unused, mcId);
     }
 
     /// <summary>ksceAppMgrCloudDataSetupKey(key): as the bridge's call.</summary>
     [Hle(Nid = 0x2FAA6ABD, Library = "SceAppMgrForDriver")]
     int ksceAppMgrCloudDataSetupKey(uint key)
     {
-        return key == 0 ? APPMGR_KERNEL_ERR_ARGUMENT : _vshAppMgrCloudDataSetupKey(key);
+        return key == 0 ? APPMGR_KERNEL_ERR_ARGUMENT : _vshAppMgrCloudDataSetupKeyThroughEntry(key);
     }
 
     /// <summary>ksceAppMgrCloudDataSrcMount(param, path, result): NULL path or result 0x80800001; online storage needs
@@ -121,7 +121,7 @@ public sealed partial class VshBridge
     [Hle(Nid = 0x55D48190, Library = "SceAppMgrForDriver")]
     int ksceAppMgrCloudDataVerifyHeader(uint header)
     {
-        return header == 0 ? APPMGR_KERNEL_ERR_ARGUMENT : _vshAppMgrCloudDataVerifyHeader(header);
+        return header == 0 ? APPMGR_KERNEL_ERR_ARGUMENT : _vshAppMgrCloudDataVerifyHeaderThroughEntry(header);
     }
 
     /// <summary>ksceAppMgrDebugSettingNotifyUpdate(?): the module rereads the debug settings: 0.</summary>
@@ -135,77 +135,77 @@ public sealed partial class VshBridge
     [Hle(Nid = 0x12FC3FA8, Library = "SceAppMgrForDriver")]
     int ksceAppMgrFakeSaveDataCreateMount(uint path, uint result)
     {
-        return path == 0 ? APPMGR_KERNEL_ERR_ARGUMENT : _vshAppMgrFakeSaveDataCreateMount(path, 0, result);
+        return path == 0 ? APPMGR_KERNEL_ERR_ARGUMENT : _vshAppMgrFakeSaveDataCreateMountThroughEntry(path, 0, result);
     }
 
     /// <summary>ksceAppMgrGetPfsProcessStatus(): as the bridge's call.</summary>
     [Hle(Nid = 0xE72D2A4A, Library = "SceAppMgrForDriver")]
     int ksceAppMgrGetPfsProcessStatus()
     {
-        return vshAppMgrGetPfsProcessStatus();
+        return vshAppMgrGetPfsProcessStatusThroughEntry();
     }
 
     /// <summary>ksceAppMgrIsExclusiveProcessRunning(param): as the bridge's call.</summary>
     [Hle(Nid = 0xA888C2DC, Library = "SceAppMgrForDriver")]
     int ksceAppMgrIsExclusiveProcessRunning(uint param)
     {
-        return _vshAppMgrIsExclusiveProcessRunning(param);
+        return _vshAppMgrIsExclusiveProcessRunningThroughEntry(param);
     }
 
     /// <summary>ksceAppMgrLocalBackupGetOfflineId(offlineId, type): as the bridge's call.</summary>
     [Hle(Nid = 0x61B13981, Library = "SceAppMgrForDriver")]
     int ksceAppMgrLocalBackupGetOfflineId(uint offlineId, uint type)
     {
-        return _vshAppMgrLocalBackupGetOfflineId(offlineId, type);
+        return _vshAppMgrLocalBackupGetOfflineIdThroughEntry(offlineId, type);
     }
 
     /// <summary>ksceAppMgrLocalBackupVerifyOfflineHeader(header): as the bridge's call.</summary>
     [Hle(Nid = 0x62E98C42, Library = "SceAppMgrForDriver")]
     int ksceAppMgrLocalBackupVerifyOfflineHeader(uint header)
     {
-        return header == 0 ? APPMGR_KERNEL_ERR_ARGUMENT : _vshAppMgrLocalBackupVerifyOfflineHeader(header);
+        return header == 0 ? APPMGR_KERNEL_ERR_ARGUMENT : _vshAppMgrLocalBackupVerifyOfflineHeaderThroughEntry(header);
     }
 
     /// <summary>ksceAppMgrRegisterPath(path, flags): NULL 0x80800001; as the bridge's call.</summary>
     [Hle(Nid = 0xB53FB98E, Library = "SceAppMgrForDriver")]
     int ksceAppMgrRegisterPath(uint path, int flags)
     {
-        return path == 0 ? APPMGR_KERNEL_ERR_ARGUMENT : _vshAppMgrRegisterPath(path, flags, 0);
+        return path == 0 ? APPMGR_KERNEL_ERR_ARGUMENT : _vshAppMgrRegisterPathThroughEntry(path, flags, 0);
     }
 
     /// <summary>ksceAppMgrSaveDataLocalBackupTargetGetList(list): as the bridge's call.</summary>
     [Hle(Nid = 0x9B3F7D66, Library = "SceAppMgrForDriver")]
     int ksceAppMgrSaveDataLocalBackupTargetGetList(uint list)
     {
-        return list == 0 ? APPMGR_KERNEL_ERR_ARGUMENT : _vshAppMgrSaveDataLocalBackupTargetGetList(list);
+        return list == 0 ? APPMGR_KERNEL_ERR_ARGUMENT : _vshAppMgrSaveDataLocalBackupTargetGetListThroughEntry(list);
     }
 
     /// <summary>ksceAppMgrSaveDataLocalBackupTargetRemoveItem(item): as the bridge's call.</summary>
     [Hle(Nid = 0xC4EF95BB, Library = "SceAppMgrForDriver")]
     int ksceAppMgrSaveDataLocalBackupTargetRemoveItem(uint item)
     {
-        return item == 0 ? APPMGR_KERNEL_ERR_ARGUMENT : _vshAppMgrSaveDataLocalBackupTargetRemoveItem(item);
+        return item == 0 ? APPMGR_KERNEL_ERR_ARGUMENT : _vshAppMgrSaveDataLocalBackupTargetRemoveItemThroughEntry(item);
     }
 
     /// <summary>ksceAppMgrSaveDataNotifyBackupFinished(param): as the bridge's call.</summary>
     [Hle(Nid = 0x6989B258, Library = "SceAppMgrForDriver")]
     int ksceAppMgrSaveDataNotifyBackupFinished(uint param)
     {
-        return param == 0 ? APPMGR_KERNEL_ERR_ARGUMENT : _vshAppMgrSaveDataNotifyBackupFinished(param);
+        return param == 0 ? APPMGR_KERNEL_ERR_ARGUMENT : _vshAppMgrSaveDataNotifyBackupFinishedThroughEntry(param);
     }
 
     /// <summary>ksceAppMgrSystemParamDateTimeSetConf(conf): as the bridge's call.</summary>
     [Hle(Nid = 0xA9AA3A68, Library = "SceAppMgrForDriver")]
     int ksceAppMgrSystemParamDateTimeSetConf(uint conf)
     {
-        return _vshAppMgrSystemParamDateTimeSetConf(conf);
+        return _vshAppMgrSystemParamDateTimeSetConfThroughEntry(conf);
     }
 
     /// <summary>ksceAppMgrUpdateRifInfo(info): NULL 0x80800009; as the bridge's call.</summary>
     [Hle(Nid = 0x894BDCB8, Library = "SceAppMgrForDriver")]
     int ksceAppMgrUpdateRifInfo(uint info)
     {
-        return info == 0 ? APPMGR_KERNEL_ERR_CALLER : _vshAppMgrUpdateRifInfo(info);
+        return info == 0 ? APPMGR_KERNEL_ERR_CALLER : _vshAppMgrUpdateRifInfoThroughEntry(info);
     }
 }
 
@@ -221,7 +221,7 @@ public sealed partial class AppMgr
             return unchecked((int)0x80800001);
         }
 
-        return sceAppMgrPhotoUmount();
+        return sceAppMgrPhotoUmountThroughEntry();
     }
 
     /// <summary>NID_0813AFCA(type, path, size): the signed-in account's NP folder: a NULL or short (below 0x20)

@@ -155,7 +155,7 @@ public sealed partial class Libc : HleModule
     }
 
     /// <summary>C locale collation: the byte order (strcoll = strcmp, strxfrm copies).</summary>
-    [Hle] int strcoll(uint a, uint b) => strcmp(a, b);
+    [Hle] int strcoll(uint a, uint b) => strcmpThroughEntry(a, b);
 
     [Hle]
     uint strxfrm(uint dst, uint src, uint n)
@@ -232,9 +232,9 @@ public sealed partial class Libc : HleModule
     {
         if (s == 0) s = save;
         if (s == 0) return 0;
-        s += strspn(s, delim);
+        s += strspnThroughEntry(s, delim);
         if (B(s) == 0) { save = s; return 0; }
-        uint end = s + strcspn(s, delim);
+        uint end = s + strcspnThroughEntry(s, delim);
         if (B(end) != 0) { GuestMemory.Write(end, (byte)0); save = end + 1; }
         else save = end;
         return s;
@@ -424,7 +424,7 @@ public sealed partial class Libc : HleModule
     void abort_handler_s(uint msg, uint ptr, int error)
     {
         WriteStream(StderrFile(), Encoding.Latin1.GetBytes((msg != 0 ? GuestMemory.ReadCString(msg) : "") + "\n"));
-        abort();
+        abortThroughEntry();
     }
 
     [Hle] void ignore_handler_s(uint msg, uint ptr, int error) { }
@@ -452,7 +452,7 @@ public sealed partial class Libc : HleModule
     {
         if (dst == 0 || BadSize(size)) return Constraint("strncpy_s: bad destination argument");
         if (src == 0 || n > int.MaxValue) { GuestMemory.Write(dst, (byte)0); return Constraint("strncpy_s: bad argument"); }
-        uint len = strnlen_s(src, n);
+        uint len = strnlen_sThroughEntry(src, n);
         if (size <= len || Overlap(dst, size, src, len)) { GuestMemory.Write(dst, (byte)0); return Constraint("strncpy_s: bad argument"); }
         GuestMemory.Copy(dst, src, len);
         GuestMemory.Write(dst + len, (byte)0);
@@ -463,7 +463,7 @@ public sealed partial class Libc : HleModule
     int strcat_s(uint dst, uint size, uint src)
     {
         if (dst == 0 || BadSize(size)) return Constraint("strcat_s: bad destination argument");
-        uint dlen = strnlen_s(dst, size);
+        uint dlen = strnlen_sThroughEntry(dst, size);
         uint slen = src == 0 ? uint.MaxValue : StrLen(src);
         if (src == 0 || dlen == size || size - dlen <= slen) { GuestMemory.Write(dst, (byte)0); return Constraint("strcat_s: bad argument"); }
         GuestMemory.Copy(dst + dlen, src, slen + 1);
@@ -474,9 +474,9 @@ public sealed partial class Libc : HleModule
     int strncat_s(uint dst, uint size, uint src, uint n)
     {
         if (dst == 0 || BadSize(size)) return Constraint("strncat_s: bad destination argument");
-        uint dlen = strnlen_s(dst, size);
+        uint dlen = strnlen_sThroughEntry(dst, size);
         if (src == 0 || n > int.MaxValue || dlen == size) { GuestMemory.Write(dst, (byte)0); return Constraint("strncat_s: bad argument"); }
-        uint slen = strnlen_s(src, n);
+        uint slen = strnlen_sThroughEntry(src, n);
         if (size - dlen <= slen) { GuestMemory.Write(dst, (byte)0); return Constraint("strncat_s: bad argument"); }
         GuestMemory.Copy(dst + dlen, src, slen);
         GuestMemory.Write(dst + dlen + slen, (byte)0);
@@ -522,7 +522,7 @@ public sealed partial class Libc : HleModule
     [Hle] int isgraph(int c) => c is > 0x20 and < 0x7F ? 1 : 0;
     [Hle] int islower(int c) => c is >= 'a' and <= 'z' ? 1 : 0;
     [Hle] int isprint(int c) => c is >= 0x20 and < 0x7F ? 1 : 0;
-    [Hle] int ispunct(int c) => c is > 0x20 and < 0x7F && isalnum(c) == 0 ? 1 : 0;
+    [Hle] int ispunct(int c) => c is > 0x20 and < 0x7F && isalnumThroughEntry(c) == 0 ? 1 : 0;
     [Hle] int isspace(int c) => IsSpace(c) ? 1 : 0;
     [Hle] int isupper(int c) => c is >= 'A' and <= 'Z' ? 1 : 0;
     [Hle] int isxdigit(int c) => c is >= '0' and <= '9' or >= 'A' and <= 'F' or >= 'a' and <= 'f' ? 1 : 0;
@@ -551,8 +551,8 @@ public sealed partial class Libc : HleModule
     void RegisterLibcVariables()
     {
         Emu.Hle.RegisterVariable(0x3CE6109D, () => TableVariable(ref _ctypeVar, c => c < 0 ? (short)0 : CtypeMask(c)));
-        Emu.Hle.RegisterVariable(0xD662E07C, () => TableVariable(ref _tolowerVar, c => (short)(c < 0 ? -1 : tolower(c))));
-        Emu.Hle.RegisterVariable(0x36878958, () => TableVariable(ref _toupperVar, c => (short)(c < 0 ? -1 : toupper(c))));
+        Emu.Hle.RegisterVariable(0xD662E07C, () => TableVariable(ref _tolowerVar, c => (short)(c < 0 ? -1 : tolowerThroughEntry(c))));
+        Emu.Hle.RegisterVariable(0x36878958, () => TableVariable(ref _toupperVar, c => (short)(c < 0 ? -1 : toupperThroughEntry(c))));
         Emu.Hle.RegisterVariable(0x66B7406C, () => StdinFile().Addr);
         Emu.Hle.RegisterVariable(0x5D8C1282, () => StdoutFile().Addr);
         Emu.Hle.RegisterVariable(0xDDF9BB09, () => StderrFile().Addr);

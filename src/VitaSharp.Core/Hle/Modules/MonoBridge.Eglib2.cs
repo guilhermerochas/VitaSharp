@@ -211,7 +211,7 @@ public sealed unsafe partial class MonoBridge
     uint GUnicharTolower(uint c) => Rune.IsValid(c) ? (uint)Rune.ToLowerInvariant(new Rune(c)).Value : c;
 
     [Hle("monoeg_g_unichar_xdigit_value", Library = Lib)]
-    int GUnicharXdigitValue(uint c) => c < 0x80 ? GAsciiXdigitValue((int)c)
+    int GUnicharXdigitValue(uint c) => c < 0x80 ? GAsciiXdigitValueThroughEntry((int)c)
         : c is >= 0xFF10 and <= 0xFF19 ? (int)(c - 0xFF10) : c is >= 0xFF21 and <= 0xFF26 ? (int)(c - 0xFF21 + 10)
         : c is >= 0xFF41 and <= 0xFF46 ? (int)(c - 0xFF41 + 10) : -1;
 
@@ -349,7 +349,7 @@ public sealed unsafe partial class MonoBridge
         {
             if (b[i] == '%')
             {
-                int hi = i + 2 < b.Length ? GAsciiXdigitValue(b[i + 1]) : -1, lo = hi >= 0 ? GAsciiXdigitValue(b[i + 2]) : -1;
+                int hi = i + 2 < b.Length ? GAsciiXdigitValueThroughEntry(b[i + 1]) : -1, lo = hi >= 0 ? GAsciiXdigitValueThroughEntry(b[i + 2]) : -1;
                 if (hi < 0 || lo < 0)
                 {
                     SetError(err, ConvertDomain, ConvertBadUri, "URI contains an invalid escaped character");
@@ -465,7 +465,7 @@ public sealed unsafe partial class MonoBridge
     {
         if (path == 0) return -1;
         string p = FullPath(Utf8(path));
-        if (Io.sceIoDopen(PsmPath(p)) is var fd and >= 0) { Io.sceIoDclose(fd); _cwd = p; return 0; }
+        if (Io.sceIoDopen(PsmPath(p)) is var fd and >= 0) { Io.sceIoDcloseThroughEntry(fd); _cwd = p; return 0; }
         Libc.SetErrno(Libc.ENOENT);
         return -1;
     }
@@ -515,17 +515,17 @@ public sealed unsafe partial class MonoBridge
         string name = Utf8(filename);
         int fd = Io.sceIoOpen(PsmPath(name), SCE_O_RDONLY, 0);
         if (fd < 0) { SetError(err, FileDomain, FileErrorCode(fd), $"Error opening file '{name}'"); return false; }
-        long size = Io.sceIoLseek(fd, 0, 2);
-        Io.sceIoLseek(fd, 0, 0);
-        if (size < 0 || size > 0x7FFFFFFF) { Io.sceIoClose(fd); SetError(err, FileDomain, FileFailed, $"Error reading file '{name}'"); return false; }
+        long size = Io.sceIoLseekThroughEntry(fd, 0, 2);
+        Io.sceIoLseekThroughEntry(fd, 0, 0);
+        if (size < 0 || size > 0x7FFFFFFF) { Io.sceIoCloseThroughEntry(fd); SetError(err, FileDomain, FileFailed, $"Error reading file '{name}'"); return false; }
         uint buf = Malloc((uint)size + 1), got = 0;
         while (got < size)
         {
-            int r = Io.sceIoRead(fd, buf + got, (uint)size - got);
+            int r = Io.sceIoReadThroughEntry(fd, buf + got, (uint)size - got);
             if (r <= 0) break;
             got += (uint)r;
         }
-        Io.sceIoClose(fd);
+        Io.sceIoCloseThroughEntry(fd);
         W8(buf + got, 0);
         W32(contents, buf);
         Wr(length, got);
@@ -598,7 +598,7 @@ public sealed unsafe partial class MonoBridge
         if (dir == 0) return 0;
         while (true)
         {
-            if (Io.sceIoDread((int)R32(dir), dir + DirentAt) <= 0) return 0;
+            if (Io.sceIoDreadThroughEntry((int)R32(dir), dir + DirentAt) <= 0) return 0;
             uint name = dir + DirentAt + 0x58;
             string n = Utf8(name);
             if (n is "." or "..") continue;
@@ -610,7 +610,7 @@ public sealed unsafe partial class MonoBridge
     void GDirClose(uint dir)
     {
         if (dir == 0) return;
-        Io.sceIoDclose((int)R32(dir));
+        Io.sceIoDcloseThroughEntry((int)R32(dir));
         Free(dir);
     }
 
@@ -660,7 +660,7 @@ public sealed unsafe partial class MonoBridge
     }
 
     [Hle("monoeg_g_timer_new", Library = Lib)]
-    uint GTimerNew() { uint t = Malloc0(16); GTimerStart(t); return t; }
+    uint GTimerNew() { uint t = Malloc0(16); GTimerStartThroughEntry(t); return t; }
 
     [Hle("monoeg_g_timer_destroy", Library = Lib)] void GTimerDestroy(uint t) => Free(t);
 
@@ -686,7 +686,7 @@ public sealed unsafe partial class MonoBridge
         return (sec * 1_000_000.0 + usec) / 1_000_000.0;
     }
 
-    [Hle("monoeg_g_usleep", Library = Lib)] void GUsleep(uint us) => Tm.sceKernelDelayThread(us);
+    [Hle("monoeg_g_usleep", Library = Lib)] void GUsleep(uint us) => Tm.sceKernelDelayThreadThroughEntry(us);
 }
 
 static class ByteListExtensions

@@ -8,9 +8,9 @@ public sealed partial class Display
 {
     [Hle]
     int _sceDisplayGetFrameBufInternal(int head, int index, uint pParam, uint opt)
-        => sceDisplayGetFrameBufInternal(head, index, pParam, opt == 0 ? 0 : GuestMemory.R32(opt));
+        => sceDisplayGetFrameBufInternalThroughEntry(head, index, pParam, opt == 0 ? 0 : GuestMemory.R32(opt));
 
     [Hle]
     int _sceDisplaySetFrameBufInternal(int head, int index, uint pParam, uint opt)
-        => sceDisplaySetFrameBufInternal(head, index, pParam, opt == 0 ? 0 : GuestMemory.R32(opt));
+        => sceDisplaySetFrameBufInternalThroughEntry(head, index, pParam, opt == 0 ? 0 : GuestMemory.R32(opt));
 }

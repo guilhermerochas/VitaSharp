@@ -2,6 +2,10 @@ using VitaSharp.Core.Memory;
 
 namespace VitaSharp.Core.Hle.Modules;
 
+// VSHLE010: these kernel entries share the C# body of the user call of the same name; on the Vita they are other
+// functions (the user call reaches the kernel by its syscall), so a hook on the user call's export does not see them.
+#pragma warning disable VSHLE010
+
 // SceAppMgrForDriver (os0:bootimage SceAppMgr 3.74, read in the module, study only): the application manager's kernel
 // entries. Most run the same operation as the user call of the same name after the syscall copied its arguments
 // (mounts, save data slots, DRM, boot parameters): here they run the user HLE's implementation on the caller's

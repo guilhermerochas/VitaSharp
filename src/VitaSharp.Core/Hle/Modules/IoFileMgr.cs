@@ -211,14 +211,14 @@ int fd, long offset, int whence)
     {
         if (_files.TryGetValue(fd, out var guest) && guest.GuestFile != 0)
         {
-            return ksceVopLseek(guest.GuestVnode, guest.GuestFile, (uint)offset, (uint)(offset >> 32), (uint)whence);
+            return ksceVopLseekThroughEntry(guest.GuestVnode, guest.GuestFile, (uint)offset, (uint)(offset >> 32), (uint)whence);
         }
 
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
         lock (f) return f.Stream.Seek(offset, (SeekOrigin)whence);
     }
 
-    [Hle] int sceIoLseek32(int fd, int offset, int whence) => (int)sceIoLseek(fd, offset, whence);
+    [Hle] int sceIoLseek32(int fd, int offset, int whence) => (int)sceIoLseekThroughEntry(fd, offset, whence);
 
     [Hle]
     internal int sceIoPread(int fd, uint buf, uint size, long offset)
@@ -351,7 +351,7 @@ int fd, long offset, int whence)
         if (!_dirs.TryGetValue(fd, out var d)) return SceError.IO_EBADF;
         if (d.GuestFile != 0)
         {
-            return ksceVopDread(d.GuestVnode, d.GuestFile, dirent);
+            return ksceVopDreadThroughEntry(d.GuestVnode, d.GuestFile, dirent);
         }
 
         if (d.Index >= d.Entries.Length) return 0;
@@ -416,7 +416,7 @@ int fd, long offset, int whence)
     {
         if (_files.TryGetValue(fd, out var guest) && guest.GuestFile != 0)
         {
-            return ksceVopFgetstat(guest.GuestVnode, guest.GuestFile, stat);
+            return ksceVopFgetstatThroughEntry(guest.GuestVnode, guest.GuestFile, stat);
         }
 
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
@@ -534,7 +534,7 @@ int fd, long offset, int whence)
     internal string? HostPathFor(string path, bool write = false) => HostPath(path, write);
 
     internal int Devctl(string dev, int cmd, uint arg, uint argLen, uint buf, uint bufLen) => sceIoDevctl(dev, cmd, arg, argLen, buf, bufLen);
-    internal int Ioctl(int fd, int cmd, uint arg, uint argLen, uint buf, uint bufLen) => sceIoIoctl(fd, cmd, arg, argLen, buf, bufLen);
+    internal int Ioctl(int fd, int cmd, uint arg, uint argLen, uint buf, uint bufLen) => sceIoIoctlThroughEntry(fd, cmd, arg, argLen, buf, bufLen);
     internal int Chstat(string path, uint stat, int bits) => sceIoChstat(path, stat, bits);
 
     /// <summary>Sets the length of an open file (ftruncate); a sceIo error code when it cannot.</summary>

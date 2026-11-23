@@ -120,7 +120,7 @@ public sealed partial class SysmemKernel
         List<KernelObject> handles = new(K.Objects.All<KernelObject>().Where(kernelObject => kernelObject.OwnerPid == pid && kernelObject is not ProcessObject && kernelObject is not GuestThread));
         foreach (KernelObject handle in handles)
         {
-            kscePUIDClose(pid, handle.Uid);
+            kscePUIDCloseThroughEntry(pid, handle.Uid);
         }
 
         return 0;
@@ -198,7 +198,7 @@ public sealed partial class SysmemKernel
 
         foreach (uint item in items)
         {
-            ksceKernelFree(item);
+            ksceKernelFreeThroughEntry(item);
         }
 
         return 0;
@@ -238,7 +238,7 @@ public sealed partial class SysmemKernel
     {
         if (slot < 6)
         {
-            GuestMemory.W32(NID_857408DA() + 0x24 + slot * 0x1C, size);
+            GuestMemory.W32(NID_857408DAThroughEntry() + 0x24 + slot * 0x1C, size);
         }
 
         return 0;
@@ -254,7 +254,7 @@ public sealed partial class SysmemKernel
             return 0;
         }
 
-        uint item = ksceKernelAlloc(size);
+        uint item = ksceKernelAllocThroughEntry(size);
         if (item != 0)
         {
             lock (_fixedHeapItems)
@@ -275,7 +275,7 @@ public sealed partial class SysmemKernel
             _fixedHeapItems.Remove(item);
         }
 
-        return ksceKernelFree(item);
+        return ksceKernelFreeThroughEntry(item);
     }
 
     // ------------------------------------------------------------------ fixed heaps
@@ -311,7 +311,7 @@ public sealed partial class SysmemKernel
             return 0;
         }
 
-        uint item = ksceKernelAlloc(Math.Max(GuestMemory.Read<ushort>(heap + 0x20), (ushort)4));
+        uint item = ksceKernelAllocThroughEntry(Math.Max(GuestMemory.Read<ushort>(heap + 0x20), (ushort)4));
         if (item != 0)
         {
             lock (_fixedHeapItems)
@@ -341,7 +341,7 @@ public sealed partial class SysmemKernel
             GuestMemory.Write(heap + 0x24, (ushort)(used == 0 ? 0 : used - 1));
         }
 
-        return ksceKernelFree(item);
+        return ksceKernelFreeThroughEntry(item);
     }
 
     /// <summary>The fixed heap information (0x90 bytes, else 0x80020009): +4 the item size, +8 its bytes, +0xC the most
@@ -379,7 +379,7 @@ public sealed partial class SysmemKernel
     [Hle(Nid = 0x890D9160, Library = "SceSysmemForKernel")]
     int NID_890D9160(int uid, uint info)
     {
-        uint heap = NID_FA6C098C(uid);
+        uint heap = NID_FA6C098CThroughEntry(uid);
         if (info == 0)
         {
             return SceError.INVALID_ARGUMENT;
@@ -605,7 +605,7 @@ public sealed partial class SysmemKernel
             return SceError.INVALID_UID;
         }
 
-        int result = ksceKernelGetHeapInfoByPtr(BodyOf(kernelObject), info);
+        int result = ksceKernelGetHeapInfoByPtrThroughEntry(BodyOf(kernelObject), info);
         if (result >= 0)
         {
             GuestMemory.W32(info + 0xC, NamePointerOf(kernelObject));
@@ -625,7 +625,7 @@ public sealed partial class SysmemKernel
         }
 
         GuestMemory.W32(countOut, 0);
-        List<KernelObject> heaps = ObjectsOfClass(ksceKernelGetUIDHeapClass());
+        List<KernelObject> heaps = ObjectsOfClass(ksceKernelGetUIDHeapClassThroughEntry());
         uint written = 0;
         foreach (KernelObject heap in heaps)
         {
@@ -636,7 +636,7 @@ public sealed partial class SysmemKernel
 
             uint info = infos + written * 0x70;
             GuestMemory.W32(info, 0x70);
-            int result = ksceKernelGetHeapInfo(heap.Uid, level, info);
+            int result = ksceKernelGetHeapInfoThroughEntry(heap.Uid, level, info);
             if (result < 0)
             {
                 return result;
@@ -763,7 +763,7 @@ public sealed partial class SysmemKernel
             size = 0x1000;
         }
 
-        int uid = ksceKernelAllocMemBlock(name != 0 ? name : KernelStr("SceSimpleMemBlock"), MemBlockKernelRw, Math.Max(size, 0x1000u), 0);
+        int uid = ksceKernelAllocMemBlockThroughEntry(name != 0 ? name : KernelStr("SceSimpleMemBlock"), MemBlockKernelRw, Math.Max(size, 0x1000u), 0);
         if (uid < 0)
         {
             GuestMemory.W32(blockOut, 0);
@@ -771,7 +771,7 @@ public sealed partial class SysmemKernel
         }
 
         _simpleBlocksTaken[pool]++;
-        uint block = NID_FA6C098C(uid);
+        uint block = NID_FA6C098CThroughEntry(uid);
         GuestMemory.W32(block + 0x34, pool);
         GuestMemory.W32(blockOut, block);
         return 0;
@@ -799,7 +799,7 @@ public sealed partial class SysmemKernel
             _simpleBlocksTaken[pool]--;
         }
 
-        return ksceKernelFreeMemBlock(uid);
+        return ksceKernelFreeMemBlockThroughEntry(uid);
     }
 
     /// <summary>A kernel read-write block type (0x1020D006).</summary>
@@ -879,13 +879,13 @@ public sealed partial class SysmemKernel
             return SceError.INVALID_ARGUMENT;
         }
 
-        return ksceKernelAllocMemBlock(name, GuestMemory.R32(request + 0x14), size, 0);
+        return ksceKernelAllocMemBlockThroughEntry(name, GuestMemory.R32(request + 0x14), size, 0);
     }
 
     /// <summary>NID_40870E74(name, size, ?): a kernel read-write block (type 0x1060D006) of sysmem's partition; its
     /// UID.</summary>
     [Hle(Nid = 0x40870E74, Library = "SceSysmemForKernel")]
-    int NID_40870E74(uint name, uint size, uint unused) => ksceKernelAllocMemBlock(name, 0x1060D006, size, 0);
+    int NID_40870E74(uint name, uint size, uint unused) => ksceKernelAllocMemBlockThroughEntry(name, 0x1060D006, size, 0);
 
     /// <summary>NID_441E6BE9(uid, pages): attaches a physical page list to a paged block (its page +0x14, +0x18 the
     /// list's first word in pages; the block's +0x14 bit 0x40); no block 0x80024701, a list already there
@@ -893,7 +893,7 @@ public sealed partial class SysmemKernel
     [Hle(Nid = 0x441E6BE9, Library = "SceSysmemForKernel")]
     int NID_441E6BE9(int uid, uint pages)
     {
-        uint block = NID_FA6C098C(uid);
+        uint block = NID_FA6C098CThroughEntry(uid);
         if (block == 0)
         {
             return ReferenceNotFound;
@@ -970,7 +970,7 @@ public sealed partial class SysmemKernel
 
     /// <summary>NID_7CDB7655(cls, name, parent, itemsize, create, destroy): ksceKernelCreateClass.</summary>
     [Hle(Nid = 0x7CDB7655, Library = "SceSysmemForKernel")]
-    int NID_7CDB7655(uint cls, uint name, uint parent, uint itemSize, uint create, uint destroy) => ksceKernelCreateClass(cls, name, parent, itemSize, create, destroy);
+    int NID_7CDB7655(uint cls, uint name, uint parent, uint itemSize, uint create, uint destroy) => ksceKernelCreateClassThroughEntry(cls, name, parent, itemSize, create, destroy);
 
     /// <summary>NID_4E74DA48(): sysmem's second boot stage (the SceKernelSysmem object and its heaps); VitaSharp's
     /// sysmem is set up before kernel code runs: 0.</summary>

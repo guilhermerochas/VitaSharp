@@ -130,7 +130,7 @@ public sealed partial class SysMem : HleModule
     {
         var b = K.Objects.Get<MemBlock>(uid);
         if (b == null || !b.IsVm) return SceError.INVALID_ARGUMENT;
-        return sceKernelFreeMemBlock(uid);
+        return sceKernelFreeMemBlockThroughEntry(uid);
     }
 
     /// <summary>Makes the VM blocks writable (open) or executable again (close); nested calls fail with ENOSYS.</summary>
@@ -216,7 +216,7 @@ public sealed partial class SysMem : HleModule
     }
 
     [Hle("sceKernelGetMemBlockInfoByRange")]
-    int sceKernelGetMemBlockInfoByRange(uint addr, uint size, uint info) => sceKernelGetMemBlockInfoByAddr(addr, info);
+    int sceKernelGetMemBlockInfoByRange(uint addr, uint size, uint info) => sceKernelGetMemBlockInfoByAddrThroughEntry(addr, info);
 
     [Hle]
     int sceKernelGetFreeMemorySize(uint info)

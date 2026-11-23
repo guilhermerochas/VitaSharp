@@ -86,7 +86,7 @@ public sealed partial class GpuEs4
 
         GuestMemory.W32(output, _userConnection);
         GuestMemory.Fill(_userConnection, 0, 0x28);
-        PVRSRVOpen();
+        PVRSRVOpenThroughEntry();
         if (BridgeDispatch(BridgeIdBase + BridgeConnectServices, 8, true, 8, 0, out _, out uint services) != 0)
         {
             return 4;
@@ -119,7 +119,7 @@ public sealed partial class GpuEs4
         }
 
         BridgeDispatch(BridgeIdBase + BridgeDisconnectServices, 0, true, 8, GuestMemory.R32(services + 4), out _, out _);
-        PVRSRVRelease();
+        PVRSRVReleaseThroughEntry();
         lock (_lock)
         {
             _userConnected = false;

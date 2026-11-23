@@ -133,7 +133,7 @@ public sealed partial class Piglet : HleModule
         GuestMemory.W32(fb + 12, 0); // SCE_DISPLAY_PIXELFORMAT_A8B8G8R8
         GuestMemory.W32(fb + 16, width);
         GuestMemory.W32(fb + 20, height);
-        Disp.SetFrameBuf(fb, interval > 0 ? 1u : 0u);
+        Disp.SetFrameBufThroughEntry(fb, interval > 0 ? 1u : 0u);
         if (!FrameRate.NoWaits)
             for (int i = 1; i < interval; i++) VBlank.WaitNext();
         c.Return(0);

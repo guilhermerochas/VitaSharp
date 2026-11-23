@@ -111,7 +111,7 @@ public sealed partial class Libc
     {
         uint pfree = GuestMemory.R32(sb + SsPfree);
         if (pfree != 0) GuestThread.Current?.CallGuest(pfree, p);
-        else free(p);
+        else freeThroughEntry(p);
     }
 
     /// <summary>_Tidy: an allocated array not frozen is freed; allocated and frozen are cleared, _Seekhigh too.</summary>
@@ -129,18 +129,18 @@ public sealed partial class Libc
     uint StrbufDtor(uint sb)
     {
         GuestMemory.W32(sb, Rtti.Vptr(VtStrstreambuf));
-        StrbufTidy(sb);
+        StrbufTidyThroughEntry(sb);
         return StreambufDtor(sb, false);
     }
 
-    [Hle("_ZNSt12strstreambufD0Ev")] uint StrbufDel(uint sb) { StrbufDtor(sb); free(sb); return sb; }
+    [Hle("_ZNSt12strstreambufD0Ev")] uint StrbufDel(uint sb) { StrbufDtorThroughEntry(sb); freeThroughEntry(sb); return sb; }
 
     /// <summary>The inline strstreambuf constructors: the streambuf, then _Init.</summary>
     void StrbufCtor(uint sb, int count, uint gp, uint pp, uint mode)
     {
         StreambufCtor(sb, false);
         GuestMemory.W32(sb, Rtti.Vptr(VtStrstreambuf));
-        StrbufInit(sb, count, gp, pp, mode);
+        StrbufInitThroughEntry(sb, count, gp, pp, mode);
     }
 
     /// <summary>freeze(f): a frozen buffer takes no more output (epptr at eback); unfreezing restores it.</summary>
@@ -189,7 +189,7 @@ public sealed partial class Libc
         else
         {
             if (size > 0x40000000) { _ZSt11_Xbad_allocv(ctx); return EofE; }
-            ptr = malloc((uint)size);
+            ptr = mallocThroughEntry((uint)size);
         }
         if (ptr == 0) return EofE;
         if (old > 0) GuestMemory.Copy(ptr, eback, (uint)old);
@@ -312,7 +312,7 @@ public sealed partial class Libc
     uint IstrstreamDtor2(uint obj, uint vtt)
     {
         SetVptrs(obj, VttAt(vtt, 0), VttAt(vtt, 3));
-        StrbufDtor(obj + 8);
+        StrbufDtorThroughEntry(obj + 8);
         SetVptrs(obj, VttAt(vtt, 1), VttAt(vtt, 2));
         return obj;
     }
@@ -324,13 +324,13 @@ public sealed partial class Libc
     {
         IstrstreamDtor2(obj, GuestVtt("istrstream", IstrstreamVtt()));
         GuestMemory.W32(obj + 0x98, Rtti.Vptr(VtIosC));
-        IosBaseDtor(obj + 0x98);
+        IosBaseDtorThroughEntry(obj + 0x98);
         return obj;
     }
 
-    [Hle("_ZNSt10istrstreamD0Ev")] uint IstrstreamD0(uint obj) { IstrstreamD1(obj); free(obj); return obj; }
-    [Hle("_ZTv0_n12_NSt10istrstreamD1Ev")] uint IstrstreamTvD1(uint obj) => IstrstreamD1(VirtualThunkThis(obj));
-    [Hle("_ZTv0_n12_NSt10istrstreamD0Ev")] uint IstrstreamTvD0(uint obj) => IstrstreamD0(VirtualThunkThis(obj));
+    [Hle("_ZNSt10istrstreamD0Ev")] uint IstrstreamD0(uint obj) { IstrstreamD1ThroughEntry(obj); freeThroughEntry(obj); return obj; }
+    [Hle("_ZTv0_n12_NSt10istrstreamD1Ev")] uint IstrstreamTvD1(uint obj) => IstrstreamD1ThroughEntry(VirtualThunkThis(obj));
+    [Hle("_ZTv0_n12_NSt10istrstreamD0Ev")] uint IstrstreamTvD0(uint obj) => IstrstreamD0ThroughEntry(VirtualThunkThis(obj));
 
     /// <summary>ostrstream(ptr, count, mode) base constructor: the ostream part over the embedded strstreambuf, which
     /// writes into ptr (from its end with app).</summary>
@@ -361,13 +361,13 @@ public sealed partial class Libc
     {
         IstrstreamDtor2(obj, GuestVtt("ostrstream", OstrstreamVtt()));
         GuestMemory.W32(obj + 0x98, Rtti.Vptr(VtIosC));
-        IosBaseDtor(obj + 0x98);
+        IosBaseDtorThroughEntry(obj + 0x98);
         return obj;
     }
 
-    [Hle("_ZNSt10ostrstreamD0Ev")] uint OstrstreamD0(uint obj) { OstrstreamD1(obj); free(obj); return obj; }
-    [Hle("_ZTv0_n12_NSt10ostrstreamD1Ev")] uint OstrstreamTvD1(uint obj) => OstrstreamD1(VirtualThunkThis(obj));
-    [Hle("_ZTv0_n12_NSt10ostrstreamD0Ev")] uint OstrstreamTvD0(uint obj) => OstrstreamD0(VirtualThunkThis(obj));
+    [Hle("_ZNSt10ostrstreamD0Ev")] uint OstrstreamD0(uint obj) { OstrstreamD1ThroughEntry(obj); freeThroughEntry(obj); return obj; }
+    [Hle("_ZTv0_n12_NSt10ostrstreamD1Ev")] uint OstrstreamTvD1(uint obj) => OstrstreamD1ThroughEntry(VirtualThunkThis(obj));
+    [Hle("_ZTv0_n12_NSt10ostrstreamD0Ev")] uint OstrstreamTvD0(uint obj) => OstrstreamD0ThroughEntry(VirtualThunkThis(obj));
 
     /// <summary>strstream(ptr, count, mode) base constructor: the istream and ostream parts of the iostream, then the
     /// embedded strstreambuf over ptr (from its end with app).</summary>
@@ -401,7 +401,7 @@ public sealed partial class Libc
     {
         SetVptrs(obj, VttAt(vtt, 0), VttAt(vtt, 8));
         GuestMemory.W32(obj + 8, VttAt(vtt, 9));
-        StrbufDtor(obj + 0x10);
+        StrbufDtorThroughEntry(obj + 0x10);
         SetVptrs(obj, VttAt(vtt, 1), VttAt(vtt, 6));
         GuestMemory.W32(obj + 8, VttAt(vtt, 7));
         SetVptrs(obj + 8, VttAt(vtt, 4), VttAt(vtt, 5));
@@ -412,15 +412,15 @@ public sealed partial class Libc
     [Hle("_ZNSt9strstreamD1Ev")]
     uint StrstreamD1(uint obj)
     {
-        StrstreamD2(obj, GuestVtt("strstream", StrstreamVtt()));
+        StrstreamD2ThroughEntry(obj, GuestVtt("strstream", StrstreamVtt()));
         GuestMemory.W32(obj + 0xA0, Rtti.Vptr(VtIosC));
-        IosBaseDtor(obj + 0xA0);
+        IosBaseDtorThroughEntry(obj + 0xA0);
         return obj;
     }
 
-    [Hle("_ZNSt9strstreamD0Ev")] uint StrstreamD0(uint obj) { StrstreamD1(obj); free(obj); return obj; }
-    [Hle("_ZThn8_NSt9strstreamD1Ev")] uint StrstreamThn8D1(uint obj) => StrstreamD1(obj - 8);
-    [Hle("_ZThn8_NSt9strstreamD0Ev")] uint StrstreamThn8D0(uint obj) => StrstreamD0(obj - 8);
-    [Hle("_ZTv0_n12_NSt9strstreamD1Ev")] uint StrstreamTvD1(uint obj) => StrstreamD1(VirtualThunkThis(obj));
-    [Hle("_ZTv0_n12_NSt9strstreamD0Ev")] uint StrstreamTvD0(uint obj) => StrstreamD0(VirtualThunkThis(obj));
+    [Hle("_ZNSt9strstreamD0Ev")] uint StrstreamD0(uint obj) { StrstreamD1ThroughEntry(obj); freeThroughEntry(obj); return obj; }
+    [Hle("_ZThn8_NSt9strstreamD1Ev")] uint StrstreamThn8D1(uint obj) => StrstreamD1ThroughEntry(obj - 8);
+    [Hle("_ZThn8_NSt9strstreamD0Ev")] uint StrstreamThn8D0(uint obj) => StrstreamD0ThroughEntry(obj - 8);
+    [Hle("_ZTv0_n12_NSt9strstreamD1Ev")] uint StrstreamTvD1(uint obj) => StrstreamD1ThroughEntry(VirtualThunkThis(obj));
+    [Hle("_ZTv0_n12_NSt9strstreamD0Ev")] uint StrstreamTvD0(uint obj) => StrstreamD0ThroughEntry(VirtualThunkThis(obj));
 }

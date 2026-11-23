@@ -26,15 +26,15 @@ public sealed partial class IoFileMgr
 
     /// <summary>ksceIoDreadForVshbridge(fd, dirent): the bridge's dread, the same operation as ksceIoDread.</summary>
     [Hle(Nid = 0x03051B02, Library = "SceIofilemgrForDriver")]
-    int ksceIoDreadForVshbridge(int fd, uint dirent) => sceIoDread(fd, dirent);
+    int ksceIoDreadForVshbridge(int fd, uint dirent) => sceIoDreadThroughEntry(fd, dirent);
 
     /// <summary>ksceIoSyncByFd2(fd, flag): ksceIoSyncByFd with its flag (the application manager's and FIOS's call).</summary>
     [Hle(Nid = 0x43170575, Library = "SceIofilemgrForDriver")]
-    int ksceIoSyncByFd2(int fd, int flag) => sceIoSyncByFd(fd, flag);
+    int ksceIoSyncByFd2(int fd, int flag) => sceIoSyncByFdThroughEntry(fd, flag);
 
     /// <summary>ksceIoFlock(fd, op): the file lock of sceIoFlockForSystem (vshIoFlock's kernel side).</summary>
     [Hle(Nid = 0x16336A0D, Library = "SceIofilemgrForDriver")]
-    int ksceIoFlock(int fd, int op) => sceIoFlockForSystem(fd, op);
+    int ksceIoFlock(int fd, int op) => sceIoFlockForSystemThroughEntry(fd, op);
 
     /// <summary>
     /// ksceIoOpenForPid(pid, path, flags, mode): opens <paramref name="path"/> as process <paramref name="pid"/> sees it

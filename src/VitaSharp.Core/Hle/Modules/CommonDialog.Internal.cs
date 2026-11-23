@@ -23,28 +23,28 @@ public sealed partial class CommonDialog
             return CommonDialogError.NULL;
         }
 
-        return sceNetCheckDialogInit(param);
+        return sceNetCheckDialogInitThroughEntry(param);
     }
 
     /// <summary>NID_40CD30CD(param): the variant Init of the NP friend list dialog (libcdlg family 0x9): sceNpFriendListDialogInit.</summary>
     [Hle(Nid = 0x40CD30CD, Library = "SceCommonDialog")]
-    int NID_40CD30CD(uint param) => sceNpFriendListDialogInit(param);
+    int NID_40CD30CD(uint param) => sceNpFriendListDialogInitThroughEntry(param);
 
     /// <summary>NID_452DA757(param, block): the variant Init of the photo import dialog (libcdlg family 0xB): scePhotoImportDialogInit.</summary>
     [Hle(Nid = 0x452DA757, Library = "SceCommonDialog")]
-    int NID_452DA757(uint param, uint block) => scePhotoImportDialogInit(param);
+    int NID_452DA757(uint param, uint block) => scePhotoImportDialogInitThroughEntry(param);
 
     /// <summary>NID_3D3F9AD6(param): the variant Init of the NP profile dialog (libcdlg family 0xC): sceNpProfileDialogInit.</summary>
     [Hle(Nid = 0x3D3F9AD6, Library = "SceCommonDialog")]
-    int NID_3D3F9AD6(uint param) => sceNpProfileDialogInit(param);
+    int NID_3D3F9AD6(uint param) => sceNpProfileDialogInitThroughEntry(param);
 
     /// <summary>NID_AC20DAF9(param, block): the variant Init of the photo review dialog (libcdlg family 0xD): scePhotoReviewDialogInit.</summary>
     [Hle(Nid = 0xAC20DAF9, Library = "SceCommonDialog")]
-    int NID_AC20DAF9(uint param, uint block) => scePhotoReviewDialogInit(param);
+    int NID_AC20DAF9(uint param, uint block) => scePhotoReviewDialogInitThroughEntry(param);
 
     /// <summary>NID_FEBF87EB(param, block): the variant Init of the camera import dialog (libcdlg family 0xF): sceCameraImportDialogInit.</summary>
     [Hle(Nid = 0xFEBF87EB, Library = "SceCommonDialog")]
-    int NID_FEBF87EB(uint param, uint block) => sceCameraImportDialogInit(param);
+    int NID_FEBF87EB(uint param, uint block) => sceCameraImportDialogInitThroughEntry(param);
 
     /// <summary>NID_075E4490(param, block): the variant Init of the Facebook dialog (libcdlg family 0x11): sceNpSnsFacebookDialogInit.</summary>
     [Hle(Nid = 0x075E4490, Library = "SceCommonDialog")]
@@ -60,12 +60,12 @@ public sealed partial class CommonDialog
             return FacebookErrInvalidParam;
         }
 
-        return sceNpSnsFacebookDialogInit(param);
+        return sceNpSnsFacebookDialogInitThroughEntry(param);
     }
 
     /// <summary>NID_AA624C1F(param): the variant Init of the NP friend list 2 dialog (libcdlg family 0x17): sceNpFriendList2DialogInit.</summary>
     [Hle(Nid = 0xAA624C1F, Library = "SceCommonDialog")]
-    int NID_AA624C1F(uint param) => sceNpFriendList2DialogInit(param);
+    int NID_AA624C1F(uint param) => sceNpFriendList2DialogInitThroughEntry(param);
 
     /// <summary>NID_62B60B87(param, block): the variant Init of the companion util dialog (libcdlg family 0x18): sceCompanionUtilDialogInit.</summary>
     [Hle(Nid = 0x62B60B87, Library = "SceCommonDialog")]
@@ -76,13 +76,13 @@ public sealed partial class CommonDialog
             return CommonDialogError.NULL;
         }
 
-        return sceCompanionUtilDialogInit(param);
+        return sceCompanionUtilDialogInitThroughEntry(param);
     }
 
     /// <summary>NID_9800F871(param, block): the variant Init of the IME dialog (libcdlg family 0x4): its OnInit2 checks
     /// the param as the public Init does and ignores the block: sceImeDialogInit.</summary>
     [Hle(Nid = 0x9800F871, Library = "SceCommonDialog")]
-    int NID_9800F871(uint param, uint block) => sceImeDialogInit(param);
+    int NID_9800F871(uint param, uint block) => sceImeDialogInitThroughEntry(param);
 
     /// <summary>NID_FBE52F6D(param, block): the variant Init of the video import dialog (libcdlg family 0x1C): a NULL
     /// param is SCE_COMMON_DIALOG_ERROR_NULL; the block's first word (a count) must be 1..255 and the next 32 bytes
@@ -114,6 +114,6 @@ public sealed partial class CommonDialog
             }
         }
 
-        return sceVideoImportDialogInit(param);
+        return sceVideoImportDialogInitThroughEntry(param);
     }
 }

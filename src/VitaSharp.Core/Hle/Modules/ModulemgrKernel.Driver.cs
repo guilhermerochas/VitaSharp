@@ -90,6 +90,6 @@ public sealed partial class ModulemgrKernel
             return SceError.INVALID_FLAGS;
         }
 
-        return ksceKernelStopUnloadModuleForPid(pid, modid, args, argp, flags, opt, status);
+        return ksceKernelStopUnloadModuleForPidThroughEntry(pid, modid, args, argp, flags, opt, status);
     }
 }

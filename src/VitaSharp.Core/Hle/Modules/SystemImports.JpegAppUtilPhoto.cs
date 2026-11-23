@@ -353,7 +353,7 @@ public sealed partial class AppUtil
             return ERR_PARAMETER;
         }
 
-        int result = _pspSaveRootMounts > 0 ? APPMGR_ERR_ALREADY_MOUNTED : Am.PspSaveDataRootMount(mountPoint);
+        int result = _pspSaveRootMounts > 0 ? APPMGR_ERR_ALREADY_MOUNTED : Am.PspSaveDataRootMountThroughEntry(mountPoint);
         if (result == 0)
         {
             _pspSaveRootMountPoint = GuestMemory.ReadCString(mountPoint, 15);

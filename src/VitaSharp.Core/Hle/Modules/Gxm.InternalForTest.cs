@@ -208,9 +208,9 @@ public sealed partial class Gxm
         GuestMemory.W32(handle + 0x10, kind);
         int result = kind switch
         {
-            TestMemoryVertexUsse => sceGxmMapVertexUsseMemory(baseAddress, rounded, new Ptr<uint>(handle + 8)),
-            TestMemoryFragmentUsse => sceGxmMapFragmentUsseMemory(baseAddress, rounded, new Ptr<uint>(handle + 8)),
-            _ => sceGxmMapMemory(baseAddress, rounded, attribs),
+            TestMemoryVertexUsse => sceGxmMapVertexUsseMemoryThroughEntry(baseAddress, rounded, new Ptr<uint>(handle + 8)),
+            TestMemoryFragmentUsse => sceGxmMapFragmentUsseMemoryThroughEntry(baseAddress, rounded, new Ptr<uint>(handle + 8)),
+            _ => sceGxmMapMemoryThroughEntry(baseAddress, rounded, attribs),
         };
         if (result != 0)
         {
@@ -235,17 +235,17 @@ public sealed partial class Gxm
         switch (GuestMemory.R32(handle + 0x10))
         {
             case TestMemoryVertexUsse:
-                sceGxmUnmapVertexUsseMemory(baseAddress);
+                sceGxmUnmapVertexUsseMemoryThroughEntry(baseAddress);
                 break;
             case TestMemoryFragmentUsse:
-                sceGxmUnmapFragmentUsseMemory(baseAddress);
+                sceGxmUnmapFragmentUsseMemoryThroughEntry(baseAddress);
                 break;
             default:
-                sceGxmUnmapMemory(baseAddress);
+                sceGxmUnmapMemoryThroughEntry(baseAddress);
                 break;
         }
 
-        Emu.Hle.Modules.OfType<SysMem>().First().sceKernelFreeMemBlock((int)GuestMemory.R32(handle));
+        Emu.Hle.Modules.OfType<SysMem>().First().sceKernelFreeMemBlockThroughEntry((int)GuestMemory.R32(handle));
         Emu.Memory.Free(handle);
         return 0;
     }

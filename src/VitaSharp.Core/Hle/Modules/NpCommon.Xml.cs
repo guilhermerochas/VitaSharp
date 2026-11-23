@@ -422,11 +422,11 @@ public sealed partial class NpManager
     internal Func<int, int, int, string, string, int>? XmlSink;
 
     // the JID helpers for np_utility's copies (NID_54C48F92 / NID_14437509)
-    internal int ParseJid(uint parts, uint jid, uint buffer, uint size, uint needed) => NpCommonJidParse(parts, jid, buffer, size, needed);
+    internal int ParseJid(uint parts, uint jid, uint buffer, uint size, uint needed) => NpCommonJidParseThroughEntry(parts, jid, buffer, size, needed);
 
-    internal int NpIdOfJid(uint npId, uint parts) => NpCommonNpIdFromJid(npId, parts);
+    internal int NpIdOfJid(uint npId, uint parts) => NpCommonNpIdFromJidThroughEntry(npId, parts);
 
-    internal int JidOfNpId(uint parts, uint npId, uint buffer, uint size, uint needed) => NpCommonJidFromNpId(parts, npId, buffer, size, needed);
+    internal int JidOfNpId(uint parts, uint npId, uint buffer, uint size, uint needed) => NpCommonJidFromNpIdThroughEntry(parts, npId, buffer, size, needed);
 
-    internal int JoinJid(uint parts, uint output, uint size, uint needed) => NpCommonJidJoin(parts, output, size, needed);
+    internal int JoinJid(uint parts, uint output, uint size, uint needed) => NpCommonJidJoinThroughEntry(parts, output, size, needed);
 }

@@ -231,7 +231,7 @@ public sealed partial class ProcessmgrKernel
 
     /// <summary>NID_4232517A(pid): the same without flags.</summary>
     [Hle(Nid = 0x4232517A, Library = "SceProcessmgrForKernel", Cost = HleCost.SchedulerWait)]
-    int NID_4232517A(int pid) => NID_1400A1F8(pid, 0, 0);
+    int NID_4232517A(int pid) => NID_1400A1F8ThroughEntry(pid, 0, 0);
 
     /// <summary>NID_EFBCF15B(pid): terminates a process (not from an interrupt handler).</summary>
     [Hle(Nid = 0xEFBCF15B, Library = "SceProcessmgrForKernel", Cost = HleCost.SchedulerWait)]
@@ -244,7 +244,7 @@ public sealed partial class ProcessmgrKernel
     /// <summary>NID_F388F05C(pid, mode): the exit of a process (mode 1: exit, 2: exit and spawn; not from an interrupt
     /// handler or an exception).</summary>
     [Hle(Nid = 0xF388F05C, Library = "SceProcessmgrForKernel", Cost = HleCost.SchedulerWait)]
-    int NID_F388F05C(int pid, int mode) => SystemServicesVsh.InInterrupt || NID_B615A7DA() != 0 ? IllegalContext : EndProcess(pid, 0);
+    int NID_F388F05C(int pid, int mode) => SystemServicesVsh.InInterrupt || NID_B615A7DAThroughEntry() != 0 ? IllegalContext : EndProcess(pid, 0);
 
     /// <summary>NID_148E23E3(pid, mode): the same.</summary>
     [Hle(Nid = 0x148E23E3, Library = "SceProcessmgrForKernel", Cost = HleCost.SchedulerWait)]
@@ -751,7 +751,7 @@ public sealed partial class ProcessmgrKernel
         for (uint i = 0; i < fits; i++)
         {
             GuestMemory.W32(buffer + i * 0x480, 0x480);
-            NID_CF9EC344(budgets[(int)i], level, buffer + i * 0x480);
+            NID_CF9EC344ThroughEntry(budgets[(int)i], level, buffer + i * 0x480);
         }
 
         GuestMemory.W32(count, fits);

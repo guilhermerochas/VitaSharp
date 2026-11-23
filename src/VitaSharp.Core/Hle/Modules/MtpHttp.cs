@@ -28,8 +28,8 @@ public sealed partial class MtpHttp : HleModule
     HleInstance<Http> H => _http ??= new HleInstance<Http>(Emu, h => h.ConfigOverride = NetConfig.Off);
     HleInstance<Ssl> S => _ssl ??= new HleInstance<Ssl>(Emu);
 
-    internal int StartClient() => sceMtpHttpStart();
-    internal int StopClient() => sceMtpHttpStop();
+    internal int StartClient() => sceMtpHttpStartThroughEntry();
+    internal int StopClient() => sceMtpHttpStopThroughEntry();
 
     /// <summary>(void): creates the module's MTP client (the IPC link to the shell's SceMtpService its sockets use).</summary>
     [Hle("sceMtpHttpStart", Nid = 0x8D80C874, Library = Lib)]

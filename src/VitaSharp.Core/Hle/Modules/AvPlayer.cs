@@ -430,7 +430,7 @@ public sealed partial class AvPlayer : HleModule
         GuestMemory.WriteCString(d + 12, "ENG", 4);
     }
 
-    [Hle] int sceAvPlayerGetVideoDataEx(uint handle, uint frameInfo) => sceAvPlayerGetVideoData(handle, frameInfo);
+    [Hle] int sceAvPlayerGetVideoDataEx(uint handle, uint frameInfo) => sceAvPlayerGetVideoDataThroughEntry(handle, frameInfo);
 
     /// <summary>Returns true with the frame due at the current playback time (or the last frame while none is due yet).</summary>
     [Hle]

@@ -41,7 +41,7 @@ public sealed partial class SysmemKernel
             uint cls = KernelAlloc(0x50, $"kernel:{name}");
             uint namePointer = cls + 0x30;
             GuestMemory.WriteCString(namePointer, name, 0x20);
-            ksceKernelCreateClass(cls, namePointer, root, itemSize, 0, 0);
+            ksceKernelCreateClassThroughEntry(cls, namePointer, root, itemSize, 0, 0);
             _sysmemClasses[name] = cls;
             return cls;
         }
@@ -70,9 +70,9 @@ public sealed partial class SysmemKernel
             return SceError.INVALID_ARGUMENT;
         }
 
-        ksceKernelGetUIDMemBlockClass();
-        ksceKernelGetUIDHeapClass();
-        ksceKernelGetUIDDLinkClass();
+        ksceKernelGetUIDMemBlockClassThroughEntry();
+        ksceKernelGetUIDHeapClassThroughEntry();
+        ksceKernelGetUIDDLinkClassThroughEntry();
         string wanted = GuestMemory.ReadCString(name, 31);
         uint root = RootClass();
         uint cls = root;
@@ -178,8 +178,8 @@ public sealed partial class SysmemKernel
             return SceError.INVALID_UID;
         }
 
-        uint objectClass = NID_368F1C36(guid);
-        if (cls != 0 && NID_7F7D5C4A(objectClass, cls) == 0)
+        uint objectClass = NID_368F1C36ThroughEntry(guid);
+        if (cls != 0 && NID_7F7D5C4AThroughEntry(objectClass, cls) == 0)
         {
             return unchecked((int)0x80024509);
         }
@@ -461,7 +461,7 @@ public sealed partial class SysmemKernel
             return SceError.INVALID_ARGUMENT;
         }
 
-        return ksceGUIDKernelCreateWithOpt(cls, name, 0, objOut);
+        return ksceGUIDKernelCreateWithOptThroughEntry(cls, name, 0, objOut);
     }
 
     /// <summary>NID_BA441FD0(uid, info): the memory block's basic information (0x30 bytes: +0 its size, else
@@ -563,7 +563,7 @@ public sealed partial class SysmemKernel
 
         if (pointer == 0)
         {
-            return ksceKernelAllocHeapMemory(heap, size);
+            return ksceKernelAllocHeapMemoryThroughEntry(heap, size);
         }
 
         uint oldSize;
@@ -577,14 +577,14 @@ public sealed partial class SysmemKernel
             oldSize = _heapAllocationSizes.GetValueOrDefault(pointer);
         }
 
-        uint moved = ksceKernelAllocHeapMemory(heap, size);
+        uint moved = ksceKernelAllocHeapMemoryThroughEntry(heap, size);
         if (moved == 0)
         {
             return 0;
         }
 
         GuestMemory.Copy(moved, pointer, Math.Min(oldSize, size));
-        ksceKernelFreeHeapMemory(heap, pointer);
+        ksceKernelFreeHeapMemoryThroughEntry(heap, pointer);
         return moved;
     }
 
@@ -610,13 +610,13 @@ public sealed partial class SysmemKernel
             return InvalidPuid;
         }
 
-        int guid = kscePUIDtoGUID(pid, puid);
+        int guid = kscePUIDtoGUIDThroughEntry(pid, puid);
         if (guid < 0)
         {
             return guid;
         }
 
-        int referred = cls != 0 ? ksceGUIDReferObjectWithClass(guid, cls, objOut) : ksceGUIDReferObject(guid, objOut);
+        int referred = cls != 0 ? ksceGUIDReferObjectWithClassThroughEntry(guid, cls, objOut) : ksceGUIDReferObjectThroughEntry(guid, objOut);
         return referred < 0 ? referred : guid;
     }
 
@@ -657,18 +657,18 @@ public sealed partial class SysmemKernel
             return InvalidPuid;
         }
 
-        int guid = kscePUIDtoGUID(pid, puid);
-        return guid < 0 ? guid : ksceGUIDReleaseObject(guid);
+        int guid = kscePUIDtoGUIDThroughEntry(pid, puid);
+        return guid < 0 ? guid : ksceGUIDReleaseObjectThroughEntry(guid);
     }
 
     /// <summary>PUIDOpenByName (0x201E970B)(pid, name): kscePUIDOpenByName.</summary>
     [Hle(Nid = 0x201E970B, Library = "SceSysmemForKernel")]
-    int NID_201E970B(int pid, uint name) => kscePUIDOpenByName(pid, name);
+    int NID_201E970B(int pid, uint name) => kscePUIDOpenByNameThroughEntry(pid, name);
 
     /// <summary>GUIDFindByName (0xBDE00106)(name): the GUID of the object with that name (no reference kept); NULL
     /// 0x80020005.</summary>
     [Hle(Nid = 0xBDE00106, Library = "SceSysmemForKernel")]
-    int NID_BDE00106(uint name) => NID_F49C0BE8(name);
+    int NID_BDE00106(uint name) => NID_F49C0BE8ThroughEntry(name);
 
     /// <summary>NID_4E6D8BC3(): 2 when the running thread's domain access word (its control block's MMU context
     /// +0x44, the DACR) has domain 2 in manager mode (0x30), what sceKernelOpenVMDomain sets and
@@ -706,7 +706,7 @@ public sealed partial class SysmemKernel
             return;
         }
 
-        context.Return(ksceKernelAllocMemBlock(name, type, size, option));
+        context.Return(ksceKernelAllocMemBlockThroughEntry(name, type, size, option));
     }
 
     /// <summary>Sets (NID_0B36F7F9) or clears (NID_6E82D5A0) attribute bits of a heap: only 0x10 may be given
@@ -745,6 +745,6 @@ public sealed partial class SysmemKernel
             return 0;
         }
 
-        return ksceKernelAlloc(size);
+        return ksceKernelAllocThroughEntry(size);
     }
 }

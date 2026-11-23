@@ -24,7 +24,7 @@ public sealed partial class Net
     static int Kerr(int r) => r < 0 && ((uint)r & 0xFFFFFF00) == 0x80410100 ? -(r & 0xFF) : r;
 
     [Hle] int sceNetSyscallSocket(string name, int domain, int type, int protocol) => Kerr(sceNetSocket(name, domain, type, protocol));
-    [Hle] int sceNetSyscallClose(int s) => Kerr(sceNetSocketClose(s));
+    [Hle] int sceNetSyscallClose(int s) => Kerr(sceNetSocketCloseThroughEntry(s));
 
     /// <summary>(const struct { int s; const void *msg; uint len; int flags; const SceNetSockaddr *to; uint tolen; } *p):
     /// the arguments come in one 0x18-byte block. A routing socket takes the message (rt_msghdr, its length first) like
@@ -40,7 +40,7 @@ public sealed partial class Net
             if (Sock(s) is { Domain: AF_ROUTE, Host: null })
                 return msg == 0 || len < 4 || GuestMemory.Read<ushort>(msg) > len ? -22 : (int)len;
         }
-        return Kerr(sceNetSendto(s, msg, len, (int)GuestMemory.R32(p + 12), GuestMemory.R32(p + 16), GuestMemory.R32(p + 20)));
+        return Kerr(sceNetSendtoThroughEntry(s, msg, len, (int)GuestMemory.R32(p + 12), GuestMemory.R32(p + 16), GuestMemory.R32(p + 20)));
     }
 
     /// <summary>(int s, uint cmd, void *argp): the interface ioctls the shell's network setup issues on lo0 (BSD
@@ -167,7 +167,7 @@ public sealed partial class Net
             return NetErr(EINVAL);
         }
 
-        int result = sceNetSyscallControl(-1, 0x21, entries, count << 3);
+        int result = sceNetSyscallControlThroughEntry(-1, 0x21, entries, count << 3);
         return result < 0 ? NetErr(unchecked((int)0x80410100) | -result) : result;
     }
 
@@ -207,11 +207,11 @@ public sealed partial class Net
     int sceNetInternalGetIfEntry(int ifIndex, uint entry, int count)
     {
         if (!_netInited) return NetErr(ENOTINIT);
-        if (ifIndex == -1) { int r = sceNetSyscallGetIfList(entry, count); return r < 0 ? NetErr(unchecked((int)0x80410100) | -r) : r; }
+        if (ifIndex == -1) { int r = sceNetSyscallGetIfListThroughEntry(entry, count); return r < 0 ? NetErr(unchecked((int)0x80410100) | -r) : r; }
         if (!(entry == 0 && count == 0) && (entry == 0 || count != 1)) return NetErr(EINVAL);
         if ((uint)ifIndex >= IfNames.Length) return 0; // libnet compares against "" (errno EINVAL): never found
         if (IfNames[ifIndex] != "lo0") return 0;
-        if (entry != 0) sceNetSyscallGetIfList(entry, 1);
+        if (entry != 0) sceNetSyscallGetIfListThroughEntry(entry, 1);
         return 1;
     }
 

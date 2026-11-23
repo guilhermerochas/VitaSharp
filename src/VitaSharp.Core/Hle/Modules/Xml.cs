@@ -319,7 +319,7 @@ public sealed unsafe partial class Xml : HleModule
 
     [Hle("_ZN3sce3Xml11InitializerD1Ev")]
     [Hle("_ZN3sce3Xml11InitializerD2Ev")]
-    uint InitializerDtor(uint me) { InitializerTerminate(me); return me; }
+    uint InitializerDtor(uint me) { InitializerTerminateThroughEntry(me); return me; }
 
     // ------------------------------------------------------------------ String, SimpleData, SerializeParameter, results
 
@@ -472,10 +472,10 @@ public sealed unsafe partial class Xml : HleModule
     }
 
     [Hle("_ZN3sce3Xml14VarAllocBuffer7copyStrEPKcj")]
-    int VabCopyStr(uint me, uint s, uint size) => VabCopy(me, s, size, true);
+    int VabCopyStr(uint me, uint s, uint size) => VabCopyThroughEntry(me, s, size, true);
 
     [Hle("_ZN3sce3Xml14VarAllocBuffer7copyStrERKNS0_6StringE")]
-    int VabCopyString(uint me, uint str) => VabCopy(me, R32(str), R32(str + 4), true);
+    int VabCopyString(uint me, uint str) => VabCopyThroughEntry(me, R32(str), R32(str + 4), true);
 
     // ------------------------------------------------------------------ Attr
 
@@ -512,14 +512,14 @@ public sealed unsafe partial class Xml : HleModule
 
     [Hle("_ZN3sce3Xml4AttrD1Ev")]
     [Hle("_ZN3sce3Xml4AttrD2Ev")]
-    uint AttrDtor(uint me) { AttrTerminate(me); return me; }
+    uint AttrDtor(uint me) { AttrTerminateThroughEntry(me); return me; }
 
     [Hle("_ZN3sce3Xml4AttrC1ERKS1_")]
     [Hle("_ZN3sce3Xml4AttrC2ERKS1_")]
     uint AttrCopyCtor(uint me, uint other)
     {
         W32(me, 0);
-        if (Impl<XAttr>(other) is { } src && AttrInitialize(me, src.Init) == 0) AttrCopyFrom(me, src);
+        if (Impl<XAttr>(other) is { } src && AttrInitializeThroughEntry(me, src.Init) == 0) AttrCopyFrom(me, src);
         return me;
     }
 
@@ -537,8 +537,8 @@ public sealed unsafe partial class Xml : HleModule
     {
         if (me == other) return me;
         var src = Impl<XAttr>(other);
-        if (src == null) { AttrTerminate(me); return me; }
-        if (R32(me) == 0 && AttrInitialize(me, src.Init) != 0) return me;
+        if (src == null) { AttrTerminateThroughEntry(me); return me; }
+        if (R32(me) == 0 && AttrInitializeThroughEntry(me, src.Init) != 0) return me;
         AttrCopyFrom(me, src);
         return me;
     }
@@ -606,14 +606,14 @@ public sealed unsafe partial class Xml : HleModule
 
     [Hle("_ZN3sce3Xml13AttributeListD1Ev")]
     [Hle("_ZN3sce3Xml13AttributeListD2Ev")]
-    uint AttrListDtor(uint me) { AttrListTerminate(me); return me; }
+    uint AttrListDtor(uint me) { AttrListTerminateThroughEntry(me); return me; }
 
     [Hle("_ZN3sce3Xml13AttributeListC1ERKS1_")]
     [Hle("_ZN3sce3Xml13AttributeListC2ERKS1_")]
     uint AttrListCopyCtor(uint me, uint other)
     {
         W32(me, 0);
-        if (Impl<XAttrList>(other) is { } src && AttrListInitialize(me, src.Init) == 0) Impl<XAttrList>(me)!.Items.AddRange(src.Items);
+        if (Impl<XAttrList>(other) is { } src && AttrListInitializeThroughEntry(me, src.Init) == 0) Impl<XAttrList>(me)!.Items.AddRange(src.Items);
         return me;
     }
 
@@ -639,11 +639,11 @@ public sealed unsafe partial class Xml : HleModule
     /// <summary>An Attr (by value) holding copies of the pair; empty when the list or the entry is missing.</summary>
     uint AttrFromPair(uint ret, XAttrList l, (uint Name, uint Value) e)
     {
-        AttrCtor(ret);
-        if (AttrInitialize(ret, l.Init) != 0) return ret;
+        AttrCtorThroughEntry(ret);
+        if (AttrInitializeThroughEntry(ret, l.Init) != 0) return ret;
         uint s = Scratch(16);
         SetCString(s, e.Name); SetCString(s + 8, e.Value);
-        AttrSetName(ret, s); AttrSetValue(ret, s + 8);
+        AttrSetNameThroughEntry(ret, s); AttrSetValueThroughEntry(ret, s + 8);
         t_sp = 0;
         return ret;
     }
@@ -655,7 +655,7 @@ public sealed unsafe partial class Xml : HleModule
     uint AttrListGetAt(uint ret, uint me, uint index)
     {
         var l = Impl<XAttrList>(me);
-        if (l == null || index >= l.Items.Count) { AttrCtor(ret); if (l != null) AttrInitialize(ret, l.Init); return ret; }
+        if (l == null || index >= l.Items.Count) { AttrCtorThroughEntry(ret); if (l != null) AttrInitializeThroughEntry(ret, l.Init); return ret; }
         return AttrFromPair(ret, l, l.Items[(int)index]);
     }
 
@@ -667,7 +667,7 @@ public sealed unsafe partial class Xml : HleModule
         if (l != null && n != null)
             foreach (var e in l.Items)
                 if (GuestMemory.ReadSpan(e.Name, (int)CStrLen(e.Name)).SequenceEqual(n)) return AttrFromPair(ret, l, e);
-        AttrCtor(ret);
+        AttrCtorThroughEntry(ret);
         return ret;
     }
 
@@ -697,14 +697,14 @@ public sealed unsafe partial class Xml : HleModule
 
     [Hle("_ZN3sce3Xml3Dom8NodeListD1Ev")]
     [Hle("_ZN3sce3Xml3Dom8NodeListD2Ev")]
-    uint NodeListDtor(uint me) { NodeListTerminate(me); return me; }
+    uint NodeListDtor(uint me) { NodeListTerminateThroughEntry(me); return me; }
 
     [Hle("_ZN3sce3Xml3Dom8NodeListC1ERKS2_")]
     [Hle("_ZN3sce3Xml3Dom8NodeListC2ERKS2_")]
     uint NodeListCopyCtor(uint me, uint other)
     {
         W32(me, 0);
-        if (Impl<XNodeList>(other) is { } src && NodeListInitialize(me, src.Init) == 0) Impl<XNodeList>(me)!.Items.AddRange(src.Items);
+        if (Impl<XNodeList>(other) is { } src && NodeListInitializeThroughEntry(me, src.Init) == 0) Impl<XNodeList>(me)!.Items.AddRange(src.Items);
         return me;
     }
 
@@ -758,7 +758,7 @@ public sealed unsafe partial class Xml : HleModule
     {
         if (Impl<XNodeList>(list) is { } l) { l.Items.Clear(); return l; }
         if (R32(list) != 0) W32(list, 0);
-        return NodeListInitialize(list, init) == 0 ? Impl<XNodeList>(list) : null;
+        return NodeListInitializeThroughEntry(list, init) == 0 ? Impl<XNodeList>(list) : null;
     }
 
     // ------------------------------------------------------------------ the node model
@@ -950,7 +950,7 @@ public sealed unsafe partial class Xml : HleModule
 
     [Hle("_ZN3sce3Xml3Dom8DocumentD1Ev")]
     [Hle("_ZN3sce3Xml3Dom8DocumentD2Ev")]
-    uint DocumentDtor(uint me) { DocumentTerminate(me); return me; }
+    uint DocumentDtor(uint me) { DocumentTerminateThroughEntry(me); return me; }
 
     [Hle("_ZN3sce3Xml3Dom8DocumentC1ERKS2_")]
     [Hle("_ZN3sce3Xml3Dom8DocumentC2ERKS2_")]

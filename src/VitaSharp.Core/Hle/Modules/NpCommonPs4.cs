@@ -52,7 +52,7 @@ public sealed partial class NpCommonPs4 : HleModule
     [Hle("NID_93C97239", Nid = 0x93C97239, Library = "SceNpCommonPs4")]
     int NpRelease(uint obj)
     {
-        int n = NpAtomicDecrement(obj + 4) - 1;
+        int n = NpAtomicDecrementThroughEntry(obj + 4) - 1;
         if (n == 0 && obj != 0) CallGuest(GuestMemory.R32(GuestMemory.R32(obj) + 4), obj);
         return n;
     }
@@ -67,7 +67,7 @@ public sealed partial class NpCommonPs4 : HleModule
     [Hle("NID_B599A560", Nid = 0xB599A560, Library = "SceNpCommonPs4")] int NpIsEmpty(uint o) => GuestMemory.R32(o + 0x10) == 0 ? 1 : 0;
     [Hle("NID_DEAEDDB3", Nid = 0xDEAEDDB3, Library = "SceNpCommonPs4")] int NpIsNotEmpty(uint o) => GuestMemory.R32(o + 0x10) != 0 ? 1 : 0;
     /// <summary>The same test on the member at +4.</summary>
-    [Hle("NID_DC7BB7F1", Nid = 0xDC7BB7F1, Library = "SceNpCommonPs4")] int NpMemberIsEmpty(uint o) => NpIsEmpty(o + 4);
+    [Hle("NID_DC7BB7F1", Nid = 0xDC7BB7F1, Library = "SceNpCommonPs4")] int NpMemberIsEmpty(uint o) => NpIsEmptyThroughEntry(o + 4);
     [Hle("NID_C78F5DF5", Nid = 0xC78F5DF5, Library = "SceNpCommonPs4")] int NpGetFlag8(uint o) => GuestMemory.Read<byte>(o + 8);
 
     /// <summary>(obj, value): sets +4 once (flags +0x20/+0x21); a second time 0x80559E03.</summary>
@@ -85,11 +85,11 @@ public sealed partial class NpCommonPs4 : HleModule
 
     /// <summary>(SceRtcTick *out): the current tick; zeros when it cannot be read.</summary>
     [Hle("NID_477BD360", Nid = 0x477BD360, Library = "SceNpCommonPs4")]
-    int NpGetCurrentTick(uint outp) => R.sceRtcGetCurrentTick(new Ptr<ulong>(outp)) is var r and < 0 ? Zero8(outp, r) : 0;
+    int NpGetCurrentTick(uint outp) => R.sceRtcGetCurrentTickThroughEntry(new Ptr<ulong>(outp)) is var r and < 0 ? Zero8(outp, r) : 0;
 
     /// <summary>(SceRtcTick *out): the current network tick; zeros when it cannot be read.</summary>
     [Hle("NID_5B904477", Nid = 0x5B904477, Library = "SceNpCommonPs4")]
-    int NpGetCurrentNetworkTick(uint outp) => R.sceRtcGetCurrentNetworkTick(new Ptr<ulong>(outp)) is var r and < 0 ? Zero8(outp, r) : 0;
+    int NpGetCurrentNetworkTick(uint outp) => R.sceRtcGetCurrentNetworkTickThroughEntry(new Ptr<ulong>(outp)) is var r and < 0 ? Zero8(outp, r) : 0;
 
     static int Zero8(uint p, int r) { GuestMemory.Write(p, 0ul); return r; }
 
@@ -104,24 +104,24 @@ public sealed partial class NpCommonPs4 : HleModule
     // ---- locks over SceKernelLwMutex
 
     [Hle("NID_F5840D6E", Nid = 0xF5840D6E, Library = "SceNpCommonPs4")]
-    int NpLock(uint m) => Tm.sceKernelLockLwMutex(m, 1, new Ptr<uint>(0)) is var r and < 0 ? r : 0;
+    int NpLock(uint m) => Tm.sceKernelLockLwMutexThroughEntry(m, 1, new Ptr<uint>(0)) is var r and < 0 ? r : 0;
 
     [Hle("NID_4A1C1C3C", Nid = 0x4A1C1C3C, Library = "SceNpCommonPs4")]
-    int NpUnlock(uint m) => Tm.sceKernelUnlockLwMutex(m, 1) is var r and < 0 ? r : 0;
+    int NpUnlock(uint m) => Tm.sceKernelUnlockLwMutexThroughEntry(m, 1) is var r and < 0 ? r : 0;
 
     [Hle("NID_29895EBB", Nid = 0x29895EBB, Library = "SceNpCommonPs4")]
-    int NpDeleteLock(uint m) => Tm.sceKernelDeleteLwMutex(m);
+    int NpDeleteLock(uint m) => Tm.sceKernelDeleteLwMutexThroughEntry(m);
 
     // ---- heaps (a pointer to a SceClib mspace) and allocators
 
     [Hle("NID_EB6E37A8", Nid = 0xEB6E37A8, Library = "SceNpCommonPs4")]
-    uint NpHeapAlloc(uint heap, uint size) => C.sceClibMspaceMalloc(GuestMemory.R32(heap), size);
+    uint NpHeapAlloc(uint heap, uint size) => C.sceClibMspaceMallocThroughEntry(GuestMemory.R32(heap), size);
 
     [Hle("NID_1514F370", Nid = 0x1514F370, Library = "SceNpCommonPs4")]
-    void NpHeapFree(uint heap, uint p) { if (p != 0) C.sceClibMspaceFree(GuestMemory.R32(heap), p); }
+    void NpHeapFree(uint heap, uint p) { if (p != 0) C.sceClibMspaceFreeThroughEntry(GuestMemory.R32(heap), p); }
 
     [Hle("NID_4117508A", Nid = 0x4117508A, Library = "SceNpCommonPs4")]
-    uint NpHeapRealloc(uint heap, uint p, uint size) => C.sceClibMspaceRealloc(GuestMemory.R32(heap), p, size);
+    uint NpHeapRealloc(uint heap, uint p, uint size) => C.sceClibMspaceReallocThroughEntry(GuestMemory.R32(heap), p, size);
 
     /// <summary>(heap, const char *s): a copy of the string in the heap (NULL when it is full).</summary>
     [Hle("NID_EBF8CB79", Nid = 0xEBF8CB79, Library = "SceNpCommonPs4")]
@@ -134,7 +134,7 @@ public sealed partial class NpCommonPs4 : HleModule
     uint HeapCopy(uint heap, uint s, uint max)
     {
         uint len = Strnlen(s, max);
-        uint p = NpHeapAlloc(heap, len + 1);
+        uint p = NpHeapAllocThroughEntry(heap, len + 1);
         if (p == 0) return 0;
         GuestMemory.Copy(p, s, len);
         GuestMemory.Write<byte>(p + len, 0);

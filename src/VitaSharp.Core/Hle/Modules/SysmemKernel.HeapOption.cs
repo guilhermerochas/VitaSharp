@@ -29,7 +29,7 @@ public sealed partial class SysmemKernel
             return 0;
         }
 
-        uint address = ksceKernelAllocHeapMemory(heap, size);
+        uint address = ksceKernelAllocHeapMemoryThroughEntry(heap, size);
         if (option != 0)
         {
             GuestMemory.W32(option + 4, 0);
@@ -54,14 +54,14 @@ public sealed partial class SysmemKernel
             GuestMemory.W32(vector, 0x14);
             GuestMemory.W32(vector + 4, 0);
             GuestMemory.W32(vector + 0x10, 0);
-            int result = ksceKernelVARangeToPAVector(range, vector);
+            int result = ksceKernelVARangeToPAVectorThroughEntry(range, vector);
             if (result < 0)
             {
                 return result;
             }
 
             uint count = GuestMemory.R32(vector + 0xC);
-            uint pairs = ksceKernelAllocHeapMemory(heap, (count * 8 + 0x1F) & ~0x1Fu);
+            uint pairs = ksceKernelAllocHeapMemoryThroughEntry(heap, (count * 8 + 0x1F) & ~0x1Fu);
             if (pairs == 0)
             {
                 return SSMGR_ERR_NO_MEMORY;
@@ -69,7 +69,7 @@ public sealed partial class SysmemKernel
 
             GuestMemory.W32(vector + 0x10, pairs);
             GuestMemory.W32(vector + 4, count);
-            result = ksceKernelVARangeToPAVector(range, vector);
+            result = ksceKernelVARangeToPAVectorThroughEntry(range, vector);
             if (result < 0)
             {
                 return result;
@@ -88,6 +88,6 @@ public sealed partial class SysmemKernel
     [Hle("NID_C38D0CEA", Nid = 0xC38D0CEA, Library = "SceSblSsMgrForDriver")]
     int SsMgrFreePaVector(int heap, uint vector)
     {
-        return ksceKernelFreeHeapMemory(heap, GuestMemory.R32(vector + 0x10)) == 0 ? 0 : SSMGR_ERR_INVALID_ARGUMENT;
+        return ksceKernelFreeHeapMemoryThroughEntry(heap, GuestMemory.R32(vector + 0x10)) == 0 ? 0 : SSMGR_ERR_INVALID_ARGUMENT;
     }
 }

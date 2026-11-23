@@ -203,7 +203,7 @@ public sealed partial class Libc
         var g = t == null ? _noThreadGlobals : _cxaGlobals.GetValue(t, _ => new CxaGlobals());
         if (g.Terminate == 0)
         {
-            g.Unexpected = HostStub("default unexpected handler", _ => TerminateNow());
+            g.Unexpected = HostStub("default unexpected handler", _ => TerminateNowThroughEntry());
             g.Terminate = HostStub("default terminate handler", _ => DefaultTerminate());
             g.Emergency = HeapAlloc(0x88, HeapAlign);
             if (g.Emergency != 0) GuestMemory.Write(g.Emergency, (byte)0);
@@ -225,7 +225,7 @@ public sealed partial class Libc
         uint h = g.OneShot != 0 ? g.OneShot : g.Terminate;
         g.OneShot = 0;
         if (h != 0) GuestThread.Current?.CallGuest(h);
-        abort();
+        abortThroughEntry();
     }
 
     /// <summary>std::unexpected: the unexpected handler, then terminate.</summary>
@@ -236,7 +236,7 @@ public sealed partial class Libc
         uint h = g.OneShot != 0 ? g.OneShot : g.Unexpected;
         g.OneShot = 0;
         if (h != 0) GuestThread.Current?.CallGuest(h);
-        TerminateNow();
+        TerminateNowThroughEntry();
     }
 
     /// <summary>The module's default terminate handler: "error: exception: : TYPE" for a caught C++ exception, then
@@ -247,7 +247,7 @@ public sealed partial class Libc
         uint h = g.Caught;
         if (h != 0 && IsNativeException(h + 0x28) && GuestMemory.R32(h + 8) is var ti && ti != 0)
             DebugMessage("exception: ", GuestMemory.ReadCString(GuestMemory.R32(ti + 4)), 0);
-        abort();
+        abortThroughEntry();
     }
 
     /// <summary>_Debug_message(message, file[, line]): "error: MESSAGE[: FILE[: line N]]" on stderr, then abort.</summary>
@@ -262,7 +262,7 @@ public sealed partial class Libc
         sb.Append('\n');
         Log.Error("[guest] " + sb.ToString().TrimEnd());
         WriteStream(StderrFile(), Encoding.Latin1.GetBytes(sb.ToString()));
-        abort();
+        abortThroughEntry();
     }
 
     [Hle] void _ZSt14_Debug_messagePKcS0_(uint msg, uint file) => DebugMessage(Str(msg), file != 0 ? Str(file) : null, 0);
@@ -291,9 +291,9 @@ public sealed partial class Libc
     void CallTerminate(uint ucb)
     {
         var g = Globals();
-        if (ucb != 0) BeginCatch(ucb);
+        if (ucb != 0) BeginCatchThroughEntry(ucb);
         g.OneShot = ucb != 0 && IsNativeException(ucb) ? GuestMemory.R32(ucb - 0x14) : g.Terminate;
-        TerminateNow();
+        TerminateNowThroughEntry();
     }
 
     [Hle] internal int _ZSt18uncaught_exceptionv() => Globals().Uncaught != 0 ? 1 : 0;
@@ -316,7 +316,7 @@ public sealed partial class Libc
             else
             {
                 g.OneShot = g.Terminate;
-                TerminateNow();
+                TerminateNowThroughEntry();
                 return 0;
             }
         }
@@ -332,7 +332,7 @@ public sealed partial class Libc
     {
         var g = Globals();
         if (g.Emergency != 0 && h == g.Emergency + 4) GuestMemory.Write(g.Emergency, (byte)0);
-        else free(h);
+        else freeThroughEntry(h);
     }
 
     [Hle] void __cxa_free_exception(uint obj) => FreeHeader(obj - 0x80);
@@ -365,13 +365,13 @@ public sealed partial class Libc
         : _dependentCleanupStub = HostStub("dependent exception cleanup", c =>
         {
             uint ucb = c.Gpr(1);
-            DecrementRefcount(GuestMemory.R32(ucb - 0x28));
+            DecrementRefcountThroughEntry(GuestMemory.R32(ucb - 0x28));
             FreeHeader(ucb - 0x28);
         });
 
     void ExceptionCleanup(uint ucb)
     {
-        if (GuestMemory.R32(ucb - 0xC) == 0) { DecrementRefcount(ucb + UcbSize); return; }
+        if (GuestMemory.R32(ucb - 0xC) == 0) { DecrementRefcountThroughEntry(ucb + UcbSize); return; }
         GuestMemory.W32(ucb - 4, GuestMemory.R32(ucb - 4) - 1);
         Globals().Uncaught--;
     }
@@ -397,7 +397,7 @@ public sealed partial class Libc
         GuestMemory.W32(h, 1);
         Globals().Uncaught++;
         if (RaiseException(ctx, ucb, Vrs.AtCall(ctx)) == URC_INSTALL_CONTEXT) return;
-        CallTerminate(ucb);
+        CallTerminateThroughEntry(ucb);
     }
 
     [Hle] void __cxa_throw(HleContext ctx, uint obj, uint ti, uint dest) => Throw(ctx, obj, ti, dest);
@@ -408,7 +408,7 @@ public sealed partial class Libc
         if (chain != 0 && GuestMemory.R32(chain + 0x28) == GuestMemory.R32(ucb) && GuestMemory.R32(chain + 0x2C) == GuestMemory.R32(ucb + 4)
             && GuestMemory.R32(chain + 8) == ucb)
             return chain;
-        uint h = AllocateException(0) - 0x80;
+        uint h = AllocateExceptionThroughEntry(0) - 0x80;
         GuestMemory.Copy(h + 0x28, ucb, 8);
         GuestMemory.W32(h + 0x24, 0);
         GuestMemory.W32(h + 0x18, 0);
@@ -443,7 +443,7 @@ public sealed partial class Libc
     {
         var g = Globals();
         uint h = g.Caught;
-        if (h == 0) { TerminateNow(); return; }
+        if (h == 0) { TerminateNowThroughEntry(); return; }
         uint count = GuestMemory.R32(h + 0x1C) - 1;
         GuestMemory.W32(h + 0x1C, count);
         if (count != 0) return;
@@ -460,13 +460,13 @@ public sealed partial class Libc
     {
         var g = Globals();
         uint h = g.Caught;
-        if (h == 0) { g.OneShot = g.Terminate; TerminateNow(); return; }
+        if (h == 0) { g.OneShot = g.Terminate; TerminateNowThroughEntry(); return; }
         GuestMemory.W32(h + 0x24, GuestMemory.R32(h + 0x24) + 1);
         uint ucb = h + 0x28;
         if (!IsNativeException(ucb)) ucb = GuestMemory.R32(h + 8);
         else g.Uncaught++;
         if (RaiseException(ctx, ucb, Vrs.AtCall(ctx)) == URC_INSTALL_CONTEXT) return;
-        CallTerminate(ucb);
+        CallTerminateThroughEntry(ucb);
     }
 
     /// <summary>__cxa_begin_cleanup(ucb) (ARM descriptors' cleanups): the exception joins the propagating chain.</summary>
@@ -494,7 +494,7 @@ public sealed partial class Libc
     {
         var g = Globals();
         uint h = g.Propagating;
-        if (h == 0) { TerminateNow(); return 0; }
+        if (h == 0) { TerminateNowThroughEntry(); return 0; }
         if (!IsNativeException(h + 0x28))
         {
             uint ucb = GuestMemory.R32(h + 8);
@@ -514,14 +514,14 @@ public sealed partial class Libc
         uint ucb = EndCleanup();
         var v = Vrs.AtCall(ctx);
         v.R[0] = ucb;
-        if (ResumeUnwind(ctx, ucb, v) != URC_INSTALL_CONTEXT) abort();
+        if (ResumeUnwind(ctx, ucb, v) != URC_INSTALL_CONTEXT) abortThroughEntry();
     }
 
     /// <summary>_Unwind_Resume(ucb), called at the end of a cleanup landing pad.</summary>
     [Hle]
     void _Unwind_Resume(HleContext ctx, uint ucb)
     {
-        if (ResumeUnwind(ctx, ucb, Vrs.AtCall(ctx)) != URC_INSTALL_CONTEXT) abort();
+        if (ResumeUnwind(ctx, ucb, Vrs.AtCall(ctx)) != URC_INSTALL_CONTEXT) abortThroughEntry();
     }
 
     /// <summary>__snc_personality_v0(state, ucb, context) called by a guest unwinder (context in the layout of
@@ -559,9 +559,9 @@ public sealed partial class Libc
     void __cxa_call_unexpected(uint ucb)
     {
         var g = Globals();
-        BeginCatch(ucb);
+        BeginCatchThroughEntry(ucb);
         g.OneShot = IsNativeException(ucb) ? GuestMemory.R32(ucb - 0x18) : g.Unexpected;
-        UnexpectedNow();
+        UnexpectedNowThroughEntry();
     }
 
     [Hle]
@@ -570,7 +570,7 @@ public sealed partial class Libc
         uint h = Globals().Caught;
         if (h == 0 || !IsNativeException(h + 0x28)) return 0;
         if (IsDependentException(h + 0x28)) h = GuestMemory.R32(h) - 0x80;
-        __cxa_increment_exception_refcount(h + 0x80);
+        __cxa_increment_exception_refcountThroughEntry(h + 0x80);
         return h + 0x80;
     }
 
@@ -585,11 +585,11 @@ public sealed partial class Libc
         {
             uint e = g.Emergency;
             if (e != 0 && GuestMemory.Read<byte>(e) == 0) { GuestMemory.Write(e, (byte)1); d = e + 4; }
-            else { g.OneShot = g.Terminate; TerminateNow(); return; }
+            else { g.OneShot = g.Terminate; TerminateNowThroughEntry(); return; }
         }
         GuestMemory.Fill(d, 0, 0x80);
         GuestMemory.W32(d, obj);
-        __cxa_increment_exception_refcount(obj);
+        __cxa_increment_exception_refcountThroughEntry(obj);
         GuestMemory.W32(d + 8, GuestMemory.R32(obj - 0x78));
         GuestMemory.W32(d + 0x10, g.Unexpected);
         GuestMemory.W32(d + 0x14, g.Terminate);
@@ -598,7 +598,7 @@ public sealed partial class Libc
         GuestMemory.W32(d + 0x28 + UcbCleanup, DependentCleanupStub);
         g.Uncaught++;
         if (RaiseException(ctx, d + 0x28, Vrs.AtCall(ctx)) == URC_INSTALL_CONTEXT) return;
-        CallTerminate(d + 0x28);
+        CallTerminateThroughEntry(d + 0x28);
     }
 
     // ------------------------------------------------------------------ std::string (the exceptions' message)
@@ -628,7 +628,7 @@ public sealed partial class Libc
 
     void StrFree(uint s)
     {
-        if (GuestMemory.R32(s + 0x18) >= 16) free(GuestMemory.R32(s + 4));
+        if (GuestMemory.R32(s + 0x18) >= 16) freeThroughEntry(GuestMemory.R32(s + 4));
         GuestMemory.W32(s + 0x18, 15);
         GuestMemory.W32(s + 0x14, 0);
         GuestMemory.Write(s + 4, (byte)0);
@@ -649,7 +649,7 @@ public sealed partial class Libc
         else if (res / 2 > newRes / 3 && res <= 0xFFFFFFFE - res / 2) newRes = res + res / 2;
         uint p = New(newRes + 1, false);
         if (oldLen != 0) GuestMemory.Copy(p, StrData(s), oldLen);
-        if (res >= 16) free(GuestMemory.R32(s + 4));
+        if (res >= 16) freeThroughEntry(GuestMemory.R32(s + 4));
         GuestMemory.W32(s + 4, p);
         GuestMemory.W32(s + 0x18, newRes);
         StrEos(s, oldLen);
@@ -670,7 +670,7 @@ public sealed partial class Libc
             {
                 uint p = GuestMemory.R32(s + 4);
                 if (keep != 0) GuestMemory.Copy(s + 4, p, keep);
-                free(p);
+                freeThroughEntry(p);
             }
             GuestMemory.W32(s + 0x18, 15);
             StrEos(s, keep);
@@ -758,7 +758,7 @@ public sealed partial class Libc
     uint DeletingDtor(uint obj, ExcClass c)
     {
         Destruct(obj, c);
-        free(obj);
+        freeThroughEntry(obj);
         return obj;
     }
 
@@ -767,7 +767,7 @@ public sealed partial class Libc
     /// <summary>_Doraise: throws a copy of the object (the most derived class's own _Doraise).</summary>
     void Doraise(HleContext ctx, uint obj, ExcClass c)
     {
-        uint copy = AllocateException(c.Size);
+        uint copy = AllocateExceptionThroughEntry(c.Size);
         Construct(copy, c, copyOf: obj);
         Throw(ctx, copy, TiOf(c), ExportStubOfSlot(c, 0));
     }
@@ -781,7 +781,7 @@ public sealed partial class Libc
     /// <summary>Throws a new exception of class <paramref name="c"/> with a C-string message.</summary>
     void ThrowNew(HleContext ctx, ExcClass c, uint cstr = 0, string? text = null)
     {
-        uint obj = AllocateException(c.Size);
+        uint obj = AllocateExceptionThroughEntry(c.Size);
         if (text != null) cstr = ConstString(text);
         Construct(obj, c, cstr: cstr);
         Throw(ctx, obj, TiOf(c), ExportStubOfSlot(c, 0));
@@ -925,7 +925,7 @@ public sealed partial class Libc
     [Hle("_ZN10__cxxabiv117__array_type_infoD0Ev")] [Hle("_ZN10__cxxabiv120__function_type_infoD0Ev")]
     [Hle("_ZN10__cxxabiv116__enum_type_infoD0Ev")] [Hle("_ZN10__cxxabiv117__pbase_type_infoD0Ev")]
     [Hle("_ZN10__cxxabiv119__pointer_type_infoD0Ev")] [Hle("_ZN10__cxxabiv129__pointer_to_member_type_infoD0Ev")]
-    uint TypeInfoDeletingDtor(uint o) { free(o); return o; }
+    uint TypeInfoDeletingDtor(uint o) { freeThroughEntry(o); return o; }
 
     // ------------------------------------------------------------------ the _X* throw helpers
 

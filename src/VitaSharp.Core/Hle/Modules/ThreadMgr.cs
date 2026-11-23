@@ -262,9 +262,9 @@ public sealed partial class ThreadMgr : HleModule
     }
 
     // firmware 0.89x NIDs of sceKernelWaitThreadEnd(CB)
-    [Hle(Cost = HleCost.SchedulerWait)] int sceKernelWaitThreadEnd_089(int thid, Ptr<int> stat, Ptr<uint> timeout) => sceKernelWaitThreadEnd(thid, stat, timeout);
+    [Hle(Cost = HleCost.SchedulerWait)] int sceKernelWaitThreadEnd_089(int thid, Ptr<int> stat, Ptr<uint> timeout) => sceKernelWaitThreadEndThroughEntry(thid, stat, timeout);
     [Hle(Cost = HleCost.SchedulerWait, CallbackWait = true)]
-    int sceKernelWaitThreadEndCB_089(int thid, Ptr<int> stat, Ptr<uint> timeout) => sceKernelWaitThreadEnd(thid, stat, timeout);
+    int sceKernelWaitThreadEndCB_089(int thid, Ptr<int> stat, Ptr<uint> timeout) => sceKernelWaitThreadEndThroughEntry(thid, stat, timeout);
 
     static long _getThreadInfoCalls;
 
@@ -377,7 +377,7 @@ public sealed partial class ThreadMgr : HleModule
     {
         if (info != 0 && opt != 0 && GuestMemory.R32(opt) > 0x40) return SceError.NO_MEMORY;
         if (info != 0 && opt != 0) GuestMemory.W32(info, GuestMemory.R32(opt));
-        return sceKernelGetThreadEventInfo(uid, info);
+        return sceKernelGetThreadEventInfoThroughEntry(uid, info);
     }
 
     /// <summary>
@@ -727,7 +727,7 @@ public sealed partial class ThreadMgr : HleModule
         }
     }
 
-    [Hle] int sceKernelGetLwMutexInfoById(int uid, uint info) => Obj<Mutex>(uid) is { } m ? sceKernelGetLwMutexInfo(m.WorkArea, info) : SceError.UNKNOWN_LW_MUTEX_ID;
+    [Hle] int sceKernelGetLwMutexInfoById(int uid, uint info) => Obj<Mutex>(uid) is { } m ? sceKernelGetLwMutexInfoThroughEntry(m.WorkArea, info) : SceError.UNKNOWN_LW_MUTEX_ID;
 
     // ------------------------------------------------------------------ condition variables
 
@@ -814,7 +814,7 @@ public sealed partial class ThreadMgr : HleModule
     }
 
     [Hle]
-    int sceKernelGetLwCondInfo(uint work, uint info) => LwCondOf(work) is { } c ? sceKernelGetLwCondInfoById(c.Uid, info) : SceError.UNKNOWN_LW_COND_ID;
+    int sceKernelGetLwCondInfo(uint work, uint info) => LwCondOf(work) is { } c ? sceKernelGetLwCondInfoByIdThroughEntry(c.Uid, info) : SceError.UNKNOWN_LW_COND_ID;
 
     CondVar? LwCondOf(uint work) => work == 0 ? null : Obj<CondVar>((int)GuestMemory.R32(work));
 
@@ -1435,7 +1435,7 @@ public sealed partial class ThreadMgr : HleModule
         var t = Timer(uid);
         if (t == null) return SceError.UNKNOWN_TIMER_ID;
         if (baseTime.IsNull) return SceError.ILLEGAL_ADDR;
-        baseTime.Value = sceKernelGetTimerBaseWide(uid);
+        baseTime.Value = sceKernelGetTimerBaseWideThroughEntry(uid);
         return 0;
     }
 
@@ -1546,11 +1546,11 @@ public sealed partial class ThreadMgr : HleModule
     /// (0x118F646E / 0x3E49D3F1; an unreadable block does nothing).</summary>
     [Hle]
     int _sceKernelSetEventWithNotifyCallback(int uid, uint setPattern, uint param) =>
-        param == 0 ? SceError.ILLEGAL_ADDR : sceKernelSetEventWithNotifyCallback(uid, setPattern, GuestMemory.Read<ulong>(param), (int)GuestMemory.R32(param + 8));
+        param == 0 ? SceError.ILLEGAL_ADDR : sceKernelSetEventWithNotifyCallbackThroughEntry(uid, setPattern, GuestMemory.Read<ulong>(param), (int)GuestMemory.R32(param + 8));
 
     [Hle]
     int _sceKernelPulseEventWithNotifyCallback(int uid, uint setPattern, uint param) =>
-        param == 0 ? SceError.ILLEGAL_ADDR : sceKernelPulseEventWithNotifyCallback(uid, setPattern, GuestMemory.Read<ulong>(param), (int)GuestMemory.R32(param + 8));
+        param == 0 ? SceError.ILLEGAL_ADDR : sceKernelPulseEventWithNotifyCallbackThroughEntry(uid, setPattern, GuestMemory.Read<ulong>(param), (int)GuestMemory.R32(param + 8));
 
     /// <summary>
     /// sceKernelRegisterCallbackToEvent(SceUID event, SceUID callback), as threadmgr 3.74 does it (the syscall

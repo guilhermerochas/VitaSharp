@@ -90,8 +90,8 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x949D45E4, Library = "SceLcdForDriver")]
     int ksceLcdResetLinesClear()
     {
-        ksceGpioPortClear(0, 0);
-        ksceGpioPortClear(1, 7);
+        ksceGpioPortClearThroughEntry(0, 0);
+        ksceGpioPortClearThroughEntry(1, 7);
         return 0;
     }
 
@@ -99,8 +99,8 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0xC0A2A6EA, Library = "SceLcdForDriver")]
     int ksceLcdResetLinesSet()
     {
-        ksceGpioPortSet(0, 0);
-        ksceGpioPortSet(1, 7);
+        ksceGpioPortSetThroughEntry(0, 0);
+        ksceGpioPortSetThroughEntry(1, 7);
         return 0;
     }
 
@@ -108,7 +108,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x6A08623C, Library = "SceLcdForDriver")]
     int ksceLcdIsResetLineLow()
     {
-        return ksceGpioPortRead(0, 0) == 0 ? 1 : 0;
+        return ksceGpioPortReadThroughEntry(0, 0) == 0 ? 1 : 0;
     }
 
     /// <summary>ksceLcdWaitReady(): waits for the start-up DDB read, which has ended (without a panel); 0.</summary>
@@ -339,7 +339,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x3E7C2CCA, Library = "SceLcdForDriver")]
     int ksceLcdPowerOn()
     {
-        ksceLcdResetLinesSet();
+        ksceLcdResetLinesSetThroughEntry();
         _lcdBacklightLevel = 0;
         _lcdBacklightReady = false;
         _lcdDisplayOn = false;

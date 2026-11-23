@@ -32,7 +32,7 @@ public sealed partial class AppUtil
             return ERR_ALREADY_MOUNTED;
         }
         Directory.CreateDirectory(Path.Combine(Emu.Options.FsRoot, "ux0", "book"));
-        int r = Am.sceAppMgrAppDataMount(BookAppDataId, mountPoint);
+        int r = Am.sceAppMgrAppDataMountThroughEntry(BookAppDataId, mountPoint);
         if (r < 0) return r;
         _bookMount = GuestMemory.ReadCString(mountPoint, 16);
         return 0;
@@ -46,7 +46,7 @@ public sealed partial class AppUtil
         uint cell = Emu.Memory.Alloc(16, "apputil book umount");
         GuestMemory.Fill(cell, 0, 16);
         GuestMemory.WriteCString(cell, _bookMount, 16);
-        int r = Am.sceAppMgrUmount(cell);
+        int r = Am.sceAppMgrUmountThroughEntry(cell);
         Emu.Memory.Free(cell);
         if (r < 0) return ERR_NOT_MOUNTED;
         _bookMount = null;
@@ -111,7 +111,7 @@ public sealed partial class AppUtil
         uint cell = Emu.Memory.Alloc(16, "apputil ext video mount");
         try
         {
-            int r = Am.sceAppMgrAppDataMount(VideoAppDataId, cell);
+            int r = Am.sceAppMgrAppDataMountThroughEntry(VideoAppDataId, cell);
             if (r < 0) return r;
             _videoMount = GuestMemory.ReadCString(cell, 16);
             return 0;
@@ -128,7 +128,7 @@ public sealed partial class AppUtil
         {
             GuestMemory.Fill(cell, 0, 16);
             GuestMemory.WriteCString(cell, _videoMount, 16);
-            if (Am.sceAppMgrUmount(cell) < 0) return ERR_NOT_MOUNTED;
+            if (Am.sceAppMgrUmountThroughEntry(cell) < 0) return ERR_NOT_MOUNTED;
             _videoMount = null;
             return 0;
         }

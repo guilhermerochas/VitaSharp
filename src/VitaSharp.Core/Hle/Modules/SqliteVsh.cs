@@ -81,11 +81,11 @@ public sealed partial class SqliteVsh : HleModule
     {
         if (_heap != 0) return _heap;
         uint block = Emu.Memory.Alloc(0x200000, "SceSqliteVsh heap");
-        return _heap = C.sceClibMspaceCreate(block, 0x200000);
+        return _heap = C.sceClibMspaceCreateThroughEntry(block, 0x200000);
     }
 
-    uint Malloc(uint size) => C.sceClibMspaceMalloc(Heap(), Math.Max(size, 1));
-    void Free(uint p) { if (p != 0) C.sceClibMspaceFree(Heap(), p); }
+    uint Malloc(uint size) => C.sceClibMspaceMallocThroughEntry(Heap(), Math.Max(size, 1));
+    void Free(uint p) { if (p != 0) C.sceClibMspaceFreeThroughEntry(Heap(), p); }
 
     uint HandleOf(object o)
     {
@@ -145,13 +145,13 @@ public sealed partial class SqliteVsh : HleModule
     [Hle("NID_490BA4E6", Nid = 0x490BA4E6, Library = Lib)] uint SqlMalloc(int n) => n is <= 0 or > 0x7FFFFEFF ? 0 : Malloc((uint)n);
     /// <summary>sqlite3_realloc.</summary>
     [Hle("NID_9F48395D", Nid = 0x9F48395D, Library = Lib)]
-    uint SqlRealloc(uint p, int n) => p == 0 ? SqlMalloc(n) : n <= 0 ? FreeRet(p) : C.sceClibMspaceRealloc(Heap(), p, (uint)n);
+    uint SqlRealloc(uint p, int n) => p == 0 ? SqlMallocThroughEntry(n) : n <= 0 ? FreeRet(p) : C.sceClibMspaceReallocThroughEntry(Heap(), p, (uint)n);
     uint FreeRet(uint p) { Free(p); return 0; }
     /// <summary>sqlite3_free.</summary>
     [Hle("NID_F67857AC", Nid = 0xF67857AC, Library = Lib)] void SqlFree(uint p) => Free(p);
     /// <summary>sqlite3_sleep(ms): the milliseconds slept.</summary>
     [Hle("NID_7236786C", Nid = 0x7236786C, Library = Lib)]
-    int Sleep(int ms) { Emu.Hle.Modules.OfType<ThreadMgr>().First().sceKernelDelayThread((uint)Math.Max(ms, 0) * 1000); return ms; }
+    int Sleep(int ms) { Emu.Hle.Modules.OfType<ThreadMgr>().First().sceKernelDelayThreadThroughEntry((uint)Math.Max(ms, 0) * 1000); return ms; }
     /// <summary>sqlite3_randomness(n, buf).</summary>
     [Hle("NID_418EA87C", Nid = 0x418EA87C, Library = Lib)]
     void Randomness(int n, uint buf) { if (n > 0 && buf != 0) RandomNumberGenerator.Fill(GuestMemory.Span(buf, n)); }
@@ -170,7 +170,7 @@ public sealed partial class SqliteVsh : HleModule
     // ---- connections
 
     /// <summary>sqlite3_open(path, sqlite3 **db).</summary>
-    [Hle("NID_67E5A83C", Nid = 0x67E5A83C, Library = Lib)] int Open(uint path, uint ppDb) => OpenV2(path, ppDb, 6, 0);
+    [Hle("NID_67E5A83C", Nid = 0x67E5A83C, Library = Lib)] int Open(uint path, uint ppDb) => OpenV2ThroughEntry(path, ppDb, 6, 0);
 
     /// <summary>sqlite3_open_v2(path, sqlite3 **db, flags, vfs): the handle is set even on failure (for errmsg).</summary>
     [Hle("NID_3E5BEB88", Nid = 0x3E5BEB88, Library = Lib)]
@@ -512,7 +512,7 @@ public sealed partial class SqliteVsh : HleModule
     uint ValueBlob(uint p)
     {
         if (V(p) is not { } v || v.Type == 5) return 0;
-        if (v.Type is not (3 or 4)) return ValueText(p);
+        if (v.Type is not (3 or 4)) return ValueTextThroughEntry(p);
         if (v.Blob == 0 && v.Bytes!.Length > 0) v.Blob = GuestBytes(v.Bytes, false);
         return v.Blob;
     }

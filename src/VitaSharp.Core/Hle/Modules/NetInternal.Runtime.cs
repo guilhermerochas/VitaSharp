@@ -120,7 +120,7 @@ public sealed partial class Net
             return NetErr(EINVAL);
         }
 
-        return Threads.sceKernelDelayThread((uint)usec);
+        return Threads.sceKernelDelayThreadThroughEntry((uint)usec);
     }
 
     /// <summary>
@@ -148,7 +148,7 @@ public sealed partial class Net
             return NetErr(uid);
         }
 
-        int started = Threads.sceKernelStartThread(uid, 0x14, attr);
+        int started = Threads.sceKernelStartThreadThroughEntry(uid, 0x14, attr);
         if (started >= 0)
         {
             GuestMemory.W32(thread, (uint)uid);
@@ -211,9 +211,9 @@ public sealed partial class Net
         uint status = Emu.Memory.Alloc(4, "libnet thread status", MemoryRegion.User, 4);
         try
         {
-            int result = Threads.sceKernelWaitThreadEnd(thread, new Ptr<int>(status), new Ptr<uint>(0));
+            int result = Threads.sceKernelWaitThreadEndThroughEntry(thread, new Ptr<int>(status), new Ptr<uint>(0));
             int exitStatus = result < 0 ? result : (int)GuestMemory.R32(status);
-            Threads.sceKernelDeleteThread(thread);
+            Threads.sceKernelDeleteThreadThroughEntry(thread);
             return NetResult(exitStatus);
         }
         finally
@@ -238,7 +238,7 @@ public sealed partial class Net
             return;
         }
 
-        GuestMemory.Write(time, Threads.sceKernelGetProcessTimeWide());
+        GuestMemory.Write(time, Threads.sceKernelGetProcessTimeWideThroughEntry());
     }
 
     // ------------------------------------------------------------------ sync objects
@@ -279,7 +279,7 @@ public sealed partial class Net
     [Hle("NID_C2FF615E", Nid = 0xC2FF615E, Library = "SceNetInternal", Cost = HleCost.SchedulerWait)]
     uint NetInternalSyncWait(uint sync, uint timeout)
     {
-        int result = Threads.sceKernelWaitEventFlag((int)GuestMemory.R32(sync), 1, 5, new Ptr<uint>(0), new Ptr<uint>(timeout));
+        int result = Threads.sceKernelWaitEventFlagThroughEntry((int)GuestMemory.R32(sync), 1, 5, new Ptr<uint>(0), new Ptr<uint>(timeout));
         if (result < 0)
         {
             if (result == unchecked((int)0x80028005))
@@ -305,7 +305,7 @@ public sealed partial class Net
         }
 
         GuestMemory.W32(sync + 4, GuestMemory.R32(sync + 4) | bits);
-        return NetResult(Threads.sceKernelSetEventFlag((int)GuestMemory.R32(sync), 1));
+        return NetResult(Threads.sceKernelSetEventFlagThroughEntry((int)GuestMemory.R32(sync), 1));
     }
 
     // ------------------------------------------------------------------ random numbers, names, print
@@ -396,7 +396,7 @@ public sealed partial class Net
     {
         if (!_randomSeeded)
         {
-            SeedRandom((uint)Threads.sceKernelGetProcessTimeWide());
+            SeedRandom((uint)Threads.sceKernelGetProcessTimeWideThroughEntry());
         }
 
         if (_randomIndex >= _randomState.Length)
@@ -642,7 +642,7 @@ public sealed partial class Net
             return NetErr(EINVAL);
         }
 
-        return Threads.sceKernelDelayThread((uint)timeoutUs);
+        return Threads.sceKernelDelayThreadThroughEntry((uint)timeoutUs);
     }
 
     LibnetEventHandler? FindEventHandler(int thread, int ifIndex)

@@ -119,7 +119,7 @@ public sealed partial class IoFileMgr
 
         uint mount = HostMount(path[..(colon + 1)]);
         uint vpp = Emu.Memory.Alloc(0x10, "vfs host vnode", MemoryRegion.Kernel, 16);
-        int result = vfsGetNewVnode(mount, HostVops(), 0, vpp);
+        int result = vfsGetNewVnodeThroughEntry(mount, HostVops(), 0, vpp);
         uint vnode = GuestMemory.R32(vpp);
         Emu.Memory.Free(vpp);
         // the parent (+0x50) is not held: a folder's vnode is never recycled
@@ -234,7 +234,7 @@ public sealed partial class IoFileMgr
         GuestMemory.W32(table + 0x28, HostOp("rmdir", args => sceIoRmdir(ChildPath(HostVnodePath(GuestMemory.R32(args)), ElementOf(GuestMemory.R32(args + 8))))));
         GuestMemory.W32(table + 0x2C, HostOp("dopen", HostDopen));
         GuestMemory.W32(table + 0x30, HostOp("dclose", args => HostCloseDescriptor(GuestMemory.R32(args + 4), true)));
-        GuestMemory.W32(table + 0x34, HostOp("dread", args => HostDescriptor(GuestMemory.R32(args + 4)) is int fd ? sceIoDread(fd, GuestMemory.R32(args + 8)) : VFS_ERR_BADF));
+        GuestMemory.W32(table + 0x34, HostOp("dread", args => HostDescriptor(GuestMemory.R32(args + 4)) is int fd ? sceIoDreadThroughEntry(fd, GuestMemory.R32(args + 8)) : VFS_ERR_BADF));
         GuestMemory.W32(table + 0x38, HostOp("getstat", args => sceIoGetstat(HostVnodePath(GuestMemory.R32(args)), GuestMemory.R32(args + 8))));
         GuestMemory.W32(table + 0x50, HostOp("inactive", _ => 0));
         GuestMemory.W32(table + 0x60, HostOp("fgetstat", args => sceIoGetstat(HostVnodePath(GuestMemory.R32(args)), GuestMemory.R32(args + 8))));
@@ -284,7 +284,7 @@ public sealed partial class IoFileMgr
             return fd;
         }
 
-        sceIoClose(fd);
+        sceIoCloseThroughEntry(fd);
         uint vnode = HostVnode(path);
         if (vnode == 0)
         {
@@ -380,7 +380,7 @@ public sealed partial class IoFileMgr
             }
         }
 
-        return directory ? sceIoDclose(fd) : sceIoClose(fd);
+        return directory ? sceIoDcloseThroughEntry(fd) : sceIoCloseThroughEntry(fd);
     }
 
     /// <summary>read / write { vp, file, buffer, size }: at the file object's position (+8), which moves by the count;
@@ -397,7 +397,7 @@ public sealed partial class IoFileMgr
         long position = GuestMemory.Read<long>(file + 8);
         uint buffer = GuestMemory.R32(args + 8);
         uint size = GuestMemory.R32(args + 0xC);
-        int count = read ? sceIoPread(fd, buffer, size, position) : sceIoPwrite(fd, buffer, size, position);
+        int count = read ? sceIoPreadThroughEntry(fd, buffer, size, position) : sceIoPwriteThroughEntry(fd, buffer, size, position);
         if (count > 0)
         {
             position += count;

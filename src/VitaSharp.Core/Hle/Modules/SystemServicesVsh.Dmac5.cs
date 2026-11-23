@@ -104,7 +104,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0xAC57F4F0, Library = "SceSblSsMgrForDriver")]
     int ksceSblRngGenuineRandomNumber(uint dest)
     {
-        return ksceSblDmac5Rnd(dest, Dmac5MaxRandom, 1);
+        return ksceSblDmac5RndThroughEntry(dest, Dmac5MaxRandom, 1);
     }
 
     /// <summary>ksceSblRngPseudoRandomNumber (0x4F9BFBE5)(void *result, SceSize size): random bytes of the module's

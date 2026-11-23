@@ -33,7 +33,7 @@ public sealed unsafe partial class MonoBridge
 
     PThread Self()
     {
-        int uid = Tm.sceKernelGetThreadId();
+        int uid = Tm.sceKernelGetThreadIdThroughEntry();
         lock (_pthreads)
         {
             if (!_pthreads.TryGetValue(uid, out var p)) _pthreads[uid] = p = new PThread();
@@ -130,7 +130,7 @@ public sealed unsafe partial class MonoBridge
         if (m == 0) return EINVAL;
         uint b = R32(m);
         if (b == 0 || !GuestMemory.IsMapped(b) || R32(b) != MagicMutex) return 0;
-        if (Tm.sceKernelDeleteLwMutex(b + 8) < 0) return EBUSY;
+        if (Tm.sceKernelDeleteLwMutexThroughEntry(b + 8) < 0) return EBUSY;
         W32(b, 0);
         Free(b);
         W32(m, 0);
@@ -142,7 +142,7 @@ public sealed unsafe partial class MonoBridge
     {
         if (m == 0) return EINVAL;
         uint b = MutexOf(m);
-        int r = Tm.sceKernelLockLwMutex(b + 8, 1, new Ptr<uint>(0));
+        int r = Tm.sceKernelLockLwMutexThroughEntry(b + 8, 1, new Ptr<uint>(0));
         return r == 0 ? 0 : r == unchecked((int)0x80028184) ? EDEADLK : EINVAL;
     }
 
@@ -151,7 +151,7 @@ public sealed unsafe partial class MonoBridge
     {
         if (m == 0) return EINVAL;
         uint b = MutexOf(m);
-        return Tm.sceKernelTryLockLwMutex(b + 8, 1) == 0 ? 0 : EBUSY;
+        return Tm.sceKernelTryLockLwMutexThroughEntry(b + 8, 1) == 0 ? 0 : EBUSY;
     }
 
     [Hle("pthread_mutex_unlock", Library = Lib)]
@@ -159,7 +159,7 @@ public sealed unsafe partial class MonoBridge
     {
         if (m == 0) return EINVAL;
         uint b = MutexOf(m);
-        return Tm.sceKernelUnlockLwMutex(b + 8, 1) == 0 ? 0 : 1; // EPERM: not the owner
+        return Tm.sceKernelUnlockLwMutexThroughEntry(b + 8, 1) == 0 ? 0 : 1; // EPERM: not the owner
     }
 
     // ------------------------------------------------------------------ condition variables
@@ -195,7 +195,7 @@ public sealed unsafe partial class MonoBridge
         if (c == 0) return EINVAL;
         uint b = R32(c);
         if (b == 0 || !GuestMemory.IsMapped(b) || R32(b) != MagicCond) return 0;
-        if (R32(b + 4) != 0 && Tm.sceKernelDeleteLwCond(b + 8) < 0) return EBUSY;
+        if (R32(b + 4) != 0 && Tm.sceKernelDeleteLwCondThroughEntry(b + 8) < 0) return EBUSY;
         W32(b, 0);
         Free(b);
         W32(c, 0);
@@ -207,7 +207,7 @@ public sealed unsafe partial class MonoBridge
     {
         if (c == 0) return EINVAL;
         uint b = CondBlock(c);
-        if (R32(b + 4) != 0) Tm.sceKernelSignalLwCond(b + 8);
+        if (R32(b + 4) != 0) Tm.sceKernelSignalLwCondThroughEntry(b + 8);
         return 0;
     }
 
@@ -216,7 +216,7 @@ public sealed unsafe partial class MonoBridge
     {
         if (c == 0) return EINVAL;
         uint b = CondBlock(c);
-        if (R32(b + 4) != 0) Tm.sceKernelSignalLwCondAll(b + 8);
+        if (R32(b + 4) != 0) Tm.sceKernelSignalLwCondAllThroughEntry(b + 8);
         return 0;
     }
 
@@ -225,7 +225,7 @@ public sealed unsafe partial class MonoBridge
     {
         if (c == 0 || m == 0) return EINVAL;
         uint b = CondFor(c, MutexOf(m));
-        return Tm.sceKernelWaitLwCond(b + 8, new Ptr<uint>(0)) == 0 ? 0 : EINVAL;
+        return Tm.sceKernelWaitLwCondThroughEntry(b + 8, new Ptr<uint>(0)) == 0 ? 0 : EINVAL;
     }
 
     /// <summary>pthread_cond_timedwait(cond, mutex, const timespec *abstime): the absolute time is the wall clock.</summary>
@@ -239,7 +239,7 @@ public sealed unsafe partial class MonoBridge
         long rel = Math.Clamp(deadlineUs - nowUs, 0, uint.MaxValue);
         uint cell = Malloc0(4);
         W32(cell, (uint)rel);
-        int r = Tm.sceKernelWaitLwCond(b + 8, new Ptr<uint>(cell));
+        int r = Tm.sceKernelWaitLwCondThroughEntry(b + 8, new Ptr<uint>(cell));
         Free(cell);
         return r == 0 ? 0 : r == KernelTimeout ? ETIMEDOUT : EINVAL;
     }
@@ -248,7 +248,7 @@ public sealed unsafe partial class MonoBridge
 
     uint ThreadEntry => HostStub("pthread.entry", c =>
     {
-        int uid = Tm.sceKernelGetThreadId();
+        int uid = Tm.sceKernelGetThreadIdThroughEntry();
         PThread p;
         lock (_pthreads) p = _pthreads[uid];
         try { p.Result = c.Thread.CallGuest(p.Start, p.Arg); }
@@ -293,10 +293,10 @@ public sealed unsafe partial class MonoBridge
         int uid = Tm.sceKernelCreateThread("SceMonoBridgePthread", ThreadEntry, 0x10000100, (int)stack, 0, 0, 0);
         if (uid < 0) return EAGAIN;
         lock (_pthreads) _pthreads[uid] = new PThread { Start = start, Arg = arg, Detached = detached };
-        if (Tm.sceKernelStartThread(uid, 0, 0) < 0)
+        if (Tm.sceKernelStartThreadThroughEntry(uid, 0, 0) < 0)
         {
             lock (_pthreads) _pthreads.Remove(uid);
-            Tm.sceKernelDeleteThread(uid);
+            Tm.sceKernelDeleteThreadThroughEntry(uid);
             return EAGAIN;
         }
         W32(thread, (uint)uid);
@@ -307,16 +307,16 @@ public sealed unsafe partial class MonoBridge
     [Hle("pthread_join", Library = Lib)]
     int PthreadJoin(int thread, uint retval)
     {
-        if (thread == Tm.sceKernelGetThreadId()) return EDEADLK;
+        if (thread == Tm.sceKernelGetThreadIdThroughEntry()) return EDEADLK;
         PThread? p;
         lock (_pthreads) _pthreads.TryGetValue(thread, out p);
         if (p == null) return ESRCH;
         if (p.Detached) return EINVAL;
-        int r = Tm.sceKernelWaitThreadEnd(thread, new Ptr<int>(0), new Ptr<uint>(0));
+        int r = Tm.sceKernelWaitThreadEndThroughEntry(thread, new Ptr<int>(0), new Ptr<uint>(0));
         if (r < 0 && !p.Exited) return ESRCH;
         if (retval != 0) W32(retval, p.Result);
         lock (_pthreads) _pthreads.Remove(thread);
-        Tm.sceKernelDeleteThread(thread);
+        Tm.sceKernelDeleteThreadThroughEntry(thread);
         return 0;
     }
 
@@ -341,7 +341,7 @@ public sealed unsafe partial class MonoBridge
         throw new GuestThreadExitException(0, false);
     }
 
-    [Hle("pthread_self", Library = Lib)] int PthreadSelf() { Self(); return Tm.sceKernelGetThreadId(); }
+    [Hle("pthread_self", Library = Lib)] int PthreadSelf() { Self(); return Tm.sceKernelGetThreadIdThroughEntry(); }
     [Hle("pthread_equal", Library = Lib)] bool PthreadEqual(uint a, uint b) => a == b;
 
     /// <summary>pthread_cleanup_push_(routine, arg) / pthread_cleanup_pop_(execute): the calling thread's handler stack.</summary>
