@@ -297,7 +297,9 @@ sealed class SessionCaptureControl : IDisposable
             var pb = new Playback(dir, input, fromUs);
             var root = Path.Combine(dir, "reruns");
             var control = new SessionCaptureControl(emu, ro, renderer, options.Where(o => !o.StartsWith("--capture-preroll")).ToArray(), null, null,
-                new SessionCaptureOptions { Root = root, SetPresentTap = null!, StartState = false, GpuDump = options.Contains("--rerun-gpu-dump"), Zip = false, Files = false, StopHint = "re-run" });
+                new SessionCaptureOptions { Root = root, SetPresentTap = null!, StartState = false, GpuDump = options.Contains("--rerun-gpu-dump"), Zip = false, Files = false, KeepCallTrace = true, StopHint = "re-run" });
+            // every HLE call from the state on: the trace starts while the load still holds the game
+            SaveStates.Restored += _ => HleCallTrace.Begin();
             SaveStates.Loaded += _ =>
             {
                 long firstFlip = SaveStates.FramesPresentedAtLastLoad;

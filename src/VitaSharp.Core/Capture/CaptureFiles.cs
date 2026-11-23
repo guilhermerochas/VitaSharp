@@ -145,7 +145,7 @@ public sealed class CaptureFileRecorder : IFileHook
     /// <paramref name="hashOnly"/> one keeps no bytes.</summary>
     internal void RecordRead(string title, string guestPath, long fileLength, long offset, ReadOnlySpan<byte> data, bool hashOnly = false)
     {
-        ChunkHash hash = ChunkHash.Of(data);
+        var hash = ChunkHash.Of(data);
         string path = Canonical(guestPath);
         long ns = CaptureClock.NowNs;
         long guestUs = GuestClock.Microseconds;
@@ -220,7 +220,7 @@ public sealed class CaptureFileRecorder : IFileHook
             return;
         }
 
-        ChunkHash hash = ChunkHash.Of(elf);
+        var hash = ChunkHash.Of(elf);
         string path = Canonical(guestPath);
         lock (_lock)
         {
@@ -346,41 +346,41 @@ public sealed class CaptureFileRecorder : IFileHook
                     break;
                 case "file":
                 case HashOnlyPrefix + "file":
-                    {
-                        files++;
-                        long size = long.TryParse(f[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsed) ? parsed : 0;
-                        (int fileReads, long fileBytes, long _) = perFile.GetValueOrDefault(name);
-                        perFile[name] = (fileReads, fileBytes, size);
-                        break;
-                    }
+                {
+                    files++;
+                    long size = long.TryParse(f[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsed) ? parsed : 0;
+                    (int fileReads, long fileBytes, long _) = perFile.GetValueOrDefault(name);
+                    perFile[name] = (fileReads, fileBytes, size);
+                    break;
+                }
                 case "module":
                     modules++;
                     break;
                 case "read":
                 case HashOnlyPrefix + "read":
+                {
+                    if (!int.TryParse(f[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out int length))
                     {
-                        if (!int.TryParse(f[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out int length))
-                        {
-                            break;
-                        }
-
-                        reads++;
-                        readBytes += length;
-                        distinct.Add(f[5]);
-                        if (f[0] != "read")
-                        {
-                            saveDataReads++;
-                        }
-                        else if (f[6] == "-")
-                        {
-                            notKept++;
-                            notKeptBytes += length;
-                        }
-
-                        (int fileReads, long fileBytes, long size) = perFile.GetValueOrDefault(name);
-                        perFile[name] = (fileReads + 1, fileBytes + length, size);
                         break;
                     }
+
+                    reads++;
+                    readBytes += length;
+                    distinct.Add(f[5]);
+                    if (f[0] != "read")
+                    {
+                        saveDataReads++;
+                    }
+                    else if (f[6] == "-")
+                    {
+                        notKept++;
+                        notKeptBytes += length;
+                    }
+
+                    (int fileReads, long fileBytes, long size) = perFile.GetValueOrDefault(name);
+                    perFile[name] = (fileReads + 1, fileBytes + length, size);
+                    break;
+                }
             }
         }
 
@@ -623,51 +623,51 @@ public sealed class CapturedFiles : IFileHook
                 Directory.CreateDirectory(host);
                 return true;
             case "file":
+            {
+                if (!long.TryParse(f[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out long size) || size < 0)
                 {
-                    if (!long.TryParse(f[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out long size) || size < 0)
-                    {
-                        return false;
-                    }
-
-                    Files++;
-                    CreateSized(host, size);
-                    return true;
+                    return false;
                 }
+
+                Files++;
+                CreateSized(host, size);
+                return true;
+            }
             case "read":
+            {
+                if (!long.TryParse(f[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out long offset) || offset < 0
+                    || !int.TryParse(f[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out int length) || length < 0)
                 {
-                    if (!long.TryParse(f[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out long offset) || offset < 0
-                        || !int.TryParse(f[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out int length) || length < 0)
-                    {
-                        return false;
-                    }
-
-                    Reads++;
-                    AddRange(title + "|" + CaptureFileRecorder.Canonical(path), offset, length);
-                    if (Content(blobs, f[6], length) is { } data)
-                    {
-                        WriteAt(host, offset, data);
-                    }
-                    else
-                    {
-                        MissingContents++;
-                    }
-
-                    return true;
+                    return false;
                 }
+
+                Reads++;
+                AddRange(title + "|" + CaptureFileRecorder.Canonical(path), offset, length);
+                if (Content(blobs, f[6], length) is { } data)
+                {
+                    WriteAt(host, offset, data);
+                }
+                else
+                {
+                    MissingContents++;
+                }
+
+                return true;
+            }
             case "module":
+            {
+                if (!int.TryParse(f[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out int length) || length < 0)
                 {
-                    if (!int.TryParse(f[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out int length) || length < 0)
-                    {
-                        return false;
-                    }
-
-                    if (Content(blobs, f[6], length) is { } image)
-                    {
-                        _modules[title + "|" + CaptureFileRecorder.Canonical(path)] = image;
-                    }
-
-                    return true;
+                    return false;
                 }
+
+                if (Content(blobs, f[6], length) is { } image)
+                {
+                    _modules[title + "|" + CaptureFileRecorder.Canonical(path)] = image;
+                }
+
+                return true;
+            }
             default:
                 return false;
         }

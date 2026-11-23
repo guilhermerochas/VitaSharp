@@ -44,7 +44,14 @@ public static class HleCallTrace
         /// still add one).</summary>
         public readonly Call[]?[] Chunks = new Call[]?[MaxCalls / ChunkSize + 1];
         public int Count;
+        /// <summary>Where the thread's calls were when a save state was taken (<see cref="MarkState"/>): guest time of
+        /// the state and the number of calls made before it.</summary>
+        public readonly List<(long GuestUs, int Count)> StateMarks = [];
     }
+
+    /// <summary>The comment lines of hle_calls.tsv that say where each thread was when a save state was taken:
+    /// "#state", the state's guest time, the thread, its number of calls before it.</summary>
+    public const string StateMarkLine = "#state";
 
     private static volatile bool s_active;
     private static int s_generation;
@@ -66,6 +73,26 @@ public static class HleCallTrace
             s_dropped = 0;
             s_generation++;
             s_active = true;
+        }
+    }
+
+    /// <summary>A save state was taken (its threads still stopped): every thread's calls so far came before it. A
+    /// re-run from that state makes the calls after the mark; guest time cannot say it (the clock stops while the
+    /// game runs on to the safe point and until it is released).</summary>
+    public static void MarkState()
+    {
+        if (!s_active)
+        {
+            return;
+        }
+
+        long us = GuestClock.Microseconds;
+        lock (s_lock)
+        {
+            foreach (ThreadBuffer buffer in s_buffers)
+            {
+                buffer.StateMarks.Add((us, Volatile.Read(ref buffer.Count)));
+            }
         }
     }
 
@@ -154,6 +181,17 @@ public static class HleCallTrace
         using (var w = new StreamWriter(path, false, new UTF8Encoding(false)))
         {
             w.WriteLine("# guestUs\tthread\tfunction\tlibrary\tr0\tr1\tr2\tr3\tresult\tlr");
+            lock (s_lock)
+            {
+                foreach (ThreadBuffer buffer in s_buffers)
+                {
+                    foreach ((long us, int count) in buffer.StateMarks)
+                    {
+                        w.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{StateMarkLine}\t{us}\t{buffer.Thread.Name}\t{count}"));
+                    }
+                }
+            }
+
             foreach ((string thread, Call call) in calls)
             {
                 HleFunction f = call.Function;
@@ -182,9 +220,12 @@ public static class HleCallTrace
     /// keep their names): the functions called in order, then their results. Null when the threads both have made
     /// the same calls over the part both recorded.
     /// </summary>
-    public static string? FirstDifference(string originalFile, string rerunFile)
+    public static string? FirstDifference(string originalFile, string rerunFile, long? stateUs = null)
     {
         Dictionary<string, List<(long Us, string Function, string Result)>> a = Read(originalFile), b = Read(rerunFile);
+        // where each thread of the capture was when the state the re-run started from was taken (the marks closest to
+        // its guest time): exact, where guest time is not
+        Dictionary<string, int>? marks = stateUs is { } wanted ? StateMarks(originalFile, wanted) : null;
         var differences = new List<(long Us, string Text)>();
         foreach ((string thread, List<(long Us, string Function, string Result)> calls) in a)
         {
@@ -202,13 +243,58 @@ public static class HleCallTrace
             // the state's moment: the capture's calls from before the re-run's first one (the state restores the guest
             // clock) are not compared. A pre-roll state is older than the capture: the re-run's first calls then come
             // before the capture's and are skipped by the alignment.
+            // With the state's guest time (the re-run replays the input by the guest's reads, so its calls from the
+            // state on are the capture's in order) the cut is exact and the calls are paired in order; without it, at
+            // the re-run's first call and by the closest guest time.
+            // (the guest clock stops when a save starts and the game runs on to a safe point: calls at the state's very
+            // guest time were made before it was taken)
+            long cut = stateUs is { } at ? at + 1 : other[0].Us;
             int skip = 0;
-            while (skip < calls.Count - 1 && calls[skip].Us < other[0].Us)
+            while (skip < calls.Count - 1 && calls[skip].Us < cut)
             {
                 skip++;
             }
 
-            int offset = Align(calls, skip, other);
+            if (marks != null)
+            {
+                // a thread that had made no call yet when the state was taken: all its calls are after it
+                skip = Math.Min(marks.GetValueOrDefault(thread), calls.Count - 1);
+            }
+
+            int offset;
+            if (stateUs != null)
+            {
+                // the re-run's own trace starts once the game runs again after the load: its first calls after the
+                // state may be missing, never extra ones. The capture's calls from the cut on are matched in order to
+                // the re-run's first ones.
+                int start = -1;
+                if (marks != null)
+                {
+                    // a thread blocked in a call when the state was taken (a vblank wait) makes that call again when
+                    // the re-run releases it: the re-run then starts with the capture's last call before the mark
+                    if (skip > 0 && StartsAt(calls, skip - 1, other))
+                    {
+                        start = skip - 1;
+                    }
+                    else if (StartsAt(calls, skip, other))
+                    {
+                        start = skip;
+                    }
+                }
+
+                if (start < 0)
+                {
+                    start = StartInCapture(calls, skip, other);
+                }
+
+                skip = start >= 0 ? start : skip;
+                offset = start >= 0 ? 0 : -1;
+            }
+            else
+            {
+                offset = Align(calls, skip, other);
+            }
+
             if (offset < 0)
             {
                 differences.Add((calls[skip].Us, $"thread '{thread}': the capture's first calls ({calls[skip].Function}...) are not among the re-run's first {AlignWindow}"));
@@ -245,6 +331,37 @@ public static class HleCallTrace
     /// repeats the same calls every frame: the first match can be another frame's), else the first call to the
     /// capture's first function (the difference is then within the first calls); -1 when there is none in the first
     /// <see cref="AlignWindow"/>.</summary>
+    /// <summary>The first of the capture's calls from <paramref name="from"/> on from which the next ones (up to 8) are
+    /// the re-run's first ones (the calls the re-run's trace missed right after the load are skipped); -1 when none
+    /// within <see cref="AlignWindow"/>.</summary>
+    private static int StartInCapture(List<(long Us, string Function, string Result)> capture, int from, List<(long Us, string Function, string Result)> rerun)
+    {
+        for (int start = from; start < Math.Min(from + AlignWindow, capture.Count); start++)
+        {
+            if (StartsAt(capture, start, rerun))
+            {
+                return start;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>The capture's calls from <paramref name="start"/> on (up to 8) are to the re-run's first functions.</summary>
+    private static bool StartsAt(List<(long Us, string Function, string Result)> capture, int start, List<(long Us, string Function, string Result)> rerun)
+    {
+        int length = Math.Min(8, Math.Min(capture.Count - start, rerun.Count));
+        for (int i = 0; i < length; i++)
+        {
+            if (capture[start + i].Function != rerun[i].Function)
+            {
+                return false;
+            }
+        }
+
+        return length > 0;
+    }
+
     private static int Align(List<(long Us, string Function, string Result)> capture, int from, List<(long Us, string Function, string Result)> rerun)
     {
         int firstFunction = -1;
@@ -276,6 +393,50 @@ public static class HleCallTrace
         }
 
         return best >= 0 ? best : firstFunction;
+    }
+
+    /// <summary>The state marks of a trace (<see cref="StateMarkLine"/>) of the state taken at
+    /// <paramref name="stateUs"/> (the closest, within a millisecond), by thread; null when it has none.</summary>
+    private static Dictionary<string, int>? StateMarks(string file, long stateUs)
+    {
+        var byState = new Dictionary<long, Dictionary<string, int>>();
+        foreach (string line in File.ReadLines(file))
+        {
+            if (!line.StartsWith(StateMarkLine + "\t", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            string[] f = line.Split('\t');
+            if (f.Length < 4 || !long.TryParse(f[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out long us)
+                || !int.TryParse(f[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out int count))
+            {
+                continue;
+            }
+
+            if (!byState.TryGetValue(us, out Dictionary<string, int>? threads))
+            {
+                threads = new Dictionary<string, int>(StringComparer.Ordinal);
+                byState[us] = threads;
+            }
+
+            // a name reused by a later thread: its first buffer's count (the later one starts after the state)
+            threads.TryAdd(f[2], count);
+        }
+
+        long best = long.MaxValue;
+        Dictionary<string, int>? found = null;
+        foreach ((long us, Dictionary<string, int> threads) in byState)
+        {
+            long distance = Math.Abs(us - stateUs);
+            if (distance <= 1000 && distance < best)
+            {
+                best = distance;
+                found = threads;
+            }
+        }
+
+        return found;
     }
 
     private static Dictionary<string, List<(long Us, string Function, string Result)>> Read(string file)

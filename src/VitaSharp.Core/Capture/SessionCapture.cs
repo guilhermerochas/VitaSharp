@@ -62,6 +62,8 @@ public sealed class SessionCaptureOptions
     public bool KeepSaveData;
     /// <summary>Records the title's file reads (files/; a re-run's own recording does not).</summary>
     public bool Files = true;
+    /// <summary>A re-run: the HLE call trace was started when its state was put back and goes on.</summary>
+    public bool KeepCallTrace;
     public const double DefaultMaxSeconds = 60;
     /// <summary>What the capture's texts must not carry (paths, user, computer and account names): null = this
     /// computer's (<see cref="CapturePrivacy.ForThisComputer"/>, the data folder above <see cref="Root"/>).</summary>
@@ -870,7 +872,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         }
 
         DebugMode.CollectHleErrors = true;
-        HleCallTrace.Begin();
+        // a re-run's trace began when its state was put back (SaveStates.Restored), before the game ran again
+        if (!_options.KeepCallTrace || !HleCallTrace.Active)
+        {
+            HleCallTrace.Begin();
+        }
         CaptureHooks.Random ??= this;
         WriteText(dir, "threads_start.txt", _options.Threads);
         WriteText(dir, "context.txt", () => SafeDescribe("start of the recording"));

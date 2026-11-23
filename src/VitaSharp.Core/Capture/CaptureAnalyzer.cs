@@ -439,19 +439,7 @@ public static class CaptureAnalyzer
     private static (long Original, long Rerun)? FlipsAtTheState(string original, string rerun, List<(long Us, long Present, long Flip, byte[]? T)> originalFrames, long? rerunFirstFlip)
     {
         Dictionary<string, string> rerunSession = ReadSession(Path.Combine(rerun, "session.txt"));
-        string options = rerunSession.GetValueOrDefault("options", "");
-        int playback = options.IndexOf("--capture-playback=", StringComparison.Ordinal);
-        if (playback < 0)
-        {
-            return null;
-        }
-
-        int end = options.IndexOf('\t', playback);
-        string spec = end < 0 ? options[playback..] : options[playback..end];
-        string key = spec.EndsWith("@start", StringComparison.Ordinal) ? "start-state" : "preroll-state";
-        string[] state = ReadSession(Path.Combine(original, "session.txt")).GetValueOrDefault(key, "").Split(' ');
-        int usAt = Array.IndexOf(state, "guest-us");
-        if (usAt < 0 || usAt + 1 >= state.Length || !long.TryParse(state[usAt + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out long stateUs))
+        if (StateGuestUs(original, rerun) is not { } stateUs)
         {
             return null;
         }
@@ -488,8 +476,32 @@ public static class CaptureAnalyzer
         return originalFlip is { } first ? (first, rerunFlip) : null;
     }
 
+    /// <summary>The guest time (µs) of the capture's state the re-run started from (session.txt start-state /
+    /// preroll-state; the re-run names which in its --capture-playback option), or null.</summary>
+    private static long? StateGuestUs(string original, string rerun)
+    {
+        string options = ReadSession(Path.Combine(rerun, "session.txt")).GetValueOrDefault("options", "");
+        int playback = options.IndexOf("--capture-playback=", StringComparison.Ordinal);
+        if (playback < 0)
+        {
+            return null;
+        }
+
+        int end = options.IndexOf('\t', playback);
+        string spec = end < 0 ? options[playback..] : options[playback..end];
+        string key = spec.EndsWith("@start", StringComparison.Ordinal) ? "start-state" : "preroll-state";
+        string[] state = ReadSession(Path.Combine(original, "session.txt")).GetValueOrDefault(key, "").Split(' ');
+        int usAt = Array.IndexOf(state, "guest-us");
+        if (usAt < 0 || usAt + 1 >= state.Length || !long.TryParse(state[usAt + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out long stateUs))
+        {
+            return null;
+        }
+
+        return stateUs;
+    }
+
     /// <summary>The HLE calls of a capture and its re-run (<see cref="HleCallTrace"/>): the first call where a
-    /// thread did something else, or got another result.</summary>
+    /// thread did something else, or got another result, from the state the re-run started from on.</summary>
     public static string CompareCalls(string original, string rerun)
     {
         string a = Path.Combine(original, HleCallTrace.FileName), b = Path.Combine(rerun, HleCallTrace.FileName);
@@ -498,7 +510,7 @@ public static class CaptureAnalyzer
             return $"HLE calls: not compared ({(File.Exists(a) ? "the re-run" : "the capture")} has no {HleCallTrace.FileName})";
         }
 
-        return HleCallTrace.FirstDifference(a, b) is { } difference
+        return HleCallTrace.FirstDifference(a, b, StateGuestUs(original, rerun)) is { } difference
             ? $"HLE calls: first difference: {difference}"
             : "HLE calls: the same calls and results in every thread";
     }

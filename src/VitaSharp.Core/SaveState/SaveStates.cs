@@ -67,6 +67,10 @@ public static partial class SaveStates
     /// pairs its frames with the recording's from there; <see cref="Loaded"/> runs once the game runs again).</summary>
     public static long FramesPresentedAtLastLoad { get; private set; }
 
+    /// <summary>A load has put the state back and the game has not run yet (under the load's lock, the emulation
+    /// paused): a capture's re-run starts its HLE call trace here, so it has every call from the state on.</summary>
+    public static event Action<Emulator>? Restored;
+
     /// <summary>Folder of a title's states: &lt;data&gt;/savestates/&lt;TITLEID&gt;.</summary>
     public static string Folder(string dataRoot, string titleId) => Path.Combine(dataRoot, "savestates", titleId);
 
@@ -173,6 +177,8 @@ public static partial class SaveStates
                         if (why == null)
                         {
                             long pausedMs = sw.ElapsedMilliseconds;
+                            // a recording's HLE trace notes where every thread was (a re-run from this state is compared from there)
+                            VitaSharp.Core.Capture.HleCallTrace.MarkState();
                             // the game goes on while the file is compressed and written
                             if (!wasPaused)
                             {
@@ -809,6 +815,7 @@ public static partial class SaveStates
                 StartRestored(LoadCore(emu, sections, layouts, positional, backendFactory));
                 // still stopped: the next guest frame is the first one from the state
                 FramesPresentedAtLastLoad = Hle.Modules.Display.FramesPresented;
+                Restored?.Invoke(emu);
             }
             catch (Exception e)
             {
