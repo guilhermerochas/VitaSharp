@@ -86,11 +86,34 @@ public sealed partial class PluginFramework
 
     readonly List<HookPatch> _hooks = new();
 
+    /// <summary>The kernel blocks this framework allocated (thunks, trampolines, records, counting stubs), by address:
+    /// a block is freed only while it is still the one allocated (the kernel's end frees them all, and the memory can be
+    /// another system's by the time a process's end comes after it).</summary>
+    readonly Dictionary<uint, GuestMemory.Block> _kernelBlocks = new();
+
     uint KernelAllocation(uint size, string name)
     {
         using (ProcessScope.Enter(KernelSpace.KernelPid))
         {
-            return Mem.Alloc(size, name, MemoryRegion.Kernel, 16);
+            uint address = Mem.Alloc(size, name, MemoryRegion.Kernel, 16);
+            if (Mem.FindBlock(address) is { } block)
+            {
+                lock (_kernelBlocks)
+                {
+                    _kernelBlocks[address] = block;
+                }
+            }
+
+            return address;
+        }
+    }
+
+    /// <summary>True while the kernel block at <paramref name="address"/> is still the one this framework allocated.</summary>
+    bool OwnsKernelBlock(uint address)
+    {
+        lock (_kernelBlocks)
+        {
+            return _kernelBlocks.TryGetValue(address, out GuestMemory.Block? block) && ReferenceEquals(Mem.FindBlock(address), block);
         }
     }
 
@@ -304,10 +327,8 @@ public sealed partial class PluginFramework
             // the record's func and old are the hook's counting stub (PluginHookStats), which goes on to the hook
             // function and to the trampoline
             uint record = KernelAllocation(12, "plugin hook reference");
-            uint stub = KernelAllocation(StubSize, "plugin hook counter");
-            uint data = WriteCountingStub(stub, hookFunction, patch.Trampoline);
-            GuestMemory.W32(record + 4, stub);
-            GuestMemory.W32(record + 8, stub + StubOldWord * 4);
+            uint data = NewCountingStub(hookFunction, patch.Trampoline);
+            PointRecordAtStub(record, data);
             if (patch.Records.Count == 0)
             {
                 GuestMemory.W32(record, 0);
@@ -537,6 +558,12 @@ public sealed partial class PluginFramework
                 FreeKernelAllocation(patch.Trampoline & ~1u);
                 foreach (uint record in patch.Records)
                 {
+                    if (!OwnsKernelBlock(record))
+                    {
+                        // the kernel ended first: its memory went with it (and may be someone else's now)
+                        continue;
+                    }
+
                     uint data = StubDataOf(record);
                     if (data != 0)
                     {
@@ -545,7 +572,8 @@ public sealed partial class PluginFramework
                             Stats.Freeze(entry);
                         }
 
-                        FreeKernelAllocation(data - StubDataWord * 4);
+                        FreeKernelAllocation(StubOf(data));
+                        FreeKernelAllocation(data);
                     }
 
                     FreeKernelAllocation(record);
@@ -565,6 +593,16 @@ public sealed partial class PluginFramework
 
     void FreeKernelAllocation(uint address)
     {
+        if (!OwnsKernelBlock(address))
+        {
+            return;
+        }
+
+        lock (_kernelBlocks)
+        {
+            _kernelBlocks.Remove(address);
+        }
+
         using (ProcessScope.Enter(KernelSpace.KernelPid))
         {
             Mem.Free(address);

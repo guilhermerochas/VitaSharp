@@ -8,13 +8,14 @@ namespace VitaSharp.Core.Hle.Modules;
 /// What the plugin hooks of one emulated system did (emulator option "Enable Kernel Plugins"): every hook installed (or
 /// refused), who installed it, how many calls entered it and how many it continued, to the next hook of its chain or to
 /// the original. The counting is guest code: each hook's reference record points at a small ARM stub of its own
-/// (<see cref="PluginFramework.WriteCountingStub"/>) that adds one to the hook's counter in kernel memory and jumps on,
+/// (<see cref="PluginFramework.NewCountingStub"/>) that adds one to the hook's counter in kernel memory and jumps on,
 /// so it costs a few instructions in every CPU backend (interpreter, JIT, precompiled code) and on every path into the
 /// hook (the patched function, the import stubs a hook took, a syscall export's HLE stub, a call through the hook
-/// chain). Only the first call, the first continuation to the next hook and the first continuation to the original
-/// enter C# (an SVC into <see cref="OnFirst"/>), which writes one log line each.
+/// chain). Only the first call, the first continuations and the first traced calls (<see cref="TraceCalls"/>) enter C#
+/// (an SVC into <see cref="OnEvent"/>); the traced calls' returns come back through the stub's return words
+/// (<see cref="OnReturn"/>, PluginFramework.HookTrace.cs).
 /// </summary>
-internal sealed class PluginHookStats
+internal sealed partial class PluginHookStats
 {
     /// <summary>One hook: what it hooks, who installed it and its counters.</summary>
     internal sealed class Entry
@@ -42,15 +43,35 @@ internal sealed class PluginHookStats
         public bool Released;
         /// <summary>The first call: process and thread (empty before it).</summary>
         public string FirstCaller = "";
+        /// <summary>What the traced calls did (<see cref="TraceCalls"/>).</summary>
+        public readonly TraceTotals Trace = new();
     }
 
-    /// <summary>Events the stub passes in r1 (each once: the counter went from 0 to 1).</summary>
-    internal const uint FirstCall = 1, FirstToNext = 2, FirstToOriginal = 4;
+    /// <summary>Events the stub passes in the low byte of r1 (the counter after the call's increment above it): the
+    /// counter went from 0 to 1 (calls, continuations to the next hook, to the original), or the call or continuation is
+    /// one of the first <see cref="TraceCalls"/>.</summary>
+    internal const uint FirstCall = 1, FirstToNext = 2, FirstToOriginal = 4, TracedCall = 8, TracedOriginal = 16;
+
+    /// <summary>The first calls of each hook whose action is logged (arguments, continuation, returns, writes):
+    /// <see cref="Util.EnvVars.PluginHookTrace"/>, 8 by default, 0 for none, at most 256.</summary>
+    internal static readonly int TraceCalls = ReadTraceCalls();
+
+    static int ReadTraceCalls()
+    {
+        string? value = Environment.GetEnvironmentVariable(Util.EnvVars.PluginHookTrace);
+        if (int.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int calls))
+        {
+            return Math.Clamp(calls, 0, 256);
+        }
+
+        return 8;
+    }
 
     readonly object _lock = new();
     readonly List<Entry> _entries = new();
     readonly Dictionary<uint, Entry> _byData = new();
     uint _svc;
+    uint _returnSvc;
 
     static readonly ConditionalWeakTable<Emulator, PluginHookStats> s_own = new();
 
@@ -60,19 +81,60 @@ internal sealed class PluginHookStats
         return emu.Vita is { } vita ? vita.PluginHooks : s_own.GetValue(emu, _ => new PluginHookStats());
     }
 
-    /// <summary>The SVC number of <see cref="OnFirst"/> in every process of <paramref name="emu"/>'s system (registered
-    /// on the first hook).</summary>
-    internal uint SvcIndex(Emulator emu)
+    const string EventName = "PluginFramework:hookEvent";
+    const string ReturnName = "PluginFramework:hookReturn";
+
+    /// <summary>The first version's name of <see cref="OnEvent"/> (its states' stubs call it until the load replaces
+    /// them).</summary>
+    const string EventNameV1 = "PluginFramework:hookFirstEvent";
+
+    /// <summary>Every process declares the stubs' host functions when it starts (<see cref="PluginFramework.Initialize"/>),
+    /// so a save state with hooks loads in a session that has none yet.</summary>
+    internal void Declare(Emulator emu)
+    {
+        emu.Hle.DeclareSharedHostFunction(EventName, OnEvent);
+        emu.Hle.DeclareSharedHostFunction(EventNameV1, OnEvent);
+        emu.Hle.DeclareSharedHostFunction(ReturnName, OnReturn);
+    }
+
+    /// <summary>The SVC numbers of <see cref="OnEvent"/> and <see cref="OnReturn"/> in every process of
+    /// <paramref name="emu"/>'s system: those its registry has (a loaded state's), else new ones.</summary>
+    internal (uint Event, uint Return) SvcIndexes(Emulator emu)
     {
         lock (_lock)
         {
             if (_svc == 0)
             {
-                _svc = emu.Hle.RegisterSharedHostFunction("PluginFramework:hookFirstEvent", OnFirst);
+                _svc = IndexOf(emu, EventName) ?? emu.Hle.RegisterSharedHostFunction(EventName, OnEvent);
+                _returnSvc = IndexOf(emu, ReturnName) ?? emu.Hle.RegisterSharedHostFunction(ReturnName, OnReturn);
             }
 
-            return _svc;
+            return (_svc, _returnSvc);
         }
+    }
+
+    /// <summary>A save state was loaded: the SVC numbers are looked up again (the state's table is the one now).</summary>
+    internal void ForgetSvcIndexes()
+    {
+        lock (_lock)
+        {
+            _svc = 0;
+            _returnSvc = 0;
+        }
+    }
+
+    static uint? IndexOf(Emulator emu, string name)
+    {
+        IReadOnlyList<HleFunction> functions = emu.Hle.Functions;
+        for (int i = 1; i < functions.Count; i++)
+        {
+            if (functions[i].Nid == 0 && functions[i].Library == "host" && functions[i].Name == name)
+            {
+                return (uint)i;
+            }
+        }
+
+        return null;
     }
 
     internal Entry Add(Entry entry)
@@ -119,6 +181,7 @@ internal sealed class PluginHookStats
                 _byData.Remove(data);
             }
 
+            _frames.RemoveAll(f => f.Entry.Owner == owner);
             for (int i = 0; i < _entries.Count; i++)
             {
                 _entries[i].Number = i + 1;
@@ -133,6 +196,7 @@ internal sealed class PluginHookStats
         lock (_lock)
         {
             _byData.Remove(entry.Data);
+            _frames.RemoveAll(f => f.Entry == entry);
             entry.Data = 0;
         }
     }
@@ -152,24 +216,39 @@ internal sealed class PluginHookStats
         }
     }
 
-    /// <summary>The stub's SVC (r0: its counters, r1: <see cref="FirstCall"/> and the others): one line per event.</summary>
-    void OnFirst(HleContext context)
+    /// <summary>The calls that neither continued to the next hook nor to the original (each continues at most once).</summary>
+    static uint AnsweredItself(uint calls, uint toNext, uint toOriginal)
+    {
+        return calls > toNext + toOriginal ? calls - toNext - toOriginal : 0;
+    }
+
+    /// <summary>The stub's SVC (r0: its counters, r1: the events in the low byte and the counter above them; sp: the
+    /// saved r12, lr, r0-r3 and then the caller's stack): one line per first event, the traced calls' frames.</summary>
+    void OnEvent(HleContext context)
     {
         uint data;
         uint events;
+        uint sp;
         unsafe
         {
             data = context.Cpu->R[0];
-            events = context.Cpu->R[1];
+            events = context.Cpu->R[1] & 0xFF;
+            sp = context.Cpu->R[13];
         }
 
-        string caller = $"pid 0x{context.Thread.Pid:X} (thread {context.Thread.Name})";
+        uint counter;
+        unsafe
+        {
+            counter = context.Cpu->R[1] >> 8;
+        }
+
         Entry? entry = ByData(data);
         if (entry == null)
         {
             return;
         }
 
+        string caller = $"pid 0x{context.Thread.Pid:X} (thread {context.Thread.Name})";
         if ((events & FirstCall) != 0)
         {
             entry.FirstCaller = caller;
@@ -184,6 +263,16 @@ internal sealed class PluginHookStats
         if ((events & FirstToOriginal) != 0)
         {
             Util.Log.Info($"plugin hook {entry.Number} continued to the original: {entry.Target} from {caller}");
+        }
+
+        if ((events & TracedCall) != 0)
+        {
+            BeginCall(context.Thread, entry, data, counter, sp);
+        }
+
+        if ((events & TracedOriginal) != 0)
+        {
+            BeginOriginal(context.Thread, entry, data, counter, sp);
         }
     }
 
@@ -222,26 +311,36 @@ internal sealed class PluginHookStats
     internal const string ContextPrefix = "plugin hook: ";
 
     /// <summary>
-    /// The hooks as a recording's context.txt keeps them (at its start and its stop), one tab-separated line each, so
-    /// the analysis (report.txt) needs neither the game nor the plugins: number, kind, target, pid, address, installer,
-    /// hook function, result (UID or error), calls, continuations to the original, to the next hook, first caller,
-    /// state (installed, released, refused).
+    /// The plugins and their hooks as a recording's context.txt keeps them (at its start and its stop), so the analysis
+    /// (report.txt) needs neither the game nor the plugins: the build and the firmware, the plugin configuration read
+    /// and each plugin module (<see cref="LoadLines"/>), then one tab-separated line per hook: number, kind, target,
+    /// pid, address, installer, hook function, result (UID or error), calls, continuations to the original, to the next
+    /// hook, first caller, state (installed, released, refused), calls that answered themselves, what the traced calls
+    /// did.
     /// </summary>
     internal IEnumerable<string> ContextLines()
     {
+        foreach (string line in LoadLines())
+        {
+            yield return line;
+        }
+
         foreach (Entry entry in Entries())
         {
             (uint calls, uint toNext, uint toOriginal) = Counters(entry);
             string state = entry.Result <= 0 ? "refused" : entry.Released ? "released" : "installed";
             yield return string.Join('\t', ContextPrefix + entry.Number, entry.Kind, entry.Target, $"pid 0x{entry.Pid:X}", $"0x{entry.Address:X8}",
-                entry.Installer, $"0x{entry.HookFunction:X8}", $"0x{entry.Result:X8}", calls, toOriginal, toNext, entry.FirstCaller, state);
+                entry.Installer, $"0x{entry.HookFunction:X8}", $"0x{entry.Result:X8}", calls, toOriginal, toNext, entry.FirstCaller, state,
+                AnsweredItself(calls, toNext, toOriginal), DescribeTrace(entry));
         }
     }
 
     /// <summary>
-    /// report.txt's "Plugin hooks" section from a recording's context.txt lines at its start and its stop
-    /// (<see cref="ContextLines"/>): each hook's calls and continuations during the recording and in the whole session,
-    /// "never called" for a hook no call entered, the error of a refused one. Empty when no plugin hooked anything.
+    /// report.txt's "Plugins" and "Plugin hooks" sections from a recording's context.txt lines at its start and its stop
+    /// (<see cref="ContextLines"/>): the build, the firmware, the configuration and the plugin modules, then each hook's
+    /// calls and continuations during the recording and in the whole session, "never called" for a hook no call
+    /// entered, the error of a refused one, what its traced calls did. Empty when no plugin was configured or hooked
+    /// anything.
     /// </summary>
     public static List<string> ReportSection(IEnumerable<string> start, IEnumerable<string> stop)
     {
@@ -256,7 +355,22 @@ internal sealed class PluginHookStats
         }
 
         var lines = new List<string>();
-        foreach (string line in stop)
+        var stopLines = stop.ToList();
+        foreach (string line in stopLines)
+        {
+            if (line.StartsWith(LoadPrefix, StringComparison.Ordinal))
+            {
+                if (lines.Count == 0)
+                {
+                    lines.Add("Plugins (at the stop of the recording):");
+                }
+
+                lines.Add("  " + line[LoadPrefix.Length..].Replace('\t', ' '));
+            }
+        }
+
+        bool hooksHeader = false;
+        foreach (string line in stopLines)
         {
             string[] stopFields = line.Split('\t');
             if (!line.StartsWith(ContextPrefix, StringComparison.Ordinal) || stopFields.Length < 13)
@@ -264,8 +378,9 @@ internal sealed class PluginHookStats
                 continue;
             }
 
-            if (lines.Count == 0)
+            if (!hooksHeader)
             {
+                hooksHeader = true;
                 lines.Add("Plugin hooks (calls and continuations: during the recording / in the session):");
             }
 
@@ -293,14 +408,16 @@ internal sealed class PluginHookStats
                 continue;
             }
 
-            lines.Add($"{head}: calls {During(8)} / {stopFields[8]}, continued to the original {During(9)} / {stopFields[9]}, to the next hook {During(10)} / {stopFields[10]}; first call from {stopFields[11]}{installedNow}{state}");
+            string answered = stopFields.Length > 13 ? $", answered itself {stopFields[13]}" : "";
+            string traced = stopFields.Length > 14 && stopFields[14].Length > 0 ? $"; {stopFields[14]}" : "";
+            lines.Add($"{head}: calls {During(8)} / {stopFields[8]}, continued to the original {During(9)} / {stopFields[9]}, to the next hook {During(10)} / {stopFields[10]}{answered}; first call from {stopFields[11]}{installedNow}{state}{traced}");
         }
 
         return lines;
     }
 
     /// <summary>One hook's line of the summary.</summary>
-    internal static string Describe(Entry entry)
+    internal string Describe(Entry entry)
     {
         string head = $"plugin hook {entry.Number} ({entry.Kind}, pid 0x{entry.Pid:X}): {entry.Target}, installed by {entry.Installer}";
         if (entry.Result <= 0)
@@ -315,248 +432,8 @@ internal sealed class PluginHookStats
             return $"{head}: never called{released}";
         }
 
-        return $"{head}: {calls} calls (first from {entry.FirstCaller}), continued to the original {toOriginal}, to the next hook {toNext}{released}";
-    }
-}
-
-/// <summary>The counting stubs of the hooks (<see cref="PluginHookStats"/>).</summary>
-public sealed partial class PluginFramework
-{
-    // the stub: 32 words entering the hook, 22 continuing to the original, then its data
-    const int StubOldWord = 32;
-    const int StubDataWord = 54;
-
-    /// <summary>The words of the two SVCs (an HLE call returns to lr: each sets lr to the word after it).</summary>
-    internal const int StubEntrySvcWord = 27, StubOldSvcWord = 49;
-    const uint StubSize = (StubDataWord + 7) * 4;
-    internal const uint StubCalls = 0, StubToNext = 4, StubToOriginal = 8, StubHookFunction = 12, StubTrampoline = 16, StubPredecessor = 20, StubMagic = 24;
-
-    /// <summary>Marks a counting stub's data (a state saved by a build without them has none).</summary>
-    const uint StubMagicValue = 0x4B4F4F48; // "HOOK"
-
-    PluginHookStats Stats => PluginHookStats.Of(Emu);
-
-    /// <summary>A conditional branch from word <paramref name="from"/> to word <paramref name="to"/>.</summary>
-    static uint StubBranch(uint cond, int from, int to)
-    {
-        return (cond << 28) | 0x0A000000 | ((uint)(to - from - 2) & 0xFFFFFF);
-    }
-
-    /// <summary>
-    /// The counting stub of one hook (ARM, at <paramref name="stub"/>): its entry (the record's func) adds one to the
-    /// hook's calls and, when the hook is not the first of its chain, to the previous hook's continuations to the next
-    /// hook, then jumps to the hook function; its continuation (the record's old) adds one to the continuations to the
-    /// original and jumps to the trampoline. Each counter goes up atomically (ldrex/strex: hooks run on every core) and
-    /// only the call that takes a counter from 0 to 1 enters C# (an SVC, r0-r3, r12 and lr kept; the HLE call returns to
-    /// lr, so the stub points lr at the word after the SVC). The caller's
-    /// registers and stack are untouched (r12 and the flags are scratch at a call), so the hook sees the call as it was.
-    /// </summary>
-    static uint[] CountingStubCode(uint svc)
-    {
-        uint svcWord = 0xEF000000 | (svc & 0xFFFFFF);
-        const uint EQ = 0x0, NE = 0x1;
-        return
-        [
-            // entry
-            0xE92D000F,                                  // 0  push {r0-r3}
-            0xE28FC000 | (StubDataWord * 4 - 12),        // 1  add r12, pc, #data
-            0xE3A03000,                                  // 2  mov r3, #0          events
-            0xE19C0F9F,                                  // 3  ldrex r0, [r12]     calls
-            0xE2800001,                                  // 4  add r0, r0, #1
-            0xE18C1F90,                                  // 5  strex r1, r0, [r12]
-            0xE3510000,                                  // 6  cmp r1, #0
-            StubBranch(NE, 7, 3),                        // 7  bne 3
-            0xE3500001,                                  // 8  cmp r0, #1
-            0x03833001,                                  // 9  orreq r3, r3, #1    first call
-            0xE59C2000 | StubPredecessor,                // 10 ldr r2, [r12, #predecessor]
-            0xE3520000,                                  // 11 cmp r2, #0
-            StubBranch(EQ, 12, 21),                      // 12 beq 21              the first of the chain
-            0xE2822000 | StubToNext,                     // 13 add r2, r2, #toNext
-            0xE1920F9F,                                  // 14 ldrex r0, [r2]
-            0xE2800001,                                  // 15 add r0, r0, #1
-            0xE1821F90,                                  // 16 strex r1, r0, [r2]
-            0xE3510000,                                  // 17 cmp r1, #0
-            StubBranch(NE, 18, 14),                      // 18 bne 14
-            0xE3500001,                                  // 19 cmp r0, #1
-            0x03833002,                                  // 20 orreq r3, r3, #2    the previous hook's first continuation
-            0xE3530000,                                  // 21 cmp r3, #0
-            StubBranch(EQ, 22, 29),                      // 22 beq 29
-            0xE1A0000C,                                  // 23 mov r0, r12
-            0xE1A01003,                                  // 24 mov r1, r3
-            0xE92D5000,                                  // 25 push {r12, lr}
-            0xE28FE000,                                  // 26 add lr, pc, #0      the HLE call returns to 28
-            svcWord,                                     // 27 svc: the log line
-            0xE8BD5000,                                  // 28 pop {r12, lr}
-            0xE8BD000F,                                  // 29 pop {r0-r3}
-            0xE59CC000 | StubHookFunction,               // 30 ldr r12, [r12, #hook]
-            0xE12FFF1C,                                  // 31 bx r12
-            // continuation to the original (the record's old)
-            0xE92D000F,                                  // 32 push {r0-r3}
-            0xE28FC000 | ((StubDataWord - StubOldWord - 1) * 4 - 8), // 33 add r12, pc, #data
-            0xE3A03000,                                  // 34 mov r3, #0
-            0xE28C2000 | StubToOriginal,                 // 35 add r2, r12, #toOriginal
-            0xE1920F9F,                                  // 36 ldrex r0, [r2]
-            0xE2800001,                                  // 37 add r0, r0, #1
-            0xE1821F90,                                  // 38 strex r1, r0, [r2]
-            0xE3510000,                                  // 39 cmp r1, #0
-            StubBranch(NE, 40, 36),                      // 40 bne 36
-            0xE3500001,                                  // 41 cmp r0, #1
-            0x03833004,                                  // 42 orreq r3, r3, #4    first continuation to the original
-            0xE3530000,                                  // 43 cmp r3, #0
-            StubBranch(EQ, 44, 51),                      // 44 beq 51
-            0xE1A0000C,                                  // 45 mov r0, r12
-            0xE1A01003,                                  // 46 mov r1, r3
-            0xE92D5000,                                  // 47 push {r12, lr}
-            0xE28FE000,                                  // 48 add lr, pc, #0      the HLE call returns to 50
-            svcWord,                                     // 49 svc: the log line
-            0xE8BD5000,                                  // 50 pop {r12, lr}
-            0xE8BD000F,                                  // 51 pop {r0-r3}
-            0xE59CC000 | StubTrampoline,                 // 52 ldr r12, [r12, #trampoline]
-            0xE12FFF1C,                                  // 53 bx r12
-        ];
-    }
-
-    /// <summary>Writes the counting stub of a hook at <paramref name="stub"/>: its code, the hook function, the
-    /// trampoline, counters at 0; returns the address of its data.</summary>
-    uint WriteCountingStub(uint stub, uint hookFunction, uint trampoline)
-    {
-        uint[] code = CountingStubCode(Stats.SvcIndex(Emu));
-        for (int i = 0; i < code.Length; i++)
-        {
-            GuestMemory.W32(stub + (uint)i * 4, code[i]);
-        }
-
-        uint data = stub + StubDataWord * 4;
-        GuestMemory.W32(data + StubCalls, 0);
-        GuestMemory.W32(data + StubToNext, 0);
-        GuestMemory.W32(data + StubToOriginal, 0);
-        GuestMemory.W32(data + StubHookFunction, hookFunction);
-        GuestMemory.W32(data + StubTrampoline, trampoline);
-        GuestMemory.W32(data + StubPredecessor, 0);
-        GuestMemory.W32(data + StubMagic, StubMagicValue);
-        InvalidateEverywhere(stub, StubSize);
-        return data;
-    }
-
-    /// <summary>The data of the counting stub a record's func points at, or 0 (a record of a state saved without
-    /// them).</summary>
-    static uint StubDataOf(uint record)
-    {
-        uint stub = GuestMemory.R32(record + 4);
-        if ((stub & 3) != 0 || !KernelSpace.IsMappedRange(stub, StubSize))
-        {
-            return 0;
-        }
-
-        uint data = stub + StubDataWord * 4;
-        return GuestMemory.R32(data + StubMagic) == StubMagicValue ? data : 0;
-    }
-
-    /// <summary>Each hook's stub of <paramref name="patch"/> counts its continuations into the hook before it in the
-    /// chain (the first one's calls come from the hooked function).</summary>
-    static void LinkStubs(HookPatch patch)
-    {
-        uint previous = 0;
-        foreach (uint record in patch.Records)
-        {
-            uint data = StubDataOf(record);
-            if (data != 0)
-            {
-                GuestMemory.W32(data + StubPredecessor, previous);
-            }
-
-            previous = data;
-        }
-    }
-
-    /// <summary>The module of process <paramref name="pid"/> (or of the kernel) whose code is at
-    /// <paramref name="address"/>: the plugin that installed a hook.</summary>
-    string ModuleNameAt(int pid, uint address)
-    {
-        foreach (int owner in pid == KernelSpace.KernelPid ? new[] { pid } : new[] { pid, KernelSpace.KernelPid })
-        {
-            if (KernelSpace.ModulesOf(Emu, owner) is not { } modules)
-            {
-                continue;
-            }
-
-            foreach (Loader.LoadedModule module in modules)
-            {
-                foreach (Loader.SegmentInfo segment in module.Segments.Values)
-                {
-                    if ((address & ~1u) - segment.Address < segment.Size)
-                    {
-                        return module.Name;
-                    }
-                }
-            }
-        }
-
-        return $"code at 0x{address:X8}";
-    }
-
-    /// <summary>
-    /// After a save state load: the hooks of the state count again. Their stubs and counters are the state's guest
-    /// memory; the SVC number of this session goes into each stub, a record of a state saved without a stub gets one
-    /// (its func and old become the stub's, which goes on to them), and the summary takes the state's hooks in place of
-    /// the ones this framework had before the load.
-    /// </summary>
-    void RestoreCountingStubs()
-    {
-        Stats.RemoveOwnedBy(Emu);
-        uint svcWord = 0xEF000000 | (Stats.SvcIndex(Emu) & 0xFFFFFF);
-        foreach (HookPatch patch in _hooks)
-        {
-            using ProcessScope.Scope space = EnterPatchSpace(patch.Pid);
-            foreach (uint record in patch.Records)
-            {
-                uint data = StubDataOf(record);
-                if (data == 0)
-                {
-                    uint stub = KernelAllocation(StubSize, "plugin hook counter");
-                    data = WriteCountingStub(stub, GuestMemory.R32(record + 4), GuestMemory.R32(record + 8));
-                    GuestMemory.W32(record + 4, stub);
-                    GuestMemory.W32(record + 8, stub + StubOldWord * 4);
-                }
-                else
-                {
-                    uint stub = data - StubDataWord * 4;
-                    GuestMemory.W32(stub + StubEntrySvcWord * 4, svcWord);
-                    GuestMemory.W32(stub + StubOldSvcWord * 4, svcWord);
-                    InvalidateEverywhere(stub, StubSize);
-                }
-
-                uint hookFunction = GuestMemory.R32(data + StubHookFunction);
-                string target = patch.RedirectedNid != 0 ? $"{NidDatabase.NameOf(patch.RedirectedNid)} of library 0x{patch.RedirectedLibNid:X8}" : $"code at 0x{patch.Address:X8}";
-                Stats.Add(new PluginHookStats.Entry
-                {
-                    Kind = $"hook, {(patch.Pid == KernelSpace.KernelPid ? "kernel" : "user")} (from the save state)",
-                    Target = target,
-                    Installer = ModuleNameAt(patch.Pid, hookFunction),
-                    Pid = patch.Pid,
-                    Address = patch.Address,
-                    HookFunction = hookFunction,
-                    Result = patch.Uid,
-                    Record = record,
-                    Data = data,
-                    Owner = Emu,
-                    FirstCaller = "before the save state",
-                });
-            }
-
-            LinkStubs(patch);
-        }
-    }
-
-    /// <summary>The hooks of <paramref name="emu"/>'s system as a recording's context.txt keeps them.</summary>
-    public static IEnumerable<string> HookContextLines(Emulator emu)
-    {
-        return PluginHookStats.Of(emu).ContextLines();
-    }
-
-    /// <summary>The summary lines of the hooks of <paramref name="emu"/>'s system (session end).</summary>
-    public static IEnumerable<string> HookSummaryLines(Emulator emu)
-    {
-        return PluginHookStats.Of(emu).SummaryLines();
+        string trace = DescribeTrace(entry);
+        string traced = trace.Length > 0 ? "; " + trace : "";
+        return $"{head}: {calls} calls (first from {entry.FirstCaller}), continued to the original {toOriginal}, to the next hook {toNext}, answered itself {AnsweredItself(calls, toNext, toOriginal)}{released}{traced}";
     }
 }
