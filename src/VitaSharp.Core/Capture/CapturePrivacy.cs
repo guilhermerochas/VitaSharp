@@ -20,7 +20,7 @@ public sealed partial class CapturePrivacy
         AccountPlaceholder = "<psn-id>", MacPlaceholder = "<mac>", EmailPlaceholder = "<email>";
 
     /// <summary>Run options whose value names an account (their value becomes <see cref="AccountPlaceholder"/>).</summary>
-    private static readonly string[] AccountOptions = ["--psn-id=", "--rpcn-user=", "--rpcn-token="];
+    private static readonly string[] s_accountOptions = ["--psn-id=", "--rpcn-user=", "--rpcn-token="];
 
     private readonly (string Text, string Placeholder)[] _paths;
     private readonly (Regex Pattern, string Placeholder)[] _words;
@@ -148,7 +148,7 @@ public sealed partial class CapturePrivacy
         var result = new List<string>();
         foreach (string option in options)
         {
-            string? account = AccountOptions.FirstOrDefault(o => option.StartsWith(o, StringComparison.Ordinal));
+            string? account = s_accountOptions.FirstOrDefault(o => option.StartsWith(o, StringComparison.Ordinal));
             result.Add(account != null ? account + AccountPlaceholder : Redact(option));
         }
 

@@ -19,7 +19,7 @@ public sealed class SessionCapturePrivacyTests(GuestMemoryFixture fixture) : IDi
 
     public void Dispose() => _harness.Dispose();
 
-    private static readonly Regex Personal = new($"{UserName}|{Computer}|{OnlineId}|{Regex.Escape(Mac)}|{Regex.Escape(Email)}", RegexOptions.IgnoreCase);
+    private static readonly Regex s_personal = new($"{UserName}|{Computer}|{OnlineId}|{Regex.Escape(Mac)}|{Regex.Escape(Email)}", RegexOptions.IgnoreCase);
 
     [Fact]
     public void RedactPutsPlaceholdersForPathsNamesAccountsMacsAndEmails()
@@ -76,7 +76,7 @@ public sealed class SessionCapturePrivacyTests(GuestMemoryFixture fixture) : IDi
         foreach (string file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
         {
             string text = File.ReadAllText(file);
-            if (Personal.Match(text) is { Success: true } m)
+            if (s_personal.Match(text) is { Success: true } m)
             {
                 leaks.Add($"{Path.GetRelativePath(dir, file)}: '{m.Value}'");
             }
@@ -87,7 +87,7 @@ public sealed class SessionCapturePrivacyTests(GuestMemoryFixture fixture) : IDi
             foreach (ZipArchiveEntry entry in zip.Entries)
             {
                 using var reader = new StreamReader(entry.Open());
-                if (Personal.Match(reader.ReadToEnd() + entry.FullName) is { Success: true } m)
+                if (s_personal.Match(reader.ReadToEnd() + entry.FullName) is { Success: true } m)
                 {
                     leaks.Add($"zip {entry.FullName}: '{m.Value}'");
                 }

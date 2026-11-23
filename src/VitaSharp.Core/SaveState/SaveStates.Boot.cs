@@ -64,7 +64,7 @@ public static partial class SaveStates
 
         byte[] boot = sections.FirstOrDefault(s => s.Name == BootSection).Data
             ?? throw new SnapshotException("the state has no boot section (saved by an earlier build): it loads only into the running game");
-        StateBootImage image = StateBootImage.Read(boot);
+        var image = StateBootImage.Read(boot);
         if (sections.FirstOrDefault(s => s.Name == ProcessesSection).Data is { } processes && new SnapshotReader(processes).ReadInt32() > 1)
         {
             throw new SnapshotException("the state holds several processes (the shell and the applications it opened): booting it without their programs is not supported yet");
