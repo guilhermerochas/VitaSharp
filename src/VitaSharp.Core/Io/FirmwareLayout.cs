@@ -88,6 +88,10 @@ public enum ContentKind
     /// <summary>The kernel's modules (os0:kd: sysmem, modulemgr, processmgr... and bootimage.skprx, the kernel image
     /// with appmgr, NpDrm and the other kernel modules inside).</summary>
     KernelModules,
+
+    /// <summary>The user modules every process has preloaded (os0:us: libkernel, driver_us, libgxm_es4, libgpu_es4,
+    /// avcodec_us).</summary>
+    UserModules,
 }
 
 /// <summary>A folder of the firmware's layout: a device and the folder on it.</summary>
@@ -152,6 +156,7 @@ public static class FirmwareLayout
     public static readonly FirmwareFolder ShellDatabase = new(ContentKind.ShellDatabase, "ur0", "shell/db");
     public static readonly FirmwareFolder ApplicationCache = new(ContentKind.ApplicationCache, "ux0", "cache");
     public static readonly FirmwareFolder KernelModules = new(ContentKind.KernelModules, "os0", "kd");
+    public static readonly FirmwareFolder UserModules = new(ContentKind.UserModules, "os0", "us");
 
     /// <summary>The kernel image in <see cref="KernelModules"/>.</summary>
     public const string KernelImage = "bootimage.skprx";
@@ -162,7 +167,7 @@ public static class FirmwareLayout
         Applications, SystemApplications, GameCardApplications, PspEmulator, PspGames, PspSaveData, PspLicenses, PspThemes,
         PsmTitles, Patches, GameCardPatches, AddCont, GameCardAddCont, Themes, Licenses, ApplicationLicenses,
         AddContLicenses, ThemeLicenses, ApplicationMetadata, SystemMetadata, SaveData, SystemSaveData, Music, Video,
-        Picture, ShellDatabase, ApplicationCache, KernelModules,
+        Picture, ShellDatabase, ApplicationCache, KernelModules, UserModules,
     ];
 
     /// <summary>

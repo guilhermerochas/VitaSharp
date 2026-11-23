@@ -436,15 +436,35 @@ public sealed partial class HleRegistry : IImportResolver
     /// <summary>Import stubs of <paramref name="nid"/> of library <paramref name="libNid"/> bind to the HLE function again.</summary>
     public void ClearRedirect(uint libNid, uint nid) => Redirects.TryRemove((libNid, nid), out _);
 
+    /// <summary>The HLE functions a user plugin's hook took in this process (a hook on a firmware user module's export,
+    /// which on the Vita is this process's code): by library and function NID.</summary>
+    readonly System.Collections.Concurrent.ConcurrentDictionary<(uint LibNid, uint Nid), uint> _processRedirects = new();
+
+    /// <summary>This process's import stubs bound to HLE function <paramref name="nid"/> of library
+    /// <paramref name="libNid"/> from now on jump to <paramref name="target"/> (a user plugin's hook).</summary>
+    public void RedirectInProcess(uint libNid, uint nid, uint target) => _processRedirects[(libNid, nid)] = target;
+
+    /// <summary>This process's import stubs of <paramref name="nid"/> of library <paramref name="libNid"/> bind to the
+    /// HLE function again.</summary>
+    public void ClearRedirectInProcess(uint libNid, uint nid) => _processRedirects.TryRemove((libNid, nid), out _);
+
     /// <summary>A guest-code implementation (<see cref="HleGuestCode"/>) of an implemented NID, placed in the calling
     /// thread's address space; 0 when there is none (or VITASHARP_HLE_GUEST_CODE=0).</summary>
     public uint GetHleGuestCode(uint nid) =>
         _impls.ContainsKey(nid) ? HleGuestCode.AddressOf(nid, _emu.Memory, n => GetHleFunctionIndex(n, 0, NidDatabase.Lookup(n)?.Library ?? ""), this) : 0;
 
     /// <summary>The thunk of the plugin hook that took function <paramref name="nid"/> of library
-    /// <paramref name="libNid"/>, else <see cref="GetHleGuestCode(uint)"/>.</summary>
-    public uint GetHleGuestCode(uint nid, uint libNid) =>
-        !Redirects.IsEmpty && Redirects.TryGetValue((libNid, nid), out uint redirect) ? redirect : GetHleGuestCode(nid);
+    /// <paramref name="libNid"/> (this process's user hook first, then the system's kernel hook), else
+    /// <see cref="GetHleGuestCode(uint)"/>.</summary>
+    public uint GetHleGuestCode(uint nid, uint libNid)
+    {
+        if (!_processRedirects.IsEmpty && _processRedirects.TryGetValue((libNid, nid), out uint own))
+        {
+            return own;
+        }
+
+        return !Redirects.IsEmpty && Redirects.TryGetValue((libNid, nid), out uint redirect) ? redirect : GetHleGuestCode(nid);
+    }
 
     /// <summary>After a save state load: places this build's guest-code routines again (<see cref="HleGuestCode.Replace"/>).</summary>
     public Func<uint, bool> ReplaceGuestCode() => HleGuestCode.Replace(_emu.Memory, n => GetHleFunctionIndex(n, 0, NidDatabase.Lookup(n)?.Library ?? ""), this);

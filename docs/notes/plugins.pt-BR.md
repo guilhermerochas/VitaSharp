@@ -115,12 +115,49 @@ chamou, com o processo dela como o atual, como o código de kernel que um syscal
 processo de usuário). Um hook ou injeção de um plugin de kernel num processo de usuário é feito na memória desse
 processo, e os patches de um processo saem quando ele termina.
 
+Os módulos de usuário do firmware que o HLE serve (os módulos de os0:us que todo processo tem pré-carregados, como o
+SceLibKernel, e os módulos de vs0 que um processo carrega) estão na lista de módulos do processo como o framework a vê:
+na primeira vez que o framework olha os módulos de um processo, cada módulo de usuário do firmware que exporta uma
+biblioteca que o processo importa, e que nenhum módulo carregado do processo exporta, entra na lista com o nome, o NID
+de módulo e as tabelas de exportação do módulo do firmware, num endereço fixo da memória do processo, e a entrada de
+cada função exportada é um stub do HLE. Eles vêm antes dos módulos carregados (foram pré-carregados), então o módulo
+mais novo continua sendo o do programa. Um hook de exportação de um plugin de usuário num deles corrige a entrada e
+toma as stubs de importação da função naquele processo (também as ligadas depois); os outros processos não são
+afetados, como no Vita o código de um módulo de usuário é do processo dele. Esses módulos não são ligados: as
+importações continuam se ligando ao HLE como antes. Precisam do firmware instalado (os0 e vs0 do PSVUPDAT.PUP); sem ele
+a busca não acha esse módulo (0x90010002), como antes.
+
+O framework não guarda lista de patches por módulo: um plugin libera os próprios hooks e injeções, normalmente no
+module_stop dele, em qualquer ordem, enquanto o código corrigido ainda está no lugar; um plugin que para e descarrega
+sem liberar deixa tudo instalado (como faz o fonte publicado do framework; um hook cujo código saiu com o módulo passa a
+saltar para memória liberada, como no Vita). Só quando um processo termina os patches dele saem, sem escrever os bytes
+originais de volta (o código saiu com o processo); os patches de kernel ficam até serem liberados.
+
+| Mecanismo | Situação |
+| --- | --- |
+| Hook de exportação, kernel (módulos de kernel, inclusive os do firmware) | Feito |
+| Hook de exportação, usuário, num módulo de usuário carregado | Feito |
+| Hook de exportação, usuário, num módulo de usuário do firmware servido pelo HLE | Feito (na lista de módulos do processo; precisa do firmware) |
+| Hook de importação (kernel e usuário) | Feito |
+| Hooks por deslocamento e por endereço absoluto (kernel e usuário, ARM e Thumb) | Feito |
+| Cadeia de hooks com continuação (next/func/old), na ordem do framework | Feito |
+| Liberação no meio, na cabeça, do último | Feito |
+| Injeção de dados (absoluta e por deslocamento no segmento), restaurada na liberação | Feito |
+| Hook de kernel numa exportação de syscall do firmware: as chamadas de todo processo, também dos criados depois | Feito |
+| Um processo termina: os patches dele saem, nada é escrito de volta | Feito |
+| Um plugin para e descarrega: o module_stop dele libera os patches; nada é liberado por ele | Feito (como o framework) |
+| Código traduzido: cada patch descarta os blocos que cobre; um bloco decodificado durante um patch é conferido de novo | Feito |
+| Corrigir o código do próprio firmware por deslocamento | Impossível (não há código do firmware: o HLE o serve) |
+
 ## Limites
 
 - Um plugin que corrige por deslocamento o código do próprio firmware não acha código do firmware ali (o VitaSharp
   implementa ele mesmo as bibliotecas do firmware).
-- Um hook de exportação de um plugin de usuário numa biblioteca de usuário do firmware servida pelo HLE (SceLibKernel,
-  SceDisplay, ...) não acha o módulo: esses módulos ainda não estão na lista de módulos do processo. Hooks de importação
-  nas stubs do próprio programa para elas funcionam.
-- Exceções não são entregues a handlers de kernel (a CPU emulada relata uma falha do guest como queda); o mascaramento
-  de interrupções é só estado (não há controlador de interrupções).
+- Os módulos de usuário do firmware servidos pelo HLE só aparecem nas buscas do framework de plugins (informação de
+  módulo, exportações, hooks, deslocamentos); a lista do próprio gerenciador de módulos do processo
+  (sceKernelGetModuleList) mostra só os módulos carregados. As variáveis exportadas deles não estão nas tabelas.
+- Instruções indefinidas e prefetch aborts (saltos para endereços não mapeados) chegam aos handlers registrados no
+  SceExcpmgr, no modo undefined/abort com os registradores banqueados e o SPSR dos modos de exceção do ARM; sem handler,
+  ou quando nenhum handler trata, a falha é relatada como queda, como antes. Data aborts ainda não são entregues (um
+  acesso a memória não mapeada lê zeros). O mascaramento de interrupções é só estado (não há controlador de
+  interrupções).

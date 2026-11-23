@@ -2067,12 +2067,17 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   usuário, como no syscall); hook/injeção de kernel com pid de usuário era feito no espaço de endereços do chamador
   (agora no do processo alvo); os patches de um processo ficavam depois que ele terminava (agora saem, como o
   framework faz no unload). Prova local com o kubridge e o fd_fix do usuário: os dois carregam e iniciam, o hook do
-  fd_fix fica instalado (ksceVopLookup no FW 3.74). Falta: (1) hook de exportação de usuário numa biblioteca de
-  usuário do firmware servida pelo HLE (SceLibKernel, SceDisplay...): esses módulos não estão na lista de módulos do
-  processo, a busca dá 0x90010002 (no Vita acha); precisa das cascas dos módulos de usuário como as de kernel
-  (`FirmwareKernelModules`); (2) o cache de código pode guardar um bloco decodificado antes de um patch e inserido
-  depois da invalidação (corrida entre `CodeCache.Get` e `Invalidate` numa thread do pré-compilador ou outra thread
-  do guest); conferir com uma geração de invalidação e um teste determinístico.
+  fd_fix fica instalado (ksceVopLookup no FW 3.74). Feito depois (22/11/2026, hook3): (1) os módulos de usuário do
+  firmware servidos pelo HLE (os0:us e os de vs0 que o processo importa) entram na lista de módulos do processo que o
+  framework vê, com nome, NID de módulo e tabelas de exportação do firmware e entradas que são stubs do HLE; um hook de
+  exportação de usuário num deles acha o módulo (antes 0x90010002) e toma as stubs de importação só daquele processo;
+  vão no save state, e um estado anterior carrega (`PluginHookUserShellTests`, teste novo em `SaveStatePluginTests`);
+  (2) a corrida entre `BlockCache.Get` e `Invalidate` (bloco decodificado antes de um patch e inserido depois da
+  invalidação) corrigida com um contador de invalidações e nova conferência do bloco (`BlockCacheInvalidationRaceTests`,
+  50x verde); (3) parar/descarregar um plugin: conferido no fonte publicado do framework, que não guarda patches por
+  módulo (o module_stop do plugin libera; só o fim do processo descarta, sem escrever de volta), igual ao VitaSharp
+  (`PluginHookStopTests`). Tabela dos mecanismos em `docs/notes/plugins.md`. Falta: validar com plugins de usuário
+  reais (teste do usuário).
 - [ ] [P3][G] Plugins de kernel `.skprx` (pedido do usuário, 11/11/2026: "eu quero tudo, todos os plugins, quero que a emulação
   seja completa"), depois do item acima. Rodar o código do plugin no processador emulado num "modo kernel" do VitaSharp
   e implementar em HLE as exportações de kernel que os plugins importam (ksceIo*, memória, ksceKernel* de threads e

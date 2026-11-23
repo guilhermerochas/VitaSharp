@@ -79,7 +79,7 @@ public static class HleCensusTables
             return "kernel-syscall";
         }
 
-        if (module.StartsWith("os0:us/", StringComparison.Ordinal))
+        if (module.StartsWith(Io.FirmwareLayout.UserModules.Guest() + "/", StringComparison.Ordinal))
         {
             return "os0-user";
         }
@@ -100,7 +100,7 @@ public static class HleCensusTables
         var b = new StringBuilder();
         b.Append("# User-side HLE holes of FW 3.74 (VitaSharp.Desktop hle-coverage --status; method in docs/hle/user-exports.md):\n");
         b.Append("# the functions the firmware exports to user code that have no [Hle] entry and can reach the HLE. kind: kernel-syscall\n");
-        b.Append("# (syscall export of a kernel module) and os0-user (os0:us module) always reach it; vs0-user rows are the missing functions of the vs0\n");
+        b.Append($"# (syscall export of a kernel module) and os0-user ({Io.FirmwareLayout.UserModules.Guest()} module) always reach it; vs0-user rows are the missing functions of the vs0\n");
         b.Append("# libraries the HLE serves, which reach it only from games (system software that imports one gets the real module).\n");
         b.Append("# games/system: importers among the installed games / system programs and modules; vitasdk: in the VitaSDK NID list.\n");
         b.Append("library\tnid\tname\tkind\tgames\tsystem\tvitasdk\n");

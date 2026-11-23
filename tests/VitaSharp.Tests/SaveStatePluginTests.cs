@@ -544,4 +544,69 @@ public sealed unsafe class SaveStatePluginTests : IDisposable
             restored.Dispose();
         }
     }
+
+    private const uint LibKernelLib = 0xCAE9ACE6, Strnlen = 0xAC595E68;
+
+    /// <summary>
+    /// A user plugin's hook on a firmware user module the HLE serves (SceLibKernel, listed in the process for the
+    /// framework) is in the state with the module's listing: saved with the hook in place and loaded after its release,
+    /// the game's call runs the hook again and the saved UID releases it; a state saved before the module was listed
+    /// loads into a session that listed it (the listing goes with the load, and the framework lists it again when it
+    /// looks next, as in a state of a build before the listing existed).
+    /// </summary>
+    [Fact]
+    public void AUserHookOnAFirmwareUserModuleComesBackWithALoadAndAnOlderStateLoadsToo()
+    {
+        var libkernel = new SceModuleBuilder("SceLibKernel");
+        int body = libkernel.ReturnConstant(0);
+        libkernel.Export("SceLibKernel", LibKernelLib, 0x0001, (Strnlen, body));
+        string us = Path.Combine(_harness.Root, "os0", "us");
+        Directory.CreateDirectory(us);
+        File.WriteAllBytes(Path.Combine(us, "libkernel.suprx"), libkernel.Build());
+        Core.Firmware.FirmwareUserImage.Forget(_harness.Root);
+        try
+        {
+            SceModuleBuilder caller = new SceModuleBuilder("SsStrnlenCaller").Import("SceLibKernel", LibKernelLib, Strnlen);
+            int call = caller.CallImport(0, 0);
+            uint gameCall = SceModuleBuilder.FunctionAddress(Load("ssstrnlen.suprx", caller, kernel: false).Segments[0].Address, call);
+            var hooks = new SceModuleBuilder("SsUserHooks");
+            int returns42 = hooks.ReturnConstant(42);
+            uint hook = SceModuleBuilder.FunctionAddress(Load("ssuserhooks.suprx", hooks, kernel: false).Segments[0].Address, returns42);
+            PluginFramework user = _emu.Hle.Modules.OfType<PluginFramework>().Single();
+            uint hookRef = _harness.Word(0);
+            uint args = _harness.Alloc(0x14);
+            GuestMemory.W32(args, 0x14);
+            GuestMemory.W32(args + 4, _harness.Str("SceLibKernel"));
+            GuestMemory.W32(args + 8, LibKernelLib);
+            GuestMemory.W32(args + 0xC, Strnlen);
+            GuestMemory.W32(args + 0x10, hook);
+            Assert.Equal(0u, RunGuest(gameCall));
+
+            // saved before the listing: loading it into the session that listed and hooked drops both
+            SaveStates.Save(_emu, StateB, timeoutMs: 60_000);
+            int uid = Call(user, "HookFunctionExportForUser", hookRef, args);
+            Assert.True(uid > 0, $"hook returned 0x{uid:X8}");
+            Assert.Equal(42u, RunGuest(gameCall));
+            SaveStates.Load(_emu, StateB);
+            Assert.Equal(0u, RunGuest(gameCall));
+            Assert.Empty(user.Shells);
+
+            // listed and hooked again, saved, released, loaded: the hook is back, the saved UID releases it
+            uid = Call(user, "HookFunctionExportForUser", hookRef, args);
+            Assert.True(uid > 0, $"hook returned 0x{uid:X8}");
+            uint record = GuestMemory.R32(hookRef);
+            SaveStates.Save(_emu, StatePath, timeoutMs: 60_000);
+            Assert.Equal(0, Call(user, "HookReleaseForUser", uid, record));
+            Assert.Equal(0u, RunGuest(gameCall));
+            SaveStates.Load(_emu, StatePath);
+            Assert.Equal(42u, RunGuest(gameCall));
+            Assert.Single(user.Shells);
+            Assert.Equal(0, Call(user, "HookReleaseForUser", uid, record));
+            Assert.Equal(0u, RunGuest(gameCall));
+        }
+        finally
+        {
+            Core.Firmware.FirmwareUserImage.Forget(_harness.Root);
+        }
+    }
 }
