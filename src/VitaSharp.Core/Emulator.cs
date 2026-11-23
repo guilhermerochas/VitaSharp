@@ -1105,9 +1105,17 @@ public sealed class Emulator : IDisposable
         }
 
         Log.Info($"Loading {TitleId} \"{Title}\" from {AppPath}");
+        Boot.BootProgress.Report(Boot.BootStep.Game);
         // per-title shader/pipeline caches start warming up while the executable loads
         try
         {
+            if (Gpu.Backend != null)
+            {
+                // the loading screen's "Carregando o cache de shaders": the driver's pipeline cache and the title's
+                // shader cache are read here, before the recorded shaders are built (its own progress)
+                Boot.BootProgress.Report(Boot.BootStep.ShaderCache);
+            }
+
             Gpu.Backend?.BeginTitle(TitleId);
             if (Options.LoadShaderCacheBeforeStart)
             {
@@ -1661,6 +1669,11 @@ public sealed class Emulator : IDisposable
         bool wait = Options.PrecompileCode && Options.PrecompileCodeWaits;
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
         CodePrecompileLog.Reporter? reporter = wait ? new CodePrecompileLog.Reporter() : null;
+        if (wait)
+        {
+            Boot.BootProgress.Report(Boot.BootStep.CodePrecompile);
+        }
+
         CodePrecompiler.Result result = codeCache.PrecompilePending(reporter == null ? null : reporter.Progress, CodePrecompileLog.Token, wait);
         reporter?.End();
         double seconds = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalSeconds;

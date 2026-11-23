@@ -593,6 +593,15 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        // still starting: its window is the loading window (the game's own waits hidden until it is ready)
+        if (_loading is { } loading)
+        {
+            loading.BringToFront();
+            AppendLog("focus: the loading window comes to the front (the game is still starting)");
+            LastFocusResultForTests = "focus: loading window";
+            return;
+        }
+
         var line = GameWindowActivator.Activate(p);
         AppendLog(line);
         LastFocusResultForTests = line;
@@ -661,31 +670,28 @@ public sealed partial class MainWindow : Window
         _logChars = 0;
         _log.Text = "";
         AppendLog($"> {title} ({titleId})");
+        // the loading window opens with the click, before the game process starts its heavy start-up
+        foreach (var o in OpenLoadingWindow(title, g))
+        {
+            psi.ArgumentList.Add(o);
+        }
+
         try
         {
-            var p = Process.Start(psi)!;
+            var p = StartProcess(psi);
             p.EnableRaisingEvents = true;
             p.OutputDataReceived += (_, e) =>
             {
                 if (e.Data != null)
                 {
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        AppendLog(e.Data);
-                        OnShaderCacheLoadLine(e.Data);
-                        OnCodePrecompileLine(e.Data);
-                    });
+                    Dispatcher.UIThread.Post(() => OnGameOutput(e.Data));
                 }
             };
             p.ErrorDataReceived += (_, e) =>
             {
                 if (e.Data != null)
                 {
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        _lastErrorLine = e.Data;
-                        AppendLog(e.Data);
-                    });
+                    Dispatcher.UIThread.Post(() => OnGameError(e.Data));
                 }
             };
             p.Exited += (_, _) => Dispatcher.UIThread.Post(() => OnGameExited(p));
@@ -711,6 +717,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception e)
         {
+            CloseLoadingWindow();
             SetStatus(S.CouldNotStart(e.Message));
         }
     }
@@ -719,6 +726,8 @@ public sealed partial class MainWindow : Window
     /// click forces the stop.</summary>
     void StopRunning()
     {
+        // stopping a game that is still starting takes its loading window too (the end is the user's, not a failure)
+        CloseLoadingWindow();
         try
         {
             if (!_stopAsked && _running?.CloseMainWindow() == true)
@@ -740,9 +749,24 @@ public sealed partial class MainWindow : Window
 
     void OnGameExited(Process p)
     {
+        // a process the launcher already let go of (its end was handled) says nothing more
+        if (!ReferenceEquals(p, _running))
+        {
+            p.Dispose();
+            return;
+        }
+
+        int code = p.ExitCode;
+        p.Dispose();
+        OnGameExited(code);
+    }
+
+    /// <summary>The game process ended with <paramref name="code"/> (the headless tests give the failure codes their
+    /// stand-in process cannot return).</summary>
+    internal void OnGameExited(int code)
+    {
         ShowShaderCacheLoad(null);
         ShowCodePrecompile(null);
-        int code = p.ExitCode;
         var title = _runningTitle;
         string? titleId = _runningId;
         if (_runningId != null)
@@ -754,24 +778,36 @@ public sealed partial class MainWindow : Window
         _runningGame = null;
         _runningTitle = _runningId = null;
         _shell?.SetRunning(null);
-        p.Dispose();
         Refresh(); // trophies earned and time played
         ReturnFreedMemory();
+        string status;
         if (code == VitaSharp.Core.Package.TitleLicense.ExitCode)
         {
             // the system refused to start it: its license is not installed (the game's process never started)
-            string message = S.LicenseMissing(titleId ?? title ?? "");
-            SetStatus(message);
-            AppendLog(message);
+            status = S.LicenseMissing(titleId ?? title ?? "");
+            AppendLog(status);
         }
         else if (code == VitaSharp.Core.TitleLaunchFailure.ExitCode && !string.IsNullOrWhiteSpace(_lastErrorLine))
         {
             // the title could not be loaded: the emulator's last error line says why in plain words
-            SetStatus(_lastErrorLine);
+            status = _lastErrorLine;
         }
         else
         {
-            SetStatus(code == 0 ? S.Closed(title ?? "") : S.StoppedWithCode(title ?? "", code));
+            status = code == 0 ? S.Closed(title ?? "") : S.StoppedWithCode(title ?? "", code);
+        }
+
+        SetStatus(status);
+        // still loading: a failed start keeps its loading window with the reason and the log's place (the user
+        // closes it); a game that quit by itself before it was ready takes its loading window with it
+        if (code != 0 && _loading is { } loading)
+        {
+            loading.Screen.Fail(status, loading.Screen.LogPath ?? Path.Combine(Program.DataRoot, "logs", "last.log"));
+            loading.BringToFront();
+        }
+        else
+        {
+            CloseLoadingWindow();
         }
 
         if (code != 0 && !_logPanel.IsVisible)
@@ -805,6 +841,7 @@ public sealed partial class MainWindow : Window
             return;
         }
         LeavePage();
+        CloseLoadingWindow();
         // the game closes its own window: a "Gravar tudo" recording is completed first (killing it lost the recording)
         try
         {

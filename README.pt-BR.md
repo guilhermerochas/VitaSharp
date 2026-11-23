@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=1b7280c5d6f8d19edcb8764967417960f4b6fc67bddf5637829e0bb0b80e9632 -->
+<!-- pair: README.md sha256=138dd516188219bbcde64839eef710777311d2054cecab1ff05328595659f85a -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -396,6 +396,15 @@ Os scripts shell seguem o Google Shell Style Guide e precisam passar no ShellChe
   desktop, Mesa); sem ela (MoltenVK, Dozen, drivers de celular) os pipelines são compilados inteiros de qualquer jeito.
   A linha `[shadercache] session` do log conta o que a thread da GPU compilou; ver
   [`docs/notes/pipeline-skip.md`](docs/notes/pipeline-skip.md).
+- Janela de carregamento: o clique num jogo abre a janela dele na hora (960x544 vezes o `--scale`), antes de o processo
+  do jogo fazer qualquer parte da inicialização, com a imagem de abertura do jogo (`sce_sys/pic0.png`), o ícone e o
+  nome, a etapa atual (firmware, controles, áudio, GPU, o jogo, o cache de shaders, o código ARM) com uma barra e,
+  durante as esperas do cache de shaders e do código ARM, "Cancelar". A janela do próprio jogo espera escondida no
+  mesmo lugar (`--loading-screen=launcher --window-pos=X,Y`) e aparece quando o jogo está pronto; as etapas são as
+  linhas `[boot-step] <etapa>` do log do processo do jogo e `[boot-log] <caminho>` o arquivo de log dele. Um segundo
+  clique no jogo traz a mesma janela de volta; o X dela para o jogo. Uma inicialização que falha (título que não
+  carrega, licença ausente, saída com erro) deixa o motivo e o lugar do log na janela, com "Fechar". O Android mostra a
+  mesma tela sobre o jogo. Nada a mais para instalar, em todos os sistemas.
 - "Carregar o cache de shaders antes de jogar" / "Load the shader cache before playing" (launcher: Configurações, ao
   lado de "Compilar shaders em segundo plano", e a página de cada jogo; `--load-shader-cache=on|off`, ligado por padrão;
   o nome antigo `--precompile-shaders` ainda é aceito, com um aviso): antes de o jogo começar, o cache de shaders dele
@@ -428,7 +437,7 @@ Os scripts shell seguem o Google Shell Style Guide e precisam passar no ShellChe
   além de cada bloco que ele alcança, e o resto da função dele, achada pelo índice de funções `.ARM.exidx`), no máximo
   64 MB da arena de código. O código pré-compilado é publicado quando o jogo chega nele pela primeira vez. As linhas de
   log `ARM code precompilation: boot step ...` e, no fim, `... % of the run blocks were precompiled` dão o tempo e a
-  cobertura. O Android faz a mesma tradução em segundo plano, sem esperar (a opção fica nos ajustes do app e nos de
+  cobertura. O Android espera a mesma etapa atrás da tela de carregamento (a opção fica nos ajustes do app e nos de
   cada jogo). Nada a mais para instalar, em todos os sistemas.
 - Perfil: `dotnet-trace` / `dotnet-counters` (`dotnet tool install -g dotnet-trace`, todos os sistemas); no Windows
   também o PerfView e o WPR/WPA (Windows Performance Toolkit).

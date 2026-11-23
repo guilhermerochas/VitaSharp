@@ -54,6 +54,61 @@ public sealed class RunnerProcessTests : IDisposable
         Assert.True(File.Exists(Path.Combine(_root, "logs", "last.log")));
     }
 
+    /// <summary>The "[boot-step]" lines of a run, in the order it wrote them (the launcher's loading window reads them).</summary>
+    private static List<VitaSharp.Core.Boot.BootStep> BootSteps(string output)
+    {
+        var steps = new List<VitaSharp.Core.Boot.BootStep>();
+        foreach (string line in output.Split('\n'))
+        {
+            if (VitaSharp.Core.Boot.BootProgress.TryParse(line, out VitaSharp.Core.Boot.BootStep step))
+            {
+                steps.Add(step);
+            }
+        }
+
+        return steps;
+    }
+
+    /// <summary>The runner reports the boot steps the loading screen shows, once each and in the order they run: the
+    /// firmware first, the game's load, the ARM code precompilation when it waits, and "ready" last, once the game
+    /// runs; a headless run has no controls, audio or window renderer to report.</summary>
+    [Fact]
+    public void AHeadlessRunReportsItsBootStepsInOrderAndReadyLast()
+    {
+        DesktopProcess.Result r = DesktopProcess.Run(_root, ["run", _app, "--headless", "--frames=5", "--turbo", "--cpu=interp", "--loading-screen=launcher"]);
+        Assert.True(r.ExitCode == 0, Tail(r.Output));
+        List<VitaSharp.Core.Boot.BootStep> steps = BootSteps(r.Output);
+        Assert.Equal(VitaSharp.Core.Boot.BootStep.Firmware, steps[0]);
+        Assert.Contains(VitaSharp.Core.Boot.BootStep.Game, steps);
+        Assert.Equal(VitaSharp.Core.Boot.BootStep.Ready, steps[^1]);
+        for (int i = 1; i < steps.Count; i++)
+        {
+            Assert.True(steps[i] > steps[i - 1], string.Join(", ", steps));
+        }
+
+        Assert.DoesNotContain(VitaSharp.Core.Boot.BootStep.Gpu, steps);
+        // the ready step comes after the title was loaded and started, never before its first frame's work
+        Assert.True(r.Output.IndexOf("Loading VSTS00001", StringComparison.Ordinal) < r.Output.IndexOf("[boot-step] ready", StringComparison.Ordinal));
+    }
+
+    /// <summary>A title that cannot be loaded: the run ends with <see cref="VitaSharp.Core.TitleLaunchFailure.ExitCode"/>,
+    /// its last error line is the reason with the log's place (what the launcher's loading window shows), and the boot
+    /// steps stop at the game's load: no "ready".</summary>
+    [Fact]
+    public void ATitleThatCannotBeLoadedStopsTheStepsAndEndsWithTheFailureCode()
+    {
+        File.WriteAllBytes(Path.Combine(_app, "eboot.bin"), new byte[64]);
+        DesktopProcess.Result r = DesktopProcess.Run(_root, ["run", _app, "--headless", "--frames=5", "--turbo", "--cpu=interp", "--loading-screen=launcher"]);
+        Assert.True(r.ExitCode == VitaSharp.Core.TitleLaunchFailure.ExitCode, Tail(r.Output));
+        List<VitaSharp.Core.Boot.BootStep> steps = BootSteps(r.Output);
+        Assert.Equal([VitaSharp.Core.Boot.BootStep.Firmware, VitaSharp.Core.Boot.BootStep.Game], steps);
+        // the session's log file is reported first (the loading window shows it with the failure), and the reason names it
+        string log = Path.Combine(_root, "logs", "last.log");
+        Assert.Contains(VitaSharp.Core.Boot.BootProgress.LogFileTag + log, r.Output, StringComparison.Ordinal);
+        string lastError = r.Output.Split('\n').Last(l => l.Contains(log, StringComparison.Ordinal) && !l.Contains(VitaSharp.Core.Boot.BootProgress.LogFileTag, StringComparison.Ordinal));
+        Assert.Contains("VSTS00001", lastError, StringComparison.Ordinal);
+    }
+
     [SoftwareVulkanFact]
     public void ScriptedInputChangesWhatTheGuestDrawsInTheDumpedFrames()
     {

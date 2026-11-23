@@ -98,6 +98,8 @@ public sealed partial class EmulationSession : IDisposable
         Performance = new GamePerformance(AppServices.AppContext);
         // VITASHARP_NET_ALLOW in env.txt limits real internet to those hosts (the desktop's --net-allow)
         var (psn, net, rpcn) = prefs.Network.ToOptions(rpcnPassword, Environment.GetEnvironmentVariable(EnvVars.NetAllow));
+        // the game screen's loading screen (GameActivity.LoadingScreen.cs) follows these steps, as the desktop's does
+        VitaSharp.Core.Boot.BootProgress.Report(VitaSharp.Core.Boot.BootStep.Firmware);
         _emu = new Emulator(new EmulatorOptions
         {
             FsRoot = data.Fs,
@@ -142,6 +144,7 @@ public sealed partial class EmulationSession : IDisposable
         _emu.Host.Input = input;
         _emu.Host.Motion = input.Keyboard; // the keyboard's tilt keys (VirtualMotion), from their first use
         _stats = new SessionStatistics(_emu, () => Paused);
+        VitaSharp.Core.Boot.BootProgress.Report(VitaSharp.Core.Boot.BootStep.Audio);
         _emu.Host.Audio = _audio = AndroidAudioBackend.TryCreate(AppServices.AppContext);
         // VITASHARP_AUDIO_DUMP=<folder, relative to the data folder>: per-port WAVs of what the guest output (--audio-dump)
         if (System.Environment.GetEnvironmentVariable(EnvVars.AudioDump) is { Length: > 0 } dump)
@@ -320,6 +323,7 @@ public sealed partial class EmulationSession : IDisposable
                     _started = false;
                     return;
                 }
+                VitaSharp.Core.Boot.BootProgress.Report(VitaSharp.Core.Boot.BootStep.Gpu);
                 _renderer = new VulkanRenderer(_rendererOptions);
             }
             Log.Info($"Renderer: {_renderer.DeviceName}");
@@ -329,6 +333,8 @@ public sealed partial class EmulationSession : IDisposable
             _played.Start();
             _emu.Start();
             _emuStarted = true;
+            // the boot steps are over (the ARM code precompilation ran in Start): the loading screen goes
+            VitaSharp.Core.Boot.BootProgress.Report(VitaSharp.Core.Boot.BootStep.Ready);
             LoadStartSlot();
             ScheduleGpuDump();
 #if VITASHARP_DEVELOPER

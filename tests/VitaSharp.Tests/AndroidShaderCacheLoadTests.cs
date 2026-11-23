@@ -1,12 +1,12 @@
+using VitaSharp.Core.Boot;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Localization;
-using VitaSharp.Mobile.Core.Gpu;
 using VitaSharp.Mobile.Core.Settings;
 
 namespace VitaSharp.Tests;
 
 /// <summary>"Carregar o cache de shaders antes de jogar" on Android: the option (global, per game, the desktop's
-/// default), the progress the game screen's banner gets from the core (<see cref="ShaderCacheLoad.Reported"/>) and its
+/// default), the progress the game screen's loading screen gets from the core (<see cref="ShaderCacheLoad.Reported"/>) and its
 /// "Cancelar".</summary>
 [Collection("ShaderCacheLoad")]
 public sealed class AndroidShaderCacheLoadTests : IDisposable
@@ -93,20 +93,20 @@ public sealed class AndroidShaderCacheLoadTests : IDisposable
     }
 
     [Fact]
-    public void TheBannerFollowsTheCoreProgressAndHidesAtTheEnd()
+    public void TheLoadingScreenFollowsTheCoreProgressAndEndsTheStep()
     {
-        var banner = new ShaderCacheLoadBanner();
+        var screen = new LoadingScreen("A Game");
         var seen = new List<ShaderCacheLoadProgress>();
         void OnReported(ShaderCacheLoadProgress progress)
         {
             seen.Add(progress);
-            banner.Show(progress);
+            screen.OnShaderCache(progress);
         }
 
         string? shownWhileLoading = null;
         var backend = new RecordedCacheBackend(new(0, 4, false), new(4, 4, true))
         {
-            BeforeStep = () => shownWhileLoading ??= banner.Text,
+            BeforeStep = () => shownWhileLoading ??= screen.StepText,
         };
         ShaderCacheLoad.Reported += OnReported;
         try
@@ -119,11 +119,13 @@ public sealed class AndroidShaderCacheLoadTests : IDisposable
         }
 
         Assert.Equal([new(0, 4, false), new(4, 4, true)], seen);
-        Assert.False(banner.Visible);
-        banner.Show(new ShaderCacheLoadProgress(1, 4, false));
-        Assert.True(banner.Visible);
-        Assert.Equal(Loc.Format("ShaderCacheLoadStatus", 1, 4), banner.Text);
-        Assert.Equal(0.25, banner.Fraction);
+        Assert.False(screen.CanCancel);
+        Assert.Equal(1.0, screen.Fraction);
+        var next = new LoadingScreen("A Game");
+        next.OnShaderCache(new ShaderCacheLoadProgress(1, 4, false));
+        Assert.True(next.CanCancel);
+        Assert.Equal(Loc.Format("ShaderCacheLoadStatus", 1, 4), next.StepText);
+        Assert.Equal(0.25, next.Fraction);
     }
 
     /// <summary>A first session (nothing recorded) still sends the end, so a banner shown by an earlier report never stays.</summary>
@@ -145,21 +147,23 @@ public sealed class AndroidShaderCacheLoadTests : IDisposable
         Assert.Equal([new ShaderCacheLoadProgress(0, 0, true)], seen);
     }
 
-    /// <summary>"Cancelar" on the banner: the core's wait stops at its next step, the banner hides, and the end is
-    /// reported.</summary>
+    /// <summary>"Cancelar" on the loading screen: the core's wait stops at its next step, the button goes, and the end
+    /// is reported.</summary>
     [Fact]
-    public void CancelStopsTheWaitAndHidesTheBanner()
+    public void CancelStopsTheWaitAndEndsTheStep()
     {
-        var banner = new ShaderCacheLoadBanner();
+        var screen = new LoadingScreen("A Game");
         var seen = new List<ShaderCacheLoadProgress>();
         void OnReported(ShaderCacheLoadProgress progress)
         {
             seen.Add(progress);
-            banner.Show(progress);
+            screen.OnShaderCache(progress);
             if (!progress.Finished)
             {
-                banner.Cancel(); // the user taps "Cancelar" as soon as the banner appears
-                Assert.False(banner.Visible);
+                // the user taps "Cancelar" as soon as the step appears (GameActivity.LoadingScreen.cs)
+                Assert.Equal(BootStep.ShaderCache, screen.Cancel());
+                ShaderCacheLoad.Cancel();
+                Assert.False(screen.CanCancel);
             }
         }
 
@@ -176,6 +180,7 @@ public sealed class AndroidShaderCacheLoadTests : IDisposable
 
         Assert.True(ShaderCacheLoad.Token.IsCancellationRequested);
         Assert.Equal([new(0, 10, false), new(0, 0, true)], seen);
-        Assert.False(banner.Visible);
+        Assert.False(screen.CanCancel);
+        Assert.Equal(BootStep.ShaderCache, screen.Step);
     }
 }

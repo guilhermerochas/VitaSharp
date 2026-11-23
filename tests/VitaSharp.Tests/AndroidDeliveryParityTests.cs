@@ -1,9 +1,9 @@
 using System.Runtime.CompilerServices;
 using VitaSharp.Core;
+using VitaSharp.Core.Boot;
 using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Hle;
 using VitaSharp.Desktop;
-using VitaSharp.Mobile.Core.Cpu;
 using VitaSharp.Mobile.Core.Settings;
 using DesktopStrings = VitaSharp.Desktop.Launcher.Ui.Strings;
 
@@ -46,14 +46,14 @@ public sealed class AndroidDeliveryParityTests : IDisposable
     }
 
     [Fact]
-    public void TheArmCodeBannerFollowsTheBootStepWithTheDesktopTextAndHidesAtTheEnd()
+    public void TheArmCodeStepOfTheLoadingScreenFollowsTheBootStepWithTheDesktopTextAndEnds()
     {
-        var banner = new CodePrecompileBanner();
+        var screen = new LoadingScreen("A Game");
         var seen = new List<CodePrecompileProgress>();
         void OnReported(CodePrecompileProgress progress)
         {
             seen.Add(progress);
-            banner.Show(progress);
+            screen.OnCodePrecompile(progress);
         }
 
         CodePrecompileLog.Reported += OnReported;
@@ -61,13 +61,15 @@ public sealed class AndroidDeliveryParityTests : IDisposable
         {
             var reporter = new CodePrecompileLog.Reporter();
             reporter.Progress(new CodePrecompileProgress(25, 100, false));
-            Assert.True(banner.Visible);
-            Assert.Equal(DesktopStrings.PrecompileCodeStatus(25, 100), banner.Text);
-            Assert.Equal(0.25, banner.Fraction, 3);
-            Assert.Equal(DesktopStrings.PrecompileCodeCancel, CodePrecompileBanner.CancelText);
+            Assert.Equal(BootStep.CodePrecompile, screen.Step);
+            Assert.Equal(DesktopStrings.PrecompileCodeStatus(25, 100), screen.StepText);
+            Assert.Equal(0.25, screen.Fraction!.Value, 3);
+            Assert.True(screen.CanCancel);
+            Assert.Equal(DesktopStrings.PrecompileCodeCancel, LoadingScreen.CancelText);
 
             reporter.Progress(new CodePrecompileProgress(100, 100, true));
-            Assert.False(banner.Visible);
+            Assert.False(screen.CanCancel);
+            Assert.Equal(1, screen.Fraction!.Value, 3);
             reporter.End(); // the step's own finished progress was seen: no second one
         }
         finally
@@ -81,12 +83,12 @@ public sealed class AndroidDeliveryParityTests : IDisposable
     [Fact]
     public void CancelStartsTheGameAndTheStepStillEndsWithAFinishedProgress()
     {
-        var banner = new CodePrecompileBanner();
+        var screen = new LoadingScreen("A Game");
         var seen = new List<CodePrecompileProgress>();
         void OnReported(CodePrecompileProgress progress)
         {
             seen.Add(progress);
-            banner.Show(progress);
+            screen.OnCodePrecompile(progress);
         }
 
         CodePrecompileLog.Reported += OnReported;
@@ -94,12 +96,14 @@ public sealed class AndroidDeliveryParityTests : IDisposable
         {
             var reporter = new CodePrecompileLog.Reporter();
             reporter.Progress(new CodePrecompileProgress(3, 40, false));
-            Assert.True(banner.Visible);
+            Assert.True(screen.CanCancel);
             Assert.False(CodePrecompileLog.Token.IsCancellationRequested);
 
-            banner.Cancel(); // the card's "Cancelar"
+            // the loading screen's "Cancelar" (GameActivity.LoadingScreen.cs: the step it names is cancelled)
+            Assert.Equal(BootStep.CodePrecompile, screen.Cancel());
+            CodePrecompileLog.Cancel();
             Assert.True(CodePrecompileLog.Token.IsCancellationRequested);
-            Assert.False(banner.Visible);
+            Assert.False(screen.CanCancel);
 
             // the precompiler stops without a finished progress of its own: the end is reported all the same
             reporter.End();
@@ -113,10 +117,12 @@ public sealed class AndroidDeliveryParityTests : IDisposable
         Assert.Equal(2, seen.Count);
         Assert.True(seen[1].Finished);
         Assert.Equal((3, 40), (seen[1].Done, seen[1].Total));
+        screen.OnStep(BootStep.Ready);
+        Assert.True(screen.IsDone);
     }
 
     [Fact]
-    public void TheAndroidGameWaitsForTheBootStepAsTheDesktopDoesWithItsCard()
+    public void TheAndroidGameWaitsForTheBootStepAsTheDesktopDoesWithItsLoadingScreen()
     {
         Assert.True(new EmulatorOptions { FsRoot = "" }.PrecompileCodeWaits); // the desktop's default, which Android now keeps
         string session = AndroidSource("Platforms", "Android", "Game", "EmulationSession.cs");
@@ -124,11 +130,16 @@ public sealed class AndroidDeliveryParityTests : IDisposable
         Assert.Contains("PrecompileCode = _settings.PrecompileCode", session, StringComparison.Ordinal);
 
         string activity = AndroidSource("Platforms", "Android", "Game", "GameActivity.cs");
-        Assert.Contains("AddCodePrecompileBanner(root)", activity, StringComparison.Ordinal);
-        Assert.Contains("RemoveCodePrecompileBanner()", activity, StringComparison.Ordinal);
-        string card = AndroidSource("Platforms", "Android", "Game", "GameActivity.CodePrecompile.cs");
+        Assert.Contains("AddLoadingScreen(root, game)", activity, StringComparison.Ordinal);
+        Assert.Contains("RemoveLoadingScreen()", activity, StringComparison.Ordinal);
+        string card = AndroidSource("Platforms", "Android", "Game", "GameActivity.LoadingScreen.cs");
         Assert.Contains("CodePrecompileLog.Reported += ", card, StringComparison.Ordinal);
-        Assert.Contains("_codePrecompile.Cancel()", card, StringComparison.Ordinal);
+        Assert.Contains("CodePrecompileLog.Cancel()", card, StringComparison.Ordinal);
+        // a start that fails leaves its reason and the log's place on the loading screen, as the desktop's window does
+        Assert.Contains("FailLoadingScreen(msg)", activity, StringComparison.Ordinal);
+        Assert.Contains("FailLoadingScreen(message)", activity, StringComparison.Ordinal);
+        Assert.Contains("_loadingScreen?.Fail(", card, StringComparison.Ordinal);
+        Assert.Contains("screen.FailureLogText", card, StringComparison.Ordinal);
     }
 
     [Fact]
