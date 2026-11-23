@@ -18,7 +18,7 @@ internal static class KernelSnapshot
     internal const string Thread = "thread", Sema = "sema", Evf = "evf", Mtx = "mutex", Cond = "cond", Pipe = "msgpipe",
         Rw = "rwlock", Cb = "callback", Timer = "timer", SEvent = "simpleevent", ThEvent = "threadevent",
         Block = "memblock", Async = "ioasync", Process = "process", App = "app", Module = "module", Data = "kerneldata",
-        PluginHook = "pluginhook", PluginInjection = "plugininject", UltRecord = "ult";
+        PluginHook = "pluginhook", PluginInjection = "plugininject", PluginShell = "pluginshell", UltRecord = "ult";
 
     /// <summary>The record kind of each type of kernel object the table can hold (the first entry the type is or derives
     /// from). Every concrete KernelObject has one (KernelSnapshotCoverageTests), except the ones marked
@@ -44,6 +44,7 @@ internal static class KernelSnapshot
         (typeof(KernelData), Data),
         (typeof(PluginFramework.HookPatch), PluginHook),
         (typeof(PluginFramework.Injection), PluginInjection),
+        (typeof(PluginFramework.FirmwareUserShell), PluginShell),
         (typeof(Ult.UltObject), UltRecord),
     ];
 
@@ -161,6 +162,9 @@ internal static class KernelSnapshot
                     break;
                 case PluginFramework.Injection injection:
                     injection.Save(w);
+                    break;
+                case PluginFramework.FirmwareUserShell shell:
+                    shell.Save(w);
                     break;
                 case Ult.UltObject ultObject:
                     ultObject.Save(w);
@@ -503,6 +507,9 @@ internal static class KernelSnapshot
                     break;
                 case PluginInjection:
                     o = PluginFramework.Injection.Load(b, name);
+                    break;
+                case PluginShell:
+                    o = PluginFramework.FirmwareUserShell.Load(b, name);
                     break;
                 case UltRecord:
                     o = Ult.LoadObject(b, name);

@@ -316,20 +316,57 @@ public sealed partial class PluginFramework
         TakeImportStubs(patch);
     }
 
-    /// <summary>The processes whose import stubs a hook on an HLE function takes: every process and the kernel.</summary>
-    IEnumerable<Emulator> RedirectedProcesses() => Emu.Vita.ProcessesAndKernel.Append(Emu).Distinct();
+    /// <summary>The processes whose import stubs a hook on an HLE function takes: for a kernel hook (a firmware kernel
+    /// module's export) every process and the kernel; for a user hook (a user shell's export) that process alone, as
+    /// on the Vita a user module's code is its process's.</summary>
+    IEnumerable<Emulator> RedirectedProcesses(int pid)
+    {
+        if (pid != KernelSpace.KernelPid)
+        {
+            return KernelSpace.ProcessOf(Emu, pid) is { } process ? [process] : [];
+        }
+
+        return Emu.Vita.ProcessesAndKernel.Append(Emu).Distinct();
+    }
+
+    /// <summary>Import stubs of the HLE function bind to <paramref name="target"/> (0: to the function again) in
+    /// <paramref name="process"/>: a kernel hook's redirect is the system's, a user hook's the process's own.</summary>
+    static void SetRedirect(Emulator process, int pid, uint libNid, uint nid, uint target)
+    {
+        if (pid == KernelSpace.KernelPid)
+        {
+            if (target != 0)
+            {
+                process.Hle.Redirect(libNid, nid, target);
+            }
+            else
+            {
+                process.Hle.ClearRedirect(libNid, nid);
+            }
+        }
+        else if (target != 0)
+        {
+            process.Hle.RedirectInProcess(libNid, nid, target);
+        }
+        else
+        {
+            process.Hle.ClearRedirectInProcess(libNid, nid);
+        }
+    }
 
     /// <summary>Points every import stub of the HLE function <paramref name="patch"/> redirects (that library's function:
-    /// a kernel twin with the same NID in another library is another function), bound now or later, in every process,
-    /// those made after the hook too, at the patch's thunk (each stub written in its own process's address space).</summary>
+    /// a kernel twin with the same NID in another library is another function), bound now or later, in the processes
+    /// the hook holds for (<see cref="RedirectedProcesses"/>; for a kernel hook those made after it too), at the patch's
+    /// thunk (each stub written in its own process's address space).</summary>
     void TakeImportStubs(HookPatch patch)
     {
-        foreach (Emulator process in RedirectedProcesses())
+        bool userHook = patch.Pid != KernelSpace.KernelPid;
+        foreach (Emulator process in RedirectedProcesses(patch.Pid))
         {
-            process.Hle.Redirect(patch.RedirectedLibNid, patch.RedirectedNid, patch.Thunk);
+            SetRedirect(process, patch.Pid, patch.RedirectedLibNid, patch.RedirectedNid, patch.Thunk);
             using (ProcessScope.Enter(process))
             {
-                foreach (bool kernel in new[] { false, true })
+                foreach (bool kernel in userHook ? new[] { false } : new[] { false, true })
                 {
                     foreach (uint stub in process.Linker.BoundStubs(patch.RedirectedNid, patch.RedirectedLibNid, kernel))
                     {
@@ -351,13 +388,13 @@ public sealed partial class PluginFramework
             return;
         }
 
-        foreach (Emulator process in RedirectedProcesses())
+        foreach (Emulator process in RedirectedProcesses(patch.Pid))
         {
-            process.Hle.ClearRedirect(patch.RedirectedLibNid, patch.RedirectedNid);
+            SetRedirect(process, patch.Pid, patch.RedirectedLibNid, patch.RedirectedNid, 0);
         }
 
         // every import stub of the function, taken at the hook or bound while it was in place, binds as it would now
-        foreach (Emulator process in RedirectedProcesses())
+        foreach (Emulator process in RedirectedProcesses(patch.Pid))
         {
             using (ProcessScope.Enter(process))
             {
@@ -416,6 +453,11 @@ public sealed partial class PluginFramework
         if (pid == KernelSpace.KernelPid)
         {
             return;
+        }
+
+        if (pid == Emu.Pid)
+        {
+            ForgetShells();
         }
 
         lock (_patchLock)
@@ -481,7 +523,9 @@ public sealed partial class PluginFramework
             return result;
         }
 
-        uint redirect = pid == KernelSpace.KernelPid ? HleNidOf(function) : 0;
+        // an HLE stub: a firmware kernel module's entry (every process's calls) or a user shell's (that process's calls)
+        using ProcessScope.Scope space = EnterPatchSpace(pid);
+        uint redirect = HleNidOf(function);
         return HookAbsolute(pid, hookRefOut, function, hookFunction, redirect != 0 ? exportLibNid : 0, redirect);
     }
 

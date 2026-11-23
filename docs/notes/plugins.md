@@ -120,13 +120,47 @@ is the module's own (VitaSharp has one UID space for the kernel and the processe
 loads its own kernel module (Adrenaline's eboot does it first). taiReloadConfig, taiReloadConfigForKernel and
 taiLoadPluginsForTitleForKernel are not offered yet.
 
+The firmware's user modules the HLE serves (the os0:us modules every process has preloaded, such as SceLibKernel, and
+the vs0 modules a process loads) are in the process's module list as the framework sees it: the first time the
+framework looks at a process's modules, each firmware user module exporting a library the process imports, that no
+loaded module of the process exports, is listed with the firmware module's name, module NID and export tables, at a
+fixed address of the process's memory, each exported function's entry an HLE stub. They come before the loaded modules
+(they were preloaded), so the newest module is still the program's. A user plugin's export hook on one patches its
+entry and takes that process's import stubs of the function (those bound later too); other processes are not
+affected, as on the Vita a user module's code is its process's. These modules are not linked: imports keep binding to
+the HLE as before. They need the firmware installed (os0 and vs0 from PSVUPDAT.PUP); without it the search finds no
+such module (0x90010002), as before.
+
+The framework keeps no list of patches by module: a plugin releases its hooks and injections itself, normally in its
+module_stop, in any order, while the patched code is still in place; a plugin that stops and unloads without
+releasing them leaves them installed (as the framework's published source does; a hook whose code went with the
+module then jumps to freed memory, as on the Vita). Only when a process ends are its patches dropped, without writing
+the original bytes back (the code went with the process); kernel patches stay until they are released.
+
+| Mechanism | Status |
+| --- | --- |
+| Export hook, kernel (kernel modules, the firmware's included) | Done |
+| Export hook, user, on a loaded user module | Done |
+| Export hook, user, on a firmware user module the HLE serves | Done (listed in the process's module list; needs the firmware) |
+| Import hook (kernel and user) | Done |
+| Offset and absolute-address hooks (kernel and user, ARM and Thumb) | Done |
+| Hook chain with continuation (next/func/old), in the framework's order | Done |
+| Release in the middle, at the head, of the last one | Done |
+| Data injection (absolute and by segment offset), restored on release | Done |
+| Kernel hook on a firmware syscall export: every process's calls, those made later too | Done |
+| A process ends: its patches are dropped, nothing written back | Done |
+| A plugin stops and unloads: its module_stop releases its patches; nothing is released for it | Done (as the framework) |
+| Translated code: each patch drops the blocks it covers; a block decoded during a patch is checked again | Done |
+| Module calls for user programs (load, start, stop, unload a kernel or process module; user/kernel copies) | Done |
+| Patching the firmware's own code by offset | Not possible (no firmware code: the HLE serves it) |
+
 ## Limits
 
 - A plugin that patches the firmware's own code by offset finds no firmware code there (VitaSharp implements the
   firmware's libraries itself).
-- A user plugin's export hook on a firmware user library the HLE serves (SceLibKernel, SceDisplay, ...) finds no
-  module: those modules are not in the process's module list yet. Import hooks on a program's own import stubs of
-  them work.
+- The firmware user modules the HLE serves are listed only in the plugin framework's searches (module information,
+  exports, hooks, offsets); the module manager's own list of the process (sceKernelGetModuleList) shows the loaded
+  modules only. Their exported variables are not in the tables.
 - Undefined instructions and prefetch aborts (jumps to unmapped addresses) reach the handlers registered with
   SceExcpmgr, in undefined/abort mode with the banked registers and SPSR of the ARM exception modes; with no handler,
   or when no handler takes it, the fault is reported as a crash as before. Data aborts are not delivered yet (an

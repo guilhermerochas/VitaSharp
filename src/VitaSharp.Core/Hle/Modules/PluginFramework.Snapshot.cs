@@ -14,9 +14,9 @@ namespace VitaSharp.Core.Hle.Modules;
 [GenerateSnapshot, SnapshotIgnoreFields("_patchLock", "_redirectsBeforeLoad")]
 public sealed partial class PluginFramework
 {
-    /// <summary>The HLE functions (library, NID) this framework's hooks redirected in the running session (read before
-    /// a load).</summary>
-    readonly HashSet<(uint LibNid, uint Nid)> _redirectsBeforeLoad = new();
+    /// <summary>The HLE functions (hook's process, library, NID) this framework's hooks redirected in the running
+    /// session (read before a load).</summary>
+    readonly HashSet<(int Pid, uint LibNid, uint Nid)> _redirectsBeforeLoad = new();
 
     void BeforeSnapshotLoad()
     {
@@ -27,7 +27,7 @@ public sealed partial class PluginFramework
             {
                 if (patch.RedirectedNid != 0)
                 {
-                    _redirectsBeforeLoad.Add((patch.RedirectedLibNid, patch.RedirectedNid));
+                    _redirectsBeforeLoad.Add((patch.Pid, patch.RedirectedLibNid, patch.RedirectedNid));
                 }
             }
         }
@@ -37,12 +37,12 @@ public sealed partial class PluginFramework
     {
         lock (_patchLock)
         {
-            if (_hooks.Contains(null!) || _injections.Contains(null!))
+            if (_hooks.Contains(null!) || _injections.Contains(null!) || _shells.Contains(null!))
             {
                 throw new SnapshotException("a hook or data injection of the plugin framework is missing from the kernel objects");
             }
 
-            var saved = new HashSet<(uint LibNid, uint Nid)>();
+            var saved = new HashSet<(int Pid, uint LibNid, uint Nid)>();
             foreach (HookPatch patch in _hooks)
             {
                 if (patch.RedirectedNid != 0)
@@ -53,24 +53,24 @@ public sealed partial class PluginFramework
                         patch.RedirectedLibNid = Emu.FirmwareKernel.LibraryOfEntry(patch.Address, patch.RedirectedNid);
                     }
 
-                    saved.Add((patch.RedirectedLibNid, patch.RedirectedNid));
+                    saved.Add((patch.Pid, patch.RedirectedLibNid, patch.RedirectedNid));
                 }
             }
 
             // a function hooked only in the running session: its stubs bind as they would now
-            foreach ((uint libNid, uint nid) in _redirectsBeforeLoad)
+            foreach ((int pid, uint libNid, uint nid) in _redirectsBeforeLoad)
             {
-                if (saved.Contains((libNid, nid)))
+                if (saved.Contains((pid, libNid, nid)))
                 {
                     continue;
                 }
 
-                foreach (Emulator process in RedirectedProcesses())
+                foreach (Emulator process in RedirectedProcesses(pid))
                 {
-                    process.Hle.ClearRedirect(libNid, nid);
+                    SetRedirect(process, pid, libNid, nid, 0);
                 }
 
-                foreach (Emulator process in RedirectedProcesses())
+                foreach (Emulator process in RedirectedProcesses(pid))
                 {
                     using (ProcessScope.Enter(process))
                     {

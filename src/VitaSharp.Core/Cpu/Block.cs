@@ -266,6 +266,17 @@ public sealed unsafe class BlockCache
 
     private static ulong Key(uint pc, bool thumb) => pc | (thumb ? 1ul << 32 : 0);
 
+    /// <summary>
+    /// Counts the invalidations (<see cref="Invalidate"/>, <see cref="Revalidate"/>, <see cref="Clear"/>): a block
+    /// decoded while one ran may hold the code from before the rewrite and reach the cache after the invalidation looked
+    /// for it (a JIT worker or another guest thread decoding while a plugin patches the code), so <see cref="Get"/>
+    /// checks such a block against the memory again before handing it out.
+    /// </summary>
+    private long _invalidations;
+
+    /// <summary>Test point: called in <see cref="Get"/> between decoding a block and adding it to the cache.</summary>
+    internal Action<Block>? AfterDecode { get; set; }
+
     public Block Get(uint pc, bool thumb)
     {
         ulong key = Key(pc, thumb);
@@ -274,9 +285,32 @@ public sealed unsafe class BlockCache
             return b;
         }
 
-        b = BlockBuilder.Build(pc, thumb);
-        b.Owner = this;
-        return _blocks.GetOrAdd(key, b);
+        while (true)
+        {
+            long generation = Volatile.Read(ref _invalidations);
+            Block built = BlockBuilder.Build(pc, thumb);
+            built.Owner = this;
+            AfterDecode?.Invoke(built);
+            b = _blocks.GetOrAdd(key, built);
+
+            // the block is in the cache before the count is read again: an invalidation counted after this read finds
+            // it in its scan; one counted between the two reads may have scanned before it was there
+            Interlocked.MemoryBarrier();
+            if (Volatile.Read(ref _invalidations) == generation)
+            {
+                return b;
+            }
+
+            if (!b.Invalidated && CodeUnchanged(b))
+            {
+                return b;
+            }
+
+            if (_blocks.TryRemove(new KeyValuePair<ulong, Block>(key, b)))
+            {
+                Retire(b);
+            }
+        }
     }
 
     /// <summary>The native backend's indirect-exit table of this process (<see cref="Native.NativeRuntime.Publish"/>),
@@ -328,6 +362,7 @@ public sealed unsafe class BlockCache
     /// <summary>Drop every block overlapping [addr, addr+size) (code was rewritten, e.g. module load/unload).</summary>
     public void Invalidate(uint addr, uint size)
     {
+        Interlocked.Increment(ref _invalidations);
         foreach (KeyValuePair<ulong, Block> kv in _blocks)
         {
             Block b = kv.Value;
@@ -349,6 +384,7 @@ public sealed unsafe class BlockCache
     public (int Kept, int Dropped) Revalidate()
     {
         using AddressSpace.Activation activation = AddressSpace.Use(Space ?? AddressSpace.Current);
+        Interlocked.Increment(ref _invalidations);
         var unchanged = new HashSet<(uint Start, uint End)>();
         var changed = new List<KeyValuePair<ulong, Block>>();
         var withDeps = new List<KeyValuePair<ulong, Block>>();
@@ -415,6 +451,7 @@ public sealed unsafe class BlockCache
 
     public void Clear()
     {
+        Interlocked.Increment(ref _invalidations);
         foreach (KeyValuePair<ulong, Block> kv in _blocks)
         {
             Retire(kv.Value);

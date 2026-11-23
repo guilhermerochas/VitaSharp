@@ -82,9 +82,10 @@ public sealed partial class PluginFramework : HleModule
 
     // ------------------------------------------------------------------ modules
 
-    /// <summary>The modules of <paramref name="pid"/> newest first (the framework walks the firmware's module list from
-    /// its end), or null for an unknown process.</summary>
-    List<LoadedModule>? ModulesNewestFirst(int pid)
+    /// <summary>The modules of <paramref name="pid"/> oldest first: a user process's firmware modules the HLE serves
+    /// (<see cref="ShellsOf"/>, preloaded before everything else), then its loaded modules; null for an unknown
+    /// process.</summary>
+    List<LoadedModule>? ModulesOldestFirst(int pid)
     {
         List<LoadedModule>? modules = KernelSpace.ModulesOf(Emu, pid);
         if (modules == null)
@@ -92,7 +93,21 @@ public sealed partial class PluginFramework : HleModule
             return null;
         }
 
-        modules.Reverse();
+        List<LoadedModule> shells = ShellsOf(pid);
+        if (shells.Count > 0)
+        {
+            modules.InsertRange(0, shells);
+        }
+
+        return modules;
+    }
+
+    /// <summary>The modules of <paramref name="pid"/> newest first (the framework walks the firmware's module list from
+    /// its end), or null for an unknown process.</summary>
+    List<LoadedModule>? ModulesNewestFirst(int pid)
+    {
+        List<LoadedModule>? modules = ModulesOldestFirst(pid);
+        modules?.Reverse();
         return modules;
     }
 
@@ -215,7 +230,7 @@ public sealed partial class PluginFramework : HleModule
             return ErrorInvalidArgs;
         }
 
-        if (KernelSpace.ModulesOf(Emu, pid)?.FirstOrDefault(m => m.Uid == moduleId) is not { } module)
+        if (ModulesOldestFirst(pid)?.FirstOrDefault(m => m.Uid == moduleId) is not { } module)
         {
             return SceError.INVALID_PID;
         }
