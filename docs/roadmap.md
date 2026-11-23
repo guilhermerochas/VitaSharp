@@ -12,8 +12,6 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
   - Entradas do áudio: gravar os fluxos que entram nos decodificadores (sceAudiodec, ATRAC/AT9, MP3/AAC) e nos
     buffers das vozes NGS durante a gravação, para o rerun sem o jogo reproduzir buracos e erros de decodificação
     (hoje só a saída em WAV).
-  - Arquivos que o jogo lê do app0 durante a gravação: o rerun sem o jogo recebe "não encontrado" e diverge dali;
-    gravar ao menos caminho, posição, tamanho e hash de cada leitura para o compare apontar a divergência pela leitura.
   - Estados de vários processos (o shell com aplicativos abertos) ainda não sobem sem os programas
     (`SaveStates.BootFromState` recusa); e a gravação do shell pode sair sem `state_start.vss` quando uma thread do
     shell está em código do guest ("not at a safe point": tentar de novo até um ponto seguro).
@@ -3231,6 +3229,20 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   AndroidOptionParityTests. Testar: em Configurações > Gráficos escolher 2x e abrir um jogo sem ajuste próprio
   (a tela de carregamento diz 2x e a imagem sai mais nítida); na página de outro jogo escolher "1x nativa" e abrir:
   abre na nativa. No Android, o mesmo em Ajustes e na página do jogo.
+- [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo: os arquivos que o jogo lê das montagens dele saem com a gravação
+  (feat/capself2, `docs/captures.md`): `files/files.tsv` lista cada arquivo aberto ou consultado (tamanho), pasta
+  listada e leitura de app0/savedata0/addcont0/montagens PFS (caminho do guest, posição, tamanho, SHA-256) e a imagem
+  decifrada de cada módulo carregado de lá; `files/blobs.bin` guarda cada conteúdo distinto uma vez só com
+  `VITASHARP_CAPTURE_FILES_MB`/`--capture-files-mb` (padrão 0: só hashes, nenhum arquivo do jogo; o rerun diz quais
+  leituras não pôde repor); do savedata só os hashes, salvo `--capture-savedata`/`VITASHARP_CAPTURE_SAVEDATA=1`, e
+  com bytes o `report.txt` avisa que a gravação leva dados
+  do jogo. O `rerun` põe
+  esses arquivos de volta (esparsos, no tamanho gravado) numa camada sobre as montagens (`Vfs.AddReplayLayer`) e diz
+  na linha `files:` se leu algo que a gravação não leu; o `report.txt` tem a seção dos arquivos. Uma gravação recebida
+  não escreve fora da pasta do rerun (caminho absoluto, `..`, dispositivo estranho: linha ignorada). Testes:
+  `CaptureFilesTests`, `SessionCaptureRerunTests.ACaptureOfAGameReadingItsFilesReRunsWithoutTheGame`. Testar: F8 num
+  jogo que carrega dados durante o jogo (troca de fase), copiar a pasta para outro lugar e rodar
+  `VitaSharp.Desktop --data=<pasta vazia> rerun <pasta>`: a linha `files:` do fim diz que toda leitura foi gravada.
 
 - [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo analisável e reexecutável sem o jogo (feat/capself1,
   `docs/captures.md`): (1) nenhum arquivo da gravação leva dado pessoal: uma última etapa troca, em todo texto e no

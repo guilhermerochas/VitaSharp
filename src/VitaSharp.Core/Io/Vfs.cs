@@ -42,7 +42,43 @@ public sealed class Vfs
             Mount("gro0", Path.Combine(fsRoot, "gro0"));
             Mount("grw0", Path.Combine(fsRoot, "grw0"));
         }
+
+        foreach (string device in _mounts.Keys)
+        {
+            _systemDevices.Add(device);
+        }
     }
+
+    /// <summary>The devices every process of the unit sees (the memory card, the system partitions, the media
+    /// folders, the game card): mounted when the file system is made. The others (app0, savedata0, addcont0, a PFS
+    /// mount...) are the mounts of the process's own title.</summary>
+    private readonly HashSet<string> _systemDevices = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>A device mounted for the process's title (app0, savedata0, addcont0, a PFS or game data mount), not one
+    /// of the unit's own devices.</summary>
+    public bool IsTitleDevice(string device)
+    {
+        string name = device.TrimEnd(':');
+        return name.Length > 0 && !_systemDevices.Contains(name) && (_mounts.ContainsKey(name) || name.Equals("app0", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>The devices mounted as save data (<see cref="MountSaveData"/>: savedata0 and the other save data
+    /// mounts of the title).</summary>
+    private readonly HashSet<string> _saveDataDevices = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>A device mounted as the title's save data (<see cref="MountSaveData"/>): the player's data, not the game's.</summary>
+    public bool IsSaveDataDevice(string device) => _saveDataDevices.Contains(device.TrimEnd(':'));
+
+    /// <summary>Re-run of a capture: for each device, a folder searched before the device's own (the files the
+    /// recording read, <see cref="Capture.CapturedFiles"/>).</summary>
+    private readonly Dictionary<string, string> _replayLayers = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Puts <paramref name="hostPath"/> over <paramref name="device"/> for reads: a file there is the one the
+    /// guest sees. A file of the layer the guest opens for writing is first copied to the device's own folder, and the
+    /// device's copy is the one from then on.</summary>
+    public void AddReplayLayer(string device, string hostPath) => _replayLayers[device.TrimEnd(':')] = hostPath;
+
+    public IReadOnlyDictionary<string, string> ReplayLayers => _replayLayers;
 
     /// <summary>The media devices and their ux0 folders.</summary>
     public static readonly (string Device, FirmwareFolder Folder)[] MediaDevices = [("photo0", FirmwareLayout.Picture), ("music0", FirmwareLayout.Music), ("video0", FirmwareLayout.Video)];
@@ -111,7 +147,16 @@ public sealed class Vfs
     public void MountSaveData(string device, string hostPath)
     {
         Mount(device, hostPath);
+        _saveDataDevices.Add(device.TrimEnd(':'));
         Directory.CreateDirectory(Path.Combine(hostPath, SaveDataSystemFolder));
+    }
+
+    /// <summary>Another title's save data that already exists (sceAppUtilSaveDataMount, _sceAppMgrSaveDataAddMount:
+    /// savedata1), mounted as save data without making its folders.</summary>
+    public void MountExistingSaveData(string device, string hostPath)
+    {
+        Mount(device, hostPath);
+        _saveDataDevices.Add(device.TrimEnd(':'));
     }
 
     /// <summary>The system folder of every save data (a fixed name of the firmware's layout).</summary>
@@ -186,6 +231,9 @@ public sealed class Vfs
         return true;
     }
 
+    /// <summary>A path inside a device without "." and ".." segments or doubled slashes ("dir/file").</summary>
+    public static string NormalizeRelative(string rel) => Normalize(rel.Replace('\\', '/'));
+
     /// <summary>Normalizes "." and ".." segments.</summary>
     private static string Normalize(string rel)
     {
@@ -215,6 +263,11 @@ public sealed class Vfs
     {
         (string? dev, string? rel) = Split(vitaPath);
         rel = Normalize(rel);
+        if (_replayLayers.Count > 0 && _replayLayers.TryGetValue(dev, out string? layer) && ResolveReplayLayer(dev, layer, rel, forWrite) is { } replayed)
+        {
+            return replayed;
+        }
+
         if (dev.Equals("app0", StringComparison.OrdinalIgnoreCase) && !forWrite)
         {
             foreach (string overlay in _app0Overlays)
@@ -232,6 +285,35 @@ public sealed class Vfs
         }
 
         return ResolveCaseInsensitive(root, rel);
+    }
+
+    /// <summary>The layer's entry for a read; for a write, the layer's file goes to the device's own folder first (copy
+    /// on write) and null is returned so the device's path is used.</summary>
+    private string? ResolveReplayLayer(string device, string layer, string rel, bool forWrite)
+    {
+        string inLayer = ResolveCaseInsensitive(layer, rel);
+        bool file = File.Exists(inLayer);
+        if (!forWrite)
+        {
+            return file || Directory.Exists(inLayer) ? inLayer : null;
+        }
+
+        if (file && _mounts.TryGetValue(device, out string? root))
+        {
+            string own = ResolveCaseInsensitive(root, rel);
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(own)!);
+                File.Copy(inLayer, own, overwrite: true);
+                File.Delete(inLayer);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                Util.Log.Warn($"re-run: {device}:{rel} not copied out of the capture's files: {e.Message}");
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

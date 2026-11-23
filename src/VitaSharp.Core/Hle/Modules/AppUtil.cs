@@ -344,7 +344,7 @@ public sealed partial class AppUtil : HleModule
         bool exists = titleId.Length > 0 && Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any();
         Log.Info($"sceAppUtilSaveDataMount({titleId}): {(exists ? "mounted" : "no save data")}");
         if (!exists) return ERR_SLOT_NOT_FOUND;
-        Emu.Vfs.Mount("savedata1", dir);
+        Emu.Vfs.MountExistingSaveData("savedata1", dir);
         return 0;
     }
 

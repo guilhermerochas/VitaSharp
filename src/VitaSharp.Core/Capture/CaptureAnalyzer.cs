@@ -278,6 +278,16 @@ public static class CaptureAnalyzer
             sb.AppendLine("    " + l["audio: ".Length..]);
         }
 
+        List<string> fileLines = CaptureFileRecorder.ReportSection(dir);
+        if (fileLines.Count > 0)
+        {
+            sb.AppendLine();
+            foreach (string l in fileLines)
+            {
+                sb.AppendLine(l);
+            }
+        }
+
         List<string> hooks = VitaSharp.Core.Hle.Modules.PluginHookStats.ReportSection(ContextSection(dir, stop: false), ctxStop);
         if (hooks.Count > 0)
         {
@@ -311,7 +321,7 @@ public static class CaptureAnalyzer
     /// re-run frame presented closest to the same guest time, and the pictures compared (mean channel difference of
     /// 96x54 thumbnails). Writes compare.txt into the re-run folder and returns its summary line.
     /// </summary>
-    public static string Compare(string original, string rerun, double threshold = 6)
+    public static string Compare(string original, string rerun, double threshold = 6, long? rerunFirstFlip = null)
     {
         // A capture recorded without the frames stream ("Gravar tudo" with pictures off, an input-only capture)
         // has nothing to compare against: say so instead of throwing, so the re-run still ends and prints its summary.
@@ -325,37 +335,77 @@ public static class CaptureAnalyzer
             return "compare: skipped, the re-run recorded no frames.vsfr";
         }
 
-        static List<(long Us, long Present, byte[] T)> Load(string dir) =>
+        // every presented frame (a frame without a picture still says which guest frame it was)
+        static List<(long Us, long Present, long Flip, byte[]? T)> Load(string dir) =>
             FramesFile.ReadAll(Path.Combine(dir, "frames.vsfr"))
-                .Where(x => x.Picture != null && x.Frame.Info.Flip >= 0)
-                .Select(x => (x.Frame.Info.GuestUs, x.Frame.Info.Present, Downscale(x.Picture!.Value.Rgba, x.Picture.Value.W, x.Picture.Value.H, TW, TH)))
+                .Where(x => x.Frame.Info.Flip >= 0)
+                .Select(x => (x.Frame.Info.GuestUs, x.Frame.Info.Present, x.Frame.Info.Flip,
+                    x.Picture is { } picture ? Downscale(picture.Rgba, picture.W, picture.H, TW, TH) : null))
                 .ToList();
-        List<(long Us, long Present, byte[] T)> a = Load(original);
-        List<(long Us, long Present, byte[] T)> b = Load(rerun);
+        List<(long Us, long Present, long Flip, byte[]? T)> a = Load(original);
+        List<(long Us, long Present, long Flip, byte[]? T)> b = Load(rerun);
         var sb = new StringBuilder("# originalPresent rerunPresent guestTimeS dtMs diff\n");
-        if (a.Count == 0 || b.Count == 0)
+        if (a.Count(f => f.T != null) == 0 || b.Count(f => f.T != null) == 0)
         {
             return "compare: no frames";
         }
 
-        long from = b[0].Us, to = b[^1].Us;
+        // The re-run hands each input change to the same read of the guest as the recording (IGuestReadInput), so its
+        // k-th frame from the state is the recording's k-th: frames are paired by guest frame from the state. Paired by
+        // guest time instead (captures that do not say where their re-run started), a re-run whose host ran at another
+        // pace met the neighbouring frame around every change.
+        Dictionary<long, int> rerunByFlip = new();
+        for (int k = 0; k < b.Count; k++)
+        {
+            rerunByFlip.TryAdd(b[k].Flip, k);
+        }
+
+        (long Original, long Rerun)? flips = FlipsAtTheState(original, rerun, a, rerunFirstFlip);
         int n = 0, same = 0;
+        long from = long.MaxValue, to = long.MinValue;
         double firstDiverge = double.NaN;
         var diffs = new List<double>();
         int j = 0;
-        foreach ((long us, long present, byte[]? t) in a)
+        foreach ((long us, long present, long flip, byte[]? t) in a)
         {
-            if (us < from || us > to)
+            if (t == null)
             {
                 continue;
             }
 
-            while (j + 1 < b.Count && Math.Abs(b[j + 1].Us - us) <= Math.Abs(b[j].Us - us))
+            (long Us, long Present, long Flip, byte[]? T) other;
+            if (flips is { } at)
             {
-                j++;
+                if (flip < at.Original || !rerunByFlip.TryGetValue(at.Rerun + flip - at.Original, out int k) || b[k].T == null)
+                {
+                    continue;
+                }
+
+                other = b[k];
+            }
+            else
+            {
+                if (us < b[0].Us || us > b[^1].Us)
+                {
+                    continue;
+                }
+
+                while (j + 1 < b.Count && (b[j].T == null || Math.Abs(b[j + 1].Us - us) <= Math.Abs(b[j].Us - us)))
+                {
+                    j++;
+                }
+
+                if (b[j].T == null)
+                {
+                    continue;
+                }
+
+                other = b[j];
             }
 
-            double d = Diff(t, b[j].T);
+            from = Math.Min(from, us);
+            to = Math.Max(to, us);
+            double d = Diff(t, other.T);
             n++;
             diffs.Add(d);
             if (d < threshold)
@@ -367,7 +417,7 @@ public static class CaptureAnalyzer
                 firstDiverge = us / 1e6;
             }
 
-            sb.AppendLine(FormattableString.Invariant($"{present} {b[j].Present} {us / 1e6:F3} {(b[j].Us - us) / 1000.0:F1} {d:F2}"));
+            sb.AppendLine(FormattableString.Invariant($"{present} {other.Present} {us / 1e6:F3} {(other.Us - us) / 1000.0:F1} {d:F2}"));
         }
         diffs.Sort();
         string summary = n == 0 ? "compare: the re-run does not overlap the capture in guest time"
@@ -379,8 +429,79 @@ public static class CaptureAnalyzer
         return summary;
     }
 
+    /// <summary>
+    /// The guest frame numbers (frames.vsfr's flips) of the first frame after the state the re-run started from, in the
+    /// capture and in the re-run: the state's guest time is the capture's (session.txt start-state / preroll-state;
+    /// the re-run names which one in its --capture-playback option), and the re-run's recording starts when that
+    /// state is loaded (<paramref name="rerunFirstFlip"/> from the load itself, else its own "start" frame). Null when
+    /// the folders do not say it.
+    /// </summary>
+    private static (long Original, long Rerun)? FlipsAtTheState(string original, string rerun, List<(long Us, long Present, long Flip, byte[]? T)> originalFrames, long? rerunFirstFlip)
+    {
+        Dictionary<string, string> rerunSession = ReadSession(Path.Combine(rerun, "session.txt"));
+        if (StateGuestUs(original, rerun) is not { } stateUs)
+        {
+            return null;
+        }
+
+        long rerunFlip;
+        if (rerunFirstFlip is { } given)
+        {
+            rerunFlip = given;
+        }
+        else
+        {
+            System.Text.RegularExpressions.Match start = System.Text.RegularExpressions.Regex.Match(rerunSession.GetValueOrDefault("start", ""), @"guest frame (\d+)");
+            if (!start.Success || !long.TryParse(start.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out rerunFlip))
+            {
+                return null;
+            }
+        }
+
+        // the frame after the last one before the state (the first one after it may have been dropped by the renderer)
+        long? before = null, after = null;
+        foreach ((long us, long _, long flip, byte[]? _) in originalFrames)
+        {
+            if (us < stateUs)
+            {
+                before = Math.Max(before ?? long.MinValue, flip);
+            }
+            else
+            {
+                after = Math.Min(after ?? long.MaxValue, flip);
+            }
+        }
+
+        long? originalFlip = before is { } last ? last + 1 : after;
+        return originalFlip is { } first ? (first, rerunFlip) : null;
+    }
+
+    /// <summary>The guest time (µs) of the capture's state the re-run started from (session.txt start-state /
+    /// preroll-state; the re-run names which in its --capture-playback option), or null.</summary>
+    private static long? StateGuestUs(string original, string rerun)
+    {
+        string options = ReadSession(Path.Combine(rerun, "session.txt")).GetValueOrDefault("options", "");
+        int playback = options.IndexOf("--capture-playback=", StringComparison.Ordinal);
+        if (playback < 0)
+        {
+            return null;
+        }
+
+        int end = options.IndexOf('\t', playback);
+        string spec = end < 0 ? options[playback..] : options[playback..end];
+        string key = spec.EndsWith("@start", StringComparison.Ordinal) ? "start-state" : "preroll-state";
+        string[] state = ReadSession(Path.Combine(original, "session.txt")).GetValueOrDefault(key, "").Split(' ');
+        int usAt = Array.IndexOf(state, "guest-us");
+        if (usAt < 0 || usAt + 1 >= state.Length || !long.TryParse(state[usAt + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out long stateUs))
+        {
+            return null;
+        }
+
+        return stateUs;
+    }
+
     /// <summary>The HLE calls of a capture and its re-run (<see cref="HleCallTrace"/>): the first call where a
-    /// thread did something else, or got another result.</summary>
+    /// thread did something else, or got another result, from the state the re-run started from on.</summary>
     public static string CompareCalls(string original, string rerun)
     {
         string a = Path.Combine(original, HleCallTrace.FileName), b = Path.Combine(rerun, HleCallTrace.FileName);
@@ -389,7 +510,7 @@ public static class CaptureAnalyzer
             return $"HLE calls: not compared ({(File.Exists(a) ? "the re-run" : "the capture")} has no {HleCallTrace.FileName})";
         }
 
-        return HleCallTrace.FirstDifference(a, b) is { } difference
+        return HleCallTrace.FirstDifference(a, b, StateGuestUs(original, rerun)) is { } difference
             ? $"HLE calls: first difference: {difference}"
             : "HLE calls: the same calls and results in every thread";
     }

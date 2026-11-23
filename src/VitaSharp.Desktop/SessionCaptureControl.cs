@@ -62,6 +62,19 @@ sealed class SessionCaptureControl : IDisposable
         }
 
         Capture = new SessionCapture(emu, o);
+        // the file contents kept of what the game reads (default 0: hashes only): --capture-files-mb=MB, over VITASHARP_CAPTURE_FILES_MB
+        // (which the core reads when the capture is made)
+        if (Runner.Opt(options, "--capture-files-mb") is { } filesMb && long.TryParse(filesMb, NumberStyles.Integer, CultureInfo.InvariantCulture, out long megabytes))
+        {
+            o.MaxFileBytes = Math.Max(0, megabytes) << 20;
+        }
+
+        // the bytes of the title's save data too (by default only their hashes): --capture-savedata, VITASHARP_CAPTURE_SAVEDATA=1
+        if (options.Contains("--capture-savedata"))
+        {
+            o.KeepSaveData = true;
+        }
+
         // a re-run's own recording has no pre-roll
         _explicitPreRoll = overrides != null ? 0 : ExplicitPreRoll(options, Environment.GetEnvironmentVariable(EnvVars.CapturePreRoll));
         UpdatePreRoll();
@@ -259,15 +272,37 @@ sealed class SessionCaptureControl : IDisposable
                 return null;
             }
             var input = InputPlayback.Load(Path.Combine(dir, "input.tsv"));
+            // what the recording read from the title's mounts goes back over them: the game reads the same bytes without being installed
+            string filesDir = Path.Combine(dir, "reruns", ".files");
+            try
+            {
+                if (Directory.Exists(filesDir))
+                {
+                    Directory.Delete(filesDir, true);
+                }
+            }
+            catch (IOException)
+            {
+            }
+
+            CapturedFiles? files = CapturedFiles.Materialize(dir, filesDir);
+            CapturedFiles.Active = files;
+            CaptureHooks.Files = files;
+            Log.Info(files != null
+                ? $"[capture] re-run: {files.Files} files and {files.Reads} reads of the recording put back over the title's mounts ({files.MissingContents} reads without their contents: over the recording's limit)"
+                : "[capture] re-run: the capture has no files/ (recorded by an earlier build): the game's files are this data folder's");
             emu.Host.Input = input;
             emu.Host.Motion = input;
             CaptureHooks.Random = input;
             var pb = new Playback(dir, input, fromUs);
             var root = Path.Combine(dir, "reruns");
             var control = new SessionCaptureControl(emu, ro, renderer, options.Where(o => !o.StartsWith("--capture-preroll")).ToArray(), null, null,
-                new SessionCaptureOptions { Root = root, SetPresentTap = null!, StartState = false, GpuDump = options.Contains("--rerun-gpu-dump"), Zip = false, StopHint = "re-run" });
+                new SessionCaptureOptions { Root = root, SetPresentTap = null!, StartState = false, GpuDump = options.Contains("--rerun-gpu-dump"), Zip = false, Files = false, KeepCallTrace = true, StopHint = "re-run" });
+            // every HLE call from the state on: the trace starts while the load still holds the game
+            SaveStates.Restored += _ => HleCallTrace.Begin();
             SaveStates.Loaded += _ =>
             {
+                long firstFlip = SaveStates.FramesPresentedAtLastLoad;
                 input.Activate(fromUs);
                 control.Capture.Start("re-run", limit: false);
                 new Thread(() =>
@@ -286,13 +321,24 @@ sealed class SessionCaptureControl : IDisposable
                     string cmp;
                     try
                     {
-                        cmp = control.Capture.Dir is { } rd ? CaptureAnalyzer.Compare(pb._dir, rd) : "no re-run capture";
+                        cmp = control.Capture.Dir is { } rd ? CaptureAnalyzer.Compare(pb._dir, rd, rerunFirstFlip: firstFlip) : "no re-run capture";
                     }
                     catch (Exception ex) when (ex is IOException or InvalidDataException)
                     {
                         // A broken or partial frames file must not take the process down before the PERF summary.
                         cmp = $"compare: failed ({ex.Message})";
                     }
+                    if (files != null)
+                    {
+                        cmp += files.ReadsOutside == 0
+                            ? $"\nfiles: every read of the title's files was one the recording made"
+                            : $"\nfiles: {files.ReadsOutside} reads the recording did not make (the log names the first of each file): the re-run diverged there";
+                        if (files.ReadsWithoutBytes > 0)
+                        {
+                            cmp += $"\nfiles: {files.ReadsWithoutBytes} reads could not be put back, the recording kept their hashes only (the log names the first of each file; record with --capture-files-mb=MB to keep the bytes): the re-run read zeros there";
+                        }
+                    }
+
                     Log.Info($"[capture] re-run recorded: {control.Capture.Dir} (report.txt there; compare.txt against the original); {cmp}");
                     Console.WriteLine($"re-run capture: {control.Capture.Dir}");
                     Console.WriteLine(cmp);

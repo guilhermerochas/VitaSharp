@@ -36,7 +36,7 @@ public sealed class SessionCaptureRerunTests : IDisposable
 
     /// <summary>The re-run's comparison lines, then the end of its output.</summary>
     private static string Summary(string s) =>
-        string.Join("\n", s.Split('\n').Where(l => l.Contains("compare", StringComparison.Ordinal) || l.Contains("HLE calls", StringComparison.Ordinal))) + "\n" + Tail(s);
+        string.Join("\n", s.Split('\n').Where(l => l.Contains("compare", StringComparison.Ordinal) || l.Contains("HLE calls", StringComparison.Ordinal) || l.Contains("files:", StringComparison.Ordinal) || l.Contains("did not read", StringComparison.Ordinal))) + "\n" + Tail(s);
 
     [SoftwareVulkanFact]
     public void ACaptureReRunsWithoutItsGameAndShowsTheSameFramesAndCalls()
@@ -68,6 +68,44 @@ public sealed class SessionCaptureRerunTests : IDisposable
         Assert.True(rerun.Output.Contains("no file of the program read", StringComparison.Ordinal), Summary(rerun.Output));
         Assert.True(rerun.Output.Contains("100% look the same in the re-run", StringComparison.Ordinal), Summary(rerun.Output));
         Assert.True(rerun.Output.Contains("no divergence", StringComparison.Ordinal), Summary(rerun.Output));
+        Assert.True(rerun.Output.Contains("HLE calls: the same calls and results in every thread", StringComparison.Ordinal), Summary(rerun.Output));
+        Assert.False(Directory.Exists(Path.Combine(_analyst, "fs", "ux0", "app", "VSTS00001")), "the re-run made the game's folder");
+    }
+
+    /// <summary>
+    /// A game that reads its own files while it runs (<see cref="SyntheticTitle.InstallFileReader"/>: every frame the
+    /// colour comes from app0:colour.bin, a second read when a button is held) re-runs without being installed: the
+    /// recording keeps only the bytes it read (two 4-byte contents of the 64 KB file, each once), the re-run puts them
+    /// back over app0 and draws the same frames. Without them the re-run's reads fail and every frame is the "missing"
+    /// colour.
+    /// </summary>
+    [SoftwareVulkanFact]
+    public void ACaptureOfAGameReadingItsFilesReRunsWithoutTheGame()
+    {
+        string app = SyntheticTitle.InstallFileReader(Path.Combine(_recorded, "fs"));
+        DesktopProcess.Result run = DesktopProcess.Run(_recorded, ["run", app, "--headless", "--vulkan", "--no-vsync", "--cpu=interp", "--frames=170",
+            "--input=cross@f80:30", "--capture-at=40:140", "--capture-files-mb=1"], timeoutMs: 240_000);
+        Assert.True(run.ExitCode == 0, Tail(run.Output));
+        string capture = Directory.GetDirectories(Path.Combine(_recorded, "captures"), "VSTS00001_*_tudo").Single();
+        Assert.True(File.Exists(Path.Combine(capture, "state_start.vss")), Tail(run.Output));
+        string[] index = File.ReadAllLines(Path.Combine(capture, "files", "files.tsv"));
+        Assert.Contains(index, l => l.StartsWith("file\tVSTS00001\tapp0:colour.bin\t-\t65536\t", StringComparison.Ordinal));
+        Assert.Contains(index, l => l.StartsWith("read\tVSTS00001\tapp0:colour.bin\t0\t4\t", StringComparison.Ordinal));
+        Assert.Contains(index, l => l.StartsWith("read\tVSTS00001\tapp0:colour.bin\t4\t4\t", StringComparison.Ordinal));
+        Assert.DoesNotContain(index, l => l.Contains("ux0:", StringComparison.Ordinal) || l.Contains(_recorded, StringComparison.OrdinalIgnoreCase));
+        // only what was read, each content once: the idle and the pressed colour
+        Assert.Equal(8, new FileInfo(Path.Combine(capture, "files", "blobs.bin")).Length);
+        string session = File.ReadAllText(Path.Combine(capture, "session.txt"));
+        Assert.Contains("2 distinct contents kept (0.0 MB of the 1 MB limit", session);
+
+        string copy = Path.Combine(_analyst, "received", Path.GetFileName(capture));
+        CopyFolder(capture, copy);
+        Directory.Delete(_recorded, true);
+
+        DesktopProcess.Result rerun = DesktopProcess.Run(_analyst, ["rerun", copy, "--cpu=interp", "--seconds=180"], timeoutMs: 240_000);
+        Assert.True(rerun.ExitCode == 0, Tail(rerun.Output));
+        Assert.True(rerun.Output.Contains("100% look the same in the re-run", StringComparison.Ordinal), Summary(rerun.Output));
+        Assert.True(rerun.Output.Contains("files: every read of the title's files was one the recording made", StringComparison.Ordinal), Summary(rerun.Output));
         Assert.True(rerun.Output.Contains("HLE calls: the same calls and results in every thread", StringComparison.Ordinal), Summary(rerun.Output));
         Assert.False(Directory.Exists(Path.Combine(_analyst, "fs", "ux0", "app", "VSTS00001")), "the re-run made the game's folder");
     }

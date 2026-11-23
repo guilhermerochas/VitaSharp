@@ -317,7 +317,7 @@ public sealed partial class AppMgr : HleModule
         string tid = GuestMemory.ReadCString(ctx, 16);
         string dir = Io.FirmwareLayout.SaveData.Host(Emu.Options.FsRoot, tid);
         if (tid.Length == 0 || !Directory.Exists(dir)) return ERR_NOT_FOUND;
-        Emu.Vfs.Mount("savedata1", dir);
+        Emu.Vfs.MountExistingSaveData("savedata1", dir);
         return 0;
     }
 

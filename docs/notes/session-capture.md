@@ -92,7 +92,8 @@ Folder `<data>/captures/<TITLEID>_<yyyyMMdd_HHmmss>_tudo/` and its zip:
 | `audio/*.wav`, `audio/files.txt`, `audio_mix.wav` | every guest audio port and every NGS source voice as a WAV (`AudioDump`), the time each opened, and their mix at 48 kHz as the device would play it |
 | `threads_start.txt`, `threads_stop.txt` | guest threads (wait state, backtrace, recent HLE calls in debug mode), held mutexes, GPU queue |
 | `hle_errors.txt` | HLE error returns and unimplemented calls by count (counted while recording, as debug mode does), and the calls of `hle_calls.tsv` by function |
-| `hle_calls.tsv` | every HLE call of the recording: guest µs, thread, function, library, r0-r3, result (`-`: still inside it at the stop), return address (`HleCallTrace`: per-thread chunks of 4096 calls, nothing allocated per call, at most 1,000,000 calls kept) |
+| `hle_calls.tsv` | every HLE call of the recording: guest µs, thread, function, library, r0-r3, result (`-`: still inside it at the stop), return address (`HleCallTrace`: per-thread chunks of 4096 calls, nothing allocated per call, at most 1,000,000 calls kept); `#state` lines say how many calls each thread had made when a save state was taken (the re-run, whose trace starts when its state is put back, is compared from there; a thread blocked in a call at the state makes it again in the re-run) |
+| `files/files.tsv`, `files/blobs.bin` | what the guest touched on its title's own mounts (app0, savedata0, addcont0, a PFS or game data mount; `Vfs.IsTitleDevice`; never ux0, os0, vs0): every file opened or whose status was read (its size), every folder listed (its entries), every read from the start of the recording (or of the pre-roll) on (path, offset, length, SHA-256, guest µs) and the decrypted image of every module loaded from them; `blobs.bin` holds each distinct content once, up to `VITASHARP_CAPTURE_FILES_MB` / `--capture-files-mb` (default 0: no bytes, every read listed with its hash only; a capture goes to public reports), the rest is listed with its hash (`CaptureFileRecorder`); the save data mounts (`Vfs.IsSaveDataDevice`) only with their hashes (`hashdir`/`hashfile`/`hashread` lines, never put back by a re-run) unless `--capture-savedata` / `VITASHARP_CAPTURE_SAVEDATA=1`; `report.txt` notes when the capture holds the game's data |
 | `log.txt` | the session log up to the stop |
 
 ### Pre-roll
@@ -126,6 +127,7 @@ Measured on the desktop (GTX 1650 laptop, 4 logical CPUs given to the emulator, 
 | States | 30-50 MB each (start, and pre-roll) |
 | Audio | 11.5 MB/min per stereo 48 kHz port or voice WAV |
 | Input, timeline, text | < 1 MB/min |
+| Files read (`files/`) | the index (path, offset, length, hash per read); the distinct bytes only up to `--capture-files-mb` (default 0); a SHA-256 per `sceIoRead` (off: one static field read) |
 | CPU while recording | the GPU dump's (~0.2-7 ms/frame on the GPU worker + compression on other threads), the frame encoder (~1 ms/frame on its own thread), the per-frame downscale copy on the GPU (the debug-mode replay ring's), a compare per input poll |
 | Start | one save state: the game stops 0.1-0.35 s |
 | Pre-roll armed | the same frame encoding, the input rings, and a save state every 30 s (0.1-0.35 s stop each) |
@@ -156,18 +158,31 @@ registered with the linker, as a load from the file does), the firmware kernel m
 (`FirmwareKernelModules.AdoptFromState`). Nothing runs until `SaveStates.Load` brings the threads, objects and HLE
 state. No file of the game, its update, the plugins or the firmware is read, so the re-run is the same whether they
 are installed or not; app0 is the title's folder of the data folder given (`--data`), never a path recorded in the
-capture (it may not exist: the game's reads during the re-run then fail as missing files). States of several
+capture (it may not exist). The files the recording read (`files/`) are put back first (`CapturedFiles.Materialize`
+into `<capture>/reruns/.files/`: each file at its recorded size, sparse, with the recorded bytes where they were read)
+and go over the title's mounts as a layer read before the device's own folder (`Vfs.AddReplayLayer`; a file of the
+layer opened for writing is moved to the device's folder first), so the game reads the same bytes without being
+installed; a module it loads from them is the recorded decrypted image (no licence leaves with the capture). A read the
+recording did not make is logged with its path and counted ("files:" line of the re-run's summary), and so is a read
+whose bytes the recording kept as a hash only (the default: the re-run reads zeros there). A received
+capture is untrusted: a line whose path would leave `.files/` (a drive or root path, `..`, a device that is not a
+plain name) or does not parse is skipped. States of several
 processes (the shell with applications) are refused. `--boot=title` boots the installed game instead and loads the
 state after 120 frames (states of earlier builds, without the boot section, need it).
 
 With the capture's run options (Jak 1's `--cpu-mhz=0` comes along), from `state_preroll.vss` (default when present)
 or `state_start.vss`, the re-run replaces the host input with
-`InputPlayback`: from the load on, the guest reads each recorded pad, touch and motion change at the same guest
-clock time it read it while recording (a save state restores the guest clock exactly), and
-`sceKernelGetRandomNumber` returns the recorded numbers in order. The re-run records itself as a capture into
-`<capture>/reruns/` (no state, no GPU dump unless `--rerun-gpu-dump`), analyzes it, and pairs its frames with the
-original's by guest time (`compare.txt`: which pictures match, the first that differs, and the first HLE call that
-differs thread by thread: another function, or another result). It ends 2 s after the last
+`InputPlayback`: from the load on, the guest's read that first saw each pad and touch change while recording sees
+it again: the controller and touch drivers number the guest's reads of each port and panel (`IGuestReadInput`; the
+count is part of the save state), `input.tsv` notes the read (`read=N`) and the re-run hands the change to that
+read, however fast the host runs it (the guest clock follows the host: under load a change matched by guest time
+landed a frame early or late). Motion samples, and captures without read numbers, play back by guest clock time (a
+save state restores the guest clock exactly); `sceKernelGetRandomNumber` returns the recorded numbers in order. The
+re-run records itself as a capture into `<capture>/reruns/` (no state, no GPU dump unless `--rerun-gpu-dump`),
+analyzes it, and pairs its frames with the original's by guest frame from the state (the re-run's first frame is the
+recording's first after the state's guest time; `SaveStates.FramesPresentedAtLastLoad`), by guest time for a
+re-run that does not say where it started (`compare.txt`: which pictures match, the first that differs, and the
+first HLE call that differs thread by thread: another function, or another result). It ends 2 s after the last
 recorded event. Headless unless `--window`.
 
 Not deterministic: guest threads run on host threads, so their interleaving, and with it every guest clock read,

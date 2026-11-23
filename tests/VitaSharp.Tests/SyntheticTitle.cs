@@ -20,9 +20,6 @@ public static class SyntheticTitle
     /// <summary>The colours as R, G, B (the guest writes them as A8B8G8R8 words).</summary>
     public static readonly (byte R, byte G, byte B) Idle = (0xC0, 0x40, 0x20), Pressed = (0x20, 0xA0, 0xE0);
 
-    private const uint InfoOff = 0x0, ImportsOff = 0x60, StringsOff = 0x100, TablesOff = 0x140, StubsOff = 0x180, CodeOff = 0x200;
-    private const uint ParamOff = 0x400, CtrlOff = 0x420, Param2Off = 0x460, FbOff = 0x1000, Fb2Off = FbOff + Width * Height * 4;
-
     private static uint Abgr((byte R, byte G, byte B) c) => 0xFF000000u | (uint)c.B << 16 | (uint)c.G << 8 | c.R;
 
     public const string Title = "Synthetic Test";
@@ -100,24 +97,72 @@ public static class SyntheticTitle
     }
 
     /// <summary>The executable.</summary>
-    public static byte[] Elf()
+    public static byte[] Elf() => Build(readsFile: false);
+
+    /// <summary>The variant of <see cref="InstallFileReader"/>: every frame it opens <see cref="ColourFile"/> on app0
+    /// and reads the colour of the frame from it (sceIoOpen, sceIoRead, sceIoClose).</summary>
+    public static byte[] FileReaderElf() => Build(readsFile: true);
+
+    /// <summary>The file the <see cref="FileReaderElf"/> variant reads every frame.</summary>
+    public const string ColourFile = "colour.bin";
+
+    /// <summary>A file the <see cref="FileReaderElf"/> variant cannot read draws this.</summary>
+    public static readonly (byte R, byte G, byte B) Missing = (0x10, 0x10, 0x10);
+
+    /// <summary>Size of <see cref="ColourFile"/>: the two colours are its first 8 bytes, the rest is never read.</summary>
+    public const int ColourFileSize = 64 * 1024;
+
+    /// <summary>The title of <see cref="Install"/> that takes its colours from app0:<see cref="ColourFile"/> every frame
+    /// (the idle colour from bytes 0-3, with a button held a second read gives the pressed colour from bytes 4-7):
+    /// a game reading its own files while it runs.</summary>
+    public static string InstallFileReader(string fsRoot, string titleId = "VSTS00001")
     {
-        byte[] seg = new byte[Param2Off + 0x20];
+        string app = Install(fsRoot, titleId);
+        File.WriteAllBytes(Path.Combine(app, "eboot.bin"), FileReaderElf());
+        byte[] colours = new byte[ColourFileSize];
+        for (int i = 8; i < colours.Length; i++)
+        {
+            colours[i] = (byte)(i * 7);
+        }
+
+        BinaryPrimitives.WriteUInt32LittleEndian(colours, Abgr(Idle));
+        BinaryPrimitives.WriteUInt32LittleEndian(colours.AsSpan(4), Abgr(Pressed));
+        File.WriteAllBytes(Path.Combine(app, ColourFile), colours);
+        return app;
+    }
+
+    private static byte[] Build(bool readsFile)
+    {
+        // the layout: module_info, imports, their strings, NID and stub tables, stubs, code, then the data
+        const uint InfoOff = 0x0, ImportsOff = 0x60;
+        uint stringsOff = readsFile ? 0x200u : 0x100u, tablesOff = stringsOff + (readsFile ? 0x60u : 0x40u), stubsOff = tablesOff + 0x40, codeOff = readsFile ? 0x300u : 0x200u;
+        uint paramOff = readsFile ? 0x600u : 0x400u, ctrlOff = paramOff + 0x20, param2Off = paramOff + 0x60;
+        uint pathOff = paramOff - 0x40, readBufOff = paramOff - 0x10;
+        const uint FbOff = 0x1000, Fb2Off = FbOff + Width * Height * 4;
+
+        byte[] seg = new byte[param2Off + 0x20];
         void W32(uint off, uint v) => BinaryPrimitives.WriteUInt32LittleEndian(seg.AsSpan((int)off), v);
         void W16(uint off, ushort v) => BinaryPrimitives.WriteUInt16LittleEndian(seg.AsSpan((int)off), v);
 
         // the imported libraries: name, library NID, function NIDs (one stub each)
-        (string Lib, uint LibNid, uint Nid)[] imports =
+        List<(string Lib, uint LibNid, uint Nid)> imports =
         [
             ("SceCtrl", 0xD197E3C7, 0xA9C3CED6),        // sceCtrlPeekBufferPositive
             ("SceDisplayUser", 0x4FAACD11, 0x7A410B64), // sceDisplaySetFrameBuf
             ("SceDisplay", 0x5ED8F994, 0x5795E898),     // sceDisplayWaitVblankStart
         ];
-        uint str = StringsOff;
-        for (int i = 0; i < imports.Length; i++)
+        if (readsFile)
+        {
+            imports.Add(("SceLibKernel", 0xCAE9ACE6, 0x6C60AC61)); // sceIoOpen
+            imports.Add(("SceIofilemgr", 0xF2FF276E, 0xFDB32293)); // sceIoRead
+            imports.Add(("SceIofilemgr", 0xF2FF276E, 0xC70B8886)); // sceIoClose
+        }
+
+        uint str = stringsOff;
+        for (int i = 0; i < imports.Count; i++)
         {
             uint entry = ImportsOff + (uint)i * 0x34;
-            uint nidTable = TablesOff + (uint)i * 8, stubTable = nidTable + 4, stub = StubsOff + (uint)i * 16;
+            uint nidTable = tablesOff + (uint)i * 8, stubTable = nidTable + 4, stub = stubsOff + (uint)i * 16;
             Encoding.ASCII.GetBytes(imports[i].Lib).CopyTo(seg, (int)str);
             W16(entry, 0x34);                      // size
             W16(entry + 2, 1);                     // version
@@ -130,10 +175,9 @@ public static class SyntheticTitle
             W32(stubTable, Base + stub);
             str += (uint)imports[i].Lib.Length + 1;
         }
-        // 3 imports x 0x34 = 0x9C bytes from 0x60: the strings at 0x100 follow without overlap
-        if (ImportsOff + imports.Length * 0x34 > StringsOff)
+        if (ImportsOff + imports.Count * 0x34 > stringsOff || str > tablesOff || stubsOff + imports.Count * 16 > codeOff)
         {
-            throw new InvalidOperationException("import table overlaps the strings");
+            throw new InvalidOperationException("import tables overlap");
         }
 
         // module_info
@@ -142,42 +186,78 @@ public static class SyntheticTitle
         W32(InfoOff + 0x24, 0);
         W32(InfoOff + 0x28, 0); // no exports
         W32(InfoOff + 0x2C, ImportsOff);
-        W32(InfoOff + 0x30, ImportsOff + (uint)imports.Length * 0x34);
-        W32(InfoOff + 0x44, CodeOff); // module_start (ARM)
+        W32(InfoOff + 0x30, ImportsOff + (uint)imports.Count * 0x34);
+        W32(InfoOff + 0x44, codeOff); // module_start (ARM)
         W32(InfoOff + 0x48, 0xFFFFFFFF);
 
         // SceDisplayFrameBuf: size, base, pitch, format (A8B8G8R8), width, height
-        W32(ParamOff, 0x18);
-        W32(ParamOff + 4, Base + FbOff);
-        W32(ParamOff + 8, Width);
-        W32(ParamOff + 12, 0);
-        W32(ParamOff + 16, Width);
-        W32(ParamOff + 20, Height);
+        W32(paramOff, 0x18);
+        W32(paramOff + 4, Base + FbOff);
+        W32(paramOff + 8, Width);
+        W32(paramOff + 12, 0);
+        W32(paramOff + 16, Width);
+        W32(paramOff + 20, Height);
         // the second framebuffer's
-        W32(Param2Off, 0x18);
-        W32(Param2Off + 4, Base + Fb2Off);
-        W32(Param2Off + 8, Width);
-        W32(Param2Off + 12, 0);
-        W32(Param2Off + 16, Width);
-        W32(Param2Off + 20, Height);
+        W32(param2Off, 0x18);
+        W32(param2Off + 4, Base + Fb2Off);
+        W32(param2Off + 8, Width);
+        W32(param2Off + 12, 0);
+        W32(param2Off + 16, Width);
+        W32(param2Off + 20, Height);
+        if (readsFile)
+        {
+            Encoding.ASCII.GetBytes("app0:" + ColourFile).CopyTo(seg, (int)pathOff);
+        }
 
-        var a = new ArmCode(Base + CodeOff);
+        var a = new ArmCode(Base + codeOff);
         a.Emit(0xE3A05000);                        // mov r5, #0          r5: which framebuffer (kept across calls)
         a.Label("loop");
         a.Emit(0xE3A00000);                        // mov r0, #0          port
-        a.LdrLiteral(1, Base + CtrlOff);           // ldr r1, =ctrl data
+        a.LdrLiteral(1, Base + ctrlOff);           // ldr r1, =ctrl data
         a.Emit(0xE3A02001);                        // mov r2, #1          one sample
-        a.Bl(Base + StubsOff);                     // sceCtrlPeekBufferPositive
-        a.LdrLiteral(1, Base + CtrlOff);
+        a.Bl(Base + stubsOff);                     // sceCtrlPeekBufferPositive
+        a.LdrLiteral(1, Base + ctrlOff);
         a.Emit(0xE5911008);                        // ldr r1, [r1, #8]    buttons
-        a.LdrLiteral(3, Abgr(Idle));
-        a.Emit(0xE3510000);                        // cmp r1, #0
-        a.LdrLiteral(3, Abgr(Pressed), cond: 0x1); // ldrne r3, =pressed
+        if (readsFile)
+        {
+            a.Emit(0xE1A07001);                    // mov r7, r1          buttons (kept across calls)
+            a.LdrLiteral(0, Base + pathOff);       // ldr r0, ="app0:colour.bin"
+            a.Emit(0xE3A01001);                    // mov r1, #1          SCE_O_RDONLY
+            a.Emit(0xE3A02000);                    // mov r2, #0
+            a.Bl(Base + stubsOff + 48);            // sceIoOpen
+            a.Emit(0xE1A08000);                    // mov r8, r0          fd
+            a.LdrLiteral(3, Abgr(Missing));
+            a.Emit(0xE3580000);                    // cmp r8, #0
+            a.Branch("colour", 0xB);               // blt colour          not opened: the missing colour
+            a.Emit(0xE1A00008);                    // mov r0, r8
+            a.LdrLiteral(1, Base + readBufOff);
+            a.Emit(0xE3A02004);                    // mov r2, #4
+            a.Bl(Base + stubsOff + 64);            // sceIoRead           bytes 0-3: the idle colour
+            a.Emit(0xE3570000);                    // cmp r7, #0
+            a.Branch("close", 0x0);                // beq close
+            a.Emit(0xE1A00008);                    // mov r0, r8
+            a.LdrLiteral(1, Base + readBufOff);
+            a.Emit(0xE3A02004);                    // mov r2, #4
+            a.Bl(Base + stubsOff + 64);            // sceIoRead           bytes 4-7: the pressed colour
+            a.Label("close");
+            a.Emit(0xE1A00008);                    // mov r0, r8
+            a.Bl(Base + stubsOff + 80);            // sceIoClose
+            a.LdrLiteral(3, Base + readBufOff);
+            a.Emit(0xE5933000);                    // ldr r3, [r3]        the colour read
+        }
+        else
+        {
+            a.LdrLiteral(3, Abgr(Idle));
+            a.Emit(0xE3510000);                    // cmp r1, #0
+            a.LdrLiteral(3, Abgr(Pressed), cond: 0x1); // ldrne r3, =pressed
+        }
+
+        a.Label("colour");
         a.LdrLiteral(2, Base + FbOff);
-        a.LdrLiteral(6, Base + ParamOff);
+        a.LdrLiteral(6, Base + paramOff);
         a.Emit(0xE3150001);                        // tst r5, #1
         a.LdrLiteral(2, Base + Fb2Off, cond: 0x1); // ldrne r2, =second framebuffer
-        a.LdrLiteral(6, Base + Param2Off, cond: 0x1);
+        a.LdrLiteral(6, Base + param2Off, cond: 0x1);
         a.LdrLiteral(4, Width * Height);
         a.Label("fill");
         a.Emit(0xE4823004);                        // str r3, [r2], #4
@@ -185,17 +265,17 @@ public static class SyntheticTitle
         a.Branch("fill", 0x1);                     // bne fill
         a.Emit(0xE1A00006);                        // mov r0, r6          the filled one's SceDisplayFrameBuf
         a.Emit(0xE3A01001);                        // mov r1, #1          next vblank
-        a.Bl(Base + StubsOff + 16);                // sceDisplaySetFrameBuf
-        a.Bl(Base + StubsOff + 32);                // sceDisplayWaitVblankStart
+        a.Bl(Base + stubsOff + 16);                // sceDisplaySetFrameBuf
+        a.Bl(Base + stubsOff + 32);                // sceDisplayWaitVblankStart
         a.Emit(0xE2255001);                        // eor r5, r5, #1      the other framebuffer next
         a.Branch("loop", 0xE);
         byte[] code = a.Assemble();
-        if (CodeOff + code.Length > ParamOff)
+        if (codeOff + code.Length > (readsFile ? pathOff : paramOff))
         {
             throw new InvalidOperationException("code too long");
         }
 
-        code.CopyTo(seg, (int)CodeOff);
+        code.CopyTo(seg, (int)codeOff);
 
         // ELF header + one PT_LOAD (the framebuffers are the zero-filled rest of the segment)
         const int ProgramHeaderOffset = 0x34, DataOffset = 0x100;
