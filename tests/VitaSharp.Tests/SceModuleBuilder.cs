@@ -72,6 +72,19 @@ public sealed class SceModuleBuilder(string name)
         return _code.Count - 1;
     }
 
+    /// <summary>A Thumb function of <paramref name="halfwords"/> (at most 8: one 16-byte slot; not 6, the length that
+    /// marks a <see cref="CallImport"/>); returns its index.</summary>
+    public int Thumb(params ushort[] halfwords)
+    {
+        if (halfwords.Length > 8 || halfwords.Length == 6)
+        {
+            throw new ArgumentOutOfRangeException(nameof(halfwords), "a Thumb function slot holds 16 bytes, and 6 halfwords mark an import call");
+        }
+
+        _code.Add(halfwords);
+        return _code.Count - 1;
+    }
+
     /// <summary>An A32 function of <paramref name="words"/> (its literals included), placed in the module's A32 code
     /// area; returns its index (<see cref="AddressOf"/> gives its address).</summary>
     public int Arm(params uint[] words)

@@ -307,6 +307,72 @@ public sealed class IoVfsMountTests(GuestMemoryFixture fixture) : IDisposable
         });
     }
 
+    /// <summary>
+    /// A kernel plugin's hook on ksceVopLookup's entry (fd_fix hooks it) sees iofilemgr's own path walks: on the Vita
+    /// the hook patches the function's code, so the calls sceIoOpen makes inside the module go through it as the other
+    /// modules' calls do. Before, the HLE's walk called its C# function directly and the hook never ran. The firmware
+    /// module is a synthetic os0:kd module exporting the function; the hook is a jump written over its entry (as any
+    /// patch, followed by the cache maintenance), to a host function that counts the call and continues to the
+    /// original with the caller's arguments.
+    /// </summary>
+    [Fact]
+    public void AHookOnTheVopLookupEntrySeesTheModulesOwnPathWalks()
+    {
+        const uint IofilemgrForDriver = 0x40FD29C7, VopLookup = 0xA5A6A55C;
+        var iofilemgr = new SceModuleBuilder("SceIofilemgr");
+        int body = iofilemgr.ReturnConstant(0);
+        iofilemgr.Export("SceIofilemgrForDriver", IofilemgrForDriver, 0x0001, (VopLookup, body));
+        string kd = Path.Combine(_h.Root, "os0", "kd");
+        Directory.CreateDirectory(kd);
+        File.WriteAllBytes(Path.Combine(kd, "iofilemgr.skprx"), iofilemgr.Build());
+        Core.Firmware.FirmwareKernelImage.Forget(_h.Root);
+        try
+        {
+            Assert.True(_h.Emu.FirmwareKernel.Load() > 0);
+            uint entry = _h.Emu.FirmwareKernel.EntryOf(IofilemgrForDriver, VopLookup);
+            Assert.NotEqual(0u, entry);
+            var hooked = new List<(uint Vnode, uint Path)>();
+            uint hook = _h.Emu.Memory.Alloc(16, "vfs test hook");
+            Linker.WriteHleStub(hook, _h.Emu.Hle.RegisterHostFunction("vfstest:vop lookup hook", context =>
+            {
+                uint vnode = context.Gpr(0);
+                uint vpp = context.Gpr(1);
+                uint path = context.Gpr(2);
+                uint flags = context.Gpr(3);
+                hooked.Add((vnode, path));
+                context.Return(Call(Io, "ksceVopLookup", vnode, vpp, path, flags));
+            }), 0);
+            _h.Emu.Code.Invalidate(hook, 16);
+            _h.OnGuest(_ =>
+            {
+                MountTvfs();
+                int unhooked = Io.sceIoOpen("tvfs0:hello.txt", (int)ORdOnly, 0);
+                Assert.True(unhooked > 0, $"open 0x{unhooked:X8}");
+                Assert.Equal(0, Io.sceIoClose(unhooked));
+                Assert.Empty(hooked);
+
+                Linker.WriteJumpStub(entry, hook);
+                _h.Emu.InvalidateCode(entry, 16);
+                _calls.Clear();
+                int fd = Io.sceIoOpen("tvfs0:hello.txt", (int)ORdOnly, 0);
+                Assert.True(fd > 0, $"open through the hook 0x{fd:X8}");
+                (uint vnode, uint path) = Assert.Single(hooked);
+                Assert.Equal(_root, vnode);
+                Assert.Equal("hello.txt", Element(path));
+                Assert.Equal(["lookup", "open"], _calls); // the hook's continuation reached the driver
+                uint buffer = _h.Alloc(32);
+                Assert.Equal(11, Io.sceIoRead(fd, buffer, 32));
+                Assert.Equal(0, Io.sceIoClose(fd));
+                Assert.Equal(NoEnt, Io.sceIoOpen("tvfs0:missing.txt", (int)ORdOnly, 0));
+                Assert.Equal(2, hooked.Count);
+            });
+        }
+        finally
+        {
+            Core.Firmware.FirmwareKernelImage.Forget(_h.Root);
+        }
+    }
+
     [Fact]
     public void CreateWriteStatDirectoryAndRemoveReachTheDriver()
     {

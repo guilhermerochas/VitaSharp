@@ -193,6 +193,35 @@ originais de volta (o código saiu com o processo); os patches de kernel ficam a
 | Código traduzido: cada patch descarta os blocos que cobre; um bloco decodificado durante um patch é conferido de novo | Feito |
 | Chamadas de módulo para programas de usuário (carregar, iniciar, parar, descarregar módulo de kernel ou de processo; cópias usuário/kernel) | Feito |
 | Corrigir o código do próprio firmware por deslocamento | Impossível (não há código do firmware: o HLE o serve) |
+| Os chamadores internos de uma função do firmware (o HLE chamando a própria função) passam pelo hook na entrada | Em andamento: o roteamento (sem custo sem hook) existe; o ksceVopLookup (os caminhos do iofilemgr) já o usa, as chamadas internas das outras funções ainda não |
+
+### Matriz de validação
+
+Cada célula é um teste que aquece o código do chamador no caminho, instala o hook, confere que o hook roda com os
+argumentos do chamador, que a continuação chega ao original e que o retorno do hook chega ao chamador, libera e confere
+que os bytes e o resultado originais voltaram (`PluginHookMatrixTests`, `PluginHookMatrixProcessTests`); a ordem da
+cadeia é testada por fuzz contra um modelo do framework (`PluginHookChainFuzzTests`, sementes fixas, 300 passos no
+interpretador, 40 com código compilado). Caminhos: o interpretador, o backend IL, o backend nativo do host (x64 no x64;
+ARM64 em host ARM64, os runners do macOS e o Android, o mesmo núcleo) e o código traduzido antes (a pré-compilação do
+cache de código: traduzido antes de rodar, depois com hook).
+
+| Hook | Interpretador | IL | Nativo | Pré-compilado |
+| --- | --- | --- | --- | --- |
+| Exportação de kernel, A32 e Thumb | ok | ok | ok | ok |
+| Importação de kernel (stub) | ok | ok | ok | ok |
+| Deslocamento de kernel (Thumb), absoluto (A32) | ok | ok | ok | ok |
+| Exportação de kernel numa biblioteca de syscall de um módulo de kernel, chamador de usuário | ok | ok | ok | ok |
+| Exportação de kernel numa syscall do firmware servida pelo HLE, chamador de usuário (vê o processo que chamou) | ok | ok | ok | ok |
+| Exportação de usuário, A32 e Thumb; importação de usuário; deslocamento de usuário (A32 e Thumb) | ok | ok | ok | ok |
+| Exportação de usuário num módulo de usuário do firmware servido pelo HLE (casca) | ok | ok | ok | ok |
+| Hooks de kernel vistos por um aplicativo aberto depois deles, nas threads dele | ok | ok | ok | ok |
+| Save state com os hooks: carrega com eles ativos; um de antes carrega sem eles | ok | ok | ok | ok |
+| Fuzz da cadeia (kernel e usuário, 3 sementes cada) | ok | ok | ok | ok |
+| Chamador interno do firmware (a chamada do próprio HLE à função com hook) | corrigido no ksceVopLookup (teste `IoVfsMountTests.AHookOnTheVopLookupEntrySeesTheModulesOwnPathWalks`) | idem | idem | idem |
+
+O sandbox ARM64 (Unicorn) roda blocos traduzidos soltos, não o despachante, então não é um caminho da matriz; a matriz
+roda em ARM64 nativo quando o host é ARM64. Carregar estado com `VITASHARP_LOAD_KEEP_CODE=1` (traduções mantidas e
+conferidas pelos bytes) é lido uma vez por processo e não é uma célula (o load padrão descarta todas as traduções).
 
 O início de processo do firmware chama o export ksceKernelStartPreloadingModules(pid) do modulemgr pelo endereço,
 quando a thread principal do processo novo já existe (processmgr 3.74). O VitaSharp inicia ele mesmo os módulos
