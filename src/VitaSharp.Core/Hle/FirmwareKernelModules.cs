@@ -455,6 +455,7 @@ public sealed class FirmwareKernelModules(Emulator emu)
     /// moves <see cref="Cpu.BlockCache.CodeChanges"/>; only then are the entries counted again (once: the threads that
     /// waited for the count find it done). With nothing patched and no code change since, it reads two fields.
     /// </summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     internal bool AnyEntryPatched()
     {
         long changes = Cpu.BlockCache.CodeChanges;
@@ -463,6 +464,14 @@ public sealed class FirmwareKernelModules(Emulator emu)
             return Volatile.Read(ref _patchedEntries) != 0;
         }
 
+        return CountPatchedEntries(changes);
+    }
+
+    /// <summary>Counts the patched entries again after guest code changed (<see cref="AnyEntryPatched"/>'s slow path,
+    /// kept out of the inlined check).</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private bool CountPatchedEntries(long changes)
+    {
         lock (_lock)
         {
             if (_patchesCheckedAt == changes)

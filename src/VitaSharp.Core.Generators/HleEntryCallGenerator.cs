@@ -178,6 +178,7 @@ public sealed class HleEntryCallGenerator : IIncrementalGenerator
         public string Return = "";
         public string ResultExpression = "";
         public string Parameters = "";
+        public string ParametersWithoutDefaults = "";
         public string Arguments = "";
         public string Words = "";
         public string Exports = "";
@@ -220,6 +221,7 @@ public sealed class HleEntryCallGenerator : IIncrementalGenerator
             wrapper.Return = method.ReturnsVoid ? "void" : HleEntrySignature.Fq(method.ReturnType);
             wrapper.ResultExpression = method.ReturnsVoid ? "" : HleEntrySignature.Result(method, "hleEntryResult");
             wrapper.Parameters = string.Join(", ", method.Parameters.Select(p => $"{HleEntrySignature.Fq(p.Type)} {HleEntrySignature.Escape(p.Name)}{DefaultOf(p)}"));
+            wrapper.ParametersWithoutDefaults = string.Join(", ", method.Parameters.Select(p => $"{HleEntrySignature.Fq(p.Type)} {HleEntrySignature.Escape(p.Name)}"));
             wrapper.Arguments = string.Join(", ", method.Parameters.Select(p => HleEntrySignature.Escape(p.Name)));
             wrapper.Words = string.Join(", ", HleEntrySignature.Words(method));
             var exports = new List<string>();
@@ -283,15 +285,37 @@ public sealed class HleEntryCallGenerator : IIncrementalGenerator
             sb.AppendLine();
             sb.AppendLine($"    /// <summary><see cref=\"{Method}\"/> called the way the firmware calls it, by the function's address: a hook");
             sb.AppendLine("    /// on its entry runs on the calling thread, else the C# method runs directly.</summary>");
+            string hooked = Method + HleEntrySignature.Suffix + "Hooked";
+            string call = Return == "void" ? "" : "return ";
+            // inlined into the caller: without a hook the call costs the check and the method's own call
+            sb.AppendLine("    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]");
             sb.AppendLine($"    {Access} {Return} {Method}{HleEntrySignature.Suffix}({Parameters})");
             sb.AppendLine("    {");
-            sb.AppendLine("        if (global::VitaSharp.Core.Hle.HleEntryCalls.AnyHook(this)");
-            sb.AppendLine($"            && global::VitaSharp.Core.Hle.HleEntryCalls.TryCall(this, {field}, out ulong hleEntryResult, [{Words}]))");
+            sb.AppendLine("        if (global::VitaSharp.Core.Hle.HleEntryCalls.AnyHook(this))");
+            sb.AppendLine("        {");
+            sb.AppendLine($"            {call}{hooked}({Arguments});");
+            if (Return == "void")
+            {
+                sb.AppendLine("            return;");
+            }
+
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine($"        {call}{Method}({Arguments});");
+            sb.AppendLine("    }");
+            sb.AppendLine();
+            // the call through a hook: out of line, so the wrapper without a hook keeps a small frame (no argument
+            // words on its stack) and inlines into its caller
+            sb.AppendLine($"    /// <summary><see cref=\"{Method}{HleEntrySignature.Suffix}\"/> when a hook may have taken the function.</summary>");
+            sb.AppendLine("    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]");
+            sb.AppendLine($"    private {Return} {hooked}({ParametersWithoutDefaults})");
+            sb.AppendLine("    {");
+            sb.AppendLine($"        if (global::VitaSharp.Core.Hle.HleEntryCalls.TryCall(this, {field}, out ulong hleEntryResult, [{Words}]))");
             sb.AppendLine("        {");
             sb.AppendLine(Return == "void" ? "            return;" : $"            return {ResultExpression};");
             sb.AppendLine("        }");
             sb.AppendLine();
-            sb.AppendLine(Return == "void" ? $"        {Method}({Arguments});" : $"        return {Method}({Arguments});");
+            sb.AppendLine($"        {call}{Method}({Arguments});");
             sb.AppendLine("    }");
             sb.AppendLine();
         }
