@@ -570,7 +570,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
       (`Jit.ActivateAhead`, que também alarga a fronteira); é assim que o cache sabe o que rodou. Módulos carregados com
       o jogo rodando entram em segundo plano do mesmo jeito. Tetos por plataforma (`Jit.AheadBudget`,
       `Jit.SpeculativeBudget`): todo o código pré-compilado 128 MiB no desktop / 64 MiB no Android (arena de 256 MiB);
-      dentro dele, o especulativo que ainda não rodou 48 / 24 MiB, com despejo (ver feat/aot4).
+      dentro dele, o especulativo que ainda não rodou 64 / 24 MiB, com despejo (ver feat/aot4 e feat/aot5).
       Android: o mesmo modelo, tudo em segundo plano (`PrecompileCodeWaits = false`) até a tela do jogo ter a barra.
     - Invalidação: os blocos pré-compilados são blocos normais do cache do processo; escrita em código
       (DirtyPages/`InvalidateCode`), carga/descarga de módulo e save state continuam derrubando a tradução.
@@ -676,6 +676,26 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
       threads de prioridade baixa chegarem lá, pior com a máquina carregada) e funções chamadas só por ponteiro em
       dados (traduzir todas as tabelas foi medido e descartado no aot3). Próximo passo: medir com a máquina livre e no
       celular; dar às threads do pré-compilador a prioridade dos workers do JIT para o trabalho Running.
+    - Feito (feat/aot5, 23/11/2026): orçamento especulativo do desktop de 64 MiB (metade do total; Android continua
+      24 MiB). Medido no Native AOT (headless, 4 núcleos 0xF0, BelowNormal, cenários `kz_idle`/`ac3l` de 5800/4500
+      quadros; a máquina ficou acima de 75% de CPU em quase todas as execuções por causa de outros trabalhos, então os
+      ms variam muito: compare blocos e cobertura; o jogo não chega sempre ao mesmo ponto).
+      AC3L 1ª sessão: base 14.402 blocos no jogo, 90,2% pré-compilado (147k blocos executados), 128 MB no teto,
+      pico de working set 1.555 MB; aot5 12.491, 93,7% (197k executados, CPU média 35%), 126,4 MB pré-compilados
+      (63,8 MB de palpite, 303k despejados), arena 149,4 MB, 1.756 MB. 2ª sessão: base 186 blocos / 8 ms, 99,9%;
+      aot5 169 / 6 ms, 99,9%, 128 MB, 1.538 MB.
+      Killzone 1ª sessão: base 982 e 1.305 blocos, 97,6% e 95,6%, 35,9 MB, 846-989 MB; aot5 758 (duas vezes),
+      98,2-98,5%, 41,6-43,7 MB (nenhum despejo: o orçamento não chega a apertar), 1.072-1.124 MB. 2ª sessão: base 4 e
+      144 blocos; aot5 1 e 28.
+      Medido e descartado: segunda chance (CLOCK) para os palpites de funções em que o jogo rodou um bloco novo
+      depois de enfileirados (iam para o fim da fila do resto das funções em execução em vez de sair): AC3L 1ª sessão
+      12.581 blocos, 93,6%, 298k despejos — igual ao despejo só por idade. Dos ~12k blocos que o JIT ainda compila no
+      jogo, ~11,7k estavam na fila do pré-compilador quando o jogo chegou (as threads de prioridade baixa ficam atrás
+      do jogo), então a ordem de despejo não é o gargalo.
+      Sobra: no AC3L a arena usada (149 MB) passa um pouco do que a base usa (128 MB pré-compilados + o JIT), por
+      causa das faixas devolvidas e das recodificações do x64; no Killzone a fronteira mais larga do aot4 custa
+      ~6-8 MB a mais de código pré-compilado. Próximo passo: o atraso das threads do pré-compilador (prioridade do
+      trabalho `Running` igual à dos workers do JIT) e medir com a máquina livre e no celular.
     - Parte 3 (bytes de máquina) avaliada e não feita agora: só reduz a etapa de boot das sessões com cache (0,6 s no
       Killzone, 1,1 s no AC3L, já ≤ ~1 s) e não muda nada na 1ª sessão, que é o que sobra. Custo: tabela de relocações
       nos 3 codificadores (x64 Iced, x64 fast-encode, ARM64) para ~7 tipos de endereço absoluto (slots de link de cada
@@ -686,7 +706,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
       (endereços absolutos de slots de link, stubs Epilogue/Callout, tabela de dispatch, pool de constantes, contador de
       tier-up; superblocos e stores mortos dependem dos vizinhos já executados): precisa de uma tabela de relocações
       nos emissores x64 (Iced e fast-encode) e ARM64. Só vale se a etapa de boot ficar longa.
-  Entrega movida para "Corrigido, falta o usuário testar" (feat/aot3, 22/11/2026); o resto segue aberto aqui.
+  Entregas movidas para "Corrigido, falta o usuário testar" (feat/aot3, 22/11/2026; feat/aot4 + feat/aot5, 23/11/2026);
+  o resto segue aberto aqui.
 
 - [x] Onde o código do guest roda (perf/il-1, 11/11/2026): linha nova `CPU tiers` no relatório do fim da execução
   (instruções executadas no código nativo, nas callouts, no backend IL e no interpretador, com o estado dos blocos
@@ -3458,6 +3479,13 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   de executável sem relocações, fronteira de 1 chamada, teto de metade da arena, etapa de boot que espera só os primeiros
   blocos. Medido: AC3L 63% -> 90% do código pré-compilado, Killzone 2ª sessão 100%. Testar: Killzone ou AC III Liberation,
   ligar "Precompilar código ARM", 1º boot com a barra e o Cancelar; na 2ª sessão o jogo não deve engasgar por compilação.
+- [ ] (23/11/2026, na main, falta testar) [P2][G] Pré-compilação do código ARM com orçamento próprio para o código
+  especulativo (feat/aot4 + feat/aot5): os palpites que ainda não rodaram têm teto de 64 MiB no desktop (24 MiB no
+  Android) e saem os mais fracos primeiro; casos de switch com instruções agendadas antes do TBB/TBH; a fronteira abre
+  já na 1ª execução interpretada. Medido: AC3L 1ª sessão 90,2% -> 93,7% pré-compilado, Killzone 1ª sessão 982 -> 758
+  blocos compilados no jogo, 2ª sessão dos dois ~0 ms. Testar: AC III Liberation e Killzone, apague a pasta
+  `codecache` da pasta de dados, 1ª sessão com "Precompilar código ARM" ligado (menos engasgos de compilação nos
+  primeiros minutos que antes) e uma 2ª sessão (sem engasgo de compilação).
 - [ ] (22/11/2026, na main, falta testar) [P2][G] Engasgos de shader (feat/uber2 8041868f, perf/uber3 0738b224, perf/uber4 51085928): pipelines do
   passe de fetch, de saída inteira e a ordem dos workers (pipeline antes dos shaders posteriores); no replay frio
   quadros lentos por pipeline foram a 0. Testar: Killzone, AC III Liberation ou Uncharted, 2ª sessão com "Carregar o cache de
