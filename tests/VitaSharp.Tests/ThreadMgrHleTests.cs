@@ -2439,10 +2439,20 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0u, GuestMemory.R32(results + 4));
             Assert.Equal(0x02000000u, GuestMemory.R32(results + 8));
             Assert.Equal(0x77ul, GuestMemory.Read<ulong>(results + 16));
-            // AND: both, with the second set from another thread
-            GuestRun s = _h.Start(_ => { Thread.Sleep(20); Call(Tm, "sceKernelSetEvent", e1, 0x01000000u, 0ul); }, "wm-set");
-            Assert.Equal(2, Call(Tm, "sceKernelWaitMultipleEventsCB", events, 2u, 2u, results, new Ptr<uint>(_h.Word(5_000_000))));
+            // AND: both, the second set only once the call waits in its queue (forced order, no host-clock sleep: a set
+            // before the call would make both match in the first pass, in the array's order)
+            Call(Tm, "sceKernelSetEvent", e2, 0x02000000u, 0x77ul);
+            int andResult = 0;
+            GuestRun s = _h.Start(_ => andResult = Call(Tm, "sceKernelWaitMultipleEventsCB", events, 2u, 2u, results, new Ptr<uint>(_h.Word(5_000_000))), "wm-and");
+            uint e1Info = Info(0x40);
+            Until(() =>
+            {
+                Call(Tm, "sceKernelGetEventInfo", e1, e1Info);
+                return GuestMemory.R32(e1Info + 0x38) == 1;
+            }, "the multiple-event wait in e1's queue");
+            Assert.Equal(0, Call(Tm, "sceKernelSetEvent", e1, 0x01000000u, 0ul));
             _h.Join(s);
+            Assert.Equal(2, andResult);
             Assert.Equal((uint)e2, GuestMemory.R32(results));       // fired first
             Assert.Equal((uint)e1, GuestMemory.R32(results + 0x18));
             // an unknown uid counts as done with UNKNOWN_EVENT_ID and the ERROR bit
