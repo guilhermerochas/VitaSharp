@@ -107,6 +107,19 @@ the current one, as kernel code a syscall runs does (ksceKernelGetProcessId give
 plugin's hook or data injection in a user process is made in that process's memory, and the patches of a process go
 when it ends.
 
+The framework's module calls for user programs (taiLoadKernelModule, taiLoadStartKernelModuleForUser,
+taiStartKernelModuleForUser, taiLoadStartModuleForPidForUser, the four stop calls, taiUnloadKernelModule,
+taiUnloadModuleForPid, taiMemcpyUserToKernel and taiMemcpyKernelToUser) follow its published contract: only a program
+with the system class may call them (ksceSblACMgrIsShell: capability bit 1, which homebrew built as an unsafe fake SELF
+has and safe homebrew and retail games do not; otherwise 0x90010009); the arguments come in the 0x14-byte record (size,
+pid, args, argp, flags), up to 256 bytes of argp are copied to a kernel buffer that module_start/module_stop receive,
+the path is at most 255 characters and opt must be NULL, with the framework's error codes for each check. The module
+loads through the firmware's kernel module manager, the loader of the `*KERNEL` plugins: a kernel module goes to the
+kernel and outlives the program that loaded it; the stop calls write module_stop's status to `*res`. The UID returned
+is the module's own (VitaSharp has one UID space for the kernel and the processes). This is how a homebrew program
+loads its own kernel module (Adrenaline's eboot does it first). taiReloadConfig, taiReloadConfigForKernel and
+taiLoadPluginsForTitleForKernel are not offered yet.
+
 ## Limits
 
 - A plugin that patches the firmware's own code by offset finds no firmware code there (VitaSharp implements the

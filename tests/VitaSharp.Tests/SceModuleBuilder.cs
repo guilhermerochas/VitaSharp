@@ -20,6 +20,7 @@ public sealed class SceModuleBuilder(string name)
     private readonly Dictionary<int, (int Offset, uint[] Words)> _arm = [];
     private int _armUsed;
     private int _startFunction = -1;
+    private int _stopFunction = -1;
     private uint _codeMemSize = Size;
     private uint _dataMemSize;
     private uint _moduleNid = 0x12345678;
@@ -95,6 +96,22 @@ public sealed class SceModuleBuilder(string name)
     public SceModuleBuilder Start(byte status)
     {
         _startFunction = ReturnConstant(status);
+        return this;
+    }
+
+    /// <summary>module_start: the builder's function <paramref name="function"/> (an A32 one from <see cref="Arm"/>,
+    /// say).</summary>
+    public SceModuleBuilder StartWith(int function)
+    {
+        _startFunction = function;
+        return this;
+    }
+
+    /// <summary>module_stop (module_info +0x48): the builder's function <paramref name="function"/>; without it the
+    /// module has none.</summary>
+    public SceModuleBuilder StopWith(int function)
+    {
+        _stopFunction = function;
         return this;
     }
 
@@ -260,7 +277,7 @@ public sealed class SceModuleBuilder(string name)
         W32(InfoAt + 0x30, (uint)imp0);
         W32(InfoAt + 0x34, _moduleNid);
         W32(InfoAt + 0x44, _startFunction >= 0 ? entryOf[_startFunction] : 0);
-        W32(InfoAt + 0x48, 0xFFFFFFFF);
+        W32(InfoAt + 0x48, _stopFunction >= 0 ? entryOf[_stopFunction] : 0xFFFFFFFF);
 
         // the ELF: header, 2 program headers (PT_LOAD, PT_SCE_RELA), the segment, the relocations (format 0, R_ARM_ABS32)
         byte[] rela = new byte[relocs.Count * 12];

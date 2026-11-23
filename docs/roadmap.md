@@ -3165,6 +3165,11 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (22/11/2026, falta testar) [P1][M] Adrenaline, carga do módulo de kernel (adr1 565d5f71): o framework de plugins
+  oferece as chamadas de módulo para programas (taiLoadStartKernelModuleForUser e afins) e o homebrew unsafe tem a
+  classe de sistema no ksceSblACMgrIsShell. Testar: com "Habilitar plugins de kernel" ligado, abrir o Adrenaline
+  (PSPEMUCFW) pelo Sistema do Vita: ele não fecha mais no primeiro quadro; o log mostra `AdrenalineKernel` carregado e
+  os hooks dele. O que vem depois segue no item de "Bugs em aberto".
 - [ ] [P1][M] HELLDIVERS (PCSA00134), cores erradas na tela de título (relato do usuário, 21/11/2026; captura
   `shell_20261121_233801_tudo`, 6,3 s a 60 fps, dump da GPU de 168 quadros): as naves e o planeta saem verde-saturado
   (as naves deveriam ser cinza-metálicas), o fundo azul e o logo parecem certos. Suspeita: canal/formato trocado ou
@@ -3605,13 +3610,13 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   o caminho do log (`TitleLaunchFailure`, código de saída 4), e o launcher mostra essa linha no status; no Android a
   falha da chave mostra o texto próprio. Falta a mensagem na própria janela do jogo.
 - [ ] [P1][G] Adrenaline (PSPEMUCFW) fecha logo ao abrir (relato do usuário, 21/11/2026; log `20261121_233018_PSPEMUCFW.log`):
-  o eboot chama `taihenUnsafe::taiLoadStartKernelModuleForUser` (NID 0x9890A8D3) para subir o módulo de kernel dele,
-  o VitaSharp responde "Unimplemented HLE function" e o app sai no quadro 1 (`sceKernelExitProcess`). Sem código
-  específico de taiHEN (decisão do usuário): no Vita com HENkaku essas exportações vêm do `taihen.skprx` real, que
-  está em `ur0:tai/` do usuário; fazer o boot dos plugins carregar o `taihen.skprx` real primeiro (como o HENkaku faz)
-  e deixá-lo ler o `config.txt`, para que as exportações taihen* sejam as dele e não stubs do HLE. Teste: um app
-  sintético que chama taiLoadStartKernelModuleForUser recebe o UID do módulo carregado pelo taihen real.
-  Entrega movida para "Corrigido, falta o usuário testar" (download do PSP 6.61, 22/11/2026); o resto segue aberto aqui.
+  feito (adr1 565d5f71): a biblioteca `taihenUnsafe` do framework de plugins (taiLoadStartKernelModuleForUser e as
+  outras chamadas de carga/descarga de módulo e de cópia user/kernel), e o ksceSblACMgrIsShell do ForDriver pelo bit 1
+  de capability. Rodando sem janela (opção de plugins ligada, sem plugins na configuração, sem o shell), o eboot agora
+  carrega e inicia o `adrenaline_kernel.skprx` (6 hooks de kernel instalados), carrega o `adrenaline_vsh.suprx` por
+  ksceKernelLoadStartModuleForPid, chama sceAppMgrDestroyAppByName e a thread main termina no quadro 1 sem erro de HLE.
+  Falta: o passo seguinte do fluxo do Adrenaline (com o shell rodando: reiniciar no emulador de PSP do firmware) e
+  taiReloadConfig, taiReloadConfigForKernel e taiLoadPluginsForTitleForKernel.
 - [ ] [P1][M] The Amazing Spider-Man (PCSE00333), tela de pausa piscando (relato do usuário, 21/11/2026; captura
   `PCSE00333_20261121_232645_tudo`, 4,3 s a 60 fps, dump da GPU de 198 quadros): o menu de pausa ("RESUME" e as
   opções abaixo, sobre o fundo com a aranha) pisca; na folha de contatos as opções abaixo de "RESUME" quase não

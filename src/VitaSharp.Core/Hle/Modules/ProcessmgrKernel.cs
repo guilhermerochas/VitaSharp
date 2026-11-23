@@ -414,9 +414,10 @@ public sealed partial class ProcessmgrKernel : HleModule
 
     // ------------------------------------------------------------------ access control and power
 
-    /// <summary>ksceSblACMgrIsSystemProgram (ksceSblACMgrIsShell)(pid): capability bit 1 of the process's auth info: 1
-    /// for a system program (it runs from vs0:), 0 for a game or application and for the kernel process (its own auth
-    /// info has bit 1 clear).</summary>
+    /// <summary>ksceSblACMgrIsSystemProgram (ksceSblACMgrIsShell)(pid): capability bit 1 of the process's auth info, as
+    /// its SceSblACMgrForKernel twin answers it (<see cref="Loader.Self.ProgramAccess"/>): 1 for a system program (it
+    /// runs from vs0:) and for homebrew with the system class (an unsafe fake SELF), 0 for a game or application, safe
+    /// homebrew and the kernel process (its own auth info has bit 1 clear).</summary>
     [Hle(ReturnsValue = true)]
     int ksceSblACMgrIsSystemProgram(int pid)
     {
@@ -425,7 +426,7 @@ public sealed partial class ProcessmgrKernel : HleModule
             return SysmemKernel.KernelAccess.IsSystemProgram ? 1 : 0;
         }
 
-        return ProcessOf(pid) is { IsSystemProgram: true } ? 1 : 0;
+        return ProcessOf(pid) is { Access.IsSystemProgram: true } ? 1 : 0;
     }
 
     /// <summary>kscePowerGetSysClockFrequency(): the ARM clock in MHz (the emulated CPU pacing).</summary>
