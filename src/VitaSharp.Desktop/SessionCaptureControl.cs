@@ -167,7 +167,7 @@ sealed class SessionCaptureControl : IDisposable
         string app;
         if (fromState)
         {
-            string guest = session.GetValueOrDefault("app-guest-path", "") is { Length: > 0 } g && g.Contains(':') ? g : $"ux0:app/{titleId}";
+            string guest = session.GetValueOrDefault("app-guest-path", "") is { Length: > 0 } g && g.Contains(':') ? g : Core.Io.FirmwareLayout.Applications.Guest(titleId);
             app = Path.GetFullPath(Core.Io.FirmwareLayout.GuestToHost(Program.FsRoot, guest));
         }
         else

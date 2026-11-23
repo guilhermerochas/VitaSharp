@@ -23,7 +23,7 @@ public sealed partial class Emulator
     {
         using ProcessScope.Scope scope = ProcessScope.Enter(this);
         _launchParam = null;
-        string guest = image.AppGuestPath.Length > 0 ? image.AppGuestPath : $"ux0:app/{image.TitleId}";
+        string guest = image.AppGuestPath.Length > 0 ? image.AppGuestPath : FirmwareLayout.Applications.Guest(image.TitleId);
         AppPath = Path.GetFullPath(FirmwareLayout.GuestToHost(Options.FsRoot, guest));
         CurrentSelf = image.Self;
         Vfs.ClearApp0Overlays();
