@@ -3675,6 +3675,21 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   se o pisca e o borrão só aparecem a 2x (ex.: uma passada da cena — TAA/reprojeção, desfoque, reamostragem de
   profundidade ou de uma textura intermediária — ainda na escala 1x ou com amostragem errada ao escalar) e corrigir
   genericamente com teste. Os painéis do HUD já saem translúcidos (correção do ac3hud confirmada nessa captura).
+  Andamento (ac3blur, 23/11/2026; não resolvido): o pisca **não é da escala**: o replay a 1x pisca igual (`replay-gpu`
+  do dump, quadros 3637/3639/3641... = os que vão para o framebuffer 0x60000000). Quadro do jogo: pré-passe só de
+  profundidade 960x800 (ds 0x61100000, sem FORCE_LOAD nem FORCE_STORE, com consultas de visibilidade), mapa de sombras
+  2048x512, G-buffer 0x6078C000 704x576 (FORCE_LOAD + FORCE_STORE, desenhos LESS_EQUAL), luz 0x60AA4000, cena 704x384,
+  bloom, composição em 960x544. No quadro que pisca, o desenho da parede no G-buffer (vs C700C860B216CB68, 2329
+  vértices) falha o teste de profundidade numa faixa pontilhada (z-fighting) contra a profundidade que o pré-passe
+  deixou; o pré-passe não desenha esse buffer de vértices. Prova: tratar a cena com FORCE_LOAD que vem de uma cena sem
+  FORCE_STORE como "sem carga" (experimento, não entregue) tira o pisca em todos os quadros. Descartado: precisão da
+  posição (`invariant`/`precise` em gl_Position mudam 0 pixels). Falta decidir pelo console: o que a cena com
+  FORCE_LOAD lê na memória quando a cena anterior da mesma superfície não tinha FORCE_STORE (o GXM só grava a
+  profundidade forçado; então o G-buffer leria o que o G-buffer do quadro anterior gravou, não o pré-passe). Próximo
+  passo: guardar por superfície o conteúdo "gravado" (só cenas com FORCE_STORE o atualizam) e carregar dele no
+  FORCE_LOAD, com teste sintético (pré-passe sem store + cena com load) e --compare nos outros dumps (Injustice,
+  MGS3, LBP dependem da carga de profundidade). O "borrão" não é bug de escala: a cena 3D já sai em 1408x768 a 2x
+  (nítida contra a 1x); o jogo renderiza a 704x384 e amplia para 960x544, por isso é macia mesmo a 2x.
 - [ ] [P2][P] Resolução interna padrão (pedido do usuário, 22/11/2026): uma opção global nas configurações (PC e Android)
   para escolher a resolução interna (1x, 2x, 3x, 4x) com que todo jogo já abre, sem precisar trocar no atalho a cada
   sessão; a escolha por jogo (quando existir) vence a global. Mostrar o valor efetivo na tela de carregamento e no log
