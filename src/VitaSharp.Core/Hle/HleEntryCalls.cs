@@ -65,26 +65,17 @@ public sealed class HleExportRef(params HleExportName[] names)
 /// </summary>
 public static class HleEntryCalls
 {
-    /// <summary>Whether any hook could take a function <paramref name="module"/> serves: this process has a user
-    /// hook on an HLE function, or the firmware kernel modules have a patched entry. Without either it reads a few
-    /// fields and allocates nothing (<see cref="FirmwareKernelModules.AnyEntryPatched"/>).</summary>
+    /// <summary>Whether any hook could take an HLE function: some process of this host has a user hook on an HLE
+    /// function, or some emulated system's firmware kernel modules have a patched entry. Without either it reads three
+    /// static fields and allocates nothing (<see cref="HleRegistry.AnyProcessHooks"/>,
+    /// <see cref="FirmwareKernelModules.AnyEntryPatchedAnywhere"/>); with one, <see cref="TryCall"/> looks in the
+    /// calling module's own process and system.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool AnyHook(HleModule module)
+    public static bool AnyHook()
     {
-        // a module that is not in a process (made on its own, or in an emulator not built, as unit tests make them)
-        // has no hook to see
-        Emulator? emu = module.Emu;
-        if (emu?.Hle is not { } hle)
-        {
-            return false;
-        }
-
-        if (hle.HasProcessHooks)
-        {
-            return true;
-        }
-
-        return emu.FirmwareKernelIfShown is { } firmware && firmware.AnyEntryPatched();
+        // static reads only (no module, emulator or registry): a hook anywhere in this host sends the call to
+        // TryCall, which looks in the module's own process and system and calls the C# method when none took it
+        return HleRegistry.AnyProcessHooks || FirmwareKernelModules.AnyEntryPatchedAnywhere();
     }
 
     /// <summary>
@@ -102,11 +93,17 @@ public static class HleEntryCalls
             return false;
         }
 
-        Emulator emu = module.Emu;
+        // a module that is not in a process (made on its own, or on an emulator not built, as unit tests make them)
+        // has no hook to see
+        if (module.Emu is not { } emu || emu.Hle is not { } hle)
+        {
+            return false;
+        }
+
         FirmwareKernelModules? firmware = emu.FirmwareKernelIfShown;
         foreach ((uint nid, string? library) in export.Resolved)
         {
-            uint target = emu.Hle.ProcessHookOf(nid, library);
+            uint target = hle.ProcessHookOf(nid, library);
             if (target == 0 && firmware != null)
             {
                 target = firmware.PatchedEntryOf(nid, library);

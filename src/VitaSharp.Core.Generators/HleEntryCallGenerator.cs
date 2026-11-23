@@ -291,7 +291,7 @@ public sealed class HleEntryCallGenerator : IIncrementalGenerator
             sb.AppendLine("    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]");
             sb.AppendLine($"    {Access} {Return} {Method}{HleEntrySignature.Suffix}({Parameters})");
             sb.AppendLine("    {");
-            sb.AppendLine("        if (global::VitaSharp.Core.Hle.HleEntryCalls.AnyHook(this))");
+            sb.AppendLine("        if (global::VitaSharp.Core.Hle.HleEntryCalls.AnyHook())");
             sb.AppendLine("        {");
             sb.AppendLine($"            {call}{hooked}({Arguments});");
             if (Return == "void")

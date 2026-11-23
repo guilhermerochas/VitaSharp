@@ -243,9 +243,9 @@ conferidas pelos bytes) é lido uma vez por processo e não é uma célula (o lo
 No Vita um hook de exportação corrige o código da função, então todo chamador passa por ele, inclusive as chamadas do
 próprio módulo do firmware. As funções do firmware servidas pelo HLE são métodos C#; quando uma chama outra função
 exportada, chama o wrapper gerado `XxxThroughEntry` (gerador de código `HleEntryCallGenerator`, feito para todo método
-`[Hle]` que algum código chama assim). Sem hook o wrapper lê alguns campos (a contagem de hooks de usuário do processo e a
-de entradas corrigidas dos módulos de kernel do firmware, recontada só quando o código do guest muda) e chama o método C#,
-sem alocar nada (`HleEntryCallBenchmarks`, `HleEntryCallTests`). Com hook, acha-o onde o framework o pôs: a entrada
+`[Hle]` que algum código chama assim). Sem hook o wrapper lê três campos estáticos (quantos processos do host têm hook de
+usuário e se os módulos de kernel do firmware de algum sistema emulado têm entrada corrigida, recontado só quando o código
+do guest muda) e chama o método C#, sem alocar nada (`HleEntryCallBenchmarks`, `HleEntryCallTests`). Com hook, acha-o onde o framework o pôs: a entrada
 corrigida da função nos módulos de kernel do firmware (hook de um plugin de kernel, ou qualquer código escrito sobre a
 entrada) ou o thunk do hook de um plugin de usuário na função, no processo do módulo (achado por biblioteca e NID: um NID que duas
 bibliotecas exportam são duas funções, e o hook de uma não é o da outra); o código com hook roda na thread

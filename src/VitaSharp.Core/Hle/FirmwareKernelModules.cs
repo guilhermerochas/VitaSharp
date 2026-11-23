@@ -259,6 +259,7 @@ public sealed class FirmwareKernelModules(Emulator emu)
                         uint svc = emu.Hle.GetHleFunctionIndex(nid, export.LibNid, libName);
                         Linker.WriteHleStub(entry, svc, nid);
                         _entries[(export.LibNid, nid)] = (entry, SvcOpcode | (svc & 0xFFFFFF));
+                        Track();
                     }
                 }
 
@@ -329,6 +330,7 @@ public sealed class FirmwareKernelModules(Emulator emu)
             uint svc = emu.Hle.GetHleFunctionIndex(nid, libNid, libName);
             Linker.WriteHleStub(entry, svc, nid);
             _entries[(libNid, nid)] = (entry, SvcOpcode | (svc & 0xFFFFFF));
+            Track();
             if (!_librariesOfNid.TryGetValue(nid, out List<(uint LibNid, string Library)>? exporting))
             {
                 exporting = new List<(uint LibNid, string Library)>();
@@ -447,6 +449,84 @@ public sealed class FirmwareKernelModules(Emulator emu)
     private int _patchedEntries;
 
     private long _patchesCheckedAt = -1;
+
+    /// <summary>The firmware kernel modules of every emulated system of this host that has exported entries (each
+    /// added once, by <see cref="Track"/>), for <see cref="AnyEntryPatchedAnywhere"/>.</summary>
+    private static readonly List<WeakReference<FirmwareKernelModules>> s_withEntries = new();
+
+    /// <summary>(<see cref="Cpu.BlockCache.CodeChanges"/> shifted left by one) | patched, when the entries of
+    /// <see cref="s_withEntries"/> were last counted (-2: never): one word, so a reader sees both halves together.</summary>
+    private static long s_patchState = -2;
+
+    private bool _tracked;
+
+    /// <summary>Adds these modules to <see cref="s_withEntries"/> when their first entry is written (under
+    /// <see cref="_lock"/>), and makes the next <see cref="AnyEntryPatchedAnywhere"/> count again.</summary>
+    private void Track()
+    {
+        if (_tracked)
+        {
+            return;
+        }
+
+        _tracked = true;
+        lock (s_withEntries)
+        {
+            s_withEntries.Add(new WeakReference<FirmwareKernelModules>(this));
+        }
+
+        Volatile.Write(ref s_patchState, -2);
+    }
+
+    /// <summary>
+    /// Whether any firmware kernel module entry of this host is patched: the static check of every
+    /// <see cref="HleEntryCalls"/> wrapper (two static reads while no guest code changed). Guest code that patches an
+    /// entry moves <see cref="Cpu.BlockCache.CodeChanges"/>; only then are the entries counted again, and a patch in any
+    /// emulated system sends every wrapper to its precise check (<see cref="PatchedEntryOf"/>).
+    /// </summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    internal static bool AnyEntryPatchedAnywhere()
+    {
+        long state = Volatile.Read(ref s_patchState);
+        if ((state >> 1) == Cpu.BlockCache.CodeChanges)
+        {
+            return (state & 1) != 0;
+        }
+
+        return CountEverywhere();
+    }
+
+    /// <summary><see cref="AnyEntryPatchedAnywhere"/>'s count after a code change. It holds no lock while it asks each
+    /// system's modules (their own lock), so it can run from any HLE call; two threads counting at once publish the
+    /// same answer, and a count published with an older change number is counted again by the next reader.</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static bool CountEverywhere()
+    {
+        long changes = Cpu.BlockCache.CodeChanges;
+        FirmwareKernelModules?[] systems;
+        lock (s_withEntries)
+        {
+            s_withEntries.RemoveAll(reference => !reference.TryGetTarget(out _));
+            systems = new FirmwareKernelModules?[s_withEntries.Count];
+            for (int i = 0; i < systems.Length; i++)
+            {
+                systems[i] = s_withEntries[i].TryGetTarget(out FirmwareKernelModules? modules) ? modules : null;
+            }
+        }
+
+        bool patched = false;
+        foreach (FirmwareKernelModules? modules in systems)
+        {
+            if (modules != null && modules.AnyEntryPatched())
+            {
+                patched = true;
+                break;
+            }
+        }
+
+        Volatile.Write(ref s_patchState, (changes << 1) | (patched ? 1L : 0L));
+        return patched;
+    }
 
     /// <summary>
     /// Whether any exported function's entry is patched (a hook): the fast check of <see cref="TryCallPatched"/> and of

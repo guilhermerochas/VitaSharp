@@ -234,9 +234,9 @@ translation).
 On the Vita a hook on an export patches the function's code, so every caller runs it, the firmware module's own
 calls included. The firmware functions the HLE serves are C# methods; when one calls another exported function it calls
 the generated wrapper `XxxThroughEntry` (source generator `HleEntryCallGenerator`, made for every `[Hle]` method some code
-calls that way). Without a hook the wrapper reads a few fields (this process's user hook count, the firmware kernel
-modules' patched-entry count, which is counted again only when guest code changes) and calls the C# method, allocating
-nothing (`HleEntryCallBenchmarks`, `HleEntryCallTests`). With a hook it finds it where the framework put it: the patched
+calls that way). Without a hook the wrapper reads three static fields (how many processes of the host have a user
+hook, and whether the firmware kernel modules of any emulated system have a patched entry, counted again only when
+guest code changes) and calls the C# method, allocating nothing (`HleEntryCallBenchmarks`, `HleEntryCallTests`). With a hook it finds it where the framework put it: the patched
 entry of the function in the firmware kernel modules (a kernel plugin's hook, or any code written over the entry) or the
 thunk of a user plugin's hook on the function in the module's process (found by library and NID: a NID two libraries
 export is two functions, and a hook on one is not the other's); the hooked code runs on the calling thread with

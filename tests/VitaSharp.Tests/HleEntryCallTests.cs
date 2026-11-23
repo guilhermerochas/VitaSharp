@@ -90,6 +90,7 @@ public sealed class HleEntryCallTests(GuestMemoryFixture fixture) : IDisposable
         _h.OnGuest(_ =>
         {
             _h.Emu.Hle.RedirectInProcess(0x1234, EntryProbeModule.WordsNid, hook);
+            Assert.True(HleEntryCalls.AnyHook());
             Assert.Equal(-16, probe.ProbeWordsThroughEntry(0x11, 0xFFFF_FFFE, true, 0x0000_0002_0000_0003));
             uint[] words = Assert.Single(seen);
             // a, b, c in r0-r2; d (64-bit) skips r3 for the even pair and goes on the stack as a 0x8-aligned pair

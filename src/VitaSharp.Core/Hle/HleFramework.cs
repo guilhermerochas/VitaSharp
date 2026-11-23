@@ -471,8 +471,36 @@ public sealed partial class HleRegistry : IImportResolver
     /// <paramref name="libNid"/> from now on jump to <paramref name="target"/> (a user plugin's hook).</summary>
     public void RedirectInProcess(uint libNid, uint nid, uint target)
     {
-        _processRedirects[(libNid, nid)] = target;
-        Volatile.Write(ref _processRedirectCount, _processRedirects.Count);
+        lock (_processRedirects)
+        {
+            _processRedirects[(libNid, nid)] = target;
+            CountProcessRedirects();
+        }
+    }
+
+    /// <summary>How many registries (processes) have a user plugin's hook on an HLE function: the one static field the
+    /// <see cref="HleEntryCalls"/> wrappers read for user hooks (0 in a session without them).</summary>
+    static int s_registriesWithProcessHooks;
+
+    /// <summary>A user plugin's hook took an HLE function in some process of this host (the wrappers' first check;
+    /// <see cref="ProcessHookOf"/> then looks in the calling module's own process).</summary>
+    internal static bool AnyProcessHooks => Volatile.Read(ref s_registriesWithProcessHooks) != 0;
+
+    /// <summary>Publishes this registry's redirect count and keeps <see cref="s_registriesWithProcessHooks"/> (called
+    /// under the lock of <see cref="_processRedirects"/>).</summary>
+    void CountProcessRedirects()
+    {
+        int before = _processRedirectCount;
+        int after = _processRedirects.Count;
+        Volatile.Write(ref _processRedirectCount, after);
+        if (before == 0 && after != 0)
+        {
+            Interlocked.Increment(ref s_registriesWithProcessHooks);
+        }
+        else if (before != 0 && after == 0)
+        {
+            Interlocked.Decrement(ref s_registriesWithProcessHooks);
+        }
     }
 
     /// <summary>How many HLE functions a user plugin's hook took in this process (<see cref="_processRedirects"/>):
@@ -522,8 +550,11 @@ public sealed partial class HleRegistry : IImportResolver
     /// HLE function again.</summary>
     public void ClearRedirectInProcess(uint libNid, uint nid)
     {
-        _processRedirects.TryRemove((libNid, nid), out _);
-        Volatile.Write(ref _processRedirectCount, _processRedirects.Count);
+        lock (_processRedirects)
+        {
+            _processRedirects.TryRemove((libNid, nid), out _);
+            CountProcessRedirects();
+        }
     }
 
     /// <summary>A guest-code implementation (<see cref="HleGuestCode"/>) of an implemented NID, placed in the calling

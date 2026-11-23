@@ -64,5 +64,5 @@ public class HleEntryCallBenchmarks
     public long ThroughEntry() => _io.sceIoLseekThroughEntry(_fd, _offset, _whence);
 
     [Benchmark]
-    public bool AnyHookCheck() => HleEntryCalls.AnyHook(_io);
+    public bool AnyHookCheck() => HleEntryCalls.AnyHook();
 }
