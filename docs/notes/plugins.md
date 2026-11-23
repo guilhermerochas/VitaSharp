@@ -223,7 +223,8 @@ calls that way). Without a hook the wrapper reads a few fields (this process's u
 modules' patched-entry count, which is counted again only when guest code changes) and calls the C# method, allocating
 nothing (`HleEntryCallBenchmarks`, `HleEntryCallTests`). With a hook it finds it where the framework put it: the patched
 entry of the function in the firmware kernel modules (a kernel plugin's hook, or any code written over the entry) or the
-thunk of a user plugin's hook on the function in the module's process; the hooked code runs on the calling thread with
+thunk of a user plugin's hook on the function in the module's process (found by library and NID: a NID two libraries
+export is two functions, and a hook on one is not the other's); the hooked code runs on the calling thread with
 the arguments as AAPCS words (64-bit values in an even register pair or an aligned stack slot) and its r0/r1 is the
 result. A function the guest cannot be called with by address (it takes a C# string, a float, the HLE context or
 variadic arguments) has no wrapper. The analyzer VSHLE010 reports a direct call of an exported function in VitaSharp.Core;

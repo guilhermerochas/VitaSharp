@@ -99,7 +99,7 @@ public static class HleEntryCalls
         FirmwareKernelModules? firmware = emu.FirmwareKernelIfShown;
         foreach ((uint nid, string? library) in export.Resolved)
         {
-            uint target = emu.Hle.ProcessHookOf(nid);
+            uint target = emu.Hle.ProcessHookOf(nid, library);
             if (target == 0 && firmware != null)
             {
                 target = firmware.PatchedEntryOf(nid, library);

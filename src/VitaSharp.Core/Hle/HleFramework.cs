@@ -396,6 +396,11 @@ public sealed partial class HleRegistry : IImportResolver
 
     public uint GetHleFunctionIndex(uint nid, uint libNid, string libName)
     {
+        if (libNid != 0 && !string.IsNullOrEmpty(libName))
+        {
+            _libraryNames.TryAdd(libNid, libName);
+        }
+
         lock (_functions)
         {
             if (_indexByNid.TryGetValue(nid, out var idx)) return (uint)idx;
@@ -463,9 +468,19 @@ public sealed partial class HleRegistry : IImportResolver
     /// <see cref="HleEntryCalls"/> wrapper makes first).</summary>
     public bool HasProcessHooks => Volatile.Read(ref _processRedirectCount) != 0;
 
-    /// <summary>The thunk of the user plugin's hook that took function <paramref name="nid"/> in this process (in any
-    /// library: a user module's exports have one NID each), or 0.</summary>
-    public uint ProcessHookOf(uint nid)
+    /// <summary>The name of each library an import or export bound to this registry's functions belongs to, by its
+    /// library NID (<see cref="GetHleFunctionIndex"/>: the user shells' export tables and the modules' imports): what
+    /// <see cref="ProcessHookOf"/> tells two libraries exporting the same function NID apart by.</summary>
+    readonly System.Collections.Concurrent.ConcurrentDictionary<uint, string> _libraryNames = new();
+
+    /// <summary>
+    /// The thunk of the user plugin's hook that took function <paramref name="nid"/> of library
+    /// <paramref name="library"/> in this process, or 0. A NID can be exported by two libraries (two functions, in
+    /// two modules' code): a hook on one is not the other's, so the hook's library (its NID, named by the export
+    /// table the hook was resolved in) has to be <paramref name="library"/>; null takes the NID in any library. A
+    /// hook whose library NID was never bound here (no name known) is taken for any library.
+    /// </summary>
+    public uint ProcessHookOf(uint nid, string? library)
     {
         if (!HasProcessHooks)
         {
@@ -474,7 +489,12 @@ public sealed partial class HleRegistry : IImportResolver
 
         foreach (KeyValuePair<(uint LibNid, uint Nid), uint> redirect in _processRedirects)
         {
-            if (redirect.Key.Nid == nid)
+            if (redirect.Key.Nid != nid)
+            {
+                continue;
+            }
+
+            if (library == null || !_libraryNames.TryGetValue(redirect.Key.LibNid, out string? hookLibrary) || hookLibrary == library)
             {
                 return redirect.Value;
             }

@@ -86,6 +86,36 @@ public sealed class HleEntryCallTests(GuestMemoryFixture fixture) : IDisposable
         });
     }
 
+    /// <summary>A NID exported by two libraries is two functions (two modules' code): a user plugin's hook on the other
+    /// library's function of the NID in this process is not the probe's and leaves its call to the C# method; a hook on
+    /// the probe's own library's function of the NID takes it. The library of a hook is the one its export table names
+    /// for its library NID.</summary>
+    [Fact]
+    public void AUserHookIsFoundByLibraryAndNid()
+    {
+        const uint ProbeUserLib = 0x7E57_3001, OtherUserLib = 0x7E57_3002;
+        EntryProbeModule probe = Probe();
+        var seen = new List<uint[]>();
+        uint hook = Hook(seen, 1);
+        // the user shells' export tables bind each function under its library (NID and name)
+        _h.Emu.Hle.GetHleFunctionIndex(EntryProbeModule.FlagNid, ProbeUserLib, "SceEntryProbeForDriver");
+        _h.Emu.Hle.GetHleFunctionIndex(EntryProbeModule.FlagNid, OtherUserLib, "SceOtherUser");
+        _h.OnGuest(_ =>
+        {
+            _h.Emu.Hle.RedirectInProcess(OtherUserLib, EntryProbeModule.FlagNid, hook);
+            Assert.False(probe.probeFlagThroughEntry(EntryProbeColor.Red));
+            Assert.Empty(seen);
+            Assert.Equal(1, probe.Calls);
+
+            _h.Emu.Hle.RedirectInProcess(ProbeUserLib, EntryProbeModule.FlagNid, hook);
+            Assert.True(probe.probeFlagThroughEntry(EntryProbeColor.Blue));
+            Assert.Equal(2u, Assert.Single(seen)[0]);
+            Assert.Equal(1, probe.Calls);
+            _h.Emu.Hle.ClearRedirectInProcess(OtherUserLib, EntryProbeModule.FlagNid);
+            _h.Emu.Hle.ClearRedirectInProcess(ProbeUserLib, EntryProbeModule.FlagNid);
+        });
+    }
+
     /// <summary>A 64-bit result comes back from r0:r1, a bool from r0, a void call returns; the wrapper of a function
     /// with more than four argument words puts the rest on the stack.</summary>
     [Fact]

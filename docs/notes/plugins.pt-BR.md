@@ -232,7 +232,8 @@ exportada, chama o wrapper gerado `XxxThroughEntry` (gerador de código `HleEntr
 de entradas corrigidas dos módulos de kernel do firmware, recontada só quando o código do guest muda) e chama o método C#,
 sem alocar nada (`HleEntryCallBenchmarks`, `HleEntryCallTests`). Com hook, acha-o onde o framework o pôs: a entrada
 corrigida da função nos módulos de kernel do firmware (hook de um plugin de kernel, ou qualquer código escrito sobre a
-entrada) ou o thunk do hook de um plugin de usuário na função, no processo do módulo; o código com hook roda na thread
+entrada) ou o thunk do hook de um plugin de usuário na função, no processo do módulo (achado por biblioteca e NID: um NID que duas
+bibliotecas exportam são duas funções, e o hook de uma não é o da outra); o código com hook roda na thread
 que chamou com os argumentos como palavras AAPCS (valores de 64 bits num par par de registradores ou numa posição
 alinhada da pilha) e o r0/r1 dele é o resultado. Função que o guest não consegue chamar pelo endereço (recebe uma string
 C#, um float, o contexto do HLE ou argumentos variáveis) não tem wrapper. O analisador VSHLE010 acusa a chamada direta a

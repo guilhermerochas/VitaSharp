@@ -92,7 +92,10 @@ public sealed class HleEntryCallLibraryTests(GuestMemoryFixture fixture) : IDisp
                 }
                 else
                 {
-                    _h.Emu.Hle.RedirectInProcess(0x7E57_2002, nid, hook);
+                    // the user shell's export table binds the function under its library, the one the hook is on
+                    const uint UserLibNid = 0x7E57_2002;
+                    _h.Emu.Hle.GetHleFunctionIndex(nid, UserLibNid, exports[0].Library ?? library);
+                    _h.Emu.Hle.RedirectInProcess(UserLibNid, nid, hook);
                 }
 
                 HleHarness.Invoke(callerInstance, caller, args);
@@ -110,10 +113,27 @@ public sealed class HleEntryCallLibraryTests(GuestMemoryFixture fixture) : IDisp
         return _h.Emu.Hle.Modules.Single(m => m.GetType().Name == name);
     }
 
+    /// <summary>The exports <paramref name="method"/> is, read from its <c>[Hle]</c> attributes as the registry reads
+    /// them, not from its generated wrapper: a caller that does not call the wrapper (the migration of the call undone)
+    /// fails because the hook never sees the call, whether or not the wrapper is still generated.</summary>
     private static HleExportRef ExportOf(HleModule module, string method)
     {
-        FieldInfo field = module.GetType().GetField("s_hleEntry_" + method, BindingFlags.Static | BindingFlags.NonPublic)
-            ?? throw new Xunit.Sdk.XunitException($"{module.GetType().Name}.{method} has no wrapper");
-        return (HleExportRef)field.GetValue(null)!;
+        const BindingFlags All = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+        var names = new List<HleExportName>();
+        foreach (MethodInfo candidate in module.GetType().GetMethods(All))
+        {
+            if (candidate.Name != method)
+            {
+                continue;
+            }
+
+            foreach (HleAttribute attribute in candidate.GetCustomAttributes<HleAttribute>())
+            {
+                names.Add(new HleExportName(attribute.Name ?? method, attribute.Nid, attribute.Library));
+            }
+        }
+
+        Assert.True(names.Count > 0, $"{module.GetType().Name}.{method} is not an [Hle] function");
+        return new HleExportRef(names.ToArray());
     }
 }
