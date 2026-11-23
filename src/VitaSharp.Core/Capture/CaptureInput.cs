@@ -55,8 +55,18 @@ public static class CaptureMarks
 /// guest reads (buttons, sticks, touches) and every motion sample it receives goes to the capture. The values pass
 /// through unchanged; the check is a compare per poll.
 /// </summary>
-public sealed class InputRecorder(IInputBackend? inner, IMotionSource? innerMotion, Action<InputEvent> sink) : IInputBackend, IMotionSource
+public sealed class InputRecorder(IInputBackend? inner, IMotionSource? innerMotion, Action<InputEvent> sink) : IInputBackend, IMotionSource, IGuestReadInput
 {
+    /// <summary>The token a pad or touch event carries when the guest's read saw the change: "read=N", the N-th read of
+    /// that port or panel by the process (<see cref="IGuestReadInput"/>).</summary>
+    public const string ReadToken = "read=";
+
+    private readonly ControllerState[] _guestLast = new ControllerState[8];
+    private readonly bool[] _guestSeen = new bool[8];
+    private readonly TouchPoint[][] _guestLastTouch = [new TouchPoint[8], new TouchPoint[8]];
+    private readonly int[] _guestLastTouchCount = new int[2];
+    private readonly bool[] _guestTouchSeen = new bool[2];
+
     public IInputBackend? Inner { get; } = inner;
     public IMotionSource? InnerMotion { get; } = innerMotion;
     private readonly ControllerState[] _last = new ControllerState[8];
@@ -71,6 +81,13 @@ public sealed class InputRecorder(IInputBackend? inner, IMotionSource? innerMoti
         {
             lock (_last)
             {
+                // the guest reads this port through its controller driver (the read-numbered events below): the other
+                // readers (the system's power and PS button polls) are not the guest's input
+                if (_guestSeen[port])
+                {
+                    return controllerState;
+                }
+
                 ref ControllerState l = ref _last[port];
                 if (!_seen[port] || l.Buttons != controllerState.Buttons || l.Lx != controllerState.Lx || l.Ly != controllerState.Ly || l.Rx != controllerState.Rx || l.Ry != controllerState.Ry)
                 {
@@ -82,6 +99,77 @@ public sealed class InputRecorder(IInputBackend? inner, IMotionSource? innerMoti
         }
 
         return controllerState;
+    }
+
+    /// <summary>The guest's <paramref name="guestRead"/>-th read of <paramref name="port"/>: a change is logged with the
+    /// number of the read that first saw it, which the re-run hands it to.</summary>
+    public ControllerState GetController(int port, long guestRead)
+    {
+        // a re-run's own recording wraps the playback: the read number goes on to it
+        ControllerState controllerState = Inner is IGuestReadInput ordered ? ordered.GetController(port, guestRead) : Inner?.GetController(port) ?? ControllerState.Neutral;
+        if ((uint)port < _guestLast.Length)
+        {
+            lock (_last)
+            {
+                ref ControllerState l = ref _guestLast[port];
+                if (!_guestSeen[port] || l.Buttons != controllerState.Buttons || l.Lx != controllerState.Lx || l.Ly != controllerState.Ly || l.Rx != controllerState.Rx || l.Ry != controllerState.Ry)
+                {
+                    _guestSeen[port] = true;
+                    l = controllerState;
+                    sink(InputEvent.Now("pad", FormatPad(port, controllerState) + " " + ReadToken + guestRead.ToString(CultureInfo.InvariantCulture)));
+                }
+            }
+        }
+
+        return controllerState;
+    }
+
+    public int GetTouches(bool back, Span<TouchPoint> dest, long guestRead)
+    {
+        int n = Inner is IGuestReadInput ordered ? ordered.GetTouches(back, dest, guestRead) : Inner?.GetTouches(back, dest) ?? 0;
+        int side = back ? 1 : 0;
+        lock (_lastTouch)
+        {
+            if (!_guestTouchSeen[side] || !SameTouches(_guestLastTouch[side], _guestLastTouchCount[side], dest[..n]))
+            {
+                _guestTouchSeen[side] = true;
+                int m = Math.Min(n, _guestLastTouch[side].Length);
+                dest[..m].CopyTo(_guestLastTouch[side]);
+                _guestLastTouchCount[side] = m;
+                sink(InputEvent.Now("touch", FormatTouches(back, dest[..m]) + " " + ReadToken + guestRead.ToString(CultureInfo.InvariantCulture)));
+            }
+        }
+
+        return n;
+    }
+
+    private static bool SameTouches(TouchPoint[] last, int lastCount, ReadOnlySpan<TouchPoint> now)
+    {
+        if (now.Length != lastCount)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < now.Length && i < last.Length; i++)
+        {
+            if (last[i] != now[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string FormatTouches(bool back, ReadOnlySpan<TouchPoint> touches)
+    {
+        var sb = new StringBuilder(back ? "back" : "front");
+        foreach (TouchPoint touch in touches)
+        {
+            sb.Append(CultureInfo.InvariantCulture, $" {touch.Id}:{touch.X:F4}:{touch.Y:F4}");
+        }
+
+        return sb.ToString();
     }
 
     public static string FormatPad(int port, ControllerState controllerState) => $"{port} {(uint)controllerState.Buttons:X8} {controllerState.Lx} {controllerState.Ly} {controllerState.Rx} {controllerState.Ry}";
@@ -99,6 +187,11 @@ public sealed class InputRecorder(IInputBackend? inner, IMotionSource? innerMoti
         int side = back ? 1 : 0;
         lock (_lastTouch)
         {
+            if (_guestTouchSeen[side])
+            {
+                return n;
+            }
+
             TouchPoint[] last = _lastTouch[side];
             bool same = n == _lastTouchCount[side];
             for (int i = 0; same && i < n && i < last.Length; i++)
@@ -153,10 +246,13 @@ public sealed class InputRecorder(IInputBackend? inner, IMotionSource? innerMoti
 /// loaded) the guest sees each change at the same guest time it saw it while recording. Before that, the pad is idle.
 /// The emulation itself is not deterministic (host thread timing), so a re-run is close, not identical.
 /// </summary>
-public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook
+public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook, IGuestReadInput
 {
     private readonly List<(long Us, ControllerState S)>[] _pad = [new(), new(), new(), new(), new()];
     private readonly List<(long Us, TouchPoint[] T)>[] _touch = [new(), new()];
+    // the changes as the guest's reads saw them (captures that number the reads): by read, not by guest clock
+    private readonly List<(long Read, ControllerState S)>[] _padByRead = [new(), new(), new(), new(), new()];
+    private readonly List<(long Read, TouchPoint[] T)>[] _touchByRead = [new(), new()];
     private readonly List<(long Us, MotionSample M)> _motion = new();
     private readonly Queue<byte[]> _random = new();
     private readonly List<(long Us, byte[] B)> _randomAll = new();
@@ -178,22 +274,45 @@ public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook
                 switch (inputEvent.Kind)
                 {
                     case "pad" when p.Length >= 6 && int.TryParse(p[0], out int port) && (uint)port < _pad.Length:
-                        _pad[port].Add((inputEvent.GuestUs, new ControllerState
+                    {
+                        var state = new ControllerState
                         {
                             Buttons = (VitaButtons)uint.Parse(p[1], NumberStyles.HexNumber),
                             Lx = byte.Parse(p[2]),
                             Ly = byte.Parse(p[3]),
                             Rx = byte.Parse(p[4]),
                             Ry = byte.Parse(p[5]),
-                        }));
+                        };
+                        if (GuestRead(p) is { } read)
+                        {
+                            _padByRead[port].Add((read, state));
+                        }
+                        else
+                        {
+                            _pad[port].Add((inputEvent.GuestUs, state));
+                        }
+
                         break;
+                    }
                     case "touch" when p.Length >= 1:
-                        _touch[p[0] == "back" ? 1 : 0].Add((inputEvent.GuestUs, p.Skip(1).Select(t =>
+                    {
+                        TouchPoint[] touches = p.Skip(1).Where(t => !t.StartsWith(InputRecorder.ReadToken, StringComparison.Ordinal)).Select(t =>
                         {
                             string[] q = t.Split(':');
                             return new TouchPoint(int.Parse(q[0]), float.Parse(q[1], CultureInfo.InvariantCulture), float.Parse(q[2], CultureInfo.InvariantCulture));
-                        }).ToArray()));
+                        }).ToArray();
+                        int side = p[0] == "back" ? 1 : 0;
+                        if (GuestRead(p) is { } read)
+                        {
+                            _touchByRead[side].Add((read, touches));
+                        }
+                        else
+                        {
+                            _touch[side].Add((inputEvent.GuestUs, touches));
+                        }
+
                         break;
+                    }
                     case "motion" when p.Length >= 7:
                         float F(int i) => float.Parse(p[i], CultureInfo.InvariantCulture);
                         _motion.Add((inputEvent.GuestUs, new MotionSample(ulong.Parse(p[0]), new Vector3(F(1), F(2), F(3)), new Vector3(F(4), F(5), F(6)))));
@@ -209,6 +328,32 @@ public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook
             }
             catch (FormatException) { }
         }
+
+        // several guest threads may read one port: the read numbers are what orders the changes
+        foreach (List<(long Read, ControllerState S)> list in _padByRead)
+        {
+            list.Sort((x, y) => x.Read.CompareTo(y.Read));
+        }
+
+        foreach (List<(long Read, TouchPoint[] T)> list in _touchByRead)
+        {
+            list.Sort((x, y) => x.Read.CompareTo(y.Read));
+        }
+    }
+
+    /// <summary>The read number of an event the guest's read saw ("read=N"), or null.</summary>
+    private static long? GuestRead(string[] fields)
+    {
+        foreach (string field in fields)
+        {
+            if (field.StartsWith(InputRecorder.ReadToken, StringComparison.Ordinal)
+                && long.TryParse(field.AsSpan(InputRecorder.ReadToken.Length), NumberStyles.Integer, CultureInfo.InvariantCulture, out long read))
+            {
+                return read;
+            }
+        }
+
+        return null;
     }
 
     public static InputPlayback Load(string inputTsv) =>
@@ -262,6 +407,54 @@ public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook
 
         int i = Find(_pad[port], GuestClock.Microseconds);
         return i >= 0 ? _pad[port][i].S : ControllerState.Neutral;
+    }
+
+    /// <summary>The <paramref name="guestRead"/>-th read of the port: the change the recording saw at that read or the
+    /// last before it (the read count is in the save state, so the reads from the state on are the recording's).
+    /// A capture without read numbers is played by guest clock.</summary>
+    public ControllerState GetController(int port, long guestRead)
+    {
+        if (!Active || (uint)port >= _pad.Length)
+        {
+            return ControllerState.Neutral;
+        }
+
+        List<(long Read, ControllerState S)> list = _padByRead[port];
+        if (list.Count == 0)
+        {
+            return GetController(port);
+        }
+
+        int i = Find(list, guestRead);
+        return i >= 0 ? list[i].S : ControllerState.Neutral;
+    }
+
+    public int GetTouches(bool back, Span<TouchPoint> dest, long guestRead)
+    {
+        if (!Active)
+        {
+            return 0;
+        }
+
+        List<(long Read, TouchPoint[] T)> list = _touchByRead[back ? 1 : 0];
+        IReadOnlyList<TouchPoint> touches;
+        if (list.Count == 0)
+        {
+            touches = GetTouches(back);
+        }
+        else
+        {
+            int i = Find(list, guestRead);
+            touches = i >= 0 ? list[i].T : [];
+        }
+
+        int n = Math.Min(touches.Count, dest.Length);
+        for (int k = 0; k < n; k++)
+        {
+            dest[k] = touches[k];
+        }
+
+        return n;
     }
 
     public IReadOnlyList<TouchPoint> GetTouches(bool back)

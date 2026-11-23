@@ -43,6 +43,19 @@ public interface IInputBackend
     }
 }
 
+/// <summary>
+/// An input source that is told which read of the guest it answers: the <paramref name="guestRead"/>-th read of that
+/// port (or panel) by the process, counted by its controller and touch drivers and kept in its save states. A "Gravar
+/// tudo" recording notes at which read the guest first saw each change; its re-run hands the change to that same read,
+/// so the guest sees the same input at the same point of its own work however fast the host ran it.
+/// </summary>
+public interface IGuestReadInput
+{
+    ControllerState GetController(int port, long guestRead);
+
+    int GetTouches(bool back, Span<TouchPoint> dest, long guestRead);
+}
+
 /// <summary>An audio output stream fed with interleaved signed 16-bit samples.</summary>
 public interface IAudioStream : IDisposable
 {
