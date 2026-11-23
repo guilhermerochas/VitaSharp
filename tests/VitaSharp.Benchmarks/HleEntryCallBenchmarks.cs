@@ -21,10 +21,10 @@ public class HleEntryCallBenchmarks
     private string _root = "";
     private IoFileMgr _io = null!;
 
-    // the arguments come from fields, so the JIT cannot fold either call into a constant
-    private readonly int _fd = -1;
-    private readonly long _offset;
-    private readonly int _whence;
+    // the arguments come from fields set in Setup, so the JIT cannot fold either call into a constant
+    private int _fd;
+    private long _offset;
+    private int _whence;
 
     [GlobalSetup]
     public void Setup()
@@ -35,6 +35,9 @@ public class HleEntryCallBenchmarks
         _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = _memory, EnableJit = false, CpuBackend = "interp" });
         _io = _emu.Hle.Modules.OfType<IoFileMgr>().Single();
         _ = _emu.FirmwareKernel;
+        _fd = -1;
+        _offset = 0;
+        _whence = 0;
     }
 
     [GlobalCleanup]
