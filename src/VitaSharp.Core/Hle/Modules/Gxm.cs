@@ -693,6 +693,14 @@ public sealed partial class Gxm : HleModule
             return ERR_INVALID_VALUE;
         }
 
+        // libgxm (FW 3.74: sceGxmBeginScene, sceGxmBeginSceneEx and the old _sceGxmBeginScene) refuses a scene with
+        // nothing to render to: a disabled (or NULL) colour surface and a disabled (or NULL) depth/stencil surface
+        ColorSurfaceInfo? color = ReadColorSurface(colorSurface);
+        if (color == null && depth == null)
+        {
+            return ERR_INVALID_VALUE;
+        }
+
         c.InScene = true;
         c.RenderTarget = rt;
         c.FragmentSyncObject = fragmentSync;
@@ -714,7 +722,7 @@ public sealed partial class Gxm : HleModule
         Gpu.Submit(new BeginSceneCommand
         {
             Width = rt.Width, Height = rt.Height, Multisample = rt.MultisampleMode,
-            Color = ReadColorSurface(colorSurface),
+            Color = color,
             Depth = depth,
         });
         return 0;

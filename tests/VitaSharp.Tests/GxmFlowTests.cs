@@ -436,7 +436,7 @@ public sealed class GxmFlowTests : IDisposable
         GuestMemory.W32(region + 12, 271);
         Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceInitDisabled", off));
         Assert.False((bool)Invoke(Gxm, "sceGxmColorSurfaceIsEnabled", off)!);
-        Assert.Equal(0, Call(Gxm, "_sceGxmBeginScene", ctx, 0u, rt, region, 0u, 0u, off, 0u));
+        Assert.Equal(0, Call(Gxm, "_sceGxmBeginScene", ctx, 0u, rt, region, 0u, 0u, off, depth));
         Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
         Finish();
         Assert.Null(_rec.LastBegin!.Color);
@@ -446,6 +446,50 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
         Assert.Equal(0, Call(Gxm, "sceGxmTransferFinish"));
         Assert.NotNull(_rec.LastBegin!.Color);
+    }
+
+    /// <summary>
+    /// libgxm (FW 3.74) refuses a scene with nothing to render to: in sceGxmBeginScene, sceGxmBeginSceneEx and the old
+    /// _sceGxmBeginScene, a NULL, disabled or never initialised (zero-filled) colour surface together with a NULL or
+    /// disabled depth/stencil surface is SCE_GXM_ERROR_INVALID_VALUE, and the context stays outside a scene (nothing
+    /// reaches the GPU). A colour surface alone or a depth/stencil surface alone is a scene.
+    /// </summary>
+    [Fact]
+    public void BeginSceneRefusesASceneWithoutColourAndDepth()
+    {
+        Init();
+        uint ctx = Context(), rt = RenderTarget(64, 64), color = SceneColor(64, 64);
+        uint offColor = _harness.Alloc(0x40), zeroColor = _harness.Alloc(0x40), offDepth = _harness.Alloc(0x20);
+        uint depth = _harness.Alloc(0x20);
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceInitDisabled", offColor));
+        Assert.Equal(0, Call(Gxm, "sceGxmDepthStencilSurfaceInitDisabled", offDepth));
+        Assert.Equal(0, Call(Gxm, "sceGxmDepthStencilSurfaceInit", depth, 0x00044000u, 0u, 64u, _harness.Alloc(64 * 64 * 4), 0u));
+
+        foreach (uint colorSurface in new[] { 0u, offColor, zeroColor })
+        {
+            foreach (uint depthSurface in new[] { 0u, offDepth })
+            {
+                Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, 0u, colorSurface, depthSurface));
+                Assert.Equal(INVALID_VALUE, Call(Gxm, "_sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, 0u, colorSurface, depthSurface));
+                Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmBeginSceneEx", ctx, 0u, rt, 0u, 0u, 0u, colorSurface, depthSurface, depthSurface));
+            }
+        }
+
+        Assert.Equal(NOT_WITHIN_SCENE, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+        Finish();
+        Assert.DoesNotContain("BeginSceneCommand", _rec.Kinds);
+
+        Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, 0u, color, offDepth));
+        Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+        Finish();
+        Assert.NotNull(_rec.LastBegin!.Color);
+        Assert.Null(_rec.LastBegin!.Depth);
+        Assert.Equal(0, Call(Gxm, "sceGxmBeginSceneEx", ctx, 0u, rt, 0u, 0u, 0u, offColor, depth, depth));
+        Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+        Finish();
+        Assert.Null(_rec.LastBegin!.Color);
+        Assert.NotNull(_rec.LastBegin!.Depth);
+        Assert.Equal(2, _rec.Kinds.Count(kind => kind == "BeginSceneCommand"));
     }
 
     /// <summary>
@@ -593,7 +637,7 @@ public sealed class GxmFlowTests : IDisposable
         uint idx = _harness.Alloc(16), verts = _harness.Alloc(36);
         Assert.Equal(NOT_WITHIN_SCENE, Call(Gxm, "sceGxmDraw", ctx, 0u, 0u, idx, 3u));
         Assert.Equal(INVALID_POINTER, Call(Gxm, "sceGxmDraw", 0x1234u, 0u, 0u, idx, 3u));
-        Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, 0u, 0u, 0u));
+        Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, 0u, SceneColor(64, 64), 0u));
         Assert.Equal(NULL_PROGRAM, Call(Gxm, "sceGxmDraw", ctx, 0u, 0u, idx, 3u));
         Invoke(Gxm, "sceGxmSetVertexProgram", ctx, vp);
         Invoke(Gxm, "sceGxmSetFragmentProgram", ctx, fp);
@@ -821,7 +865,7 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(INVALID_POINTER, Call(Gxm, "sceGxmExecuteCommandList", imm, 0u));
         Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmExecuteCommandList", def, list));
         Assert.Equal(NOT_WITHIN_SCENE, Call(Gxm, "sceGxmExecuteCommandList", imm, list));
-        Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", imm, 0u, rt, 0u, 0u, 0u, 0u, 0u));
+        Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", imm, 0u, rt, 0u, 0u, 0u, SceneColor(64, 64), 0u));
         Assert.Equal(INVALID_POINTER, Call(Gxm, "sceGxmExecuteCommandList", imm, _harness.Alloc(32))); // not a list
         Assert.Equal(0, Call(Gxm, "sceGxmExecuteCommandList", imm, empty));
         Assert.Equal(0, Call(Gxm, "sceGxmExecuteCommandList", imm, list));
@@ -884,7 +928,7 @@ public sealed class GxmFlowTests : IDisposable
 
         Assert.Equal(INVALID_POINTER, Call(Gxm, "sceGxmDrawPrecomputed", ctx, 0u));
         Assert.Equal(NOT_WITHIN_SCENE, Call(Gxm, "sceGxmDrawPrecomputed", ctx, draw));
-        Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, 0u, 0u, 0u));
+        Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, 0u, SceneColor(64, 64), 0u));
         Invoke(Gxm, "sceGxmSetPrecomputedVertexState", ctx, vs);
         Invoke(Gxm, "sceGxmSetPrecomputedFragmentState", ctx, fs);
         Assert.Equal(0, Call(Gxm, "sceGxmDrawPrecomputed", ctx, draw)); // the states give the programs
