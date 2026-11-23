@@ -46,6 +46,41 @@ public sealed class HleIndexTable
     /// enters C#, such as the plugin hooks' counting stubs), by index.</summary>
     private readonly Dictionary<int, (string Name, Action<HleContext> Body)> _sharedHost = new();
 
+    /// <summary>The shared host functions by name, declared before any index is given (a save state names them).</summary>
+    private readonly Dictionary<string, Action<HleContext>> _sharedBodies = new(StringComparer.Ordinal);
+
+    /// <summary>Declares a shared host function by name without giving it an index: a save state that has it (by name)
+    /// finds it on load (<see cref="SharedHostByName"/>), also in a session that never called it.</summary>
+    public void DeclareSharedHost(string name, Action<HleContext> body)
+    {
+        lock (_lock)
+        {
+            _sharedBodies.TryAdd(name, body);
+        }
+    }
+
+    /// <summary>The body of the shared host function declared as <paramref name="name"/>.</summary>
+    public bool SharedHostByName(string name, out Action<HleContext> body)
+    {
+        lock (_lock)
+        {
+            return _sharedBodies.TryGetValue(name, out body!);
+        }
+    }
+
+    /// <summary>After a save state load: the shared host function <paramref name="name"/> is at the saved session's
+    /// <paramref name="index"/> in every process.</summary>
+    public void AliasSharedHost(int index, string name)
+    {
+        lock (_lock)
+        {
+            if (_sharedBodies.TryGetValue(name, out Action<HleContext>? body))
+            {
+                _sharedHost[index] = (name, body);
+            }
+        }
+    }
+
     /// <summary>A new index for a host function that every process's registry serves (each binds it on its first
     /// call, <see cref="SharedHostFunction"/>).</summary>
     public int NewSharedHostIndex(string name, Action<HleContext> body)
@@ -54,7 +89,8 @@ public sealed class HleIndexTable
         {
             _nids.Add(0);
             int index = _nids.Count - 1;
-            _sharedHost[index] = (name, body);
+            _sharedBodies.TryAdd(name, body);
+            _sharedHost[index] = (name, _sharedBodies[name]);
             return index;
         }
     }
@@ -111,6 +147,13 @@ public sealed class HleIndexTable
                 {
                     return false;
                 }
+            }
+
+            // the saved layout replaces this session's below its end: a shared host function given an index there is
+            // found again by name (the load aliases the saved one, AliasSharedHost)
+            foreach (int index in _sharedHost.Keys.Where(k => k < nids.Count).ToList())
+            {
+                _sharedHost.Remove(index);
             }
 
             for (int i = _nids.Count; i < nids.Count; i++)

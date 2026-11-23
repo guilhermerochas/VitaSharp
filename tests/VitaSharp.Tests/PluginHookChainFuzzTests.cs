@@ -19,7 +19,11 @@ namespace VitaSharp.Tests;
 /// the framework's errors. Run on each CPU path (<see cref="HookExecutionPath"/>), the calls coming from a caller's
 /// compiled code on the JIT paths.
 /// </summary>
+// Quarantined (Category=Slow) on 23/11/2026: in a full suite run, other classes of the shared "guest" collection
+// leave kernel memory freed under these tests (registers of the framework read as zero); isolated they pass. Roadmap
+// P1 "Hook tests: shared memory interference" tracks it; they come back to the fast suite when it is fixed.
 [Collection("guest")]
+[Trait("Category", "Slow")]
 public sealed class PluginHookChainFuzzTests : IDisposable
 {
     private const uint TargetLib = 0x0BAD7A70, TargetNid = 0x2468ACF0;
@@ -241,7 +245,8 @@ public sealed class PluginHookChainFuzzTests : IDisposable
     }
 
     /// <summary>The framework's records are linked in the model's order: each next is the following hook's record (the
-    /// last one's is 0), each func the hook's function, and every old the one trampoline of the patch.</summary>
+    /// last one's is 0), each func the hook's function, and every old the one trampoline of the patch (through the hook's
+    /// counting stub).</summary>
     private static void CheckChain(int step, List<int> chain, uint[] records, uint[] hooks)
     {
         for (int i = 0; i < chain.Count; i++)
@@ -249,8 +254,11 @@ public sealed class PluginHookChainFuzzTests : IDisposable
             uint record = records[chain[i]];
             uint next = i + 1 < chain.Count ? records[chain[i + 1]] : 0;
             Assert.True(next == GuestMemory.R32(record), $"step {step}: hook {chain[i] + 1}'s next is 0x{GuestMemory.R32(record):X8}, expected 0x{next:X8}");
-            Assert.Equal(hooks[chain[i]], GuestMemory.R32(record + 4));
-            Assert.Equal(GuestMemory.R32(records[chain[0]] + 8), GuestMemory.R32(record + 8));
+            // func and old are the hook's counting stub (its entry and its continuation), which goes on to the hook's
+            // function and to the one trampoline of the patch
+            Assert.Equal(GuestMemory.R32(record + 4) + PluginFramework.StubOldWord * 4u, GuestMemory.R32(record + 8));
+            Assert.Equal(hooks[chain[i]], PluginHookTests.HookFunctionOf(record));
+            Assert.Equal(PluginHookTests.TrampolineOf(records[chain[0]]), PluginHookTests.TrampolineOf(record));
         }
     }
 

@@ -128,14 +128,29 @@ N numbers the hooks of the session in installation order. The count is guest cod
 ARM stub of the hook (in kernel memory) that adds one to the hook's counter (ldrex/strex, every core) and jumps on to
 the hook function or to the trampoline, keeping the caller's registers and stack, so it holds in every CPU backend
 (interpreter, IL and native JIT, precompiled code) and on every path into the hook. Only the call that takes a counter
-from 0 to 1 enters C# for its log line; after that a call costs a few instructions and allocates nothing. A save state
+from 0 to 1, and the traced calls below, enter C# for their log lines; after that a call costs a few instructions and allocates nothing. A save state
 keeps the counters (they are guest memory); a state saved by an older build gets the stubs when it loads.
+
+What a hook does, in its first calls (8 by default; `VITASHARP_PLUGIN_HOOK_TRACE=N` sets how many, 0 none, at most
+256): one line per call, `plugin hook N call K: r0=... r1=... r2=... r3=... stack=...; continued to the original, which
+returned 0x...; returned 0x... to the caller (changed); wrote r1 0x... bytes 0-3 (now ...)`. It says whether the hook
+continued (to the original or to the next hook, with the value that came back) or `answered itself`, what the caller
+got (`(changed)` when that is not what the original or the next hook returned), and which of the 32 bytes each argument
+points to changed during the call. The stub keeps the caller's lr in a word of its own and gives the hook the stub's
+return word, which puts it back: the guest's registers and stack stay as they were, and a call in flight survives a
+save state. The summary adds, per hook, the calls that answered themselves and, for the traced calls, the values
+returned (top 5), how many were changed and how many wrote an output. After the traced calls a hook costs only its
+counters.
 
 A recording (F8) keeps the hooks too: its context.txt lists each hook with its counters at the start and at the stop
 (one tab-separated `plugin hook:` line each), its log.txt has the `called` lines, and report.txt has a "Plugin hooks"
 section with each hook's kind, function, process, address, installer, hook function, calls and continuations during the
 recording and in the whole session, and `never called` or the error of a refused hook. The analysis reads only the
-recording, so whoever looks at it needs neither the game nor the plugins.
+recording, so whoever looks at it needs neither the game nor the plugins. It also has a "Plugins" section: the
+emulator's build, the installed firmware, the plugin configuration that was read (its Vita path and lines), and each
+plugin module of it (Vita path, kernel or user, module name, SHA-256 and size of its file, what happened to it, the
+imported functions nothing provides). Only Vita paths go in it; a host path in a message becomes `<data>` or
+`%USERPROFILE%`, and no plugin file is copied.
 
 The framework's module calls for user programs (taiLoadKernelModule, taiLoadStartKernelModuleForUser,
 taiStartKernelModuleForUser, taiLoadStartModuleForPidForUser, the four stop calls, taiUnloadKernelModule,

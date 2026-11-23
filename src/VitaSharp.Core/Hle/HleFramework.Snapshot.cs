@@ -50,10 +50,12 @@ public sealed partial class HleRegistry
         lock (_functions)
         {
             int n = r.ReadInt32();
-            var hostByName = _functions.Where(f => f.Nid == 0 && f.Library == "host").ToDictionary(f => f.Name);
+            // by name (a shared host function can sit at more than one index: a state loaded over one that had it)
+            var hostByName = _functions.Where(f => f.Nid == 0 && f.Library == "host").GroupBy(f => f.Name).ToDictionary(g => g.Key, g => g.First());
             var list = new List<HleFunction>(n) { _functions[0] };
             var index = new Dictionary<uint, int>();
             var nids = new List<uint>(n) { 0 };
+            var shared = new List<(int Index, string Name)>();
             for (int i = 1; i < n; i++)
             {
                 uint nid = r.ReadUInt32();
@@ -61,7 +63,26 @@ public sealed partial class HleRegistry
                 nids.Add(nid);
                 if (nid == 0 && lib == "host")
                 {
-                    list.Add(hostByName.GetValueOrDefault(name) ?? throw new SnapshotException($"host function {name} of the saved session does not exist here"));
+                    if (hostByName.GetValueOrDefault(name) is { } host)
+                    {
+                        list.Add(host);
+                        if (Indexes.SharedHostByName(name, out _))
+                        {
+                            // every process serves it at the saved index too
+                            shared.Add((list.Count - 1, name));
+                        }
+                    }
+                    else if (Indexes.SharedHostByName(name, out Action<HleContext> body))
+                    {
+                        // a host function every process serves, declared but not yet given an index in this session
+                        list.Add(SharedHostRecord(name, body));
+                        shared.Add((list.Count - 1, name));
+                    }
+                    else
+                    {
+                        throw new SnapshotException($"host function {name} of the saved session does not exist here");
+                    }
+
                     continue;
                 }
 
@@ -82,7 +103,13 @@ public sealed partial class HleRegistry
             foreach (var (k, v) in index) _indexByNid[k] = v;
             // the saved session's processes shared one table: it is this session's from now on (a state of a build
             // whose processes each had their own table keeps this one apart, as that build ran it)
-            Indexes.Adopt(nids);
+            if (Indexes.Adopt(nids))
+            {
+                foreach ((int at, string name) in shared)
+                {
+                    Indexes.AliasSharedHost(at, name);
+                }
+            }
         }
         lock (_vars)
         {

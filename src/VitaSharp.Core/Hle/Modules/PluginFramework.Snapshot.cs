@@ -11,7 +11,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// stubs of a function hooked only in the running session back to the function. No plugin is loaded again: the
 /// plugins' modules, threads and memory are the state's.
 /// </summary>
-[GenerateSnapshot, SnapshotIgnoreFields("_patchLock", "_redirectsBeforeLoad")]
+[GenerateSnapshot, SnapshotIgnoreFields("_patchLock", "_redirectsBeforeLoad", "_kernelBlocks")]
 public sealed partial class PluginFramework
 {
     /// <summary>The HLE functions (hook's process, library, NID) this framework's hooks redirected in the running
