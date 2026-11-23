@@ -268,6 +268,7 @@ sealed class SessionCaptureControl : IDisposable
                 new SessionCaptureOptions { Root = root, SetPresentTap = null!, StartState = false, GpuDump = options.Contains("--rerun-gpu-dump"), Zip = false, StopHint = "re-run" });
             SaveStates.Loaded += _ =>
             {
+                long firstFlip = SaveStates.FramesPresentedAtLastLoad;
                 input.Activate(fromUs);
                 control.Capture.Start("re-run", limit: false);
                 new Thread(() =>
@@ -286,7 +287,7 @@ sealed class SessionCaptureControl : IDisposable
                     string cmp;
                     try
                     {
-                        cmp = control.Capture.Dir is { } rd ? CaptureAnalyzer.Compare(pb._dir, rd) : "no re-run capture";
+                        cmp = control.Capture.Dir is { } rd ? CaptureAnalyzer.Compare(pb._dir, rd, rerunFirstFlip: firstFlip) : "no re-run capture";
                     }
                     catch (Exception ex) when (ex is IOException or InvalidDataException)
                     {

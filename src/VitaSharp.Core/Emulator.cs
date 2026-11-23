@@ -436,7 +436,8 @@ public sealed partial class Emulator : IDisposable
         if (Parent != null)
         {
             // a process of a multi-process system re-executes on its own: the host front-end only drives the first
-            Task.Run(() =>
+            // (its old image's memory goes on that task: the system's end waits for it)
+            Vita.TrackProcessTask(Task.Run(() =>
             {
                 try
                 {
@@ -447,7 +448,7 @@ public sealed partial class Emulator : IDisposable
                     Log.Error($"{Describe()}: LoadExec failed: {e}");
                     Terminate("LoadExec failed");
                 }
-            });
+            }));
             return;
         }
         ExecRequested?.Invoke();
@@ -529,7 +530,8 @@ public sealed partial class Emulator : IDisposable
             Vita.PostShellEvent(ShellEvents.AppCreated, child.Pid, child.AppId);
         }
 
-        Task.Run(() =>
+        // the child starts on a host task (its module_start may wait for the caller); the system's end waits for it
+        Vita.TrackProcessTask(Task.Run(() =>
         {
             try
             {
@@ -557,7 +559,7 @@ public sealed partial class Emulator : IDisposable
                     Vita.PostShellEvent(ShellEvents.AppLaunched, -1);
                 }
             }
-        });
+        }));
         return child;
     }
 
@@ -857,7 +859,8 @@ public sealed partial class Emulator : IDisposable
             c.Terminate("ended with its parent");
         }
 
-        Task.Run(() =>
+        // the system's end waits for this (VitaSystem.WaitForProcessTasks)
+        Vita.TrackProcessTask(Task.Run(() =>
         {
             if (!Kernel.WaitAllThreadsExit(10_000))
             {
@@ -874,7 +877,7 @@ public sealed partial class Emulator : IDisposable
                 }
             }
             Release();
-        });
+        }));
     }
 
     /// <summary>Gives everything the process holds back to the system.</summary>
@@ -2441,6 +2444,8 @@ public sealed partial class Emulator : IDisposable
             return; // the GPU and host devices are the first process's
         }
 
+        // the processes still starting, re-executing or ending finish first: what they free is this system's
+        Vita.WaitForProcessTasks();
         Vita.EndKernelProcess();
 
         if (_jitBefore is { } jit)

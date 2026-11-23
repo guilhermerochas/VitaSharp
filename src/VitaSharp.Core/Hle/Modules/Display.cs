@@ -423,6 +423,26 @@ public sealed partial class Ctrl : HleModule
     uint _samplingMode;
     long _lastRead;
     bool _psDown;
+    /// <summary>The guest's reads of each port so far (<see cref="IGuestReadInput"/>): part of the save state, so a
+    /// re-run from it counts on from the same read.</summary>
+    [VitaSharp.Core.SaveState.SnapshotMissing] // states of builds before it: counted from 0 (their captures play back by guest time)
+    long[] _padReads = new long[8];
+
+    /// <summary>The number of this read of <paramref name="port"/> (1 = the first).</summary>
+    internal static long NextRead(ref long[] reads, int port)
+    {
+        if ((uint)port >= (uint)reads.Length)
+        {
+            // a state of an earlier build has none
+            System.Threading.Interlocked.CompareExchange(ref reads, new long[Math.Max(8, port + 1)], reads);
+            if ((uint)port >= (uint)reads.Length)
+            {
+                return 0;
+            }
+        }
+
+        return System.Threading.Interlocked.Increment(ref reads[port]);
+    }
     [VitaSharp.Core.SaveState.SnapshotIgnore] // a lookup cache
     SystemServicesVsh? _kernelServices;
 
@@ -434,7 +454,16 @@ public sealed partial class Ctrl : HleModule
     /// front) is handed to the system (<see cref="Kernel.VitaSystem.OnPsButton"/>); applications never see it.</summary>
     ControllerState State(int port)
     {
-        var s = Emu.Host.Input?.GetController(port) ?? ControllerState.Neutral;
+        ControllerState s;
+        long read = NextRead(ref _padReads, port);
+        if (Emu.Host.Input is IGuestReadInput ordered)
+        {
+            s = ordered.GetController(port, read);
+        }
+        else
+        {
+            s = Emu.Host.Input?.GetController(port) ?? ControllerState.Neutral;
+        }
         bool ps = (s.Buttons & VitaButtons.PsButton) != 0;
         if (Emu.IsShell)
         {
@@ -681,6 +710,10 @@ public sealed partial class Touch : HleModule
 
     internal uint SamplingState(int port) => _sampling[port];
 
+    /// <summary>The guest's reads of each panel so far (<see cref="IGuestReadInput"/>), kept in the save state.</summary>
+    [VitaSharp.Core.SaveState.SnapshotMissing] // states of builds before it: counted from 0
+    long[] _touchReads = new long[2];
+
     [Hle]
     int sceTouchGetPanelInfo(int port, uint info)
     {
@@ -710,7 +743,12 @@ public sealed partial class Touch : HleModule
         // bar, its on-screen keyboard): those contacts are the shell's
         bool claimed = Emu.Vita.TouchClaimedByShell(port);
         bool touched = claimed || Emu.IsForeground;
-        int reports = _sampling[port] != 0 && touched && Emu.Host.Input is { } input ? input.GetTouches(port == 1, touches) : 0;
+        int reports = 0;
+        if (_sampling[port] != 0 && touched && Emu.Host.Input is { } input)
+        {
+            long read = Ctrl.NextRead(ref _touchReads, port);
+            reports = input is IGuestReadInput ordered ? ordered.GetTouches(port == 1, touches, read) : input.GetTouches(port == 1, touches);
+        }
         if (claimed)
         {
             int kept = 0;
