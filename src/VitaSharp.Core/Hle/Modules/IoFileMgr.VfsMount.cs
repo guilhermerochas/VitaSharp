@@ -34,6 +34,10 @@ public sealed partial class IoFileMgr
     const uint MountBeingMounted = 0x100;
     const uint MountFlagNoDevctl = 0x1000;
     const uint VnodeTypeDirectory = 0x1002;
+
+    /// <summary>The type of a block device vnode (+0x78), the one a device file system's mount (kind 3) makes at its
+    /// path and vfsRmdev removes.</summary>
+    const uint VnodeTypeBlockDevice = 0x2000;
     const int VFS_ERR_ACCEPTED_DEVCTL = unchecked((int)0x8001001C);
     const int VFS_ERR_NOMEM = unchecked((int)0x8001000C);
 
@@ -63,6 +67,8 @@ public sealed partial class IoFileMgr
     /// the state carries.</summary>
     void AfterSnapshotLoad()
     {
+        AfterAsyncLoad();
+        AfterHostVnodeLoad();
         lock (_guestMounts)
         {
             _guestMounts.Clear();
@@ -223,7 +229,7 @@ public sealed partial class IoFileMgr
         {
             1 => fsType == 3,
             2 => fsType is 1 or 2,
-            3 => GuestMemory.R32(driver + 0x10) == 0x10,
+            3 => GuestMemory.R32(driver + 0x10) == 0x10 && IsDeviceDirectory(GuestMemory.ReadCString(rootPathAddress, 0x40)),
             4 => device != 0,
             5 => fsType is 1 or 2 && device != 0,
             6 => fsType == 4,
@@ -246,6 +252,30 @@ public sealed partial class IoFileMgr
             // the root is the emulator's own ("/" is always mounted); a path already covered by a mount is busy
             ReleaseVfsDriver(driver);
             return kind == 6 ? VFS_ERR_EXIST : VFS_ERR_BUSY;
+        }
+
+        uint covered = 0;
+        if (kind == 1)
+        {
+            // a mount over an existing path: the vnode there is covered (+0x40); a device file system's cannot be
+            int found = device == 0 ? VFS_ERR_INVAL : CoveredVnode(GuestMemory.ReadCString(device, 0x3FF), out covered);
+            uint coveredMount = covered == 0 ? 0 : GuestMemory.R32(covered + 0x4C);
+            if (found >= 0 && coveredMount != 0 && (GuestMemory.R32(coveredMount + 0x4C) & 0xFF) == 3)
+            {
+                ReleaseVnode(covered);
+                found = VFS_ERR_BUSY;
+            }
+
+            if (found < 0)
+            {
+                ReleaseVfsDriver(driver);
+                return found;
+            }
+
+            if (coveredMount != 0)
+            {
+                HoldMount(coveredMount);
+            }
         }
 
         uint devicePathAddress = device;
@@ -280,15 +310,26 @@ public sealed partial class IoFileMgr
         Emu.Memory.Free(vpp);
         if (result < 0)
         {
+            ReleaseCovered(covered);
             FreeMount(mount, driver);
             return result;
         }
 
-        GuestMemory.W32(root + 0x78, VnodeTypeDirectory);
+        // the root is a directory, active from the start (+0x74 1); over a covered vnode its parent is the covered
+        // vnode's (+0x50). A device file system's (kind 3) is the block device vnode at its path (0x2000), which the
+        // mount covers (+0x40) and whose ops are the mount's default ones (+0x6C)
+        GuestMemory.W32(root + 0x78, kind == 3 ? VnodeTypeBlockDevice : VnodeTypeDirectory);
+        GuestMemory.W32(root + 0x74, VnodeStateActive);
         GuestMemory.W32(root + 0x4C, mount);
         if (kind == 3)
         {
             GuestMemory.W32(mount + 0x40, root);
+            GuestMemory.W32(root + 0x6C, GuestMemory.R32(mount + 0x44));
+        }
+        else if (kind == 1)
+        {
+            GuestMemory.W32(mount + 0x40, covered);
+            GuestMemory.W32(root + 0x50, GuestMemory.R32(covered + 0x50));
         }
 
         string devicePath = devicePathAddress == 0 ? "" : GuestMemory.ReadCString(devicePathAddress, 0x3FF);
@@ -306,6 +347,7 @@ public sealed partial class IoFileMgr
         else
         {
             vfsFreeVnode(root);
+            ReleaseCovered(covered);
             FreeMount(mount, driver);
             return result;
         }
@@ -325,6 +367,7 @@ public sealed partial class IoFileMgr
         if (result < 0)
         {
             vfsFreeVnode(root);
+            ReleaseCovered(covered);
             FreeMount(mount, driver);
             return result;
         }
@@ -343,11 +386,125 @@ public sealed partial class IoFileMgr
         return 0;
     }
 
+    /// <summary>A covered vnode given back: its reference and its mount's.</summary>
+    static void ReleaseCovered(uint covered)
+    {
+        if (covered != 0)
+        {
+            ReleaseOpenVnode(covered);
+        }
+    }
+
     void FreeMount(uint mount, uint driver)
     {
         Emu.Memory.Free(GuestMemory.R32(mount + 0xCC));
         Emu.Memory.Free(mount);
         ReleaseVfsDriver(driver);
+    }
+
+    /// <summary>The first element of a device file system's path is one of the device directories ("dev", "tty",
+    /// "md", iofilemgr 3.74 0x8101ce94): a name the firmware fixes.</summary>
+    static bool IsDeviceDirectory(string rootPath)
+    {
+        string first = rootPath.TrimStart('/').Split('/')[0];
+        return first is "dev" or "tty" or "md";
+    }
+
+    /// <summary>
+    /// vfsRmdev(param { path, flags }) as iofilemgr 3.74 has it (0x81007f14): the path ("sdstor0:gcd-lp-ign-entire", by
+    /// an assign name or a root path) is walked to its parent and its last element looked up there; that vnode must be
+    /// a block device's (type bit 0x2000; another vnode 0x80010001; nothing there 0x80010002, as with no game card in
+    /// the slot). Only a plain block device vnode (type 0x2000 exactly) goes, and with flag 1 only when no file is open
+    /// on it (+0x94; else 0x80010010): its files are synced (ksceVopSync), the parent's driver removes it
+    /// (ksceVopRemove), it turns inactive (+0x74 0x100, so the files still open on it lose it) and, with no other
+    /// reference, it is inactivated and freed. The block device vnode a device file system's mount (kind 3) put at its
+    /// own path takes that mount away with it. 0.
+    /// </summary>
+    [Hle(Nid = 0x69A7E076, Library = "SceIofilemgrForDriver")]
+    int vfsRmdev(uint param)
+    {
+        if (param == 0 || GuestMemory.R32(param) == 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        string path = GuestMemory.ReadCString(GuestMemory.R32(param), 0x400);
+        uint flags = GuestMemory.R32(param + 4);
+        if (ResolveGuestMount(path, out string fullPath) is not { } mount)
+        {
+            return VFS_ERR_NOENT;
+        }
+
+        using var block = new GuestPathBlock(this, fullPath);
+        int result = GuestWalk(mount, block, fullPath, parentOnly: true, out uint parent, out int lastStart);
+        if (result < 0)
+        {
+            return result;
+        }
+
+        if (lastStart < 0)
+        {
+            // the path is the mount's own: its root vnode (the walk's reference)
+            return RemoveDeviceVnode(mount, 0, parent, block.VfsPath, flags);
+        }
+
+        GuestMemory.W32(block.VnodeOut, 0);
+        result = ksceVopLookup(parent, block.VnodeOut, block.VfsPath, 0);
+        uint vnode = result < 0 ? 0 : GuestMemory.R32(block.VnodeOut);
+        if (result < 0 || vnode == 0)
+        {
+            ReleaseVnode(parent);
+            return result < 0 ? result : VFS_ERR_NOENT;
+        }
+
+        result = RemoveDeviceVnode(mount, parent, vnode, block.VfsPath, flags);
+        ReleaseVnode(parent);
+        return result;
+    }
+
+    /// <summary>The checks and the removal of vfsRmdev on the vnode found (one reference held, given back here; the
+    /// parent 0 for a mount's root).</summary>
+    int RemoveDeviceVnode(GuestMount mount, uint parent, uint vnode, uint vfsPath, uint flags)
+    {
+        uint type = GuestMemory.R32(vnode + 0x78);
+        if ((type & VnodeTypeBlockDevice) == 0 || type != VnodeTypeBlockDevice
+            || ((flags & 1) != 0 && (int)GuestMemory.R32(vnode + 0x94) >= 1))
+        {
+            ReleaseVnode(vnode);
+            return (type & VnodeTypeBlockDevice) == 0 ? VFS_ERR_PERM : VFS_ERR_BUSY;
+        }
+
+        if (parent == 0)
+        {
+            // the device vnode of a device file system's own mount: the mount goes with it
+            ReleaseVnode(vnode);
+            GuestMemory.W32(vnode + 0x74, VnodeActiveBelow);
+            return RemoveGuestMount(mount, flags);
+        }
+
+        int result = ksceVopSync(vnode, GuestMemory.R32(vnode + 0x90), 0);
+        if (result >= 0)
+        {
+            result = ksceVopRemove(parent, vnode, vfsPath, 0);
+        }
+
+        if (result < 0)
+        {
+            ReleaseVnode(vnode);
+            return result;
+        }
+
+        GuestMemory.W32(vnode + 0x74, VnodeActiveBelow);
+        if (GuestMemory.R32(vnode + 0x58) <= 1)
+        {
+            GuestMemory.W32(vnode + 0x58, 0);
+            ksceVopInactive(vnode);
+            vfsFreeVnode(vnode);
+            return 0;
+        }
+
+        ReleaseVnode(vnode);
+        return 0;
     }
 
     /// <summary>vfsUmount(param { path, flags }): the driver's unmount op (+4, { mount, flags }), then the mount goes
@@ -374,12 +531,24 @@ public sealed partial class IoFileMgr
             return VFS_ERR_BUSY;
         }
 
+        return RemoveGuestMount(mount, flags);
+    }
+
+    /// <summary>The end of an unmount: the driver's unmount op (+4, { mount, flags }); when it accepts, the covered
+    /// vnode is given back and the mount goes away with its vnodes.</summary>
+    int RemoveGuestMount(GuestMount mount, uint flags)
+    {
         GuestMemory.W32(mount.Mount + 0x48, MountStateUnmounting);
         int result = VfsOpCall(mount.Mount, 0x04, [mount.Mount, flags]);
         if (result < 0)
         {
             GuestMemory.W32(mount.Mount + 0x48, 1);
             return result;
+        }
+
+        if ((GuestMemory.R32(mount.Mount + 0x50) & 0xFF) == 1)
+        {
+            ReleaseCovered(GuestMemory.R32(mount.Mount + 0x40));
         }
 
         lock (_guestMounts)
@@ -510,7 +679,7 @@ public sealed partial class IoFileMgr
     GuestMount? ResolveGuestMount(string path, out string fullPath)
     {
         fullPath = "";
-        if (_guestMounts.Count == 0)
+        if (_guestMounts.Count == 0 || t_inHostVop)
         {
             return null;
         }
@@ -610,10 +779,44 @@ public sealed partial class IoFileMgr
         return 0;
     }
 
-    /// <summary>A file object for <paramref name="vnode"/> (vfsAllocateFile).</summary>
-    uint GuestAllocateFile(uint vnode, in GuestPathBlock path)
+    /// <summary>The UID of each file object the I/O calls on guest mounts opened (the descriptor the module keeps).</summary>
+    [SnapshotMissing] // states of builds before it: file objects were not UIDs
+    readonly Dictionary<uint, int> _guestFileUids = new();
+
+    /// <summary>A file object for <paramref name="vnode"/> (vfsAllocateFile), +0 1 for a directory and +4 the open
+    /// flags, as the module's open and dopen set them before the driver's op.</summary>
+    uint GuestAllocateFile(uint vnode, in GuestPathBlock path, bool directory, int flags)
     {
-        return vfsAllocateFile(vnode, path.Scratch) < 0 ? 0 : GuestMemory.R32(path.Scratch);
+        int uid = vfsAllocateFile(vnode, path.Scratch, 0);
+        if (uid < 0)
+        {
+            return 0;
+        }
+
+        uint file = GuestMemory.R32(path.Scratch);
+        GuestMemory.W32(file, directory ? 1u : 0u);
+        GuestMemory.W32(file + 4, (uint)flags);
+        lock (_guestFileUids)
+        {
+            _guestFileUids[file] = uid;
+        }
+
+        return file;
+    }
+
+    /// <summary>vfsFreeFile on a file object <see cref="GuestAllocateFile"/> made.</summary>
+    void GuestFreeFile(uint vnode, uint file)
+    {
+        int uid;
+        lock (_guestFileUids)
+        {
+            if (!_guestFileUids.Remove(file, out uid))
+            {
+                return;
+            }
+        }
+
+        vfsFreeFile(vnode, (uint)uid);
     }
 
     // ---- the I/O calls on a guest mount's paths and descriptors
@@ -654,7 +857,7 @@ public sealed partial class IoFileMgr
             vnode = GuestMemory.R32(path.VnodeOut);
         }
 
-        uint file = GuestAllocateFile(vnode, path);
+        uint file = GuestAllocateFile(vnode, path, false, flags);
         if (file == 0)
         {
             ReleaseVnode(vnode);
@@ -664,7 +867,7 @@ public sealed partial class IoFileMgr
         result = ksceVopOpen(vnode, path.VfsPath, (uint)flags, file);
         if (result < 0)
         {
-            vfsFreeFile(vnode, file);
+            GuestFreeFile(vnode, file);
             ReleaseVnode(vnode);
             return result;
         }
@@ -681,7 +884,7 @@ public sealed partial class IoFileMgr
     {
         int result = ksceVopClose(file.GuestVnode, file.GuestFile);
         ForgetGuestDescriptor(file.GuestFile);
-        vfsFreeFile(file.GuestVnode, file.GuestFile);
+        GuestFreeFile(file.GuestVnode, file.GuestFile);
         ReleaseOpenVnode(file.GuestVnode);
         return result;
     }
@@ -733,7 +936,7 @@ public sealed partial class IoFileMgr
             return result;
         }
 
-        uint file = GuestAllocateFile(vnode, path);
+        uint file = GuestAllocateFile(vnode, path, true, 0);
         if (file == 0)
         {
             ReleaseVnode(vnode);
@@ -743,7 +946,7 @@ public sealed partial class IoFileMgr
         result = ksceVopDopen(vnode, path.VfsPath, file);
         if (result < 0)
         {
-            vfsFreeFile(vnode, file);
+            GuestFreeFile(vnode, file);
             ReleaseVnode(vnode);
             return result;
         }
@@ -759,7 +962,7 @@ public sealed partial class IoFileMgr
     {
         int result = ksceVopDclose(directory.GuestVnode, directory.GuestFile);
         ForgetGuestDescriptor(directory.GuestFile);
-        vfsFreeFile(directory.GuestVnode, directory.GuestFile);
+        GuestFreeFile(directory.GuestVnode, directory.GuestFile);
         ReleaseOpenVnode(directory.GuestVnode);
         return result;
     }

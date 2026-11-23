@@ -12,8 +12,8 @@ namespace VitaSharp.Core.Gxm.Shader;
 /// colour): the layout of the colour the program leaves in its output registers (see ShaderGenerator.OutputType)</param>
 /// <param name="TileWord1">the scene keeps the second output register word of its pixels in an auxiliary R32_UINT
 /// attachment (see <see cref="TileWord1Use"/>): the shader starts with o[0].y = that word (set 3 binding 3 input
-/// attachment with <see cref="FetchInputAttachment"/>, else binding 4, a copy) and, when it writes the word, outputs
-/// it at location 1</param>
+/// attachment with <see cref="FetchInputAttachment"/>, else a copy: binding 4, binding 5 in multisampled scenes) and,
+/// when it writes the word, outputs it at location 1</param>
 /// <param name="FetchInputSingleSample">with <see cref="FetchInputAttachment"/>: the attachment is single-sampled (a
 /// one-sample scene whose programmable-blending draw renders in a render pass, VulkanRenderer.SingleFetch.cs), read
 /// as a plain subpassInput</param>
@@ -254,7 +254,8 @@ public enum TileWord1Use : byte
 /// Builds complete Vulkan GLSL for a GXP program. Descriptor layout:
 /// set 0 binding 0 = vertex uniform SSBO, binding 1 = fragment uniform SSBO;
 /// set 1 = vertex textures (binding = texture unit); set 2 = fragment textures; set 3 = framebuffer fetch (binding 0 =
-/// single-sampled copy of the target, 1 = multisampled copy, 2 = multisampled colour input attachment).
+/// single-sampled copy of the target, 1 = multisampled copy, 2 = multisampled colour input attachment; 3, 4, 5 = the
+/// tile word: input attachment, single-sampled copy, multisampled copy).
 /// The render state lives in a push-constant block shared by both stages.
 /// </summary>
 public static class ShaderGenerator
@@ -265,7 +266,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 30;
+    public const int GeneratorVersion = 33;
 
     /// <summary>Clip distances the generated vertex shaders may write (index 0 the far plane, 1-7 the GXM user clip
     /// planes 0-6): the Vulkan minimum of maxClipDistances.</summary>
@@ -923,11 +924,22 @@ float packC10(vec3 c) {
                 decl.Clear().Append(text.Replace(mapped, $"layout(std430, set = 0, binding = {(vertex ? 2 : 3)}) restrict buffer MappedData"));
                 decl.AppendLine($"void storeMemory(int addr, float v) {{ if ((addr & 0x{MappedFlag:X}) != 0) {{ uint j = uint(addr & 0x{MappedFlag - 1:X}) >> 2; " +
                                 "if (j < uint(mem.length())) mem[j] = floatBitsToUint(v); } }");
+                // 16- and 8-bit stores (VLDST INT16/INT8) replace their bytes of the little-endian word and keep the
+                // others, which another invocation may be storing at the same time (two atomics, no read-modify-write)
+                foreach ((int bits, string name, uint lane) in new[] { (16, "storeMemory16", 2u), (8, "storeMemory8", 3u) })
+                {
+                    uint valueMask = (1u << bits) - 1;
+                    decl.AppendLine($"void {name}(int addr, int v) {{ if ((addr & 0x{MappedFlag:X}) != 0) {{ uint b = uint(addr & 0x{MappedFlag - 1:X}); uint j = b >> 2; " +
+                                    $"if (j < uint(mem.length())) {{ uint sh = (b & {lane}u) * 8u; atomicAnd(mem[j], ~(0x{valueMask:X}u << sh)); " +
+                                    $"atomicOr(mem[j], (uint(v) & 0x{valueMask:X}u) << sh); }} }} }}");
+                }
                 result.WritesMemory = true;
             }
             else
             {
                 decl.AppendLine("void storeMemory(int addr, float v) { }");
+                decl.AppendLine("void storeMemory16(int addr, int v) { }");
+                decl.AppendLine("void storeMemory8(int addr, int v) { }");
                 result.Warnings.Add("buffer store without a mapped uniform buffer (dropped)");
             }
         }
@@ -1488,8 +1500,11 @@ float packC10(vec3 c) {
             }
             else
             {
+                // a copy of the attachment: binding 4 one-sample (also supersampled scenes), binding 5 the samples of
+                // a multisampled scene (VITASHARP_MSAA_FETCH=copy, rinfo.fb_samples > 1), read per sample
                 decl.AppendLine("layout(set = 3, binding = 4) uniform usampler2D tile_word1_tex;");
-                word = "texelFetch(tile_word1_tex, ivec2(gl_FragCoord.xy), 0).x";
+                decl.AppendLine("layout(set = 3, binding = 5) uniform usampler2DMS tile_word1_ms;");
+                word = $"(rinfo.fb_samples > 1.5 ? texelFetch(tile_word1_ms, ivec2(gl_FragCoord.xy), {sample}).x : texelFetch(tile_word1_tex, ivec2(gl_FragCoord.xy), 0).x)";
             }
             usseTranslator.Line($"o[0].y = uintBitsToFloat({word});");
         }
@@ -1632,6 +1647,13 @@ float packC10(vec3 c) {
         {
             rawBits = 32;
             rawWords = nativeWords;
+        }
+
+        int packedHalfWords = rawBits == 0 ? NativePackedHalfSurfaceWords(program, hints, usseTranslator) : 0;
+        if (packedHalfWords != 0)
+        {
+            rawBits = 16;
+            rawWords = packedHalfWords;
         }
         // a float colour stored as its bits through the integer view of a 32-bit float surface (ShaderHints.FloatBitsOutput)
         bool floatBits = rawBits == 0 && hints.FloatBitsOutput && !result.UsesFragColor && FloatBitsOutputPossible(hints.ColorFormat);
@@ -1795,6 +1817,46 @@ float packC10(vec3 c) {
             _ => 0,
         };
         return registerWords == surfaceWords ? surfaceWords : 0;
+    }
+
+    /// <summary>
+    /// Words (1 or 2) of the output register that a native-colour program stores unconverted into a half-float surface
+    /// (F16F16F16F16, F16F16) because it left packed integer data in o0, or 0. The program was created with an explicit
+    /// output register format exactly the size of the pixel (HALF4/FLOAT2 on the 64-bit surface, a 32-bit format on
+    /// F16F16), so the tile store copies the register bits: there is no conversion between the register and a surface
+    /// of the same layout. HELLDIVERS creates its G-buffer programs (declared half4) with HALF4 on a 960x544
+    /// F16F16F16F16 surface, packs the RGBA8 albedo into o0.x and the S8 normal into o0.y, and samples the surface back
+    /// as U8U8U8U8 at +0 and S8S8S8S8 at +4. Read as the bytes of o0.x into the float view, the albedo became four
+    /// halves and the normal was lost (green, saturated ships and planet on the title screen). A real half colour in
+    /// o0 keeps the converted path (and fixed-function blending); swizzled surfaces are left to it too.
+    /// </summary>
+    private static int NativePackedHalfSurfaceWords(GxpProgram program, ShaderHints hints, UsseTranslator usseTranslator)
+    {
+        if (!program.IsNativeColor || hints.OutputRegisterFormat == 0 || ((hints.ColorFormat >> 20) & 3) != 0)
+        {
+            return 0;
+        }
+
+        int surfaceWords = (hints.ColorFormat & 0xF1800000) switch
+        {
+            0x01000000 => 2, // F16F16F16F16
+            0x00800000 => 1, // F16F16
+            _ => 0,
+        };
+        int registerWords = hints.OutputRegisterFormat switch
+        {
+            5 or 7 => 2,                     // HALF4, FLOAT2: 64 bits
+            1 or 2 or 3 or 4 or 6 or 8 => 1, // UCHAR4, CHAR4, USHORT2, SHORT2, HALF2, FLOAT: 32 bits
+            _ => 0,
+        };
+        if (surfaceWords == 0 || registerWords != surfaceWords)
+        {
+            return 0;
+        }
+
+        bool packed = usseTranslator.WordType(Bank.Output, 0) is DataType.UInt8 or DataType.Int8 or DataType.O8
+            or DataType.UInt16 or DataType.Int16 or DataType.UInt32 or DataType.Int32;
+        return packed ? surfaceWords : 0;
     }
 
     public static int RawOutputBits(GxpProgram program, uint colorFormat)

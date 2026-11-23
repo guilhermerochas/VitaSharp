@@ -9,9 +9,12 @@ namespace VitaSharp.Tests;
 /// </summary>
 public sealed class AndroidNarrowLayoutTests
 {
-    private static string AndroidSource(params string[] parts)
+    /// <summary>A source of the app, found from this file's repository (the tests may run from a build folder outside it).</summary>
+    private static string AndroidSource(params string[] parts) => AndroidSourceIn(parts);
+
+    private static string AndroidSourceIn(string[] parts, [System.Runtime.CompilerServices.CallerFilePath] string source = "")
     {
-        string dir = AppContext.BaseDirectory;
+        string dir = Path.GetDirectoryName(source)!;
         while (!File.Exists(Path.Combine(dir, "VitaSharp.sln")))
         {
             dir = Path.GetDirectoryName(dir) ?? throw new DirectoryNotFoundException("repository root");

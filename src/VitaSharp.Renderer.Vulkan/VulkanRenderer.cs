@@ -61,6 +61,9 @@ public sealed class VulkanRendererOptions
     /// <summary>adreno|mali|desktop: behave as that device class (missing features, limits, driver quirks) to test
     /// the mobile paths on a desktop GPU (--gpu-profile; null = VITASHARP_GPU_PROFILE, else the real device).</summary>
     public string? GpuProfile;
+    /// <summary>Quirks forced on (+Name) or off (-Name), comma-separated, as VITASHARP_GPU_QUIRKS (null = that variable):
+    /// tests run one path, such as the tile-based renderings (+TileBased), on the software device.</summary>
+    public string? GpuQuirks;
     /// <summary>Tooling (replay-gpu --mali-cost): receives every executed draw with its occlusion sample count once its
     /// frame completed (VulkanRenderer.DrawCost.cs). Null = off.</summary>
     public Action<IReadOnlyList<DrawCostRecord>>? DrawCostSink;
@@ -81,6 +84,9 @@ public sealed class VulkanRendererOptions
     /// <summary>MSAA scenes: "native" (real multisampling), "ss" (2x supersampling) or "off"; null = VITASHARP_MSAA, else
     /// native (VulkanRenderer.MsaaNative.cs). The F3 hotkey sets it and replaces the renderer.</summary>
     public string? Msaa;
+    /// <summary>Programmable blending in MSAA scenes: "copy" reads copies of the samples, anything else the colour
+    /// attachment as an input attachment; null = VITASHARP_MSAA_FETCH (VulkanRenderer.MsaaNative.cs).</summary>
+    public string? MsaaFetch;
     /// <summary>CPU transfers over a writeback in flight run when its frame retires instead of the worker waiting for it
     /// (VulkanRenderer.TransferDefer.cs): null = VITASHARP_TRANSFER_DEFER, else on on Android only.</summary>
     public bool? TransferDefer;
@@ -227,6 +233,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _options = options;
         _resScale = options.ResScale > 0 ? ParseResScale(options.ResScale.ToString(System.Globalization.CultureInfo.InvariantCulture)) : s_envResScale;
         _msaaSetting = ParseMsaa(options.Msaa ?? Environment.GetEnvironmentVariable(EnvVars.Msaa));
+        _msaaInputFetch = !string.Equals((options.MsaaFetch ?? Environment.GetEnvironmentVariable(EnvVars.MsaaFetch))?.Trim(), "copy", StringComparison.OrdinalIgnoreCase);
         _presentCount = Math.Max(0, options.FirstPresent);
         if (options._handoff is { } h && ReferenceEquals(h.Surface, options.Surface))
         {
@@ -238,7 +245,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         else
         {
             options._handoff?.Core.Dispose();
-            _core = new VkCore(options.Surface, options.Validation || Environment.GetEnvironmentVariable(EnvVars.VkValidation) is "1" or "sync", options.GpuProfile);
+            _core = new VkCore(options.Surface, options.Validation || Environment.GetEnvironmentVariable(EnvVars.VkValidation) is "1" or "sync", options.GpuProfile, options.GpuQuirks);
         }
         options._handoff = null;
         _vk = _core.Vk;
@@ -828,6 +835,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public uint StrideBytes;
         public uint StencilAddress, StencilStrideBytes; // separate S8 stencil plane (formats S8, DF32_S8, DF32M_S8)
         public long LastScene;
+        /// <summary>The last scene with a colour surface that used it (0: none): its scale is the one scenes without a
+        /// colour surface take (<see cref="ColorlessSceneScale"/>).</summary>
+        public long LastColorScene;
         public long Version;          // bumped whenever depth may have been written
         public Image Image;
         public ImageView View;
@@ -1304,6 +1314,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _inScene = true;
         _renderTarget = beginSceneCommand.Color != null ? GetRenderTarget(beginSceneCommand.Color) : null;
         _renderTarget?.LastPid = beginSceneCommand.Pid;
+        _colorlessSceneScale = _renderTarget == null ? ColorlessSceneScale(beginSceneCommand.Depth, beginSceneCommand.Width, beginSceneCommand.Height) : 1f;
         ProfMark(ProfPhase.BsTarget);
         if (TracingScenes || s_traceVis)
         {
@@ -1401,6 +1412,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _depth.TexelsPerSampleX = texelsPerSampleX;
         _depth.TexelsPerSampleY = texelsPerSampleY;
         _depth.LastScene = _sceneSerial;
+        if (_renderTarget != null)
+        {
+            _depth.LastColorScene = _sceneSerial;
+        }
+
         _depth.LastUsedFrame = _depth.LastTouchedFrame = FrameCount;
         if (beginSceneCommand.Depth is { ForceStore: true })
         {

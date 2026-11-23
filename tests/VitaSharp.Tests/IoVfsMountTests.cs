@@ -37,6 +37,7 @@ public sealed class IoVfsMountTests(GuestMemoryFixture fixture) : IDisposable
     private uint _root;
     private string _deviceSeen = "";
     private string _deviceRead = "";
+    private (uint Vnode, uint State, long Position, uint Flags) _opened;
 
     public void Dispose() => _h.Dispose();
 
@@ -93,6 +94,10 @@ public sealed class IoVfsMountTests(GuestMemoryFixture fixture) : IDisposable
         uint vpp = _h.Alloc(4);
         Assert.Equal(0, Call(Io, "vfsGetNewVnode", mount, _vops, 0u, vpp));
         uint vnode = GuestMemory.R32(vpp);
+        // what a driver's lookup fills in (the firmware's own tty driver, PFS): active, its type and size
+        GuestMemory.W32(vnode + 0x74, 1);
+        GuestMemory.W32(vnode + 0x78, name == "sub" ? 0x1002u : 0x1001u);
+        GuestMemory.Write(vnode + 0x80, (long)(_contents.TryGetValue(name, out byte[]? data) ? data.Length : 0));
         _vnodes[name] = vnode;
         _names[vnode] = name;
         return vnode;
@@ -131,7 +136,13 @@ public sealed class IoVfsMountTests(GuestMemoryFixture fixture) : IDisposable
 
         _vops = _h.Alloc(0x80);
         GuestMemory.Fill(_vops, 0, 0x80);
-        GuestMemory.W32(_vops + 0x00, Stub("open", _ => 0));
+        GuestMemory.W32(_vops + 0x00, Stub("open", args =>
+        {
+            // a driver reads the file object's fields the module filled in
+            uint file = GuestMemory.R32(args + 0xC);
+            _opened = (GuestMemory.R32(file + 0x18), GuestMemory.R32(file + 0x10), GuestMemory.Read<long>(file + 8), GuestMemory.R32(file + 4));
+            return 0;
+        }));
         GuestMemory.W32(_vops + 0x04, Stub("create", args =>
         {
             string name = Element(GuestMemory.R32(args + 8));
@@ -153,19 +164,22 @@ public sealed class IoVfsMountTests(GuestMemoryFixture fixture) : IDisposable
         }));
         GuestMemory.W32(_vops + 0x10, Stub("read", args =>
         {
+            // the driver keeps the position in the file object (+8), as exFAT does
             byte[] data = _contents[_names[GuestMemory.R32(args)]];
             uint file = GuestMemory.R32(args + 4);
-            int position = _positions.GetValueOrDefault(file);
+            int position = (int)GuestMemory.Read<long>(file + 8);
             int count = Math.Min((int)GuestMemory.R32(args + 12), data.Length - position);
             data.AsSpan(position, count).CopyTo(GuestMemory.Span(GuestMemory.R32(args + 8), count));
-            _positions[file] = position + count;
+            GuestMemory.Write(file + 8, (long)(position + count));
             return count;
         }));
         GuestMemory.W32(_vops + 0x14, Stub("write", args =>
         {
-            string name = _names[GuestMemory.R32(args)];
+            uint vnode = GuestMemory.R32(args);
+            string name = _names[vnode];
             byte[] added = GuestMemory.ReadSpan(GuestMemory.R32(args + 8), (int)GuestMemory.R32(args + 12)).ToArray();
             _contents[name] = [.. _contents[name], .. added];
+            GuestMemory.Write(vnode + 0x80, (long)_contents[name].Length);
             return added.Length;
         }));
         GuestMemory.W32(_vops + 0x18, Stub64("lseek", args =>
@@ -173,7 +187,7 @@ public sealed class IoVfsMountTests(GuestMemoryFixture fixture) : IDisposable
             // a driver's lseek returns the 64-bit position (r0:r1); past 4 GiB the file keeps no data here
             long offset = GuestMemory.Read<long>(args + 8);
             _seeks.Add((offset, (int)GuestMemory.R32(args + 0x10)));
-            _positions[GuestMemory.R32(args + 4)] = (int)Math.Min(offset, int.MaxValue);
+            GuestMemory.Write(GuestMemory.R32(args + 4) + 8, offset);
             return offset;
         }));
         GuestMemory.W32(_vops + 0x20, Stub("remove", args => _contents.Remove(Element(GuestMemory.R32(args + 8))) ? 0 : NoEnt));
@@ -214,8 +228,12 @@ public sealed class IoVfsMountTests(GuestMemoryFixture fixture) : IDisposable
         GuestMemory.W32(info + 4, _h.Str("tvfs"));
         GuestMemory.W32(info + 0x14, _vops);
         Assert.Equal(0, Call(Io, "ksceVfsAddVfs", info));
+        _lastInfo = info;
         return info;
     }
+
+    /// <summary>The SceVfsInfo RegisterDriver registered last.</summary>
+    private uint _lastInfo;
 
     /// <summary>A SceVfsMountParam: root path, block device, fs type, flags, driver name, misc { assign name, fs name,
     /// block device, block device without partition }.</summary>
@@ -370,7 +388,7 @@ public sealed class IoVfsMountTests(GuestMemoryFixture fixture) : IDisposable
             MountTvfs();
             uint vnode = NewVnode(GuestMemory.R32(_root + 0x4C), "hello.txt");
             uint filep = _h.Alloc(4);
-            Assert.Equal(0, Call(Io, "vfsAllocateFile", vnode, filep));
+            Assert.True(Call(Io, "vfsAllocateFile", vnode, filep, 0u) > 0);
             uint file = GuestMemory.R32(filep);
             uint result = _h.Word(0xFFFFFFFF);
             uint buffer = _h.Alloc(16);
@@ -543,5 +561,392 @@ public sealed class IoVfsMountTests(GuestMemoryFixture fixture) : IDisposable
             Assert.Equal(0, Call(Io, "vfsGetMntList", 0u, 0u, 0u));
             Assert.Equal(NoEnt, Call(Io, "vfsGetMntInfo", mount, info));
         });
+    }
+
+    private const int Perm = unchecked((int)0x80010001), BadF = unchecked((int)0x80010009);
+    private const int NoVnode = unchecked((int)0x8001000C);
+
+    /// <summary>A SceVfsPath { name, length, full path } for <paramref name="name"/>.</summary>
+    private uint VfsPath(string name)
+    {
+        uint text = _h.Str(name);
+        uint path = _h.Alloc(12);
+        GuestMemory.W32(path, text);
+        GuestMemory.W32(path + 4, (uint)name.Length);
+        GuestMemory.W32(path + 8, text);
+        return path;
+    }
+
+    /// <summary>
+    /// The file object as iofilemgr 3.74 lays it out (vfsAllocateFile 0x81007a80 / 0x8100ac88, the state checks
+    /// 0x8100ada4 / 0x8100add8, the read wrapper 0x570388A5): the driver's open finds +0x18 the vnode, +0x10 the state
+    /// 1, +8 the position 0 and +4 the open flags; the file is on its vnode's list (+0x90, +0x94) and counted by the
+    /// mount (+0x64); vfsAllocateFile returns the file object's UID, which vfsFreeFile takes; a read at the vnode's size
+    /// (+0x80) ends without the driver, a file in the bad state 0x200 is 0x80010009, and a vnode that is not active
+    /// (+0x74 0x8000, fresh) is refused by the path operations with 0x80010001.
+    /// </summary>
+    [Fact]
+    public void TheFileObjectHasTheFirmwaresLayout()
+    {
+        _h.OnGuest(_ =>
+        {
+            MountTvfs();
+            uint mount = GuestMemory.R32(_root + 0x4C);
+            int fd = Io.sceIoOpen("tvfs0:hello.txt", (int)ORdOnly, 0);
+            Assert.True(fd > 0, $"open 0x{fd:X8}");
+            uint hello = _vnodes["hello.txt"];
+            Assert.Equal((hello, 1u, 0L, ORdOnly), _opened);
+            uint file = GuestMemory.R32(hello + 0x90);
+            Assert.NotEqual(0u, file);
+            Assert.Equal(1u, GuestMemory.R32(hello + 0x94));
+            Assert.Equal(hello, GuestMemory.R32(file + 0x18));
+            Assert.Equal(1u, GuestMemory.R32(mount + 0x64));
+
+            uint buffer = _h.Alloc(32);
+            Assert.Equal(11, Io.sceIoRead(fd, buffer, 32));
+            Assert.Equal(11L, GuestMemory.Read<long>(file + 8)); // the driver moved the position
+            _calls.Clear();
+            Assert.Equal(0, Io.sceIoRead(fd, buffer, 32));
+            Assert.Empty(_calls); // at the vnode's size: the end of the file, without the driver
+            GuestMemory.W32(file + 0x10, 0x200);
+            Assert.Equal(BadF, Io.sceIoRead(fd, buffer, 32));
+            GuestMemory.W32(file + 0x10, 1);
+            Assert.Equal(0, Io.sceIoClose(fd));
+            Assert.Equal(0u, GuestMemory.R32(hello + 0x90));
+            Assert.Equal(0u, GuestMemory.R32(hello + 0x94));
+            Assert.Equal(0u, GuestMemory.R32(mount + 0x64));
+
+            // the export itself: UIDs, the vnode's list newest first
+            uint filep = _h.Alloc(4);
+            int first = Call(Io, "vfsAllocateFile", hello, filep, 0u);
+            uint firstFile = GuestMemory.R32(filep);
+            int second = Call(Io, "vfsAllocateFile", hello, filep, 0u);
+            uint secondFile = GuestMemory.R32(filep);
+            Assert.True(first > 0 && second > 0 && first != second);
+            Assert.Equal(secondFile, GuestMemory.R32(hello + 0x90));
+            Assert.Equal(firstFile, GuestMemory.R32(secondFile + 0x1C));
+            Assert.Equal(0, Call(Io, "vfsFreeFile", hello, (uint)first));
+            Assert.Equal(secondFile, GuestMemory.R32(hello + 0x90));
+            Assert.Equal(0u, GuestMemory.R32(secondFile + 0x1C));
+            Assert.Equal(1u, GuestMemory.R32(hello + 0x94));
+            Assert.Equal(BadF, Call(Io, "vfsFreeFile", hello, (uint)first));
+            Assert.Equal(0, Call(Io, "vfsFreeFile", hello, (uint)second));
+            int dummy = Call(Io, "vfsAllocateFileDummy", 3u, 1u, 0u);
+            Assert.True(dummy > 0);
+
+            uint vpp = _h.Alloc(4);
+            Assert.Equal(0, Call(Io, "vfsGetNewVnode", mount, _vops, 0u, vpp));
+            uint fresh = GuestMemory.R32(vpp);
+            Assert.Equal(0x8000u, GuestMemory.R32(fresh + 0x74));
+            _calls.Clear();
+            Assert.Equal(Perm, Call(Io, "ksceVopLookup", fresh, vpp, VfsPath("hello.txt"), 0u));
+            Assert.Empty(_calls);
+        });
+    }
+
+    /// <summary>
+    /// A file system stacked over an emulator device (vfsMount kind 1, fs type 3, as iofilemgr 3.74's 0xB62DE9A6 walks
+    /// the path in the request's +4 to the vnode there): the mount's covered vnode (+0x40) is a vnode of the I/O
+    /// manager over the host folder (active, a directory), and the driver above works through its vops the way PFS
+    /// does: lookup gives the file's vnode (type 0x1001, its size at +0x80), open / read / lseek / close go to the host
+    /// file at the file object's position, create makes a host file; the unmount gives the covered vnode back. A path
+    /// with nothing there is 0x80010002.
+    /// </summary>
+    [Fact]
+    public void AStackedMountWorksThroughTheHostFoldersVnodes()
+    {
+        _h.OnGuest(_ =>
+        {
+            string? folder = _h.Emu.Vfs.Resolve("ux0:stack", true);
+            Assert.NotNull(folder);
+            Directory.CreateDirectory(folder!);
+            File.WriteAllText(Path.Combine(folder!, "a.txt"), "lower data");
+            RegisterDriver();
+            Assert.Equal(NoEnt, Call(Io, "vfsMount", MountParam("/stk", "ux0:missing", 3, 1)));
+            Assert.Equal(0, Call(Io, "vfsMount", MountParam("/stk", "ux0:stack", 3, 1)));
+            uint mount = GuestMemory.R32(_root + 0x4C);
+            uint covered = GuestMemory.R32(mount + 0x40);
+            Assert.NotEqual(0u, covered);
+            Assert.NotEqual(_vops, GuestMemory.R32(covered + 0x40)); // the I/O manager's own ops
+            Assert.Equal(1u, GuestMemory.R32(covered + 0x74));
+            Assert.Equal(0x1002u, GuestMemory.R32(covered + 0x78));
+            Assert.Equal(GuestMemory.R32(covered + 0x50), GuestMemory.R32(_root + 0x50));
+            Assert.Equal(1u, GuestMemory.R32(covered + 0x58)); // the mount holds it
+
+            uint vpp = _h.Alloc(4);
+            Assert.Equal(NoEnt, Call(Io, "ksceVopLookup", covered, vpp, VfsPath("none.txt"), 0u));
+            uint name = VfsPath("a.txt");
+            Assert.Equal(0, Call(Io, "ksceVopLookup", covered, vpp, name, 0u));
+            uint lower = GuestMemory.R32(vpp);
+            Assert.Equal(0x1001u, GuestMemory.R32(lower + 0x78));
+            Assert.Equal(10L, GuestMemory.Read<long>(lower + 0x80));
+            Assert.Equal(covered, GuestMemory.R32(lower + 0x50));
+
+            uint filep = _h.Alloc(4);
+            int uid = Call(Io, "vfsAllocateFile", lower, filep, 0u);
+            Assert.True(uid > 0);
+            uint file = GuestMemory.R32(filep);
+            GuestMemory.W32(file + 4, ORdOnly);
+            Assert.Equal(0, Call(Io, "ksceVopOpen", lower, name, ORdOnly, file));
+            uint buffer = _h.Alloc(32);
+            uint count = _h.Word(0xFFFFFFFF);
+            Assert.Equal(0, Call(Io, "ksceVopRead", lower, file, buffer, 32u, count));
+            Assert.Equal(10u, GuestMemory.R32(count));
+            Assert.Equal("lower data", GuestMemory.ReadCString(buffer, 10));
+            Assert.Equal(10L, GuestMemory.Read<long>(file + 8));
+            Assert.Equal(2L, Convert.ToInt64(Invoke(Io, "ksceVopLseek", lower, file, 2u, 0u, 0u)));
+            Assert.Equal(0, Call(Io, "ksceVopRead", lower, file, buffer, 3u, count));
+            Assert.Equal("wer", GuestMemory.ReadCString(buffer, 3));
+            Assert.Equal(0, Call(Io, "ksceVopClose", lower, file));
+            Assert.Equal(0, Call(Io, "vfsFreeFile", lower, (uint)uid));
+
+            uint stat = _h.Alloc(0x58);
+            Assert.Equal(0, Call(Io, "ksceVopGetstat", covered, 0u, stat));
+            Assert.Equal(0x1000u, GuestMemory.R32(stat) & 0xF000); // a folder
+            Assert.Equal(0, Call(Io, "ksceVopCreate", covered, vpp, VfsPath("b.txt"), OWrOnly | OCreat, 0x1B6u));
+            Assert.True(File.Exists(Path.Combine(folder!, "b.txt")));
+            Assert.Equal(0x1001u, GuestMemory.R32(GuestMemory.R32(vpp) + 0x78));
+
+            uint unmount = _h.Alloc(8);
+            GuestMemory.W32(unmount, _h.Str("/stk"));
+            GuestMemory.W32(unmount + 4, 0);
+            Assert.Equal(0, Call(Io, "vfsUmount", unmount));
+            Assert.Equal(0u, GuestMemory.R32(covered + 0x58));
+        });
+    }
+
+    /// <summary>
+    /// The vnode pool as iofilemgr 3.74 has it (vfsGetNewVnode 0x8100bca8, the recycling 0x81007934, the growth
+    /// 0x8100bc68): with 0x400 vnodes in use the next one is a cached vnode recycled (no reference, active, a file, its
+    /// mount mounted, its parent free): the driver's inactive op runs on it, it leaves its mount's list and comes back
+    /// cleared with state 0x8000; when nothing can be recycled the pool lets 0x40 more in, up to 0x1000, and past that
+    /// vfsGetNewVnode is 0x8001000C.
+    /// </summary>
+    [Fact]
+    public void FullPoolRecyclesACachedVnodeThenGrowsUpToItsEnd()
+    {
+        _h.OnGuest(_ =>
+        {
+            MountTvfs();
+            uint mount = GuestMemory.R32(_root + 0x4C);
+            uint vpp = _h.Alloc(4);
+            var made = new List<uint>();
+            var seen = new HashSet<uint>();
+            uint vnode;
+            while (true)
+            {
+                Assert.Equal(0, Call(Io, "vfsGetNewVnode", mount, _vops, 0u, vpp));
+                vnode = GuestMemory.R32(vpp);
+                if (!seen.Add(vnode))
+                {
+                    break;
+                }
+
+                // a file the driver looked up and nobody holds: cached, recyclable
+                GuestMemory.W32(vnode + 0x74, 1);
+                GuestMemory.W32(vnode + 0x78, 0x1001);
+                GuestMemory.W32(vnode + 0x50, _root);
+                GuestMemory.W32(vnode + 0x58, 0);
+                _names[vnode] = "cached" + made.Count;
+                made.Add(vnode);
+                Assert.True(made.Count < 0x400, "no vnode was recycled at the pool's first limit");
+            }
+
+            Assert.Equal(0x400 - 1, made.Count); // the root is the other one in use
+            Assert.Equal(made[0], vnode); // the first cached vnode after the root
+            Assert.Equal(["cached0"], _inactivated);
+            Assert.Equal(0x8000u, GuestMemory.R32(vnode + 0x74));
+            Assert.Equal(vnode, GuestMemory.R32(mount + 0x54)); // back at the head of its mount's list, once
+            Assert.Equal((uint)(made.Count + 1), GuestMemory.R32(mount + 0x58));
+
+            // everything referenced: the pool grows to its end, then no vnode is left
+            foreach (uint each in made)
+            {
+                GuestMemory.W32(each + 0x58, 1);
+            }
+
+            int more = 0;
+            int result;
+            while ((result = Call(Io, "vfsGetNewVnode", mount, _vops, 0u, vpp)) == 0)
+            {
+                more++;
+                Assert.True(more <= 0x1000, "the pool did not stop at its end");
+            }
+
+            Assert.Equal(NoVnode, result);
+            Assert.Equal(0x1000 - 0x400, more);
+            Assert.Single(_inactivated);
+        });
+    }
+
+    /// <summary>
+    /// The vnode lock with its wait as iofilemgr 3.74 has it (vfsLockVnode 0x8100a6ec, vfsUnlockVnode 0x8100a7e8): a
+    /// second thread counts itself as waiting (+0) and sleeps on the lock's event flag until the owner's last unlock
+    /// hands the lock over; it then owns it (+4), and its unlock leaves the lock free (-1) with nobody waiting.
+    /// </summary>
+    [Fact]
+    public void ASecondThreadWaitsForTheVnodeLock()
+    {
+        uint vnode = 0;
+        _h.OnGuest(_ =>
+        {
+            MountTvfs();
+            vnode = NewVnode(GuestMemory.R32(_root + 0x4C), "hello.txt");
+        });
+
+        using var locked = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        bool unlocked = false;
+        GuestRun holder = _h.Start(_ =>
+        {
+            try
+            {
+                Assert.Equal(0, Call(Io, "vfsLockVnode", vnode));
+                Assert.Equal(0, Call(Io, "vfsLockVnode", vnode)); // the owner's own: one more depth
+            }
+            finally
+            {
+                locked.Set();
+            }
+
+            release.Wait();
+            Assert.Equal(0, Call(Io, "vfsUnlockVnode", vnode));
+            Volatile.Write(ref unlocked, true);
+            Assert.Equal(0, Call(Io, "vfsUnlockVnode", vnode));
+        }, "holder");
+        locked.Wait();
+
+        bool sawUnlocked = false;
+        int owner = -1;
+        GuestRun waiter = _h.Start(_ =>
+        {
+            Assert.Equal(0, Call(Io, "vfsLockVnode", vnode));
+            sawUnlocked = Volatile.Read(ref unlocked);
+            owner = Call(Io, "vfsIsOwnerVnode", vnode);
+            Assert.Equal(0, Call(Io, "vfsUnlockVnode", vnode));
+        }, "waiter");
+
+        Until(() => GuestMemory.R32(vnode) == 1 || !waiter.Thread.IsLive, "the second thread waiting on the vnode");
+        Assert.True(waiter.Thread.IsLive, "the second thread took a lock another thread holds");
+        release.Set();
+        _h.Join(holder);
+        _h.Join(waiter);
+        Assert.True(sawUnlocked);
+        Assert.Equal(1, owner);
+        Assert.Equal(0u, GuestMemory.R32(vnode));
+        Assert.Equal(0xFFFFFFFFu, GuestMemory.R32(vnode + 4));
+    }
+
+    // ---------------------------------------------------------------- block device vnodes (vfsRmdev)
+
+    /// <summary>Registers "tdev", a device file system driver (SceVfsInfo +0x10 = 0x10) with tvfs's ops, and mounts it
+    /// as kind 3 at <paramref name="root"/>; the mount's result.</summary>
+    private int MountDevice(string root)
+    {
+        RegisterDriver();
+        return MountDeviceDriverOnly(root);
+    }
+
+    private uint RmdevParam(string path, uint flags)
+    {
+        uint param = _h.Alloc(8);
+        GuestMemory.W32(param, _h.Str(path));
+        GuestMemory.W32(param + 4, flags);
+        return param;
+    }
+
+    [Fact]
+    public void ADeviceFileSystemMountsABlockDeviceVnodeUnderTheDeviceDirectoriesOnly()
+    {
+        _h.OnGuest(_ =>
+        {
+            Assert.Equal(Inval, MountDevice("/other/tdev"));
+            Assert.Equal(0, Call(Io, "vfsMount", MountParam("/dev/tdev", null, 1, 3, driver: "tdev", assign: "tdev0:")));
+            Assert.Equal(0x2000u, GuestMemory.R32(_root + 0x78));
+            uint mount = GuestMemory.R32(_root + 0x4C);
+            Assert.Equal(_root, GuestMemory.R32(mount + 0x40));
+            Assert.Equal(GuestMemory.R32(mount + 0x44), GuestMemory.R32(_root + 0x6C));
+            Assert.DoesNotContain("devctl", _calls);
+        });
+    }
+
+    [Fact]
+    public void RmdevRemovesTheBlockDeviceVnodeAndItsDeviceFileSystem()
+    {
+        _h.OnGuest(_ =>
+        {
+            Assert.Equal(0, MountDevice("/dev/tdev"));
+            uint vnode = _root;
+            _calls.Clear();
+            Assert.Equal(0, Call(Io, "vfsRmdev", RmdevParam("/dev/tdev", 0)));
+            Assert.Contains("umount", _calls);
+            Assert.Equal(NoEnt, Call(Io, "vfsRmdev", RmdevParam("/dev/tdev", 0)));
+            Assert.Equal(Inval, Call(Io, "vfsRmdev", 0u));
+            // the path is free again: the device file system mounts there anew
+            Assert.Equal(0, Call(Io, "vfsMount", MountParam("/dev/tdev", null, 1, 3, driver: "tdev", assign: "tdev0:")));
+            Assert.NotEqual(0u, vnode);
+        });
+    }
+
+    [Fact]
+    public void RmdevRefusesAVnodeThatIsNotABlockDevicesAndABusyOneWithFlagOne()
+    {
+        _h.OnGuest(_ =>
+        {
+            MountTvfs();
+            Assert.Equal(Perm, Call(Io, "vfsRmdev", RmdevParam("/tvfs", 0)));
+
+            Assert.Equal(0, MountDeviceDriverOnly("/dev/tdev"));
+            uint device = _root;
+            // a file open on the device vnode (its count, +0x94)
+            GuestMemory.W32(device + 0x94, 1);
+            Assert.Equal(Busy, Call(Io, "vfsRmdev", RmdevParam("/dev/tdev", 1)));
+            // NID_A39A9CA7(path, ?, 0, 0) is vfsRmdev with flag 1
+            Assert.Equal(Busy, Call(Io, "ksceIofilemgr_A39A9CA7", _h.Str("/dev/tdev"), 0u, 0u, 0u));
+            Assert.Equal(Inval, Call(Io, "ksceIofilemgr_A39A9CA7", _h.Str("/dev/tdev"), 0u, 1u, 0u));
+            // a device vnode of another kind of block device (0x2010) is busy too
+            GuestMemory.W32(device + 0x94, 0);
+            GuestMemory.W32(device + 0x78, 0x2010);
+            Assert.Equal(Busy, Call(Io, "vfsRmdev", RmdevParam("/dev/tdev", 0)));
+            GuestMemory.W32(device + 0x78, 0x2000);
+            Assert.Equal(0, Call(Io, "ksceIofilemgr_A39A9CA7", _h.Str("/dev/tdev"), 0u, 0u, 0u));
+            Assert.Equal(NoEnt, Call(Io, "vfsRmdev", RmdevParam("/dev/tdev", 0)));
+        });
+    }
+
+    [Fact]
+    public void RmdevOfABlockDeviceVnodeInsideADeviceFileSystemSyncsRemovesAndFreesIt()
+    {
+        _h.OnGuest(_ =>
+        {
+            Assert.Equal(0, MountDevice("/dev/tdev"));
+            GuestMemory.W32(_vops + 0x5C, Stub("sync", _ => 0));
+            uint mount = GuestMemory.R32(_root + 0x4C);
+            _contents["part0"] = [];
+            uint partition = NewVnode(mount, "part0");
+            GuestMemory.W32(partition + 0x78, 0x2000);
+            GuestMemory.W32(partition + 0x58, 0);
+            _calls.Clear();
+            Assert.Equal(0, Call(Io, "vfsRmdev", RmdevParam("tdev0:part0", 1)));
+            Assert.Equal(["lookup", "sync", "remove", "inactive"], _calls);
+            Assert.Contains("part0", _inactivated);
+            // the driver removed it: nothing at the path any more
+            Assert.Equal(NoEnt, Call(Io, "vfsRmdev", RmdevParam("tdev0:part0", 1)));
+            // a vnode that is not a block device's: 0x80010001
+            Assert.Equal(Perm, Call(Io, "vfsRmdev", RmdevParam("tdev0:hello.txt", 0)));
+        });
+    }
+
+    /// <summary>Registers "tdev" (after tvfs is already registered) and mounts it.</summary>
+    private int MountDeviceDriverOnly(string root)
+    {
+        uint info = _h.Alloc(0x20);
+        GuestMemory.Fill(info, 0, 0x20);
+        GuestMemory.W32(info + 4, _h.Str("tdev"));
+        GuestMemory.W32(info, GuestMemory.R32(_lastInfo));
+        GuestMemory.W32(info + 0x14, GuestMemory.R32(_lastInfo + 0x14));
+        GuestMemory.W32(info + 0x10, 0x10);
+        Assert.Equal(0, Call(Io, "ksceVfsAddVfs", info));
+        return Call(Io, "vfsMount", MountParam(root, null, 1, 3, driver: "tdev", assign: "tdev0:"));
     }
 }

@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=8184b2a2b26dcc29f4d0d585ef3a8314b3b721b7cddd22bb1e4d434fefb66c80 -->
+<!-- pair: README.md sha256=138dd516188219bbcde64839eef710777311d2054cecab1ff05328595659f85a -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -106,8 +106,8 @@ pode importar), do censo em [`docs/hle/kernel-exports.md`](docs/hle/kernel-expor
 
 38 jogos testados até agora ([`docs/compatibility.md`](docs/compatibility.md), com o estado e o cenário de teste de
 cada um): 25 chegam ao gameplay (entre eles Killzone: Mercenary, Uncharted: Golden Abyss, Gravity Rush, God of War
-Collection, FIFA 13, Persona 4 Golden, LittleBigPlanet, Tearaway, WRC 4, Skullgirls e Devious Dungeon, vários que
-não abrem no Vita3K) e o resto chega aos menus. Os defeitos conhecidos e o trabalho futuro estão no
+Collection, FIFA 13, Persona 4 Golden, LittleBigPlanet, Tearaway, WRC 4, Skullgirls e Devious Dungeon) e o
+resto chega aos menus. Os defeitos conhecidos e o trabalho futuro estão no
 [roadmap](docs/roadmap.md).
 
 ## Plataformas
@@ -396,6 +396,15 @@ Os scripts shell seguem o Google Shell Style Guide e precisam passar no ShellChe
   desktop, Mesa); sem ela (MoltenVK, Dozen, drivers de celular) os pipelines são compilados inteiros de qualquer jeito.
   A linha `[shadercache] session` do log conta o que a thread da GPU compilou; ver
   [`docs/notes/pipeline-skip.md`](docs/notes/pipeline-skip.md).
+- Janela de carregamento: o clique num jogo abre a janela dele na hora (960x544 vezes o `--scale`), antes de o processo
+  do jogo fazer qualquer parte da inicialização, com a imagem de abertura do jogo (`sce_sys/pic0.png`), o ícone e o
+  nome, a etapa atual (firmware, controles, áudio, GPU, o jogo, o cache de shaders, o código ARM) com uma barra e,
+  durante as esperas do cache de shaders e do código ARM, "Cancelar". A janela do próprio jogo espera escondida no
+  mesmo lugar (`--loading-screen=launcher --window-pos=X,Y`) e aparece quando o jogo está pronto; as etapas são as
+  linhas `[boot-step] <etapa>` do log do processo do jogo e `[boot-log] <caminho>` o arquivo de log dele. Um segundo
+  clique no jogo traz a mesma janela de volta; o X dela para o jogo. Uma inicialização que falha (título que não
+  carrega, licença ausente, saída com erro) deixa o motivo e o lugar do log na janela, com "Fechar". O Android mostra a
+  mesma tela sobre o jogo. Nada a mais para instalar, em todos os sistemas.
 - "Carregar o cache de shaders antes de jogar" / "Load the shader cache before playing" (launcher: Configurações, ao
   lado de "Compilar shaders em segundo plano", e a página de cada jogo; `--load-shader-cache=on|off`, ligado por padrão;
   o nome antigo `--precompile-shaders` ainda é aceito, com um aviso): antes de o jogo começar, o cache de shaders dele
@@ -428,7 +437,7 @@ Os scripts shell seguem o Google Shell Style Guide e precisam passar no ShellChe
   além de cada bloco que ele alcança, e o resto da função dele, achada pelo índice de funções `.ARM.exidx`), no máximo
   64 MB da arena de código. O código pré-compilado é publicado quando o jogo chega nele pela primeira vez. As linhas de
   log `ARM code precompilation: boot step ...` e, no fim, `... % of the run blocks were precompiled` dão o tempo e a
-  cobertura. O Android faz a mesma tradução em segundo plano, sem esperar (a opção fica nos ajustes do app e nos de
+  cobertura. O Android espera a mesma etapa atrás da tela de carregamento (a opção fica nos ajustes do app e nos de
   cada jogo). Nada a mais para instalar, em todos os sistemas.
 - Perfil: `dotnet-trace` / `dotnet-counters` (`dotnet tool install -g dotnet-trace`, todos os sistemas); no Windows
   também o PerfView e o WPR/WPA (Windows Performance Toolkit).
@@ -441,7 +450,7 @@ O que o `dotnet test tests/VitaSharp.Tests` precisa em cada sistema; um teste se
 |---|---|---|---|
 | SDK | .NET 10 SDK | .NET 10 SDK | .NET 10 SDK |
 | Dispositivo Vulkan (testes do renderizador, dos dumps da GPU e dos jogos rodando) | o lavapipe do Mesa (Vulkan 1.4, o mesmo do CI do Linux): descompacte a pasta `x64` de uma versão do [mesa-dist-win](https://github.com/pal1000/mesa-dist-win/releases) (`vulkan_lvp.dll` + `lvp_icd.x86_64.json`) em `%LOCALAPPDATA%\VitaSharpTools\mesa\<versão>\x64`; sem ele, ou quando o carregador do sistema `vulkan-1.dll` não pode usá-lo, o SwiftShader que vem com o Microsoft Edge ou o Google Chrome (os dois achados sozinhos) | o lavapipe do Mesa: `sudo apt install mesa-vulkan-drivers libvulkan1` (Fedora: `mesa-vulkan-drivers vulkan-loader`) | o MoltenVK: o Vulkan SDK da LunarG, ou `brew install molten-vk vulkan-loader` |
-| shaderc (testes do renderizador e de compilação de shaders; o renderizador também precisa dele) | vem do pacote Silk.NET.Shaderc.Native | vem do pacote; quando essa cópia não carrega: `sudo apt install libshaderc-dev` (Fedora, Arch: `shaderc`) | vem do pacote |
+| shaderc (testes do renderizador e de compilação de shaders; o renderizador também precisa dele) | vem do pacote Silk.NET.Shaderc.Native | vem do pacote (achado em `runtimes/linux-x64` também onde a busca do Silk.NET não acha, como no Ubuntu); quando essa cópia não carrega: `sudo apt install libshaderc-dev` (Fedora, Arch: `shaderc`; carregado como `libshaderc.so.1`) | vem do pacote, senão o `brew install shaderc` do Homebrew |
 | Uma janela do desktop (testes do overlay do jogo) | sempre | uma tela X11 ou Wayland; sem tela: `xvfb-run dotnet test tests/VitaSharp.Tests` (`sudo apt install xvfb`) | pulados: o AppKit só cria janelas na thread principal, e os testes rodam em threads de trabalho |
 | FFmpeg (testes de decodificação de vídeo e áudio) | baixado pelo primeiro build | baixado pelo primeiro build | o do sistema: `brew install ffmpeg` |
 

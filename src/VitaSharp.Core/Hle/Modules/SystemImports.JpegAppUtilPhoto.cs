@@ -501,11 +501,11 @@ public sealed partial class AppUtil
 
 public sealed partial class AppMgr
 {
-    /// <summary>The counterpart of <see cref="PspSaveDataRootMount"/>: the root is the folder itself, nothing was
-    /// mounted for it, so there is nothing to take away.</summary>
+    /// <summary>The counterpart of <see cref="PspSaveDataRootMount"/>: apputil unmounts the kept mount point with
+    /// sceAppMgrUmount.</summary>
     internal int PspSaveDataRootUmount(string mountPoint)
     {
-        return mountPoint.Length == 0 ? ERR_NOT_FOUND : 0;
+        return Umount(mountPoint);
     }
 }
 

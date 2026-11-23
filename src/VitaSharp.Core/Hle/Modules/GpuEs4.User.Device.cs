@@ -273,7 +273,7 @@ public sealed partial class GpuEs4
         byte[]? bytes = LibgpuCodeSource != null ? LibgpuCodeSource(nid, offset, length) : ReadLibgpuCode(nid, offset, length);
         if (bytes == null || bytes.Length < length)
         {
-            Log.InfoOnce("libgpu-code", "SceGpuEs4User: os0:us/libgpu_es4.suprx not readable: its code templates are written as zeros (default)");
+            Log.InfoOnce("libgpu-code", $"SceGpuEs4User: {Io.FirmwareLayout.UserModules.Guest("libgpu_es4.suprx")} not readable: its code templates are written as zeros (default)");
             GuestMemory.Fill(destination, 0, (uint)length);
             return;
         }
@@ -290,7 +290,7 @@ public sealed partial class GpuEs4
                 _libgpuElfRead = true;
                 try
                 {
-                    if (Emu.Vfs.Resolve("os0:us/libgpu_es4.suprx") is { } host && File.Exists(host))
+                    if (Emu.Vfs.Resolve(Io.FirmwareLayout.UserModules.Guest("libgpu_es4.suprx")) is { } host && File.Exists(host))
                     {
                         _libgpuElf = SelfDecryptor.ToElf(File.ReadAllBytes(host), null);
                     }
@@ -298,7 +298,7 @@ public sealed partial class GpuEs4
                 catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException
                     or System.Security.Cryptography.CryptographicException)
                 {
-                    Log.Info($"SceGpuEs4User: os0:us/libgpu_es4.suprx: {e.Message}");
+                    Log.Info($"SceGpuEs4User: {Io.FirmwareLayout.UserModules.Guest("libgpu_es4.suprx")}: {e.Message}");
                 }
             }
 

@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using VitaSharp.Core;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Io;
+using VitaSharp.Core.Loader.Self;
 using VitaSharp.Core.Memory;
 
 namespace VitaSharp.Tests;
@@ -94,6 +95,35 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(Path.Combine(_root, "ux0", "app", "PCSB00002", "eboot.bin"), emu.Vfs.Resolve(dev + "eboot.bin"));
         Assert.Equal(0, Call<int>(mgr, "sceAppMgrUmount", mp));
         Assert.Equal(ERR_NOT_FOUND, Call<int>(mgr, "sceAppMgrUmount", mp));
+    }
+
+    /// <summary>SceAppMgr 3.74 sceAppMgrPspSaveDataRootMount: mount id 0xCA of ux0:pspemu, registered with the
+    /// process's mounts so sceAppMgrUmount takes it away; a sandboxed program gets "ms" and 12 hex digits, one that is
+    /// not sandboxed (the PSP emulator) "ms0:"; a second mount gives the same point back with 0x80800003.</summary>
+    [Fact]
+    public void PspSaveDataRootMountIsARegisteredMount()
+    {
+        (AppMgr mgr, Emulator emu) = Make();
+        uint mp = Alloc(16), again = Alloc(16);
+        Assert.Equal(ERR_NULL_POINTER, Call<int>(mgr, "PspSaveDataRootMount", 0u));
+        Assert.Equal(0, Call<int>(mgr, "PspSaveDataRootMount", mp));
+        string dev = GuestMemory.ReadCString(mp, 16);
+        Assert.Matches("^ms[0-9a-f]{12}:$", dev);
+        Assert.True(Directory.Exists(Path.Combine(_root, "ux0", "pspemu")));
+        Assert.Equal(Path.Combine(_root, "ux0", "pspemu", "PSP", "SAVEDATA"), emu.Vfs.Resolve(dev + "PSP/SAVEDATA"));
+        Assert.Equal(unchecked((int)0x80800003), Call<int>(mgr, "PspSaveDataRootMount", again));
+        Assert.Equal(dev, GuestMemory.ReadCString(again, 16));
+        Assert.Equal(0, Call<int>(mgr, "sceAppMgrUmount", mp));
+        Assert.False(emu.Vfs.IsMounted(dev.TrimEnd(':')));
+        Assert.Equal(ERR_NOT_FOUND, Call<int>(mgr, "sceAppMgrUmount", mp));
+
+        // the PSP emulator (not sandboxed) gets the fixed name, and can mount again after the unmount
+        SetBacking(emu, "Access", new ProgramAccess(0x2800000000007009UL, null, true));
+        Assert.Equal(0, Call<int>(mgr, "PspSaveDataRootMount", mp));
+        Assert.Equal("ms0:", GuestMemory.ReadCString(mp, 16));
+        Assert.Equal(0, Call<int>(mgr, "sceAppMgrUmount", mp));
+        Assert.Equal(0, Call<int>(mgr, "PspSaveDataRootMount", mp));
+        Assert.Equal(0, Call<int>(mgr, "sceAppMgrUmount", mp));
     }
 
     [Fact]

@@ -1,4 +1,3 @@
-using System.IO.Compression;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.SaveState;
@@ -14,9 +13,10 @@ namespace VitaSharp.Core.Hle.Modules;
 /// msg +0x18, state +0x1C, zalloc +0x20, zfree +0x24, opaque +0x28, data_type +0x2C, adler +0x30); the state word holds
 /// a kernel token for the stream's state kept here. Inflating is a resumable RFC 1950/1951/1952 decoder
 /// (<see cref="ZlibStreamInflater"/>): input taken in pieces, output given as the caller has room, the bytes past the
-/// end handed back. Deflating compresses the input between two flush points as one piece (the host's deflate, which
-/// is zlib's own algorithm; the bytes may differ from the firmware's build but decode the same), with the zlib or gzip
-/// wrapper written here.
+/// end handed back. Deflating is zlib's encoder at the bit level (<see cref="DeflateBitEncoder"/>: its 16-bit bit
+/// buffer, the window kept across flush points, the level table and strategies, blocks stored / fixed / dynamic by
+/// size), so deflatePrime's bits, Z_BLOCK and Z_PARTIAL_FLUSH leave the stream off a byte boundary as zlib does; the
+/// zlib (with a preset dictionary's id) or gzip wrapper is written here.
 /// </para>
 /// </summary>
 public sealed partial class SystemServicesVsh
@@ -25,7 +25,7 @@ public sealed partial class SystemServicesVsh
     const int ZFinish = 4;
     const uint ZStreamSize = 0x38;
     const uint ZNextIn = 0x00, ZAvailIn = 0x04, ZTotalIn = 0x08, ZNextOut = 0x0C, ZAvailOut = 0x10, ZTotalOut = 0x14;
-    const uint ZMsg = 0x18, ZState = 0x1C, ZZfree = 0x24, ZOpaque = 0x28, ZAdler = 0x30;
+    const uint ZMsg = 0x18, ZState = 0x1C, ZZfree = 0x24, ZOpaque = 0x28, ZDataType = 0x2C, ZAdler = 0x30;
 
     /// <summary>The state of one stream (by its token).</summary>
     sealed class ZStream : ISnapshotState
@@ -36,8 +36,11 @@ public sealed partial class SystemServicesVsh
         public int Level;
         public int WindowBits;
         public int MemLevel;
+        public int Strategy;
         public ZlibStreamInflater.Wrapper Wrapper;
-        public List<byte> PendingInput = [];
+        public DeflateBitEncoder? Encoder;
+        public bool HasDictionary;
+        public uint DictionaryId;
         public byte[] Output = [];
         public int Delivered;
         public bool HeaderWritten;
@@ -49,7 +52,7 @@ public sealed partial class SystemServicesVsh
         {
             var copy = (ZStream)MemberwiseClone();
             copy.Inflater = Inflater?.Clone();
-            copy.PendingInput = [.. PendingInput];
+            copy.Encoder = Encoder?.Clone();
             copy.Output = (byte[])Output.Clone();
             return copy;
         }
@@ -63,8 +66,12 @@ public sealed partial class SystemServicesVsh
             w.Write(Level);
             w.Write(WindowBits);
             w.Write(MemLevel);
+            w.Write(Strategy);
             w.Write((int)Wrapper);
-            w.Write(PendingInput.ToArray());
+            w.Write(Encoder != null);
+            Encoder?.SaveState(w);
+            w.Write(HasDictionary);
+            w.Write(DictionaryId);
             w.Write(Output);
             w.Write(Delivered);
             w.Write(HeaderWritten);
@@ -87,8 +94,17 @@ public sealed partial class SystemServicesVsh
             Level = r.ReadInt32();
             WindowBits = r.ReadInt32();
             MemLevel = r.ReadInt32();
+            Strategy = r.ReadInt32();
             Wrapper = (ZlibStreamInflater.Wrapper)r.ReadInt32();
-            PendingInput = [.. r.ReadBytes() ?? []];
+            Encoder = null;
+            if (r.ReadBool())
+            {
+                Encoder = new DeflateBitEncoder(0, 0);
+                Encoder.LoadState(r);
+            }
+
+            HasDictionary = r.ReadBool();
+            DictionaryId = r.ReadUInt32();
             Output = r.ReadBytes() ?? [];
             Delivered = r.ReadInt32();
             HeaderWritten = r.ReadBool();
@@ -99,10 +115,10 @@ public sealed partial class SystemServicesVsh
     }
 
     /// <summary>The streams by their state token, saved whole: the inflater's decoding state (bit buffer, code tables,
-    /// window, pending output) and a deflate stream's input since its last flush point with the output not taken yet
-    /// (the host codec compresses each piece from that input at the flush, so it holds no state between calls).</summary>
-    [SnapshotMissing] // states of builds before it did not keep the streams: none open
-    readonly Dictionary<uint, ZStream> _zlibStreams = new();
+    /// window, pending output) and a deflate stream's encoder (window, block input, bit buffer) with the output not
+    /// taken yet.</summary>
+    [SnapshotMissing] // states of builds before it kept deflate streams in another form: none open
+    readonly Dictionary<uint, ZStream> _zlibStreamStates = new();
 
     /// <summary>The zlib strings in kernel memory (0 until first asked): "1.2.5" and z_errmsg.</summary>
     [SnapshotMissing] // states of builds before it: made again on first request
@@ -117,7 +133,7 @@ public sealed partial class SystemServicesVsh
     /// <summary>The address of "1.2.5" (+0) and of each z_errmsg string (+0x10 + index * 0x18).</summary>
     uint ZlibString(int index)
     {
-        lock (_zlibStreams)
+        lock (_zlibStreamStates)
         {
             if (_zlibStrings == 0)
             {
@@ -148,9 +164,9 @@ public sealed partial class SystemServicesVsh
         }
 
         uint token = GuestMemory.R32(stream + ZState);
-        lock (_zlibStreams)
+        lock (_zlibStreamStates)
         {
-            return token != 0 && _zlibStreams.TryGetValue(token, out ZStream? state) ? state : null;
+            return token != 0 && _zlibStreamStates.TryGetValue(token, out ZStream? state) ? state : null;
         }
     }
 
@@ -165,9 +181,9 @@ public sealed partial class SystemServicesVsh
             token = Mem.Alloc(8, "kernel:zstream", MemoryRegion.Kernel, 8);
         }
 
-        lock (_zlibStreams)
+        lock (_zlibStreamStates)
         {
-            _zlibStreams[token] = state;
+            _zlibStreamStates[token] = state;
         }
 
         GuestMemory.W32(stream + ZState, token);
@@ -175,6 +191,7 @@ public sealed partial class SystemServicesVsh
         GuestMemory.W32(stream + ZTotalIn, 0);
         GuestMemory.W32(stream + ZTotalOut, 0);
         GuestMemory.W32(stream + ZAdler, state.Wrapper == ZlibStreamInflater.Wrapper.Gzip ? 0u : 1u);
+        GuestMemory.W32(stream + ZDataType, 2);
         return ZOk;
     }
 
@@ -182,9 +199,9 @@ public sealed partial class SystemServicesVsh
     {
         uint token = GuestMemory.R32(stream + ZState);
         bool known;
-        lock (_zlibStreams)
+        lock (_zlibStreamStates)
         {
-            known = _zlibStreams.Remove(token);
+            known = _zlibStreamStates.Remove(token);
         }
 
         if (!known)
@@ -246,7 +263,9 @@ public sealed partial class SystemServicesVsh
             Level = level,
             WindowBits = windowBits == 8 ? 9 : windowBits,
             MemLevel = memLevel,
+            Strategy = strategy,
             Wrapper = wrapper,
+            Encoder = new DeflateBitEncoder(level, strategy),
             Checksum = wrapper == ZlibStreamInflater.Wrapper.Gzip ? 0u : 1u,
         };
         return AttachStream(stream, state);
@@ -271,7 +290,8 @@ public sealed partial class SystemServicesVsh
         context.Return(DeflateInit(context.Gpr(0), (int)context.Gpr(1), (int)context.Gpr(2), (int)context.Gpr(3), (int)context.Gpr(4), (int)context.Gpr(5), context.Gpr(6), context.Gpr(7)));
     }
 
-    /// <summary>The zlib (CMF, FLG by level) or gzip (no name, no time, OS 3) header of a deflated stream.</summary>
+    /// <summary>The zlib (CMF, FLG by level and strategy, FDICT and the dictionary's adler32 after a preset
+    /// dictionary) or gzip (no name, no time, OS 3) header of a deflated stream.</summary>
     static byte[] DeflateHeader(ZStream state)
     {
         if (state.Wrapper == ZlibStreamInflater.Wrapper.Gzip)
@@ -285,34 +305,33 @@ public sealed partial class SystemServicesVsh
         }
 
         int cmf = 8 | ((state.WindowBits - 8) << 4);
-        int levelFlags = state.Level < 2 ? 0 : state.Level < 6 ? 1 : state.Level == 6 ? 2 : 3;
+        int levelFlags = state.Strategy >= DeflateBitEncoder.StrategyHuffmanOnly || state.Level < 2 ? 0 : state.Level < 6 ? 1 : state.Level == 6 ? 2 : 3;
         int flags = levelFlags << 6;
-        flags += 31 - ((cmf << 8) | flags) % 31;
-        return [(byte)cmf, (byte)flags];
-    }
-
-    static CompressionLevel HostLevel(int level) => level switch
-    {
-        0 => CompressionLevel.NoCompression,
-        < 4 => CompressionLevel.Fastest,
-        9 => CompressionLevel.SmallestSize,
-        _ => CompressionLevel.Optimal,
-    };
-
-    /// <summary>Deflates the input since the last flush point as one piece: a sync-flushed piece, or the final one.</summary>
-    static byte[] DeflatePiece(ZStream state, bool final)
-    {
-        using var output = new MemoryStream();
-        long flushed;
-        using (var deflater = new DeflateStream(output, HostLevel(state.Level), leaveOpen: true))
+        if (state.HasDictionary)
         {
-            deflater.Write(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(state.PendingInput));
-            deflater.Flush();
-            flushed = output.Length;
+            flags |= 0x20;
         }
 
-        byte[] bytes = output.ToArray();
-        return final ? bytes : bytes[..(int)flushed];
+        flags += 31 - ((cmf << 8) | flags) % 31;
+        if (!state.HasDictionary)
+        {
+            return [(byte)cmf, (byte)flags];
+        }
+
+        uint id = state.DictionaryId;
+        return [(byte)cmf, (byte)flags, (byte)(id >> 24), (byte)(id >> 16), (byte)(id >> 8), (byte)id];
+    }
+
+    /// <summary>Runs the encoder over the input and a flush point; what it completes goes to the pending output.</summary>
+    void Encode(ZStream state, ReadOnlySpan<byte> input, int flush)
+    {
+        var bytes = new List<byte>();
+        state.Encoder!.AddInput(input, bytes);
+        state.Encoder.Flush(flush, bytes);
+        if (bytes.Count > 0)
+        {
+            AppendOutput(state, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(bytes));
+        }
     }
 
     void AppendOutput(ZStream state, ReadOnlySpan<byte> bytes)
@@ -344,8 +363,9 @@ public sealed partial class SystemServicesVsh
         return (uint)count;
     }
 
-    /// <summary>deflate (0x5B718E55, 0xE859D60F)(strm, flush): takes all the input, compresses it at a flush
-    /// (Z_PARTIAL/SYNC/FULL_FLUSH, Z_BLOCK) or at Z_FINISH (the wrapper's trailer after it), and gives what fits;
+    /// <summary>deflate (0x5B718E55, 0xE859D60F)(strm, flush): takes all the input (a block is written each 64 KB),
+    /// ends the block at a flush (Z_PARTIAL/SYNC/FULL_FLUSH, Z_BLOCK) or at Z_FINISH (the wrapper's trailer after it),
+    /// and gives what fits;
     /// Z_STREAM_END once everything after Z_FINISH was given, Z_BUF_ERROR when no progress was possible.</summary>
     [Hle(Nid = 0x5B718E55, Library = "SceZlibForDriver")]
     [Hle(Nid = 0xE859D60F, Library = "SceZlibForDriver")]
@@ -369,12 +389,17 @@ public sealed partial class SystemServicesVsh
             return ZBufError;
         }
 
+        if (!state.HeaderWritten)
+        {
+            AppendOutput(state, DeflateHeader(state));
+            state.HeaderWritten = true;
+        }
+
         uint available = GuestMemory.R32(stream + ZAvailIn);
         uint next = GuestMemory.R32(stream + ZNextIn);
-        ReadOnlySpan<byte> input = GuestMemory.ReadSpan(next, (int)available);
+        ReadOnlySpan<byte> input = state.Finished ? [] : GuestMemory.ReadSpan(next, (int)available);
         if (!state.Finished && available > 0)
         {
-            state.PendingInput.AddRange(input);
             state.Checksum = state.Wrapper == ZlibStreamInflater.Wrapper.Gzip
                 ? ZlibStreamInflater.Crc32(state.Checksum, input)
                 : ZlibStreamInflater.Adler32(state.Checksum, input);
@@ -385,16 +410,14 @@ public sealed partial class SystemServicesVsh
             GuestMemory.W32(stream + ZAdler, state.Checksum);
         }
 
-        if (!state.HeaderWritten)
+        if (!state.Finished)
         {
-            AppendOutput(state, DeflateHeader(state));
-            state.HeaderWritten = true;
-        }
+            Encode(state, input, flush);
+            if (state.Level > 0)
+            {
+                GuestMemory.W32(stream + ZDataType, (uint)state.Encoder!.DataType);
+            }
 
-        if (!state.Finished && flush != 0)
-        {
-            AppendOutput(state, DeflatePiece(state, flush == ZFinish));
-            state.PendingInput.Clear();
             if (flush == ZFinish)
             {
                 AppendOutput(state, DeflateTrailer(state));
@@ -452,7 +475,9 @@ public sealed partial class SystemServicesVsh
             return ZStreamError;
         }
 
-        state.PendingInput.Clear();
+        state.Encoder = new DeflateBitEncoder(state.Level, state.Strategy);
+        state.HasDictionary = false;
+        state.DictionaryId = 0;
         state.Output = [];
         state.Delivered = 0;
         state.HeaderWritten = false;
@@ -462,39 +487,73 @@ public sealed partial class SystemServicesVsh
         GuestMemory.W32(stream + ZTotalIn, 0);
         GuestMemory.W32(stream + ZTotalOut, 0);
         GuestMemory.W32(stream + ZMsg, 0);
+        GuestMemory.W32(stream + ZDataType, 2);
         GuestMemory.W32(stream + ZAdler, state.Checksum);
         return ZOk;
     }
 
-    /// <summary>deflateSetDictionary (0x4EE6C080, 0x93168F72)(strm, dictionary, length): accepted before the first
-    /// deflate (Z_STREAM_ERROR after it or for a gzip stream); the host deflate does not take a preset dictionary,
-    /// so the output simply does not refer to it (any inflater, with or without the dictionary, decodes it).</summary>
+    /// <summary>deflateSetDictionary (0x4EE6C080, 0x93168F72)(strm, dictionary, length): the window starts with the
+    /// dictionary (its last 32 KB; fewer than 3 bytes are not kept), so the data can refer to it. A zlib stream takes
+    /// it only before its first deflate: adler becomes the dictionary's adler32 and the header carries FDICT and that
+    /// id (the inflater asks for it with Z_NEED_DICT); a raw stream takes it at any time; a gzip stream never
+    /// (Z_STREAM_ERROR), as zlib 1.2.5.</summary>
     [Hle(Nid = 0x4EE6C080, Library = "SceZlibForDriver")]
     [Hle(Nid = 0x93168F72, Library = "SceZlibForDriver")]
     int zlibDeflateSetDictionary(uint stream, uint dictionary, uint length)
     {
-        if (StreamOf(stream) is not { Deflating: true } state || dictionary == 0 || state.HeaderWritten
-            || state.Wrapper == ZlibStreamInflater.Wrapper.Gzip)
+        if (StreamOf(stream) is not { Deflating: true } state || dictionary == 0
+            || state.Wrapper == ZlibStreamInflater.Wrapper.Gzip
+            || (state.Wrapper == ZlibStreamInflater.Wrapper.Zlib && state.HeaderWritten))
         {
             return ZStreamError;
         }
 
-        GuestMemory.W32(stream + ZAdler, ZlibStreamInflater.Adler32(1, GuestMemory.ReadSpan(dictionary, (int)length)));
+        ReadOnlySpan<byte> bytes = GuestMemory.ReadSpan(dictionary, (int)length);
+        if (state.Wrapper == ZlibStreamInflater.Wrapper.Zlib)
+        {
+            uint id = ZlibStreamInflater.Adler32(GuestMemory.R32(stream + ZAdler), bytes);
+            GuestMemory.W32(stream + ZAdler, id);
+            state.HasDictionary = true;
+            state.DictionaryId = id;
+        }
+
+        state.Encoder!.SetDictionary(bytes);
         return ZOk;
     }
 
-    /// <summary>deflatePrime (0x0FA805A3, 0x1C344E27)(strm, bits, value): bits to put before the next deflate output.
-    /// The host deflate starts its pieces on a byte, so the bits cannot be merged; the call is accepted (0) as the
-    /// firmware's, without them.</summary>
-    [Hle(Nid = 0x0FA805A3, Library = "SceZlibForDriver", Default = true)]
-    [Hle(Nid = 0x1C344E27, Library = "SceZlibForDriver", Default = true)]
-    int zlibDeflatePrime(uint stream, int bits, int value) => StreamOf(stream) is { Deflating: true } ? ZOk : ZStreamError;
+    /// <summary>deflatePrime (0x0FA805A3, 0x1C344E27)(strm, bits, value): as zlib 1.2.5 (FW 3.74 SceSblPostSsMgr,
+    /// decompiled, study only: bi_valid = bits, bi_buf = value &amp; ((1 &lt;&lt; bits) - 1), no other check): the
+    /// encoder's bit buffer becomes those bits, dropping what it held, and the next block follows them on the same
+    /// byte. Z_STREAM_ERROR without a stream or state; an inflate stream's state is not an encoder's, so the call does
+    /// nothing to it (0).</summary>
+    [Hle(Nid = 0x0FA805A3, Library = "SceZlibForDriver")]
+    [Hle(Nid = 0x1C344E27, Library = "SceZlibForDriver")]
+    int zlibDeflatePrime(uint stream, int bits, int value)
+    {
+        if (StreamOf(stream) is not { } state)
+        {
+            return ZStreamError;
+        }
+
+        state.Encoder?.Prime(bits, value);
+        return ZOk;
+    }
 
     /// <summary>deflateTune (0x938F34FA, 0xBC022D38)(strm, good_length, max_lazy, nice_length, max_chain): the match
-    /// search parameters (the host deflate keeps its own); 0.</summary>
+    /// search parameters of the encoder; 0.</summary>
     [Hle(Nid = 0x938F34FA, Library = "SceZlibForDriver")]
     [Hle(Nid = 0xBC022D38, Library = "SceZlibForDriver")]
-    int zlibDeflateTune(uint stream) => StreamOf(stream) is { Deflating: true } ? ZOk : ZStreamError;
+    void zlibDeflateTune(HleContext context)
+    {
+        if (StreamOf(context.Gpr(0)) is not { Deflating: true } state)
+        {
+            context.Return(ZStreamError);
+            return;
+        }
+
+        state.Encoder!.Tune((int)context.Gpr(1), (int)context.Gpr(2), (int)context.Gpr(3), (int)context.Gpr(4));
+        context.Return(ZOk);
+    }
 
     /// <summary>deflateBound (0x05F712FE, 0x67A085C4)(strm, sourceLen): the most a single deflate(Z_FINISH) of
     /// sourceLen bytes writes: the tight bound for windowBits 15 and memLevel 8, else the conservative one, plus the
@@ -892,23 +951,27 @@ public sealed partial class SystemServicesVsh
             return ZStreamError;
         }
 
-        var state = new ZStream { Deflating = true, Level = level, WindowBits = 15, MemLevel = 8, Wrapper = ZlibStreamInflater.Wrapper.Zlib, Checksum = 1 };
+        var state = new ZStream
+        {
+            Deflating = true,
+            Level = level,
+            WindowBits = 15,
+            MemLevel = 8,
+            Wrapper = ZlibStreamInflater.Wrapper.Zlib,
+            Encoder = new DeflateBitEncoder(level, 0),
+        };
         ReadOnlySpan<byte> input = GuestMemory.ReadSpan(source, (int)sourceLength);
-        state.PendingInput.AddRange(input);
         state.Checksum = ZlibStreamInflater.Adler32(1, input);
-        byte[] header = DeflateHeader(state);
-        byte[] body = DeflatePiece(state, final: true);
-        byte[] trailer = DeflateTrailer(state);
-        uint total = (uint)(header.Length + body.Length + trailer.Length);
+        AppendOutput(state, DeflateHeader(state));
+        Encode(state, input, ZFinish);
+        AppendOutput(state, DeflateTrailer(state));
+        uint total = (uint)state.Output.Length;
         if (total > GuestMemory.R32(destinationLength))
         {
             return ZBufError;
         }
 
-        Span<byte> target = GuestMemory.Span(destination, (int)total);
-        header.CopyTo(target);
-        body.CopyTo(target[header.Length..]);
-        trailer.CopyTo(target[(header.Length + body.Length)..]);
+        state.Output.CopyTo(GuestMemory.Span(destination, (int)total));
         GuestMemory.W32(destinationLength, total);
         return ZOk;
     }

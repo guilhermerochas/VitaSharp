@@ -26,8 +26,10 @@ public sealed class RendererSurfaceReuseTests(GuestMemoryFixture fx)
     private const uint DepthLess = 0x00400000, DepthGreaterEqual = 0x01800000, DepthAlways = 0x01C00000;
 
     /// <summary>The last presented frame (RGB per pixel) after <paramref name="body"/> ran on a renderer with MSAA mode
-    /// <paramref name="msaa"/>.</summary>
-    private byte[] Run(string tag, Action<HleHarness, RendererTextureTests.Workload> body, ushort multisample, uint scaleMode, string msaa = "native")
+    /// <paramref name="msaa"/> (GPU quirks forced by <paramref name="gpuQuirks"/>, as VITASHARP_GPU_QUIRKS) at internal
+    /// resolution <paramref name="resScale"/> (a whole factor: the frame, dumped at that resolution, is read back one
+    /// pixel per guest pixel).</summary>
+    private byte[] Run(string tag, Action<HleHarness, RendererTextureTests.Workload> body, ushort multisample, uint scaleMode, string msaa = "native", string? gpuQuirks = null, int resScale = 1)
     {
         string frames = Path.Combine(Path.GetTempPath(), "vitasharp-reuse-" + Guid.NewGuid().ToString("N"));
         try
@@ -38,8 +40,10 @@ public sealed class RendererSurfaceReuseTests(GuestMemoryFixture fx)
                 AsyncShaders = false,
                 AsyncPipelines = false,
                 Msaa = msaa,
+                GpuQuirks = gpuQuirks,
                 DumpFramesDir = frames,
                 DumpEvery = 1,
+                ResScale = resScale,
             });
             using (HleHarness harness = new(fx, tag))
             {
@@ -66,8 +70,19 @@ public sealed class RendererSurfaceReuseTests(GuestMemoryFixture fx)
             }
             string last = Directory.GetFiles(frames, "frame_*.png").Order().Last();
             using var bitmap = SkiaSharp.SKBitmap.Decode(last);
-            Assert.Equal((W, H), (bitmap.Width, bitmap.Height));
-            return bitmap.Pixels.SelectMany(pixel => new[] { pixel.Red, pixel.Green, pixel.Blue }).ToArray();
+            Assert.Equal((W * resScale, H * resScale), (bitmap.Width, bitmap.Height));
+            byte[] image = new byte[W * H * 3];
+            for (int y = 0; y < H; y++)
+            {
+                for (int x = 0; x < W; x++)
+                {
+                    SkiaSharp.SKColor pixel = bitmap.GetPixel(x * resScale + resScale / 2, y * resScale + resScale / 2);
+                    image[(y * W + x) * 3] = pixel.Red;
+                    image[(y * W + x) * 3 + 1] = pixel.Green;
+                    image[(y * W + x) * 3 + 2] = pixel.Blue;
+                }
+            }
+            return image;
         }
         finally
         {
@@ -127,15 +142,25 @@ public sealed class RendererSurfaceReuseTests(GuestMemoryFixture fx)
     /// (one texel per pixel, resampled). Without the resample the one-sample emulation copied the top-left quarter of
     /// the larger image and the supersampled one tested against zero, so LESS drew nothing and GREATER_EQUAL
     /// everything (the cockpit glass drawn over or hidden behind the wrong depth).
+    /// Each case also runs as a tile-based GPU (TileBased forced on the software device: Apple, Adreno, Mali and
+    /// PowerVR are tile-based), whose renderings begin only over the tiles the scene's draws can write: the supersampled
+    /// scene's render area was trimmed in guest pixels instead of its 2x attachment pixels, so the samples past the
+    /// first 96x96 of its 128x128 image were never drawn (the CI's MoltenVK run: 644 and 1,288 of 1,680 pixels).
     /// </summary>
     [SoftwareVulkanTheory]
-    [InlineData("native", DepthLess)]
-    [InlineData("native", DepthGreaterEqual)]
-    [InlineData("ss", DepthLess)]
-    [InlineData("ss", DepthGreaterEqual)]
-    [InlineData("off", DepthLess)]
-    [InlineData("off", DepthGreaterEqual)]
-    public void FourXSceneLoadsTheDepthAOneSampleSceneStored(string msaa, uint depthFunc)
+    [InlineData("native", DepthLess, null)]
+    [InlineData("native", DepthGreaterEqual, null)]
+    [InlineData("ss", DepthLess, null)]
+    [InlineData("ss", DepthGreaterEqual, null)]
+    [InlineData("off", DepthLess, null)]
+    [InlineData("off", DepthGreaterEqual, null)]
+    [InlineData("native", DepthLess, "+TileBased")]
+    [InlineData("native", DepthGreaterEqual, "+TileBased")]
+    [InlineData("ss", DepthLess, "+TileBased")]
+    [InlineData("ss", DepthGreaterEqual, "+TileBased")]
+    [InlineData("off", DepthLess, "+TileBased")]
+    [InlineData("off", DepthGreaterEqual, "+TileBased")]
+    public void FourXSceneLoadsTheDepthAOneSampleSceneStored(string msaa, uint depthFunc, string? gpuQuirks)
     {
         using IDisposable driver = SoftwareVulkan.Use();
         byte[] image = Run("vkreuse-depth", (harness, workload) =>
@@ -186,7 +211,7 @@ public sealed class RendererSurfaceReuseTests(GuestMemoryFixture fx)
             Assert.Equal(0, Call(gxm, "sceGxmEndScene", workload.Ctx, 0u, 0u));
             harness.Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(workload.Data, W, W, H, DisplayPixelFormat.A8B8G8R8) });
             Assert.Equal(0, Call(gxm, "sceGxmFinish", workload.Ctx));
-        }, multisample: 2, scaleMode: 1, msaa: msaa);
+        }, multisample: 2, scaleMode: 1, msaa: msaa, gpuQuirks: gpuQuirks);
 
         bool lessPasses = depthFunc == DepthLess;
         int keptWhereFailing = 0, drawnWherePassing = 0, total = 0;
@@ -201,8 +226,8 @@ public sealed class RendererSurfaceReuseTests(GuestMemoryFixture fx)
             }
         }
         // the left half's samples hold 0.2 (texels 0-63 of each row of the depth), the right half's 1.0
-        Assert.True(keptWhereFailing == total, $"MSAA {msaa}: {total - keptWhereFailing} of {total} pixels were drawn where the one-sample scene's depth fails the test");
-        Assert.True(drawnWherePassing > total * 9 / 10, $"MSAA {msaa}: only {drawnWherePassing} of {total} pixels were drawn where the one-sample scene's depth passes the test: the 4X scene did not load it");
+        Assert.True(keptWhereFailing == total, $"MSAA {msaa}, GPU quirks {gpuQuirks ?? "of the device"}: {total - keptWhereFailing} of {total} pixels were drawn where the one-sample scene's depth fails the test");
+        Assert.True(drawnWherePassing > total * 9 / 10, $"MSAA {msaa}, GPU quirks {gpuQuirks ?? "of the device"}: only {drawnWherePassing} of {total} pixels were drawn where the one-sample scene's depth passes the test: the 4X scene did not load it");
     }
 
     /// <summary>
@@ -211,9 +236,11 @@ public sealed class RendererSurfaceReuseTests(GuestMemoryFixture fx)
     /// of pixel (x/2, y/2). Without the resample the one-sample image kept its own (zeroed) depth.
     /// </summary>
     [SoftwareVulkanTheory]
-    [InlineData(DepthLess)]
-    [InlineData(DepthGreaterEqual)]
-    public void OneSampleSceneLoadsTheDepthAForceStored4XSceneStored(uint depthFunc)
+    [InlineData(DepthLess, null)]
+    [InlineData(DepthGreaterEqual, null)]
+    [InlineData(DepthLess, "+TileBased")]
+    [InlineData(DepthGreaterEqual, "+TileBased")]
+    public void OneSampleSceneLoadsTheDepthAForceStored4XSceneStored(uint depthFunc, string? gpuQuirks)
     {
         using IDisposable driver = SoftwareVulkan.Use();
         byte[] image = Run("vkreuse-depth-back", (harness, workload) =>
@@ -264,7 +291,7 @@ public sealed class RendererSurfaceReuseTests(GuestMemoryFixture fx)
             Assert.Equal(0, Call(gxm, "sceGxmEndScene", workload.Ctx, 0u, 0u));
             harness.Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(data1, S, W, H, DisplayPixelFormat.A8B8G8R8) });
             Assert.Equal(0, Call(gxm, "sceGxmFinish", workload.Ctx));
-        }, multisample: 2, scaleMode: 1);
+        }, multisample: 2, scaleMode: 1, gpuQuirks: gpuQuirks);
 
         bool lessPasses = depthFunc == DepthLess;
         int keptWhereFailing = 0, drawnWherePassing = 0, total = 0;
@@ -278,8 +305,8 @@ public sealed class RendererSurfaceReuseTests(GuestMemoryFixture fx)
                 drawnWherePassing += Near(At(image, passX, y), Pattern(passX, y, W)) ? 0 : 1;
             }
         }
-        Assert.True(keptWhereFailing == total, $"{total - keptWhereFailing} of {total} pixels were drawn where the 4X scene's stored samples fail the test");
-        Assert.True(drawnWherePassing > total * 9 / 10, $"only {drawnWherePassing} of {total} pixels were drawn where the 4X scene's stored samples pass the test: the one-sample scene did not load them");
+        Assert.True(keptWhereFailing == total, $"GPU quirks {gpuQuirks ?? "of the device"}: {total - keptWhereFailing} of {total} pixels were drawn where the 4X scene's stored samples fail the test");
+        Assert.True(drawnWherePassing > total * 9 / 10, $"GPU quirks {gpuQuirks ?? "of the device"}: only {drawnWherePassing} of {total} pixels were drawn where the 4X scene's stored samples pass the test: the one-sample scene did not load them");
     }
 
     /// <summary>The sample mapping of each MSAA emulation's one-sample depth image (texels per surface sample).</summary>
@@ -347,5 +374,103 @@ public sealed class RendererSurfaceReuseTests(GuestMemoryFixture fx)
         Assert.True(same > total * 9 / 10, $"only {same} of {total} pixels show the 32x32 scene's rendering");
         // the rest of the 64x64 surface keeps its memory
         Assert.True(Near(At(image, W - 3, H - 3), Pattern(W - 3, H - 3, W)), "the 64x64 surface lost its memory outside the 32x32 one");
+    }
+    /// <summary>A quad over guest columns [<paramref name="x0"/>, <paramref name="x1"/>) of the 64x64 surface at clip
+    /// depth <paramref name="z"/>, drawn with the current state.</summary>
+    private static void DrawColumns(HleHarness harness, Gxm gxm, RendererTextureTests.Workload workload, int x0, int x1, float z)
+    {
+        uint quad = harness.Alloc(64), quadIdx = harness.Alloc(12);
+        float left = x0 * 2f / W - 1f, right = x1 * 2f / W - 1f;
+        float[] vertices = [left, -1, z, 1, right, -1, z, 1, left, 1, z, 1, right, 1, z, 1];
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            GuestMemory.Write(quad + (uint)i * 4, vertices[i]);
+        }
+
+        ushort[] indices = [0, 1, 2, 2, 1, 3];
+        for (int i = 0; i < indices.Length; i++)
+        {
+            GuestMemory.Write(quadIdx + (uint)i * 2, indices[i]);
+        }
+
+        Assert.Equal(0, Call(gxm, "sceGxmSetVertexStream", workload.Ctx, 0u, quad));
+        Assert.Equal(0, Call(gxm, "sceGxmDraw", workload.Ctx, 0u, 0u, quadIdx, 6u));
+    }
+
+    /// <summary>
+    /// A depth/stencil surface shared by colour scenes and a scene without a colour surface (a depth pre-pass, occlusion
+    /// queries, a stencil mask) is one block of memory on the Vita: each scene loads what the one before it stored,
+    /// whatever the internal resolution. A colour scene writes texels 0-15 of each row at 0.2, a colour-less scene
+    /// loads that and writes texels 16-31 at 0.2, and a colour scene loads the result and draws the whole surface at
+    /// 0.75: with LESS only the right half (1.0) passes, with GREATER_EQUAL only the left half. Above native scale the
+    /// colour-less scene rendered into a native-size image of its own, so the colour scenes never saw its depth (and it
+    /// never saw theirs): Assassin's Creed III Liberation clears depth and stencil in such a scene at the start of each
+    /// frame, so at 2x its 3D scene loaded the stencil the HUD wrote the frame before, its geometry failed the stencil
+    /// test under the HUD panels, and they blended over black. Also as a tile-based GPU (render-area trim).
+    /// </summary>
+    [SoftwareVulkanTheory]
+    [InlineData(1, DepthLess, null)]
+    [InlineData(1, DepthGreaterEqual, null)]
+    [InlineData(2, DepthLess, null)]
+    [InlineData(2, DepthGreaterEqual, null)]
+    [InlineData(2, DepthLess, "+TileBased")]
+    [InlineData(2, DepthGreaterEqual, "+TileBased")]
+    [InlineData(3, DepthLess, null)]
+    [InlineData(3, DepthGreaterEqual, "+TileBased")]
+    public void SceneWithoutColourSharesTheDepthOfTheColourScenesAtEveryScale(int resScale, uint depthFunc, string? gpuQuirks)
+    {
+        using IDisposable driver = SoftwareVulkan.Use();
+        byte[] image = Run("vkreuse-colourless", (harness, workload) =>
+        {
+            Gxm gxm = harness.Module<Gxm>();
+            for (uint i = 0; i < W * H; i++)
+            {
+                GuestMemory.W32(workload.Data + i * 4, PatternTexel(i));
+            }
+
+            uint depth = harness.Alloc(0x20), depthData = harness.Alloc(W * H * 4);
+            Assert.Equal(0, Call(gxm, "sceGxmDepthStencilSurfaceInit", depth, 0x00044000u, 0u, (uint)W, depthData, 0u));
+            Invoke(gxm, "sceGxmDepthStencilSurfaceSetForceStoreMode", depth, 4u);
+
+            // 1. a colour scene (its own 64x64 surface): depth cleared to the background (1.0), texels 0-15 at 0.2
+            uint colorA = harness.Alloc(0x40), dataA = harness.Alloc(W * H * 4);
+            Assert.Equal(0, Call(gxm, "sceGxmColorSurfaceInit", colorA, 0u, 0u, 0u, 0u, (uint)W, (uint)H, (uint)W, dataA));
+            Assert.Equal(0, Call(gxm, "sceGxmBeginScene", workload.Ctx, 0u, workload.Rt, 0u, 0u, 0u, colorA, depth));
+            Setup(gxm, workload, DepthAlways, depthWrite: true);
+            DrawColumns(harness, gxm, workload, 0, W / 4, -0.6f);
+            Assert.Equal(0, Call(gxm, "sceGxmEndScene", workload.Ctx, 0u, 0u));
+
+            // 2. a scene without a colour surface loads that depth and writes texels 16-31 at 0.2
+            Invoke(gxm, "sceGxmDepthStencilSurfaceSetForceLoadMode", depth, 2u);
+            Assert.Equal(0, Call(gxm, "sceGxmBeginScene", workload.Ctx, 0u, workload.Rt, 0u, 0u, 0u, 0u, depth));
+            Setup(gxm, workload, DepthAlways, depthWrite: true);
+            DrawColumns(harness, gxm, workload, W / 4, W / 2, -0.6f);
+            Assert.Equal(0, Call(gxm, "sceGxmEndScene", workload.Ctx, 0u, 0u));
+
+            // 3. the presented colour scene loads the depth and draws the whole surface at 0.75
+            Assert.Equal(0, Call(gxm, "sceGxmBeginScene", workload.Ctx, 0u, workload.Rt, 0u, 0u, 0u, workload.Color, depth));
+            Setup(gxm, workload, depthFunc, depthWrite: false);
+            Assert.Equal(0, Call(gxm, "sceGxmSetVertexStream", workload.Ctx, 0u, workload.Verts));
+            Assert.Equal(0, Call(gxm, "sceGxmDraw", workload.Ctx, 0u, 0u, workload.Idx, 3u));
+            Assert.Equal(0, Call(gxm, "sceGxmEndScene", workload.Ctx, 0u, 0u));
+            harness.Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(workload.Data, W, W, H, DisplayPixelFormat.A8B8G8R8) });
+            Assert.Equal(0, Call(gxm, "sceGxmFinish", workload.Ctx));
+        }, multisample: 0, scaleMode: 0, gpuQuirks: gpuQuirks, resScale: resScale);
+
+        bool lessPasses = depthFunc == DepthLess;
+        int keptWhereFailing = 0, drawnWherePassing = 0, total = 0;
+        for (int y = 2; y < H - 2; y++)
+        {
+            for (int x = 2; x < W / 2 - 2; x++)
+            {
+                total++;
+                (int failX, int passX) = lessPasses ? (x, x + W / 2) : (x + W / 2, x);
+                keptWhereFailing += Near(At(image, failX, y), Pattern(failX, y, W)) ? 1 : 0;
+                drawnWherePassing += Near(At(image, passX, y), Pattern(passX, y, W)) ? 0 : 1;
+            }
+        }
+        string setup = $"scale {resScale}x, GPU quirks {gpuQuirks ?? "of the device"}";
+        Assert.True(keptWhereFailing == total, $"{setup}: {total - keptWhereFailing} of {total} pixels were drawn where the earlier scenes' depth (0.2) fails the test");
+        Assert.True(drawnWherePassing > total * 9 / 10, $"{setup}: only {drawnWherePassing} of {total} pixels were drawn where the earlier scenes' depth (1.0) passes the test");
     }
 }

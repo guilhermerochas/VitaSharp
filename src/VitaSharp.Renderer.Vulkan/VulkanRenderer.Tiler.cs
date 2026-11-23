@@ -38,7 +38,10 @@ public sealed unsafe partial class VulkanRenderer
         public AttachmentLoadOp DepthLoad;
         public ClearValue DepthClear;
         public Extent2D Area;
-        /// <summary>Attachment pixels per guest pixel (VulkanRenderer.ResScale.cs).</summary>
+        /// <summary>Attachment pixels per guest pixel (<see cref="SceneScale"/>: the resolution scale of
+        /// VulkanRenderer.ResScale.cs, doubled for a supersampled or MSAA-without-downscale scene). The render area is
+        /// trimmed with it: with the resolution scale alone a supersampled scene's renderings began over the guest-pixel
+        /// rectangle of its 2x image, and the samples outside it were never drawn (MoltenVK on macOS).</summary>
         public float Scale;
         public bool HasColor;
     }
@@ -95,7 +98,7 @@ public sealed unsafe partial class VulkanRenderer
             DepthLoad = depthLoad,
             DepthClear = depthClear,
             Area = SceneArea,
-            Scale = RtScale,
+            Scale = SceneScale,
         };
         // merge: the renderings ended since the primary was last touched continue on the same attachments
         if (_chain.Count > 0 && !(_chainScene == _sceneSerial && SameAttachments(in _chainPass, in _tilePass)))
@@ -301,8 +304,8 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>
     /// The render area of the pending renderings: the whole surface, or (VITASHARP_RENDER_AREA_TRIM=1) the tiles their
-    /// draws can write (in attachment pixels: the rectangles are guest pixels, scaled by the target's resolution
-    /// scale). Every draw of a scene rendering is clipped to its region clip and viewport
+    /// draws can write (in attachment pixels: the rectangles are guest pixels, scaled by the scene's
+    /// <see cref="SceneScale"/>: resolution scale, times 2 when supersampled or MSAA without downscale). Every draw of a scene rendering is clipped to its region clip and viewport
     /// (<see cref="NoteDrawn"/> keeps their union since the chain began), so the tiles outside are neither drawn nor
     /// changed: loading and storing them is bandwidth for nothing on a tiler, and Vulkan leaves an attachment untouched
     /// outside the render area. Kept whole when a draw had no bounds, when the rendering has no colour surface

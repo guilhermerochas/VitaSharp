@@ -133,6 +133,11 @@ public sealed class Emulator : IDisposable
     public string Title { get; private set; } = "";
     public Sfo? ParamSfo { get; private set; }
     public byte[]? Klicensee { get; private set; }
+
+    /// <summary>The secure processor's licence verification and key decryption for app0's PFS mount
+    /// (<see cref="Package.LicenseTitleKey"/>): the emulated unit has none (null, the step answers 0x80020004); only
+    /// the tests set one, with a test key.</summary>
+    internal Func<byte[], byte[]?>? SecureProcessorRifKey { get; set; }
     public string AppPath { get; internal set; } = "";
     public LoadedModule? MainModule { get; private set; }
     /// <summary>Local PSN services (TUS, rankings) of the emulated account, stored under <see cref="EmulatorOptions.NpRoot"/>.</summary>
@@ -563,6 +568,11 @@ public sealed class Emulator : IDisposable
             return noLicense.Error;
         }
 
+        if (e is TitleKeyException noKey)
+        {
+            return noKey.Error;
+        }
+
         if (e is FileNotFoundException or DirectoryNotFoundException)
         {
             return SceError.MODULEMGR_NOENT;
@@ -579,7 +589,8 @@ public sealed class Emulator : IDisposable
     /// <summary>Whether <paramref name="e"/> is the loader refusing a module (a missing file, a file that is no SELF, an
     /// encrypted module without its license): the module manager returns <see cref="ModuleLoadError"/> for it.</summary>
     public static bool IsModuleLoadFailure(Exception e) =>
-        e is FileNotFoundException or DirectoryNotFoundException or InvalidDataException or SelfLicenseMissingException or TitleLicenseMissingException;
+        e is FileNotFoundException or DirectoryNotFoundException or InvalidDataException or SelfLicenseMissingException or TitleLicenseMissingException
+        or TitleKeyException;
 
     /// <summary>A process whose executable never ran (its load failed): it goes at once, without the end event a started
     /// application gives the shell (the shell never heard of it).</summary>
@@ -785,6 +796,7 @@ public sealed class Emulator : IDisposable
         }
 
         Kernel.StopAllThreads();
+        ForgetPluginPatches();
         foreach (Emulator c in _children.ToArray())
         {
             c.Terminate("ended with its parent");
@@ -1079,6 +1091,7 @@ public sealed class Emulator : IDisposable
         Vfs.Mount("addcont0", Io.FirmwareLayout.AddCont.Host(Options.FsRoot, TitleId));
 
         Klicensee = FindKlicensee();
+        OpenApp0Image();
         string vs0 = Path.GetFullPath(Path.Combine(Options.FsRoot, "vs0")) + Path.DirectorySeparatorChar;
         IsSystemProgram = AppPath.StartsWith(vs0, StringComparison.OrdinalIgnoreCase);
         _startFirst.Clear();
@@ -1092,9 +1105,17 @@ public sealed class Emulator : IDisposable
         }
 
         Log.Info($"Loading {TitleId} \"{Title}\" from {AppPath}");
+        Boot.BootProgress.Report(Boot.BootStep.Game);
         // per-title shader/pipeline caches start warming up while the executable loads
         try
         {
+            if (Gpu.Backend != null)
+            {
+                // the loading screen's "Carregando o cache de shaders": the driver's pipeline cache and the title's
+                // shader cache are read here, before the recorded shaders are built (its own progress)
+                Boot.BootProgress.Report(Boot.BootStep.ShaderCache);
+            }
+
             Gpu.Backend?.BeginTitle(TitleId);
             if (Options.LoadShaderCacheBeforeStart)
             {
@@ -1647,16 +1668,14 @@ public sealed class Emulator : IDisposable
         codeCache.Analyze = Options.PrecompileCode;
         bool wait = Options.PrecompileCode && Options.PrecompileCodeWaits;
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
-        long last = 0;
-        CodePrecompiler.Result result = codeCache.PrecompilePending(!wait ? null : progress =>
+        CodePrecompileLog.Reporter? reporter = wait ? new CodePrecompileLog.Reporter() : null;
+        if (wait)
         {
-            long now = Environment.TickCount64;
-            if (progress.Finished || now - last >= 250)
-            {
-                last = now;
-                Log.Info(CodePrecompileLog.Format(progress));
-            }
-        }, CodePrecompileLog.Token, wait);
+            Boot.BootProgress.Report(Boot.BootStep.CodePrecompile);
+        }
+
+        CodePrecompiler.Result result = codeCache.PrecompilePending(reporter == null ? null : reporter.Progress, CodePrecompileLog.Token, wait);
+        reporter?.End();
         double seconds = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalSeconds;
         Log.Info($"ARM code precompilation: boot step {seconds:F1} s ({(wait ? "waited for " + (codeCache.CachedSeeds > 0 ? "the code cache" : "the code reached from the entry points") : "nothing waited for")}), "
             + $"{result.Translated} blocks translated of {result.Visited} visited ({codeCache.CachedSeeds} from the code cache, {result.Found} found by the static analysis)"
@@ -1681,6 +1700,51 @@ public sealed class Emulator : IDisposable
             Log.Warn($"Code cache: save failed: {e.Message}");
         }
     }
+    /// <summary>
+    /// An application folder that is still a PFS image gets app0 as appmgr mounts it: the licence where the firmware
+    /// keeps it, its title key by SceNpDrm's checks and the secure processor (<see cref="Package.LicenseTitleKey"/>),
+    /// then the PFS layer opened with that key (<see cref="Package.Pfs.PfsApp0View"/>), the key the executable's SELF
+    /// is decrypted with too. Without a licence the launch fails as appmgr's does
+    /// (<see cref="TitleLicenseMissingException"/>); without a key, or with one that does not open the image, as
+    /// <see cref="TitleKeyException"/>. The decrypted view is kept with the emulator's caches, next to the file system.
+    /// </summary>
+    private void OpenApp0Image()
+    {
+        if (!Package.Pfs.PfsApp0View.IsImage(AppPath))
+        {
+            return;
+        }
+
+        if (TitleLicense.FindFile(Options.FsRoot, AppPath, TitleId) is not { } licenseFile)
+        {
+            throw new TitleLicenseMissingException(TitleId, new FileNotFoundException($"{AppPath} is a PFS image and has no licence"));
+        }
+
+        string? activationFile = Vfs.Resolve("tm0:npdrm/act.dat");
+        byte[] activation = activationFile != null && File.Exists(activationFile) ? File.ReadAllBytes(activationFile) : [];
+        int error = Package.LicenseTitleKey.Get(File.ReadAllBytes(licenseFile), activation, SecureProcessorRifKey, out byte[]? key);
+        if (error != 0 || key == null)
+        {
+            Log.Error($"{TitleId}: app0 is a PFS image; the title key of its licence {licenseFile} is not available (0x{error:X8})");
+            throw new TitleKeyException(TitleId, error);
+        }
+
+        string fsRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(Options.FsRoot));
+        string dataRoot = Path.GetDirectoryName(fsRoot) ?? fsRoot;
+        byte[] folderHash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(AppPath.ToUpperInvariant()));
+        string view = Path.Combine(dataRoot, "cache", "pfs", $"{TitleId}-{Convert.ToHexString(folderHash, 0, 8)}");
+        try
+        {
+            Vfs.AddApp0BaseLayer(Package.Pfs.PfsApp0View.Open(AppPath, key, view, Log.Info));
+        }
+        catch (Package.Pfs.PfsKeyMismatchException e)
+        {
+            throw new TitleKeyException(TitleId, Package.LicenseTitleKey.BadLicense, e);
+        }
+
+        Klicensee = key;
+    }
+
     private byte[]? FindKlicensee() =>
         TitleLicense.FindFile(Options.FsRoot, AppPath, TitleId) is { } license ? PkgInstaller.ReadKlicensee(license) : null;
 
@@ -1952,6 +2016,18 @@ public sealed class Emulator : IDisposable
         {
             File.WriteAllText(PluginFolderConfig, string.Join("\n", lines));
         }
+    }
+
+    /// <summary>The process ended: the plugin framework's hooks and injections in it (made by kernel plugins, kept by
+    /// the kernel, and by the process's own user plugins) go with it.</summary>
+    private void ForgetPluginPatches()
+    {
+        if (Vita.KernelProcess is { } kernel && !ReferenceEquals(kernel, this))
+        {
+            kernel.Hle.Modules.OfType<Hle.Modules.PluginFramework>().FirstOrDefault()?.ForgetProcess(Pid);
+        }
+
+        Hle.Modules.OfType<Hle.Modules.PluginFramework>().FirstOrDefault()?.ForgetProcess(Pid);
     }
 
     private bool ExportsPluginFramework(LoadedModule module) =>

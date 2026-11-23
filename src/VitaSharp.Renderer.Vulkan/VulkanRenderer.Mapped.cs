@@ -13,12 +13,19 @@ namespace VitaSharp.Renderer.Vulkan;
 /// render targets and depth surfaces to read rendered data with memory loads (downsampling, luminance, depth-aware
 /// effects). Shaders read them from one device buffer that mirrors guest CDRAM, where those surfaces live: render
 /// targets and depth surfaces are copied in (in guest layout) whenever they change, other CDRAM ranges come from
-/// guest memory. Ranges outside CDRAM go to a per-frame scratch area at the end of the same buffer.
+/// guest memory. Ranges outside CDRAM go to a per-frame scratch area at the end of the same buffer, except the ones
+/// programs store to (any memory mapped for the GPU, LPDDR included): those get a place of their own in the store
+/// area after the scratch, kept like the CDRAM ranges programs store to.
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
     private const uint CdramBytes = GuestMemory.CdramEnd - GuestMemory.CdramStart;
     private const uint ScratchBytes = 32 << 20;
+    /// <summary>Mirror space for memory outside CDRAM that programs store to (<see cref="StoreAreaFor"/>).</summary>
+    private const uint StoreAreaBytes = 16 << 20;
+    private const uint StoreAreaStart = CdramBytes + ScratchBytes;
+    /// <summary>The <see cref="_gpuWritten"/> delta of CDRAM ranges: their mirror offset is the address minus CDRAM's start.</summary>
+    private const uint CdramDelta = unchecked(0u - GuestMemory.CdramStart);
     private const int MappedWindowBytes = 1 << 20;
 
     private Buffer _mirror;
@@ -36,7 +43,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         InitMappedRangeLimit();
-        (_mirror, _mirrorMem) = _core.CreateDeviceBuffer((ulong)CdramBytes + ScratchBytes,
+        (_mirror, _mirrorMem) = _core.CreateDeviceBuffer(MirrorBytes,
             BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit | BufferUsageFlags.VertexBufferBit, MemCat.PipelineBuffer);
         // the last 256 bytes stay zero: slots bound to a null address read from there
         EndRendering();
@@ -105,7 +112,7 @@ public sealed unsafe partial class VulkanRenderer
         return ResolveMappedWindow(slots, data, addrs, writes);
     }
 
-    private const ulong MirrorBytes = (ulong)CdramBytes + ScratchBytes;
+    private const ulong MirrorBytes = (ulong)CdramBytes + ScratchBytes + StoreAreaBytes;
     private const uint NullSlot = uint.MaxValue;
     private ulong _mappedRangeLimit = ulong.MaxValue;
     private ulong _mappedRangeAlignment = 1;
@@ -166,7 +173,7 @@ public sealed unsafe partial class VulkanRenderer
 
             for (int i = 0; i < slots.Count; i++)
             {
-                if (offsets[i] != NullSlot && offsets[i] < CdramBytes)
+                if (offsets[i] != NullSlot && (offsets[i] < CdramBytes || offsets[i] >= StoreAreaStart))
                 {
                     offsets[i] = CopyMirrorToScratch(offsets[i], (uint)Math.Min(slots[i].DeclaredBytes, MappedWindowBytes));
                 }
@@ -223,7 +230,7 @@ public sealed unsafe partial class VulkanRenderer
     /// meshes this way: point draws whose vertex program stores the transformed vertices, then the draws of the meshes
     /// with those vertices as a stream.
     /// </summary>
-    private readonly SortedList<uint, (uint End, uint Stamp)> _gpuWritten = new();
+    private readonly SortedList<uint, (uint End, uint Stamp, uint Delta)> _gpuWritten = new();
     /// <summary>Shader writes into the mirror not yet made visible to later reads (barrier pending).</summary>
     private bool _mirrorWritesPending, _gpuWrittenStreamLogged;
 
@@ -266,7 +273,7 @@ public sealed unsafe partial class VulkanRenderer
         for (int i = _gpuWritten.Count - 1; i >= 0; i--)
         {
             uint s = _gpuWritten.Keys[i];
-            (uint e, uint stamp) = _gpuWritten.Values[i];
+            (uint e, uint stamp, uint delta) = _gpuWritten.Values[i];
             if (e <= start || s >= end)
             {
                 continue;
@@ -303,21 +310,22 @@ public sealed unsafe partial class VulkanRenderer
 
                     if (ps > keep)
                     {
-                        _gpuWritten[keep] = (ps, stamp);
+                        _gpuWritten[keep] = (ps, stamp, delta);
                     }
 
                     keep = pe;
                 }
                 if (e > keep)
                 {
-                    _gpuWritten[keep] = (e, stamp);
+                    _gpuWritten[keep] = (e, stamp, delta);
                 }
             }
         }
     }
 
-    /// <summary>Records [start, end) as written by a shader (merged with the ranges it touches).</summary>
-    private void NoteGpuWritten(uint start, uint end)
+    /// <summary>Records [start, end) as written by a shader (merged with the ranges it touches that have the same mirror
+    /// placement: <paramref name="delta"/> = mirror offset minus address, <see cref="CdramDelta"/> for CDRAM).</summary>
+    private void NoteGpuWritten(uint start, uint end, uint delta = CdramDelta)
     {
         if (_gpuWritten.Count >= 4096)
         {
@@ -325,9 +333,9 @@ public sealed unsafe partial class VulkanRenderer
         }
         // the merged range gets a new stamp: the CPU writes since the older ranges were stored count first
         uint lo = start, hi = end;
-        foreach ((uint s, (uint e, uint _)) in _gpuWritten)
+        foreach ((uint s, (uint e, uint _, uint d)) in _gpuWritten)
         {
-            if (e >= start && s <= end)
+            if (e >= start && s <= end && d == delta)
             {
                 lo = Math.Min(lo, s);
                 hi = Math.Max(hi, e);
@@ -343,7 +351,7 @@ public sealed unsafe partial class VulkanRenderer
         {
             uint s = _gpuWritten.Keys[i];
             uint e = _gpuWritten.Values[i].End;
-            if (e < start || s > end)
+            if (e < start || s > end || _gpuWritten.Values[i].Delta != delta)
             {
                 continue;
             }
@@ -353,9 +361,19 @@ public sealed unsafe partial class VulkanRenderer
             _gpuWritten.RemoveAt(i);
         }
         // stamped with the storing draw's scene end when known: the guest writes after it (the worker being behind)
-        // are later than the store; before the first such scene, the sweep now
+        // are later than the store. Before the first such scene, a sweep now: the writes made until here (the guest
+        // filling the buffer before the storing scene) get its epoch or an older one, the later ones the next. Stamped
+        // with the epoch of the last sweep instead, the first store of a session counted the writes made before it
+        // that sweep had not folded yet as later CPU writes, and later draws read the stale guest copy
         uint bound = GpuQueue.ReadBound;
-        _gpuWritten[start] = (end, bound != uint.MaxValue ? bound + 1 : DirtyPages.Epoch);
+        uint stamp = bound + 1;
+        if (bound == uint.MaxValue)
+        {
+            DirtyPages.Sweep();
+            stamp = DirtyPages.Epoch + 1;
+        }
+
+        _gpuWritten[start] = (end, stamp, delta);
         GpuQueue.SceneEndSweeps = true;
         _mirrorWritesPending = true;
         if (_diagActive != null)
@@ -367,13 +385,13 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>The mirror offset of a vertex stream that lies in shader-written memory, else -1 (read from guest memory).</summary>
     private long GpuWrittenStream(uint addr, uint length)
     {
-        if (_gpuWritten.Count == 0 || addr < GuestMemory.CdramStart || (ulong)addr + length > GuestMemory.CdramEnd)
+        if (_gpuWritten.Count == 0 || (ulong)addr + length > uint.MaxValue)
         {
             return -1;
         }
 
         ExpireGpuWritten(addr, addr + length, innerPages: length >= 3u << DirtyPages.PageShift);
-        foreach ((uint s, (uint e, uint _)) in _gpuWritten)
+        foreach ((uint s, (uint e, uint _, uint delta)) in _gpuWritten)
         {
             if (s > addr)
             {
@@ -388,12 +406,12 @@ public sealed unsafe partial class VulkanRenderer
                     _gpuWrittenStreamLogged = true;
                     Log.Info($"[gpu] vertex stream 0x{addr:X8} ({length} bytes) is read from memory a program stored to");
                 }
-                return addr - GuestMemory.CdramStart;
+                return unchecked(addr + delta);
             }
         }
         if (_diagActive != null)
         {
-            foreach ((uint s, (uint e, uint _)) in _gpuWritten)
+            foreach ((uint s, (uint e, uint _, uint _)) in _gpuWritten)
             {
                 if (s < addr + length && addr < e)
                 {
@@ -410,7 +428,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         uint end = addr + size, at = addr;
         ExpireGpuWritten(addr, end);
-        foreach ((uint s, (uint e, uint _)) in _gpuWritten)
+        foreach ((uint s, (uint e, uint _, uint _)) in _gpuWritten)
         {
             if (e <= at)
             {
@@ -464,15 +482,160 @@ public sealed unsafe partial class VulkanRenderer
 
             return addr - GuestMemory.CdramStart;
         }
-        if (writes)
+
+        uint size = (uint)Math.Min(Math.Min(declaredBytes, MappedWindowBytes), uint.MaxValue - addr);
+        // memory outside CDRAM that programs stored to (LPDDR mapped for the GPU): read from its store area
+        if (StoredOutsideCdram(addr, size) is { } stored)
         {
-            Log.WarnOnce("mapped-store-scratch", $"[gpu] a program stores to memory at 0x{addr:X8}, outside CDRAM: later draws do not see what it wrote");
+            if (writes)
+            {
+                NoteGpuWritten(addr, addr + size, unchecked(stored - addr));
+            }
+
+            return stored;
+        }
+        if (writes && StoreAreaFor(addr, size) is { } area)
+        {
+            return area;
         }
 
-        uint size = (uint)Math.Min(declaredBytes, MappedWindowBytes);
+        if (writes)
+        {
+            Log.WarnOnce("mapped-store-scratch", $"[gpu] a program stores to memory at 0x{addr:X8}, outside CDRAM, and the {StoreAreaBytes >> 20} MB store area is full: later draws do not see what it wrote");
+        }
+
         uint off = ReserveScratch(size);
         CopyGuestToMirror(addr, size, off);
+        OverlayStoredOutsideCdram(addr, size, off);
         return off;
+    }
+
+    /// <summary>A read of [<paramref name="addr"/>, + <paramref name="size"/>) copied from guest memory to mirror offset
+    /// <paramref name="offset"/>: the parts programs stored to (store-area ranges) replace the stale guest bytes.</summary>
+    private void OverlayStoredOutsideCdram(uint addr, uint size, uint offset)
+    {
+        uint end = addr + size;
+        foreach ((uint s, (uint e, uint _, uint delta)) in _gpuWritten)
+        {
+            if (delta == CdramDelta || s >= end || e <= addr)
+            {
+                continue;
+            }
+
+            uint from = Math.Max(s, addr), to = Math.Min(e, end);
+            BufferBarrier(_mirror, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
+                AccessFlags.ShaderWriteBit | AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit | AccessFlags.TransferWriteBit);
+            var region = new BufferCopy(unchecked(from + delta), offset + (from - addr), to - from);
+            _vk.CmdCopyBuffer(Cmd, _mirror, _mirror, 1, in region);
+            BufferBarrier(_mirror, PipelineStageFlags.TransferBit, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit,
+                AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit);
+        }
+    }
+
+    private uint _storeAreaUsed;
+    private bool _storeAreaLogged;
+
+    /// <summary>The mirror offset of [<paramref name="addr"/>, + <paramref name="size"/>) when one store-area range
+    /// outside CDRAM holds all of it (pages the CPU wrote since leave it first), else null.</summary>
+    private uint? StoredOutsideCdram(uint addr, uint size)
+    {
+        if (_gpuWritten.Count == 0)
+        {
+            return null;
+        }
+
+        ExpireGpuWritten(addr, addr + size);
+        foreach ((uint s, (uint e, uint _, uint delta)) in _gpuWritten)
+        {
+            if (s > addr)
+            {
+                break;
+            }
+
+            if (delta != CdramDelta && addr + size <= e)
+            {
+                return unchecked(addr + delta);
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// A program stores to [<paramref name="addr"/>, + <paramref name="size"/>) outside CDRAM: the range gets a place
+    /// in the mirror's store area that later draws read (mapped slots, vertex streams) until the CPU writes its pages,
+    /// as the CDRAM ranges programs store to. It starts with guest memory and what earlier stores left in the store-area
+    /// ranges it overlaps (which it replaces). Returns its mirror offset, null when the area is full (it starts over
+    /// at the next frame that fills it: the oldest stored data goes back to guest memory).
+    /// </summary>
+    private uint? StoreAreaFor(uint addr, uint size)
+    {
+        uint lo = addr, hi = addr + size;
+        bool grew = true;
+        while (grew)
+        {
+            grew = false;
+            foreach ((uint s, (uint e, uint _, uint delta)) in _gpuWritten)
+            {
+                if (delta != CdramDelta && s < hi && e > lo && (s < lo || e > hi))
+                {
+                    lo = Math.Min(lo, s);
+                    hi = Math.Max(hi, e);
+                    grew = true;
+                }
+            }
+        }
+        uint bytes = (hi - lo + 255) & ~255u;
+        if (bytes > StoreAreaBytes)
+        {
+            return null;
+        }
+
+        if (_storeAreaUsed + bytes > StoreAreaBytes)
+        {
+            // full: the ranges stored so far go back to guest memory and the area starts over (the copies below wait
+            // for the draws that read or wrote the old ranges)
+            for (int i = _gpuWritten.Count - 1; i >= 0; i--)
+            {
+                if (_gpuWritten.Values[i].Delta != CdramDelta)
+                {
+                    _gpuWritten.RemoveAt(i);
+                }
+            }
+            _storeAreaUsed = 0;
+            Log.WarnOnce("store-area-wrap", $"[gpu] the {StoreAreaBytes >> 20} MB store area for memory programs store to outside CDRAM is full: it starts over");
+            lo = addr;
+            hi = addr + size;
+            bytes = (size + 255) & ~255u;
+        }
+        uint area = StoreAreaStart + _storeAreaUsed;
+        _storeAreaUsed += bytes;
+        CopyGuestToMirror(lo, hi - lo, area);
+        for (int i = _gpuWritten.Count - 1; i >= 0; i--)
+        {
+            uint s = _gpuWritten.Keys[i];
+            (uint e, uint _, uint delta) = _gpuWritten.Values[i];
+            if (delta == CdramDelta || s >= hi || e <= lo)
+            {
+                continue;
+            }
+
+            // what the overlapped range's earlier stores left there (the guest copy is older)
+            BufferBarrier(_mirror, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
+                AccessFlags.ShaderWriteBit | AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit | AccessFlags.TransferWriteBit);
+            var region = new BufferCopy(unchecked(s + delta), area + (s - lo), e - s);
+            _vk.CmdCopyBuffer(Cmd, _mirror, _mirror, 1, in region);
+            BufferBarrier(_mirror, PipelineStageFlags.TransferBit, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit,
+                AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit);
+            _gpuWritten.RemoveAt(i);
+        }
+        NoteGpuWritten(lo, hi, unchecked(area - lo));
+        if (!_storeAreaLogged)
+        {
+            _storeAreaLogged = true;
+            Log.Info($"[gpu] a program stores to memory at 0x{addr:X8}, outside CDRAM: kept in the mirror's store area for later draws");
+        }
+
+        return area + (addr - lo);
     }
 
     private void CopyGuestToMirror(uint addr, uint size, uint mirrorOffset)

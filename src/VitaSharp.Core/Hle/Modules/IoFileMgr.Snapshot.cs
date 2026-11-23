@@ -8,7 +8,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// and position. File contents are the host's: what the game wrote after the save stays written (as on the console,
 /// saved data is not part of the machine state).
 /// </summary>
-[GenerateSnapshot, SnapshotIgnoreFields("_files", "_dirs", "_fios", "_guestMounts")]
+[GenerateSnapshot, SnapshotIgnoreFields("_files", "_dirs", "_fios", "_guestMounts", "_scheduler")]
 public sealed partial class IoFileMgr
 {
     void SaveExtra(SnapshotWriter w)

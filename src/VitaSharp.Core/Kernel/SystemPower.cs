@@ -38,7 +38,19 @@ public sealed class SystemPower : IDisposable
     /// <summary>Raised once when the system turns off: the session is over (the host closes the game).</summary>
     public event Action? PoweredOff;
 
+    /// <summary>
+    /// Raised once when the system reboots (kscePowerRequestSoftReset, the syscon's cold or soft reset): on the console
+    /// the syscon resets the application processor and the boot runs again, so everything in memory is gone and the
+    /// system starts from its boot target (the shell, or the title it was started with). The host ends this session
+    /// and boots a new one with the same target in the same window or screen, without closing the application.
+    /// </summary>
+    public event Action? Rebooted;
+
     private int _poweredOff;
+    private int _rebooted;
+
+    /// <summary>The system was asked to reboot (the session is ending to boot again).</summary>
+    public bool RebootRequested => Volatile.Read(ref _rebooted) != 0;
 
     /// <summary>Starts reading the POWER button from <paramref name="input"/> (the host's controller, port 0) on a host
     /// thread, which keeps running while the emulation is in standby.</summary>
@@ -185,6 +197,32 @@ public sealed class SystemPower : IDisposable
 
         Log.Info("[power] power off: the session ends");
         PoweredOff?.Invoke();
+    }
+
+    /// <summary>The system reboots: the session ends and the host boots the system again (<see cref="Rebooted"/>). A
+    /// host that cannot boot again (none listens) ends the session as at power off.</summary>
+    public void Reboot()
+    {
+        if (Volatile.Read(ref _poweredOff) != 0 || Interlocked.Exchange(ref _rebooted, 1) != 0)
+        {
+            return;
+        }
+
+        if (Suspended)
+        {
+            Resume();
+        }
+
+        Action? rebooted = Rebooted;
+        if (rebooted == null)
+        {
+            Log.Info("[power] reboot: no host boots the system again: the session ends");
+            PowerOff();
+            return;
+        }
+
+        Log.Info("[power] reboot: the session ends and the system boots again");
+        rebooted();
     }
 
     public void Dispose()

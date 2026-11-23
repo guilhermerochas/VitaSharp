@@ -220,11 +220,14 @@ public sealed partial class PowerKernel : HleModule
 
     // ------------------------------------------------------------------ requests
 
-    /// <summary>kscePowerRequestSoftReset(): the system reboot is not emulated: logged. 0.</summary>
-    [Hle(Nid = 0x2875994B, Library = "ScePowerForDriver", Default = true)]
+    /// <summary>kscePowerRequestSoftReset(): ScePower 3.74 sets the reset request (0x40) on its power thread, which
+    /// ends with the syscon's soft reset: the system reboots (<see cref="SystemPower.Reboot"/>: the session ends and
+    /// the host boots the system again). 0.</summary>
+    [Hle(Nid = 0x2875994B, Library = "ScePowerForDriver")]
     int kscePowerRequestSoftReset()
     {
-        Log.Warn("kscePowerRequestSoftReset (ignored: the system does not reboot)");
+        Log.Info("kscePowerRequestSoftReset: reboot");
+        Emu.Vita.Power.Reboot();
         return 0;
     }
 
@@ -375,9 +378,15 @@ public sealed partial class PowerKernel : HleModule
         return 0;
     }
 
-    /// <summary>kscePowerEncodeUBattery(): the battery authentication runs on the power thread with the security
-    /// processor; there is none to run: 0.</summary>
-    [Hle(Nid = 0x3951AF53, Library = "ScePowerForDriver", Default = true)]
+    /// <summary>
+    /// kscePowerEncodeUBattery (0x3951AF53; ScePower 3.74, decompiled, study only: it is not a battery call): waits for
+    /// the power request in flight. It polls the power thread's event flag and, when a request (bits 0x6F0: standby,
+    /// power off, reset, hibernate...) is set, waits for the thread to take it (0x20000) and finish it (0x40000); its
+    /// result is the wait's (0 with no request). Here each request is carried out by the call that makes it (the
+    /// standby, the power off and the reboot happen before that call returns to the guest), so no request is ever in
+    /// flight when a thread gets here: 0, as the firmware answers with none pending.
+    /// </summary>
+    [Hle(Nid = 0x3951AF53, Library = "ScePowerForDriver")]
     int kscePowerEncodeUBattery() => 0;
 
     // ------------------------------------------------------------------ the display brightness

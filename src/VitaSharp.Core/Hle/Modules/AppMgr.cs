@@ -178,8 +178,27 @@ public sealed partial class AppMgr : HleModule
     internal int sceAppMgrUmount(uint mountPoint)
     {
         if (mountPoint == 0) return ERR_NULL_POINTER;
-        string dev = GuestMemory.ReadCString(mountPoint, 16).TrimEnd(':');
-        lock (_mounts) if (!_mounts.Remove(dev)) return ERR_NOT_FOUND;
+        return Umount(GuestMemory.ReadCString(mountPoint, 16));
+    }
+
+    /// <summary>Takes away the mount named <paramref name="mountPoint"/> ("am100:" or "am100"), as sceAppMgrUmount
+    /// does: not one of this process's mounts 0x80802012.</summary>
+    internal int Umount(string mountPoint)
+    {
+        string dev = mountPoint.TrimEnd(':');
+        lock (_mounts)
+        {
+            if (!_mounts.Remove(dev))
+            {
+                return ERR_NOT_FOUND;
+            }
+
+            if (dev.Equals(_pspSaveRootDevice, StringComparison.OrdinalIgnoreCase))
+            {
+                _pspSaveRootDevice = null;
+            }
+        }
+
         Emu.Vfs.Unmount(dev);
         return 0;
     }

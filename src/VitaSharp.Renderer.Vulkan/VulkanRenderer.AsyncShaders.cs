@@ -479,7 +479,7 @@ public sealed unsafe partial class VulkanRenderer
         PredictedScene predictedScene = j.Scene;
         bool ms = predictedScene.Samples != SampleCountFlags.Count1Bit;
         ulong fsKey = j.Fk;
-        if (fsM.Gen.UsesFragColor && ms && s_msaaInputFetch && fsM.Gen.RawColorBits == 0)
+        if (fsM.Gen.UsesFragColor && ms && _msaaInputFetch && fsM.Gen.RawColorBits == 0)
         {
             fsM = ModuleFor(j.Fs, j.FetchKey, j.FetchHints);
             fsKey = j.FetchKey;

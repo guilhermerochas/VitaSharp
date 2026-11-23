@@ -13,11 +13,14 @@ public sealed class PfsTable(uint salt, uint numSectors, uint sectorSize, byte[]
     public uint SectorSize { get; } = sectorSize;
     internal byte[] TweakKey { get; } = tweakKey;
 
+    /// <summary>The key of the table's sector ICVs (HMAC-SHA1), derived from the licence's key.</summary>
+    internal byte[] SigKey { get; } = sigKey;
+
     /// <summary>The file's first sector (still encrypted; up to <see cref="SectorSize"/> bytes) matches this table's first ICV.</summary>
     public bool Matches(ReadOnlySpan<byte> head)
     {
         Span<byte> mac = stackalloc byte[20];
-        HMACSHA1.HashData(sigKey, head, mac);
+        HMACSHA1.HashData(SigKey, head, mac);
         return mac.SequenceEqual(firstIcv);
     }
 }
@@ -134,6 +137,17 @@ public sealed class PfsSectorCipher
     /// </summary>
     public void Decrypt(Span<byte> data, long fileOffset)
     {
+        Crypt(data, fileOffset, encrypt: false);
+    }
+
+    /// <summary>The inverse of <see cref="Decrypt"/> (how the image was made): builds PFS images for the tests.</summary>
+    internal void Encrypt(Span<byte> data, long fileOffset)
+    {
+        Crypt(data, fileOffset, encrypt: true);
+    }
+
+    private void Crypt(Span<byte> data, long fileOffset, bool encrypt)
+    {
         Span<byte> iv = stackalloc byte[16];
         Span<byte> next = stackalloc byte[16];
         Span<byte> ks = stackalloc byte[16];
@@ -150,7 +164,12 @@ public sealed class PfsSectorCipher
             }
 
             int aligned = buf.Length & ~15;
-            if (aligned > 0)
+            if (aligned > 0 && encrypt)
+            {
+                _aes.EncryptCbc(buf[..aligned], iv, buf[..aligned], PaddingMode.None);
+                buf.Slice(aligned - 16, 16).CopyTo(iv);
+            }
+            else if (aligned > 0)
             {
                 buf.Slice(aligned - 16, 16).CopyTo(next);
                 _aes.DecryptCbc(buf[..aligned], iv, buf[..aligned], PaddingMode.None);

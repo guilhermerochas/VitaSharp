@@ -356,7 +356,7 @@ public sealed partial class IoFileMgr
 
     /// <summary>NID_A39A9CA7(path, ?, 0, 0): vfsRmdev of <paramref name="path"/> with flags 1 (iofilemgr 3.74
     /// 0x81019440 builds { path, 1 }); a third or fourth argument that is not 0 is 0x80010016.</summary>
-    [Hle(Nid = 0xA39A9CA7, Library = "SceIofilemgrForDriver", Default = true)]
+    [Hle(Nid = 0xA39A9CA7, Library = "SceIofilemgrForDriver")]
     int ksceIofilemgr_A39A9CA7(uint path, uint second, uint third, uint fourth)
     {
         if (third != 0 || fourth != 0)

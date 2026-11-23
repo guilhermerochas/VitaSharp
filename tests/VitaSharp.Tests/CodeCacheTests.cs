@@ -573,6 +573,68 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
     }
 
     [Fact]
+    public void TheBootStepReportsItsProgressToTheGameScreenAndAlwaysItsEnd()
+    {
+        if (!NativeHost)
+        {
+            return; // native code runs in this dispatcher only on an x64 or ARM64 host
+        }
+
+        uint code = fixture.Memory.Alloc(0x1000, "codecache report");
+        WriteProgram(code);
+        var seen = new List<CodePrecompileProgress>();
+        void OnReported(CodePrecompileProgress progress)
+        {
+            lock (seen)
+            {
+                seen.Add(progress);
+            }
+        }
+
+        CodePrecompileLog.Reported += OnReported;
+        try
+        {
+            WithNative(() =>
+            {
+                // the boot step as Emulator.PrecompileCode runs it: progress while it waits, then the end
+                var codeCache = new CodeCache(null, new BlockCache());
+                codeCache.ModuleLoaded(Module(code, 11));
+                var reporter = new CodePrecompileLog.Reporter();
+                codeCache.PrecompilePending(reporter.Progress, CancellationToken.None, workers: 2);
+                reporter.End();
+                codeCache.Stop();
+                lock (seen)
+                {
+                    Assert.NotEmpty(seen);
+                    Assert.True(seen[^1].Finished);
+                    Assert.Single(seen, p => p.Finished);
+                    seen.Clear();
+                }
+
+                // cancelled before it starts (the banner's "Cancelar"): the end is still reported, once
+                var cancelledCache = new CodeCache(null, new BlockCache());
+                cancelledCache.ModuleLoaded(Module(code, 12));
+                using var cancel = new CancellationTokenSource();
+                cancel.Cancel();
+                var cancelledReporter = new CodePrecompileLog.Reporter();
+                cancelledCache.PrecompilePending(cancelledReporter.Progress, cancel.Token, workers: 2);
+                cancelledReporter.End();
+                cancelledCache.Stop();
+                lock (seen)
+                {
+                    Assert.NotEmpty(seen);
+                    Assert.True(seen[^1].Finished);
+                    Assert.Single(seen, p => p.Finished);
+                }
+            });
+        }
+        finally
+        {
+            CodePrecompileLog.Reported -= OnReported;
+        }
+    }
+
+    [Fact]
     public void TheBootStepWaitsForTheFirstRecordedBlocksOnly()
     {
         // with a code cache, the first BootCachedBlocks recorded blocks (in the order they first ran) are enough to

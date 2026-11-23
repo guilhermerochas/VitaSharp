@@ -60,8 +60,9 @@ public sealed class NetworkSettings
     public bool RpcnEditable => RealInternet && PsnSignedIn;
 
     /// <summary>The values for EmulatorOptions.Psn / Net / Rpcn. An RPCN server needs a user and a password;
-    /// without them Score/TUS stay on the local services.</summary>
-    public (PsnAccount Psn, NetConfig Net, RpcnConfig? Rpcn) ToOptions(string rpcnPassword)
+    /// without them Score/TUS stay on the local services. <paramref name="netAllow"/> is VITASHARP_NET_ALLOW (env.txt):
+    /// with real internet, only those hosts are reachable, as the desktop's --net-allow.</summary>
+    public (PsnAccount Psn, NetConfig Net, RpcnConfig? Rpcn) ToOptions(string rpcnPassword, string? netAllow = null)
     {
         RpcnConfig? rpcn = null;
         if (RpcnEditable && RpcnConfig.ParseServer(RpcnServer) is { } server && RpcnUser.Length > 0 && rpcnPassword.Length > 0)
@@ -71,6 +72,6 @@ public sealed class NetworkSettings
         // with an RPCN server the online ID is the RPCN user (as on the desktop)
         string? id = rpcn != null && PsnAccount.IsValidOnlineId(rpcn.User) ? rpcn.User
             : PsnAccount.IsValidOnlineId(PsnOnlineId) ? PsnOnlineId : null;
-        return (PsnAccount.Create(PsnSignedIn, id, PsnLocalServices), new NetConfig(RealInternet ? NetMode.Real : NetMode.Off), rpcn);
+        return (PsnAccount.Create(PsnSignedIn, id, PsnLocalServices), new NetConfig(RealInternet ? NetMode.Real : NetMode.Off, netAllow?.Split(',')), rpcn);
     }
 }

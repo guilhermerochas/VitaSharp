@@ -2,6 +2,7 @@ using VitaSharp.Core.Hle;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Loader;
+using VitaSharp.Core.Util;
 using Mutex = VitaSharp.Core.Kernel.Mutex;
 using Semaphore = VitaSharp.Core.Kernel.Semaphore;
 
@@ -17,7 +18,7 @@ internal static class KernelSnapshot
     internal const string Thread = "thread", Sema = "sema", Evf = "evf", Mtx = "mutex", Cond = "cond", Pipe = "msgpipe",
         Rw = "rwlock", Cb = "callback", Timer = "timer", SEvent = "simpleevent", ThEvent = "threadevent",
         Block = "memblock", Async = "ioasync", Process = "process", App = "app", Module = "module", Data = "kerneldata",
-        PluginHook = "pluginhook", PluginInjection = "plugininject", UltRecord = "ult";
+        PluginHook = "pluginhook", PluginInjection = "plugininject", PluginShell = "pluginshell", UltRecord = "ult";
 
     /// <summary>The record kind of each type of kernel object the table can hold (the first entry the type is or derives
     /// from). Every concrete KernelObject has one (KernelSnapshotCoverageTests), except the ones marked
@@ -43,6 +44,7 @@ internal static class KernelSnapshot
         (typeof(KernelData), Data),
         (typeof(PluginFramework.HookPatch), PluginHook),
         (typeof(PluginFramework.Injection), PluginInjection),
+        (typeof(PluginFramework.FirmwareUserShell), PluginShell),
         (typeof(Ult.UltObject), UltRecord),
     ];
 
@@ -134,9 +136,10 @@ internal static class KernelSnapshot
                     w.Write(d.References);
                     break;
                 case IoAsyncOp a:
-                    if (!a.Done)
+                    if (!a.Done && a.State is not IoAsyncState.InDevice)
                     {
-                        throw new SnapshotException("an asynchronous I/O request is in flight");
+                        // its host work is not done yet: the state waits for it (the I/O scheduler is not held)
+                        throw new SnapshotRetryException("an asynchronous I/O request is being served");
                     }
 
                     w.Write(a.Fd);
@@ -144,12 +147,24 @@ internal static class KernelSnapshot
                     w.Write(a.Cancelled);
                     w.Write(a.Pattern);
                     w.Write(a.UserData);
+                    // a request in the device (its result known, its completion time ahead): it completes after the
+                    // load at the same guest time (states of builds before this have none)
+                    w.Write(!a.Done);
+                    if (!a.Done)
+                    {
+                        w.Write(GuestClock.ToMicroseconds(a.DueTicks));
+                        w.Write(a.Param);
+                    }
+
                     break;
                 case PluginFramework.HookPatch hook:
                     hook.Save(w);
                     break;
                 case PluginFramework.Injection injection:
                     injection.Save(w);
+                    break;
+                case PluginFramework.FirmwareUserShell shell:
+                    shell.Save(w);
                     break;
                 case Ult.UltObject ultObject:
                     ultObject.Save(w);
@@ -473,14 +488,28 @@ internal static class KernelSnapshot
                     o = new KernelData { Name = name, Kind = b.ReadStringNotNull(), Address = b.ReadUInt32(), Size = b.ReadUInt32(), Aux = b.ReadUInt32(), References = b.ReadInt32() };
                     break;
                 case Async:
-                    o = new IoAsyncOp
+                {
+                    var op = new IoAsyncOp
                     { Name = name, Fd = b.ReadInt32(), Result = b.ReadInt64(), Done = true, Cancelled = b.ReadBool(), Pattern = b.ReadUInt32(), UserData = b.ReadUInt64() };
+                    if (!b.AtEnd && b.ReadBool())
+                    {
+                        op.Done = false;
+                        op.State = IoAsyncState.InDevice;
+                        op.DueTicks = GuestClock.FromMicroseconds(b.ReadInt64());
+                        op.Param = b.ReadUInt32();
+                    }
+
+                    o = op;
                     break;
+                }
                 case PluginHook:
                     o = PluginFramework.HookPatch.Load(b, name);
                     break;
                 case PluginInjection:
                     o = PluginFramework.Injection.Load(b, name);
+                    break;
+                case PluginShell:
+                    o = PluginFramework.FirmwareUserShell.Load(b, name);
                     break;
                 case UltRecord:
                     o = Ult.LoadObject(b, name);

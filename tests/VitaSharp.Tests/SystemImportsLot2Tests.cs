@@ -251,12 +251,15 @@ public sealed class SystemImportsLot2Tests(GuestMemoryFixture fixture) : IDispos
         Assert.Equal(0, Call(u, "AppUtilPspSaveDataRootMount", 0xCA, mount));
         string first = GuestMemory.ReadCString(mount, 16);
         Assert.NotEqual("", first);
+        Assert.True(_harness.Emu.Vfs.IsMounted(first.TrimEnd(':'))); // a mount of SceAppMgr's, not a folder path
         uint second = _harness.Alloc(16);
         Assert.Equal(unchecked((int)0x80100603), Call(u, "AppUtilPspSaveDataRootMount", 0xCA, second));
         Assert.Equal(first, GuestMemory.ReadCString(second, 16));
         Assert.Equal(AppUtil.ERR_PARAMETER, Call(u, "AppUtilPspSaveDataRootUmount", 0));
         Assert.Equal(0, Call(u, "AppUtilPspSaveDataRootUmount", 0xCA));
+        Assert.True(_harness.Emu.Vfs.IsMounted(first.TrimEnd(':'))); // one user left
         Assert.Equal(0, Call(u, "AppUtilPspSaveDataRootUmount", 0xCA));
+        Assert.False(_harness.Emu.Vfs.IsMounted(first.TrimEnd(':')));
         Assert.Equal(AppUtil.ERR_NOT_MOUNTED, Call(u, "AppUtilPspSaveDataRootUmount", 0xCA)); // nothing left to unmount
     }
 

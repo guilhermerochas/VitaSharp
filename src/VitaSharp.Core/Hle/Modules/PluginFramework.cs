@@ -82,9 +82,10 @@ public sealed partial class PluginFramework : HleModule
 
     // ------------------------------------------------------------------ modules
 
-    /// <summary>The modules of <paramref name="pid"/> newest first (the framework walks the firmware's module list from
-    /// its end), or null for an unknown process.</summary>
-    List<LoadedModule>? ModulesNewestFirst(int pid)
+    /// <summary>The modules of <paramref name="pid"/> oldest first: a user process's firmware modules the HLE serves
+    /// (<see cref="ShellsOf"/>, preloaded before everything else), then its loaded modules; null for an unknown
+    /// process.</summary>
+    List<LoadedModule>? ModulesOldestFirst(int pid)
     {
         List<LoadedModule>? modules = KernelSpace.ModulesOf(Emu, pid);
         if (modules == null)
@@ -92,7 +93,21 @@ public sealed partial class PluginFramework : HleModule
             return null;
         }
 
-        modules.Reverse();
+        List<LoadedModule> shells = ShellsOf(pid);
+        if (shells.Count > 0)
+        {
+            modules.InsertRange(0, shells);
+        }
+
+        return modules;
+    }
+
+    /// <summary>The modules of <paramref name="pid"/> newest first (the framework walks the firmware's module list from
+    /// its end), or null for an unknown process.</summary>
+    List<LoadedModule>? ModulesNewestFirst(int pid)
+    {
+        List<LoadedModule>? modules = ModulesOldestFirst(pid);
+        modules?.Reverse();
         return modules;
     }
 
@@ -215,7 +230,7 @@ public sealed partial class PluginFramework : HleModule
             return ErrorInvalidArgs;
         }
 
-        if (KernelSpace.ModulesOf(Emu, pid)?.FirstOrDefault(m => m.Uid == moduleId) is not { } module)
+        if (ModulesOldestFirst(pid)?.FirstOrDefault(m => m.Uid == moduleId) is not { } module)
         {
             return SceError.INVALID_PID;
         }
@@ -248,11 +263,13 @@ public sealed partial class PluginFramework : HleModule
     }
 
     /// <summary>The entry of export <paramref name="functionNid"/> of library <paramref name="libraryNid"/> (any:
-    /// 0xFFFFFFFF) in a module's export table.</summary>
-    int ExportFunction(int pid, uint namePtr, uint libraryNid, uint functionNid, out uint function)
+    /// 0xFFFFFFFF) in a module's export table; <paramref name="exportLibNid"/> is the library it was found in.</summary>
+    int ExportFunction(int pid, uint namePtr, uint libraryNid, uint functionNid, out uint function, out uint exportLibNid)
     {
         function = 0;
+        exportLibNid = 0;
         string? name = namePtr == 0 ? null : GuestMemory.ReadCString(namePtr, MaxNameLength);
+        using ProcessScope.Scope space = EnterPatchSpace(pid);
         if (FindModule(pid, name, IgnoreNid, out LoadedModule? module) != Success)
         {
             return ErrorNotFound;
@@ -277,6 +294,7 @@ public sealed partial class PluginFramework : HleModule
                     if (GuestMemory.R32(nids + i * 4) == functionNid)
                     {
                         function = GuestMemory.R32(entries + i * 4);
+                        exportLibNid = GuestMemory.R32(entry + 0x10);
                         return Success;
                     }
                 }
@@ -297,7 +315,7 @@ public sealed partial class PluginFramework : HleModule
             return 0;
         }
 
-        int result = ExportFunction(pid, namePtr, libraryNid, functionNid, out uint function);
+        int result = ExportFunction(pid, namePtr, libraryNid, functionNid, out uint function, out _);
         if (result == Success)
         {
             GuestMemory.W32(functionOut, function);
@@ -320,7 +338,7 @@ public sealed partial class PluginFramework : HleModule
             return ErrorUserMemory;
         }
 
-        int result = ExportFunction(Emu.Pid, namePtr, libraryNid, functionNid, out uint function);
+        int result = ExportFunction(Emu.Pid, namePtr, libraryNid, functionNid, out uint function, out _);
         if (result == Success)
         {
             GuestMemory.W32(functionOut, function);
@@ -346,6 +364,21 @@ public sealed partial class PluginFramework : HleModule
     int ModuleImportStub(int pid, uint namePtr, uint libraryNid, uint functionNid, uint stubOut)
     {
         string? name = namePtr == 0 ? null : GuestMemory.ReadCString(namePtr, MaxNameLength);
+        uint stub = 0;
+        int result = ImportStubOf(pid, name, libraryNid, functionNid, ref stub);
+        if (result == Success)
+        {
+            GuestMemory.W32(stubOut, stub);
+        }
+
+        return result;
+    }
+
+    /// <summary>The import stub of a function in a module's import table of process <paramref name="pid"/> (read in
+    /// its address space).</summary>
+    int ImportStubOf(int pid, string? name, uint libraryNid, uint functionNid, ref uint stub)
+    {
+        using ProcessScope.Scope space = EnterPatchSpace(pid);
         if (FindModule(pid, name, IgnoreNid, out LoadedModule? module) != Success)
         {
             return ErrorNotFound;
@@ -388,7 +421,7 @@ public sealed partial class PluginFramework : HleModule
                 {
                     if (GuestMemory.R32(nids + i * 4) == functionNid)
                     {
-                        GuestMemory.W32(stubOut, GuestMemory.R32(stubs + i * 4));
+                        stub = GuestMemory.R32(stubs + i * 4);
                         return Success;
                     }
                 }
@@ -407,7 +440,15 @@ public sealed partial class PluginFramework : HleModule
     /// another patch of the process is refused. Returns the injection's UID.</summary>
     int Inject(int pid, uint destination, uint source, uint size)
     {
-        if (size == 0 || !KernelSpace.IsMappedRange(destination, size) || !KernelSpace.IsMappedRange(source, size))
+        // the source is read in the caller's address space, the destination written in the process's
+        if (size == 0 || !KernelSpace.IsMappedRange(source, size))
+        {
+            return ErrorInvalidArgs;
+        }
+
+        byte[] data = GuestMemory.ReadSpan(source, (int)size).ToArray();
+        using ProcessScope.Scope space = EnterPatchSpace(pid);
+        if (!KernelSpace.IsMappedRange(destination, size))
         {
             return ErrorInvalidArgs;
         }
@@ -437,12 +478,25 @@ public sealed partial class PluginFramework : HleModule
                 }
             }
 
-            GuestMemory.Copy(destination, source, size);
+            data.CopyTo(GuestMemory.Span(destination, (int)size));
             int uid = K.Objects.Register(injection);
             _injections.Add(injection);
             InvalidateEverywhere(destination, size);
             return uid;
         }
+    }
+
+    /// <summary>Makes the address space of process <paramref name="pid"/> the one guest memory accesses use: the
+    /// framework makes a patch of a process in that process's memory (it switches to the process's address space), and
+    /// a patch of the kernel in the caller's (kernel memory is mapped in every process).</summary>
+    ProcessScope.Scope EnterPatchSpace(int pid)
+    {
+        if (pid != KernelSpace.KernelPid && KernelSpace.ProcessOf(Emu, pid) is { } process)
+        {
+            return ProcessScope.Enter(process);
+        }
+
+        return ProcessScope.Enter(Emu);
     }
 
     void InvalidateEverywhere(uint address, uint size)
@@ -465,6 +519,7 @@ public sealed partial class PluginFramework : HleModule
                 return ErrorSystem;
             }
 
+            using ProcessScope.Scope space = EnterPatchSpace(injection.Pid);
             injection.Saved.CopyTo(GuestMemory.Span(injection.Address, injection.Saved.Length));
             K.Objects.Remove(uid);
             InvalidateEverywhere(injection.Address, (uint)injection.Saved.Length);

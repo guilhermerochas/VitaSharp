@@ -161,7 +161,7 @@ public sealed class PluginHookTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(0, Call(Framework, "ModuleGetImportFunc", KernelSpace.KernelPid, _harness.Str("HookTarget"), ThreadmgrForDriver, GetThreadId, stubOut));
         uint stub = GuestMemory.R32(stubOut);
         uint hookRef = _harness.Word(0);
-        int uid = Convert.ToInt32(Invoke(Framework, "HookAbsolute", KernelSpace.KernelPid, hookRef, stub, hooks[0], GetThreadId));
+        int uid = Convert.ToInt32(Invoke(Framework, "HookAbsolute", KernelSpace.KernelPid, hookRef, stub, hooks[0], ThreadmgrForDriver, GetThreadId));
         Assert.True(uid > 0, $"hook returned 0x{uid:X8}");
 
         // a module loaded after the hook imports the same function: its stub runs the hook too
