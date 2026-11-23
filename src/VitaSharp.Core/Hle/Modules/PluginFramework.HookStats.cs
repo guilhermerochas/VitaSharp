@@ -81,20 +81,60 @@ internal sealed partial class PluginHookStats
         return emu.Vita is { } vita ? vita.PluginHooks : s_own.GetValue(emu, _ => new PluginHookStats());
     }
 
+    const string EventName = "PluginFramework:hookEvent";
+    const string ReturnName = "PluginFramework:hookReturn";
+
+    /// <summary>The first version's name of <see cref="OnEvent"/> (its states' stubs call it until the load replaces
+    /// them).</summary>
+    const string EventNameV1 = "PluginFramework:hookFirstEvent";
+
+    /// <summary>Every process declares the stubs' host functions when it starts (<see cref="PluginFramework.Initialize"/>),
+    /// so a save state with hooks loads in a session that has none yet.</summary>
+    internal void Declare(Emulator emu)
+    {
+        emu.Hle.DeclareSharedHostFunction(EventName, OnEvent);
+        emu.Hle.DeclareSharedHostFunction(EventNameV1, OnEvent);
+        emu.Hle.DeclareSharedHostFunction(ReturnName, OnReturn);
+    }
+
     /// <summary>The SVC numbers of <see cref="OnEvent"/> and <see cref="OnReturn"/> in every process of
-    /// <paramref name="emu"/>'s system (registered on the first hook).</summary>
+    /// <paramref name="emu"/>'s system: those its registry has (a loaded state's), else new ones.</summary>
     internal (uint Event, uint Return) SvcIndexes(Emulator emu)
     {
         lock (_lock)
         {
             if (_svc == 0)
             {
-                _svc = emu.Hle.RegisterSharedHostFunction("PluginFramework:hookEvent", OnEvent);
-                _returnSvc = emu.Hle.RegisterSharedHostFunction("PluginFramework:hookReturn", OnReturn);
+                _svc = IndexOf(emu, EventName) ?? emu.Hle.RegisterSharedHostFunction(EventName, OnEvent);
+                _returnSvc = IndexOf(emu, ReturnName) ?? emu.Hle.RegisterSharedHostFunction(ReturnName, OnReturn);
             }
 
             return (_svc, _returnSvc);
         }
+    }
+
+    /// <summary>A save state was loaded: the SVC numbers are looked up again (the state's table is the one now).</summary>
+    internal void ForgetSvcIndexes()
+    {
+        lock (_lock)
+        {
+            _svc = 0;
+            _returnSvc = 0;
+        }
+    }
+
+    static uint? IndexOf(Emulator emu, string name)
+    {
+        IReadOnlyList<HleFunction> functions = emu.Hle.Functions;
+        for (int i = 1; i < functions.Count; i++)
+        {
+            if (functions[i].Nid == 0 && functions[i].Library == "host" && functions[i].Name == name)
+            {
+                return (uint)i;
+            }
+        }
+
+        return null;
     }
 
     internal Entry Add(Entry entry)

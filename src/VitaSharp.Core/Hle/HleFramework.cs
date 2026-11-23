@@ -383,6 +383,21 @@ public sealed partial class HleRegistry : IImportResolver
         return (uint)Indexes.NewSharedHostIndex(name, body);
     }
 
+    /// <summary>Declares a shared host function by name (no index yet): a save state that calls it finds it on load.</summary>
+    public void DeclareSharedHostFunction(string name, Action<HleContext> body)
+    {
+        Indexes.DeclareSharedHost(name, body);
+    }
+
+    /// <summary>The record of a shared host function in this registry: the emulator's own code (no firmware function),
+    /// so r0 is not an error code, and it charges no more guest time than a few instructions.</summary>
+    static HleFunction SharedHostRecord(string name, Action<HleContext> body)
+    {
+        var shared = new HleFunction { Nid = 0, Name = name, Library = "host", Invoke = body, ReturnsValue = true };
+        shared.SetCost(HleCost.UserInline);
+        return shared;
+    }
+
     /// <summary>Puts <paramref name="function"/> at <paramref name="index"/>, the slots before it unbound.</summary>
     void Place(int index, HleFunction function)
     {
@@ -569,10 +584,7 @@ public sealed partial class HleRegistry : IImportResolver
             {
                 lock (_functions)
                 {
-                    // the emulator's own code (no firmware function): r0 is not an error code, and it charges no
-                    // more guest time than a few instructions
-                    var shared = new HleFunction { Nid = 0, Name = name, Library = "host", Invoke = body, ReturnsValue = true };
-                    shared.SetCost(HleCost.UserInline);
+                    HleFunction shared = SharedHostRecord(name, body);
                     Place((int)index, shared);
                     return shared;
                 }

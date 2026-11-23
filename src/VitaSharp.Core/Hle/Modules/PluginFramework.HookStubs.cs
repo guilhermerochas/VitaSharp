@@ -8,7 +8,7 @@ public sealed partial class PluginFramework
 {
     // the stub: 36 words entering the hook, 26 continuing to the original, 8 words of data, then the return words of
     // the traced calls (one SVC each: the hook's returns, then the original's) and their saved lr
-    const int StubOldWord = 36;
+    internal const int StubOldWord = 36;
     internal const int StubDataWord = 62;
     internal const int StubReturnWord = 70;
 
@@ -27,6 +27,12 @@ public sealed partial class PluginFramework
     const int StubDataWordV1 = 54;
 
     PluginHookStats Stats => PluginHookStats.Of(Emu);
+
+    /// <summary>The counting stubs' host functions are declared in every process (a save state with hooks names them).</summary>
+    public override void Initialize()
+    {
+        Stats.Declare(Emu);
+    }
 
     /// <summary>The size of a stub tracing <paramref name="traced"/> calls.</summary>
     static uint StubSize(int traced)
@@ -272,6 +278,7 @@ public sealed partial class PluginFramework
     void RestoreCountingStubs()
     {
         Stats.RemoveOwnedBy(Emu);
+        Stats.ForgetSvcIndexes();
         foreach (HookPatch patch in _hooks)
         {
             using ProcessScope.Scope space = EnterPatchSpace(patch.Pid);
