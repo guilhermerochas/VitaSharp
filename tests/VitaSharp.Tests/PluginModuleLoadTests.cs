@@ -54,14 +54,24 @@ public sealed class PluginModuleLoadTests(GuestMemoryFixture fixture) : IDisposa
     private static uint[] Recorder(byte status) =>
         [0xE5912000, 0xE58F000C, 0xE58F100C, 0xE58F200C, 0xE3A00000u | status, 0xE12FFF1E, 0, 0, 0];
 
+    /// <summary>
+    /// A32 code that records r0 (args) and r1 (argp) in the buffer whose address is the first word at argp, and returns
+    /// <paramref name="status"/>: ldr r2,[r1]; str r0,[r2]; str r1,[r2,#4]; mov r0,#status; bx lr. For a call that also
+    /// unloads the module: what it saw must outlive the module's memory, which the unload frees (freed kernel memory
+    /// reads zeros on Linux and Android, where the pages are punched out of the shared memory file).
+    /// </summary>
+    private static uint[] RecorderToArgpBuffer(byte status) =>
+        [0xE5912000, 0xE5820000, 0xE5821004, 0xE3A00000u | status, 0xE12FFF1E];
+
     private sealed record Probe(string Path, SceModuleBuilder Builder, int StartFunction, int StopFunction);
 
-    /// <summary>The synthetic kernel module, written to ux0:app/TAIMOD000/kmod.skprx (an application's own folder).</summary>
-    private static Probe WriteProbe(HleHarness harness, string file = "kmod.skprx", byte startStatus = 0)
+    /// <summary>The synthetic kernel module, written to ux0:app/TAIMOD000/kmod.skprx (an application's own folder);
+    /// <paramref name="stopRecordsToArgpBuffer"/>: module_stop is <see cref="RecorderToArgpBuffer"/>.</summary>
+    private static Probe WriteProbe(HleHarness harness, string file = "kmod.skprx", byte startStatus = 0, bool stopRecordsToArgpBuffer = false)
     {
         var builder = new SceModuleBuilder("TaiProbeKernel");
         int start = builder.Arm(Recorder(startStatus));
-        int stop = builder.Arm(Recorder(StopStatus));
+        int stop = builder.Arm(stopRecordsToArgpBuffer ? RecorderToArgpBuffer(StopStatus) : Recorder(StopStatus));
         builder.StartWith(start).StopWith(stop);
         string dir = Path.Combine(harness.Root, "ux0", "app", "TAIMOD000");
         Directory.CreateDirectory(dir);
@@ -98,7 +108,7 @@ public sealed class PluginModuleLoadTests(GuestMemoryFixture fixture) : IDisposa
     {
         HleHarness harness = Harness();
         PluginFramework framework = harness.Module<PluginFramework>();
-        Probe probe = WriteProbe(harness);
+        Probe probe = WriteProbe(harness, stopRecordsToArgpBuffer: true);
         harness.OnGuest(_ =>
         {
             uint args = ModuleArgs(harness, 8, 0xCAFEF00D);
@@ -113,14 +123,18 @@ public sealed class PluginModuleLoadTests(GuestMemoryFixture fixture) : IDisposa
             Assert.NotEqual(GuestMemory.R32(args + 0xC), argp);
             Assert.False(KernelSpace.IsUserRange(argp, 8));
 
-            // module_stop gets its own arguments, *res its status, and the module goes
+            // module_stop gets its own arguments (their first word: where it records them, since the module's memory
+            // goes with the unload), *res its status, and the module goes
             uint res = harness.Word(0xFFFFFFFF);
-            uint stopArgs = ModuleArgs(harness, 4, 0x5709);
+            uint stopRecord = harness.Alloc(8);
+            GuestMemory.W32(stopRecord, 0);
+            GuestMemory.W32(stopRecord + 4, 0);
+            uint stopArgs = ModuleArgs(harness, 4, stopRecord);
             Assert.Equal(0, Call(framework, "StopUnloadKernelModuleForUser", uid, stopArgs, 0u, res));
             Assert.Equal((uint)StopStatus, GuestMemory.R32(res));
-            (uint stopLength, uint stopArgp, uint stopWord) = Recorded(module, probe, probe.StopFunction);
+            uint stopLength = GuestMemory.R32(stopRecord), stopArgp = GuestMemory.R32(stopRecord + 4);
             Assert.Equal(4u, stopLength);
-            Assert.Equal(0x5709u, stopWord);
+            Assert.NotEqual(GuestMemory.R32(stopArgs + 0xC), stopArgp);
             Assert.False(KernelSpace.IsUserRange(stopArgp, 4));
             Assert.Null(KernelModule(harness, uid));
         });
