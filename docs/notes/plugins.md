@@ -55,7 +55,11 @@ modules of a section load in file order, and one that fails does not stop the ot
   the firmware's module manager does. The log says what happened to each one (`kernel plugin ...: loaded and started`,
   `... module_start of X returned 0x2, unloaded`).
 - `*KERNEL` modules load once, into the kernel process: the one kernel of the system, made at boot (with the shell, or with
-  the first game when no shell runs), as the plugin loader loads them at boot on the Vita. Every process sees them: the
+  the first game when no shell runs), as the plugin loader loads them at boot on the Vita. They load at the system's boot,
+  before the first program's launch starts and whatever the title is, so a launch that then fails (an app0 that does not
+  mount, a PSM title without its runtime) still has them loaded; the log says `kernel plugins: N of M loaded and started
+  at system boot, before any application is launched`, and the recordings' plugin lines end with `system boot` (a user
+  module with `with process TITLEID`). Every process sees them: the
   shell, an application the shell opens next to it, the program a LoadExec starts. They stay until the system ends; a
   kernel module a program loads (the kernel module manager) is the kernel's too and outlives that program.
 - Kernel code's process event handlers (`ksceKernelRegisterProcEventHandler`) are called as the firmware's process
@@ -237,6 +241,18 @@ to a process this way (Adrenaline's kernel module adds its user module to the PS
 shell starts by path (sceAppMgrLaunchAppByPath4, the firmware's PSP emulator vs0:app/NPXS10028) has the title the
 launch names as its process title (ksceKernelGetProcessTitleId, the plugin configuration's section): the title of the
 bubble the shell opened.
+
+### The launch's app0 mount
+
+An application folder that is still a PFS image is mounted as SceAppMgr 3.74 mounts it when it launches the title
+(decompiled appmgr, study only): the licence file is found, read (0x200 bytes) with the kernel's ksceIoOpen (flags
+0x10001), ksceIoRead and ksceIoClose, checked by SceNpDrm (ksceNpDrmGetRifInfo, ksceNpDrmGetRifVitaKey; pfsmgr itself
+imports nothing of SceNpDrm, the key comes in with kscePfsMount), and app0 is mounted through ScePfsMgr with the key. When
+kernel code hooked one of those three I/O functions, the licence read runs through their entries on a kernel thread, so
+the hook sees the launch's read (and its continuation reaches the HLE); without a hook the file is read directly. The
+title key step is the secure processor's and answers 0x80020004 on the emulated unit, hooked or not. A failure names its
+step: `<title>: the launch stopped at app0's mount, step N of 4 (<step>): ... (0x........)` (1 licence, 2 licence read,
+3 title key, 4 PFS mount); the message to the user is unchanged.
 
 ## Limits
 

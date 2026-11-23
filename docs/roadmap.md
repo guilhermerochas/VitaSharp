@@ -3183,6 +3183,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (23/11/2026, falta testar) [P1][M] Plugins de kernel no boot do sistema, antes do lançamento do título
+  (fix/bootord1): os módulos `*KERNEL` carregam e iniciam no boot (uma vez por sistema, qualquer que seja o título),
+  antes do mount do app0; um título cujo app0 não monta continua falhando com 0x80020004 e a mesma mensagem, e o log diz
+  em que passo do lançamento parou (`the launch stopped at app0's mount, step 3 of 4 (title key ...)`). A leitura da
+  licença no lançamento passa pelas entradas de ksceIoOpen/ksceIoRead/ksceIoClose quando código de kernel as enganchou.
+  Teste: `KernelPluginBootOrderTests`. Testar: com "Ativar Plugins do Kernel" ligado, abrir um título; o `last.log`
+  mostra cada `kernel plugin ...: loaded and started (...) (at system boot)` e `kernel plugins: N of M loaded and started
+  at system boot` antes da linha do título (`PSM title ...`/`Loading ...`), também quando o título falha.
+
 - [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo analisável e reexecutável sem o jogo (feat/capself1,
   `docs/captures.md`): (1) nenhum arquivo da gravação leva dado pessoal: uma última etapa troca, em todo texto e no
   cabeçalho do `gpu.vsgd`, a pasta de dados por `<data>`, a pasta e o nome do usuário por `<user>`, o computador por

@@ -59,7 +59,11 @@ os outros.
   de novo, como faz o gerenciador de módulos do firmware. O log diz o que aconteceu com cada um
   (`kernel plugin ...: loaded and started`, `... module_start of X returned 0x2, unloaded`).
 - Os módulos de `*KERNEL` carregam uma vez, no processo do kernel: o kernel único do sistema, criado no boot (com o
-  shell, ou com o primeiro jogo quando não há shell), como o carregador de plugins os carrega no boot do Vita. Todo
+  shell, ou com o primeiro jogo quando não há shell), como o carregador de plugins os carrega no boot do Vita. Eles
+  carregam no boot do sistema, antes de começar o lançamento do primeiro programa e qualquer que seja o título, então
+  um lançamento que depois falha (um app0 que não monta, um título PSM sem o runtime) já os tem carregados; o log diz
+  `kernel plugins: N of M loaded and started at system boot, before any application is launched` e as linhas de plugin
+  das gravações terminam com `system boot` (um módulo de usuário com `with process TITLEID`). Todo
   processo os vê: o shell, um app que o shell abre ao lado dele, o programa que um LoadExec inicia. Ficam até o sistema
   terminar; um módulo de kernel que um programa carrega (o gerenciador de módulos do kernel) também é do kernel e
   continua depois do programa.
@@ -246,6 +250,18 @@ hook. É assim que um módulo de kernel põe o seu módulo num processo (o módu
 usuário dele no processo do emulador de PSP). O processo que o shell inicia por caminho (sceAppMgrLaunchAppByPath4, o
 emulador de PSP do firmware vs0:app/NPXS10028) tem como título de processo o título que o launch informa
 (ksceKernelGetProcessTitleId, a seção da configuração de plugins): o da bolha que o shell abriu.
+
+### O mount do app0 no lançamento
+
+Uma pasta de aplicativo que ainda é uma imagem PFS é montada como o SceAppMgr 3.74 a monta ao lançar o título
+(appmgr descompilado, só estudo): acha o arquivo da licença, lê 0x200 bytes com ksceIoOpen (flags 0x10001), ksceIoRead e
+ksceIoClose do kernel, o SceNpDrm confere (ksceNpDrmGetRifInfo, ksceNpDrmGetRifVitaKey; o pfsmgr não importa nada do
+SceNpDrm, a chave chega com o kscePfsMount) e o app0 é montado pelo ScePfsMgr com a chave. Quando código de kernel
+enganchou uma dessas três funções de E/S, a leitura da licença passa pelas entradas delas numa thread de kernel, e o hook
+vê a leitura do lançamento (a continuação chega ao HLE); sem hook o arquivo é lido direto. O passo da chave é do
+processador seguro e responde 0x80020004 na unidade emulada, com ou sem hook. Uma falha diz o passo:
+`<título>: the launch stopped at app0's mount, step N of 4 (<passo>): ... (0x........)` (1 licença, 2 leitura da
+licença, 3 chave do título, 4 mount PFS); a mensagem ao usuário não muda.
 
 ## Limites
 

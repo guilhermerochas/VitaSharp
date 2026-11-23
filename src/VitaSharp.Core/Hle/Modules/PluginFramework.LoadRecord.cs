@@ -20,6 +20,8 @@ internal sealed partial class PluginHookStats
         public long Size;
         public string Result = "";
         public string Unresolved = "";
+        /// <summary>When it loaded: "system boot" for a *KERNEL module, "with process TITLEID" for a user module.</summary>
+        public string Moment = "";
     }
 
     /// <summary>The prefix of the loader's lines in a recording's context.txt (<see cref="LoadLines"/>).</summary>
@@ -44,8 +46,10 @@ internal sealed partial class PluginHookStats
     }
 
     /// <summary>One plugin module the loader handled; <paramref name="hostFile"/> (may be null) gives its hash and
-    /// size; <paramref name="fsRoot"/> is replaced in the result by a placeholder.</summary>
-    internal void RecordPlugin(string vitaPath, bool kernel, string module, string? hostFile, string result, string unresolved, string fsRoot)
+    /// size; <paramref name="fsRoot"/> is replaced in the result by a placeholder; <paramref name="moment"/> says when it
+    /// loaded (the system's boot, a process's start).</summary>
+    internal void RecordPlugin(string vitaPath, bool kernel, string module, string? hostFile, string result, string unresolved, string fsRoot,
+        string moment = "")
     {
         var record = new PluginRecord
         {
@@ -54,6 +58,7 @@ internal sealed partial class PluginHookStats
             Module = module,
             Result = Placeholders(result, fsRoot),
             Unresolved = unresolved,
+            Moment = moment,
         };
         if (hostFile != null && File.Exists(hostFile))
         {
@@ -87,7 +92,8 @@ internal sealed partial class PluginHookStats
     }
 
     /// <summary>The loader's lines of context.txt: build and firmware, the configuration and its lines, one line per
-    /// plugin module (tab-separated: path, kernel or user, module, SHA-256, size, result, unresolved imports).</summary>
+    /// plugin module (tab-separated: path, kernel or user, module, SHA-256, size, result, unresolved imports, when it
+    /// loaded).</summary>
     internal IEnumerable<string> LoadLines()
     {
         lock (_lock)
@@ -111,7 +117,8 @@ internal sealed partial class PluginHookStats
             {
                 string unresolved = plugin.Unresolved.Length > 0 ? $"\tunresolved imports: {plugin.Unresolved}" : "";
                 string hash = plugin.Sha256.Length > 0 ? $"sha256 {plugin.Sha256}, {plugin.Size} bytes" : "file not found";
-                lines.Add($"{LoadPrefix}module {plugin.Path}\t{(plugin.Kernel ? "kernel" : "user")}\t{(plugin.Module.Length > 0 ? plugin.Module : "-")}\t{hash}\t{plugin.Result}{unresolved}");
+                string moment = plugin.Moment.Length > 0 ? $"\t{plugin.Moment}" : "";
+                lines.Add($"{LoadPrefix}module {plugin.Path}\t{(plugin.Kernel ? "kernel" : "user")}\t{(plugin.Module.Length > 0 ? plugin.Module : "-")}\t{hash}\t{plugin.Result}{unresolved}{moment}");
             }
 
             return lines;
