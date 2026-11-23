@@ -1121,7 +1121,8 @@ public static class Runner
     /// the application at once with sceAppMgrLaunchAppByName2ndStage, only when it carries flag 0x20000 (what Music's
     /// "Start [Content Manager]" passes); without it, and for "psgm:play?titleid=", it cancels the request and leaves the
     /// LiveArea open on the gate. --launch-flags= the request's flags (--launch-app: 0x20000, --launch-uri: 0),
-    /// --launch-after= at least that many frames first.
+    /// --launch-after= at least that many frames first; --launch-repeat=N asks again N times, each time once the
+    /// application's processes ended (a title that closes itself to be tapped again).
     /// A system application needs the shell running: its libshellsvc connects to the shell's IPC server at start, and
     /// without one Settings, Store, Camera, Music, Content Manager and the PSN sign-up called through a NULL service
     /// pointer or exited.
@@ -1137,6 +1138,7 @@ public static class Runner
         int flags = Opt(options, "--launch-flags") is { } lfs ? Convert.ToInt32(lfs, lfs.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? 16 : 10)
             : string.IsNullOrEmpty(uri) ? LaunchAtOnceFlag : 0;
         long after = long.TryParse(Opt(options, "--launch-after"), out var la) && la > 0 ? la : 0;
+        int repeat = string.IsNullOrEmpty(app) || !int.TryParse(Opt(options, "--launch-repeat"), out int lr) || lr < 0 ? 0 : lr;
         var t = new Thread(() =>
         {
             // the shell handles requests once its home screen is built (VitaSystem.ShellUp), a moment after that
@@ -1168,13 +1170,48 @@ public static class Runner
                 Log.Warn($"--launch-app={app}: not installed");
                 return;
             }
-            shell.Vita.RequestLaunchByName(shell, app!, dir, flags, null);
+
+            for (int launch = 0; launch <= repeat && emu.Running; launch++)
+            {
+                if (launch > 0)
+                {
+                    // the title's processes ended (it closed itself): the request again, as a second tap on its bubble
+                    WaitTitleProcesses(emu, app!, present: true);
+                    WaitTitleProcesses(emu, app!, present: false);
+                    long next = Frames() + ShellLaunchDelayFrames;
+                    while (emu.Running && Frames() < next)
+                    {
+                        Thread.Sleep(50);
+                    }
+
+                    Log.Info($"--launch-repeat: {app} ended, asking the shell again ({launch} of {repeat})");
+                }
+
+                shell.Vita.RequestLaunchByName(shell, app!, dir, flags, null);
+            }
         })
         {
             IsBackground = true,
             Name = "shell launch"
         };
         t.Start();
+    }
+
+    /// <summary>Waits until a process of title <paramref name="titleId"/> (its application's or the title the kernel
+    /// knows it by) runs (<paramref name="present"/>) or until none does, or the emulator stops.</summary>
+    static void WaitTitleProcesses(Emulator emu, string titleId, bool present)
+    {
+        while (emu.Running)
+        {
+            bool running = emu.Vita.Processes.Any(p => p.TitleId.Equals(titleId, StringComparison.OrdinalIgnoreCase)
+                || p.ProcessTitleId.Equals(titleId, StringComparison.OrdinalIgnoreCase));
+            if (running == present)
+            {
+                return;
+            }
+
+            Thread.Sleep(50);
+        }
     }
 
     /// <summary>sceAppMgrLaunchAppByName flag the shell starts the requested application for, instead of only opening

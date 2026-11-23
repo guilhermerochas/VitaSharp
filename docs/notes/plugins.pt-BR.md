@@ -128,6 +128,15 @@ escrevem o status do module_stop em `*res`. O UID devolvido é o do próprio mó
 para o kernel e os processos). É assim que um homebrew carrega o próprio módulo de kernel (o eboot do Adrenaline faz
 isso primeiro). taiReloadConfig, taiReloadConfigForKernel e taiLoadPluginsForTitleForKernel ainda não são oferecidas.
 
+O início de processo do firmware chama o export ksceKernelStartPreloadingModules(pid) do modulemgr pelo endereço,
+quando a thread principal do processo novo já existe (processmgr 3.74). O VitaSharp inicia ele mesmo os módulos
+pré-carregados, então a chamada passa pela entrada do export quando um código de kernel o hookou: o hook roda numa
+thread de kernel com o pid do processo novo, antes da thread principal do processo, para todo processo aberto depois do
+hook. É assim que um módulo de kernel põe o seu módulo num processo (o módulo de kernel do Adrenaline põe o módulo de
+usuário dele no processo do emulador de PSP). O processo que o shell inicia por caminho (sceAppMgrLaunchAppByPath4, o
+emulador de PSP do firmware vs0:app/NPXS10028) tem como título de processo o título que o launch informa
+(ksceKernelGetProcessTitleId, a seção da configuração de plugins): o da bolha que o shell abriu.
+
 ## Limites
 
 - Um plugin que corrige por deslocamento o código do próprio firmware não acha código do firmware ali (o VitaSharp

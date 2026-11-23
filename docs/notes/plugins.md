@@ -120,6 +120,15 @@ is the module's own (VitaSharp has one UID space for the kernel and the processe
 loads its own kernel module (Adrenaline's eboot does it first). taiReloadConfig, taiReloadConfigForKernel and
 taiLoadPluginsForTitleForKernel are not offered yet.
 
+The firmware's process start calls modulemgr's export ksceKernelStartPreloadingModules(pid) by its address once a new
+process's main thread exists (processmgr 3.74). VitaSharp starts the preloaded modules itself, so the call is made
+through the export's entry when kernel code hooked it: the hook runs on a kernel thread with the new process's pid,
+before the process's main thread runs, for every process opened after the hook. A kernel module adds its own module
+to a process this way (Adrenaline's kernel module adds its user module to the PSP emulator's process). The process the
+shell starts by path (sceAppMgrLaunchAppByPath4, the firmware's PSP emulator vs0:app/NPXS10028) has the title the
+launch names as its process title (ksceKernelGetProcessTitleId, the plugin configuration's section): the title of the
+bubble the shell opened.
+
 ## Limits
 
 - A plugin that patches the firmware's own code by offset finds no firmware code there (VitaSharp implements the

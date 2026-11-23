@@ -993,7 +993,7 @@ public static class Program
         Console.WriteLine("  firmware-verify [other fs root]      check the key modules decrypt; compare files with another installation");
         Console.WriteLine("  import-trophies <folder>|--vita3k    import a PS Vita's ur0:user/00/trophy (decrypted copy) or Vita3K's trophies");
         Console.WriteLine("  run <TITLEID|folder> [options]       boot a title (a system app such as NPXS10008 boots the shell, which opens it; --no-shell: alone; a vs0: folder with --self=x.self)");
-        Console.WriteLine("  run options: --launch-app=<TITLEID> | --launch-uri=<uri> [--launch-flags=N] [--launch-after=<frames>]  with boot-shell: once the shell is up, ask it to start the app (flags 0x20000) / open the URI (as an application asks it)");
+        Console.WriteLine("  run options: --launch-app=<TITLEID> | --launch-uri=<uri> [--launch-flags=N] [--launch-after=<frames>] [--launch-repeat=N]  with boot-shell: once the shell is up, ask it to start the app (flags 0x20000) / open the URI (as an application asks it); --launch-repeat: ask again N times, each time the app ended");
         Console.WriteLine("  boot-shell [options]                 boot the installed firmware's shell (vs0:vsh/shell/shell.self)");
         Console.WriteLine("  registry [prefix] [path=value]       list / set the system registry (firmware template + written values)");
         Console.WriteLine("  run <game.vpk> [--reinstall] [options]  install the VPK if needed, then boot it");
