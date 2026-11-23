@@ -693,6 +693,14 @@ public sealed partial class Gxm : HleModule
             return ERR_INVALID_VALUE;
         }
 
+        // libgxm (FW 3.74: sceGxmBeginScene, sceGxmBeginSceneEx and the old _sceGxmBeginScene) refuses a scene with
+        // nothing to render to: a disabled (or NULL) colour surface and a disabled (or NULL) depth/stencil surface
+        ColorSurfaceInfo? color = ReadColorSurface(colorSurface);
+        if (color == null && depth == null)
+        {
+            return ERR_INVALID_VALUE;
+        }
+
         c.InScene = true;
         c.RenderTarget = rt;
         c.FragmentSyncObject = fragmentSync;
@@ -714,7 +722,7 @@ public sealed partial class Gxm : HleModule
         Gpu.Submit(new BeginSceneCommand
         {
             Width = rt.Width, Height = rt.Height, Multisample = rt.MultisampleMode,
-            Color = ReadColorSurface(colorSurface),
+            Color = color,
             Depth = depth,
         });
         return 0;
@@ -751,11 +759,51 @@ public sealed partial class Gxm : HleModule
         return 0;
     }
 
+    /// <summary>
+    /// sceGxmMidSceneFlush (libgxm, FW 3.74): kicks only the scene's vertex work so far (its submission flags carry no
+    /// fragment work), so the vertex rings can be reused and the draws before it may read their buffers; the colour
+    /// and depth/stencil surfaces are neither stored nor reloaded, and the scene's pixels stay on chip until
+    /// sceGxmEndScene. Flags other than SCE_GXM_MIDSCENE_PRESERVE_DEFAULT_UNIFORM_BUFFERS, a deferred context or a
+    /// vertex sync object are refused, and so is a context outside a scene.
+    /// </summary>
     [Hle]
-    [Hle(Nid = 0x51FE0899, Library = "SceGxm")] // _sceGxmMidSceneFlush (old SDK)
     int sceGxmMidSceneFlush(uint ctx, uint flags, uint vertexSync, uint vertexNotification)
     {
-        if (Ctx(ctx) is { Deferred: true }) return ERR_INVALID_VALUE;
+        if (Ctx(ctx) is not null && (flags & ~1u) != 0)
+        {
+            return ERR_INVALID_VALUE;
+        }
+
+        return MidSceneFlush(ctx, vertexSync, vertexNotification);
+    }
+
+    /// <summary>The old SDK's entry: the same flush, with the flags masked to the preserve bit instead of checked.</summary>
+    [Hle]
+    int _sceGxmMidSceneFlush(uint ctx, uint flags, uint vertexSync, uint vertexNotification) => MidSceneFlush(ctx, vertexSync, vertexNotification);
+
+    int MidSceneFlush(uint ctx, uint vertexSync, uint vertexNotification)
+    {
+        GxmContext? c = Ctx(ctx);
+        if (c == null)
+        {
+            return ERR_INVALID_POINTER;
+        }
+
+        if (c.Deferred)
+        {
+            return ERR_INVALID_VALUE;
+        }
+
+        if (vertexSync != 0)
+        {
+            return ERR_INVALID_POINTER;
+        }
+
+        if (!c.InScene)
+        {
+            return ERR_NOT_WITHIN_SCENE;
+        }
+
         // the vertex work so far goes to the hardware: the draws before the flush may read their buffers now
         if (_sceneGate is { } gate)
         {
@@ -763,7 +811,11 @@ public sealed partial class Gxm : HleModule
             _sceneGate = NewSceneGate();
         }
         Gpu.Submit(new MidSceneFlushCommand());
-        if (ReadNotification(vertexNotification) is { } n && n.Item1 != 0) Gpu.Notify(n.Item1, n.Item2);
+        if (ReadNotification(vertexNotification) is { } notification && notification.Item1 != 0)
+        {
+            Gpu.Notify(notification.Item1, notification.Item2);
+        }
+
         return 0;
     }
 

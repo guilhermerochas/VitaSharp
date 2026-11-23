@@ -739,14 +739,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 Finish();
                 break;
             case MidSceneFlushCommand:
+                // libgxm (FW 3.74) kicks only the vertex work here: nothing of the scene is stored to memory or loaded
+                // back, so the scene goes on in the same render pass and its own surface still samples the content
+                // from before the scene. libgxm stores and reloads mid-scene only on its own, when a fragment ring
+                // of the context fills (a partial scene); the HLE rings never fill, so that split does not happen here.
                 if (TracingScenes)
                 {
                     TraceLine($"[scene] mid-scene flush rt=0x{_renderTarget?.Address ?? 0:X8} (next draw id={NextDrawId})");
-                }
-
-                if (_inScene && _renderTarget != null)
-                {
-                    CaptureSceneStart(_renderTarget);
                 }
 
                 break;

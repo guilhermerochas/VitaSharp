@@ -55,7 +55,8 @@ public sealed class EndSceneCommand : GpuCommand
 /// <summary>sceGxmFinish: the backend completes every submitted GPU operation, including render-target writebacks, before retiring it.</summary>
 public sealed class FinishCommand : GpuCommand;
 
-/// <summary>sceGxmMidSceneFlush: what the scene rendered so far is stored to memory, so later draws of the same scene can sample it.</summary>
+/// <summary>sceGxmMidSceneFlush: the scene's vertex work so far goes to the hardware (libgxm, FW 3.74); its colour and
+/// depth/stencil are not stored or reloaded, the scene goes on as one.</summary>
 public sealed class MidSceneFlushCommand : GpuCommand;
 
 /// <summary>Process <see cref="GpuCommand.Pid"/> ended: the backend drops the scene it left open (when

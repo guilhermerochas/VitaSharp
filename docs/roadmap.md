@@ -3243,6 +3243,23 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `CaptureFilesTests`, `SessionCaptureRerunTests.ACaptureOfAGameReadingItsFilesReRunsWithoutTheGame`. Testar: F8 num
   jogo que carrega dados durante o jogo (troca de fase), copiar a pasta para outro lugar e rodar
   `VitaSharp.Desktop --data=<pasta vazia> rerun <pasta>`: a linha `files:` do fim diz que toda leitura foi gravada.
+- [ ] (23/11/2026, falta testar) [P2][P] sceGxmMidSceneFlush como o libgxm 3.74 (fix/gxmex2): envia só o trabalho de
+  vértices da cena (sem fragmentos) e não grava nem recarrega cor ou profundidade; o renderizador não trata mais o
+  flush como ponto de gravação da cor (a superfície da própria cena continua amostrando o conteúdo de antes da cena).
+  Recusa como o firmware: contexto NULL/desconhecido ou objeto de sync de vértices → INVALID_POINTER, contexto
+  diferido ou flags além de PRESERVE_DEFAULT_UNIFORM_BUFFERS → INVALID_VALUE (o `_sceGxmMidSceneFlush` antigo mascara
+  as flags), fora da cena → NOT_WITHIN_SCENE, sem notificação nem comando à GPU. Não emulado: o envio parcial interno
+  do libgxm quando o anel de fragmentos do contexto enche (grava e recarrega no meio da cena); os anéis da HLE não
+  enchem. Testes: `GxmFlowTests.MidSceneFlushRefusesWhatLibgxmRefuses`,
+  `RendererMidSceneFlushTests.MidSceneFlushStoresNothingTheSceneSamples` (com e sem +TileBased); `replay-gpu
+  --compare` nos 12 dumps de captura (2.725 quadros) pixel-idêntico. Testar: jogos que usam o MidSceneFlush com
+  notificação no meio da cena (vita2d, Uncharted) sem tela preta, travada ou piscando onde antes funcionavam.
+- [ ] (23/11/2026, falta testar) [P3][P] sceGxmBeginScene, sceGxmBeginSceneEx e o `_sceGxmBeginScene` antigo recusam,
+  como o libgxm 3.74, uma cena sem cor e sem profundidade (fix/gxmex2): superfície de cor NULL, desligada ou nunca
+  iniciada junto com profundidade/stencil NULL ou desligada → SCE_GXM_ERROR_INVALID_VALUE, sem abrir a cena nem
+  mandar nada à GPU; só cor ou só profundidade continua valendo. Testes:
+  `GxmFlowTests.BeginSceneRefusesASceneWithoutColourAndDepth`. Testar: os jogos que o usuário já abre continuam
+  abrindo e mostrando imagem (nenhum `sceGxmBeginScene: 0x805B0003` novo no log).
 
 - [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo analisável e reexecutável sem o jogo (feat/capself1,
   `docs/captures.md`): (1) nenhum arquivo da gravação leva dado pessoal: uma última etapa troca, em todo texto e no
