@@ -357,6 +357,10 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   full), então a imagem não muda; usar o perfil do contexto no decodificador é parte do item de GXM acima.
 - [ ] [P3][M] **Sistema de arquivos, carregador e módulos:** montagens, patches por origem, NIDs, imports/exports, permissões
   de módulos de sistema.
+  Em andamento (23/11/2026, quick3): patches por origem já cobertos por `UpdateModelTests` (pasta da atualização por
+  origem, app0 com a atualização por cima); achado e corrigido na revalidação: a listagem de pasta do app0 com
+  atualização (`App0UpdateListingTests`, em "Corrigido, falta o usuário testar"). Falta: montagens, NIDs,
+  imports/exports e permissões de módulos de sistema.
 - [x] [P3][M] **Save states:** ida e volta de cada módulo HLE e do escalonador com threads em espera. Feito
   (16/11/2026, rm1, test/savestate-waiting-thread): os módulos HLE já eram cobertos por
   `ModuleSnapshotTests.EveryModuleStateRoundTrips` (cada módulo salvo, carregado noutro emulador e salvo de novo, byte
@@ -3180,6 +3184,17 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (23/11/2026, falta testar) [P3][M] Pasta do app0 com atualização instalada listava só a atualização
+  (fix/quick3, do item "Sistema de arquivos, carregador e módulos" dos testes de regressão): o appmgr 3.74 monta
+  ux0:patch/<id> (grw0:patch/<id> para o cartão) sobre ux0:app/<id>, e a atualização traz só os arquivos que muda; os
+  arquivos já vinham da camada certa, mas o `sceIoDopen` de uma pasta que as duas camadas têm listava só a da
+  atualização (os arquivos que ela não muda sumiam da listagem). Agora a pasta lista as duas camadas, cada nome uma
+  vez (sem diferenciar maiúsculas), com o arquivo da atualização no lugar do da aplicação, e uma pasta de uma camada só
+  também abre (`Vfs.DirectoryEntries`; o Vita3K junta a atualização à aplicação do mesmo jeito). Sem atualização nada
+  muda; ux0:app/<id> continua sendo a pasta da aplicação sozinha. Testes: `App0UpdateListingTests` (falham sem a
+  correção). Testar: um jogo com atualização instalada que lista arquivos do próprio app0 (DLC/arquivos de dados
+  procurados por pasta) abre e acha o conteúdo como antes da atualização.
 
 - [ ] (23/11/2026, falta testar) [P1][M] Falha ao abrir um jogo fecha o app sem aviso: uma exceção no carregamento do
   título terminava o processo só com o log. Feito: no PC, a falha do `LoadTitle` vira erro no log e no stderr com o

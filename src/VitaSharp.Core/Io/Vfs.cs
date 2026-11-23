@@ -317,6 +317,58 @@ public sealed class Vfs
     }
 
     /// <summary>
+    /// The entries of the directory <paramref name="vitaPath"/> (host paths), or null when it is no directory. app0 is
+    /// the application with its update over it (appmgr's mount of ux0:patch/&lt;id&gt; over ux0:app/&lt;id&gt;; Vita3K merges
+    /// the update into the application the same way): an update carries only the files it changes, so a directory
+    /// lists every layer's entries, each name once, the upper layer's file standing for it.
+    /// </summary>
+    public string[]? DirectoryEntries(string vitaPath)
+    {
+        (string? dev, string? rel) = Split(vitaPath);
+        rel = Normalize(rel);
+        bool layered = dev.Equals("app0", StringComparison.OrdinalIgnoreCase) && _app0Overlays.Count > 0;
+        if (!layered)
+        {
+            return Resolve(vitaPath) is { } host && Directory.Exists(host) ? Directory.GetFileSystemEntries(host) : null;
+        }
+
+        var entries = new List<string>();
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        bool found = false;
+        foreach (string overlay in _app0Overlays)
+        {
+            found |= AddDirectoryLayer(ResolveCaseInsensitive(overlay, rel), entries, names);
+        }
+
+        if (_mounts.TryGetValue(dev, out string? root))
+        {
+            found |= AddDirectoryLayer(ResolveCaseInsensitive(root, rel), entries, names);
+        }
+
+        return found ? entries.ToArray() : null;
+    }
+
+    /// <summary>Adds the entries of <paramref name="directory"/> whose names no upper layer had; false when it is no
+    /// directory.</summary>
+    private static bool AddDirectoryLayer(string directory, List<string> entries, HashSet<string> names)
+    {
+        if (!Directory.Exists(directory))
+        {
+            return false;
+        }
+
+        foreach (string entry in Directory.GetFileSystemEntries(directory))
+        {
+            if (names.Add(Path.GetFileName(entry)))
+            {
+                entries.Add(entry);
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Resolves <paramref name="rel"/> ("dir/sub/file", '/'-separated) under <paramref name="root"/> the way the
     /// Vita's case-insensitive file systems would: on case-sensitive hosts (Linux, Android, case-sensitive APFS) every
     /// existing path component is matched ignoring case, an exact-case entry winning over the others. Components that

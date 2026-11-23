@@ -341,11 +341,26 @@ int fd, long offset, int whence)
             return GuestDopen(guestMount, guestPath);
         }
 
-        var host = HostPath(path);
-        if (host == null || !Directory.Exists(host)) return SceError.IO_ENOENT;
+        _fios ??= Emu.Hle.Modules.OfType<Fios2User>().FirstOrDefault();
+        string resolved = _fios != null ? _fios.Resolve(path) : path;
+        // app0 with an update lists both layers (Vfs.DirectoryEntries)
+        if (Emu.Vfs.DirectoryEntries(resolved) is not { } entries)
+        {
+            if (Emu.Vfs.Resolve(resolved) == null)
+            {
+                Log.Warn($"IO: unmapped path '{resolved}'");
+            }
+
+            return SceError.IO_ENOENT;
+        }
+
         int fd = Interlocked.Increment(ref _nextFd);
-        _dirs[fd] = new OpenDir { Entries = Directory.GetFileSystemEntries(host) };
-        Capture.CaptureHooks.Files?.Listed(Emu, path, host);
+        _dirs[fd] = new OpenDir { Entries = entries };
+        // the capture lists the folder the path resolves to (with an update, the update's layer)
+        if (Emu.Vfs.Resolve(resolved) is { } host && Directory.Exists(host))
+        {
+            Capture.CaptureHooks.Files?.Listed(Emu, path, host);
+        }
         return fd;
     }
 
