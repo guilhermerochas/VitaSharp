@@ -569,7 +569,10 @@ public sealed partial class HleRegistry : IImportResolver
             {
                 lock (_functions)
                 {
-                    var shared = new HleFunction { Nid = 0, Name = name, Library = "host", Invoke = body };
+                    // the emulator's own code (no firmware function): r0 is not an error code, and it charges no
+                    // more guest time than a few instructions
+                    var shared = new HleFunction { Nid = 0, Name = name, Library = "host", Invoke = body, ReturnsValue = true };
+                    shared.SetCost(HleCost.UserInline);
                     Place((int)index, shared);
                     return shared;
                 }

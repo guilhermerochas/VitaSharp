@@ -304,10 +304,8 @@ public sealed partial class PluginFramework
             // the record's func and old are the hook's counting stub (PluginHookStats), which goes on to the hook
             // function and to the trampoline
             uint record = KernelAllocation(12, "plugin hook reference");
-            uint stub = KernelAllocation(StubSize, "plugin hook counter");
-            uint data = WriteCountingStub(stub, hookFunction, patch.Trampoline);
-            GuestMemory.W32(record + 4, stub);
-            GuestMemory.W32(record + 8, stub + StubOldWord * 4);
+            uint data = NewCountingStub(hookFunction, patch.Trampoline);
+            PointRecordAtStub(record, data);
             if (patch.Records.Count == 0)
             {
                 GuestMemory.W32(record, 0);
@@ -545,7 +543,7 @@ public sealed partial class PluginFramework
                             Stats.Freeze(entry);
                         }
 
-                        FreeKernelAllocation(data - StubDataWord * 4);
+                        FreeKernelAllocation(StubOf(data));
                     }
 
                     FreeKernelAllocation(record);

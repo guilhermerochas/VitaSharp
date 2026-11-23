@@ -55,10 +55,10 @@ public sealed class PluginHookTests(GuestMemoryFixture fixture) : IDisposable
     }
 
     /// <summary>The hook function a reference record's counting stub goes on to.</summary>
-    internal static uint HookFunctionOf(uint record) => GuestMemory.R32(GuestMemory.R32(record + 4) + 54 * 4 + 12);
+    internal static uint HookFunctionOf(uint record) => GuestMemory.R32(GuestMemory.R32(record + 4) + PluginFramework.StubDataWord * 4 + PluginFramework.StubHookFunction);
 
     /// <summary>The trampoline a reference record's counting stub continues to (the original).</summary>
-    internal static uint TrampolineOf(uint record) => GuestMemory.R32(GuestMemory.R32(record + 4) + 54 * 4 + 16);
+    internal static uint TrampolineOf(uint record) => GuestMemory.R32(GuestMemory.R32(record + 4) + PluginFramework.StubDataWord * 4 + PluginFramework.StubTrampoline);
 
     [Fact]
     public void AnExportHookRunsTheHookAndOldRunsTheOriginal()
