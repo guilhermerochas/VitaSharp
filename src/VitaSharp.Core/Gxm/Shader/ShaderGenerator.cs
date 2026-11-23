@@ -266,7 +266,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 33;
+    public const int GeneratorVersion = 34;
 
     /// <summary>Clip distances the generated vertex shaders may write (index 0 the far plane, 1-7 the GXM user clip
     /// planes 0-6): the Vulkan minimum of maxClipDistances.</summary>
@@ -875,10 +875,9 @@ float packC10(vec3 c) {
         }
 
         // ---- the programs: secondary (sample-rate) phase first, then primary
-        if (vertex)
-        {
-            t.Line("for (int k = 0; k < o.length(); k++) o[k] = vec4(0.0);");
-        }
+        // outputs and temporaries of both stages start at zero (a fragment program may read an output register before
+        // writing it as well)
+        t.Line("for (int k = 0; k < o.length(); k++) o[k] = vec4(0.0);");
         // Temporaries start at zero: programs write parts of a register (a 16-bit VBW into the low half) and read the
         // whole word back; an uninitialised GLSL local made those upper bits undefined (driver-dependent garbage that
         // changed every frame: Tearaway's skinned meshes indexed bone matrices far out of range).
@@ -985,11 +984,20 @@ float packC10(vec3 c) {
         // the GPU registers held, which came out as random NaN/huge colours on the macOS CI.
         int paSize = Size(t.MaxPa, 8);
         sb.AppendLine($"vec4 pa[{paSize}] = vec4[{paSize}]({string.Join(", ", Enumerable.Repeat("vec4(0.0)", paSize))});");
-        sb.AppendLine($"vec4 sa[{Size(t.MaxSa, 8)}];");
+        // Secondary attributes start at zero too. On the console an SA register holds only what the program's
+        // containers (register-resident uniform buffers), literals and secondary program load into it; programs also
+        // read registers none of them fills (whatever an earlier task left there; past the program's
+        // SecondaryRegCount they are not even allocated to it) and overwrite the result. Undefined in GLSL as well,
+        // NVIDIA's compiler let that garbage reach unrelated results: the Amazing Spider-Man pause menu's skinned glass
+        // shards (vertex program 5B4A21A875593F98: containers fill sa[0-21], its secondary program sa[22].xzw, 92 SA
+        // words allocated; it reads sa[22].y and sa[23]) landed somewhere else on every run and their depth hid the
+        // menu text in some frames. Zero is the deterministic choice (Vita3K leaves its SA bank undefined as well).
+        int saSize = Size(t.MaxSa, 8);
+        sb.AppendLine($"vec4 sa[{saSize}] = vec4[{saSize}]({string.Join(", ", Enumerable.Repeat("vec4(0.0)", saSize))});");
         sb.AppendLine($"vec4 r[{Size(t.MaxTemp, 8)}];");
         sb.AppendLine($"vec4 o[{Size(t.MaxOut, vertex ? 16 : 8)}];");
         sb.AppendLine($"vec4 fi[{Size(t.MaxFi, 8)}];");
-        sb.AppendLine("bool p[4];");
+        sb.AppendLine("bool p[4] = bool[4](false, false, false, false);");
         sb.AppendLine("int idx[2];");
         if (t.DynBanks.Count > 0)
         {

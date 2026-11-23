@@ -3617,6 +3617,20 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   de fechar o processo (`SessionCaptureTests.Compare_skips_when_a_capture_has_no_frames_file`). Teste: rodar o rerun
   de uma captura sem quadros e ver a linha `compare: skipped` e o resumo PERF no fim.
 
+- [ ] [P1][M] The Amazing Spider-Man (PCSE00333), tela de pausa piscando (relato do usuário, 21/11/2026; captura
+  `PCSE00333_20261121_232645_tudo`, 4,3 s a 60 fps, dump da GPU de 198 quadros): o menu de pausa ("RESUME" e as
+  opções abaixo, sobre o fundo com a aranha) pisca; na folha de contatos as opções abaixo de "RESUME" quase não
+  aparecem. Comparar quadros seguidos no replay do dump (texto/opções presentes em um quadro e ausentes no outro).
+  Feito (fix/spidey4, 22/11/2026): os cacos de vidro animados atrás do menu (vertex program 5B4A21A875593F98, draws
+  52/53 do quadro) liam registradores SA que nenhum container, literal ou programa secundário carrega (sa[22].y; sa[23]
+  fica além dos 92 SA alocados ao programa) e o GLSL gerado os declarava sem inicializador: o driver NVIDIA entregava
+  lixo e os cacos saíam em lugares diferentes a cada execução; a profundidade deles escondia RESTART/SETTINGS/QUIT.
+  No Vita esses registradores guardam o que uma tarefa anterior deixou (o programa sobrescreve o resultado); o
+  gerador agora zera todos os bancos (sa, p e as saídas também no fragmento), GeneratorVersion 34. Replay do dump:
+  198/198 quadros idênticos entre execuções (antes 81-147/198). Teste: `ShaderRegisterInitTests`.
+  Testar: The Amazing Spider-Man, abrir a pausa (e a folha de contatos) e ficar alguns segundos: RESUME e as opções
+  abaixo sempre visíveis, sem piscar.
+
 ## Bugs em aberto
 - [ ] [P1][G] PSM em Unity não abre (relato do usuário, 22/11/2026; log de 19:33, NPOA00239): o título traz o próprio
   runtime (`ux0:psm/<título>/runtime/eboot.bin`, PCSI00010 "Unity Runtime for PlayStation Mobile", mais mono_prx e
@@ -3646,26 +3660,6 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   ksceKernelLoadStartModuleForPid, chama sceAppMgrDestroyAppByName e a thread main termina no quadro 1 sem erro de HLE.
   Falta: o passo seguinte do fluxo do Adrenaline (com o shell rodando: reiniciar no emulador de PSP do firmware) e
   taiReloadConfig, taiReloadConfigForKernel e taiLoadPluginsForTitleForKernel.
-- [ ] [P1][M] The Amazing Spider-Man (PCSE00333), tela de pausa piscando (relato do usuário, 21/11/2026; captura
-  `PCSE00333_20261121_232645_tudo`, 4,3 s a 60 fps, dump da GPU de 198 quadros): o menu de pausa ("RESUME" e as
-  opções abaixo, sobre o fundo com a aranha) pisca; na folha de contatos as opções abaixo de "RESUME" quase não
-  aparecem. Comparar quadros seguidos no replay do dump (texto/opções presentes em um quadro e ausentes no outro).
-  Em andamento (22/11/2026, small1; causa ainda não achada): nos quadros gravados (`frames.vsfr`) 4 de 243 (presents
-  8499, 8592, 8606, 8667) perdem RESTART/SETTINGS/QUIT, sempre cortados no mesmo ponto; os dados do guest no dump estão
-  certos. O replay do dump não é determinístico: duas execuções iguais têm só 86-120 de 198 quadros idênticos, e as
-  diferenças são triângulos dos últimos draws do quadro (o texto, fs `E8CED0FE0BD923E3`, e o PAUSE) faltando a partir de
-  um ponto do draw. `run --load-state=state_start.vss` da captura (pasta de dados com o `ur0` copiado) reproduz no jogo:
-  7-9 quadros sem texto em ~3000. É um hazard na GPU entre draws de uma mesma renderização: `EndRendering` (com a
-  barreira de anexos normal) depois de cada draw deixa 198/198 quadros idênticos, e basta fazê-lo depois dos draws
-  ~48-50 do quadro (antes dos draws 51-53, com uniforms de vértice de ~3 KB e seis texturas, que escrevem profundidade);
-  cortar depois do 51 ou do 54 não resolve. Descartados por A/B no replay: o cache de estado dinâmico/pipeline
-  (`_dyn`/`_boundPipeline` zerados a cada command buffer: nada muda), o cache de vértices (`VITASHARP_VERTEX_CACHE=0`),
-  o uniform heap, `VITASHARP_FRAMES_IN_FLIGHT` 2/8, `VITASHARP_SCENE_BREAKS=strict`, `VITASHARP_MSAA=off` e uma barreira
-  total antes do present; não há quebras de cena nos quadros do menu. Próximo passo: validação de sincronização
-  (`VITASHARP_VK_VALIDATION=sync` no `replay-gpu` não produziu mensagens; conferir se a camada carrega no replay) e
-  bisseção do que os draws 51-53 leem/escrevem (profundidade com teste LE do texto, recursos ligados).
-  Andamento (22/11/2026, spidey2; pausado, causa principal ainda não achada): a validação de sincronização carrega no `replay-gpu` (`VITASHARP_VK_VALIDATION=sync`, LunarG SDK) e achou um hazard: WRITE_AFTER_READ entre a cópia de readback do quadro (`RecordReadback`, sem barreira quando o alvo não tem escala) e os draws do quadro seguinte no mesmo alvo; só sem swapchain (headless/replay; no jogo o blit para a swapchain já ordena). Corrigido (barreiras antes e depois da cópia); a validação fica limpa, mas o replay continua não determinístico (112-127 de 198 idênticos): o hazard restante não é visto pela camada (provável escrita do host num buffer que a GPU ainda lê, ou ordem de rasterização). Trace do quadro 8551 (`--trace-draws`): cena 960x544 com 94 draws; os draws 50 e 51 (mesmo programa vs 71E2E86D9D730DFE / fs 6525A33665C7AE78, 1180 e 2156 índices, blend, escrevem profundidade, mesmas texturas) e 52-53 (vs 5B4A21A875593F98, uniforms de 3120 B, seis texturas, t0 704x400 U8U8U8U8 em 0x90994DD0, toda zero, logo acima do anel de vértices do jogo em 0x9093xxxx-0x90994xxx); o texto (fs E8CED0FE0BD923E3, draws 88-92) testa LE sem escrever profundidade, vértices em 0x862Axxxx. Bisseção com `EndRendering` antes de um só draw (2 replays cada): antes de todos 198/198, antes do 51 196/198, antes do 52 104/198, sem nada 112/198. O hazard está entre os draws 50 e 51 (mesmo pipeline, sem nada entre eles): próximo passo é comparar o que os dois leem do anel de upload/vértices (`UploadRange`/cache de vértices, faixas que se sobrepõem entre o 50 e o 51) e a profundidade que o 51 escreve.
-  Andamento (22/11/2026, spidey3; causa ainda não achada): a diferença entre dois replays (quadro 8599/8640) é o texto do menu (RESTART/SETTINGS/QUIT) sumindo abaixo de uma linha horizontal da tela (y ~234), não a geometria dos draws 50/51: com `--debug-fs=6525A33665C7AE78:vec4(1.0,0.0,0.0,1.0)` os triângulos desses draws saem idênticos nos dois replays. Os shaders 50/51 não têm stores, nem registradores lidos sem valor, e o fetch dos uniforms tem limite. A/B com `EndRendering` antes de cada draw (2 replays cada): com a barreira de anexos 198/198; sem barreira nenhuma (renderings soltas) 96/198; com só a barreira de cor, só a de profundidade, ou só uma dependência de execução (anexos -> vértice/fragmento, sem acesso de memória) 198/198 nos três; rebind de pipeline/estado sem quebrar 99/198. Ou seja: qualquer serialização da GPU entre os draws resolve, e o hazard não é visto pela camada de sincronização (core + sync limpas). Próximo passo: procurar recursos que se sobrepõem na memória sem a camada ver (imagens/buffers sub-alocados no pool reaproveitados enquanto a GPU ainda usa: `ReleaseDepthTarget(now)`, `F.Overflow`, chunks do cache de vértices pequeno), e as consultas por draw (`BeginCostQuery`/visibilidade) dentro da rendering. O teste da barreira do readback (b5baa46a) via `FrameSink` + validação sync no SwiftShader passou com e sem a correção (outra barreira já ordena a cópia nesse caminho), por isso não entrou; a conferência dela segue sendo o replay com `VITASHARP_VK_VALIDATION=sync`.
 - [ ] [P2][M] Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
   capturas de 21/11/2026, e um engasgo de 132 ms por leitura de arquivo (fileIo 134 ms; quadro 302 do dump da
   `_232150_tudo`). Achado (perf/ac3pace): fora das gravações o jogo fica em 30 fps (linhas `FPS frame` da sessão) e
