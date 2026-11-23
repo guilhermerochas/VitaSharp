@@ -694,7 +694,7 @@ public sealed partial class MainWindow : Window
                     Dispatcher.UIThread.Post(() => OnGameError(e.Data));
                 }
             };
-            p.Exited += (_, _) => Dispatcher.UIThread.Post(() => OnGameExited(p));
+            p.Exited += (_, _) => _ = PostGameExitAfterItsOutput(p);
             p.BeginOutputReadLine();
             p.BeginErrorReadLine();
             _running = p;
@@ -742,6 +742,35 @@ public sealed partial class MainWindow : Window
             }
         }
         catch (InvalidOperationException) { }
+    }
+
+    /// <summary>The longest the end of the game process waits for the rest of its output: a process it started that
+    /// kept the pipes open must not keep the end from being handled.</summary>
+    static readonly TimeSpan OutputDrainLimit = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// The game process ended: its end is handled once everything it printed was handled. Exited comes as soon as the
+    /// process is gone, while its last lines can still be in the pipe and in the reader (a process ends once its last
+    /// write is in the pipe): handled first, the end read the failure reason before the line that says it
+    /// (<see cref="_lastErrorLine"/>), let go of the process with its output still coming, and the session's log missed
+    /// its last lines. WaitForExitAsync returns once both redirected streams reached their end, after their last lines
+    /// were posted, so the end is posted after them.
+    /// </summary>
+    async Task PostGameExitAfterItsOutput(Process p)
+    {
+        using var limit = new CancellationTokenSource(OutputDrainLimit);
+        try
+        {
+            await p.WaitForExitAsync(limit.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+
+        Dispatcher.UIThread.Post(() => OnGameExited(p));
     }
 
     /// <summary>Raised when the emulator process ended (ui-render's launch check).</summary>
