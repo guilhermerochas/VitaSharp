@@ -172,6 +172,10 @@ public sealed partial class Emulator
         GuestMemory.Fill(block, 0, PathSize + LicenseTitleKey.LicenseSize);
         GuestMemory.WriteCString(path, guestPath, PathSize);
         int result = LicenceReadError;
+        // VSHLE010: the lambdas below are the originals behind the kernel entries ksceIoOpen/Read/Close, which
+        // firmware.Call already routes through when a hook took them; the user exports sceIoRead/sceIoClose are other
+        // functions on the Vita, so a hook on them must not see the kernel's licence read
+#pragma warning disable VSHLE010
         RunOnKernelThread(kernel, "SceAppMgrLaunch", _ =>
         {
             int fd = (int)firmware.Call(IofilemgrForDriverLibNid, KernelIoOpenNid,
@@ -187,6 +191,7 @@ public sealed partial class Emulator
             firmware.Call(IofilemgrForDriverLibNid, KernelIoCloseNid, () => (uint)io.sceIoClose(fd), (uint)fd);
             result = count == LicenseTitleKey.LicenseSize ? count : LicenceReadError;
         }, "the launch's licence read");
+#pragma warning restore VSHLE010
 
         if (result == LicenseTitleKey.LicenseSize)
         {
