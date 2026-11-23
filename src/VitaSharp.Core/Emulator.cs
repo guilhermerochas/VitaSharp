@@ -89,7 +89,7 @@ public enum PsmRuntimeKind
 /// The platform-independent emulator: memory, CPU translation cache, kernel, HLE modules and loader.
 /// Front-ends (desktop now, Android later) supply the host services in <see cref="Host"/>.
 /// </summary>
-public sealed class Emulator : IDisposable
+public sealed partial class Emulator : IDisposable
 {
     public EmulatorOptions Options { get; }
     /// <summary>What this process shares with the other processes of the emulated system (object table, display).</summary>

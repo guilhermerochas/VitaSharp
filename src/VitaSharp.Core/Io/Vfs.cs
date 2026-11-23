@@ -99,6 +99,10 @@ public sealed class Vfs
         Directory.CreateDirectory(hostPath);
     }
 
+    /// <summary>Mounts <paramref name="hostPath"/> as it is, without making the folder: app0 of a program booted from a
+    /// save state on a computer that does not have it (its files are then not found, as a missing file is).</summary>
+    public void MountAsIs(string device, string hostPath) => _mounts[device.TrimEnd(':')] = hostPath;
+
     /// <summary>
     /// Mounts a process's own save data (savedata0:). SceAppMgr creates a title's save data with its system folder
     /// sce_sys already in it (FW 3.74: "%s/sce_sys", then the keystone and sealedkey files of the PFS image, which have

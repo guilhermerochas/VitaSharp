@@ -633,6 +633,15 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
             a3 = s->R[3];
             lr = s->R[14];
         }
+        // a session capture's call trace (hle_calls.tsv): one static read when no recording runs
+        int traceSlot = -1;
+        Capture.HleCallTrace.ThreadBuffer? traceBuffer = null;
+        if (Capture.HleCallTrace.Active)
+        {
+            traceSlot = Capture.HleCallTrace.Enter(this, ref _callTrace, hleFunction, s->R[0], s->R[1], s->R[2], s->R[3], s->R[14]);
+            traceBuffer = _callTrace;
+        }
+
         if (hleFunction.Invoke != null)
         {
             if (hleFunction.IsCallbackWait)
@@ -679,6 +688,11 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
                 Log.Info($"  -> {hleFunction.Name} = 0x{s->R[0]:X} t={Util.GuestClock.Microseconds}");
             }
 
+            if (traceSlot >= 0)
+            {
+                Capture.HleCallTrace.Returned(traceBuffer!, traceSlot, s->R[0]);
+            }
+
             if (ContextReplaced)
             {
                 ContextReplaced = false;
@@ -699,6 +713,10 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
             }
 
             s->R[0] = 0;
+            if (traceSlot >= 0)
+            {
+                Capture.HleCallTrace.Returned(traceBuffer!, traceSlot, 0);
+            }
         }
         // The stub's next instruction is "bx lr": return directly.
         Arm.BxWritePc(s, s->R[14]);
@@ -945,6 +963,9 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         public HleFunction F; public uint A0, A1, A2, A3, Lr, Ret; public bool Returned; public long Frame;
     }
     private HleRecord[]? _hleRing;
+
+    /// <summary>This thread's calls of the session capture's recording (<see cref="Capture.HleCallTrace"/>).</summary>
+    private Capture.HleCallTrace.ThreadBuffer? _callTrace;
     private int _hleRingPos;
 
     private void RecordHle(HleFunction hleFunction, uint a0, uint a1, uint a2, uint a3, uint lr)
