@@ -497,7 +497,12 @@ public sealed partial class Gxm : HleModule
     }
 
     static readonly Dictionary<(uint, uint, uint, uint, uint, uint, bool, uint), ColorSurfaceInfo> ColorSurfaces = new();
-    static readonly Dictionary<(uint, uint, uint, uint, uint, uint, byte, bool, bool), DepthSurfaceInfo> DepthSurfaces = new();
+    /// <summary>A scene's depth/stencil surface as the hardware gets it: the control word, the store and load addresses,
+    /// the background depth (raw bits: exact match) and the background control word.</summary>
+    readonly record struct DepthSurfaceKey(uint ControlWord, uint DepthData, uint StencilData, uint LoadDepthData, uint LoadStencilData,
+        uint BackgroundDepthBits, uint BackgroundControl);
+
+    static readonly Dictionary<DepthSurfaceKey, DepthSurfaceInfo> DepthSurfaces = new();
 
     static ColorSurfaceInfo? ReadColorSurface(uint s)
     {
@@ -562,21 +567,86 @@ public sealed partial class Gxm : HleModule
     [Hle(ReturnsValue = true)] uint sceGxmDepthStencilSurfaceGetFormat(uint s) => ((GuestMemory.R32(s) >> 12) & 0x7EEE) << 12;
     [Hle] uint sceGxmDepthStencilSurfaceGetStrideInSamples(uint s) => (((GuestMemory.R32(s) >> 3) & 0xFF) + 1) << 5;
 
+    const uint DepthStencilFormatMask = 0x07EEE000;
+
     static DepthSurfaceInfo? ReadDepthSurface(uint s)
     {
-        if (s == 0) return null;
-        uint w0 = GuestMemory.R32(s);
-        uint taf = w0 >> 12;
-        uint format = (taf & 0x7EEE) << 12;
-        if (format == 0) return null;
-        uint w4 = GuestMemory.R32(s + 16);
-        var key = (GuestMemory.R32(s + 4), GuestMemory.R32(s + 8), (((w0 >> 3) & 0xFF) + 1) << 5, format, (taf & 0x11) << 12,
-            GuestMemory.R32(s + 12), (byte)(w4 & 0xFF), (w0 & 2) != 0, (w0 & 4) != 0); // depth as raw bits: exact match
+        if (s == 0)
+        {
+            return null;
+        }
+
+        uint depthData = GuestMemory.R32(s + 4);
+        uint stencilData = GuestMemory.R32(s + 8);
+        return SceneDepthSurface(new DepthSurfaceKey(GuestMemory.R32(s), depthData, stencilData, depthData, stencilData, GuestMemory.R32(s + 12), GuestMemory.R32(s + 16)));
+    }
+
+    /// <summary>Control-word bits libgxm's sceGxmBeginSceneEx takes from the load surface (FW 3.74): the force-load bit,
+    /// the load side of the format (bits 12-15, 21-23); the rest, the force-store bit included, comes from the store
+    /// surface.</summary>
+    const uint LoadSurfaceControlBits = 0x00E0F002;
+
+    /// <summary>
+    /// The scene surface of sceGxmBeginSceneEx (libgxm, FW 3.74): both surfaces enabled or both disabled, the same
+    /// stride, and the store surface's format stores every component (depth, stencil) the load surface loads. The
+    /// control word merges the load surface's load bits with the store surface's other bits; the scene loads from the
+    /// load surface's memory with its background, and stores to the store surface's memory. Null when both are
+    /// disabled; <paramref name="valid"/> is false when the pair is rejected (SCE_GXM_ERROR_INVALID_VALUE).
+    /// </summary>
+    static DepthSurfaceInfo? ReadDepthSurfacePair(uint load, uint store, out bool valid)
+    {
+        valid = true;
+        bool loadEnabled = load != 0 && (GuestMemory.R32(load) & DepthStencilFormatMask) != 0;
+        bool storeEnabled = store != 0 && (GuestMemory.R32(store) & DepthStencilFormatMask) != 0;
+        if (!loadEnabled && !storeEnabled)
+        {
+            return null;
+        }
+
+        uint loadWord = loadEnabled ? GuestMemory.R32(load) : 0;
+        uint storeWord = storeEnabled ? GuestMemory.R32(store) : 0;
+        // load-side components (bits 13-15) must be stored by the store surface (its bits 17-19)
+        bool componentsStored = (((loadWord >> 13) & 7) & ~((storeWord >> 17) & 7)) == 0;
+        if (!loadEnabled || !storeEnabled || !componentsStored || DepthStride(loadWord) != DepthStride(storeWord))
+        {
+            valid = false;
+            return null;
+        }
+
+        uint controlWord = (storeWord & ~LoadSurfaceControlBits) | (loadWord & LoadSurfaceControlBits);
+        return SceneDepthSurface(new DepthSurfaceKey(controlWord, GuestMemory.R32(store + 4), GuestMemory.R32(store + 8), GuestMemory.R32(load + 4),
+            GuestMemory.R32(load + 8), GuestMemory.R32(load + 12), GuestMemory.R32(load + 16)));
+    }
+
+    static uint DepthStride(uint controlWord) => (((controlWord >> 3) & 0xFF) + 1) << 5;
+
+    static DepthSurfaceInfo? SceneDepthSurface(DepthSurfaceKey key)
+    {
+        uint format = key.ControlWord & DepthStencilFormatMask;
+        if (format == 0)
+        {
+            return null;
+        }
+
         lock (DepthSurfaces)
         {
-            if (DepthSurfaces.TryGetValue(key, out var shared)) return shared;
-            if (DepthSurfaces.Count >= 256) DepthSurfaces.Clear();
-            return DepthSurfaces[key] = new DepthSurfaceInfo(key.Item1, key.Item2, key.Item3, key.Item4, key.Item5, BitConverter.UInt32BitsToSingle(key.Item6), key.Item7, key.Item8, key.Item9);
+            if (DepthSurfaces.TryGetValue(key, out DepthSurfaceInfo? shared))
+            {
+                return shared;
+            }
+
+            if (DepthSurfaces.Count >= 256)
+            {
+                DepthSurfaces.Clear();
+            }
+
+            uint word = key.ControlWord;
+            return DepthSurfaces[key] = new DepthSurfaceInfo(key.DepthData, key.StencilData, DepthStride(word), format, word & 0x00011000,
+                BitConverter.UInt32BitsToSingle(key.BackgroundDepthBits), (byte)(key.BackgroundControl & 0xFF), (word & 2) != 0, (word & 4) != 0)
+            {
+                LoadDepthData = key.LoadDepthData,
+                LoadStencilData = key.LoadStencilData,
+            };
         }
     }
 
@@ -599,19 +669,30 @@ public sealed partial class Gxm : HleModule
 
     [Hle]
     int sceGxmBeginScene(uint ctx, uint flags, uint renderTarget, uint validRegion, uint vertexSync, uint fragmentSync, uint colorSurface, uint depthStencil)
-        => BeginScene(ctx, renderTarget, validRegion, fragmentSync, colorSurface, depthStencil);
+        => BeginScene(ctx, renderTarget, validRegion, fragmentSync, colorSurface, ReadDepthSurface(depthStencil), depthValid: true);
 
+    /// <summary>A scene that loads its depth/stencil from one surface and stores it to another (libgxm, FW 3.74): the
+    /// force-load bit and the background of the load surface, the force-store bit of the store surface
+    /// (<see cref="ReadDepthSurfacePair"/>).</summary>
     [Hle]
     int sceGxmBeginSceneEx(uint ctx, uint flags, uint renderTarget, uint validRegion, uint vertexSync, uint fragmentSync, uint colorSurface,
         uint loadDepthStencil, uint storeDepthStencil)
-        => BeginScene(ctx, renderTarget, validRegion, fragmentSync, colorSurface, storeDepthStencil != 0 ? storeDepthStencil : loadDepthStencil);
+    {
+        DepthSurfaceInfo? depth = ReadDepthSurfacePair(loadDepthStencil, storeDepthStencil, out bool depthValid);
+        return BeginScene(ctx, renderTarget, validRegion, fragmentSync, colorSurface, depth, depthValid);
+    }
 
-    int BeginScene(uint ctx, uint renderTarget, uint validRegion, uint fragmentSync, uint colorSurface, uint depthStencil)
+    int BeginScene(uint ctx, uint renderTarget, uint validRegion, uint fragmentSync, uint colorSurface, DepthSurfaceInfo? depth, bool depthValid)
     {
         var c = Ctx(ctx);
         if (c == null || !_renderTargets.TryGetValue(renderTarget, out var rt)) return ERR_INVALID_POINTER;
         if (c.Deferred) return ERR_INVALID_VALUE;
         if (c.InScene) return ERR_WITHIN_SCENE;
+        if (!depthValid)
+        {
+            return ERR_INVALID_VALUE;
+        }
+
         c.InScene = true;
         c.RenderTarget = rt;
         c.FragmentSyncObject = fragmentSync;
@@ -634,7 +715,7 @@ public sealed partial class Gxm : HleModule
         {
             Width = rt.Width, Height = rt.Height, Multisample = rt.MultisampleMode,
             Color = ReadColorSurface(colorSurface),
-            Depth = ReadDepthSurface(depthStencil),
+            Depth = depth,
         });
         return 0;
     }

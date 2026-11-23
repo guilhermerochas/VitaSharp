@@ -431,10 +431,83 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
         Finish();
         Assert.Null(_rec.LastBegin!.Color);
-        Assert.Equal(0, Call(Gxm, "sceGxmBeginSceneEx", ctx, 0u, rt, 0u, 0u, 0u, color, depth, 0u));
+        // libgxm rejects a load surface without a store surface; the same surface as both is a plain scene
+        Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmBeginSceneEx", ctx, 0u, rt, 0u, 0u, 0u, color, depth, 0u));
+        Assert.Equal(0, Call(Gxm, "sceGxmBeginSceneEx", ctx, 0u, rt, 0u, 0u, 0u, color, depth, depth));
         Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
         Assert.Equal(0, Call(Gxm, "sceGxmTransferFinish"));
         Assert.NotNull(_rec.LastBegin!.Color);
+    }
+
+    /// <summary>
+    /// sceGxmBeginSceneEx (libgxm, FW 3.74) merges its two depth/stencil surfaces: the force-load bit, the background
+    /// depth and stencil and the load addresses come from the load surface; the force-store bit and the store addresses
+    /// from the store surface. Both surfaces enabled or both disabled, the same stride, and the store surface's format
+    /// stores what the load surface loads (a stencil loaded must be stored), else SCE_GXM_ERROR_INVALID_VALUE without
+    /// beginning the scene.
+    /// </summary>
+    [Fact]
+    public void SceneExTakesTheLoadBitFromTheLoadSurfaceAndTheStoreBitFromTheStoreSurface()
+    {
+        Init();
+        uint ctx = Context(), rt = RenderTarget(64, 64);
+        uint color = _harness.Alloc(0x40);
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceInit", color, 0u, 0u, 0u, 0u, 64u, 64u, 64u, _harness.Alloc(64 * 64 * 4)));
+        uint load = _harness.Alloc(0x20), store = _harness.Alloc(0x20);
+        uint loadDepth = _harness.Alloc(64 * 64 * 4), loadStencil = _harness.Alloc(64 * 64);
+        uint storeDepth = _harness.Alloc(64 * 64 * 4), storeStencil = _harness.Alloc(64 * 64);
+        const uint S8D24 = 0x01266000;
+        Assert.Equal(0, Call(Gxm, "sceGxmDepthStencilSurfaceInit", load, S8D24, 0u, 64u, loadDepth, loadStencil));
+        Assert.Equal(0, Call(Gxm, "sceGxmDepthStencilSurfaceInit", store, S8D24, 0u, 64u, storeDepth, storeStencil));
+        Invoke(Gxm, "sceGxmDepthStencilSurfaceSetForceLoadMode", load, 2u);
+        Invoke(Gxm, "sceGxmDepthStencilSurfaceSetForceStoreMode", store, 4u);
+        Invoke(Gxm, "sceGxmDepthStencilSurfaceSetBackgroundDepth", load, 0.25f);
+        Invoke(Gxm, "sceGxmDepthStencilSurfaceSetBackgroundStencil", load, 0x11u);
+        Invoke(Gxm, "sceGxmDepthStencilSurfaceSetBackgroundDepth", store, 0.75f);
+        Invoke(Gxm, "sceGxmDepthStencilSurfaceSetBackgroundStencil", store, 0x22u);
+
+        Assert.Equal(0, Call(Gxm, "sceGxmBeginSceneEx", ctx, 0u, rt, 0u, 0u, 0u, color, load, store));
+        Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+        Finish();
+        DepthSurfaceInfo scene = _rec.LastBegin!.Depth!;
+        Assert.True(scene.ForceLoad, "the load surface asks for the load");
+        Assert.True(scene.ForceStore, "the store surface asks for the store");
+        Assert.Equal((storeDepth, storeStencil), (scene.DepthData, scene.StencilData));
+        Assert.Equal((loadDepth, loadStencil), (scene.LoadDepthData, scene.LoadStencilData));
+        Assert.True(scene.LoadsFromOtherSurface);
+        Assert.Equal((0.25f, (byte)0x11), (scene.BackgroundDepth, scene.BackgroundStencil));
+        Assert.Equal(S8D24, scene.Format);
+
+        // swapped: the store surface's load bit and the load surface's store bit do not count
+        Assert.Equal(0, Call(Gxm, "sceGxmBeginSceneEx", ctx, 0u, rt, 0u, 0u, 0u, color, store, load));
+        Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+        Finish();
+        scene = _rec.LastBegin!.Depth!;
+        Assert.False(scene.ForceLoad, "the load surface (without the load bit) does not load");
+        Assert.False(scene.ForceStore, "the store surface (without the store bit) does not store");
+        Assert.Equal((loadDepth, storeDepth), (scene.DepthData, scene.LoadDepthData));
+
+        // both disabled: a scene without depth/stencil
+        uint off = _harness.Alloc(0x20);
+        Assert.Equal(0, Call(Gxm, "sceGxmDepthStencilSurfaceInitDisabled", off));
+        Assert.Equal(0, Call(Gxm, "sceGxmBeginSceneEx", ctx, 0u, rt, 0u, 0u, 0u, color, off, 0u));
+        Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+        Finish();
+        Assert.Null(_rec.LastBegin!.Depth);
+
+        // rejected pairs: one side disabled, another stride, a loaded stencil the store surface does not store
+        uint otherStride = _harness.Alloc(0x20), depthOnly = _harness.Alloc(0x20);
+        Assert.Equal(0, Call(Gxm, "sceGxmDepthStencilSurfaceInit", otherStride, S8D24, 0u, 96u, storeDepth, storeStencil));
+        Assert.Equal(0, Call(Gxm, "sceGxmDepthStencilSurfaceInit", depthOnly, 0x00044000u, 0u, 64u, storeDepth, 0u));
+        Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmBeginSceneEx", ctx, 0u, rt, 0u, 0u, 0u, color, load, off));
+        Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmBeginSceneEx", ctx, 0u, rt, 0u, 0u, 0u, color, 0u, store));
+        Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmBeginSceneEx", ctx, 0u, rt, 0u, 0u, 0u, color, load, otherStride));
+        Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmBeginSceneEx", ctx, 0u, rt, 0u, 0u, 0u, color, load, depthOnly));
+        Assert.False((bool)Invoke(Gxm, "sceGxmRenderingContextIsWithinSceneInternal")!);
+        // a depth-only load surface into a surface that also stores stencil is fine
+        Assert.Equal(0, Call(Gxm, "sceGxmBeginSceneEx", ctx, 0u, rt, 0u, 0u, 0u, color, depthOnly, store));
+        Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+        Finish();
     }
 
     [Fact]
