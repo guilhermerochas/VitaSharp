@@ -2057,6 +2057,22 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   libshacccg); completar todas as formas de hook (export/import/offset, cadeia de hooks com continuação, liberação) e
   de injeção de dados com restauração, com a mesma semântica e os mesmos códigos de erro do console, respeitados pelo
   JIT e pelo interpretador (invalidando blocos traduzidos). Validar com plugins de usuário reais e um teste por API.
+  Feito (22/11/2026, hook2, `PluginHookContractTests`, `PluginHookProcessTests`, conferido no fonte publicado do
+  framework): cadeia de hooks com a continuação do framework (next/func/old) e a ordem dele (o primeiro fica na
+  cabeça, cada novo entra logo depois: primeiro, mais novo, ..., segundo), liberação no meio/na cabeça/do último,
+  export/import/offset de kernel e de usuário. Corrigidos: o redirecionamento das stubs de uma função do firmware
+  servida pelo HLE era por NID só (um hook na gêmea de kernel ForDriver pegava o syscall de usuário de mesmo NID) e só
+  nos processos que já existiam (agora por biblioteca + NID, do sistema inteiro); o hook alcançado pelo HLE
+  (FirmwareKernelModules.Call) numa thread de usuário rodava com o pid do kernel (agora o processo atual é o do
+  usuário, como no syscall); hook/injeção de kernel com pid de usuário era feito no espaço de endereços do chamador
+  (agora no do processo alvo); os patches de um processo ficavam depois que ele terminava (agora saem, como o
+  framework faz no unload). Prova local com o kubridge e o fd_fix do usuário: os dois carregam e iniciam, o hook do
+  fd_fix fica instalado (ksceVopLookup no FW 3.74). Falta: (1) hook de exportação de usuário numa biblioteca de
+  usuário do firmware servida pelo HLE (SceLibKernel, SceDisplay...): esses módulos não estão na lista de módulos do
+  processo, a busca dá 0x90010002 (no Vita acha); precisa das cascas dos módulos de usuário como as de kernel
+  (`FirmwareKernelModules`); (2) o cache de código pode guardar um bloco decodificado antes de um patch e inserido
+  depois da invalidação (corrida entre `CodeCache.Get` e `Invalidate` numa thread do pré-compilador ou outra thread
+  do guest); conferir com uma geração de invalidação e um teste determinístico.
 - [ ] [P3][G] Plugins de kernel `.skprx` (pedido do usuário, 11/11/2026: "eu quero tudo, todos os plugins, quero que a emulação
   seja completa"), depois do item acima. Rodar o código do plugin no processador emulado num "modo kernel" do VitaSharp
   e implementar em HLE as exportações de kernel que os plugins importam (ksceIo*, memória, ksceKernel* de threads e

@@ -37,6 +37,8 @@ public sealed partial class PluginFramework
         public List<uint> Records = new();
         /// <summary>The HLE function whose import stubs were taken (0: none).</summary>
         public uint RedirectedNid;
+        /// <summary>The library of <see cref="RedirectedNid"/> (its export entry's library).</summary>
+        public uint RedirectedLibNid;
 
         /// <summary>Save states: the record of the kernel object table (<see cref="SaveState.KernelSnapshot"/>).</summary>
         internal void Save(SaveState.SnapshotWriter writer)
@@ -54,6 +56,7 @@ public sealed partial class PluginFramework
             }
 
             writer.Write(RedirectedNid);
+            writer.Write(RedirectedLibNid);
         }
 
         internal static HookPatch Load(SaveState.SnapshotReader reader, string name)
@@ -75,6 +78,8 @@ public sealed partial class PluginFramework
             }
 
             patch.RedirectedNid = reader.ReadUInt32();
+            // a state saved before the library was kept: 0, found again from the hooked entry after the load
+            patch.RedirectedLibNid = reader.AtEnd ? 0 : reader.ReadUInt32();
             return patch;
         }
     }
@@ -212,13 +217,14 @@ public sealed partial class PluginFramework
     /// <summary>Hooks the function at <paramref name="destination"/> (bit 0: Thumb) of process <paramref name="pid"/>
     /// with <paramref name="hookFunction"/>; writes the hook's reference to <paramref name="hookRefOut"/>. Returns the
     /// hook's UID or an error.</summary>
-    int HookAbsolute(int pid, uint hookRefOut, uint destination, uint hookFunction, uint redirectNid)
+    int HookAbsolute(int pid, uint hookRefOut, uint destination, uint hookFunction, uint redirectLibNid, uint redirectNid)
     {
         if (hookFunction >= 0xE0000000)
         {
             return pid == KernelSpace.KernelPid ? ErrorInvalidKernelAddr : unchecked((int)0x90010007);
         }
 
+        using ProcessScope.Scope space = EnterPatchSpace(pid);
         uint address = destination & ~1u;
         bool thumb = (destination & 1) != 0;
         if (!KernelSpace.IsMappedRange(address, ArmJumpSize))
@@ -267,10 +273,12 @@ public sealed partial class PluginFramework
                 GuestMemory.W32(record, 0);
                 patch.Records.Add(record);
                 AimThunk(patch);
-                Install(patch, redirectNid);
+                Install(patch, redirectLibNid, redirectNid);
             }
             else
             {
+                // the framework links a new hook right after the first one (its published source): the first hook
+                // stays the one the function jumps to, the newest runs second, the older ones after it
                 uint head = patch.Records[0];
                 GuestMemory.W32(record, GuestMemory.R32(head));
                 GuestMemory.W32(head, record);
@@ -278,15 +286,15 @@ public sealed partial class PluginFramework
             }
 
             GuestMemory.W32(hookRefOut, record);
-            string what = redirectNid != 0 ? $" ({NidDatabase.NameOf(redirectNid)}, its import stubs too)" : "";
+            string what = redirectNid != 0 ? $" ({NidDatabase.NameOf(redirectNid)} of library 0x{redirectLibNid:X8}, its import stubs too)" : "";
             Util.Log.Info($"plugin hook {patch.Records.Count} on 0x{address:X8}{what}: hook function 0x{hookFunction:X8} (pid 0x{pid:X})");
             return patch.Uid;
         }
     }
 
     /// <summary>Writes the jump to the thunk over the hooked function and takes the import stubs of the HLE function
-    /// <paramref name="redirectNid"/> (0: none).</summary>
-    void Install(HookPatch patch, uint redirectNid)
+    /// <paramref name="redirectNid"/> of library <paramref name="redirectLibNid"/> (0: none).</summary>
+    void Install(HookPatch patch, uint redirectLibNid, uint redirectNid)
     {
         if (patch.Thumb)
         {
@@ -304,24 +312,26 @@ public sealed partial class PluginFramework
         }
 
         patch.RedirectedNid = redirectNid;
+        patch.RedirectedLibNid = redirectLibNid;
         TakeImportStubs(patch);
     }
 
     /// <summary>The processes whose import stubs a hook on an HLE function takes: every process and the kernel.</summary>
     IEnumerable<Emulator> RedirectedProcesses() => Emu.Vita.ProcessesAndKernel.Append(Emu).Distinct();
 
-    /// <summary>Points every import stub of the HLE function <paramref name="patch"/> redirects, bound now or later, in
-    /// every process, at the patch's thunk (each stub written in its own process's address space).</summary>
+    /// <summary>Points every import stub of the HLE function <paramref name="patch"/> redirects (that library's function:
+    /// a kernel twin with the same NID in another library is another function), bound now or later, in every process,
+    /// those made after the hook too, at the patch's thunk (each stub written in its own process's address space).</summary>
     void TakeImportStubs(HookPatch patch)
     {
         foreach (Emulator process in RedirectedProcesses())
         {
-            process.Hle.Redirect(patch.RedirectedNid, patch.Thunk);
+            process.Hle.Redirect(patch.RedirectedLibNid, patch.RedirectedNid, patch.Thunk);
             using (ProcessScope.Enter(process))
             {
                 foreach (bool kernel in new[] { false, true })
                 {
-                    foreach (uint stub in process.Linker.BoundStubs(patch.RedirectedNid, null, kernel))
+                    foreach (uint stub in process.Linker.BoundStubs(patch.RedirectedNid, patch.RedirectedLibNid, kernel))
                     {
                         Linker.WriteJumpStub(stub, patch.Thunk);
                         process.Code.Invalidate(stub, ArmJumpSize);
@@ -343,7 +353,7 @@ public sealed partial class PluginFramework
 
         foreach (Emulator process in RedirectedProcesses())
         {
-            process.Hle.ClearRedirect(patch.RedirectedNid);
+            process.Hle.ClearRedirect(patch.RedirectedLibNid, patch.RedirectedNid);
         }
 
         // every import stub of the function, taken at the hook or bound while it was in place, binds as it would now
@@ -351,7 +361,7 @@ public sealed partial class PluginFramework
         {
             using (ProcessScope.Enter(process))
             {
-                process.Linker.RebindFunction(patch.RedirectedNid);
+                process.Linker.RebindFunction(patch.RedirectedNid, patch.RedirectedLibNid);
             }
         }
     }
@@ -367,6 +377,7 @@ public sealed partial class PluginFramework
                 return SceError.UNKNOWN_UID;
             }
 
+            using ProcessScope.Scope space = EnterPatchSpace(patch.Pid);
             int index = patch.Records.IndexOf(hookRef);
             if (index < 0)
             {
@@ -394,6 +405,68 @@ public sealed partial class PluginFramework
         }
     }
 
+    /// <summary>
+    /// Process <paramref name="pid"/> ended: its hooks and data injections go with it, as the framework drops every patch
+    /// of a process when the process unloads (its published source, from its hook on the process unload);
+    /// the code they patched went with the process, so nothing is written back. The hooks' thunks, trampolines and
+    /// reference records are freed (no thread of the process runs them any more).
+    /// </summary>
+    internal void ForgetProcess(int pid)
+    {
+        if (pid == KernelSpace.KernelPid)
+        {
+            return;
+        }
+
+        lock (_patchLock)
+        {
+            for (int i = _hooks.Count - 1; i >= 0; i--)
+            {
+                HookPatch patch = _hooks[i];
+                if (patch.Pid != pid)
+                {
+                    continue;
+                }
+
+                _hooks.RemoveAt(i);
+                K.Objects.Remove(patch.Uid);
+                FreeKernelAllocation(patch.Thunk);
+                FreeKernelAllocation(patch.Trampoline & ~1u);
+                foreach (uint record in patch.Records)
+                {
+                    FreeKernelAllocation(record);
+                }
+            }
+
+            for (int i = _injections.Count - 1; i >= 0; i--)
+            {
+                if (_injections[i].Pid == pid)
+                {
+                    K.Objects.Remove(_injections[i].Uid);
+                    _injections.RemoveAt(i);
+                }
+            }
+        }
+    }
+
+    void FreeKernelAllocation(uint address)
+    {
+        using (ProcessScope.Enter(KernelSpace.KernelPid))
+        {
+            Mem.Free(address);
+        }
+    }
+
+    /// <summary>The number of hooked addresses and data injections this framework keeps for process
+    /// <paramref name="pid"/> (tests).</summary>
+    internal (int Hooks, int Injections) PatchesOf(int pid)
+    {
+        lock (_patchLock)
+        {
+            return (_hooks.Count(h => h.Pid == pid), _injections.Count(i => i.Pid == pid));
+        }
+    }
+
     /// <summary>The HLE function a firmware export entry serves (its SVC stub's NID), or 0.</summary>
     static uint HleNidOf(uint address)
     {
@@ -402,26 +475,27 @@ public sealed partial class PluginFramework
 
     int HookExport(int pid, uint hookRefOut, uint namePtr, uint libraryNid, uint functionNid, uint hookFunction)
     {
-        int result = ExportFunction(pid, namePtr, libraryNid, functionNid, out uint function);
+        int result = ExportFunction(pid, namePtr, libraryNid, functionNid, out uint function, out uint exportLibNid);
         if (result != Success)
         {
             return result;
         }
 
         uint redirect = pid == KernelSpace.KernelPid ? HleNidOf(function) : 0;
-        return HookAbsolute(pid, hookRefOut, function, hookFunction, redirect);
+        return HookAbsolute(pid, hookRefOut, function, hookFunction, redirect != 0 ? exportLibNid : 0, redirect);
     }
 
     int HookImport(int pid, uint hookRefOut, uint namePtr, uint libraryNid, uint functionNid, uint hookFunction)
     {
-        uint stubOut = KernelAllocation(4, "plugin hook import");
-        int result = ModuleImportStub(pid, namePtr, libraryNid, functionNid, stubOut);
+        string? name = namePtr == 0 ? null : GuestMemory.ReadCString(namePtr, MaxNameLength);
+        uint stub = 0;
+        int result = ImportStubOf(pid, name, libraryNid, functionNid, ref stub);
         if (result != Success)
         {
             return result;
         }
 
-        return HookAbsolute(pid, hookRefOut, GuestMemory.R32(stubOut), hookFunction, 0);
+        return HookAbsolute(pid, hookRefOut, stub, hookFunction, 0, 0);
     }
 
     int HookOffset(int pid, uint hookRefOut, int moduleId, int segment, uint offset, bool thumb, uint hookFunction)
@@ -432,7 +506,7 @@ public sealed partial class PluginFramework
             return result;
         }
 
-        return HookAbsolute(pid, hookRefOut, thumb ? address | 1 : address, hookFunction, 0);
+        return HookAbsolute(pid, hookRefOut, thumb ? address | 1 : address, hookFunction, 0, 0);
     }
 
     /// <summary>Kernel: hooks the function at an absolute address of process <paramref name="pid"/>.</summary>
@@ -444,7 +518,7 @@ public sealed partial class PluginFramework
             return 0;
         }
 
-        return HookAbsolute(pid, hookRefOut, destination, hookFunction, 0);
+        return HookAbsolute(pid, hookRefOut, destination, hookFunction, 0, 0);
     }
 
     /// <summary>Kernel: hooks a module's export (pid, hook ref, module name, library NID, function NID, hook).</summary>

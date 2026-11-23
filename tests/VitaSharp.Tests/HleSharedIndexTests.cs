@@ -66,7 +66,7 @@ public sealed class HleSharedIndexTests(GuestMemoryFixture fixture) : IDisposabl
         uint stubOut = _harness.Word(0);
         PluginFramework framework = _harness.Module<PluginFramework>();
         Assert.Equal(0, Call(framework, "ModuleGetImportFunc", KernelSpace.KernelPid, _harness.Str("SharedTarget"), ThreadmgrForDriver, GetThreadId, stubOut));
-        int uid = Convert.ToInt32(Invoke(framework, "HookAbsolute", KernelSpace.KernelPid, hookRef, GuestMemory.R32(stubOut), hookFunction, GetThreadId));
+        int uid = Convert.ToInt32(Invoke(framework, "HookAbsolute", KernelSpace.KernelPid, hookRef, GuestMemory.R32(stubOut), hookFunction, ThreadmgrForDriver, GetThreadId));
         Assert.True(uid > 0, $"hook returned 0x{uid:X8}");
         _harness.OnGuest(t => Assert.Equal((uint)t.Uid, t.CallGuest(call)));
 

@@ -796,6 +796,7 @@ public sealed class Emulator : IDisposable
         }
 
         Kernel.StopAllThreads();
+        ForgetPluginPatches();
         foreach (Emulator c in _children.ToArray())
         {
             c.Terminate("ended with its parent");
@@ -2002,6 +2003,18 @@ public sealed class Emulator : IDisposable
         {
             File.WriteAllText(PluginFolderConfig, string.Join("\n", lines));
         }
+    }
+
+    /// <summary>The process ended: the plugin framework's hooks and injections in it (made by kernel plugins, kept by
+    /// the kernel, and by the process's own user plugins) go with it.</summary>
+    private void ForgetPluginPatches()
+    {
+        if (Vita.KernelProcess is { } kernel && !ReferenceEquals(kernel, this))
+        {
+            kernel.Hle.Modules.OfType<Hle.Modules.PluginFramework>().FirstOrDefault()?.ForgetProcess(Pid);
+        }
+
+        Hle.Modules.OfType<Hle.Modules.PluginFramework>().FirstOrDefault()?.ForgetProcess(Pid);
     }
 
     private bool ExportsPluginFramework(LoadedModule module) =>

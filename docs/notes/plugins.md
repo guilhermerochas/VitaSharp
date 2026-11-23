@@ -90,12 +90,30 @@ the NID table only): module information by name or module NID (the 0x38-byte rec
 segment offsets, its export and import entries, data injections (the original bytes kept and written back on release)
 and the framework's error codes (0x9001xxxx). A listed module that exports those libraries (the user's copy of the
 framework) is not loaded: the log says `not loaded (the emulator provides its libraries)`. With the option off the
-functions do nothing, as imports nothing provides. Function hooks are the next step.
+functions do nothing, as imports nothing provides.
+
+Function hooks (export, import, offset and absolute address; kernel and user) follow the framework's published
+contract: the hooked function's first instructions become a jump to the first hook; each hook gets a reference record
+(next, func, old) and continues the call as the framework's continuation macro does (the next hook's function, or,
+after the last one, a trampoline that runs the replaced instructions and the rest of the original). Hooks on one
+function are linked as the framework links them: the first stays the one the function jumps to and each new one goes
+right after it (so they run first, newest, ..., second; the framework leaves the order undefined). Releasing a hook
+keeps the others; releasing the last writes the original bytes back. Every patch drops only the translated code it
+covers, in every process. A hook works the same on a guest (LLE) function and on a firmware function the HLE serves:
+a kernel hook on a firmware export also takes, in every process (those made later too), the import stubs of that
+library's function, so a hook on a syscall export sees the user programs' calls; the kernel library's function with
+the same NID (a kernel twin) is another function. The hook runs on the calling thread with the caller's process as
+the current one, as kernel code a syscall runs does (ksceKernelGetProcessId gives the user process). A kernel
+plugin's hook or data injection in a user process is made in that process's memory, and the patches of a process go
+when it ends.
 
 ## Limits
 
 - A plugin that patches the firmware's own code by offset finds no firmware code there (VitaSharp implements the
   firmware's libraries itself).
+- A user plugin's export hook on a firmware user library the HLE serves (SceLibKernel, SceDisplay, ...) finds no
+  module: those modules are not in the process's module list yet. Import hooks on a program's own import stubs of
+  them work.
 - Undefined instructions and prefetch aborts (jumps to unmapped addresses) reach the handlers registered with
   SceExcpmgr, in undefined/abort mode with the banked registers and SPSR of the ARM exception modes; with no handler,
   or when no handler takes it, the fault is reported as a crash as before. Data aborts are not delivered yet (an

@@ -76,6 +76,9 @@ public interface IImportResolver
     /// <summary>Guest address of an HLE function implemented as guest code (Hle/HleGuestCode), or 0: the import then
     /// jumps there instead of trapping.</summary>
     uint GetHleGuestCode(uint nid) => 0;
+    /// <summary>The code an import of <paramref name="nid"/> from library <paramref name="libNid"/> jumps to instead of
+    /// trapping: a plugin hook's thunk when one took that library's function, else <see cref="GetHleGuestCode(uint)"/>.</summary>
+    uint GetHleGuestCode(uint nid, uint libNid) => GetHleGuestCode(nid);
 }
 
 /// <summary>Who may import a library a module exports.</summary>
@@ -293,7 +296,7 @@ public sealed class Linker(IImportResolver importResolver)
 
     private void BindHle(uint stub, uint nid, uint libNid, string libName)
     {
-        uint code = importResolver.GetHleGuestCode(nid);
+        uint code = importResolver.GetHleGuestCode(nid, libNid);
         if (code != 0)
         {
             WriteJumpStub(stub, code);
@@ -349,14 +352,15 @@ public sealed class Linker(IImportResolver importResolver)
     }
 
     /// <summary>Binds every import stub of function <paramref name="nid"/> again, as a new import would bind now (to a
-    /// visible export, else to the HLE): a plugin hook that had taken them is gone.</summary>
-    public void RebindFunction(uint nid)
+    /// visible export, else to the HLE): a plugin hook that had taken them is gone. With <paramref name="onlyLibNid"/>,
+    /// only the imports of that library's function (another library's function of the same NID is another function).</summary>
+    public void RebindFunction(uint nid, uint? onlyLibNid = null)
     {
         lock (_lock)
         {
             foreach ((uint bnid, uint libNid, string libName, uint stub, bool kernel) in _funcBindings)
             {
-                if (bnid != nid || Kept(stub))
+                if (bnid != nid || (onlyLibNid != null && libNid != onlyLibNid) || Kept(stub))
                 {
                     continue;
                 }
