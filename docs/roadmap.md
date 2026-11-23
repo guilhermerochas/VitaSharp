@@ -3190,6 +3190,27 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 Itens com correção já na `main` que esperam só a confirmação do usuário no jogo/tela do relato; quem fecha (`[x]`) é o
 usuário. Se o teste falhar, o item volta para "Bugs em aberto".
 
+- [ ] [P2][G] Abrir um jogo não dá retorno visual (relato do usuário, 21/11/2026: "quando eu clico de novo no jogo ele
+  não abre a janela dele"): pelo log, a sessão começa e a janela só aparece 13 s depois (firmware, input, áudio,
+  dispositivo Vulkan), seguida de ~12 s de carregamento do cache de shaders e da etapa de pré-compilação ARM. Fazer,
+  no PC e no Android: a janela abre na hora do clique com uma tela de carregamento (nome do jogo e etapa atual);
+  clicar de novo no mesmo jogo traz a janela existente para frente; conferir se há caso em que o segundo clique
+  realmente não abre.
+  Junto aqui (triagem de 22/11/2026), é a mesma tela de carregamento:
+  [P2][G] Barras de progresso no carregamento (pedido do usuário, 21/11/2026): "carregando cache de shaders" (N/total)
+  e "pré-compilando código ARM" (N/total) com barra e Cancelar, na tela de carregamento do PC e do Android (o Android
+  já tem o cartão da pré-compilação do andpar3: usar o mesmo modelo), com os nomes corretos dos dois conceitos.
+  Feito (feat/loadui2, 22/11/2026): no PC, o clique abre na hora a janela de carregamento do jogo (960x544, imagem
+  de abertura `pic0.png`, ícone, nome, etapa atual com barra: firmware, controles, áudio, GPU, jogo, cache de shaders
+  N/total, código ARM N/total, com "Cancelar" nas duas esperas) antes de o processo do jogo começar; a janela do jogo
+  espera escondida no mesmo lugar e aparece quando ele está pronto. Segundo clique traz a mesma janela (um processo
+  só), o X dela para o jogo. Uma falha ao abrir (título que não carrega, licença ausente, saída com erro) fica na
+  janela com o motivo, o caminho do log e "Fechar" (a parte "mensagem na janela" do [P1] "Falha ao abrir um jogo
+  fecha o app sem aviso"). No Android, a mesma tela sobre o jogo desde o toque, e a falha fica nela sob o diálogo.
+  Testar: no PC, clicar num jogo (a janela aparece na hora e passa pelas etapas; com cache, as barras contam e
+  "Cancelar" começa o jogo), clicar de novo no jogo enquanto carrega (a mesma janela vem para frente), fechar pelo X
+  durante o carregamento (o jogo para), abrir um título que falha (ex.: o PSM em Unity do relato: o motivo e o log
+  ficam na janela); no Android, tocar num jogo (tela de carregamento com etapas e barras).
 - [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053), áudio picotado (capturas de 21/11/2026). Causa: o módulo
   Envelope do NGS só fazia o loop de sustentação (uLoopStart..nLoopEnd) quando o loop terminava no último ponto. O jogo
   usa 4 pontos com o loop em 1..2 (amplitude 1) e um ponto 3 em 0, então toda voz passava para o 0: os efeitos eram
@@ -3613,7 +3634,10 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   ao launcher sem crash; teste com um título inválido.
   Em andamento (feat/psmu1, o mínimo): no PC, qualquer falha do `LoadTitle` vira erro no log e no stderr com o motivo e
   o caminho do log (`TitleLaunchFailure`, código de saída 4), e o launcher mostra essa linha no status; no Android a
-  falha da chave mostra o texto próprio. Falta a mensagem na própria janela do jogo.
+  falha da chave mostra o texto próprio. Feito (feat/loadui2, 22/11/2026): a mensagem na janela, no PC (a janela de
+  carregamento fica com o motivo, o caminho do log e "Fechar") e no Android (a tela de carregamento fica com o motivo
+  sob o diálogo); teste com um título inválido (`RunnerProcessTests`, `LauncherLoadingWindowTests`). Entrega movida
+  para "Corrigido, falta o usuário testar" (item da tela de carregamento); o resto segue aberto aqui.
 - [ ] [P1][G] Adrenaline (PSPEMUCFW) fecha logo ao abrir (relato do usuário, 21/11/2026; log `20261121_233018_PSPEMUCFW.log`):
   feito (adr1 565d5f71): a biblioteca `taihenUnsafe` do framework de plugins (taiLoadStartKernelModuleForUser e as
   outras chamadas de carga/descarga de módulo e de cópia user/kernel), e o ksceSblACMgrIsShell do ForDriver pelo bit 1
@@ -3653,17 +3677,6 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   gravador por quadro e avisa quando ele passa de 4 ms. Falta: (1) baratear o gravador do dump (21 ms/quadro: a
   codificação dos comandos e dos blocos de uniforms, ~11 MB/quadro crus, no GPU worker; levar para outra thread ou
   reduzir as cópias/alocações por draw); (2) feito (fix/io1, 22/11/2026), ver "Corrigido, falta o usuário testar".
-- [ ] [P2][G] Abrir um jogo não dá retorno visual (relato do usuário, 21/11/2026: "quando eu clico de novo no jogo ele
-  não abre a janela dele"): pelo log, a sessão começa e a janela só aparece 13 s depois (firmware, input, áudio,
-  dispositivo Vulkan), seguida de ~12 s de carregamento do cache de shaders e da etapa de pré-compilação ARM. Fazer,
-  no PC e no Android: a janela abre na hora do clique com uma tela de carregamento (nome do jogo e etapa atual);
-  clicar de novo no mesmo jogo traz a janela existente para frente; conferir se há caso em que o segundo clique
-  realmente não abre.
-  Junto aqui (triagem de 22/11/2026), é a mesma tela de carregamento:
-  [P2][G] Barras de progresso no carregamento (pedido do usuário, 21/11/2026): "carregando cache de shaders" (N/total)
-  e "pré-compilando código ARM" (N/total) com barra e Cancelar, na tela de carregamento do PC e do Android (o Android
-  já tem o cartão da pré-compilação do andpar3: usar o mesmo modelo), com os nomes corretos dos dois conceitos.
-
 - [x] (18/11/2026, usuário: corrigido; reabre se aparecer de novo) [P1][M] PSVitaAlive (PSVAS1178, homebrew vita2d), bug gráfico no teclado de busca (usuário, 17/11/2026; captura
   `captures/PSVAS1178_20261117_215911_tudo`, 41 achados [flash]): em quadros isolados faltam as teclas e parte do
   texto ("9/12" em vez de "9/128") e triângulos saem do canto superior esquerdo. Causa (replay do gpu.vsgd, quadro

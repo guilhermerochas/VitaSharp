@@ -3189,6 +3189,42 @@
   <data name="PrecompileCodeCancel" xml:space="preserve">
     <value>Cancel</value>
   </data>
+  <data name="BootStepStarting" xml:space="preserve">
+    <value>Opening the game...</value>
+  </data>
+  <data name="BootStepFirmware" xml:space="preserve">
+    <value>Starting the firmware</value>
+  </data>
+  <data name="BootStepInput" xml:space="preserve">
+    <value>Setting up the controls</value>
+  </data>
+  <data name="BootStepAudio" xml:space="preserve">
+    <value>Starting the audio</value>
+  </data>
+  <data name="BootStepGpu" xml:space="preserve">
+    <value>Starting the GPU (Vulkan)</value>
+  </data>
+  <data name="BootStepGame" xml:space="preserve">
+    <value>Loading the game</value>
+  </data>
+  <data name="BootStepShaderCache" xml:space="preserve">
+    <value>Loading the shader cache</value>
+  </data>
+  <data name="BootStepCodePrecompile" xml:space="preserve">
+    <value>Precompiling ARM code</value>
+  </data>
+  <data name="BootStepReady" xml:space="preserve">
+    <value>Starting the game</value>
+  </data>
+  <data name="LoadingWindowTitle" xml:space="preserve">
+    <value>{0}: loading</value>
+  </data>
+  <data name="LoadingFailureLog" xml:space="preserve">
+    <value>Full log: {0}</value>
+  </data>
+  <data name="LoadingFailureClose" xml:space="preserve">
+    <value>Close</value>
+  </data>
   <data name="LicenseMissing" xml:space="preserve">
     <value>The license of this game ({0}) is not installed, so the system cannot start it (error {1}). Reinstall it with the work.bin, zRIF or .rif license from your console.</value>
   </data>

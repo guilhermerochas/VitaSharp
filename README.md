@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=ef3731d7d52d36edbee486cd2b94d9a68b1d8657c99b0518e7c82ff2593396b9 -->
+<!-- pair: README.pt-BR.md sha256=5474041cb9f54baa78ccf6922dde4a7d7bc50e7bf7ce272a181ac7e5275822ca -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -391,6 +391,15 @@ Shell scripts follow the Google Shell Style Guide and must pass ShellCheck (CI j
   Dozen, phone drivers) pipelines are compiled whole either way. The
   `[shadercache] session` log line counts what the GPU thread compiled; see
   [`docs/notes/pipeline-skip.md`](docs/notes/pipeline-skip.md).
+- Loading window: a click on a game opens its window at once (960x544 times `--scale`), before the game process does
+  any of its start-up, with the game's start-up picture (`sce_sys/pic0.png`), its icon and name, the current step
+  (firmware, controls, audio, GPU, the game, the shader cache, the ARM code) with a bar and, during the shader cache
+  and the ARM code waits, "Cancelar". The game's own window waits hidden at the same place
+  (`--loading-screen=launcher --window-pos=X,Y`) and appears when the game is ready; the steps are the game process's
+  `[boot-step] <step>` log lines and `[boot-log] <path>` its log file. A second click on the game brings the same
+  window back; its X stops the game. A start that fails (a title that cannot be loaded, a missing license, an error
+  exit) leaves the reason and the log's place on the window, with "Fechar". Android shows the same screen over the
+  game. Nothing extra to install, every OS.
 - "Carregar o cache de shaders antes de jogar" / "Load the shader cache before playing" (launcher: Configurações, next
   to "Compilar shaders em segundo plano", and each game's page; `--load-shader-cache=on|off`, default on; the earlier
   name `--precompile-shaders` is still accepted with a warning): before a game starts, its shader cache (the shaders
@@ -419,8 +428,8 @@ Shell scripts follow the Google Shell Style Guide and must pass ShellCheck (CI j
   low-priority threads translate the code near what the game runs (a few blocks past every block it reaches, and the
   rest of its function, found through the `.ARM.exidx` function index), at most 64 MB of the code arena. Precompiled
   code is published when the game first reaches it. The log lines `ARM code precompilation: boot step ...` and, at the
-  end, `... % of the run blocks were precompiled` give the time and the coverage. Android runs the same translation in
-  the background without waiting (the option is in the app's settings and each game's settings). Nothing extra to
+  end, `... % of the run blocks were precompiled` give the time and the coverage. Android waits for the same step behind
+  its loading screen (the option is in the app's settings and each game's settings). Nothing extra to
   install, every OS.
 - Profiling: `dotnet-trace` / `dotnet-counters` (`dotnet tool install -g dotnet-trace`, every OS); on Windows also
   PerfView and WPR/WPA (Windows Performance Toolkit).

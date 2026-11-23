@@ -190,8 +190,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
             TopMargin = Dp(12),
             RightMargin = Dp(96)
         });
-        AddShaderCacheLoadBanner(root); // GameActivity.ShaderCacheLoad.cs
-        AddCodePrecompileBanner(root); // GameActivity.CodePrecompile.cs
+        // the loading screen from the tap on, over everything until the game is ready (GameActivity.LoadingScreen.cs)
+        AddLoadingScreen(root, game);
         SetContentView(root);
         // after SetContentView: Window.InsetsController needs the decor view, which does not exist before it (a
         // NullPointerException inside PhoneWindow.getInsetsController on API 30+)
@@ -240,10 +240,16 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         catch (Exception e)
         {
             Log.Error($"Session for {game.TitleId}: {e}");
-            ShowFatal(Loc.Format("MPrepareFailed", e.Message));
+            string message = Loc.Format("MPrepareFailed", e.Message);
+            FailLoadingScreen(message);
+            ShowFatal(message);
             return;
         }
-        _session.Failed += msg => RunOnUiThread(() => ShowFatal(msg));
+        _session.Failed += msg => RunOnUiThread(() =>
+        {
+            FailLoadingScreen(msg);
+            ShowFatal(msg);
+        });
         // the game quit by itself: back to the screens, as the Vita goes back to its home screen
         _session.Exited += () => RunOnUiThread(Leave);
         // the emulated system rebooted: the same title boots again on this screen, as the console's boot runs again
@@ -367,8 +373,7 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     protected override void OnDestroy()
     {
         _fpsTimer?.Dispose();
-        RemoveShaderCacheLoadBanner();
-        RemoveCodePrecompileBanner();
+        RemoveLoadingScreen();
         AppServices.Gamepads.DevicesChanged -= OnGamepadsChanged;
         _inputManager?.UnregisterInputDeviceListener(this);
         _session?.Dispose();
