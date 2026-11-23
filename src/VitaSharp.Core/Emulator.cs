@@ -2131,6 +2131,12 @@ public sealed class Emulator : IDisposable
             }
 
             string text = File.ReadAllText(host);
+            // the recordings keep which configuration was read, the build and the firmware (PluginHookStats)
+            string vitaPath = path == PluginFolderConfig ? "ur0:kernel_plugins/config.txt" : path;
+            FirmwareInfo? firmware = FirmwareInfo.Read(Options.FsRoot);
+            string firmwareText = firmware == null ? "not installed" : $"{firmware.Version ?? "unknown"} (build {firmware.Build})";
+            PluginHookStats.Of(this).RecordConfig(vitaPath + (PluginConfig.IsValid(text) ? "" : " (not valid: no plugin loads)"), text,
+                global::VitaSharp.Core.SaveState.SaveStateFile.EmulatorVersion, firmwareText);
             if (!PluginConfig.IsValid(text))
             {
                 Log.Warn($"plugin configuration {path} is not valid (no plugin loads from it)");
@@ -2199,6 +2205,20 @@ public sealed class Emulator : IDisposable
     /// </summary>
     private string LoadPlugin(string path, bool kernel)
     {
+        string result = LoadPluginModule(path, kernel, out LoadedModule? loadedModule);
+        // the recordings keep each plugin: its file's hash and size, what happened, the imports nothing provides
+        string unresolved = loadedModule == null ? "" : string.Join(", ", loadedModule.Imports
+            .SelectMany(i => i.FuncNids
+                .Where(n => !Linker.TryGetVisibleExport(n, i.LibNid, kernel, out _) && !Hle.Implements(n))
+                .Select(n => $"{i.Library}:{NidDatabase.NameOf(n)}")));
+        string? hostFile = InPluginFolder(path) ? Path.Combine(KernelPluginsFolder, path) : Vfs.Resolve(path);
+        PluginHookStats.Of(this).RecordPlugin(path, kernel, loadedModule?.Name ?? "", hostFile, result, unresolved, Options.FsRoot);
+        return result;
+    }
+
+    private string LoadPluginModule(string path, bool kernel, out LoadedModule? loaded)
+    {
+        loaded = null;
         LoadedModule loadedModule;
         try
         {
@@ -2210,6 +2230,7 @@ public sealed class Emulator : IDisposable
             return $"not loaded ({e.Message})";
         }
 
+        loaded = loadedModule;
         // the emulator offers the plugin framework libraries itself: a listed module that exports them (the user's copy of
         // the framework) is not loaded
         if (ExportsPluginFramework(loadedModule))

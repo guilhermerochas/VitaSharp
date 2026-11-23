@@ -136,15 +136,30 @@ N numera os hooks da sessão na ordem de instalação. A contagem é código do 
 pequena stub ARM do hook (na memória do kernel) que soma um no contador do hook (ldrex/strex, todos os núcleos) e segue
 para a função do hook ou para o trampolim, mantendo os registradores e a pilha de quem chamou; por isso vale em todo
 backend da CPU (interpretador, JIT IL e nativo, código pré-compilado) e em todo caminho até o hook. Só a chamada que
-leva um contador de 0 a 1 entra no C# para a linha do log; depois disso uma chamada custa poucas instruções e não aloca
+leva um contador de 0 a 1, e as chamadas rastreadas abaixo, entram no C# para as linhas do log; depois disso uma chamada custa poucas instruções e não aloca
 nada. Um save state guarda os contadores (são memória do guest); um estado salvo por uma versão antiga ganha as stubs ao
 carregar.
+
+O que um hook faz, nas primeiras chamadas (8 por padrão; `VITASHARP_PLUGIN_HOOK_TRACE=N` define quantas, 0 nenhuma,
+no máximo 256): uma linha por chamada, `plugin hook N call K: r0=... r1=... r2=... r3=... stack=...; continued to the
+original, which returned 0x...; returned 0x... to the caller (changed); wrote r1 0x... bytes 0-3 (now ...)`. Ela diz se
+o hook continuou (para a original ou para o próximo hook, com o valor que voltou) ou respondeu sozinho
+(`answered itself`), o que quem chamou recebeu (`(changed)` quando não é o que a original ou o próximo hook devolveu) e
+quais dos 32 bytes apontados por cada argumento mudaram durante a chamada. A stub guarda o lr de quem chamou numa
+palavra própria e entrega ao hook a palavra de retorno da stub, que o devolve: os registradores e a pilha do guest
+ficam como estavam, e uma chamada em andamento sobrevive a um save state. O resumo acrescenta, por hook, as chamadas que
+responderam sozinhas e, nas chamadas rastreadas, os valores devolvidos (os 5 mais comuns), quantos foram alterados e
+quantas escreveram numa saída. Depois das chamadas rastreadas, um hook custa só os contadores.
 
 Uma gravação (F8) também guarda os hooks: o context.txt lista cada hook com os contadores no início e no fim (uma linha
 `plugin hook:` separada por tabulações para cada um), o log.txt tem as linhas `called` e o report.txt tem a seção
 "Plugin hooks" com o tipo, a função, o processo, o endereço, quem instalou, a função do hook, as chamadas e as
 continuações durante a gravação e na sessão inteira, e `never called` ou o erro de um hook recusado. A análise lê só a
-gravação, então quem a examina não precisa nem do jogo nem dos plugins.
+gravação, então quem a examina não precisa nem do jogo nem dos plugins. Ela também tem a seção "Plugins": o build
+do emulador, o firmware instalado, a configuração de plugins lida (o caminho do Vita e as linhas) e cada módulo de
+plugin dela (caminho do Vita, kernel ou usuário, nome do módulo, SHA-256 e tamanho do arquivo, o que aconteceu com
+ele, as funções importadas que nada fornece). Só entram caminhos do Vita; um caminho do PC numa mensagem vira
+`<data>` ou `%USERPROFILE%`, e nenhum arquivo de plugin é copiado.
 
 As chamadas de módulo do framework para programas de usuário (taiLoadKernelModule, taiLoadStartKernelModuleForUser,
 taiStartKernelModuleForUser, taiLoadStartModuleForPidForUser, as quatro chamadas de stop, taiUnloadKernelModule,

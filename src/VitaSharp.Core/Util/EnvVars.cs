@@ -182,6 +182,10 @@ public static class EnvVars
     /// app's switch win over it): the plugins of ur0:kernel_plugins/config.txt (else ur0:tai / ux0:tai config.txt) are loaded. Default off: the pure firmware,
     /// no plugin.</summary>
     public const string KernelPlugins = "VITASHARP_KERNEL_PLUGINS";
+    /// <summary>The first calls of each plugin hook whose action the log shows (arguments, continuation, the original's
+    /// and the hook's returns, writes to the memory the arguments point to): 8 by default, 0 for none, at most 256; after
+    /// them a hook costs only its counters.</summary>
+    public const string PluginHookTrace = "VITASHARP_PLUGIN_HOOK_TRACE";
     /// <summary>Default of --net-allow=host,host: with real internet, only these hosts (names or addresses) are reachable.</summary>
     public const string NetAllow = "VITASHARP_NET_ALLOW";
     /// <summary>=folder: the IL backend also writes the IL of every block it compiles to assemblies there

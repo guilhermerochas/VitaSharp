@@ -17,7 +17,7 @@ namespace VitaSharp.Tests;
 /// function, a call through the hook chain, the import stubs a hook on an HLE function took. Synthetic kernel modules.
 /// </summary>
 [Collection("guest")]
-public sealed class PluginHookCallLogTests(GuestMemoryFixture fixture)
+public sealed partial class PluginHookCallLogTests(GuestMemoryFixture fixture)
 {
     private const uint TargetLib = 0x0BAD7A60, TargetNid = 0x2468ACE0, OtherNid = 0x2468ACE1;
     private const uint ThreadmgrForDriver = 0xE2C40624, GetThreadId = 0x59D06540;
@@ -200,8 +200,8 @@ public sealed class PluginHookCallLogTests(GuestMemoryFixture fixture)
         Assert.Single(rig.Sink.Starting("plugin hook 2 continued to the original: "));
         Assert.Empty(rig.Sink.Starting("plugin hook 1 continued to the original"));
         List<string> summary = rig.Summary();
-        Assert.Contains(summary, l => l.Contains("plugin hook 1 (", StringComparison.Ordinal) && l.Contains("5 calls", StringComparison.Ordinal) && l.EndsWith("continued to the original 0, to the next hook 5", StringComparison.Ordinal));
-        Assert.Contains(summary, l => l.Contains("plugin hook 2 (", StringComparison.Ordinal) && l.Contains("5 calls", StringComparison.Ordinal) && l.EndsWith("continued to the original 5, to the next hook 0", StringComparison.Ordinal));
+        Assert.Contains(summary, l => l.Contains("plugin hook 1 (", StringComparison.Ordinal) && l.Contains("5 calls", StringComparison.Ordinal) && l.Contains("continued to the original 0, to the next hook 5, answered itself 0", StringComparison.Ordinal));
+        Assert.Contains(summary, l => l.Contains("plugin hook 2 (", StringComparison.Ordinal) && l.Contains("5 calls", StringComparison.Ordinal) && l.Contains("continued to the original 5, to the next hook 0, answered itself 0", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -228,7 +228,7 @@ public sealed class PluginHookCallLogTests(GuestMemoryFixture fixture)
 
         Assert.Single(rig.Sink.Starting("plugin hook 1 called: "));
         Assert.Empty(rig.Sink.Starting("plugin hook 1 continued"));
-        Assert.Contains(rig.Summary(), l => l.Contains("plugin hook 1 (", StringComparison.Ordinal) && l.EndsWith($"3 calls (first from pid 0x{callerPid:X} (thread hle-test)), continued to the original 0, to the next hook 0, released", StringComparison.Ordinal));
+        Assert.Contains(rig.Summary(), l => l.Contains("plugin hook 1 (", StringComparison.Ordinal) && l.Contains($"3 calls (first from pid 0x{callerPid:X} (thread hle-test)), continued to the original 0, to the next hook 0, answered itself 3, released", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -277,12 +277,12 @@ public sealed class PluginHookCallLogTests(GuestMemoryFixture fixture)
         uint code = rig.Load("svc.skprx", hooks).Segments[0].Address;
         Assert.True(rig.HookExport(hookRef, TargetNid, hooks.AddressOf(code, answers)) > 0);
         uint stub = GuestMemory.R32(GuestMemory.R32(hookRef) + 4);
-        uint svc = GuestMemory.R32(stub + 27 * 4);
+        uint svc = GuestMemory.R32(stub + PluginFramework.StubEntrySvcWord * 4);
         Assert.Equal(0xEF000000u, svc & 0xFF000000);
-        Assert.Equal(svc, GuestMemory.R32(stub + 49 * 4));
+        Assert.Equal(svc, GuestMemory.R32(stub + PluginFramework.StubOldSvcWord * 4));
         var other = new HleRegistry(rig.Harness.Emu);
         HleFunction function = other.GetFunction(svc & 0xFFFFFF);
-        Assert.Equal("PluginFramework:hookFirstEvent", function.Name);
+        Assert.Equal("PluginFramework:hookEvent", function.Name);
         Assert.True(function.Implemented);
         _ = target;
     }
@@ -324,7 +324,7 @@ public sealed class PluginHookCallLogTests(GuestMemoryFixture fixture)
                 Core.Capture.CaptureAnalyzer.ContextSection(dir, stop: true));
             Assert.Equal("Plugin hooks (calls and continuations: during the recording / in the session):", section[0]);
             Assert.Contains(section, l => l.StartsWith("  hook 1: export hook, kernel, ", StringComparison.Ordinal) && l.Contains("installed by CaptureHooks", StringComparison.Ordinal)
-                && l.Contains("calls 4 / 5, continued to the original 4 / 5, to the next hook 0 / 0; first call from pid 0x", StringComparison.Ordinal));
+                && l.Contains("calls 4 / 5, continued to the original 4 / 5, to the next hook 0 / 0, answered itself 0; first call from pid 0x", StringComparison.Ordinal));
             Assert.Contains(section, l => l.StartsWith("  hook 2: export hook, kernel, ", StringComparison.Ordinal) && l.EndsWith(": never called", StringComparison.Ordinal));
         }
         finally
