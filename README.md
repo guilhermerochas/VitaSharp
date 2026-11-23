@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=40118b7921a7edc523d31f2e69c4c36ad658ea6e4c06f6cfa9a311e493411314 -->
+<!-- pair: README.pt-BR.md sha256=cad1bd7a81699ab64fcd50a6200fffc2960981f0aee45e35c1483dc7a5ff4bd6 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -195,8 +195,9 @@ injections, function hooks), as a console with the homebrew environment set up.
   data files stay in `ur0:tai`. The framework's own file is never loaded: the emulator provides its libraries. The
   folder of earlier versions (`kernel_plugins/` next to `fs/` in the data folder) moves into `ur0:kernel_plugins/` the
   same way, and the empty old folder is deleted.
-- **Log:** one line per plugin, `kernel plugin <path>: loaded and started (<name>)`, `... not started: no module
-  provides ...` or `... not loaded (...)`.
+- **Log:** one line per plugin, `kernel plugin <path>: loaded and started (<name>) (at system boot)`, `... not started:
+  no module provides ...` or `... not loaded (...)`. The `*KERNEL` plugins load at the system's boot, before the title's
+  launch, even when that launch then fails.
 
 Details in [`docs/notes/plugins.md`](docs/notes/plugins.md).
 

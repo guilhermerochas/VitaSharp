@@ -3183,6 +3183,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (23/11/2026, falta testar) [P1][M] Plugins de kernel no boot do sistema, antes do lançamento do título
+  (fix/bootord1): os módulos `*KERNEL` carregam e iniciam no boot (uma vez por sistema, qualquer que seja o título),
+  antes do mount do app0; um título cujo app0 não monta continua falhando com 0x80020004 e a mesma mensagem, e o log diz
+  em que passo do lançamento parou (`the launch stopped at app0's mount, step 3 of 4 (title key ...)`). A leitura da
+  licença no lançamento passa pelas entradas de ksceIoOpen/ksceIoRead/ksceIoClose quando código de kernel as enganchou.
+  Teste: `KernelPluginBootOrderTests`. Testar: com "Ativar Plugins do Kernel" ligado, abrir um título; o `last.log`
+  mostra cada `kernel plugin ...: loaded and started (...) (at system boot)` e `kernel plugins: N of M loaded and started
+  at system boot` antes da linha do título (`PSM title ...`/`Loading ...`), também quando o título falha.
+
 - [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo analisável e reexecutável sem o jogo (feat/capself1,
   `docs/captures.md`): (1) nenhum arquivo da gravação leva dado pessoal: uma última etapa troca, em todo texto e no
   cabeçalho do `gpu.vsgd`, a pasta de dados por `<data>`, a pasta e o nome do usuário por `<user>`, o computador por
@@ -3682,6 +3691,41 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   se o pisca e o borrão só aparecem a 2x (ex.: uma passada da cena — TAA/reprojeção, desfoque, reamostragem de
   profundidade ou de uma textura intermediária — ainda na escala 1x ou com amostragem errada ao escalar) e corrigir
   genericamente com teste. Os painéis do HUD já saem translúcidos (correção do ac3hud confirmada nessa captura).
+  Andamento (ac3blur, 23/11/2026; não resolvido): o pisca **não é da escala**: o replay a 1x pisca igual (`replay-gpu`
+  do dump, quadros 3637/3639/3641... = os que vão para o framebuffer 0x60000000). Quadro do jogo: pré-passe só de
+  profundidade 960x800 (ds 0x61100000, sem FORCE_LOAD nem FORCE_STORE, com consultas de visibilidade), mapa de sombras
+  2048x512, G-buffer 0x6078C000 704x576 (FORCE_LOAD + FORCE_STORE, desenhos LESS_EQUAL), luz 0x60AA4000, cena 704x384,
+  bloom, composição em 960x544. No quadro que pisca, o desenho da parede no G-buffer (vs C700C860B216CB68, 2329
+  vértices) falha o teste de profundidade numa faixa pontilhada (z-fighting) contra a profundidade que o pré-passe
+  deixou; o pré-passe não desenha esse buffer de vértices. Prova: tratar a cena com FORCE_LOAD que vem de uma cena sem
+  FORCE_STORE como "sem carga" (experimento, não entregue) tira o pisca em todos os quadros. Descartado: precisão da
+  posição (`invariant`/`precise` em gl_Position mudam 0 pixels). Falta decidir pelo console: o que a cena com
+  FORCE_LOAD lê na memória quando a cena anterior da mesma superfície não tinha FORCE_STORE (o GXM só grava a
+  profundidade forçado; então o G-buffer leria o que o G-buffer do quadro anterior gravou, não o pré-passe). Próximo
+  passo: guardar por superfície o conteúdo "gravado" (só cenas com FORCE_STORE o atualizam) e carregar dele no
+  FORCE_LOAD, com teste sintético (pré-passe sem store + cena com load) e --compare nos outros dumps (Injustice,
+  MGS3, LBP dependem da carga de profundidade). O "borrão" não é bug de escala: a cena 3D já sai em 1408x768 a 2x
+  (nítida contra a 1x); o jogo renderiza a 704x384 e amplia para 960x544, por isso é macia mesmo a 2x.
+  Andamento (ac3depth, 23/11/2026; não resolvido): **carregar a profundidade do pré-passe está certo.** No libgxm
+  3.74, SetForceLoadMode/SetForceStoreMode só ligam os bits 1/2 da palavra 0 da superfície, que o sceGxmBeginScene
+  repassa ao hardware (o BeginSceneEx tira o load da superfície de carga e o store da de gravação; o
+  sceGxmMidSceneFlush liga os dois para continuar uma cena dividida). Implementada a semântica estrita (a carga só lê
+  o que uma cena com FORCE_STORE gravou), o replay sai com o 3D todo preto: o G-buffer não limpa e carregaria a
+  própria profundidade do quadro anterior. No aparelho o jogo funciona, então o pré-passe (limpa + oclusores com
+  escrita) chega à memória. Cenas do quadro: pré-passe 960x800 (ds 0x61100000, sem load/store; quad ALWAYS que limpa,
+  oclusores 724271F2/C34E297C/07DF9995 com LESS_EQUAL e escrita, caixas E8D0292C só com consulta), sombra 2048x512
+  (outro ds, store), G-buffer (load+store, LESS_EQUAL, sem bias, stencil LESS_EQUAL ref 0), luz e cena (load, sem
+  store; a luz lê a profundidade como textura), final no framebuffer (sem load/store). Quadro par x ímpar: mesmas
+  cenas, mesmos estados (ds, formato, viewport, clip, bias 0, funções), pré-passe idêntico; o G-buffer só muda a
+  ordem de alguns draws, e a câmera anda ~0,001. No ímpar a parede (C700C860B216CB68, 2329 vértices) falha numa
+  área grande com borda pontilhada em degradê (empate quase exato com a profundidade de um oclusor); no par passa
+  inteira. Descartados: precisão do formato (imagens D32F em vez de D24S8: pisca igual), bias (0/0). Hipótese a
+  testar ao vivo (o dump já traz os uniforms copiados, o replay não muda isso): os oclusores leem a matriz de
+  vub1, fatias de 80 bytes num buffer que alterna entre dois endereços por quadro, e o pré-passe do quadro N começa
+  e termina antes do flip do quadro N-1. Se o jogo grava essas matrizes depois do sceGxmEndScene do pré-passe, a
+  cópia no fim da cena pega dados de outro quadro e o oclusor fica deslocado em quadros alternados. Rodar o jogo no
+  ponto do relato com VITASHARP_UB_SCENE_END=audit (e o A/B =frame) e ver se o vs 724271F2CFC4A93C aparece com
+  buffers reescritos depois do fim da cena e se o pisca some com =frame.
 - [ ] [P2][P] Resolução interna padrão (pedido do usuário, 22/11/2026): uma opção global nas configurações (PC e Android)
   para escolher a resolução interna (1x, 2x, 3x, 4x) com que todo jogo já abre, sem precisar trocar no atalho a cada
   sessão; a escolha por jogo (quando existir) vence a global. Mostrar o valor efetivo na tela de carregamento e no log

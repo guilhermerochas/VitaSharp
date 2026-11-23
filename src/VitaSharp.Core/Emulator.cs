@@ -1108,6 +1108,9 @@ public sealed partial class Emulator : IDisposable
     public void LoadTitle(string appPath, string self = "eboot.bin")
     {
         using ProcessScope.Scope scope = ProcessScope.Enter(this);
+        // the system's boot comes before any launch: the kernel and its *KERNEL plugins are up whatever the title, and
+        // whether its launch then works or not (once per system)
+        BootKernelPlugins();
         // a PSM title is started as the system starts it: its runtime with the title's folder as the launch parameter
         _launchParam = null;
         if (Package.InstalledContent.IsPsmTitleFolder(Options.FsRoot, appPath))
@@ -1765,51 +1768,6 @@ public sealed partial class Emulator : IDisposable
             Log.Warn($"Code cache: save failed: {e.Message}");
         }
     }
-    /// <summary>
-    /// An application folder that is still a PFS image gets app0 as appmgr mounts it: the licence where the firmware
-    /// keeps it, its title key by SceNpDrm's checks and the secure processor (<see cref="Package.LicenseTitleKey"/>),
-    /// then the PFS layer opened with that key (<see cref="Package.Pfs.PfsApp0View"/>), the key the executable's SELF
-    /// is decrypted with too. Without a licence the launch fails as appmgr's does
-    /// (<see cref="TitleLicenseMissingException"/>); without a key, or with one that does not open the image, as
-    /// <see cref="TitleKeyException"/>. The decrypted view is kept with the emulator's caches, next to the file system.
-    /// </summary>
-    private void OpenApp0Image()
-    {
-        if (!Package.Pfs.PfsApp0View.IsImage(AppPath))
-        {
-            return;
-        }
-
-        if (TitleLicense.FindFile(Options.FsRoot, AppPath, TitleId) is not { } licenseFile)
-        {
-            throw new TitleLicenseMissingException(TitleId, new FileNotFoundException($"{AppPath} is a PFS image and has no licence"));
-        }
-
-        string? activationFile = Vfs.Resolve("tm0:npdrm/act.dat");
-        byte[] activation = activationFile != null && File.Exists(activationFile) ? File.ReadAllBytes(activationFile) : [];
-        int error = Package.LicenseTitleKey.Get(File.ReadAllBytes(licenseFile), activation, SecureProcessorRifKey, out byte[]? key);
-        if (error != 0 || key == null)
-        {
-            Log.Error($"{TitleId}: app0 is a PFS image; the title key of its licence {licenseFile} is not available (0x{error:X8})");
-            throw new TitleKeyException(TitleId, error);
-        }
-
-        string fsRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(Options.FsRoot));
-        string dataRoot = Path.GetDirectoryName(fsRoot) ?? fsRoot;
-        byte[] folderHash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(AppPath.ToUpperInvariant()));
-        string view = Path.Combine(dataRoot, "cache", "pfs", $"{TitleId}-{Convert.ToHexString(folderHash, 0, 8)}");
-        try
-        {
-            Vfs.AddApp0BaseLayer(Package.Pfs.PfsApp0View.Open(AppPath, key, view, Log.Info));
-        }
-        catch (Package.Pfs.PfsKeyMismatchException e)
-        {
-            throw new TitleKeyException(TitleId, Package.LicenseTitleKey.BadLicense, e);
-        }
-
-        Klicensee = key;
-    }
-
     private byte[]? FindKlicensee() =>
         TitleLicense.FindFile(Options.FsRoot, AppPath, TitleId) is { } license ? PkgInstaller.ReadKlicensee(license) : null;
 
@@ -2185,7 +2143,7 @@ public sealed partial class Emulator : IDisposable
             }
 
             string result = LoadPlugin(path, kernel: true);
-            Log.Info($"kernel plugin {path}: {result}");
+            Log.Info($"kernel plugin {path}: {result} (at system boot)");
             results.Add($"{path}: {result}");
         }
 
@@ -2228,7 +2186,9 @@ public sealed partial class Emulator : IDisposable
                 .Where(n => !Linker.TryGetVisibleExport(n, i.LibNid, kernel, out _) && !Hle.Implements(n))
                 .Select(n => $"{i.Library}:{NidDatabase.NameOf(n)}")));
         string? hostFile = InPluginFolder(path) ? Path.Combine(KernelPluginsFolder, path) : Vfs.Resolve(path);
-        PluginHookStats.Of(this).RecordPlugin(path, kernel, loadedModule?.Name ?? "", hostFile, result, unresolved, Options.FsRoot);
+        // a kernel module loads at the system's boot (the *KERNEL section), a user module with its process
+        string moment = kernel ? KernelPluginMoment : $"with process {ProcessTitleId}";
+        PluginHookStats.Of(this).RecordPlugin(path, kernel, loadedModule?.Name ?? "", hostFile, result, unresolved, Options.FsRoot, moment);
         return result;
     }
 
