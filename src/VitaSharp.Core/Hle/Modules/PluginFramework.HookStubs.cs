@@ -6,20 +6,22 @@ namespace VitaSharp.Core.Hle.Modules;
 /// <summary>The counting stubs of the hooks (<see cref="PluginHookStats"/>).</summary>
 public sealed partial class PluginFramework
 {
-    // the stub: 36 words entering the hook, 26 continuing to the original, 8 words of data, then the return words of
-    // the traced calls (one SVC each: the hook's returns, then the original's) and their saved lr
+    // the stub's code (never written while it runs): 36 words entering the hook, 26 continuing to the original, the
+    // address of its data, then the return words of the traced calls (one SVC each: the hook's returns, then the
+    // original's); its data, a block of its own: the counters, the targets, the trace limit, the code's address and
+    // the traced calls' saved lr
     internal const int StubOldWord = 36;
-    internal const int StubDataWord = 62;
-    internal const int StubReturnWord = 70;
+    internal const int StubLiteralWord = 62;
+    internal const int StubReturnWord = 63;
 
     /// <summary>The words of the two SVCs (an HLE call returns to lr: each sets lr to the word after it).</summary>
     internal const int StubEntrySvcWord = 31, StubOldSvcWord = 57;
 
     internal const uint StubCalls = 0, StubToNext = 4, StubToOriginal = 8, StubHookFunction = 12, StubTrampoline = 16, StubPredecessor = 20, StubMagic = 24,
-        StubTraceLimit = 28;
+        StubTraceLimit = 28, StubCode = 32, StubSavedLrs = 36;
 
     /// <summary>Marks a counting stub's data.</summary>
-    const uint StubMagicValue = 0x324B4F48; // "HOK2"
+    const uint StubMagicValue = 0x334B4F48; // "HOK3"
 
     /// <summary>The stubs of the first version (no tracing: data at word 54, entry SVC at 27, continuation SVC at 49),
     /// found in save states: replaced on load.</summary>
@@ -34,24 +36,29 @@ public sealed partial class PluginFramework
         Stats.Declare(Emu);
     }
 
-    /// <summary>The size of a stub tracing <paramref name="traced"/> calls.</summary>
-    static uint StubSize(int traced)
+    /// <summary>The size of the code of a stub tracing <paramref name="traced"/> calls.</summary>
+    static uint StubCodeSize(int traced)
     {
-        return (uint)(StubReturnWord + 4 * traced) * 4;
+        return (uint)(StubReturnWord + 2 * traced) * 4;
     }
 
-    /// <summary>The address of the saved lr of return word <paramref name="slot"/> of a stub tracing
-    /// <paramref name="traced"/> calls (slots 0..traced-1: the hook's returns, traced..2*traced-1: the original's).</summary>
+    /// <summary>The size of the data of a stub tracing <paramref name="traced"/> calls.</summary>
+    static uint StubDataSize(int traced)
+    {
+        return StubSavedLrs + (uint)(2 * traced) * 4;
+    }
+
+    /// <summary>The address of the saved lr of return word <paramref name="slot"/> (slots 0..traced-1: the hook's
+    /// returns, traced..2*traced-1: the original's), in the stub's data.</summary>
     internal static uint StubSavedLr(uint data, int traced, int slot)
     {
-        uint stub = data - StubDataWord * 4;
-        return stub + (uint)(StubReturnWord + 2 * traced + slot) * 4;
+        return data + StubSavedLrs + (uint)slot * 4;
     }
 
-    /// <summary>The address of return word <paramref name="slot"/> (see <see cref="StubSavedLr"/>).</summary>
+    /// <summary>The address of return word <paramref name="slot"/> (see <see cref="StubSavedLr"/>), in the stub's code.</summary>
     internal static uint StubReturnAddress(uint data, int slot)
     {
-        return data - StubDataWord * 4 + (uint)(StubReturnWord + slot) * 4;
+        return GuestMemory.R32(data + StubCode) + (uint)(StubReturnWord + slot) * 4;
     }
 
     /// <summary>A conditional branch from word <paramref name="from"/> to word <paramref name="to"/>.</summary>
@@ -78,7 +85,7 @@ public sealed partial class PluginFramework
         [
             // entry
             0xE92D000F,                                  // 0  push {r0-r3}
-            0xE28FC000 | (StubDataWord * 4 - 12),        // 1  add r12, pc, #data
+            0xE59FC000 | (StubLiteralWord * 4 - 12),     // 1  ldr r12, [pc, #data]   the data's address
             0xE3A03000,                                  // 2  mov r3, #0          events
             0xE19C0F9F,                                  // 3  ldrex r0, [r12]     calls
             0xE2800001,                                  // 4  add r0, r0, #1
@@ -115,7 +122,7 @@ public sealed partial class PluginFramework
             0xE12FFF1C,                                  // 35 bx r12
             // continuation to the original (the record's old)
             0xE92D000F,                                  // 36 push {r0-r3}
-            0xE28FC000 | ((StubDataWord - StubOldWord - 1) * 4 - 8), // 37 add r12, pc, #data
+            0xE59FC000 | ((StubLiteralWord - StubOldWord - 1) * 4 - 8), // 37 ldr r12, [pc, #data]
             0xE3A03000,                                  // 38 mov r3, #0
             0xE28C2000 | StubToOriginal,                 // 39 add r2, r12, #toOriginal
             0xE1920F9F,                                  // 40 ldrex r0, [r2]
@@ -147,7 +154,7 @@ public sealed partial class PluginFramework
     void WriteStubSvcs(uint data, int traced)
     {
         (uint eventSvc, uint returnSvc) = Stats.SvcIndexes(Emu);
-        uint stub = data - StubDataWord * 4;
+        uint stub = StubOf(data);
         GuestMemory.W32(stub + StubEntrySvcWord * 4, 0xEF000000 | (eventSvc & 0xFFFFFF));
         GuestMemory.W32(stub + StubOldSvcWord * 4, 0xEF000000 | (eventSvc & 0xFFFFFF));
         for (int slot = 0; slot < 2 * traced; slot++)
@@ -155,7 +162,7 @@ public sealed partial class PluginFramework
             GuestMemory.W32(StubReturnAddress(data, slot), 0xEF000000 | (returnSvc & 0xFFFFFF));
         }
 
-        InvalidateEverywhere(stub, StubSize(traced));
+        InvalidateEverywhere(stub, StubCodeSize(traced));
     }
 
     /// <summary>Allocates and writes the counting stub of a hook: its code, the hook function, the trampoline, the
@@ -163,14 +170,16 @@ public sealed partial class PluginFramework
     uint NewCountingStub(uint hookFunction, uint trampoline)
     {
         int traced = PluginHookStats.TraceCalls;
-        uint stub = KernelAllocation(StubSize(traced), "plugin hook counter");
+        uint stub = KernelAllocation(StubCodeSize(traced), "plugin hook counter");
+        uint data = KernelAllocation(StubDataSize(traced), "plugin hook counter data");
         uint[] code = CountingStubCode(Stats.SvcIndexes(Emu).Event);
         for (int i = 0; i < code.Length; i++)
         {
             GuestMemory.W32(stub + (uint)i * 4, code[i]);
         }
 
-        uint data = stub + StubDataWord * 4;
+        GuestMemory.W32(stub + StubLiteralWord * 4, data);
+        GuestMemory.W32(data + StubCode, stub);
         GuestMemory.W32(data + StubCalls, 0);
         GuestMemory.W32(data + StubToNext, 0);
         GuestMemory.W32(data + StubToOriginal, 0);
@@ -186,7 +195,7 @@ public sealed partial class PluginFramework
     /// <summary>The record's func and old become the stub's entry and continuation.</summary>
     static void PointRecordAtStub(uint record, uint data)
     {
-        uint stub = data - StubDataWord * 4;
+        uint stub = StubOf(data);
         GuestMemory.W32(record + 4, stub);
         GuestMemory.W32(record + 8, stub + StubOldWord * 4);
     }
@@ -197,13 +206,14 @@ public sealed partial class PluginFramework
     {
         firstVersion = false;
         uint stub = GuestMemory.R32(record + 4);
-        if ((stub & 3) != 0 || !KernelSpace.IsMappedRange(stub, StubSize(0)))
+        if ((stub & 3) != 0 || !KernelSpace.IsMappedRange(stub, StubCodeSize(0) + 4))
         {
             return 0;
         }
 
-        uint data = stub + StubDataWord * 4;
-        if (GuestMemory.R32(data + StubMagic) == StubMagicValue)
+        uint data = GuestMemory.R32(stub + StubLiteralWord * 4);
+        if ((data & 3) == 0 && KernelSpace.IsMappedRange(data, StubDataSize(0)) && GuestMemory.R32(data + StubMagic) == StubMagicValue
+            && GuestMemory.R32(data + StubCode) == stub)
         {
             return data;
         }
@@ -219,10 +229,10 @@ public sealed partial class PluginFramework
         return firstVersion ? 0 : data;
     }
 
-    /// <summary>The stub's allocation (for freeing).</summary>
+    /// <summary>The stub's code (its data's other block).</summary>
     static uint StubOf(uint data)
     {
-        return data - StubDataWord * 4;
+        return GuestMemory.R32(data + StubCode);
     }
 
     /// <summary>Each hook's stub of <paramref name="patch"/> counts its continuations into the hook before it in the
