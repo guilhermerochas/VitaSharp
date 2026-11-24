@@ -2351,6 +2351,48 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Manager, câmera/AR, apps de vídeo/música/browser) e abrir um item por recurso com o caminho (LLE do módulo real +
   HLE do que falta); os grupos que o plano do VitaSDK marcou como "não se aplica" (Mono do PSM, Piglet, ShaccCg)
   entram aqui como recursos a emular, não como ignorados
+- [ ] [P3][M] Microfone com captura do host (inventário: `docs/notes/hardware-coverage.md`): o `SceAudioin` hoje tem
+  protocolo, ritmo, mudo e adoção certos, mas devolve só silêncio. Interface de captura no `Host/` ao lado da câmera,
+  uma implementação por sistema (WASAPI, PulseAudio/PipeWire, Core Audio, `AudioRecord` do Android) e a fonte
+  "nenhuma"; requisitos no README. Primeira entrega: fonte roteirizada (senoide) no teste, `sceAudioInInput` devolve
+  as amostras no ritmo do grain, mudo e sem fonte dão zeros. Usa: chat de voz, Party, Skype/Near, gravação de voz.
+- [ ] [P3][G] Modelo PS TV (VTE-1000) como opção do console (`docs/notes/hardware-coverage.md`): identidade do KBL
+  (bit `0x200` do product sub code, tipo de placa no hardware info) a partir de uma opção num lugar só
+  (`ConsoleIdentity`, variável no `EnvVars.cs`), o `vs0` do target 2 do pacote, até quatro controles do host nas
+  portas 1-4 pelo caminho do `SceDs3`/`SceHid`, vibração (`sceCtrlSetActuator`) e light bar nos controles do host,
+  HDMI como monitor que aceita os modos, USB host e Ethernet. Primeira entrega: com o modelo PS TV
+  `ksceSblAimgrIsDolce` = 1, AVConfig HDMI sem `0x803A0109`, `sceCtrlIsMultiControllerSupported` = 1, um segundo
+  controle roteirizado aparece na porta 1 e a vibração chega a um destino que grava; o modelo padrão continua igual.
+  Também cobre os outros modelos (PCH-2000: LCD e cartão interno de 1 GB; PCH-1100: modem 3G ausente = fiel).
+- [ ] [P3][G] Wi-Fi ad hoc entre instâncias do emulador (`docs/notes/hardware-coverage.md`,
+  `docs/notes/online-features.md`): hoje `pspnet_adhoc`/Matching não acham nenhum par. Primeira entrega: duas pilhas
+  emuladas num teste sobre UDP de loopback, uma cria o grupo, a outra acha (`sceNetAdhocctlScan`), entra e troca um
+  datagrama PDP nos dois sentidos. Depois Matching e o canal WLAN do ScePspemu.
+- [ ] [P3][M] Localização (GPS) pelo host (`docs/notes/hardware-coverage.md`): hoje "aplicativo sem permissão".
+  Interface de localização do host (Geolocation do Windows, GeoClue, Core Location, `LocationManager` do Android) e
+  posição fixa por opção. Primeira entrega: posição roteirizada devolvida pelo `sceLocationGetLocation` com o
+  aplicativo permitido; sem fonte, a resposta de hoje. Usa: Near, Mapas.
+- [ ] [P3][M] Magnetômetro (`docs/notes/hardware-coverage.md`): o `sceMotionMagnetometerOn` só guarda a chave. Campo
+  magnético na leitura de movimento do host (sensor do celular, roteiro); primeira entrega: campo roteirizado dá a
+  direção e `magFieldStability` estável em `sceMotionGetSensorState`/`GetState`.
+- [ ] [P3][M] Teclado e mouse Bluetooth (`SceHid`) a partir do host, como opção (`docs/notes/hardware-coverage.md`):
+  primeira entrega: `sceHidKeyboardEnumerate` devolve um handle e `sceHidKeyboardRead` informa teclas roteirizadas.
+- [ ] [P3][G] Processador de mídia Venezia (núcleos MeP + IVC2) para código MeP que não é do firmware (plugin
+  VVNZRunner e o homebrew sobre ele; `docs/notes/hardware-coverage.md`): o `vnzimg.skprx` sai do `self2elf` em claro,
+  sem chave. Primeira entrega: interpretador do núcleo MeP-c5 numa thread de guest com programa sintético no teste
+  (aritmética, memória, desvios, escrita de mailbox lida pelo ARM). Depois o IVC2 (sem documentação pública), o boot
+  do `vnzimg` até o estado 8 que o `SceCodecEngineWrapper` espera e os RPCs.
+- [ ] [P3][G] Codecs que faltam no HLE do codec engine (`docs/notes/hardware-coverage.md`): decodificador CELP
+  (`sceAudiodec` tipo `0x1006` recusa hoje), codificadores CELP e G.729 (quadros zerados), decodificador JPEG
+  dividido. Primeira entrega: tabela de tamanho de quadro CELP por modo de taxa conferida com o contrato do
+  `SceAudiodec`, depois quadros decodificados contra valores calculados pela ISO/IEC 14496-3.
+- [ ] [P3][G] Cartão de memória e eMMC como dispositivos de bloco (`docs/notes/hardware-coverage.md`): hoje o acesso a
+  setores falha (`0x803D0000`, `0x8032001A`). Primeira entrega: log de todo acesso a setor por chamador (formatação,
+  atualização pelos Ajustes, homebrew) e um arquivo de imagem como base de um dispositivo do `sdstor`, com setor
+  gravado lido de volta e fora do limite como o módulo responde.
+- [ ] [P3][G] Porta USB de dispositivo conectada a um host emulado (Content Manager com PC/PS3, armazenamento USB;
+  `docs/notes/hardware-coverage.md`): primeira entrega: evento "cabo conectado", `SceUdcd` em `0x20`, a espera de
+  estado retorna e um host roteirizado completa um pedido de controle.
 - [x] [P3][P] Idioma do sistema por jogo (pedido do usuário, 09/11/2026): opção "Idioma do sistema" nos ajustes de cada jogo
   (desktop e Android) que sobrepõe o idioma que o jogo recebe (SceSystemParamLang / `/CONFIG/SYSTEM/language`), para
   jogos sem o idioma do aparelho. Caso real: Killzone Mercenary PCSC00045 (lançamento asiático) só tem japonês
