@@ -3367,14 +3367,57 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `GxmHleTests.ColorSurfaceInitAcceptsNullData`. Testar: Zero Time Dilemma (PCSE00781) passa do boot, logos, menu e
   cenas como antes (nenhum `sceGxmBeginScene: 0x805B0003` ou `sceGxmColorSurfaceSetData: 0x805B0009` no log);
   Croixleur Sigma (framebuffers com dados NULL e SetData depois) abre e mostra imagem.
+- [ ] (23/11/2026, falta testar) [P1][P] O ID de autoridade do processo existe antes do mount do app0 (fix/hookfn3): no
+  processmgr 3.74 (descompilado, só estudo) o ksceKernelCreateProcess carrega o executável pelo modulemgr
+  (SceModulemgrForKernel 0xA85A44D7), que preenche o self auth info do processo, e o appmgr lê o ID com
+  ksceKernelGetProcessSelfAuthInfo (0x324F2B20) antes de chamar o kscePfsMount; o cabeçalho do SELF dá para ler porque o
+  PFS não cifra os arquivos que já são SELF (atributo NENC no files.db). Aqui o ID só era lido do executável depois do
+  mount, então o kscePfsMount do lançamento recebia 0 num primeiro lançamento. Agora o lançamento lê o ID do executável
+  do app0 antes da camada PFS (a pasta do aplicativo, ou a atualização que a cobre) na criação do processo; depois do
+  mount a leitura de sempre continua. Teste: `KernelPluginBootOrderTests.TheLaunchsPfsMountGetsTheAuthorityIdOfTheProcess`
+  (falha sem a correção: r2/r3 iam 0). Testar: com "Ativar Plugins do Kernel" e um plugin de kernel que engancha o
+  kscePfsMount, abrir um título cujo app0 é imagem PFS; no `last.log` a linha `plugin hook N call 1:` mostra r2/r3 com o
+  ID do título (r3=0x2F000000 num jogo), não 0.
+
+- [ ] (23/11/2026, falta testar) [P1][M] Os pedidos assíncronos de E/S com hook rodam nas threads fixas do escalonador
+  (fix/hookfn3): no iofilemgr 3.74 (descompilado, só estudo) o escalonador de E/S tem cinco threads de kernel fixas,
+  "SceIoSchedWorker0" a "SceIoSchedWorker4", uma por fila (0 armazenamento interno, 1 cartão de jogo e SD, 2 cartão de
+  memória, 3 host0, 4 as demais; a fila vem do tipo de armazenamento do mount), feitas uma vez com prioridade 100, pilha
+  0x2000 e afinidade 0x80000; o pedido roda na thread da fila do seu dispositivo. Aqui cada pedido com hook no
+  ksceVopLookup criava uma thread de kernel nova ("SceIoScheduler", o nome de um mutex do firmware). Agora o pedido vai
+  para a thread fixa da sua fila, feita no primeiro pedido com hook e mantida, no contexto do processo que o enviou (os
+  dispositivos, vnodes e memória dele); sem hook nada muda (o pedido fica na thread do host, nenhuma thread é criada).
+  Save state: a thread é de serviço (IServiceThreadOwner), volta com o UID salvo. Testes: `IoVopLookupHookTests`
+  (`AsynchronousRequestsRunOnTheFixedWorkerOfTheirQueue`, que falha sem a correção; os pedidos assíncronos e o "sem hook
+  não cria thread"), 50x sob carga. Testar: com "Ativar Plugins do Kernel" e o fd_fix (hook do ksceVopLookup), abrir um
+  jogo que carrega arquivos de forma assíncrona e conferir que carrega igual; o `last.log` mostra `Created thread
+  'SceIoSchedWorker2'` uma vez só, não uma thread por arquivo.
+
+- [ ] (23/11/2026, falta testar) [P1][M] Os mounts PFS (ScePfsMgrForKernel) com os argumentos do pfsmgr 3.74
+  (fix/hookfn3): no pfsmgr 3.74 (descompilado e desmontado, só estudo) o kscePfsMount é (origem, ponto de montagem, ID
+  de autoridade de 64 bits na 3ª e 4ª palavras, chave, modo): o modo 0x28 responde o modo de um mount em que esse ID
+  está aprovado (senão 0x80010013); qualquer outro é Mount2(origem, ponto, chave, modo) e depois Approve(ponto, ID). O
+  HLE lia a 3ª e a 4ª palavras como chave e modo e o 6º argumento como tamanho, então o Mount2 recebia a metade alta do
+  ID como modo e o Approve não guardava ID nenhum. Agora: Mount2 aceita só os modos do firmware (dados de jogo/save 2, 3,
+  5, 6, 7, 9, 10, 13; AC 4, 8, 12; redirecionamento 0, 20 a 23; outro 0x80142109), modo 10 sem chave e 2/3/10/13 sem
+  chave numa unidade de varejo dão 0x80010016, origem até 62 bytes, ponto de montagem de 1 a 31 bytes, e a imagem é
+  servida no dispositivo "<ponto>0:" (o "%s0:" do pfsmgr); Approve/Disapprove guardam e removem o ID (até 16 por mount;
+  repetido 0x80010011, cheio 0x8001001C, ausente 0x80010002). A chave do título continua vindo do caminho atual; nada
+  de licença mudou. Fica aberto: o NID 0x4C148288, que no 3.74 lê as informações de um mount do vfs (não o estado de
+  aprovação que o HLE responde). Testes: `IofilemgrKernelTests` (`PfsMountTakesTheAuthorityIdTheKeyAndTheMode`,
+  `PfsMountAcceptsTheFirmwareModes`, `PfsMountsServeTheSourceAtTheMountPoint`; falham sem a correção). Testar: com
+  "Ativar Plugins do Kernel" e um plugin de kernel que monta uma pasta com kscePfsMount (ou engancha o kscePfsMount),
+  conferir no `last.log` que o mount responde 0 e o conteúdo aparece no dispositivo "<ponto>0:"; os títulos que já
+  abriam abrem igual.
+
 - [ ] (23/11/2026, falta testar) [P1][M] O mount do app0 no lançamento passa pela entrada kscePfsMount (fix/hookfn2): no
   SceAppMgr 3.74 (descompilado, só estudo) o lançamento chama o kscePfsMount exportado do pfsmgr (caminho do app, ponto
   de montagem "ts" + 12 dígitos hex + "d", ID de autoridade do processo em duas palavras, chave do título, modo 5); aqui
   a imagem era aberta direto e um hook nessa função nunca era chamado. Agora, quando código de kernel enganchou o
   kscePfsMount, o lançamento faz a chamada pela entrada numa thread de kernel; o original monta a imagem igual a antes e
   um erro do hook falha o lançamento no passo 4 (mount PFS). A chave continua vindo do caminho atual (sem processador
-  seguro o lançamento para antes, em 0x80020004); nenhuma função de licença mudou. Diferença conhecida: o ID de
-  autoridade vai 0 num primeiro lançamento (o executável está dentro da imagem e é lido depois do mount). Teste:
+  seguro o lançamento para antes, em 0x80020004); nenhuma função de licença mudou. O ID de autoridade
+  é o do processo desde a criação dele (fix/hookfn3, item abaixo). Teste:
   `KernelPluginBootOrderTests` (`TheLaunchMountsApp0ThroughAHookedPfsMountEntry`,
   `AnErrorThePfsMountHookAnswersFailsTheLaunch`). Testar: com "Ativar Plugins do Kernel" e um plugin de kernel que
   engancha o kscePfsMount, abrir um título cujo app0 é imagem PFS e que já abria; o `last.log` mostra

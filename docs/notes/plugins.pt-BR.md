@@ -285,8 +285,13 @@ kscePfsMount (ScePfsMgrForKernel 0xA067B56F / 0xA772209C) com o caminho do aplic
 dígitos hexadecimais + "d", o ID de autoridade do programa do processo, a chave do título de 16 bytes e o modo 5: quando
 código de kernel enganchou essa função, o lançamento faz a chamada pela entrada numa thread de kernel, o original para o
 qual o hook continua monta a imagem como o lançamento monta sem hook, e um erro respondido pelo hook falha o lançamento
-no passo 4. A chave do título é a que o lançamento já tem (nenhuma conferência da licença muda); o ID de autoridade é 0
-num primeiro lançamento, porque o VitaSharp o lê do executável dentro da imagem, depois do mount.
+no passo 4. A chave do título é a que o lançamento já tem (nenhuma conferência da licença muda); o ID de autoridade é o do
+processo desde a criação dele, como o ksceKernelCreateProcess do processmgr 3.74 carrega o SELF do executável e preenche
+o self auth info do processo (o PFS não cifra SELFs, então o cabeçalho é lido do app0 antes da camada PFS). O kscePfsMount do
+pfsmgr 3.74 recebe (origem, ponto de montagem, o ID de autoridade como argumento de 64 bits na 3ª e 4ª palavras, chave,
+modo): o modo 0x28 responde o modo de um mount em que o ID está aprovado; qualquer outro é Mount2(origem, ponto, chave,
+modo) e depois Approve(ponto, ID). O Mount2 aceita só os modos do firmware (0, 2 a 10, 12, 13, 20 a 23; outros
+0x80142109) e serve a imagem no dispositivo "<ponto>0:"; Approve e Disapprove guardam os IDs permitidos no mount (até 16).
 
 ### Caminhadas de caminho nos dispositivos do emulador
 
@@ -300,10 +305,12 @@ rename cria é procurado, não é achado, e é criado): o hook recebe cada eleme
 a chamada, outro vnode a
 leva ao caminho dele, uma abertura que cria continua criando). Sem esse hook nada é percorrido nem alocado
 (`IoVopLookupHookTests`). As formas assíncronas (sceIoOpenAsync, sceIoDopenAsync, sceIoGetstatAsync e os outros pedidos
-com caminho) rodam no Vita na thread de kernel do próprio iofilemgr (SceIoScheduler), que percorre o caminho do mesmo
-jeito: com esse hook o escalonador de E/S roda o pedido com caminho numa thread de kernel com esse nome, no contexto do
-processo que o enviou, então o hook é chamado para ele e a resposta dele é o resultado do pedido; sem hook o pedido
-continua na thread do host do escalonador.
+com caminho) rodam no Vita numa das threads de kernel fixas do iofilemgr (3.74: SceIoSchedWorker0 a SceIoSchedWorker4,
+uma por fila do escalonador: armazenamento interno, cartão de jogo e SD, cartão de memória, host0, o resto; feitas uma
+vez, prioridade 100), que percorre o caminho do mesmo jeito: com esse hook o escalonador de E/S roda o pedido com
+caminho na thread da fila do dispositivo dele, feita no primeiro pedido assim e mantida, no contexto do processo que o
+enviou, então o hook é chamado para ele e a resposta dele é o resultado do pedido; sem hook o pedido continua na thread
+do host do escalonador e nenhuma thread é feita.
 
 ### A criação do processo no lançamento
 

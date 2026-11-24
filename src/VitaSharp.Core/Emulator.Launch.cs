@@ -235,8 +235,8 @@ public sealed partial class Emulator
     /// (<paramref name="mount"/>), so the call is made through the entry only when kernel code hooked it: the hook runs on
     /// a kernel thread with those arguments, and the original it continues to answers with <paramref name="mount"/>
     /// (<see cref="IoFileMgr.MountLaunchedApp0"/>). The title key is the one the launch already has; nothing of the
-    /// licence's checks changes. The authority ID is what the process has then: VitaSharp reads it from the executable,
-    /// which is inside the image, after the mount, so it is 0 for a first launch. Without a hook the mount runs directly.
+    /// licence's checks changes. The authority ID is what the process has then (<see cref="ExecutableAuthorityId"/>, read
+    /// when the process is created). Without a hook the mount runs directly.
     /// Returns 0 or the error.
     /// </summary>
     private int MountApp0ThroughPfsMgr(byte[] key, Func<int> mount)

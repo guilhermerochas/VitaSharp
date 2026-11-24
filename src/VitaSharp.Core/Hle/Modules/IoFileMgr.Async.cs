@@ -47,6 +47,10 @@ public sealed class IoAsyncOp : EventObject
     /// <summary>Where the I/O scheduler runs <see cref="Request"/> (null: on its own host thread).</summary>
     internal IoScheduler.RequestRunner? Runner;
 
+    /// <summary>The I/O scheduler's queue the request's device belongs to (iofilemgr's queues by storage: 0 internal,
+    /// 1 game card, 2 removable, 3 host file system, 4 default), which names the worker thread that serves it.</summary>
+    internal int SchedulerQueue;
+
     /// <summary>The SceIoAsyncParam the result goes to on completion (0: none).</summary>
     internal uint Param;
 
@@ -105,7 +109,7 @@ public sealed class IoAsyncOp : EventObject
 /// other error is the request's result. A request on a guest driver's mount runs the driver's guest code, which needs
 /// a guest thread: it still runs in the submitting call.
 /// </summary>
-public sealed partial class IoFileMgr
+public sealed partial class IoFileMgr : IServiceThreadOwner
 {
     const int IO_ECANCELED = unchecked((int)0x8001008C);
 
@@ -165,9 +169,10 @@ public sealed partial class IoFileMgr
         }
 
         request.Request = op;
-        if (path != null || otherPath != null)
+        if ((path ?? otherPath) is { } named)
         {
             request.Runner = _runPathRequest ??= RunPathRequest;
+            request.SchedulerQueue = SchedulerQueueOf(named);
         }
 
         AsyncScheduler.Enqueue(request);
@@ -179,35 +184,262 @@ public sealed partial class IoFileMgr
     IoScheduler.RequestRunner? _runPathRequest;
 
     /// <summary>
-    /// A request that names a path, as the I/O scheduler runs it. On the Vita the request runs on iofilemgr's own
-    /// kernel thread (the "SceIoScheduler" of 3.74, study only), which walks the path through the vfs as the
-    /// synchronous call does, one ksceVopLookup per element, for the process that submitted it. The emulator's devices
-    /// answer without the walk, so the request runs on the scheduler's host thread; only when a hook took ksceVopLookup
-    /// (<see cref="HostWalk"/>), checked when the request runs, it runs on a kernel thread named as the firmware's, in
-    /// the submitting process's context (its devices, its host vnodes and their ops, its address space; VitaSharp runs
-    /// kernel code on the threads of every process), so the hook is called for it as for a synchronous call and its
-    /// answer is the request's. The device time is the request's either way.
+    /// A request that names a path, as the I/O scheduler runs it. On the Vita the request runs on one of iofilemgr's
+    /// fixed worker threads (3.74, decompiled, study only: "SceIoSchedWorker0" to "SceIoSchedWorker4", kernel threads
+    /// made once when the scheduler's queues are made, one per queue, priority 100), which walks the path through the
+    /// vfs as the synchronous call does, one ksceVopLookup per element, for the process that submitted it. The
+    /// emulator's devices answer without the walk, so the request runs on the scheduler's host thread; only when a hook
+    /// took ksceVopLookup (<see cref="HostWalk"/>), checked when the request runs, it runs on the worker of its queue
+    /// (<see cref="IoSchedWorkerOf"/>, made the first time), so the hook is called for it as for a synchronous call and
+    /// its answer is the request's. The device time is the request's either way.
     /// </summary>
-    long RunPathRequest(Func<long> work, long from, out long deviceDone)
+    long RunPathRequest(IoAsyncOp op, Func<long> work, long from, out long deviceDone)
     {
-        if (!HleEntryCalls.IsHooked(this, s_hleEntry_ksceVopLookup) || Emu is not { } emu)
+        if (!HleEntryCalls.IsHooked(this, s_hleEntry_ksceVopLookup) || Emu == null)
         {
             return IoScheduler.Execute(work, from, out deviceDone);
         }
 
-        AddressSpace? space = AddressSpace.Current;
-        long result = SceError.IO_EINVAL;
-        long done = from;
-        // a kernel thread in the submitting process's context: its devices, its host vnodes and their ops, its memory
-        emu.RunOnKernelThread(emu, "SceIoScheduler", _ =>
+        IoSchedWorker worker = IoSchedWorkerOf(op.SchedulerQueue);
+        lock (worker.Submitting)
         {
-            using (AddressSpace.Use(space))
+            GuestThread thread = worker.Thread;
+            lock (thread.WaitLock)
             {
-                result = IoScheduler.Execute(work, from, out done);
+                worker.Work = work;
+                worker.From = from;
+                worker.Space = AddressSpace.Current;
+                worker.Finished = false;
+                Monitor.PulseAll(thread.WaitLock);
+                // the worker answers (or ends: a stop, a state load that let it go) through this lock
+                while (!worker.Finished && !worker.Exited)
+                {
+                    Monitor.Wait(thread.WaitLock);
+                }
+
+                deviceDone = worker.Finished ? worker.Done : from;
+                long result = worker.Finished ? worker.Result : SceError.IO_EINVAL;
+                worker.Work = null;
+                worker.Space = null;
+                return result;
             }
-        }, "an asynchronous I/O request");
-        deviceDone = done;
-        return result;
+        }
+    }
+
+    /// <summary>The scheduler's worker threads' names: the prefix and the queue's number ("%s%d", iofilemgr 3.74).</summary>
+    internal const string IoSchedWorkerName = "SceIoSchedWorker";
+
+    /// <summary>iofilemgr 3.74's scheduler queues: internal storage, game card, removable (memory card), host file
+    /// system, default.</summary>
+    const int IoSchedQueueInternal = 0, IoSchedQueueGameCard = 1, IoSchedQueueRemovable = 2, IoSchedQueueHost = 3, IoSchedQueueDefault = 4;
+
+    /// <summary>The scheduler's worker threads' priority, stack, attribute and affinity (iofilemgr 3.74).</summary>
+    const int IoSchedWorkerPriority = 100, IoSchedWorkerAffinity = 0x80000;
+    const uint IoSchedWorkerStack = 0x2000, IoSchedWorkerAttr = 0x10000000;
+
+    /// <summary>One of the scheduler's worker threads and the request it is serving (guarded by the thread's wait
+    /// lock).</summary>
+    sealed class IoSchedWorker(GuestThread thread)
+    {
+        public readonly GuestThread Thread = thread;
+
+        /// <summary>Held by the I/O scheduler while one request goes to this worker.</summary>
+        public readonly object Submitting = new();
+
+        public Func<long>? Work;
+        public long From;
+        public AddressSpace? Space;
+        public long Result;
+        public long Done;
+        public bool Finished;
+
+        /// <summary>The thread ended (a stop, or a state load let it go): it takes no more requests.</summary>
+        public bool Exited;
+    }
+
+    /// <summary>The scheduler's worker threads of this process, by queue (made with the first hooked request).</summary>
+    [SnapshotIgnore]
+    readonly IoSchedWorker?[] _ioSchedWorkers = new IoSchedWorker?[IoSchedQueueDefault + 1];
+
+    /// <summary>
+    /// The queue of iofilemgr 3.74's scheduler a path's device belongs to (decompiled, study only: the queue is chosen
+    /// by the mount's storage type, 0x100 internal, 0x201 and 0x203 game card and SD, 0x202 the memory card, 0x300 the
+    /// host file system, any other the default one). The device names are the firmware's fixed ones (the reason a name
+    /// is compared here): the internal flash's partitions, the game card's, the memory card's and host0; a device of
+    /// none of them (app0, savedata0, the PFS drives) is the default queue's.
+    /// </summary>
+    static int SchedulerQueueOf(string path)
+    {
+        int colon = path.IndexOf(':');
+        if (colon <= 0)
+        {
+            return IoSchedQueueDefault;
+        }
+
+        ReadOnlySpan<char> device = path.AsSpan(0, colon);
+        if (device.Equals("gro0", StringComparison.OrdinalIgnoreCase) || device.Equals("grw0", StringComparison.OrdinalIgnoreCase))
+        {
+            return IoSchedQueueGameCard;
+        }
+
+        if (device.Equals("ux0", StringComparison.OrdinalIgnoreCase) || device.Equals("xmc0", StringComparison.OrdinalIgnoreCase))
+        {
+            return IoSchedQueueRemovable;
+        }
+
+        if (device.Equals("host0", StringComparison.OrdinalIgnoreCase))
+        {
+            return IoSchedQueueHost;
+        }
+
+        foreach (string partition in s_internalPartitions)
+        {
+            if (device.Equals(partition, StringComparison.OrdinalIgnoreCase))
+            {
+                return IoSchedQueueInternal;
+            }
+        }
+
+        return IoSchedQueueDefault;
+    }
+
+    /// <summary>The internal flash's partitions (the firmware's fixed device names).</summary>
+    static readonly string[] s_internalPartitions = ["os0", "vs0", "vd0", "sa0", "tm0", "ud0", "pd0", "ur0", "imc0"];
+
+    /// <summary>The worker thread of a scheduler queue: a kernel thread of the submitting process (VitaSharp runs kernel
+    /// code on the threads of every process; the process's devices, host vnodes and memory are the request's), made the
+    /// first time a hooked request goes to that queue and kept, as the firmware keeps its workers.</summary>
+    IoSchedWorker IoSchedWorkerOf(int queue)
+    {
+        lock (_ioSchedWorkers)
+        {
+            if (_ioSchedWorkers[queue] is { Exited: false } existing)
+            {
+                return existing;
+            }
+
+            Emulator emu = Emu!;
+            GuestThread thread;
+            using (ProcessScope.Enter(emu))
+            {
+                thread = emu.Kernel.CreateThread(IoSchedWorkerName + queue, 0, IoSchedWorkerPriority, IoSchedWorkerStack, IoSchedWorkerAttr, IoSchedWorkerAffinity);
+            }
+
+            var worker = new IoSchedWorker(thread);
+            thread.KernelMode = true;
+            thread.HostBody = self => RunIoSchedWorker(self, worker);
+            _ioSchedWorkers[queue] = worker;
+            thread.Start(0, 0);
+            return worker;
+        }
+    }
+
+    /// <summary>A scheduler worker's body: waits for a request, runs it in the submitter's address space, answers.</summary>
+    static void RunIoSchedWorker(GuestThread self, IoSchedWorker worker)
+    {
+        try
+        {
+            while (true)
+            {
+                Func<long> work;
+                using (Scheduler.Block())
+                {
+                    lock (self.WaitLock)
+                    {
+                        // no timeout: a request (RunPathRequest) or the stop request pulses this lock
+                        while ((worker.Work == null || worker.Finished) && !self.Core.StopRequested)
+                        {
+                            Monitor.Wait(self.WaitLock);
+                        }
+
+                        if (self.Core.StopRequested)
+                        {
+                            return;
+                        }
+
+                        work = worker.Work!;
+                    }
+                }
+
+                long done;
+                long result;
+                using (AddressSpace.Use(worker.Space))
+                {
+                    result = IoScheduler.Execute(work, worker.From, out done);
+                }
+
+                lock (self.WaitLock)
+                {
+                    worker.Result = result;
+                    worker.Done = done;
+                    worker.Finished = true;
+                    Monitor.PulseAll(self.WaitLock);
+                }
+            }
+        }
+        finally
+        {
+            lock (self.WaitLock)
+            {
+                worker.Exited = true;
+                Monitor.PulseAll(self.WaitLock);
+            }
+        }
+    }
+
+    /// <summary>Save states (<see cref="IServiceThreadOwner"/>): a saved scheduler worker of this process this session
+    /// does not run is this module's again, with its saved UID. Matched by name: the name is the fixed one the firmware
+    /// gives the worker of each queue (prefix and queue number), the identity of a service thread in a save state.</summary>
+    bool IServiceThreadOwner.AdoptServiceThread(GuestThread thread)
+    {
+        if (!ReferenceEquals(thread.Process, Emu) || !thread.Name.StartsWith(IoSchedWorkerName, StringComparison.Ordinal)
+            || !int.TryParse(thread.Name.AsSpan(IoSchedWorkerName.Length), out int queue) || queue < 0 || queue > IoSchedQueueDefault)
+        {
+            return false;
+        }
+
+        lock (_ioSchedWorkers)
+        {
+            if (_ioSchedWorkers[queue] is { Exited: false })
+            {
+                return false;
+            }
+
+            var worker = new IoSchedWorker(thread);
+            thread.KernelMode = true;
+            thread.HostBody = self => RunIoSchedWorker(self, worker);
+            _ioSchedWorkers[queue] = worker;
+        }
+
+        return true;
+    }
+
+    /// <summary>Save states: a worker the loaded state does not have is forgotten (the next hooked request of its queue
+    /// makes a new one).</summary>
+    bool IServiceThreadOwner.ReleaseServiceThread(GuestThread thread)
+    {
+        lock (_ioSchedWorkers)
+        {
+            for (int queue = 0; queue < _ioSchedWorkers.Length; queue++)
+            {
+                if (_ioSchedWorkers[queue] is { } worker && ReferenceEquals(worker.Thread, thread))
+                {
+                    _ioSchedWorkers[queue] = null;
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Tests: the worker thread of a scheduler queue, if it was made.</summary>
+    internal GuestThread? IoSchedWorkerThread(int queue)
+    {
+        lock (_ioSchedWorkers)
+        {
+            return _ioSchedWorkers[queue]?.Thread;
+        }
     }
 
     /// <summary>Tests: waits until the I/O scheduler has done the host work of every queued request (their completion

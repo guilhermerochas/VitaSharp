@@ -138,18 +138,19 @@ public sealed class IofilemgrKernelTests(GuestMemoryFixture fixture) : IDisposab
         Directory.CreateDirectory(host!);
         File.WriteAllText(Path.Combine(host!, "data.bin"), "x");
         uint source = _harness.Str("ux0:pfssrc");
-        uint point = _harness.Str("pfst0:");
-        Assert.Equal(Inval, Call(Io, "kscePfsMount2", source, _harness.Str(""), 0u, 2u));
-        Assert.Equal(Inval, Call(Io, "kscePfsMount2", source, _harness.Str(new string('m', 31)), 0u, 2u));
-        Assert.Equal(NoEnt, Call(Io, "kscePfsMount2", _harness.Str("ux0:missing"), point, 0u, 2u));
-        Assert.Equal(0, Call(Io, "kscePfsMount2", source, point, 0u, 2u));
-        Assert.Equal(Exist, Call(Io, "kscePfsMount2", source, point, 0u, 2u));
+        uint point = _harness.Str("pfst");
+        Assert.Equal(Inval, Call(Io, "kscePfsMount2", source, _harness.Str(""), 0u, 6u));
+        Assert.Equal(Inval, Call(Io, "kscePfsMount2", source, _harness.Str(new string('m', 32)), 0u, 6u));
+        Assert.Equal(NoEnt, Call(Io, "kscePfsMount2", _harness.Str("ux0:missing"), point, 0u, 6u));
+        Assert.Equal(0, Call(Io, "kscePfsMount2", source, point, 0u, 6u));
+        Assert.Equal(Exist, Call(Io, "kscePfsMount2", source, point, 0u, 6u));
         Assert.Equal(Path.Combine(host!, "data.bin"), _harness.Emu.Vfs.Resolve("pfst0:data.bin"));
-        Assert.Equal(2, Call(Io, "kscePfsMount", source, point, 0u, 0u, 0u, 0x28u));
+        Assert.Equal(NotMounted, Call(Io, "kscePfsMount", source, point, 0u, 0u, 0u, 0x28u)); // no authority approved
         uint state = _harness.Alloc(4);
         Assert.Equal(0, Call(Io, "kscePfs_4C148288", point, state));
         Assert.Equal(0u, GuestMemory.R32(state));
         Assert.Equal(0, Call(Io, "kscePfsApprove", point, 0u, 0u, 0u));
+        Assert.Equal(6, Call(Io, "kscePfsMount", source, point, 0u, 0u, 0u, 0x28u));
         Assert.Equal(0, Call(Io, "kscePfs_4C148288", point, state));
         Assert.Equal(1u, GuestMemory.R32(state));
         Assert.Equal(0, Call(Io, "kscePfsDisapprove", point, 0u, 0u, 0u));
@@ -160,6 +161,72 @@ public sealed class IofilemgrKernelTests(GuestMemoryFixture fixture) : IDisposab
         Assert.Equal(0, Call(Io, "kscePfsAcidDirSet", source, _harness.Str("PCSA00000")));
         Assert.True(Call(Io, "kscePfsAcidDirSet", _harness.Str("ux0:missing"), _harness.Str("PCSA00000")) < 0);
         Assert.Equal(-1, Call(Io, "kscePfsFacade_04352D52"));
+    }
+
+    /// <summary>
+    /// kscePfsMount's arguments as pfsmgr 3.74 takes them (ScePfsMgrForKernel 0xA772209C, decompiled, study only):
+    /// (source, mount point, program authority ID in the third and fourth words, key, mode). A mode other than 0x28 is
+    /// Mount2(source, mount point, key, mode) then Approve(mount point, authority ID); mode 0x28 answers the mode of a
+    /// mount that authority ID is approved on. SceAppMgr mounts applications with mode 5 and an authority ID such as
+    /// 0x2F00000000000001. Fails when the call reads the third and fourth words as the key and the mode.
+    /// </summary>
+    [Fact]
+    public void PfsMountTakesTheAuthorityIdTheKeyAndTheMode()
+    {
+        Directory.CreateDirectory(_harness.Emu.Vfs.Resolve("ux0:pfsapp", true)!);
+        uint source = _harness.Str("ux0:pfsapp");
+        uint point = _harness.Str("tsa1b2c3d4e5f6d");
+        uint key = _harness.Alloc(0x10);
+        const uint AuthorityLow = 1, AuthorityHigh = 0x2F000000;
+
+        Assert.Equal(0, Call(Io, "kscePfsMount", source, point, AuthorityLow, AuthorityHigh, key, 5u));
+        Assert.True(_harness.Emu.Vfs.IsMounted("tsa1b2c3d4e5f6d0"));
+        Assert.Equal(5, Call(Io, "kscePfsMount", 0u, point, AuthorityLow, AuthorityHigh, 0u, 0x28u));
+        Assert.Equal(NotMounted, Call(Io, "kscePfsMount", 0u, point, 2u, AuthorityHigh, 0u, 0x28u)); // another program
+        Assert.Equal(NotMounted, Call(Io, "kscePfsMount", 0u, _harness.Str("tsnone"), AuthorityLow, AuthorityHigh, 0u, 0x28u));
+        Assert.Equal(Inval, Call(Io, "kscePfsMount", 0u, 0u, AuthorityLow, AuthorityHigh, 0u, 0x28u));
+
+        // the authority table: one entry per ID, 16 per mount
+        Assert.Equal(Exist, Call(Io, "kscePfsApprove", point, 0u, AuthorityLow, AuthorityHigh));
+        for (uint id = 2; id <= 16; id++)
+        {
+            Assert.Equal(0, Call(Io, "kscePfsApprove", point, 0u, id, AuthorityHigh));
+        }
+
+        Assert.Equal(unchecked((int)0x8001001C), Call(Io, "kscePfsApprove", point, 0u, 17u, AuthorityHigh));
+        Assert.Equal(0, Call(Io, "kscePfsDisapprove", point, 0u, AuthorityLow, AuthorityHigh));
+        Assert.Equal(NoEnt, Call(Io, "kscePfsDisapprove", point, 0u, AuthorityLow, AuthorityHigh));
+        Assert.Equal(NotMounted, Call(Io, "kscePfsMount", 0u, point, AuthorityLow, AuthorityHigh, 0u, 0x28u));
+        Assert.Equal(0, Call(Io, "kscePfsUnmount", point));
+        Assert.False(_harness.Emu.Vfs.IsMounted("tsa1b2c3d4e5f6d0"));
+    }
+
+    /// <summary>The modes pfsmgr 3.74 mounts (game data/save data 2, 3, 5, 6, 7, 9, 10, 13; AC 4, 8, 12; redirect 0,
+    /// 20 to 23; any other 0x80142109) and its key rules (mode 10 takes none; 2, 3, 10 and 13 need one on a retail
+    /// unit), checked before the source.</summary>
+    [Fact]
+    public void PfsMountAcceptsTheFirmwareModes()
+    {
+        uint source = _harness.Str("ux0:pfsmissing");
+        uint point = _harness.Str("pfsm");
+        uint key = _harness.Alloc(0x10);
+        const int BadMode = unchecked((int)0x80142109);
+        uint[] mounted = [0, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 20, 21, 22, 23];
+        for (uint mode = 0; mode < 0x30; mode++)
+        {
+            int expected = Array.IndexOf(mounted, mode) >= 0 ? NoEnt : BadMode;
+            if (mode == 10)
+            {
+                expected = Inval; // with a key
+            }
+
+            Assert.Equal(expected, Call(Io, "kscePfsMount2", source, point, key, mode));
+        }
+
+        Assert.Equal(Inval, Call(Io, "kscePfsMount2", source, point, 0u, 10u)); // no key on a retail unit
+        Assert.Equal(Inval, Call(Io, "kscePfsMount2", source, point, 0u, 2u));
+        Assert.Equal(NoEnt, Call(Io, "kscePfsMount2", source, point, 0u, 5u));
+        Assert.Equal(Inval, Call(Io, "kscePfsMount2", _harness.Str("ux0:" + new string('p', 59)), point, key, 5u));
     }
 
     [Fact]

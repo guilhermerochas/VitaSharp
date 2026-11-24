@@ -6,11 +6,13 @@ namespace VitaSharp.Core.Hle.Modules;
 
 // ScePfsMgrForKernel (os0:bootimage ScePfsMgr 3.74) and ScePfsFacadeForKernel (iofilemgr.skprx 3.74; read in the
 // modules, study only): the protected file system's mounts. pfsmgr keeps a table of mounts by mount point (a name of
-// 1 to 30 bytes, else 0x80010016): Mount2(source, mount point, keys, type) adds one (a mount point already in use
-// 0x80010011) and mounts the source's PFS image on it through the I/O manager; Approve/Disapprove set or clear its
-// approval, Unmount removes it (unknown 0x80010013). The emulator installs content decrypted into host folders, so a
-// PFS mount is the source folder served at the mount point (the device of the mount point maps to the source's host
-// folder, as the console's PFS shows the image's plain files there). The ACID directory calls run an ioctl on the
+// 1 to 31 bytes, else 0x80010016): Mount2(source, mount point, key, mode) adds one (a mount point already in use
+// 0x80010011) and mounts the source's PFS image on the device "<mount point>0:" through the I/O manager;
+// Approve/Disapprove(mount point, program authority ID) add or remove an authority ID allowed to use it (up to 16),
+// Unmount removes it (unknown 0x80010013); Mount(source, mount point, authority ID, key, mode) is Mount2 then Approve,
+// or with mode 0x28 the mode of a mount the authority ID is approved on. The emulator installs content decrypted into
+// host folders, so a PFS mount is the source folder served on the mount's device (it maps to the source's host
+// folder, as the console's PFS shows the image's plain files there; the key is not needed). The ACID directory calls run an ioctl on the
 // directory (it must exist: the I/O manager's error), the devctl calls on the mount's PFS device. The facade entries
 // are the I/O manager's own stand-ins for an absent pfsmgr: each answers -1.
 public sealed partial class IoFileMgr
@@ -25,9 +27,34 @@ public sealed partial class IoFileMgr
     [SnapshotMissing]
     readonly Dictionary<string, int> _pfsTypes = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>The approved PFS mounts.</summary>
+    /// <summary>The approved PFS mounts: pfsmgr clears a mount's "not approved" flag at its first approval and never
+    /// sets it again.</summary>
     [SnapshotMissing]
     readonly HashSet<string> _pfsApproved = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The program authority IDs approved on each PFS mount (pfsmgr's table of 16 per mount).</summary>
+    [SnapshotMissing] // states of builds before it: no authority approved
+    readonly Dictionary<string, List<ulong>> _pfsAuthorities = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>How many program authority IDs pfsmgr approves on one mount.</summary>
+    const int PfsAuthoritiesPerMount = 16;
+
+    /// <summary>pfsmgr's "the table is full" (an approval past the 16th authority ID).</summary>
+    const int PFS_ERR_AUTHORITIES_FULL = unchecked((int)0x8001001C);
+
+    /// <summary>pfsmgr's error for a mode it does not mount.</summary>
+    const int PFS_ERR_BAD_MODE = unchecked((int)0x80142109);
+
+    /// <summary>kscePfsMount's mode that asks for an existing mount's mode instead of mounting.</summary>
+    const uint PfsModeQuery = 0x28;
+
+    /// <summary>The modes pfsmgr 3.74 mounts (below 0x18): the game data and save data pseudo drives (2, 3, 5, 6, 7, 9,
+    /// 10, 13), the AC pseudo drives (4, 8, 12) and the redirect pseudo drives (0, 20 to 23); any other is
+    /// 0x80142109.</summary>
+    const uint PfsGameDataModes = 0x26EC, PfsAcModes = 0x1110, PfsRedirectModes = 0xF00001;
+
+    /// <summary>The longest source path pfsmgr takes (62 bytes).</summary>
+    const int PfsSourceMaxLength = 0x3E;
 
     /// <summary>The launches mounting app0 through kscePfsMount's entry (<see cref="MountLaunchedApp0"/>), by the kernel
     /// thread making the call: the launch's own mount.</summary>
@@ -77,7 +104,7 @@ public sealed partial class IoFileMgr
         }
     }
 
-    /// <summary>A mount point the module takes: 1 to 30 bytes; the name, or null.</summary>
+    /// <summary>A mount point the module takes: 1 to 31 bytes; the name, or null.</summary>
     static string? PfsMountPoint(uint mountPoint)
     {
         if (mountPoint == 0)
@@ -86,20 +113,61 @@ public sealed partial class IoFileMgr
         }
 
         string text = GuestMemory.ReadCString(mountPoint, 0x20);
-        return text.Length is >= 1 and <= 0x1E ? text : null;
+        return text.Length is >= 1 and <= 0x1F ? text : null;
     }
 
-    /// <summary>kscePfsMount2(source, mountPoint, keys, type): NULL source or a bad mount point 0x80010016, a mount
-    /// point in use 0x80010011, a source that does not exist 0x80010002; the source served at the mount point.</summary>
+    /// <summary>The device pfsmgr mounts a mount point's image on: the name followed by "0" ("%s0:").</summary>
+    static string PfsDevice(string point)
+    {
+        return point + "0";
+    }
+
+    /// <summary>pfsmgr's checks of a new mount's arguments (its mount entry's setup): a source of more than 62 bytes,
+    /// mode 10 with a key, or modes 2, 3, 10 and 13 without a key on a retail unit 0x80010016; a mode it does not mount
+    /// 0x80142109. 0 when the mount can be made.</summary>
+    static int PfsCheckMount(string sourcePath, uint key, uint mode)
+    {
+        bool needsKeyOnRetail = mode is 2 or 3 or 10 or 13;
+        if (sourcePath.Length > PfsSourceMaxLength || (mode == 10 && key != 0)
+            || (needsKeyOnRetail && key == 0 && SystemServicesVsh.AimgrIsCex()))
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        if (mode >= 0x18 || ((1u << (int)mode) & (PfsGameDataModes | PfsAcModes | PfsRedirectModes)) == 0)
+        {
+            return PFS_ERR_BAD_MODE;
+        }
+
+        return 0;
+    }
+
+    /// <summary>kscePfsMount2(source, mountPoint, key, mode) as pfsmgr 3.74 makes it: NULL source or a bad mount point
+    /// 0x80010016, a mount point in use 0x80010011, then the mount's checks (<see cref="PfsCheckMount"/>), a source
+    /// that does not exist 0x80010002; the source served on the device "mountPoint0:", not yet approved.</summary>
     [Hle(Nid = 0x2D48AEA2, Library = "ScePfsMgrForKernel")]
-    int kscePfsMount2(uint source, uint mountPoint, uint keys, uint type)
+    int kscePfsMount2(uint source, uint mountPoint, uint key, uint mode)
     {
         if (source == 0 || PfsMountPoint(mountPoint) is not { } point)
         {
             return VFS_ERR_INVAL;
         }
 
-        string sourcePath = GuestMemory.ReadCString(source, 0x400);
+        lock (_pfsMounts)
+        {
+            if (_pfsMounts.ContainsKey(point))
+            {
+                return VFS_ERR_EXIST;
+            }
+        }
+
+        string sourcePath = GuestMemory.ReadCString(source, PfsSourceMaxLength + 1);
+        int check = PfsCheckMount(sourcePath, key, mode);
+        if (check != 0)
+        {
+            return check;
+        }
+
         string? host = Emu.Vfs.Resolve(sourcePath);
         if (host == null || !Directory.Exists(host))
         {
@@ -114,11 +182,12 @@ public sealed partial class IoFileMgr
             }
 
             _pfsMounts[point] = sourcePath;
-            _pfsTypes[point] = (int)type;
+            _pfsTypes[point] = (int)mode;
+            _pfsAuthorities[point] = new List<ulong>();
         }
 
-        string device = point.TrimEnd(':');
-        if (!device.Contains('/') && !Emu.Vfs.IsMounted(device))
+        string device = PfsDevice(point);
+        if (!device.Contains('/') && !device.Contains(':') && !Emu.Vfs.IsMounted(device))
         {
             Emu.Vfs.Mount(device, host);
         }
@@ -126,33 +195,51 @@ public sealed partial class IoFileMgr
         return 0;
     }
 
-    /// <summary>kscePfsMount(source, mountPoint, keys, type, ?, size): with a 0x28-byte argument block, the type of an
-    /// existing mount (unknown 0x80010013); otherwise Mount2 then Approve.</summary>
+    /// <summary>
+    /// kscePfsMount(source, mountPoint, program authority ID (two words), key, mode) as pfsmgr 3.74 makes it: mode 0x28
+    /// asks for a mount's mode (a NULL or longer than 31 bytes mount point 0x80010016; a mount point not mounted, or
+    /// one the authority ID is not approved on, 0x80010013); any other mode is Mount2(source, mountPoint, key, mode)
+    /// then Approve(mountPoint, authority ID).
+    /// </summary>
     [Hle(Nid = 0xA772209C, Library = "ScePfsMgrForKernel")]
-    int kscePfsMount(uint source, uint mountPoint, uint keys, uint type, uint unused, uint size)
+    int kscePfsMount(uint source, uint mountPoint, uint authorityLow, uint authorityHigh, uint key, uint mode)
     {
         if (LaunchMountOfCaller() is { } launchMount)
         {
             // the system's launch mounting app0 through the entry: its own mount answers (the arguments are checked
             // as any mount's)
-            return source == 0 || PfsMountPoint(mountPoint) == null ? VFS_ERR_INVAL : launchMount();
+            if (source == 0 || PfsMountPoint(mountPoint) == null)
+            {
+                return VFS_ERR_INVAL;
+            }
+
+            int check = PfsCheckMount(GuestMemory.ReadCString(source, PfsSourceMaxLength + 1), key, mode);
+            return check != 0 ? check : launchMount();
         }
 
-        if (size == 0x28)
+        ulong authority = authorityLow | ((ulong)authorityHigh << 32);
+        if (mode == PfsModeQuery)
         {
-            if (PfsMountPoint(mountPoint) is not { } point)
+            if (mountPoint == 0)
+            {
+                return VFS_ERR_INVAL;
+            }
+
+            string point = GuestMemory.ReadCString(mountPoint, 0x20);
+            if (point.Length > 0x1F)
             {
                 return VFS_ERR_INVAL;
             }
 
             lock (_pfsMounts)
             {
-                return _pfsTypes.TryGetValue(point, out int mountType) ? mountType : PFS_ERR_NOT_MOUNTED;
+                bool approved = _pfsAuthorities.TryGetValue(point, out List<ulong>? authorities) && authorities.Contains(authority);
+                return approved && _pfsTypes.TryGetValue(point, out int mountMode) ? mountMode : PFS_ERR_NOT_MOUNTED;
             }
         }
 
-        int result = kscePfsMount2ThroughEntry(source, mountPoint, keys, type);
-        return result != 0 ? result : kscePfsApproveThroughEntry(mountPoint, keys, type, 0);
+        int result = kscePfsMount2ThroughEntry(source, mountPoint, key, mode);
+        return result != 0 ? result : kscePfsApproveThroughEntry(mountPoint, 0, authorityLow, authorityHigh);
     }
 
     /// <summary>kscePfsUnmount(mountPoint): unknown 0x80010013; the mount point no longer served.</summary>
@@ -173,10 +260,11 @@ public sealed partial class IoFileMgr
 
             _pfsApproved.Remove(point);
             _pfsTypes.Remove(point);
+            _pfsAuthorities.Remove(point);
         }
 
-        string device = point.TrimEnd(':');
-        if (!device.Contains('/'))
+        string device = PfsDevice(point);
+        if (!device.Contains('/') && !device.Contains(':'))
         {
             Emu.Vfs.Unmount(device);
         }
@@ -184,13 +272,20 @@ public sealed partial class IoFileMgr
         return 0;
     }
 
-    int PfsSetApproval(uint mountPoint, bool approved)
+    /// <summary>
+    /// kscePfsApprove(mountPoint, program authority ID) as pfsmgr 3.74 makes it (the ID is a 64-bit argument, in the
+    /// third and fourth words): a bad mount point 0x80010016, unknown 0x80010013, an ID already approved 0x80010011, a
+    /// 17th ID 0x8001001C; the ID added and the mount approved.
+    /// </summary>
+    [Hle(Nid = 0xD8D0FEE5, Library = "ScePfsMgrForKernel")]
+    int kscePfsApprove(uint mountPoint, uint padding, uint authorityLow, uint authorityHigh)
     {
         if (PfsMountPoint(mountPoint) is not { } point)
         {
             return VFS_ERR_INVAL;
         }
 
+        ulong authority = authorityLow | ((ulong)authorityHigh << 32);
         lock (_pfsMounts)
         {
             if (!_pfsMounts.ContainsKey(point))
@@ -198,31 +293,56 @@ public sealed partial class IoFileMgr
                 return PFS_ERR_NOT_MOUNTED;
             }
 
-            if (approved)
+            if (!_pfsAuthorities.TryGetValue(point, out List<ulong>? authorities))
             {
-                _pfsApproved.Add(point);
+                authorities = new List<ulong>();
+                _pfsAuthorities[point] = authorities;
             }
-            else
+
+            if (authorities.Contains(authority))
             {
-                _pfsApproved.Remove(point);
+                return VFS_ERR_EXIST;
             }
+
+            if (authorities.Count >= PfsAuthoritiesPerMount)
+            {
+                return PFS_ERR_AUTHORITIES_FULL;
+            }
+
+            authorities.Add(authority);
+            _pfsApproved.Add(point);
         }
 
         return 0;
     }
 
-    /// <summary>kscePfsApprove(mountPoint, keys, ?, ?): unknown 0x80010013; the mount approved.</summary>
-    [Hle(Nid = 0xD8D0FEE5, Library = "ScePfsMgrForKernel")]
-    int kscePfsApprove(uint mountPoint, uint keys, uint first, uint second)
-    {
-        return PfsSetApproval(mountPoint, true);
-    }
-
-    /// <summary>kscePfsDisapprove(mountPoint, keys, ?, ?): unknown 0x80010013; the approval cleared.</summary>
+    /// <summary>
+    /// kscePfsDisapprove(mountPoint, program authority ID) as pfsmgr 3.74 makes it: a bad mount point 0x80010016,
+    /// unknown 0x80010013, an ID not approved 0x80010002; the ID removed (the mount stays approved).
+    /// </summary>
     [Hle(Nid = 0x2D67D8CA, Library = "ScePfsMgrForKernel")]
-    int kscePfsDisapprove(uint mountPoint, uint keys, uint first, uint second)
+    int kscePfsDisapprove(uint mountPoint, uint padding, uint authorityLow, uint authorityHigh)
     {
-        return PfsSetApproval(mountPoint, false);
+        if (PfsMountPoint(mountPoint) is not { } point)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        ulong authority = authorityLow | ((ulong)authorityHigh << 32);
+        lock (_pfsMounts)
+        {
+            if (!_pfsMounts.ContainsKey(point))
+            {
+                return PFS_ERR_NOT_MOUNTED;
+            }
+
+            if (!_pfsAuthorities.TryGetValue(point, out List<ulong>? authorities) || !authorities.Remove(authority))
+            {
+                return VFS_ERR_NOENT;
+            }
+        }
+
+        return 0;
     }
 
     /// <summary>The ACID directory calls: NULL path 0x80010016; the directory opened and its ioctl run (a missing

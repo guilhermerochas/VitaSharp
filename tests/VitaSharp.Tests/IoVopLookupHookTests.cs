@@ -29,6 +29,9 @@ public sealed class IoVopLookupHookTests(GuestMemoryFixture fixture) : IDisposab
 
     /// <summary>The thread each hook call ran on: its name and whether it is a kernel thread.</summary>
     private readonly List<(string Name, bool Kernel)> _threads = [];
+
+    /// <summary>The UID of the thread each hook call ran on.</summary>
+    private readonly List<int> _threadUids = [];
     private Func<uint, uint, uint, uint, int?>? _answer;
 
     public void Dispose()
@@ -73,6 +76,7 @@ public sealed class IoVopLookupHookTests(GuestMemoryFixture fixture) : IDisposab
             _elements.Add(Element(path));
             GuestThread? caller = GuestThread.Current;
             _threads.Add((caller?.Name ?? "host", caller?.KernelMode ?? false));
+            _threadUids.Add(caller?.Uid ?? 0);
             int? answer = _answer?.Invoke(vnode, vpp, path, flags);
             context.Return(answer ?? Call(Io, "ksceVopLookup", vnode, vpp, path, flags));
         }), 0);
@@ -213,7 +217,7 @@ public sealed class IoVopLookupHookTests(GuestMemoryFixture fixture) : IDisposab
         Io.WaitForAsyncHostWork();
 
         Assert.Equal(["data", "hfn", "sub", "a.txt", "data", "hfn", "sub", "data", "hfn", "sub", "b.txt"], _elements);
-        Assert.All(_threads, thread => Assert.Equal(("SceIoScheduler", true), thread));
+        Assert.All(_threads, thread => Assert.Equal(("SceIoSchedWorker2", true), thread));
         int fd = 0;
         int dir = 0;
         int statResult = -1;
@@ -258,6 +262,54 @@ public sealed class IoVopLookupHookTests(GuestMemoryFixture fixture) : IDisposab
         _answer = null;
     }
 
+    /// <summary>
+    /// The requests run on iofilemgr's fixed worker threads, as in 3.74 (decompiled, study only): one kernel thread per
+    /// scheduler queue ("SceIoSchedWorker" and the queue's number: 0 internal storage, 2 the memory card), made once and
+    /// kept, priority 100, not one thread per request. Several requests on ux0 run on one thread that is still there
+    /// after them; a request on ur0 runs on the internal queue's. Fails when each request makes its own thread.
+    /// </summary>
+    [Fact]
+    public void AsynchronousRequestsRunOnTheFixedWorkerOfTheirQueue()
+    {
+        Files();
+        Directory.CreateDirectory(Path.Combine(_h.Root, "ur0", "hfn"));
+        File.WriteAllText(Path.Combine(_h.Root, "ur0", "hfn", "c.txt"), "file c");
+        Hook(LoadFirmwareIofilemgr());
+        uint stat = _h.Alloc(0x58);
+        var removable = new List<int>();
+        for (int round = 0; round < 3; round++)
+        {
+            int request = 0;
+            _h.OnGuest(_ => request = Call(Io, "sceIoGetstatAsync", "ux0:data/hfn/sub/b.txt", stat, 0u));
+            Io.WaitForAsyncHostWork();
+            int result = -1;
+            _h.OnGuest(_ => result = Call(Io, "sceIoComplete", request));
+            Assert.Equal(0, result);
+            removable.Add(_threadUids[^1]);
+        }
+
+        GuestThread? worker = Io.IoSchedWorkerThread(2);
+        Assert.NotNull(worker);
+        Assert.True(worker!.IsLive);
+        Assert.True(worker.KernelMode);
+        Assert.Equal("SceIoSchedWorker2", worker.Name);
+        Assert.Equal(100, worker.Priority);
+        Assert.All(removable, uid => Assert.Equal(worker.Uid, uid));
+        Assert.All(_threadUids.Take(12), uid => Assert.Equal(worker.Uid, uid));
+
+        int internalRequest = 0;
+        _h.OnGuest(_ => internalRequest = Call(Io, "sceIoGetstatAsync", "ur0:hfn/c.txt", stat, 0u));
+        Io.WaitForAsyncHostWork();
+        int internalResult = -1;
+        _h.OnGuest(_ => internalResult = Call(Io, "sceIoComplete", internalRequest));
+        Assert.Equal(0, internalResult);
+        Assert.Equal(("SceIoSchedWorker0", true), _threads[^1]);
+        Assert.Equal(Io.IoSchedWorkerThread(0)?.Uid, _threadUids[^1]);
+        Assert.True(worker.IsLive);
+        int workers = _h.Emu.Kernel.Objects.Snapshot().OfType<GuestThread>().Count(t => t.Name.StartsWith("SceIoSched", StringComparison.Ordinal));
+        Assert.Equal(2, workers);
+    }
+
     /// <summary>Without a hook an asynchronous request walks nothing and no kernel thread is made for it.</summary>
     [Fact]
     public void WithoutAHookAnAsynchronousOpenWalksNothing()
@@ -276,6 +328,7 @@ public sealed class IoVopLookupHookTests(GuestMemoryFixture fixture) : IDisposab
         });
         Assert.True(fd > 0, $"async open 0x{fd:X8}");
         Assert.Empty(_elements);
+        Assert.DoesNotContain(_h.Emu.Kernel.Objects.Snapshot().OfType<GuestThread>(), t => t.Name.StartsWith("SceIoSched", StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -370,7 +423,7 @@ public sealed class IoVopLookupHookTests(GuestMemoryFixture fixture) : IDisposab
         _h.OnGuest(_ => result = Call(Io, "sceIoComplete", remove));
         Assert.Equal(0, result);
         Assert.Equal(["data", "hfn", "sub", "a.txt"], _elements);
-        Assert.All(_threads, thread => Assert.Equal(("SceIoScheduler", true), thread));
+        Assert.All(_threads, thread => Assert.Equal(("SceIoSchedWorker2", true), thread));
         Assert.False(File.Exists(Data(Path.Combine("sub", "a.txt"))));
     }
 }
