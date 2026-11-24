@@ -13,6 +13,10 @@
   <uses-permission android:name="android.permission.CAMERA" />
   <!-- SceAudioIn: the phone's microphone, asked at run time when a game first opens its microphone port (denied = silence) -->
   <uses-permission android:name="android.permission.RECORD_AUDIO" />
+  <!-- the phone's position as the Vita's (SceLibLocation), only with Ajustes > Localizacao on and asked when a game
+       first asks for it -->
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
   <!-- the data folder /storage/emulated/0/.vitasharp, visible and editable (Mobile.Core DataRoot, StorageSetup):
        "All files access" on Android 11+, the storage permission on Android 8-10; not asked on a rooted device -->
   <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />

@@ -2363,10 +2363,14 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `docs/notes/online-features.md`): hoje `pspnet_adhoc`/Matching não acham nenhum par. Primeira entrega: duas pilhas
   emuladas num teste sobre UDP de loopback, uma cria o grupo, a outra acha (`sceNetAdhocctlScan`), entra e troca um
   datagrama PDP nos dois sentidos. Depois Matching e o canal WLAN do ScePspemu.
-- [ ] [P3][M] Localização (GPS) pelo host (`docs/notes/hardware-coverage.md`): hoje "aplicativo sem permissão".
-  Interface de localização do host (Geolocation do Windows, GeoClue, Core Location, `LocationManager` do Android) e
-  posição fixa por opção. Primeira entrega: posição roteirizada devolvida pelo `sceLocationGetLocation` com o
-  aplicativo permitido; sem fonte, a resposta de hoje. Usa: Near, Mapas.
+- [ ] [P3][M] Localização (GPS) pelo host, o que falta (`docs/notes/hardware-coverage.md`; o feito está em
+  "Corrigido, falta o usuário testar"): (1) o serviço de localização do próprio PC (Geolocation do Windows, GeoClue
+  no Linux, Core Location no macOS) como fonte "system" no desktop; (2) entregar a posição pelos callbacks
+  (`sceLocationStartLocationCallback` aceita e fica ativo, mas ainda não chama o callback do guest a cada
+  deslocamento de `distance` metros); (3) o caminho do firmware: o liblocation.suprx real é cliente IPC do
+  `location_provider` do shell, que nos modelos 3G lê o `SceGps` (driver do modem); o VitaSharp emula um modelo Wi-Fi
+  (sem receptor, o `ksceGps` fica no estado 2 com driver e sem sessão), e o Near (NPXS10000) já usa o liblocation real
+  contra o provedor do shell sem posição. Usa: Near, Mapas.
 - [ ] [P3][M] Magnetômetro (`docs/notes/hardware-coverage.md`): o `sceMotionMagnetometerOn` só guarda a chave. Campo
   magnético na leitura de movimento do host (sensor do celular, roteiro); primeira entrega: campo roteirizado dá a
   direção e `magFieldStability` estável em `sceMotionGetSensorState`/`GetState`.
@@ -3248,6 +3252,27 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (24/11/2026, falta testar) [P3][M] Localização pelo host (fix/adr4; `docs/notes/hardware-coverage.md`): no Vita
+  o SceLibLocation responde a posição do serviço de localização quando o usuário permite o aplicativo (Configurações
+  > Dados de localização); sem permissão, `SCE_LOCATION_ERROR_DISABLE_APPLICATION`; sem posição ainda,
+  `SCE_LOCATION_INFO_UNDETERMINED_LOCATION` (0x80101200). Agora há uma fonte de localização no host, **desligada por
+  padrão** (sem fonte tudo fica como antes): posição fixa (`--location=latitude,longitude[,altitude[,precisão]]`,
+  Configurações > Áudio > Localização no PC) e a localização do celular no Android (Ajustes > Localização; a
+  permissão é pedida só quando um jogo pergunta a posição). Com a fonte, a permissão do aplicativo é ALLOW, o diálogo
+  de confirmação termina com "enable", o `sceLocationGetLocation`/`WithTimeout` devolve latitude, longitude,
+  altitude, precisão, direção e velocidade (o que a fonte não sabe vai como `SCE_LOCATION_DATA_INVALID`) e o tick do
+  RTC; sem fix, "indeterminada"; o rumo (heading) fica indeterminado (sem bússola no serviço); o callback de
+  localização é aceito um por handle até o stop/close. Privacidade: a posição nunca vai para o log; com "Gravar tudo"
+  armado ou gravando, o serviço responde "indeterminada" e o `session.txt` guarda `--location=<location>`, a não ser
+  com `--capture-location`/`VITASHARP_CAPTURE_LOCATION=1`; o "Command line" da captura F10 também omite o valor.
+  Testes: `LocationSourceTests` (posição, sem fix, sem fonte, callbacks, captura armada com e sem a opção, o formato
+  da opção, a redação). Testar: no PC, Configurações > Áudio > Localização = `-23.5613,-46.6565` e abrir um jogo que
+  usa localização (o Assassin's Creed III Liberation lê a posição numa thread de geolocalização): ele recebe essa
+  posição; apagar o campo volta ao "sem permissão". O Near usa o liblocation do firmware contra o provedor do shell
+  e ainda não recebe a posição (item em "Firmware e sistema"). No Android,
+  Ajustes > Localização = "Localização do celular": o pedido de permissão aparece só quando o jogo pergunta a
+  posição; recusado, o jogo segue sem posição.
 
 - [ ] (24/11/2026, falta testar) [P3][M] Microfone com captura do host (feat/mic1; `docs/notes/hardware-coverage.md`):
   no Vita o `SceAudioin` abre uma porta por processo (VOICE 256/512 amostras a 16 kHz, RAW 256 a 16 kHz ou 768 a

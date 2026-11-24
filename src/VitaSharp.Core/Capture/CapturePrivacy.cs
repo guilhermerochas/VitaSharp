@@ -142,17 +142,44 @@ public sealed partial class CapturePrivacy
         return s;
     }
 
-    /// <summary>The run options without personal items (session.txt "options:", reused by the re-run).</summary>
-    public string[] RedactOptions(IEnumerable<string> options)
+    /// <summary>The placeholder of a --location= value (a position is where the player is).</summary>
+    public const string LocationPlaceholder = "<location>";
+
+    /// <summary>The location option, whose value can be a position.</summary>
+    public const string LocationOption = "--location=";
+
+    /// <summary>The run options without personal items (session.txt "options:", reused by the re-run): accounts, paths,
+    /// and the --location= value unless <paramref name="keepLocation"/> (--capture-location).</summary>
+    public string[] RedactOptions(IEnumerable<string> options, bool keepLocation = false)
     {
         var result = new List<string>();
         foreach (string option in options)
         {
             string? account = s_accountOptions.FirstOrDefault(o => option.StartsWith(o, StringComparison.Ordinal));
-            result.Add(account != null ? account + AccountPlaceholder : Redact(option));
+            if (account != null)
+            {
+                result.Add(account + AccountPlaceholder);
+            }
+            else if (!keepLocation && option.StartsWith(LocationOption, StringComparison.Ordinal))
+            {
+                result.Add(RedactLocation(option));
+            }
+            else
+            {
+                result.Add(Redact(option));
+            }
         }
 
         return result.ToArray();
+    }
+
+    /// <summary>A --location= option with its value replaced by <see cref="LocationPlaceholder"/> (other options as
+    /// they are): what a diagnostic file keeps of the command line.</summary>
+    public static string RedactLocation(string option)
+    {
+        return option.StartsWith(LocationOption, StringComparison.Ordinal) && option.Length > LocationOption.Length
+            ? LocationOption + LocationPlaceholder
+            : option;
     }
 
     /// <summary>Rewrites every text file of a capture folder (and its sub-folders) through <see cref="Redact"/>.</summary>

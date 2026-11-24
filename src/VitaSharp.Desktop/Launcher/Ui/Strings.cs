@@ -378,6 +378,9 @@ public static class Strings
     public static string MicrophoneDefault => T();
     public static string MicrophoneNone => T();
     public static string MicrophoneTone => T();
+    public static string Location => T();
+    public static string LocationDetail => T();
+    public static string LocationWatermark => T();
     public static string SectionAdvanced => T();
     public static string StartSection => T();
     public static string StartupView => T();

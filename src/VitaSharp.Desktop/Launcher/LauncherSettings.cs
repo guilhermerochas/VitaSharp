@@ -22,6 +22,9 @@ public sealed class LauncherSettings
     /// <summary>"Microfone" (--microphone=): "" = the system's default capture device, "none" = off (silence), "tone" = a
     /// 440 Hz test tone, or a capture device name (<see cref="Core.Host.MicrophoneSpec"/>).</summary>
     public string Microphone { get; set; } = "";
+    /// <summary>"Localizacao" (--location=): "" = off (the default), or "latitude,longitude[,altitude[,accuracy]]", a fixed
+    /// position the Vita's location service answers (<see cref="Core.Host.LocationSpec"/>).</summary>
+    public string Location { get; set; } = "";
     /// <summary>CPU backend: "" = best supported on this PC, or "native", "il", "interp" (--cpu=).</summary>
     public string CpuBackend { get; set; } = "";
     /// <summary>Emulated ARM clock in MHz (--cpu-mhz=): 0 = the Vita's default for applications (333), 444 = the
@@ -329,6 +332,11 @@ public sealed class LauncherSettings
         if (!string.IsNullOrWhiteSpace(Microphone))
         {
             yield return $"--microphone={Microphone}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(Location))
+        {
+            yield return $"--location={Location.Trim()}";
         }
 
         if (!string.IsNullOrWhiteSpace(AudioDevice))

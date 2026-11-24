@@ -56,7 +56,7 @@ recorded, not to be emulated); **ok** covered.
 | Front touch screen, rear touchpad | `SceTouch` | host mouse/touch for both panels | ok |
 | Motion: accelerometer, gyroscope | `SceMotionDev`, `SceMotion` | host gyro/accelerometer (SDL controller, phone sensors) | ok |
 | Motion: magnetometer | `SceMotionDev`, `SceMotion` | switch kept, no data (`magFieldStability` always unstable) | **(b)** |
-| GPS / location | `SceGps` (driver from the modem), `liblocation`, `location_provider` | no positioning: "location on, this application not allowed" | **(b)** |
+| GPS / location | `SceGps` (driver from the modem), `liblocation`, `location_provider` | off by default ("this application not allowed"); a fixed position (PC) or the phone's location (Android) when the setting gives one | **(b)** |
 | 3G modem (PCH-1100) | `SceBbmc`, USB modem | absent, as on the Wi-Fi model the unit is (`0x80330003`) | (c) (faithful to the model; the 3G service is gone) |
 | Wi-Fi infrastructure | `SceWlanBt`, `SceNetPs`, `wlanbt_robin_img_ax.skprx` | host sockets (`--net=real`), offline profile otherwise | ok |
 | Wi-Fi ad hoc | `SceNetPs` ad hoc, `pspnet_adhoc`, `sceNetAdhocctl*`, Matching | offline profile: library works, no peer is ever found | **(b)** |
@@ -151,7 +151,10 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
 
 ### (b) GPS / location
 
-- **Today:** no positioning; the application is "not allowed" (`Hle/Modules/Location.cs`).
+- **Today:** off by default, the application is "not allowed" (`Hle/Modules/Location.cs`); with the location
+  setting (`--location=latitude,longitude`, Android "Localização do celular") the application is allowed and gets
+  that position (`Host/Location.cs`). Missing: the PC's location service, the location callbacks' deliveries, the
+  firmware path (liblocation LLE against the shell's provider, `SceGps` of a 3G model).
 - **Impact:** Near, Maps and the location features of apps and games.
 - **Size:** [M]: a host location interface (Windows Geolocation, GeoClue, Core Location, Android `LocationManager`)
   and a fixed position option. **First testable delivery:** a scripted position; with the application allowed,

@@ -25,6 +25,24 @@ public static class Runner
     internal static IMicrophoneSource? CreateMicrophone(string? value) =>
         MicrophoneSpec.Parse(value).CreateSource(spec => OpenAlMicrophone.TryCreate(spec));
 
+    /// <summary>The SceLibLocation source of --location=: off, or a fixed position. The PC's own location service
+    /// ("system") is not read yet: location stays off then. The position itself is never logged.</summary>
+    internal static ILocationSource? CreateLocation(string? value)
+    {
+        LocationSpec spec = LocationSpec.Parse(value);
+        ILocationSource? source = spec.CreateSource(() =>
+        {
+            Log.Warn("Location: the PC's location service is not supported yet; location stays off (give latitude,longitude)");
+            return null;
+        });
+        if (source != null)
+        {
+            Log.Info("Location: on (a fixed position); withheld while Gravar tudo is armed or recording, unless --capture-location");
+        }
+
+        return source;
+    }
+
     /// <summary>A trace filter: --name=value, or --name value as the HLE docs write it (without this the filter was
     /// silently ignored).</summary>
     internal static string? TraceOpt(string[] options, string name)
@@ -493,6 +511,8 @@ public static class Runner
         emu.Host.Microphone = Environment.GetEnvironmentVariable(EnvVars.HiddenWindow) == "1" && Opt(options, "--microphone") == null
             ? null
             : CreateMicrophone(Opt(options, "--microphone"));
+        // SceLibLocation: --location= (off by default; "latitude,longitude[,altitude[,accuracy]]" a fixed position)
+        emu.Host.Location = CreateLocation(Opt(options, "--location"));
         VulkanRenderer? renderer = null;
         var clock = Stopwatch.StartNew();
         long lastFrames = 0, titleTicks = 0;
@@ -1525,6 +1545,8 @@ public static class Runner
         {
             emu.Host.Microphone = CreateMicrophone(microphone);
         }
+
+        emu.Host.Location = CreateLocation(Opt(options, "--location"));
 
         emu.BacktraceHle = Opt(options, "--bt");
         if (TraceOpt(options, "--trace-hle-only") is { } tho)

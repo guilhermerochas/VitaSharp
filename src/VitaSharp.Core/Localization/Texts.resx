@@ -3096,6 +3096,27 @@
   <data name="MicrophoneTone" xml:space="preserve">
     <value>Test tone (440 Hz)</value>
   </data>
+  <data name="Location" xml:space="preserve">
+    <value>Location</value>
+  </data>
+  <data name="LocationDetail" xml:space="preserve">
+    <value>Where the Vita is for games and apps that use location. Off by default. A fixed position: latitude,longitude (decimal degrees), optionally altitude and accuracy in metres. Never logged; diagnostic captures withhold it unless --capture-location. Takes effect when a game starts</value>
+  </data>
+  <data name="LocationWatermark" xml:space="preserve">
+    <value>Off, or latitude,longitude</value>
+  </data>
+  <data name="MLocationDetail" xml:space="preserve">
+    <value>Where the Vita is for games and apps that use location. Off by default. With "Phone location", Android asks for the location permission the first time a game asks for its position. Never logged nor saved. Takes effect when a game starts</value>
+  </data>
+  <data name="LocationOff" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="LocationSystem" xml:space="preserve">
+    <value>Phone location</value>
+  </data>
+  <data name="LocationFixed" xml:space="preserve">
+    <value>Fixed position</value>
+  </data>
   <data name="MOn" xml:space="preserve">
     <value>On</value>
   </data>

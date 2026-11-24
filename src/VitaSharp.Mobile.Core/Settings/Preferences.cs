@@ -80,6 +80,10 @@ public sealed class AppPreferences
     /// (--microphone=, Core.Host.MicrophoneSpec): "" = the phone's microphone, "none" = off (silence), "tone" = a test
     /// tone (<see cref="MicrophoneSettings"/>).</summary>
     public string Microphone { get; set; } = "";
+    /// <summary>"Localizacao": where the Vita is, as the desktop launcher's option of the same name (--location=,
+    /// Core.Host.LocationSpec): "" = off (the default), "system" = the phone's location service
+    /// (<see cref="LocationSettings"/>).</summary>
+    public string Location { get; set; } = "";
     /// <summary>"Ao abrir o emulador": "library" (the default) or "system" (the shell boots when the app opens), the
     /// desktop launcher's option (<see cref="StartupViews"/>).</summary>
     public string StartupView { get; set; } = StartupViews.Library;

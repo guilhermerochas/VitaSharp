@@ -31,6 +31,10 @@ ir. Os dados salvos (savedata0) são do jogador: deles ficam só os hashes, a n�
 O microfone é o que o jogador e quem está perto dele dizem: o `audio.txt` traz só o formato, a fonte e o ritmo da porta
 do microfone, e o som dele só entra (`audio/NN_microphone_RATE.wav`) com `--capture-mic-audio` (ou
 `VITASHARP_CAPTURE_MIC_AUDIO=1`).
+A posição é onde o jogador está: enquanto a captura está armada ou gravando, o serviço de localização do Vita
+responde "posição indeterminada" (nenhuma posição entra na memória do guest que a captura guarda) e o `session.txt`
+guarda `--location=<location>`; só `--capture-location` (ou `VITASHARP_CAPTURE_LOCATION=1`) deixa responder e guarda o
+valor da opção.
 
 ## O que a gravação diz sobre o ambiente
 

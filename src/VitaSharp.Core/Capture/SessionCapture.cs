@@ -66,6 +66,11 @@ public sealed class SessionCaptureOptions
     /// microphone is what the player and the people near them say, and a capture goes to public reports, so only the
     /// port's format and pace go in (audio.txt); VITASHARP_CAPTURE_MIC_AUDIO=1 / --capture-mic-audio.</summary>
     public bool KeepMicrophoneAudio;
+    /// <summary>Lets the location source answer while the capture is armed or recording, and keeps the --location= value
+    /// in session.txt. Off by default: the position is where the player is, and a capture goes to public reports; the
+    /// location service then answers "undetermined" while the capture is armed or recording, so the guest memory the
+    /// capture keeps holds no new position; VITASHARP_CAPTURE_LOCATION=1 / --capture-location.</summary>
+    public bool KeepLocation;
     /// <summary>Records the title's file reads (files/; a re-run's own recording does not).</summary>
     public bool Files = true;
     /// <summary>A re-run: the HLE call trace was started when its state was put back and goes on.</summary>
@@ -200,6 +205,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         {
             options.KeepMicrophoneAudio = true;
         }
+
+        if (Environment.GetEnvironmentVariable(EnvVars.CaptureLocation) == "1")
+        {
+            options.KeepLocation = true;
+        }
         _privacy = options.Privacy ?? CapturePrivacy.ForThisComputer(Path.GetDirectoryName(Path.GetFullPath(options.Root)), emu.Options.Psn);
         // the last button and touch changes are always kept (a compare per poll): the report says what the player did
         // just before pressing F8 even without the pre-roll
@@ -226,6 +236,13 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 
     public SessionCaptureOptions Options => _options;
     public bool IsRecording => _rec != null;
+
+    /// <summary>The location source is withheld while the capture is armed (its pre-roll keeps save states) or
+    /// recording, unless <see cref="SessionCaptureOptions.KeepLocation"/> (called under the lock).</summary>
+    private void UpdateLocationWithholding()
+    {
+        _emu.Host.LocationWithheld = !_options.KeepLocation && (_rec != null || _preRollSeconds > 0);
+    }
     public bool Armed => _preRollSeconds > 0;
     public double PreRollSeconds => _preRollSeconds;
     /// <summary>The folder of the running recording, or of the last one.</summary>
@@ -285,6 +302,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             }
 
             _preRollSeconds = seconds;
+            UpdateLocationWithholding();
             if (seconds > 0)
             {
                 EnsureRunning();
@@ -854,6 +872,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             r.Input.Add(InputEvent.Now("ctx", where));
             r.LastWhere = where;
             _rec = r;
+            UpdateLocationWithholding();
             _queue!.Add(new Work(WorkKind.FlushPreRoll, default, null, 0, 0, r, null));
         }
         Log.Info($"[capture] recording ({reason}) at guest frame {r.StartFlip}: {dir}" + (pre != null ? $"; pre-roll from guest frame {pre.Flip} ({(r.StartNs - pre.StartNs) / 1e9:F1} s before)" : _preRollSeconds > 0 ? "; pre-roll without a save state yet" : ""));
@@ -1038,6 +1057,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         {
             r.Input.Add(InputEvent.Now("mark", $"stop {reason}"));
             _rec = null;
+            UpdateLocationWithholding();
             _queue?.Add(new Work(WorkKind.Close, default, null, 0, 0, r, closed));
             if (_preRollSeconds <= 0)
             {
@@ -1220,7 +1240,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         sb.AppendLine($"title: {_emu.Title}");
         sb.AppendLine($"app-path: {_privacy.Redact(_emu.AppPath)}");
         sb.AppendLine($"platform: {_options.Platform}");
-        sb.AppendLine($"options: {string.Join('\t', _privacy.RedactOptions(_options.RunOptions))}");
+        sb.AppendLine($"options: {string.Join('\t', _privacy.RedactOptions(_options.RunOptions, _options.KeepLocation))}");
         foreach (string line in CaptureIdentity.Describe(_emu))
         {
             sb.AppendLine(_privacy.Redact(line));
@@ -1429,6 +1449,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             _disposed = true;
             EmulationPause.Changed -= OnEmulationPauseChanged;
             _preRollSeconds = 0;
+            _emu.Host.LocationWithheld = false;
             ClearRing();
             if (_rec == null)
             {

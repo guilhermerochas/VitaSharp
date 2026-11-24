@@ -333,6 +333,9 @@ public static class EnvVars
     /// <summary>=1: "Gravar tudo" also records what the microphone port captured (by default only its format and pace:
     /// the microphone is what the player and the people near them say; --capture-mic-audio).</summary>
     public const string CaptureMicrophoneAudio = "VITASHARP_CAPTURE_MIC_AUDIO";
+    /// <summary>=1: the location source keeps answering while "Gravar tudo" is armed or recording, and session.txt keeps
+    /// the --location= value (by default the position is withheld: it is where the player is; --capture-location).</summary>
+    public const string CaptureLocation = "VITASHARP_CAPTURE_LOCATION";
 
 
 

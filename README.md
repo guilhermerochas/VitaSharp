@@ -179,6 +179,14 @@ runs VitaSharp: **System Settings > Privacy & Security > Microphone**) the game 
 Nothing the microphone captures is saved; a **Record everything** capture keeps only its format and pace, unless
 `--capture-mic-audio` (or `VITASHARP_CAPTURE_MIC_AUDIO=1`) asks for its sound too.
 
+**Location.** Apps and games that ask the Vita where it is get no position by default: the Vita answers
+that the application is not allowed, as when the player declines. **Settings > Audio > Location** (or
+`--location=<latitude,longitude[,altitude[,accuracy]]>`, decimal degrees with a point, metres) gives the Vita a fixed
+position, which it answers with that accuracy (10 m when not given); empty or `none` is off. The PC's own location
+service is not read yet. The position is never written to the log; a **Record everything** capture withholds it (the
+Vita answers "position undetermined" while the capture is armed or recording, and `session.txt` keeps
+`--location=<location>`) unless `--capture-location` (or `VITASHARP_CAPTURE_LOCATION=1`).
+
 Data lives in `%APPDATA%\VitaSharp` on Windows (`~/.local/share/VitaSharp` on Linux,
 `~/Library/Application Support/VitaSharp` on macOS; `--data=<folder>` or `VITASHARP_DATA` change the folder): games in
 `fs/ux0/app`, firmware in `fs/os0`... , `logs/`, `savestates/`, `captures/` (Record everything), `gpudumps/`,
@@ -302,6 +310,8 @@ that side (the default), a PNG/JPEG picture or none (grey frames).
 **Ajustes > Microfone** chooses what the Vita microphone hears: the phone's microphone (the default; a connected
 headset's when there is one), off (silence) or the test tone. Android asks for the microphone permission the first
 time a game opens its microphone, never before; refused, the game hears silence.
+**Ajustes > Localização** gives the Vita the phone's position (off by default): Android asks for the location
+permission the first time a game asks where the Vita is, never before; refused, the position stays undetermined.
 
 **Pause menu, save states and Record everything.** The PS button (on screen or on the controller) pauses a game
 started on its own: **Continuar**, **Salvar estado** / **Carregar estado** (6 slots with a picture), **Ajustes** (rear
@@ -477,6 +487,8 @@ What `dotnet test tests/VitaSharp.Tests` needs per system; a test whose requirem
   data folder; the Piglet compiler tests need `libshacccg.suprx` in `ur0:data`.
 - The microphone tests (`MicrophoneTests`) use a scripted tone on a clock the test moves: no capture device, no
   permission and no sound card are needed on any system.
+- The location tests (`LocationSourceTests`) use a fixed position and a source the test moves: no location service
+  and no permission are needed on any system.
 - The tests never use your data folder: each one makes a scratch folder (`VITASHARP_DATA` for the child processes);
   the game-run tests boot a small executable the tests write themselves.
 - Optional: the LunarG Vulkan SDK's validation layers run the renderer workloads under validation with

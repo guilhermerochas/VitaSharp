@@ -3096,6 +3096,27 @@
   <data name="MicrophoneTone" xml:space="preserve">
     <value>Tom de teste (440 Hz)</value>
   </data>
+  <data name="Location" xml:space="preserve">
+    <value>Localização</value>
+  </data>
+  <data name="LocationDetail" xml:space="preserve">
+    <value>Onde o Vita está para jogos e apps que usam localização. Desligada por padrão. Posição fixa: latitude,longitude (graus decimais), opcionalmente altitude e precisão em metros. Nunca vai para o log; as capturas de diagnóstico a omitem, a não ser com --capture-location. Vale ao iniciar um jogo</value>
+  </data>
+  <data name="LocationWatermark" xml:space="preserve">
+    <value>Desligada, ou latitude,longitude</value>
+  </data>
+  <data name="MLocationDetail" xml:space="preserve">
+    <value>Onde o Vita está para jogos e apps que usam localização. Desligada por padrão. Com "Localização do celular", o Android pede a permissão de localização na primeira vez que um jogo pede a posição. Nunca vai para o log nem é gravada. Vale ao iniciar um jogo</value>
+  </data>
+  <data name="LocationOff" xml:space="preserve">
+    <value>Desligada</value>
+  </data>
+  <data name="LocationSystem" xml:space="preserve">
+    <value>Localização do celular</value>
+  </data>
+  <data name="LocationFixed" xml:space="preserve">
+    <value>Posição fixa</value>
+  </data>
   <data name="MOn" xml:space="preserve">
     <value>Ligado</value>
   </data>
