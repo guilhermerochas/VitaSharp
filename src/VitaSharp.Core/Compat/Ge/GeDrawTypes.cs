@@ -125,6 +125,11 @@ public sealed class GeRenderState
     public bool TextureLinear;
     public bool ClampU;
     public bool ClampV;
+
+    /// <summary>FOGENABLE (transformed vertices only): each fragment is factor * colour + (1 - factor) * FOGCOLOR with the
+    /// vertices' <see cref="GeVertex.Fog"/> factor.</summary>
+    public bool Fog;
+    public uint FogColor;
 }
 
 /// <summary>

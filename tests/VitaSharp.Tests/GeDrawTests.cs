@@ -333,6 +333,16 @@ public sealed class GeDrawTests
         Assert.Equal(0u, _memory.Read32(Destination + (21 * 512 + 13) * 4));
     }
 
+    /// <summary>A 565 texel has no alpha bits and reads as opaque (as the PSP samples it), not as transparent.</summary>
+    [Fact]
+    public void A565TextureIsOpaque()
+    {
+        _memory.Write16(Texture, GePixels.To565(0x000000FF));
+        uint[] pixels = new uint[1];
+        Assert.True(GeTextureDecoder.Decode(_memory, Texture, 4, 1, 1, GePixels.Format565, false, new uint[256], 0, pixels));
+        Assert.Equal(0xFF0000FFu, pixels[0]);
+    }
+
     [Theory]
     [InlineData(0xFF0000FFu)]
     [InlineData(0x80FF8040u)]

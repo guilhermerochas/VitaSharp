@@ -430,10 +430,8 @@ public sealed partial class GeEngine
             Log.WarnOnce("ge-stencil", "GE: the stencil test is not applied yet");
         }
 
-        if (Enabled(GeCommand.FogEnable) && !format.Through)
-        {
-            Log.WarnOnce("ge-fog", "GE: fog is not applied yet");
-        }
+        state.Fog = Enabled(GeCommand.FogEnable) && !format.Through && !state.ClearMode;
+        state.FogColor = Command(GeCommand.FogColor) & 0xFFFFFF;
     }
 
     private bool Enabled(int command)
