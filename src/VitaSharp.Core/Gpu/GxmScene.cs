@@ -82,6 +82,10 @@ public sealed class PresentCommand : GpuCommand
     /// <summary>The shell's overlay plane, blended over <see cref="Frame"/> with its alpha (the on-screen keyboard over an
     /// application that shows its own frames). Not part of GPU dumps.</summary>
     public DisplayFrame? Overlay;
+    /// <summary>Where <see cref="Frame"/> goes on the screen when sceDisplaySetFrameBufForCompat set it: scaled into a
+    /// rectangle, black around it, under <see cref="Overlay"/> (plane 1 over plane 0). Null: the frame fills the screen,
+    /// at no cost. Not part of GPU dumps.</summary>
+    public DisplayPlacement? Placement;
     /// <summary>The guest flip that queued it (frames presented by the display before it; -1 = a present of the
     /// emulator's own, e.g. the process coming back to the front), the vblank count, the guest clock and the host
     /// time (Stopwatch ticks) of that sceDisplaySetFrameBuf. Not part of GPU dumps.</summary>

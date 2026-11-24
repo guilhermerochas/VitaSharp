@@ -26,7 +26,7 @@ public sealed unsafe partial class VulkanRenderer
 
         (RenderTarget? src, DisplayFrame frame) = last;
         // the surface may have been destroyed since it was presented (the pause came after a reallocation)
-        if (src != _cpuFramebuffer && !_renderTargets.ContainsValue(src))
+        if (!IsLiveSurface(src))
         {
             return;
         }

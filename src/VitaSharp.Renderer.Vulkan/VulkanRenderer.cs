@@ -1984,7 +1984,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         ProfMark(ProfPhase.PresBegin);
         RenderTarget? src = FindRenderTargetByAddress(frame.Address);
         Log.WarnOnce($"present{frame.Address:X}", $"[gpu] present 0x{frame.Address:X8} {frame.Width}x{frame.Height} pitch {frame.Pitch} fmt {frame.Format}: {(src != null ? "rendered surface" : "CPU framebuffer")}");
-        if (src == null)
+        if (src == null && frame.Format == DisplayPixelFormat.A1B5G5R5)
+        {
+            // the compat plane's 16-bit format, drawn with the CPU (VulkanRenderer.CompatPlane.cs)
+            src = UploadCpuFramebuffer16(frame);
+            NoteScanoutSource(frame, cpu: true);
+        }
+        else if (src == null)
         {
             // the guest drew the framebuffer with the CPU
             var c = new ColorSurfaceInfo(frame.Address, frame.Width, frame.Height, frame.Pitch, 0, 0, false, 0);
@@ -2013,6 +2019,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         SyncRenderTargetForRead(src);
         src.LastUsedFrame = src.LastTouchedFrame = FrameCount;
         src = PresentSource(src); // RGBA/BGRA surfaces: shown in guest memory byte order, as the display reads them
+        if (_presentCmd?.Placement is { } placement)
+        {
+            // plane 0 placed in a rectangle of the screen (VulkanRenderer.CompatPlane.cs), under the shell's overlay
+            src = ComposeCompatPlacement(src, placement);
+            frame = ScreenFrame(frame);
+        }
+
         if (_presentCmd?.Overlay is { } overlay)
         {
             src = ComposeShellOverlay(src, overlay); // VulkanRenderer.ShellOverlay.cs
