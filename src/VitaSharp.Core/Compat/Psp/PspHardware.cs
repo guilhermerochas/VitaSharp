@@ -40,13 +40,20 @@ public sealed class PspHardware
     /// memory (<see cref="IGeMemory"/>); null otherwise.</summary>
     public GeEngine? Ge { get; private set; }
 
+    /// <summary>The display controller (0xBE740000, the vertical blank) of the standard set; null otherwise.</summary>
+    public PspDisplayController? Display { get; private set; }
+
+    /// <summary>The DMACplus scan-out channel (0xBC800100, the picture) of the standard set; null otherwise.</summary>
+    public PspLcdc? Lcdc { get; private set; }
+
     /// <summary>The blocks, in the order they were added.</summary>
     public IReadOnlyList<IPspMmioDevice> Devices => _devices;
 
     /// <summary>
     /// The compat core's standard set: the interrupt controller, the system control registers, the CPU/bus clocks,
     /// the four hardware timers, the system time, the two DMA controllers (over <paramref name="memory"/>, the core's
-    /// bus), the DDR controller and, when <paramref name="memory"/> is also the GE's memory, the GE.
+    /// bus), the DDR controller, the DMACplus scan-out channel, the display controller and, when
+    /// <paramref name="memory"/> is also the GE's memory, the GE.
     /// </summary>
     public static PspHardware CreateStandard(IAllegrexBus memory)
     {
@@ -59,6 +66,10 @@ public sealed class PspHardware
         hardware.Add(new PspDmac(PspDmac.Base0, PspInterrupt.Dma0, hardware.Interrupts, memory));
         hardware.Add(new PspDmac(PspDmac.Base1, PspInterrupt.Dma1, hardware.Interrupts, memory));
         hardware.Add(new PspDdrController());
+        hardware.Lcdc = new PspLcdc();
+        hardware.Add(hardware.Lcdc);
+        hardware.Display = new PspDisplayController(hardware.Clock, hardware.Interrupts);
+        hardware.Add(hardware.Display);
         if (memory is IGeMemory geMemory)
         {
             GeEngine ge = new(geMemory);
