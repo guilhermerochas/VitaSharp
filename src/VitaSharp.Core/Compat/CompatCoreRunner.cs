@@ -174,14 +174,20 @@ public sealed class CompatCoreRunner
                     break;
                 }
 
-                if (_core.Halted && !WaitWhileHalted())
-                {
-                    break;
-                }
-
+                // a halted core runs again first: a line raised since it halted wakes it inside Run
                 int ran = _core.Run(SliceCycles);
                 Interlocked.Add(ref _cycles, ran);
                 NotifyProgress();
+                if (ran == 0 && _core.Halted)
+                {
+                    if (!WaitWhileHalted())
+                    {
+                        break;
+                    }
+
+                    continue;
+                }
+
                 Scheduler.Yield(self);
             }
         }
