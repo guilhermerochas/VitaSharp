@@ -196,6 +196,16 @@ public sealed partial class PluginFramework
             return stub;
         }
 
+        int jumpSize = thumb ? ThumbJumpSize : ArmJumpSize;
+        if (Emu.FirmwareKernel.IsTrapFill(address, (uint)jumpSize))
+        {
+            // a function of a firmware module whose code VitaSharp runs in HLE (an internal one, reached by offset):
+            // its segment holds trap fill, not code to move; the trampoline is trap fill that stands for the call
+            // at the function's start, so the hook's continue still reaches the function's HLE
+            replaced = jumpSize;
+            return Emu.FirmwareKernel.MoveTrap(thumb ? address | 1 : address, KernelAllocation(4, "plugin hook trampoline"));
+        }
+
         if (thumb)
         {
             while (replaced < ThumbJumpSize)
