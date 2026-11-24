@@ -189,6 +189,19 @@ public sealed class GeVulkanRasterizerTests : IDisposable
         Assert.InRange(Depth(30, 30), (ushort)59990, (ushort)60010);
     }
 
+    /// <summary>Without the depth test nothing writes the depth buffer, even with depth writes on.</summary>
+    [SoftwareVulkanFact]
+    public void WithoutTheDepthTestTheDepthBufferIsLeft()
+    {
+        GeListBuilder list = Setup().Command(GeCommand.ClearMode, 1 | 0x400);
+        Rectangle(list, Vertices, 0, 0, 64, 64, 0x1234, 0).Command(GeCommand.ClearMode, 0)
+            .Command(GeCommand.DepthTestEnable, 0).Command(GeCommand.DepthWriteDisable, 0);
+        Rectangle(list, Vertices + 0x100, 0, 0, 32, 32, 50000, 0xFF0000FF).End();
+        GeRegisters.Run(_engine, list.Start);
+        Assert.Equal(0x0000FFu, Pixel(10, 10) & 0xFFFFFF);
+        Assert.Equal((ushort)0x1234, Depth(10, 10));
+    }
+
     [SoftwareVulkanFact]
     public void A565FramebufferGetsItsPixels()
     {

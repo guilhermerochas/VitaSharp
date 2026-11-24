@@ -190,6 +190,20 @@ public sealed class GeDrawTests
         Assert.NotNull(_rasterizer.LastTarget!.Depth); // a clear that writes depth reads the depth buffer
     }
 
+    /// <summary>As on the PSP, the depth buffer is written only while the depth test is on: with the test off (and
+    /// depth writes not disabled) the draw neither writes nor reads depth.</summary>
+    [Fact]
+    public void DepthWritesNeedTheDepthTest()
+    {
+        ThroughVertex(0, 0, 0, 0, 0xFFFFFFFF);
+        ThroughVertex(1, 4, 4, 0, 0xFFFFFFFF);
+        GeRegisters.Run(_engine, Setup().Command(GeCommand.VertexType, ThroughColorS16)
+            .Command(GeCommand.DepthTestEnable, 0).Command(GeCommand.DepthWriteDisable, 0)
+            .Command(GeCommand.Primitive, (6u << 16) | 2).End().Start);
+        Assert.False(_rasterizer.LastState!.DepthWrite);
+        Assert.Null(_rasterizer.LastTarget!.Depth);
+    }
+
     /// <summary>The framebuffer goes to the rasterizer as RGBA8 and comes back in its own format (565 here).</summary>
     [Fact]
     public void TheFramebufferIsConvertedForTheRasterizerAndBack()

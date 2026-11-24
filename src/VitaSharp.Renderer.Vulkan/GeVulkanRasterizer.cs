@@ -1,6 +1,6 @@
-using System.Runtime.InteropServices;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
+using System.Runtime.InteropServices;
 using VitaSharp.Core.Compat.Ge;
 using VitaSharp.Core.Util;
 using Buffer = Silk.NET.Vulkan.Buffer;
@@ -24,7 +24,11 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
 {
     private const Format ColorFormat = Format.R8G8B8A8Unorm;
     private const Format DepthFormat = Format.D16Unorm;
-    private const int VertexStride = 28;
+    /// <summary>The vertex buffer is the GeVertex array as it is: its size and field offsets give the layout.</summary>
+    private static readonly int s_vertexStride = Marshal.SizeOf<GeVertex>();
+    private static readonly uint s_positionOffset = (uint)Marshal.OffsetOf<GeVertex>(nameof(GeVertex.X));
+    private static readonly uint s_uvOffset = (uint)Marshal.OffsetOf<GeVertex>(nameof(GeVertex.U));
+    private static readonly uint s_colorOffset = (uint)Marshal.OffsetOf<GeVertex>(nameof(GeVertex.Color));
     private const int PushConstantSize = 48;
 
     private const string VertexShader = """
@@ -220,7 +224,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         ulong textureOffset = depthOffset + depthBytes;
         ulong textureBytes = textured ? (ulong)state.TextureWidth * (ulong)state.TextureHeight * 4 : 0;
         EnsureStaging(textureOffset + textureBytes);
-        EnsureVertexBuffer((ulong)(vertices.Length * VertexStride));
+        EnsureVertexBuffer((ulong)(vertices.Length * s_vertexStride));
 
         target.Color.AsSpan(0, target.Width * target.Height).CopyTo(new Span<uint>((void*)_stagingMapped, target.Width * target.Height));
         if (usesDepth)
@@ -233,7 +237,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             state.TexturePixels.AsSpan(0, state.TextureWidth * state.TextureHeight).CopyTo(new Span<uint>((void*)(_stagingMapped + (nint)textureOffset), state.TextureWidth * state.TextureHeight));
         }
 
-        MemoryMarshal.AsBytes(vertices).CopyTo(new Span<byte>((void*)_vertexMapped, vertices.Length * VertexStride));
+        MemoryMarshal.AsBytes(vertices).CopyTo(new Span<byte>((void*)_vertexMapped, vertices.Length * s_vertexStride));
 
         Pipeline pipeline = PipelineFor(topology, state, usesDepth);
         UpdateDescriptor(state, textured);
@@ -600,11 +604,11 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             stages[0] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = _vertexModule, PName = entry };
             stages[1] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = _fragmentModule, PName = entry };
 
-            VertexInputBindingDescription binding = new(0, VertexStride, VertexInputRate.Vertex);
+            VertexInputBindingDescription binding = new(0, (uint)s_vertexStride, VertexInputRate.Vertex);
             VertexInputAttributeDescription* attributes = stackalloc VertexInputAttributeDescription[3];
-            attributes[0] = new VertexInputAttributeDescription(0, 0, Format.R32G32B32A32Sfloat, 0);
-            attributes[1] = new VertexInputAttributeDescription(1, 0, Format.R32G32Sfloat, 16);
-            attributes[2] = new VertexInputAttributeDescription(2, 0, Format.R8G8B8A8Unorm, 24);
+            attributes[0] = new VertexInputAttributeDescription(0, 0, Format.R32G32B32A32Sfloat, s_positionOffset);
+            attributes[1] = new VertexInputAttributeDescription(1, 0, Format.R32G32Sfloat, s_uvOffset);
+            attributes[2] = new VertexInputAttributeDescription(2, 0, Format.R8G8B8A8Unorm, s_colorOffset);
             PipelineVertexInputStateCreateInfo vertexInput = new()
             {
                 SType = StructureType.PipelineVertexInputStateCreateInfo,
