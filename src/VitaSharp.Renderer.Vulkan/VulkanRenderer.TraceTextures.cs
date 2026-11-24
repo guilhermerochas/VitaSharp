@@ -238,7 +238,7 @@ public sealed unsafe partial class VulkanRenderer
         MipLayout mipLayout = layout.Levels[(int)lodMin];
         w = mipLayout.Width;
         h = mipLayout.Height;
-        Texels texels = TextureDecoder.Decode(gxmTextureDesc, info, gxmTextureDesc.DataAddress + face * layout.FaceStride + mipLayout.Offset, mipLayout.Width, mipLayout.Height, mipLayout.RowPitch, out _, out _);
+        Texels texels = TextureDecoder.Decode(gxmTextureDesc, info, gxmTextureDesc.DataAddress + face * layout.FaceStride + mipLayout.Offset, mipLayout.Width, mipLayout.Height, mipLayout.RowPitch, GxmYuvProfiles.Default, out _, out _); // inspection: the context defaults
         iw = w;
         ih = h;
         if (!(info.Compressed && info.Convert == TexConvert.None) && info.Format is Format.R8G8B8A8Unorm or Format.R8G8B8A8Srgb)

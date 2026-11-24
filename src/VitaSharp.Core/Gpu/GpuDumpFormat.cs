@@ -23,8 +23,10 @@ public static class GpuDumpFormat
     /// <summary>Format version: readers accept files up to this version. 2: the mask update byte of a fragment program
     /// record is a flag byte (bit 0 mask update, bit 1 a u32 + u8 texture coordinate remap follows); version 1 files
     /// read the same. 3: bit 1 of a scene's force-load byte says the load surface's depth and stencil addresses follow
-    /// (sceGxmBeginSceneEx with another load surface); older files read the same.</summary>
-    public const uint Version = 3;
+    /// (sceGxmBeginSceneEx with another load surface); older files read the same. 4:
+    /// a begin scene record ends with the two YUV profiles (u8 CSC0, u8 CSC1); earlier files read as the profiles
+    /// sceGxmCreateContext sets.</summary>
+    public const uint Version = 4;
     public const string Extension = ".vsgd";
 
     public const byte ChunkRecords = 1, ChunkEnd = 2;
@@ -588,6 +590,9 @@ public sealed class GpuDumpCodec
                         w.U32(z.LoadStencilData);
                     }
                 }
+
+                w.U8(b.YuvProfiles.Csc0);
+                w.U8(b.YuvProfiles.Csc1);
                 return true;
             case EndSceneCommand e:
                 w.U8((byte)GpuDumpRecord.EndScene);
@@ -881,6 +886,8 @@ public sealed class GpuDumpCodec
     /// <summary>The process of the commands written last / read next (<see cref="GpuDumpRecord.Process"/>).</summary>
     private int _writePid;
     public int ReadPid;
+    /// <summary>The format version of the file being read (<see cref="GpuDumpFormat.Version"/> history).</summary>
+    public uint ReadVersion = GpuDumpFormat.Version;
 
     private GpuCommand ReadCommandRecord(GpuDumpRecord kind, DumpCursor r, DrawCommand draw)
     {
@@ -913,6 +920,11 @@ public sealed class GpuDumpCodec
                         LoadDepthData = otherLoadSurface ? r.U32() : depthData,
                         LoadStencilData = otherLoadSurface ? r.U32() : stencilData,
                     };
+                }
+
+                if (ReadVersion >= 4)
+                {
+                    b.YuvProfiles = new GxmYuvProfiles(r.U8(), r.U8());
                 }
 
                 return b;
@@ -1077,12 +1089,14 @@ public sealed class GpuDumpCodec
         return true;
     }
 
-    public static void WriteFileHeader(Stream output, GpuDumpHeader header)
+    /// <summary>Writes the file header; <paramref name="version"/> is the records' format version (a copy of another
+    /// file's records keeps that file's).</summary>
+    public static void WriteFileHeader(Stream output, GpuDumpHeader header, uint version = GpuDumpFormat.Version)
     {
         byte[] text = Encoding.UTF8.GetBytes(header.Text);
         output.Write(GpuDumpFormat.Magic);
         Span<byte> b = stackalloc byte[8];
-        BinaryPrimitives.WriteUInt32LittleEndian(b, GpuDumpFormat.Version);
+        BinaryPrimitives.WriteUInt32LittleEndian(b, version);
         BinaryPrimitives.WriteUInt32LittleEndian(b[4..], (uint)text.Length);
         output.Write(b);
         output.Write(text);

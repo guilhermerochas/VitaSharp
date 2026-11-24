@@ -724,6 +724,7 @@ public sealed partial class Gxm : HleModule
             Width = rt.Width, Height = rt.Height, Multisample = rt.MultisampleMode,
             Color = color,
             Depth = depth,
+            YuvProfiles = new GxmYuvProfiles(c.YuvProfile[0], c.YuvProfile[1]),
         });
         return 0;
     }
@@ -1231,7 +1232,8 @@ public sealed partial class Gxm : HleModule
     [Hle(Cost = HleCost.UserCall)] void sceGxmSetBackLineFillLastPixelEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.State.Back.LineFillLastPixel = e != 0; }
 
     /// <summary>YUV->RGB matrix of the colour space converter <paramref name="index"/> (0/1): BT601 0, BT709 1,
-    /// BT601 full range 2, BT709 full range 3. Stored per context; the texture decoder still uses its fixed matrices.
+    /// BT601 full range 2, BT709 full range 3. Stored per context; sceGxmBeginScene hands the two to the scene
+    /// (<see cref="BeginSceneCommand.YuvProfiles"/>), whose YUV textures the renderer converts with them.
     /// As libgxm 3.74: NULL or unknown context 0x805B0004; a deferred context, index above 1 or profile above 3 (any
     /// profile is taken from programs built with an SDK before 2.50) 0x805B0003; inside a scene 0x805B0007.</summary>
     [Hle(Cost = HleCost.UserCall)]

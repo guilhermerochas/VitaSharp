@@ -1288,6 +1288,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     private bool _inScene, _rendering, _depthNeedsClear;
     private long _sceneSerial;
     private BeginSceneCommand? _scene;
+    /// <summary>The colour space converters' profiles of the open scene (sceGxmBeginScene latches them): the matrices
+    /// its YUV textures are converted with.</summary>
+    private GxmYuvProfiles SceneYuvProfiles => _scene?.YuvProfiles ?? GxmYuvProfiles.Default;
     private RenderTarget? _renderTarget;
     private Format _rtAttachFormat;   // format the scene renders with (the sRGB view when the surface has gamma)
     private bool _rtGamma;

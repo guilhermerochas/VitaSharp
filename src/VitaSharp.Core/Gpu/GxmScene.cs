@@ -43,6 +43,11 @@ public sealed class BeginSceneCommand : GpuCommand
     public uint Multisample;
     public ColorSurfaceInfo? Color;
     public DepthSurfaceInfo? Depth;
+    /// <summary>The SceGxmYuvProfile of the two colour space converters (CSC0, CSC1) for the scene's YUV textures: the
+    /// context's sceGxmSetYuvProfile values, latched by sceGxmBeginScene (libgxm 3.74 copies them into the scene's
+    /// state there, and the setter is refused inside a scene). Defaults of sceGxmCreateContext: BT.601 standard and
+    /// BT.709 standard.</summary>
+    public GxmYuvProfiles YuvProfiles = GxmYuvProfiles.Default;
 }
 
 public sealed class EndSceneCommand : GpuCommand

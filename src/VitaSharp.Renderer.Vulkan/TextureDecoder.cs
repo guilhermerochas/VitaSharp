@@ -116,8 +116,10 @@ public static class TextureDecoder
 
     private static byte Mem8(uint addr) => t_srcData is { } d && addr - t_srcAddr < (uint)d.Length ? d[addr - t_srcAddr] : GuestMemory.Read<byte>(addr);
 
-    /// <summary>Decodes one level. The result is pooled: dispose it once its bytes were copied.</summary>
-    public static Texels Decode(GxmTextureDesc gxmTextureDesc, TexFormatInfo info, uint addr, uint w, uint h, uint rowPitch, out uint outW, out uint outH)
+    /// <summary>Decodes one level. The result is pooled: dispose it once its bytes were copied. <paramref name="yuvProfiles"/>:
+    /// the matrices of the scene's colour space converters, for a YUV format.</summary>
+    public static Texels Decode(GxmTextureDesc gxmTextureDesc, TexFormatInfo info, uint addr, uint w, uint h, uint rowPitch,
+        GxmYuvProfiles yuvProfiles, out uint outW, out uint outH)
     {
         outW = w;
         outH = h;
@@ -199,9 +201,10 @@ public static class TextureDecoder
         {
             case TexConvert.Yuv420P2:
             case TexConvert.Yuv420P3:
-                return Yuv420(addr, w, h, rowPitch == 0 ? w : (uint)Math.Max(rowPitch, w), info.Convert == TexConvert.Yuv420P3, gxmTextureDesc.Swizzle);
+                return Yuv420(addr, w, h, rowPitch == 0 ? w : (uint)Math.Max(rowPitch, w), info.Convert == TexConvert.Yuv420P3,
+                    (gxmTextureDesc.Swizzle & 1) != 0, yuvProfiles.ProfileOf(gxmTextureDesc.Format));
             case TexConvert.Yuv422:
-                return Yuv422(addr, w, h, rowPitch);
+                return Yuv422(addr, w, h, rowPitch, gxmTextureDesc.Swizzle & 3, yuvProfiles.ProfileOf(gxmTextureDesc.Format));
         }
 
         if (bits < 8)
@@ -418,49 +421,45 @@ public static class TextureDecoder
         return result;
     }
 
-    /// <summary>BT.601: CSC0 is studio range (Y 16..235), CSC1 full range (the hardware's two colour-space modes).</summary>
-    private static void YuvToRgb(int y, int u, int v, Span<byte> o, bool fullRange = false)
+    /// <summary>One texel through the conversion of <paramref name="tables"/> (<see cref="YuvTables"/>).</summary>
+    private static void YuvToRgb(int y, int u, int v, Span<byte> o, YuvTables tables)
     {
-        int d = u - 128, e = v - 128;
-        if (fullRange)
-        {
-            o[0] = (byte)Math.Clamp((256 * y + 359 * e + 128) >> 8, 0, 255);
-            o[1] = (byte)Math.Clamp((256 * y - 88 * d - 183 * e + 128) >> 8, 0, 255);
-            o[2] = (byte)Math.Clamp((256 * y + 454 * d + 128) >> 8, 0, 255);
-        }
-        else
-        {
-            int c = y - 16;
-            o[0] = (byte)Math.Clamp((298 * c + 409 * e + 128) >> 8, 0, 255);
-            o[1] = (byte)Math.Clamp((298 * c - 100 * d - 208 * e + 128) >> 8, 0, 255);
-            o[2] = (byte)Math.Clamp((298 * c + 516 * d + 128) >> 8, 0, 255);
-        }
+        int c = tables.Luma[y];
+        o[0] = ClampByte(c + tables.RFromV[v]);
+        o[1] = ClampByte(c + tables.GFromU[u] + tables.GFromV[v]);
+        o[2] = ClampByte(c + tables.BFromU[u]);
         o[3] = 255;
     }
 
-    /// <summary>swizzle: bit 0 = YVU order (V before U), bit 1 = CSC1 (full range).</summary>
-    public static Texels Yuv420(uint addr, uint w, uint h, uint pitch, bool threePlane, uint swizzle)
+    /// <summary>YUV420P2 / YUV420P3 to RGBA. <paramref name="yvu"/>: V before U (the YVU420 swizzles);
+    /// <paramref name="yuvProfile"/>: the SceGxmYuvProfile of the texture's converter (<see cref="GxmYuvProfiles.ProfileOf"/>).</summary>
+    public static Texels Yuv420(uint addr, uint w, uint h, uint pitch, bool threePlane, bool yvu, int yuvProfile)
     {
-        return Yuv420Fast(addr, w, h, pitch, threePlane, swizzle) ?? Yuv420Texel(addr, w, h, pitch, threePlane, swizzle);
+        return Yuv420Fast(addr, w, h, pitch, threePlane, yvu, yuvProfile) ?? Yuv420Texel(addr, w, h, pitch, threePlane, yvu, yuvProfile);
     }
 
-    /// <summary>Per-channel terms of the BT.601 conversion (<see cref="YuvToRgb"/>), by sample value: studio range
-    /// (CSC0) and full range (CSC1).</summary>
-    private static readonly int[] s_lumaStudio = Table(v => 298 * (v - 16) + 128), s_lumaFull = Table(v => 256 * v + 128);
-    private static readonly int[] s_rFromVStudio = Table(v => 409 * (v - 128)), s_gFromUStudio = Table(v => -100 * (v - 128));
-    private static readonly int[] s_gFromVStudio = Table(v => -208 * (v - 128)), s_bFromUStudio = Table(v => 516 * (v - 128));
-    private static readonly int[] s_rFromVFull = Table(v => 359 * (v - 128)), s_gFromUFull = Table(v => -88 * (v - 128));
-    private static readonly int[] s_gFromVFull = Table(v => -183 * (v - 128)), s_bFromUFull = Table(v => 454 * (v - 128));
-
-    private static int[] Table(Func<int, int> term)
+    /// <summary>The per-channel terms of each SceGxmYuvProfile's conversion (<see cref="GxmYuv.Coefficients"/>) by
+    /// sample value, the rounding half (128) in the luma term.</summary>
+    private sealed class YuvTables
     {
-        int[] table = new int[256];
-        for (int v = 0; v < 256; v++)
+        public readonly int[] Luma = new int[256], RFromV = new int[256], GFromU = new int[256], GFromV = new int[256], BFromU = new int[256];
+
+        private YuvTables(int profile)
         {
-            table[v] = term(v);
+            (int luma, int lumaOffset, int rFromV, int gFromU, int gFromV, int bFromU) = GxmYuv.Coefficients(profile);
+            for (int value = 0; value < 256; value++)
+            {
+                Luma[value] = luma * (value - lumaOffset) + 128;
+                RFromV[value] = rFromV * (value - 128);
+                GFromU[value] = -gFromU * (value - 128);
+                GFromV[value] = -gFromV * (value - 128);
+                BFromU[value] = bFromU * (value - 128);
+            }
         }
 
-        return table;
+        private static readonly YuvTables[] s_profiles = [new(0), new(1), new(2), new(3)];
+
+        public static YuvTables Of(int profile) => s_profiles[profile & 3];
     }
 
     private static byte ClampByte(int scaled) => (byte)Math.Clamp(scaled >> 8, 0, 255);
@@ -472,14 +471,13 @@ public static class TextureDecoder
     /// pictures a second where the Vita shows ~25). Null when the planes cannot be read as one span (a decoder picture
     /// covering only part of them): the per-texel path reads each sample from wherever it lies.
     /// </summary>
-    private static Texels? Yuv420Fast(uint addr, uint w, uint h, uint pitch, bool threePlane, uint swizzle)
+    private static Texels? Yuv420Fast(uint addr, uint w, uint h, uint pitch, bool threePlane, bool yvu, int yuvProfile)
     {
         if (w == 0 || h == 0)
         {
             return null;
         }
 
-        bool yvu = (swizzle & 1) != 0, full = (swizzle & 2) != 0;
         ulong ySize = (ulong)pitch * h;
         uint chromaPitch = threePlane ? pitch / 2 : pitch;
         ulong chromaPlane = (ulong)(pitch / 2) * (h / 2);
@@ -503,9 +501,8 @@ public static class TextureDecoder
         }
 
         ReadOnlySpan<byte> src = Mem(addr, (int)length);
-        int[] luma = full ? s_lumaFull : s_lumaStudio;
-        int[] rFromV = full ? s_rFromVFull : s_rFromVStudio, gFromU = full ? s_gFromUFull : s_gFromUStudio;
-        int[] gFromV = full ? s_gFromVFull : s_gFromVStudio, bFromU = full ? s_bFromUFull : s_bFromUStudio;
+        var tables = YuvTables.Of(yuvProfile);
+        int[] luma = tables.Luma, rFromV = tables.RFromV, gFromU = tables.GFromU, gFromV = tables.GFromV, bFromU = tables.BFromU;
         var result = Texels.Rent(w * h * 4L);
         Span<byte> dst = result.Span;
         for (uint y = 0; y < h; y++)
@@ -533,9 +530,9 @@ public static class TextureDecoder
 
     /// <summary>The per-texel conversion (one guest memory read per sample): the reference of <see cref="Yuv420Fast"/>,
     /// and the path for planes a decoder picture covers only in part.</summary>
-    public static Texels Yuv420Texel(uint addr, uint w, uint h, uint pitch, bool threePlane, uint swizzle)
+    public static Texels Yuv420Texel(uint addr, uint w, uint h, uint pitch, bool threePlane, bool yvu, int yuvProfile)
     {
-        bool yvu = (swizzle & 1) != 0, full = (swizzle & 2) != 0;
+        var tables = YuvTables.Of(yuvProfile);
         var result = Texels.Rent(w * h * 4L);
         Span<byte> dst = result.Span;
         uint ySize = pitch * h;
@@ -557,15 +554,24 @@ public static class TextureDecoder
                     U = Mem8(c + (yvu ? 1u : 0u));
                     V = Mem8(c + (yvu ? 0u : 1u));
                 }
-                YuvToRgb(Y, U, V, dst.Slice((int)((y * w + x) * 4), 4), full);
+                YuvToRgb(Y, U, V, dst.Slice((int)((y * w + x) * 4), 4), tables);
             }
         }
 
         return result;
     }
 
-    private static Texels Yuv422(uint addr, uint w, uint h, uint pitch)
+    /// <summary>YUV422 to RGBA: each 4-byte group holds two texels' luma and their shared U and V, in the order of
+    /// <paramref name="order"/> (SceGxmTextureSwizzleYUV422Mode bits 0-1: 0 YUYV, 1 YVYU, 2 UYVY, 3 VYUY);
+    /// <paramref name="yuvProfile"/>: the SceGxmYuvProfile of the texture's converter.</summary>
+    public static Texels Yuv422(uint addr, uint w, uint h, uint pitch, uint order, int yuvProfile)
     {
+        var tables = YuvTables.Of(yuvProfile);
+        // byte of the group holding Y0, Y1, U and V
+        bool lumaFirst = (order & 2) == 0, vFirst = (order & 1) != 0;
+        uint y0At = lumaFirst ? 0u : 1u;
+        uint chromaAt = lumaFirst ? 1u : 0u;
+        uint uAt = vFirst ? chromaAt + 2 : chromaAt, vAt = vFirst ? chromaAt : chromaAt + 2;
         var result = Texels.Rent(w * h * 4L);
         Span<byte> dst = result.Span;
         if (pitch == 0)
@@ -578,11 +584,11 @@ public static class TextureDecoder
             for (uint x = 0; x < w; x += 2)
             {
                 uint p = addr + y * pitch + x * 2;
-                int y0 = Mem8(p), u = Mem8(p + 1), y1 = Mem8(p + 2), v = Mem8(p + 3);
-                YuvToRgb(y0, u, v, dst.Slice((int)((y * w + x) * 4), 4));
+                int y0 = Mem8(p + y0At), y1 = Mem8(p + y0At + 2), u = Mem8(p + uAt), v = Mem8(p + vAt);
+                YuvToRgb(y0, u, v, dst.Slice((int)((y * w + x) * 4), 4), tables);
                 if (x + 1 < w)
                 {
-                    YuvToRgb(y1, u, v, dst.Slice((int)((y * w + x + 1) * 4), 4));
+                    YuvToRgb(y1, u, v, dst.Slice((int)((y * w + x + 1) * 4), 4), tables);
                 }
             }
         }

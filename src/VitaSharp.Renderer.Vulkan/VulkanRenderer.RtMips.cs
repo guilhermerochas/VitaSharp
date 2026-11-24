@@ -157,7 +157,7 @@ public sealed unsafe partial class VulkanRenderer
                     continue;
                 }
 
-                using Texels data = TextureDecoder.Decode(gxmTextureDesc, info, gxmTextureDesc.DataAddress + mipLayout.Offset, mipLayout.Width, mipLayout.Height, mipLayout.RowPitch, out uint outW, out uint outH);
+                using Texels data = TextureDecoder.Decode(gxmTextureDesc, info, gxmTextureDesc.DataAddress + mipLayout.Offset, mipLayout.Width, mipLayout.Height, mipLayout.RowPitch, SceneYuvProfiles, out uint outW, out uint outH);
                 (Silk.NET.Vulkan.Buffer buf, ulong off) = UploadSpan(data.Span, 16);
                 var region = new BufferImageCopy
                 {

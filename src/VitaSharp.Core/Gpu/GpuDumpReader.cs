@@ -40,6 +40,7 @@ public sealed class GpuDumpReader : IDisposable
         _input = input;
         Header = GpuDumpCodec.ReadFileHeader(input, out uint v);
         Version = v;
+        _codec.ReadVersion = v;
     }
 
     /// <summary>False at the end of the dump.</summary>
@@ -182,9 +183,9 @@ public sealed class GpuDumpReader : IDisposable
     public static (int Chunks, long RawBytes, double Seconds) Recompress(string input, string output, int quality)
     {
         using var inp = new FileStream(input, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20);
-        GpuDumpHeader header = GpuDumpCodec.ReadFileHeader(inp, out _);
+        GpuDumpHeader header = GpuDumpCodec.ReadFileHeader(inp, out uint version);
         using var outp = new FileStream(output, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
-        GpuDumpCodec.WriteFileHeader(outp, header);
+        GpuDumpCodec.WriteFileHeader(outp, header, version);
         byte[] buf = new byte[1 << 20];
         byte[]? scratch = null, scratch2 = null;
         int chunks = 0;

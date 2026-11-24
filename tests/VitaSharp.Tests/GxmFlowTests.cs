@@ -802,6 +802,33 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmSetYuvProfile", ctx, 0u, 5u));
     }
 
+    /// <summary>libgxm 3.74 copies the context's two YUV profiles into the scene's state in sceGxmBeginScene (and the
+    /// setter is refused inside a scene): every scene carries the profiles set before it, the sceGxmCreateContext
+    /// defaults (CSC0 BT.601 standard, CSC1 BT.709 standard) when none was set, and a refused set changes nothing.</summary>
+    [Fact]
+    public void EachSceneCarriesTheYuvProfilesSetBeforeIt()
+    {
+        Init();
+        uint ctx = Context(), rt = RenderTarget(64, 64);
+        uint color = _harness.Alloc(0x40), data = _harness.Alloc(64 * 64 * 4);
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceInit", color, 0u, 0u, 0u, 0u, 64u, 64u, 64u, data));
+        GxmYuvProfiles Scene()
+        {
+            Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, 0u, color, 0u));
+            Assert.Equal(WITHIN_SCENE, Call(Gxm, "sceGxmSetYuvProfile", ctx, 0u, 1u));
+            Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+            Finish();
+            return _rec.LastBegin!.YuvProfiles;
+        }
+
+        Assert.Equal(new GxmYuvProfiles(GxmYuv.Bt601Standard, GxmYuv.Bt709Standard), Scene());
+        Assert.Equal(0, Call(Gxm, "sceGxmSetYuvProfile", ctx, 1u, (uint)GxmYuv.Bt601FullRange));
+        Assert.Equal(new GxmYuvProfiles(GxmYuv.Bt601Standard, GxmYuv.Bt601FullRange), Scene());
+        Assert.Equal(0, Call(Gxm, "sceGxmSetYuvProfile", ctx, 0u, (uint)GxmYuv.Bt709FullRange));
+        Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmSetYuvProfile", ctx, 1u, 4u));
+        Assert.Equal(new GxmYuvProfiles(GxmYuv.Bt709FullRange, GxmYuv.Bt601FullRange), Scene());
+    }
+
     [Fact]
     public void DeferredContextsRecordCommandLists()
     {

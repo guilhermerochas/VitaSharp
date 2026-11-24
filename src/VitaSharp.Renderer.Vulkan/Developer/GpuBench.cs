@@ -712,7 +712,7 @@ public static class GpuBench
         }
 
         using var inp = new FileStream(dump, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20);
-        var header = GpuDumpCodec.ReadFileHeader(inp, out _);
+        var header = GpuDumpCodec.ReadFileHeader(inp, out uint version);
         header[KeyFrame] = frame.ToString(CultureInfo.InvariantCulture);
         header[KeyName] = name;
         header["bench.source"] = Path.GetFileName(dump);
@@ -723,7 +723,7 @@ public static class GpuBench
 
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
         using var outp = new FileStream(output, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
-        GpuDumpCodec.WriteFileHeader(outp, header);
+        GpuDumpCodec.WriteFileHeader(outp, header, version);
         var buf = new byte[1 << 20];
         for (long left = end - inp.Position; left > 0;)
         {

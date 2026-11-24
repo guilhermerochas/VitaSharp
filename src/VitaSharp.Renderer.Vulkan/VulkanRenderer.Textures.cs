@@ -69,7 +69,7 @@ public sealed unsafe partial class VulkanRenderer
                + (_options.InspectTextures ? $"; test inspection {_inspectTicks / f / frames:F3} ms/frame ({_inspectDone} inspected, {_inspectDuplicate} repeated contents skipped, {_inspectDeferred} over the frame budget: {_inspectBackground} inspected in the background, {_inspectStale} changed before their turn, {_inspectQueue.Count} still queued)" : "");
     }
 
-    private readonly record struct TexKey(uint Data, uint Format, uint Width, uint Height, uint Type, uint Mips, uint Stride, uint Palette, bool Gamma);
+    private readonly record struct TexKey(uint Data, uint Format, uint Width, uint Height, uint Type, uint Mips, uint Stride, uint Palette, bool Gamma, byte YuvProfile);
 
     private readonly Dictionary<TexKey, Texture> _textures = new();
     private readonly Dictionary<(uint, uint), Sampler> _samplers = new();
@@ -895,7 +895,8 @@ public sealed unsafe partial class VulkanRenderer
     /// a 2D texture uploaded into all six faces of a cube image.</summary>
     private (ImageView, ImageLayout) ResolveMemoryTexture(GxmTextureDesc gxmTextureDesc, uint addr, uint w, uint h, bool gamma, bool asCube)
     {
-        var key = new TexKey(addr, gxmTextureDesc.Format, w, h, gxmTextureDesc.TextureType | (asCube ? 1u : 0u), gxmTextureDesc.MipCount | (gxmTextureDesc.LodMin << 8), gxmTextureDesc.TextureType == GxmTextureDesc.TypeLinearStrided ? gxmTextureDesc.StrideBytes : 0, gxmTextureDesc.PaletteAddress, gamma);
+        var key = new TexKey(addr, gxmTextureDesc.Format, w, h, gxmTextureDesc.TextureType | (asCube ? 1u : 0u), gxmTextureDesc.MipCount | (gxmTextureDesc.LodMin << 8), gxmTextureDesc.TextureType == GxmTextureDesc.TypeLinearStrided ? gxmTextureDesc.StrideBytes : 0, gxmTextureDesc.PaletteAddress, gamma,
+            (byte)SceneYuvProfiles.ProfileOf(gxmTextureDesc.Format));
         if (_xferPendingDst.Count > 0)
         {
             // VITASHARP_TRANSFER_DEFER: the transfer's result as the GPU produced it in command order, when it did
@@ -1655,7 +1656,7 @@ public sealed unsafe partial class VulkanRenderer
             {
                 MipLayout mipLayout = layout.Levels[(int)m];
                 uint baseAddr = gxmTextureDesc.DataAddress + face * layout.FaceStride + mipLayout.Offset;
-                using Texels linear = TextureDecoder.Decode(gxmTextureDesc, info, baseAddr, mipLayout.Width, mipLayout.Height, mipLayout.RowPitch, out uint outW, out uint outH);
+                using Texels linear = TextureDecoder.Decode(gxmTextureDesc, info, baseAddr, mipLayout.Width, mipLayout.Height, mipLayout.RowPitch, SceneYuvProfiles, out uint outW, out uint outH);
                 (Silk.NET.Vulkan.Buffer buf, ulong off) = UploadSpan(linear.Span, 16);
                 var r = new BufferImageCopy
                 {

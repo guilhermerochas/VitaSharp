@@ -124,7 +124,8 @@ public sealed class GpuDumpTests(GuestMemoryFixture fixture) : IDisposable
         {
             new BeginSceneCommand { Width = 960, Height = 544, Multisample = 2,
                 Color = new ColorSurfaceInfo(0x60000000, 960, 544, 960, 0x1000, 2, true, 1),
-                Depth = new DepthSurfaceInfo(0x61000000, 0, 960, 0x4000, 1, 0.5f, 7, true, false) },
+                Depth = new DepthSurfaceInfo(0x61000000, 0, 960, 0x4000, 1, 0.5f, 7, true, false),
+                YuvProfiles = new GxmYuvProfiles(GxmYuv.Bt709FullRange, GxmYuv.Bt601FullRange) },
             Draw(vu1, fu, 0x81400000), Draw(vu2, fu, 0x81500000), Draw(vu3, fu, 0x81600000), Draw(vu1, [], 0x81700000),
             new MidSceneFlushCommand(),
             new EndSceneCommand { Notifications = [(0x81000010, 5), (0x81000014, 6)] },
@@ -202,7 +203,8 @@ public sealed class GpuDumpTests(GuestMemoryFixture fixture) : IDisposable
                     break;
                 case BeginSceneCommand b:
                     var gb = (BeginSceneCommand)got;
-                    Assert.Equal((b.Width, b.Height, b.Multisample, b.Color, b.Depth), (gb.Width, gb.Height, gb.Multisample, gb.Color, gb.Depth));
+                    Assert.Equal((b.Width, b.Height, b.Multisample, b.Color, b.Depth, b.YuvProfiles),
+                        (gb.Width, gb.Height, gb.Multisample, gb.Color, gb.Depth, gb.YuvProfiles));
                     break;
                 case EndSceneCommand e:
                     Assert.Equal(e.Notifications, ((EndSceneCommand)got).Notifications);
@@ -243,6 +245,44 @@ public sealed class GpuDumpTests(GuestMemoryFixture fixture) : IDisposable
         Assert.IsType<FinishCommand>(r.Command);
         Assert.False(r.Next());
         Assert.Null(r.Summary);
+    }
+
+    /// <summary>A version 2 file's begin scene record has no YUV profiles: it reads as sceGxmCreateContext's (CSC0
+    /// BT.601 standard, CSC1 BT.709 standard), and the next record still lines up; a recompressed or cut copy keeps
+    /// the version its records were written in.</summary>
+    [Fact]
+    public void AVersion2BeginSceneReadsTheContextDefaultsAndCopiesKeepTheVersion()
+    {
+        var body = new DumpBuffer();
+        body.U8((byte)GpuDumpRecord.BeginScene);
+        body.U32(64);
+        body.U32(32);
+        body.U32(0);
+        body.Bool(false);
+        body.Bool(false);
+        body.U8((byte)GpuDumpRecord.Finish);
+        Directory.CreateDirectory(_dir);
+        string path = Path.Combine(_dir, "v2.vsgd");
+        using (FileStream f = File.Create(path))
+        {
+            GpuDumpCodec.WriteFileHeader(f, new GpuDumpHeader(), version: 2);
+            byte[]? scratch = null;
+            GpuDumpCodec.WriteChunk(f, GpuDumpFormat.ChunkRecords, body.Span, 3, ref scratch);
+        }
+
+        string copy = Path.Combine(_dir, "v2-copy.vsgd");
+        GpuDumpReader.Recompress(path, copy, 1);
+        foreach (string file in new[] { path, copy })
+        {
+            using var r = new GpuDumpReader(file);
+            Assert.Equal(2u, r.Version);
+            Assert.True(r.Next());
+            BeginSceneCommand begin = Assert.IsType<BeginSceneCommand>(r.Command);
+            Assert.Equal((64u, 32u), (begin.Width, begin.Height));
+            Assert.Equal(new GxmYuvProfiles(GxmYuv.Bt601Standard, GxmYuv.Bt709Standard), begin.YuvProfiles);
+            Assert.True(r.Next());
+            Assert.IsType<FinishCommand>(r.Command);
+        }
     }
 
     [Fact]

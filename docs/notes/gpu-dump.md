@@ -84,7 +84,7 @@ the draws between the previous present and it.
 The recorder sits on the GPU worker: it records the commands in the order the backend executes them (the same order
 the guest submitted them), and the guest memory the backend actually read.
 
-- **Commands:** BeginScene (surfaces, MSAA mode, depth surface), Draw (programs, full fixed-function state, the
+- **Commands:** BeginScene (surfaces, MSAA mode, depth surface, the two YUV profiles), Draw (programs, full fixed-function state, the
   uniform data copied at submission, uniform buffer addresses, texture descriptors, streams, indices, visibility),
   EndScene (notification addresses), MidSceneFlush, Finish, Signal, Callback (only its written range: GPU transfers
   run on the CPU, their result reaches the dump through later reads), Present (display frame plus host time,
@@ -103,7 +103,7 @@ the guest submitted them), and the guest memory the backend actually read.
 - **Header:** title, build and commit, OS, CPU backend, GPU, renderer description (driver, MSAA mode, shader
   settings, cache), debug mode, command line, every `VITASHARP_*` variable, first present.
 
-## File format (`.vsgd`, version 2)
+## File format (`.vsgd`, version 4)
 
 ```
 file    = "VSGPUDMP" u32 version u32 headerBytes header chunk*
@@ -116,7 +116,9 @@ record  = u8 kind ...                                                records nev
 Integers are little endian, `var` is unsigned LEB128. Record kinds (`GpuDumpRecord`): 1 Memory (u32 address, var
 length, bytes), 2 ProgramInfo, 3 VertexProgram, 4 FragmentProgram (its last byte is a flag byte since version 2:
 bit 0 mask update, bit 1 a texture coordinate remap of sceGxmShaderPatcherCreateFragmentProgramForGles follows as
-u32 + u8; version 1 files read the same), 5 BackendState (var length, opaque renderer blob), 0x10 BeginScene, 0x11 Draw, 0x12 EndScene, 0x13 Finish, 0x14 MidSceneFlush, 0x15 Present, 0x16 Signal,
+u32 + u8; version 1 files read the same), 5 BackendState (var length, opaque renderer blob), 0x10 BeginScene (since
+version 4 it ends with the sceGxmSetYuvProfile values of CSC0 and CSC1, u8 each; earlier files read as the
+sceGxmCreateContext defaults, BT.601 and BT.709 standard), 0x11 Draw, 0x12 EndScene, 0x13 Finish, 0x14 MidSceneFlush, 0x15 Present, 0x16 Signal,
 0x17 Callback, 0x20 Idle. Draw uniform blocks are stored inline, as a reference to an identical block among the last
 4096, or as a delta (changed 8-byte-word runs) against the previous block of the same program and stage.
 A dump cut short (crash) is readable up to its last complete chunk; the reader skips unknown chunk types. Chunks

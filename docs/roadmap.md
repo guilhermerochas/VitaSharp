@@ -140,6 +140,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `libshacccg` são da Sony); a amostragem de cube do renderizador segue coberta pelos testes de renderizador da suíte.
   O CSC1 também não entra: a libgxm 3.74 começa o CSC1 como BT.709 padrão (`GxmContext.YuvProfile`), mas o
   `TextureDecoder` o converte como BT.601 de faixa cheia e não lê o `sceGxmSetYuvProfile`; a conferir num item próprio.
+  Feito (23/11/2026, fix/quick3): ver "Texturas YUV com a matriz do conversor de cor da cena" em "Corrigido, falta o
+  usuário testar".
   Feito (22/11/2026, small1, fix/small1; a confirmar pelo usuário): o `display_vblank_30` ainda exigia 15 de 30
   esperas no vblank seguinte, o que a carga derruba (vcount +77 em 30 esperas na rodada do bug7). Agora decide só pelo
   contrato: nenhuma espera sem vblank novo, alguma espera no vblank seguinte (o laço segue até 300 esperas até ver
@@ -355,6 +357,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   3 só de programas com SDK anterior a 2.50. Prova: `GxmFlowTests.YuvProfileAndVisibilityBufferFollowTheFirmwareChecks`
   (falha sem a correção). O renderizador não lê esses campos (o decodificador YUV usa as matrizes fixas, CSC1 = BT.601
   full), então a imagem não muda; usar o perfil do contexto no decodificador é parte do item de GXM acima.
+  Feito (23/11/2026, fix/quick3): o decodificador usa o perfil da cena (item em "Corrigido, falta o usuário testar").
 - [ ] [P3][M] **Sistema de arquivos, carregador e módulos:** montagens, patches por origem, NIDs, imports/exports, permissões
   de módulos de sistema.
   Em andamento (23/11/2026, quick3): patches por origem já cobertos por `UpdateModelTests` (pasta da atualização por
@@ -3184,6 +3187,22 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (23/11/2026, falta testar) [P3][P] Texturas YUV com a matriz do conversor de cor da cena (fix/quick3): na libgxm
+  3.74 o `sceGxmBeginScene` copia para a cena os dois perfis do contexto (`sceGxmSetYuvProfile`; padrão do
+  `sceGxmCreateContext`: CSC0 BT.601 padrão, CSC1 BT.709 padrão) e manda com ela as duas entradas da tabela de
+  matrizes (uma por perfil: BT.601/BT.709, faixa padrão/cheia); o formato da textura escolhe o conversor (YUV420:
+  bit 1 do swizzle; YUV422: bit 2). O decodificador usava matrizes fixas (CSC0 BT.601 padrão, CSC1 sempre BT.601 de
+  faixa cheia, YUV422 sempre BT.601 e sempre na ordem YUYV). Agora a cena leva os perfis
+  (`BeginSceneCommand.YuvProfiles`), o decodificador converte pelo perfil do conversor do formato
+  (`GxmYuv`, coeficientes pelos Kr/Kb das normas; BT.601 dá os mesmos bytes de antes), o cache de texturas separa por
+  perfil, e o YUV422 lê as quatro ordens (YUYV, YVYU, UYVY, VYUY). Dump da GPU versão 4 (a cena grava os dois perfis;
+  dumps antigos leem com o padrão do contexto, e cópias/recortes mantêm a versão do arquivo). Testes:
+  `YuvTextureTests` (matrizes, conversor por formato, decodificação por perfil, ordens do YUV422),
+  `GxmFlowTests.EachSceneCarriesTheYuvProfilesSetBeforeIt`,
+  `GpuDumpTests.AVersion2BeginSceneReadsTheContextDefaultsAndCopiesKeepTheVersion` (falham sem a correção). Testar:
+  os filmes dos jogos (ex.: as aberturas pelo avplayer, texturas YVU420P2_CSC1) com as cores do Vita: sem o tom
+  lavado/saturado da faixa cheia; um replay de dump antigo com filme pode mudar de cor (mudança intencional).
 
 - [ ] (23/11/2026, falta testar) [P3][M] Pasta do app0 com atualização instalada listava só a atualização
   (fix/quick3, do item "Sistema de arquivos, carregador e módulos" dos testes de regressão): o appmgr 3.74 monta
