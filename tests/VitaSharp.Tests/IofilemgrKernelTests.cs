@@ -146,13 +146,8 @@ public sealed class IofilemgrKernelTests(GuestMemoryFixture fixture) : IDisposab
         Assert.Equal(Exist, Call(Io, "kscePfsMount2", source, point, 0u, 6u));
         Assert.Equal(Path.Combine(host!, "data.bin"), _harness.Emu.Vfs.Resolve("pfst0:data.bin"));
         Assert.Equal(NotMounted, Call(Io, "kscePfsMount", source, point, 0u, 0u, 0u, 0x28u)); // no authority approved
-        uint state = _harness.Alloc(4);
-        Assert.Equal(0, Call(Io, "kscePfs_4C148288", point, state));
-        Assert.Equal(0u, GuestMemory.R32(state));
         Assert.Equal(0, Call(Io, "kscePfsApprove", point, 0u, 0u, 0u));
         Assert.Equal(6, Call(Io, "kscePfsMount", source, point, 0u, 0u, 0u, 0x28u));
-        Assert.Equal(0, Call(Io, "kscePfs_4C148288", point, state));
-        Assert.Equal(1u, GuestMemory.R32(state));
         Assert.Equal(0, Call(Io, "kscePfsDisapprove", point, 0u, 0u, 0u));
         Assert.Equal(0, Call(Io, "kscePfsUnmount", point));
         Assert.False(_harness.Emu.Vfs.IsMounted("pfst0"));
@@ -161,6 +156,80 @@ public sealed class IofilemgrKernelTests(GuestMemoryFixture fixture) : IDisposab
         Assert.Equal(0, Call(Io, "kscePfsAcidDirSet", source, _harness.Str("PCSA00000")));
         Assert.True(Call(Io, "kscePfsAcidDirSet", _harness.Str("ux0:missing"), _harness.Str("PCSA00000")) < 0);
         Assert.Equal(-1, Call(Io, "kscePfsFacade_04352D52"));
+    }
+
+    /// <summary>
+    /// NID_4C148288(mount, info) as pfsmgr 3.74 has it (ScePfsMgrForKernel, 0x81000000, disassembled, study only): it
+    /// takes a vfs mount, not a mount point. A PFS mount (fs type 3) answers its entry's fields in a block of 0x68
+    /// bytes: the mount, the source path, the root path "/point", the assign name "point0:", the mode, the quota, the
+    /// image's header value, the authority table's size (16) and address, and the AC list (none outside the AC modes);
+    /// another mount is 0x80010016 with nothing written. Fails when the call reads its first argument as a mount point
+    /// and answers whether the mount is approved.
+    /// </summary>
+    [Fact]
+    public void PfsMountInfoIsReadFromTheVfsMountsEntry()
+    {
+        string? host = _harness.Emu.Vfs.Resolve("ux0:pfsinfo", true);
+        Directory.CreateDirectory(host!);
+        File.WriteAllText(Path.Combine(host!, "data.bin"), "x");
+        uint source = _harness.Str("ux0:pfsinfo");
+        uint point = _harness.Str("pfsi");
+        uint key = _harness.Alloc(0x10);
+        Assert.Equal(0, Call(Io, "kscePfsMount2", source, point, key, 6u));
+        uint vnode = Io.HostVnode("pfsi0:data.bin");
+        Assert.NotEqual(0u, vnode);
+        uint mount = GuestMemory.R32(vnode + 0x4C);
+        Assert.Equal(3, GuestMemory.Read<byte>(mount + 0x4C));
+
+        uint info = _harness.Alloc(IoFileMgr.PfsMountInfoSize);
+        GuestMemory.Fill(info, 0xCC, IoFileMgr.PfsMountInfoSize);
+        Assert.Equal(0, Call(Io, "kscePfs_4C148288", mount, info));
+        Assert.Equal(mount, GuestMemory.R32(info));
+        Assert.Equal("ux0:pfsinfo", GuestMemory.ReadCString(GuestMemory.R32(info + 4)));
+        Assert.Equal("/pfsi", GuestMemory.ReadCString(GuestMemory.R32(info + 8)));
+        Assert.Equal("pfsi0:", GuestMemory.ReadCString(GuestMemory.R32(info + 0xC)));
+        Assert.Equal(6, GuestMemory.Read<ushort>(info + 0x10));
+        Assert.Equal(0u, GuestMemory.R32(info + 0x14));
+        Assert.Equal(0u, GuestMemory.R32(info + 0x18));
+        Assert.Equal(16u, GuestMemory.R32(info + 0x1C));
+        uint table = GuestMemory.R32(info + 0x20);
+        Assert.Equal(ulong.MaxValue, GuestMemory.Read<ulong>(table)); // no authority approved yet
+        Assert.Equal(0u, GuestMemory.R32(info + 0x24));
+        for (uint word = 0; word < 16; word++)
+        {
+            Assert.Equal(0u, GuestMemory.R32(info + 0x28 + word * 4));
+        }
+
+        // the table is the entry's: an approval is seen through it, a disapproval packs it
+        Assert.Equal(0, Call(Io, "kscePfsApprove", point, 0u, 1u, 0x2F000000u));
+        Assert.Equal(0, Call(Io, "kscePfsApprove", point, 0u, 2u, 0x2F000000u));
+        Assert.Equal(0x2F00000000000001UL, GuestMemory.Read<ulong>(table));
+        Assert.Equal(0, Call(Io, "kscePfsDisapprove", point, 0u, 1u, 0x2F000000u));
+        Assert.Equal(0x2F00000000000002UL, GuestMemory.Read<ulong>(table));
+        Assert.Equal(ulong.MaxValue, GuestMemory.Read<ulong>(table + 8));
+
+        // a mount that is not a PFS one: 0x80010016, the block untouched
+        uint plain = GuestMemory.R32(Io.HostVnode("ux0:pfsinfo") + 0x4C);
+        uint other = _harness.Alloc(IoFileMgr.PfsMountInfoSize);
+        GuestMemory.Fill(other, 0xCC, IoFileMgr.PfsMountInfoSize);
+        Assert.Equal(Inval, Call(Io, "kscePfs_4C148288", plain, other));
+        Assert.Equal(0xCCCCCCCCu, GuestMemory.R32(other));
+
+        // an AC pseudo drive: its list is empty
+        Assert.Equal(0, Call(Io, "kscePfsMount2", source, _harness.Str("pfsac"), key, 4u));
+        uint acMount = GuestMemory.R32(Io.HostVnode("pfsac0:data.bin") + 0x4C);
+        Assert.Equal(0, Call(Io, "kscePfs_4C148288", acMount, info));
+        Assert.Equal(4, GuestMemory.Read<ushort>(info + 0x10));
+        Assert.Equal(0u, GuestMemory.R32(info + 0x24));
+
+        // after the unmount the device's paths get a new mount block when it is mounted again
+        Assert.Equal(0, Call(Io, "kscePfsUnmount", point));
+        Assert.Equal(0, Call(Io, "kscePfsMount2", source, point, key, 5u));
+        uint again = GuestMemory.R32(Io.HostVnode("pfsi0:data.bin") + 0x4C);
+        Assert.Equal(0, Call(Io, "kscePfs_4C148288", again, info));
+        Assert.Equal(5, GuestMemory.Read<ushort>(info + 0x10));
+        Assert.Equal(0, Call(Io, "kscePfsUnmount", point));
+        Assert.Equal(0, Call(Io, "kscePfsUnmount", _harness.Str("pfsac")));
     }
 
     /// <summary>
