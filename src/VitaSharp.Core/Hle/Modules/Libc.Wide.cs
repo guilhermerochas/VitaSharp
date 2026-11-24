@@ -65,7 +65,7 @@ public sealed partial class Libc
         return 0;
     }
 
-    [Hle] int wcscoll(uint a, uint b) => wcscmp(a, b);
+    [Hle] int wcscoll(uint a, uint b) => wcscmpThroughEntry(a, b);
 
     [Hle]
     uint wcsxfrm(uint dst, uint src, uint n)
@@ -115,9 +115,9 @@ public sealed partial class Libc
     {
         uint p = s != 0 ? s : GuestMemory.R32(savePtr);
         if (p == 0) return 0;
-        p += wcsspn(p, delim) * 2;
+        p += wcsspnThroughEntry(p, delim) * 2;
         if (W(p) == 0) { GuestMemory.W32(savePtr, p); return 0; }
-        uint end = p + wcscspn(p, delim) * 2;
+        uint end = p + wcscspnThroughEntry(p, delim) * 2;
         if (W(end) != 0) { GuestMemory.Write(end, (ushort)0); GuestMemory.W32(savePtr, end + 2); }
         else GuestMemory.W32(savePtr, end);
         return p;
@@ -128,7 +128,7 @@ public sealed partial class Libc
     {
         if (smaxPtr == 0 || delim == 0 || savePtr == 0 || (s == 0 && GuestMemory.R32(savePtr) == 0)) { Constraint("wcstok_s: bad argument"); return 0; }
         uint start = s != 0 ? s : GuestMemory.R32(savePtr);
-        uint r = wcstok(s, delim, savePtr);
+        uint r = wcstokThroughEntry(s, delim, savePtr);
         uint used = (GuestMemory.R32(savePtr) - start) / 2, max = GuestMemory.R32(smaxPtr);
         GuestMemory.W32(smaxPtr, used > max ? 0 : max - used);
         return r;
@@ -177,7 +177,7 @@ public sealed partial class Libc
     {
         if (dst == 0 || BadSize(size)) return Constraint("wcsncpy_s: bad destination argument");
         if (src == 0 || n > int.MaxValue) { GuestMemory.Write(dst, (ushort)0); return Constraint("wcsncpy_s: bad argument"); }
-        uint len = wcsnlen_s(src, n);
+        uint len = wcsnlen_sThroughEntry(src, n);
         if (size <= len) { GuestMemory.Write(dst, (ushort)0); return Constraint("wcsncpy_s: bad argument"); }
         GuestMemory.Copy(dst, src, len * 2);
         GuestMemory.Write(dst + len * 2, (ushort)0);
@@ -188,7 +188,7 @@ public sealed partial class Libc
     int wcscat_s(uint dst, uint size, uint src)
     {
         if (dst == 0 || BadSize(size)) return Constraint("wcscat_s: bad destination argument");
-        uint dlen = wcsnlen_s(dst, size), slen = src == 0 ? uint.MaxValue : WcsLen(src);
+        uint dlen = wcsnlen_sThroughEntry(dst, size), slen = src == 0 ? uint.MaxValue : WcsLen(src);
         if (src == 0 || dlen == size || size - dlen <= slen) { GuestMemory.Write(dst, (ushort)0); return Constraint("wcscat_s: bad argument"); }
         GuestMemory.Copy(dst + dlen * 2, src, (slen + 1) * 2);
         return 0;
@@ -198,9 +198,9 @@ public sealed partial class Libc
     int wcsncat_s(uint dst, uint size, uint src, uint n)
     {
         if (dst == 0 || BadSize(size)) return Constraint("wcsncat_s: bad destination argument");
-        uint dlen = wcsnlen_s(dst, size);
+        uint dlen = wcsnlen_sThroughEntry(dst, size);
         if (src == 0 || n > int.MaxValue || dlen == size) { GuestMemory.Write(dst, (ushort)0); return Constraint("wcsncat_s: bad argument"); }
-        uint slen = wcsnlen_s(src, n);
+        uint slen = wcsnlen_sThroughEntry(src, n);
         if (size - dlen <= slen) { GuestMemory.Write(dst, (ushort)0); return Constraint("wcsncat_s: bad argument"); }
         GuestMemory.Copy(dst + dlen * 2, src, slen * 2);
         GuestMemory.Write(dst + (dlen + slen) * 2, (ushort)0);
@@ -227,18 +227,18 @@ public sealed partial class Libc
 
     // ------------------------------------------------------------------ wide classification (C locale)
 
-    [Hle] int iswalnum(int c) => c is >= 0 and < 0x80 ? isalnum(c) : 0;
-    [Hle] int iswalpha(int c) => c is >= 0 and < 0x80 ? isalpha(c) : 0;
-    [Hle] int iswblank(int c) => c is >= 0 and < 0x80 ? isblank(c) : 0;
-    [Hle] int iswcntrl(int c) => c is >= 0 and < 0x80 ? iscntrl(c) : 0;
-    [Hle] int iswdigit(int c) => c is >= 0 and < 0x80 ? isdigit(c) : 0;
-    [Hle] int iswgraph(int c) => c is >= 0 and < 0x80 ? isgraph(c) : 0;
-    [Hle] int iswlower(int c) => c is >= 0 and < 0x80 ? islower(c) : 0;
-    [Hle] int iswprint(int c) => c is >= 0 and < 0x80 ? isprint(c) : 0;
-    [Hle] int iswpunct(int c) => c is >= 0 and < 0x80 ? ispunct(c) : 0;
-    [Hle] int iswspace(int c) => c is >= 0 and < 0x80 ? isspace(c) : 0;
-    [Hle] int iswupper(int c) => c is >= 0 and < 0x80 ? isupper(c) : 0;
-    [Hle] int iswxdigit(int c) => c is >= 0 and < 0x80 ? isxdigit(c) : 0;
+    [Hle] int iswalnum(int c) => c is >= 0 and < 0x80 ? isalnumThroughEntry(c) : 0;
+    [Hle] int iswalpha(int c) => c is >= 0 and < 0x80 ? isalphaThroughEntry(c) : 0;
+    [Hle] int iswblank(int c) => c is >= 0 and < 0x80 ? isblankThroughEntry(c) : 0;
+    [Hle] int iswcntrl(int c) => c is >= 0 and < 0x80 ? iscntrlThroughEntry(c) : 0;
+    [Hle] int iswdigit(int c) => c is >= 0 and < 0x80 ? isdigitThroughEntry(c) : 0;
+    [Hle] int iswgraph(int c) => c is >= 0 and < 0x80 ? isgraphThroughEntry(c) : 0;
+    [Hle] int iswlower(int c) => c is >= 0 and < 0x80 ? islowerThroughEntry(c) : 0;
+    [Hle] int iswprint(int c) => c is >= 0 and < 0x80 ? isprintThroughEntry(c) : 0;
+    [Hle] int iswpunct(int c) => c is >= 0 and < 0x80 ? ispunctThroughEntry(c) : 0;
+    [Hle] int iswspace(int c) => c is >= 0 and < 0x80 ? isspaceThroughEntry(c) : 0;
+    [Hle] int iswupper(int c) => c is >= 0 and < 0x80 ? isupperThroughEntry(c) : 0;
+    [Hle] int iswxdigit(int c) => c is >= 0 and < 0x80 ? isxdigitThroughEntry(c) : 0;
     [Hle] int towlower(int c) => c is >= 'A' and <= 'Z' ? c + 32 : c & 0xFFFF;
     [Hle] int towupper(int c) => c is >= 'a' and <= 'z' ? c - 32 : c & 0xFFFF;
 
@@ -251,8 +251,8 @@ public sealed partial class Libc
     [Hle("_Iswctype")]
     int iswctype(int c, uint desc) => desc switch
     {
-        1 => iswalnum(c), 2 => iswalpha(c), 3 => iswblank(c), 4 => iswcntrl(c), 5 => iswdigit(c), 6 => iswgraph(c),
-        7 => iswlower(c), 8 => iswprint(c), 9 => iswpunct(c), 10 => iswspace(c), 11 => iswupper(c), 12 => iswxdigit(c), _ => 0,
+        1 => iswalnumThroughEntry(c), 2 => iswalphaThroughEntry(c), 3 => iswblankThroughEntry(c), 4 => iswcntrlThroughEntry(c), 5 => iswdigitThroughEntry(c), 6 => iswgraphThroughEntry(c),
+        7 => iswlowerThroughEntry(c), 8 => iswprintThroughEntry(c), 9 => iswpunctThroughEntry(c), 10 => iswspaceThroughEntry(c), 11 => iswupperThroughEntry(c), 12 => iswxdigitThroughEntry(c), _ => 0,
     };
 
     /// <summary>wctrans(name): 1 "tolower", 2 "toupper", 0 otherwise.</summary>
@@ -260,7 +260,7 @@ public sealed partial class Libc
 
     [Hle("towctrans")]
     [Hle("_Towctrans")]
-    int towctrans(int c, uint desc) => desc switch { 1 => towlower(c), 2 => towupper(c), _ => c & 0xFFFF };
+    int towctrans(int c, uint desc) => desc switch { 1 => towlowerThroughEntry(c), 2 => towupperThroughEntry(c), _ => c & 0xFFFF };
 
     // ------------------------------------------------------------------ multibyte ⇄ wide (UTF-8 ⇄ UTF-16)
 
@@ -327,7 +327,7 @@ public sealed partial class Libc
         return n == 0 ? MbIncomplete : Mbr(pwc, s, n, state);
     }
 
-    [Hle] uint mbrlen(uint s, uint n, uint state) => mbrtowc(0, s, n, state != 0 ? state : InternalState("mbrlen"));
+    [Hle] uint mbrlen(uint s, uint n, uint state) => mbrtowcThroughEntry(0, s, n, state != 0 ? state : InternalState("mbrlen"));
 
     [Hle("mbtowc")]
     [Hle("_Mbtowc")]
@@ -371,7 +371,7 @@ public sealed partial class Libc
     {
         if (retval == 0 || (s != 0 && BadSize(smax))) return Constraint("wcrtomb_s: bad argument");
         if (s != 0 && smax < Utf8Of(wc & 0xFFFF).Length) { GuestMemory.Write(s, (byte)0); GuestMemory.W32(retval, MbInvalid); return Constraint("wcrtomb_s: buffer too small"); }
-        uint r = wcrtomb(s, wc, state);
+        uint r = wcrtombThroughEntry(s, wc, state);
         GuestMemory.W32(retval, r);
         return r == MbInvalid ? EILSEQ : 0;
     }
@@ -395,7 +395,7 @@ public sealed partial class Libc
         if (s == 0) { GuestMemory.W32(status, 0); return 0; }
         int len = Utf8Of(wc & 0xFFFF).Length;
         if (smax < len) { GuestMemory.W32(status, unchecked((uint)-1)); return Constraint("wctomb_s: buffer too small"); }
-        int r = wctomb(s, wc);
+        int r = wctombThroughEntry(s, wc);
         GuestMemory.W32(status, (uint)r);
         return r < 0 ? EILSEQ : 0;
     }
@@ -481,7 +481,7 @@ public sealed partial class Libc
     int mbstowcs_s(uint retval, uint dst, uint dmax, uint src, uint len)
     {
         if (retval == 0 || src == 0 || (dst != 0 && BadSize(dmax))) return Constraint("mbstowcs_s: bad argument");
-        uint r = mbstowcs(dst, src, dst != 0 ? Math.Min(len, dmax - 1) : len);
+        uint r = mbstowcsThroughEntry(dst, src, dst != 0 ? Math.Min(len, dmax - 1) : len);
         if (r == MbInvalid) { if (dst != 0) GuestMemory.Write(dst, (ushort)0); GuestMemory.W32(retval, r); return EILSEQ; }
         if (dst != 0) GuestMemory.Write(dst + r * 2, (ushort)0);
         GuestMemory.W32(retval, r);
@@ -492,7 +492,7 @@ public sealed partial class Libc
     int mbsrtowcs_s(uint retval, uint dst, uint dmax, uint srcPtr, uint len, uint state)
     {
         if (retval == 0 || srcPtr == 0 || GuestMemory.R32(srcPtr) == 0 || (dst != 0 && BadSize(dmax))) return Constraint("mbsrtowcs_s: bad argument");
-        uint r = mbsrtowcs(dst, srcPtr, dst != 0 ? Math.Min(len, dmax - 1) : len, state);
+        uint r = mbsrtowcsThroughEntry(dst, srcPtr, dst != 0 ? Math.Min(len, dmax - 1) : len, state);
         if (r == MbInvalid) { if (dst != 0) GuestMemory.Write(dst, (ushort)0); GuestMemory.W32(retval, r); return EILSEQ; }
         if (dst != 0) GuestMemory.Write(dst + r * 2, (ushort)0);
         GuestMemory.W32(retval, r);
@@ -591,7 +591,7 @@ public sealed partial class Libc
     }
 
     // char16_t / char32_t (C11 uchar.h)
-    [Hle] uint mbrtoc16(uint pc16, uint s, uint n, uint state) => mbrtowc(pc16, s, n, state != 0 ? state : InternalState("mbrtoc16"));
+    [Hle] uint mbrtoc16(uint pc16, uint s, uint n, uint state) => mbrtowcThroughEntry(pc16, s, n, state != 0 ? state : InternalState("mbrtoc16"));
 
     [Hle]
     uint mbrtoc32(uint pc32, uint s, uint n, uint state)
@@ -604,8 +604,8 @@ public sealed partial class Libc
         return r;
     }
 
-    [Hle] uint c16rtomb(uint s, int c16, uint state) => wcrtomb(s, c16, state != 0 ? state : InternalState("c16rtomb"));
-    [Hle] uint c32rtomb(uint s, uint c32, uint state) => c32 > 0xFFFF ? Fail32() : wcrtomb(s, (int)c32, state != 0 ? state : InternalState("c32rtomb"));
+    [Hle] uint c16rtomb(uint s, int c16, uint state) => wcrtombThroughEntry(s, c16, state != 0 ? state : InternalState("c16rtomb"));
+    [Hle] uint c32rtomb(uint s, uint c32, uint state) => c32 > 0xFFFF ? Fail32() : wcrtombThroughEntry(s, (int)c32, state != 0 ? state : InternalState("c32rtomb"));
 
     static uint Fail32() { SetErrno(EILSEQ); return MbInvalid; }
 }

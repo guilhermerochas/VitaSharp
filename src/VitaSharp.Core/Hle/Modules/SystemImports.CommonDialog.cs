@@ -98,10 +98,10 @@ public sealed partial class CommonDialog
 
     /// <summary>NID_463DB9ED(param): libcdlg_twitter's Init of the Twitter dialog (family 0x15): sceTwDialogInit.</summary>
     [Hle("NID_463DB9ED", Nid = 0x463DB9ED, Library = "SceCommonDialog")]
-    int CommonDialogTwitterInit(uint param) => sceTwDialogInit(param);
+    int CommonDialogTwitterInit(uint param) => sceTwDialogInitThroughEntry(param);
 
     /// <summary>NID_FCDA2F0D(param, block): libcdlg_twitter's photo import (family 0xB) with its block (OnInit2):
     /// as NID_452DA757.</summary>
     [Hle("NID_FCDA2F0D", Nid = 0xFCDA2F0D, Library = "SceCommonDialog")]
-    int CommonDialogPhotoImportInit2(uint param, uint block) => scePhotoImportDialogInit(param);
+    int CommonDialogPhotoImportInit2(uint param, uint block) => scePhotoImportDialogInitThroughEntry(param);
 }

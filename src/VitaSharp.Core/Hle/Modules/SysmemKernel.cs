@@ -204,7 +204,11 @@ public sealed partial class SysmemKernel : HleModule
             return SceError.ILLEGAL_ADDR;
         }
 
+        // the syscall's C# body, which this kernel function shares (on the Vita another function): a hook on
+        // the syscall export does not see it
+#pragma warning disable VSHLE010
         return UserSysMem.sceKernelGetMemBlockBase(uid, new Ptr<uint>(basePtr));
+#pragma warning restore VSHLE010
     }
 
     /// <summary>ksceKernelMapBlockUserVisible(uid): a kernel block becomes reachable from user code (and from the user
@@ -634,7 +638,7 @@ public sealed partial class SysmemKernel : HleModule
             return SceError.UID_NOT_OF_SUBCLASS;
         }
 
-        return ksceGUIDReferObject(guid, objOut);
+        return ksceGUIDReferObjectThroughEntry(guid, objOut);
     }
 
     static void ClearObjectOut(uint objOut)
@@ -684,9 +688,9 @@ public sealed partial class SysmemKernel : HleModule
                 return 0;
             }
             case MemBlock:
-                return ksceKernelFreeMemBlock(guid);
+                return ksceKernelFreeMemBlockThroughEntry(guid);
             case KernelData { Kind: KernelData.Heap }:
-                return ksceKernelDeleteHeap(guid);
+                return ksceKernelDeleteHeapThroughEntry(guid);
             default:
                 K.Objects.Remove(guid);
                 return 0;

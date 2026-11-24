@@ -40,7 +40,7 @@ public sealed partial class Libc
 
     ScanInput StreamInput(Stream st, bool wide) =>
         new(() => wide ? (GetWide(st) is var w && w == WEOF ? EOF : w) : GetByte(st),
-            c => { if (wide) ungetwc(c, st.Addr); else { st.Pushback.Push((byte)c); st.Eof = false; } });
+            c => { if (wide) ungetwcThroughEntry(c, st.Addr); else { st.Pushback.Push((byte)c); st.Eof = false; } });
 
     /// <summary>Runs a scanf format; returns the number of assigned conversions, or EOF on an input failure before
     /// the first conversion.</summary>

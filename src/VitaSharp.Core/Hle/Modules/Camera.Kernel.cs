@@ -140,7 +140,7 @@ public sealed partial class Camera
             return ERR_PARAM;
         }
 
-        return CameraOf(0)?.sceCameraOpen((int)camera, info) ?? ERR_PARAM;
+        return CameraOf(0)?.sceCameraOpenThroughEntry((int)camera, info) ?? ERR_PARAM;
     }
 
     /// <summary>NID_2D12FDF3(camera, read): a frame of the calling process's camera (sceCameraRead).</summary>
@@ -152,7 +152,7 @@ public sealed partial class Camera
             return ERR_PARAM;
         }
 
-        return CameraOf(0)?.sceCameraRead((int)camera, read) ?? ERR_PARAM;
+        return CameraOf(0)?.sceCameraReadThroughEntry((int)camera, read) ?? ERR_PARAM;
     }
 
     /// <summary>An image processor setting (the sensor's operation at <paramref name="operation"/>): the camera must be

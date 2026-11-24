@@ -176,7 +176,7 @@ public sealed partial class ProcessMgr : HleModule
     }
 
     /// <summary>Ends the process as sceKernelExitProcess does (SceLibc exit/_Exit/abort).</summary>
-    internal void ExitProcess(int res) => sceKernelExitProcess(res);
+    internal void ExitProcess(int res) => sceKernelExitProcessThroughEntry(res);
 
     [Hle]
     [Hle("_sceKernelExitProcessForUser")] // the SceProcessmgr syscall libkernel's sceKernelExitProcess ends with
@@ -303,7 +303,7 @@ public sealed partial class ProcessMgr : HleModule
         int mode = (int)GuestMemory.R32(args + 4);
         if ((mode & BacktraceKernel) != 0) return SceError.INVALID_ARGUMENT;
         if (buf != 0 && bufBytes < 8) return SceError.INVALID_ARGUMENT;
-        return sceKernelBacktrace(thid, buf, bufBytes, new Ptr<uint>(numFrames), mode);
+        return sceKernelBacktraceThroughEntry(thid, buf, bufBytes, new Ptr<uint>(numFrames), mode);
     }
 
     [Hle]

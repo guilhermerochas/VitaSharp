@@ -445,7 +445,7 @@ public sealed unsafe partial class Xml
     /// <summary>insertBefore uses the module's engine insert (right after refChild, first when 0).</summary>
     ulong NodeInsert(uint me, ulong child, ulong refChild, bool append)
     {
-        if (!NodeAvailable(me) || NodeOf(me) is not { } r || Resolve(child) is not { } c) return 0;
+        if (!NodeAvailableThroughEntry(me) || NodeOf(me) is not { } r || Resolve(child) is not { } c) return 0;
         if (r.Doc.ReadOnly) return 0;
         var n = c.Doc == r.Doc ? c.Node : CloneInto(r.Doc, c.Node);
         bool ok = refChild == 0 && append ? Insert(r.Node, n, null) : InsertAfter(r.Doc, r.Node, n, refChild);
@@ -456,7 +456,7 @@ public sealed unsafe partial class Xml
     [Hle("_ZN3sce3Xml3Dom4Node11removeChildEy")]
     ulong NodeRemoveChild(uint me, ulong child)
     {
-        if (!NodeAvailable(me) || NodeOf(me) is not { } r || r.Doc.ReadOnly || Node(r.Doc, child) is not { } c || c.Parent != r.Node) return 0;
+        if (!NodeAvailableThroughEntry(me) || NodeOf(me) is not { } r || r.Doc.ReadOnly || Node(r.Doc, child) is not { } c || c.Parent != r.Node) return 0;
         Detach(c);
         return child;
     }
@@ -493,7 +493,7 @@ public sealed unsafe partial class Xml
 
     [Hle("_ZN3sce3Xml3Dom15DocumentBuilderD1Ev")]
     [Hle("_ZN3sce3Xml3Dom15DocumentBuilderD2Ev")]
-    uint BuilderDtor(uint me) { BuilderTerminate(me); return me; }
+    uint BuilderDtor(uint me) { BuilderTerminateThroughEntry(me); return me; }
 
     [Hle("_ZN3sce3Xml3Dom15DocumentBuilder26setSkipIgnorableWhiteSpaceEb")]
     void BuilderSkipWs(uint me, bool on) { if (Impl<XBuilder>(me) is { } b) b.SkipWs = on; }
@@ -587,7 +587,7 @@ public sealed unsafe partial class Xml
 
     [Hle("_ZN3sce3Xml3Sax6ParserD1Ev")]
     [Hle("_ZN3sce3Xml3Sax6ParserD2Ev")]
-    uint ParserDtor(uint me) { ParserTerminate(me); return me; }
+    uint ParserDtor(uint me) { ParserTerminateThroughEntry(me); return me; }
 
     [Hle("_ZN3sce3Xml3Sax6Parser18setDocumentHandlerEPNS1_15DocumentHandlerE")]
     void ParserSetHandler(uint me, uint handler) { if (Impl<XParser>(me) is { } p) p.Handler = handler; }
@@ -655,8 +655,8 @@ public sealed unsafe partial class Xml
                         all.CopyTo(GuestMemory.Span(data, all.Length));
                         SetString(str8, data, (uint)e.Name.Length);
                         uint lst = Scratch(8);
-                        AttrListCtor(lst);
-                        if (AttrListInitialize(lst, p.Init) != 0) { t_sp = 0; return ErrNoMemory; }
+                        AttrListCtorThroughEntry(lst);
+                        if (AttrListInitializeThroughEntry(lst, p.Init) != 0) { t_sp = 0; return ErrNoMemory; }
                         list = lst;
                         uint at = data + (uint)e.Name.Length + 1;
                         foreach (var (an, av) in e.Attrs!)
@@ -665,7 +665,7 @@ public sealed unsafe partial class Xml
                             at += (uint)(an.Length + av.Length + 2);
                         }
                         res = CallVirt(h, 3, ud, str8, lst);
-                        AttrListTerminate(lst);
+                        AttrListTerminateThroughEntry(lst);
                         list = 0;
                         t_sp = 0;
                         break;
@@ -684,7 +684,7 @@ public sealed unsafe partial class Xml
         }
         finally
         {
-            if (list != 0) AttrListTerminate(list);
+            if (list != 0) AttrListTerminateThroughEntry(list);
             t_sp = 0;
             Free(p.Init, scratch);
         }

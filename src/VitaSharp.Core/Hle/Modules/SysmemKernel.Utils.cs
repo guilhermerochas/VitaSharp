@@ -377,7 +377,7 @@ public sealed partial class SysmemKernel
 
         if (!_globalTwisterSeeded)
         {
-            ksceMt19937GlobalInit(Emu.Hle.Modules.OfType<SystemServicesVsh>().First().DipswWord(3));
+            ksceMt19937GlobalInitThroughEntry(Emu.Hle.Modules.OfType<SystemServicesVsh>().First().DipswWord(3));
         }
 
         for (uint offset = 0; offset < size; offset += 4)

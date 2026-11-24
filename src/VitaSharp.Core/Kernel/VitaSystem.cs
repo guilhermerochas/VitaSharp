@@ -146,6 +146,88 @@ public sealed class VitaSystem
     private readonly object _kernelGate = new();
     private Emulator? _kernelProcess;
 
+    // the host tasks processes run on their own (a child's start, a child's LoadExec, the end that joins a terminated
+    // process's threads and frees its memory): the system ends after them
+    private readonly List<Task> _processTasks = new();
+
+    /// <summary>True while the system's end waits for the tasks of <see cref="TrackProcessTask"/> (tests).</summary>
+    internal bool WaitingForProcessTasks => Volatile.Read(ref _waitingForProcessTasks);
+
+    private bool _waitingForProcessTasks;
+
+    private bool _ending;
+
+    /// <summary>
+    /// The system is ending (the first process's <see cref="Emulator.Dispose"/> began): no process starts any more. A
+    /// child's start runs on a host task (<see cref="Emulator.SpawnProcess"/>); one that came after the stop made the
+    /// child running again and created its main thread, which no stop ever reached: it went on running guest code
+    /// after the system ended, storing into memory its process no longer held (the next tests' kernel blocks).
+    /// </summary>
+    internal bool Ending => Volatile.Read(ref _ending);
+
+    /// <summary>The system's end begins (<see cref="Ending"/>).</summary>
+    internal void BeginEnd()
+    {
+        Volatile.Write(ref _ending, true);
+    }
+
+    /// <summary>A process works on the host task <paramref name="task"/> (it starts, re-executes or ends there):
+    /// <see cref="WaitForProcessTasks"/> waits for it.</summary>
+    internal void TrackProcessTask(Task task)
+    {
+        lock (_processTasks)
+        {
+            _processTasks.RemoveAll(tracked => tracked.IsCompleted);
+            _processTasks.Add(task);
+        }
+    }
+
+    /// <summary>
+    /// The system ends (the first process's <see cref="Emulator.Dispose"/>): waits for the tasks of its processes,
+    /// also those they start meanwhile (a start that fails terminates the child). A process end left running after
+    /// the system frees by its pid, and pids are unique only within one system: in a guest memory a later system
+    /// uses, it freed that system's blocks with the same owner (a thread's return trap, then reallocated to another
+    /// block). Each task is bounded (a process's threads 10 s, the GPU 5 s); the limit here only guards against a
+    /// hang.
+    /// </summary>
+    internal void WaitForProcessTasks()
+    {
+        var limit = System.Diagnostics.Stopwatch.StartNew();
+        Volatile.Write(ref _waitingForProcessTasks, true);
+        try
+        {
+            while (true)
+            {
+                Task[] tasks;
+                lock (_processTasks)
+                {
+                    _processTasks.RemoveAll(tracked => tracked.IsCompleted);
+                    tasks = [.. _processTasks];
+                }
+
+                if (tasks.Length == 0)
+                {
+                    return;
+                }
+
+                int left = (int)Math.Max(0, 60_000 - limit.ElapsedMilliseconds);
+                if (left == 0 || !Task.WaitAll(tasks, left))
+                {
+                    Log.Warn($"system end: {tasks.Count(task => !task.IsCompleted)} process tasks did not finish in time");
+                    return;
+                }
+            }
+        }
+        catch (AggregateException e)
+        {
+            Log.Warn($"system end: a process task failed: {e.InnerException?.Message}");
+        }
+        finally
+        {
+            Volatile.Write(ref _waitingForProcessTasks, false);
+        }
+    }
+
     /// <summary>
     /// The kernel process (<see cref="KernelSpace.KernelPid"/>): the one kernel of the system, created when the first
     /// kernel module loads (a *KERNEL plugin at boot, ksceKernelLoadModule, the firmware's kernel modules shown to

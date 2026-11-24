@@ -284,7 +284,7 @@ public sealed partial class SysmemKernel
     /// <summary>NID_64DBE472(uid, SceKernelAddrPair *pa): the block's single physical range (a block of several
     /// ranges 0x80024003; the memory here is contiguous).</summary>
     [Hle(Nid = 0x64DBE472, Library = "SceSysmemForDriver")]
-    int NID_64DBE472(int uid, uint physicalRange) => ksceKernelGetMemBlockPARange(uid, physicalRange);
+    int NID_64DBE472(int uid, uint physicalRange) => ksceKernelGetMemBlockPARangeThroughEntry(uid, physicalRange);
 
     /// <summary>Writes the block's physical range into a SceKernelPAVector (0x14 bytes: size, capacity, written,
     /// total, pairs; a nonzero capacity needs the pairs).</summary>
@@ -488,7 +488,7 @@ public sealed partial class SysmemKernel
             return SceError.INVALID_UID;
         }
 
-        return (flag & ~1u) == 0 ? ksceKernelMapBlockUserVisible(uid) : SceError.INVALID_ARGUMENT;
+        return (flag & ~1u) == 0 ? ksceKernelMapBlockUserVisibleThroughEntry(uid) : SceError.INVALID_ARGUMENT;
     }
 
     /// <summary>ksceKernelUnmapMemBlock (0xFFCD9B60)(uid): the block is no longer reachable from user code.</summary>
@@ -551,7 +551,7 @@ public sealed partial class SysmemKernel
             return InvalidMemBlockType;
         }
 
-        return ksceKernelAllocMemBlock(name, type, size, info);
+        return ksceKernelAllocMemBlockThroughEntry(name, type, size, info);
     }
 
     // ------------------------------------------------------------------ user mappings into the kernel
@@ -703,30 +703,30 @@ public sealed partial class SysmemKernel
             return SceError.INVALID_ARGUMENT;
         }
 
-        return ksceKernelIsAccessibleRangeProc(pid, mode, address, size);
+        return ksceKernelIsAccessibleRangeProcThroughEntry(pid, mode, address, size);
     }
 
     // ------------------------------------------------------------------ translations by software / hardware
 
     /// <summary>ksceKernelVAtoPABySW (0x65419BD3)(va, uintptr_t *pa): ksceKernelVAtoPA by the page tables.</summary>
     [Hle(Nid = 0x65419BD3, Library = "SceSysmemForDriver")]
-    int ksceKernelVAtoPABySW(uint address, uint physicalOut) => ksceKernelVAtoPA(address, physicalOut);
+    int ksceKernelVAtoPABySW(uint address, uint physicalOut) => ksceKernelVAtoPAThroughEntry(address, physicalOut);
 
     /// <summary>ksceKernelVARangeToPARangeBySW (0x32257A24)(va range, pa range).</summary>
     [Hle(Nid = 0x32257A24, Library = "SceSysmemForDriver")]
-    int ksceKernelVARangeToPARangeBySW(uint virtualRange, uint physicalRange) => ksceKernelVARangeToPARange(virtualRange, physicalRange);
+    int ksceKernelVARangeToPARangeBySW(uint virtualRange, uint physicalRange) => ksceKernelVARangeToPARangeThroughEntry(virtualRange, physicalRange);
 
     /// <summary>ksceKernelVARangeToPARangeByHW (0xB3575090)(va range, pa range).</summary>
     [Hle(Nid = 0xB3575090, Library = "SceSysmemForDriver")]
-    int ksceKernelVARangeToPARangeByHW(uint virtualRange, uint physicalRange) => ksceKernelVARangeToPARange(virtualRange, physicalRange);
+    int ksceKernelVARangeToPARangeByHW(uint virtualRange, uint physicalRange) => ksceKernelVARangeToPARangeThroughEntry(virtualRange, physicalRange);
 
     /// <summary>ksceKernelVARangeToPAVectorBySW (0x08A8A7E8)(va range, SceKernelPAVector *pv).</summary>
     [Hle(Nid = 0x08A8A7E8, Library = "SceSysmemForDriver")]
-    int ksceKernelVARangeToPAVectorBySW(uint virtualRange, uint vector) => ksceKernelVARangeToPAVector(virtualRange, vector);
+    int ksceKernelVARangeToPAVectorBySW(uint virtualRange, uint vector) => ksceKernelVARangeToPAVectorThroughEntry(virtualRange, vector);
 
     /// <summary>ksceKernelVARangeToPAVectorByHW (0x16844CE6)(va range, SceKernelPAVector *pv).</summary>
     [Hle(Nid = 0x16844CE6, Library = "SceSysmemForDriver")]
-    int ksceKernelVARangeToPAVectorByHW(uint virtualRange, uint vector) => ksceKernelVARangeToPAVector(virtualRange, vector);
+    int ksceKernelVARangeToPAVectorByHW(uint virtualRange, uint vector) => ksceKernelVARangeToPAVectorThroughEntry(virtualRange, vector);
 
     /// <summary>ksceKernelProcessSwitchContext (0x2D711589)(const SceKernelProcessContext *ctx, SceKernelProcessContext
     /// *previous): saves the current context into <paramref name="previous"/> (when given) and switches. VitaSharp's
@@ -747,12 +747,12 @@ public sealed partial class SysmemKernel
 
     /// <summary>ksceKernelAllocHeapMemoryWithOpt (0xB415B5A8)(heap, size, opt): ksceKernelAllocHeapMemoryWithOption.</summary>
     [Hle(Nid = 0xB415B5A8, Library = "SceSysmemForDriver", ReturnsValue = true)]
-    uint ksceKernelAllocHeapMemoryWithOpt(int heap, uint size, uint option) => ksceKernelAllocHeapMemoryWithOption(heap, size, option);
+    uint ksceKernelAllocHeapMemoryWithOpt(int heap, uint size, uint option) => ksceKernelAllocHeapMemoryWithOptionThroughEntry(heap, size, option);
 
     /// <summary>ksceKernelAllocUncacheHeapMemory (0x7750CEA7)(size): a block of sysmem's uncached heap (the kernel's
     /// general heap here: no cache to keep apart).</summary>
     [Hle(Nid = 0x7750CEA7, Library = "SceSysmemForDriver", ReturnsValue = true)]
-    uint ksceKernelAllocUncacheHeapMemory(uint size) => ksceKernelAlloc(size);
+    uint ksceKernelAllocUncacheHeapMemory(uint size) => ksceKernelAllocThroughEntry(size);
 
     /// <summary>ksceKernelAllocUncacheHeapMemoryWithOption (0x0B4ED16A)(size, SceAllocOpt *opt): the same with the
     /// option block of ksceKernelAllocHeapMemoryWithOption (NULL or 0x14 bytes, else NULL).</summary>
@@ -764,12 +764,12 @@ public sealed partial class SysmemKernel
             return 0;
         }
 
-        return ksceKernelAlloc(size);
+        return ksceKernelAllocThroughEntry(size);
     }
 
     /// <summary>ksceKernelFreeUncacheHeapMemory (0xFB817A59)(ptr): gives an uncached heap block back; 0.</summary>
     [Hle(Nid = 0xFB817A59, Library = "SceSysmemForDriver")]
-    int ksceKernelFreeUncacheHeapMemory(uint pointer) => ksceKernelFree(pointer);
+    int ksceKernelFreeUncacheHeapMemory(uint pointer) => ksceKernelFreeThroughEntry(pointer);
 
     /// <summary>NID_856FA2E3(heap): gives the heap's unused memory back to the system (0x80024901 for a UID that is
     /// not a heap). Every allocation here is its own block, so there is nothing to give back; 0.</summary>
@@ -815,7 +815,7 @@ public sealed partial class SysmemKernel
             return SceError.INVALID_PID;
         }
 
-        return InProcess(process, () => ksceKernelCopyFromToUser(destination, source, length));
+        return InProcess(process, () => ksceKernelCopyFromToUserThroughEntry(destination, source, length));
     }
 
     /// <summary>ksceKernelStrncpyToUserProc (0xFED82F2D)(pid, dst, src, len): ksceKernelStrncpyToUser in process
@@ -828,7 +828,7 @@ public sealed partial class SysmemKernel
             return SceError.INVALID_PID;
         }
 
-        return InProcess(process, () => ksceKernelStrncpyToUser(destination, source, length));
+        return InProcess(process, () => ksceKernelStrncpyToUserThroughEntry(destination, source, length));
     }
 
     /// <summary>ksceKernelStrnlenFromUserProc (0x9929EB07)(pid, s, max): ksceKernelStrnlenFromUser in process
@@ -841,7 +841,7 @@ public sealed partial class SysmemKernel
             return SceError.INVALID_PID;
         }
 
-        return InProcess(process, () => ksceKernelStrnlenFromUser(text, max));
+        return InProcess(process, () => ksceKernelStrnlenFromUserThroughEntry(text, max));
     }
 
     /// <summary>How many bytes from <paramref name="pointer"/>, <paramref name="width"/> at a time, are units equal
@@ -910,7 +910,7 @@ public sealed partial class SysmemKernel
             return SceError.INVALID_ARGUMENT;
         }
 
-        return ksceGUIDKernelCreateWithOpt(cls, name, 0, objOut);
+        return ksceGUIDKernelCreateWithOptThroughEntry(cls, name, 0, objOut);
     }
 
     /// <summary>ksceGUIDReferObjectWithLevel (0xF6DB54BA)(guid, level, SceObjectBase **obj): a GUID (positive and odd,
@@ -928,7 +928,7 @@ public sealed partial class SysmemKernel
             return SceError.INVALID_ARGUMENT;
         }
 
-        return ksceGUIDReferObject(guid, objOut);
+        return ksceGUIDReferObjectThroughEntry(guid, objOut);
     }
 
     /// <summary>The PUID checks of the by-name calls: not the kernel's pid (0x80020005), a handle of the UID form
@@ -953,7 +953,7 @@ public sealed partial class SysmemKernel
             return check;
         }
 
-        return nameOut == 0 ? SceError.INVALID_ARGUMENT : ksceGUIDGetName(puid, nameOut);
+        return nameOut == 0 ? SceError.INVALID_ARGUMENT : ksceGUIDGetNameThroughEntry(puid, nameOut);
     }
 
     /// <summary>kscePUIDSetName (0x12624884)(pid, puid, name): renames the object; NULL 0x80020005.</summary>
@@ -966,13 +966,13 @@ public sealed partial class SysmemKernel
             return check;
         }
 
-        return name == 0 ? SceError.INVALID_ARGUMENT : ksceGUIDSetName(puid, name);
+        return name == 0 ? SceError.INVALID_ARGUMENT : ksceGUIDSetNameThroughEntry(puid, name);
     }
 
     /// <summary>kscePUIDOpenByName (0x513B9DDD)(pid, name): a handle of the process for the object with that name
     /// (the kernel's pid or a NULL name 0x80020005).</summary>
     [Hle(Nid = 0x513B9DDD, Library = "SceSysmemForDriver")]
-    int kscePUIDOpenByName(int pid, uint name) => kscePUIDOpenByNameWithClass(pid, name, 0);
+    int kscePUIDOpenByName(int pid, uint name) => kscePUIDOpenByNameWithClassThroughEntry(pid, name, 0);
 
     /// <summary>kscePUIDOpenByNameWithClass (0x8DA0BCA5)(pid, name, SceClass *cls): the same for an object of the
     /// class (0x80024509 for another).</summary>
@@ -984,18 +984,18 @@ public sealed partial class SysmemKernel
             return SceError.INVALID_ARGUMENT;
         }
 
-        int guid = ksceGUIDOpenByName(name);
+        int guid = ksceGUIDOpenByNameThroughEntry(name);
         if (guid < 0)
         {
             return guid;
         }
 
-        if (cls != 0 && NID_368F1C36(guid) != cls)
+        if (cls != 0 && NID_368F1C36ThroughEntry(guid) != cls)
         {
             return unchecked((int)0x80024509);
         }
 
-        return kscePUIDOpenByGUID(pid, guid);
+        return kscePUIDOpenByGUIDThroughEntry(pid, guid);
     }
 
     /// <summary>kscePUIDtoGUIDWithClass (0x184172B1)(pid, puid, SceClass *cls, SceObjectBase **obj): the object behind
@@ -1008,20 +1008,20 @@ public sealed partial class SysmemKernel
             return SceError.INVALID_ARGUMENT;
         }
 
-        int guid = kscePUIDtoGUID(pid, puid);
+        int guid = kscePUIDtoGUIDThroughEntry(pid, puid);
         if (guid < 0)
         {
             return guid;
         }
 
-        if (cls != 0 && NID_368F1C36(guid) != cls)
+        if (cls != 0 && NID_368F1C36ThroughEntry(guid) != cls)
         {
             return unchecked((int)0x80024509);
         }
 
         if (objOut != 0)
         {
-            GuestMemory.W32(objOut, NID_FA6C098C(guid));
+            GuestMemory.W32(objOut, NID_FA6C098CThroughEntry(guid));
         }
 
         return guid;

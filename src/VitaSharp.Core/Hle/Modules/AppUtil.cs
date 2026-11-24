@@ -381,7 +381,7 @@ public sealed partial class AppUtil : HleModule
     {
         if (param == 0) return ERR_PARAMETER;
         if (!SlotExists(slot)) return ERR_SLOT_NOT_FOUND;
-        return sceAppUtilSaveDataSlotCreate(slot, param, mountPoint);
+        return sceAppUtilSaveDataSlotCreateThroughEntry(slot, param, mountPoint);
     }
 
     [Hle]

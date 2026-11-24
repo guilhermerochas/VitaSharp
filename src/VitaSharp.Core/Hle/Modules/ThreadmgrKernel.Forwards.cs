@@ -104,14 +104,18 @@ public sealed partial class ThreadmgrKernel
         }
 
         int earlier = thread.Priority;
+        // the syscall's C# body, which this kernel function shares (on the Vita another function): a hook on
+        // the syscall export does not see it
+#pragma warning disable VSHLE010
         int result = UserThreadmgr.sceKernelChangeThreadPriority(thid, priority);
+#pragma warning restore VSHLE010
         return result < 0 ? result : earlier;
     }
 
     /// <summary>NID_DA1544D1(thid, priority): ksceKernelChangeThreadPriority with 0 for any success (only an error
     /// comes through).</summary>
     [Hle(Nid = 0xDA1544D1, Library = "SceThreadmgrForDriver", Cost = HleCost.SchedulerWait)]
-    int NID_DA1544D1(int thid, int priority) => Math.Min(ksceKernelChangeThreadPriority(thid, priority), 0);
+    int NID_DA1544D1(int thid, int priority) => Math.Min(ksceKernelChangeThreadPriorityThroughEntry(thid, priority), 0);
 
     /// <summary>NID_14F8167C(): the current thread's VFP exception mask (+0x14, what
     /// ksceKernelChangeThreadVfpException changes); 0x80027101 without a current thread.</summary>
@@ -130,7 +134,7 @@ public sealed partial class ThreadmgrKernel
     /// <summary>NID_9461FC73(int value): ksceKernelSetPermission's SceThreadmgrForKernel entry (the same code: a
     /// negative value is SCE_KERNEL_ERROR_INVALID_ARGUMENT, then the earlier permission).</summary>
     [Hle(Nid = 0x9461FC73, Library = "SceThreadmgrForKernel")]
-    int NID_9461FC73(int value) => ksceKernelSetPermission(value);
+    int NID_9461FC73(int value) => ksceKernelSetPermissionThroughEntry(value);
 
     /// <summary>NID_84EB1EA4(int value): sets the current thread's +0x100 word (NID_56C18B11 reads it) and returns the
     /// earlier one; a negative value is SCE_KERNEL_ERROR_INVALID_ARGUMENT, no current thread 0x80027101.</summary>

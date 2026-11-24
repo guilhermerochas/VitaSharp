@@ -27,7 +27,7 @@ public sealed unsafe partial class Json : HleModule
     [Hle("_ZN3sce4Json11InitializerD2Ev")]
     uint InitializerDtor(uint thisPtr)
     {
-        InitializerTerminate(thisPtr);
+        InitializerTerminateThroughEntry(thisPtr);
         return thisPtr;
     }
 
@@ -67,7 +67,7 @@ public sealed unsafe partial class Json : HleModule
         W8(thisPtr, 1);
         if (R32(d + DString) == 0 || R32(d + DArray) == 0 || R32(d + DObject) == 0 || R32(d + DNullValue) == 0 || m == 0)
         {
-            InitializerTerminate(thisPtr);
+            InitializerTerminateThroughEntry(thisPtr);
             return ERROR_NOMEM;
         }
         return 0;

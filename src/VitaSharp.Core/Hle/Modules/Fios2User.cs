@@ -194,11 +194,11 @@ public sealed partial class Fios2User : HleModule
     int sceFiosOverlayThreadIsDisabled02() => ThreadOverlaysDisabled ? 1 : 0;
 
     // the SceFios2 (libfios2) user-side calls, for the calling process
-    internal int AddOverlay(uint overlay, uint outId) => sceFiosOverlayAddForProcess02(0, overlay, new Ptr<int>(outId));
-    internal int RemoveOverlay(int id) => sceFiosOverlayRemoveForProcess02(0, id);
-    internal int GetOverlayInfo(int id, uint outOverlay) => sceFiosOverlayGetInfoForProcess02(0, id, outOverlay);
-    internal int ModifyOverlay(int id, uint overlay) => sceFiosOverlayModifyForProcess02(0, id, overlay);
-    internal int GetOverlayList(uint outIds, uint max, uint actual) => sceFiosOverlayGetList02(0, 0, 0xFF, outIds, max, new Ptr<uint>(actual));
+    internal int AddOverlay(uint overlay, uint outId) => sceFiosOverlayAddForProcess02ThroughEntry(0, overlay, new Ptr<int>(outId));
+    internal int RemoveOverlay(int id) => sceFiosOverlayRemoveForProcess02ThroughEntry(0, id);
+    internal int GetOverlayInfo(int id, uint outOverlay) => sceFiosOverlayGetInfoForProcess02ThroughEntry(0, id, outOverlay);
+    internal int ModifyOverlay(int id, uint overlay) => sceFiosOverlayModifyForProcess02ThroughEntry(0, id, overlay);
+    internal int GetOverlayList(uint outIds, uint max, uint actual) => sceFiosOverlayGetList02ThroughEntry(0, 0, 0xFF, outIds, max, new Ptr<uint>(actual));
     internal int ResolveOverlay(int mode, string path, uint outPath, uint max) => sceFiosOverlayResolveSync02(0, mode, path, outPath, max);
 
     // ------------------------------------------------------------------ SceFios2Kernel (libfios2 from SDKs before 1.80)
@@ -206,22 +206,22 @@ public sealed partial class Fios2User : HleModule
     // { char *pOutPath; SceSize maxPath; char loOrderFilter; char hiOrderFilter; char reserved[2]; int reserved[4]; }
 
     [Hle("_sceFiosKernelOverlayAdd")]
-    int _sceFiosKernelOverlayAdd(uint overlay, Ptr<int> outId) => sceFiosOverlayAddForProcess02(0, overlay, outId);
+    int _sceFiosKernelOverlayAdd(uint overlay, Ptr<int> outId) => sceFiosOverlayAddForProcess02ThroughEntry(0, overlay, outId);
 
     [Hle("_sceFiosKernelOverlayAddForProcess")]
-    int _sceFiosKernelOverlayAddForProcess(int pid, uint overlay, Ptr<int> outId) => sceFiosOverlayAddForProcess02(pid, overlay, outId);
+    int _sceFiosKernelOverlayAddForProcess(int pid, uint overlay, Ptr<int> outId) => sceFiosOverlayAddForProcess02ThroughEntry(pid, overlay, outId);
 
     [Hle("_sceFiosKernelOverlayRemove")]
-    int _sceFiosKernelOverlayRemove(int id) => sceFiosOverlayRemoveForProcess02(0, id);
+    int _sceFiosKernelOverlayRemove(int id) => sceFiosOverlayRemoveForProcess02ThroughEntry(0, id);
 
     [Hle("_sceFiosKernelOverlayRemoveForProcess")]
-    int _sceFiosKernelOverlayRemoveForProcess(int pid, int id) => sceFiosOverlayRemoveForProcess02(pid, id);
+    int _sceFiosKernelOverlayRemoveForProcess(int pid, int id) => sceFiosOverlayRemoveForProcess02ThroughEntry(pid, id);
 
     [Hle("_sceFiosKernelOverlayGetInfo")]
-    int _sceFiosKernelOverlayGetInfo(int id, uint outOverlay) => sceFiosOverlayGetInfoForProcess02(0, id, outOverlay);
+    int _sceFiosKernelOverlayGetInfo(int id, uint outOverlay) => sceFiosOverlayGetInfoForProcess02ThroughEntry(0, id, outOverlay);
 
     [Hle("_sceFiosKernelOverlayGetInfoForProcess")]
-    int _sceFiosKernelOverlayGetInfoForProcess(int pid, int id, uint outOverlay) => sceFiosOverlayGetInfoForProcess02(pid, id, outOverlay);
+    int _sceFiosKernelOverlayGetInfoForProcess(int pid, int id, uint outOverlay) => sceFiosOverlayGetInfoForProcess02ThroughEntry(pid, id, outOverlay);
 
     /// <summary>SceFiosGetListSyscallArgs (0x18, layout inferred from sceFiosKernelOverlayGetList02_opt):
     /// +0 out_ids, +4 max_ids, +8 SceSize *actual_ids, +0xC out_ids buffer size in bytes, +0x10 reserved[2].</summary>
@@ -232,14 +232,14 @@ public sealed partial class Fios2User : HleModule
         uint outIds = GuestMemory.R32(args), maxIds = GuestMemory.R32(args + 4), actual = GuestMemory.R32(args + 8),
             bufSize = GuestMemory.R32(args + 0xC);
         if (bufSize != 0) maxIds = Math.Min(maxIds, bufSize / 4);
-        return sceFiosOverlayGetList02(pid, minOrder, maxOrder, outIds, maxIds, new Ptr<uint>(actual));
+        return sceFiosOverlayGetList02ThroughEntry(pid, minOrder, maxOrder, outIds, maxIds, new Ptr<uint>(actual));
     }
 
     [Hle("_sceFiosKernelOverlayModify")]
-    int _sceFiosKernelOverlayModify(int id, uint newValue) => sceFiosOverlayModifyForProcess02(0, id, newValue);
+    int _sceFiosKernelOverlayModify(int id, uint newValue) => sceFiosOverlayModifyForProcess02ThroughEntry(0, id, newValue);
 
     [Hle("_sceFiosKernelOverlayModifyForProcess")]
-    int _sceFiosKernelOverlayModifyForProcess(int pid, int id, uint newValue) => sceFiosOverlayModifyForProcess02(pid, id, newValue);
+    int _sceFiosKernelOverlayModifyForProcess(int pid, int id, uint newValue) => sceFiosOverlayModifyForProcess02ThroughEntry(pid, id, newValue);
 
     [Hle("_sceFiosKernelOverlayGetRecommendedScheduler")]
     int _sceFiosKernelOverlayGetRecommendedScheduler(int param, string path) => sceFiosOverlayGetRecommendedScheduler02(param, path);
@@ -263,10 +263,10 @@ public sealed partial class Fios2User : HleModule
     }
 
     [Hle("_sceFiosKernelOverlayThreadSetDisabled")]
-    int _sceFiosKernelOverlayThreadSetDisabled(int disabled) => sceFiosOverlayThreadSetDisabled02(disabled);
+    int _sceFiosKernelOverlayThreadSetDisabled(int disabled) => sceFiosOverlayThreadSetDisabled02ThroughEntry(disabled);
 
     [Hle("_sceFiosKernelOverlayThreadIsDisabled")]
-    int _sceFiosKernelOverlayThreadIsDisabled() => sceFiosOverlayThreadIsDisabled02();
+    int _sceFiosKernelOverlayThreadIsDisabled() => sceFiosOverlayThreadIsDisabled02ThroughEntry();
 
     // Merged overlay directory handles: psp2/fios2kernel.h notes that on FW 3.60 DHOpenSync "returns an
     // unsupported-operation error" before reading its arguments, so libfios2 falls back to plain sceIoDopen.

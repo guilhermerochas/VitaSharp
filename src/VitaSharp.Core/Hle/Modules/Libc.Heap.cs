@@ -55,7 +55,7 @@ public sealed partial class Libc
             try { block = Mem.Alloc(chunk, "SceLibcMalloc", MemoryRegion.User, 0x1000); }
             catch (Exception e) when (e is OutOfMemoryException or InvalidOperationException) { return 0; }
             if (block == 0) return 0;
-            uint ms = ClibM.sceClibMspaceCreate(block, chunk);
+            uint ms = ClibM.sceClibMspaceCreateThroughEntry(block, chunk);
             if (ms == 0) return 0;
             _heapBlocks.Add(ms);
             _heapReserved += chunk;
@@ -84,12 +84,12 @@ public sealed partial class Libc
     {
         ulong total = (ulong)n * size;
         if (total > uint.MaxValue) { SetErrno(ENOMEM); return 0; }
-        uint p = malloc((uint)total);
+        uint p = mallocThroughEntry((uint)total);
         if (p != 0) GuestMemory.Fill(p, 0, (uint)total);
         return p;
     }
 
-    [Hle] void free(uint p) { if (p != 0) ClibM.sceClibMspaceFree(0, p); }
+    [Hle] void free(uint p) { if (p != 0) ClibM.sceClibMspaceFreeThroughEntry(0, p); }
 
     [Hle] uint realloc(uint p, uint size) => Reallocate(p, size, HeapAlign);
     [Hle] uint reallocalign(uint p, uint size, uint align) => Reallocate(p, size, Math.Max(align, HeapAlign));
@@ -97,12 +97,12 @@ public sealed partial class Libc
     uint Reallocate(uint p, uint size, uint align)
     {
         if (p == 0) return HeapAlloc(size, align) is var n and not 0 ? n : Fail();
-        if (size == 0) { free(p); return 0; }
+        if (size == 0) { freeThroughEntry(p); return 0; }
         uint old = ClibM.UsableSize(p);
         uint q = HeapAlloc(size, align);
         if (q == 0) return Fail();
         GuestMemory.Copy(q, p, Math.Min(old, size));
-        free(p);
+        freeThroughEntry(p);
         return q;
 
         static uint Fail() { SetErrno(ENOMEM); return 0; }
@@ -135,17 +135,17 @@ public sealed partial class Libc
     int _heapInitError;
 
     // mspace_*: the same heaps as sceClibMspace* (block handle = block address)
-    [Hle] uint mspace_create(uint block, uint size) => ClibM.sceClibMspaceCreate(block, size);
+    [Hle] uint mspace_create(uint block, uint size) => ClibM.sceClibMspaceCreateThroughEntry(block, size);
     /// <summary>mspace_create_with_flag(block, size, flags): flag bit 3 = thread-safe; any other bit is refused (NULL).</summary>
-    [Hle] uint mspace_create_with_flag(uint block, uint size, uint flags) => (flags & ~8u) != 0 ? 0 : ClibM.sceClibMspaceCreate(block, size);
-    [Hle] uint mspace_create_internal(uint block, uint size, uint flags) => ClibM.sceClibMspaceCreate(block, size);
-    [Hle] uint mspace_destroy(uint ms) { ClibM.sceClibMspaceDestroy(ms); return 0; }
-    [Hle] uint mspace_malloc(uint ms, uint size) => ClibM.sceClibMspaceMalloc(ms, size);
+    [Hle] uint mspace_create_with_flag(uint block, uint size, uint flags) => (flags & ~8u) != 0 ? 0 : ClibM.sceClibMspaceCreateThroughEntry(block, size);
+    [Hle] uint mspace_create_internal(uint block, uint size, uint flags) => ClibM.sceClibMspaceCreateThroughEntry(block, size);
+    [Hle] uint mspace_destroy(uint ms) { ClibM.sceClibMspaceDestroyThroughEntry(ms); return 0; }
+    [Hle] uint mspace_malloc(uint ms, uint size) => ClibM.sceClibMspaceMallocThroughEntry(ms, size);
     [Hle] uint mspace_memalign(uint ms, uint align, uint size) => ClibM.MspaceMemalign(ms, align, size);
     [Hle] uint mspace_calloc(uint ms, uint n, uint size) => ClibM.MspaceCalloc(ms, n, size);
-    [Hle] uint mspace_realloc(uint ms, uint p, uint size) => ClibM.sceClibMspaceRealloc(ms, p, size);
+    [Hle] uint mspace_realloc(uint ms, uint p, uint size) => ClibM.sceClibMspaceReallocThroughEntry(ms, p, size);
     [Hle] uint mspace_reallocalign(uint ms, uint p, uint size, uint align) => ClibM.MspaceReallocalign(ms, p, size, align);
-    [Hle] void mspace_free(uint ms, uint p) => ClibM.sceClibMspaceFree(ms, p);
+    [Hle] void mspace_free(uint ms, uint p) => ClibM.sceClibMspaceFreeThroughEntry(ms, p);
     [Hle] uint mspace_malloc_usable_size(uint p) => ClibM.UsableSize(p);
     [Hle] int mspace_is_heap_empty(uint ms) => ClibM.IsHeapEmpty(ms);
 

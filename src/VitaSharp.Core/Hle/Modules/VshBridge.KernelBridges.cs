@@ -425,14 +425,14 @@ public sealed partial class VshBridge
     [Hle]
     int vshCtrlChangePortAssign(uint port, uint assign)
     {
-        return Vsh ? KernelServices.ksceCtrlChangePortAssign(port, assign) : VSH_ERR_PERM;
+        return Vsh ? KernelServices.ksceCtrlChangePortAssignThroughEntry(port, assign) : VSH_ERR_PERM;
     }
 
     /// <summary>(int enable): ksceCtrlSetVibrationSetting, kept in the kernel.</summary>
     [Hle]
     int vshCtrlSetVibrationSetting(int enable)
     {
-        return Vsh ? KernelServices.ksceCtrlSetVibrationSetting(enable) : VSH_ERR_PERM;
+        return Vsh ? KernelServices.ksceCtrlSetVibrationSettingThroughEntry(enable) : VSH_ERR_PERM;
     }
 
     /// <summary>(int seconds): ksceCtrlSetTurnOffInterval, the virtual controller driver's (0x80340021 on the
@@ -440,7 +440,7 @@ public sealed partial class VshBridge
     [Hle]
     int vshCtrlSetTurnOffInterval(uint interval)
     {
-        return Vsh ? KernelServices.ksceCtrlSetTurnOffInterval(interval) : VSH_ERR_PERM;
+        return Vsh ? KernelServices.ksceCtrlSetTurnOffIntervalThroughEntry(interval) : VSH_ERR_PERM;
     }
 
     /// <summary>ksceCtrlGetActiveControllerPort: the virtual controller driver's answer; the handheld loads no such
@@ -448,14 +448,14 @@ public sealed partial class VshBridge
     [Hle]
     int vshCtrlGetActiveControllerPort()
     {
-        return Vsh ? KernelServices.ksceCtrlGetActiveControllerPort() : VSH_ERR_PERM;
+        return Vsh ? KernelServices.ksceCtrlGetActiveControllerPortThroughEntry() : VSH_ERR_PERM;
     }
 
     /// <summary>A Blu-ray remote (PS TV only): for system programs (0x80010058), ksceCtrlIsBdRemoconConnected.</summary>
     [Hle]
     int vshCtrlIsBdRemoconConnected()
     {
-        return Vsh ? KernelServices.ksceCtrlIsBdRemoconConnected() : VSH_ERR_PERM;
+        return Vsh ? KernelServices.ksceCtrlIsBdRemoconConnectedThroughEntry() : VSH_ERR_PERM;
     }
 
     /// <summary>(SceUID cb): the caller's callback handle made a kernel one (an unknown handle: that error with bit 30
@@ -473,7 +473,7 @@ public sealed partial class VshBridge
             return SceError.INVALID_UID | 0x40000000;
         }
 
-        return KernelServices.ksceCtrlRegisterNotifyCallBack(callback);
+        return KernelServices.ksceCtrlRegisterNotifyCallBackThroughEntry(callback);
     }
 
     /// <summary>(SceUID cb): as vshCtrlRegisterNotifyCallBack, then ksceCtrlUnregisterNotifyCallBack.</summary>
@@ -490,7 +490,7 @@ public sealed partial class VshBridge
             return SceError.INVALID_UID | 0x40000000;
         }
 
-        return KernelServices.ksceCtrlUnregisterNotifyCallBack(callback);
+        return KernelServices.ksceCtrlUnregisterNotifyCallBackThroughEntry(callback);
     }
 
     /// <summary>(SceTouchEmulationData *data 0x90): the touch emulation data PS TV's controller-to-touch mapping
@@ -1007,18 +1007,18 @@ public sealed partial class VshBridge
     /// eboot with ksceNpDrmEbootSigGenPsp.</summary>
     [Hle]
     int _vshNpDrmEbootSigGenPsp(uint path, uint sha, uint sig, uint opt) =>
-        EbootSigGen(path, sha, sig, opt, 0x90B1A6D3, () => KernelServices.ksceNpDrmEbootSigGenPsp(path, sha, sig, (int)GuestMemory.R32(opt)));
+        EbootSigGen(path, sha, sig, opt, 0x90B1A6D3, () => KernelServices.ksceNpDrmEbootSigGenPspThroughEntry(path, sha, sig, (int)GuestMemory.R32(opt)));
 
     /// <summary>(... same, a PS1 eboot: ksceNpDrmEbootSigGenPs1).</summary>
     [Hle]
     int _vshNpDrmEbootSigGenPs1(uint path, uint sha, uint sig, uint opt) =>
-        EbootSigGen(path, sha, sig, opt, 0x6D9223E1, () => KernelServices.ksceNpDrmEbootSigGenPs1(path, sha, sig, (int)GuestMemory.R32(opt)));
+        EbootSigGen(path, sha, sig, opt, 0x6D9223E1, () => KernelServices.ksceNpDrmEbootSigGenPs1ThroughEntry(path, sha, sig, (int)GuestMemory.R32(opt)));
 
     /// <summary>(const char *path, const void *sceDiscinfo 0x100, void *sig 0x200, const opt *): a multi-disc PS1
     /// eboot (ksceNpDrmEbootSigGenMultiDisc).</summary>
     [Hle]
     int _vshNpDrmEbootSigGenMultiDisc(uint path, uint discinfo, uint sig, uint opt) =>
-        EbootSigGen(path, discinfo, sig, opt, 0x39A7A666, () => KernelServices.ksceNpDrmEbootSigGenMultiDisc(path, discinfo, sig, (int)GuestMemory.R32(opt)));
+        EbootSigGen(path, discinfo, sig, opt, 0x39A7A666, () => KernelServices.ksceNpDrmEbootSigGenMultiDiscThroughEntry(path, discinfo, sig, (int)GuestMemory.R32(opt)));
 
     /// <summary>A user eboot signature check: the option block (8 bytes) and the path copied in, then the kernel
     /// export's answer (0, or 0x80870005 for a signature that is not the unit's for that eboot).</summary>
@@ -1040,12 +1040,12 @@ public sealed partial class VshBridge
     /// <summary>(const char *path, const void *sig 0x200, const opt *8): ksceNpDrmEbootSigVerify.</summary>
     [Hle]
     int _vshNpDrmEbootSigVerify(uint path, uint sig, uint opt) =>
-        EbootSigCheck(path, sig, opt, 0x7A319692, () => KernelServices.ksceNpDrmEbootSigVerify(path, sig));
+        EbootSigCheck(path, sig, opt, 0x7A319692, () => KernelServices.ksceNpDrmEbootSigVerifyThroughEntry(path, sig));
 
     /// <summary>(const char *path, const void *sig 0x100, const opt *8): ksceNpDrmPspEbootVerify.</summary>
     [Hle]
     int _vshNpDrmPspEbootVerify(uint path, uint sig, uint opt) =>
-        EbootSigCheck(path, sig, opt, 0xB6CA3A2C, () => KernelServices.ksceNpDrmPspEbootVerify(path, sig));
+        EbootSigCheck(path, sig, opt, 0xB6CA3A2C, () => KernelServices.ksceNpDrmPspEbootVerifyThroughEntry(path, sig));
 
     /// <summary>(const SceUInt8 rif[0x200], const void *doc, SceSize docSize, const opt *0x10: documentKey,
     /// size &lt;= 0x200): the key of a PSP game manual (DOCUMENT.DAT) from its license. PSP licenses are not
@@ -1230,7 +1230,7 @@ public sealed partial class VshBridge
     }
 
     /// <summary>(const SceAppMgrBackupFinished *param 0x10): the backup of a title's saves finished; it leaves the list.</summary>
-    [Hle] int _vshAppMgrSaveDataNotifyBackupFinished(uint param) => _vshAppMgrSaveDataLocalBackupTargetRemoveItem(param);
+    [Hle] int _vshAppMgrSaveDataNotifyBackupFinished(uint param) => _vshAppMgrSaveDataLocalBackupTargetRemoveItemThroughEntry(param);
 
     /// <summary>(SceUInt64 *offlineId, int *idType): the offline id backups are bound to without PSN: derived from the
     /// console id (8 bytes) with type 1 (console-bound).</summary>

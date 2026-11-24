@@ -378,7 +378,7 @@ public sealed unsafe partial class Fiber : HleModule
             int r = AttachContext(fiber, addrContext, sizeContext, Self(GuestThread.Current!).Current != null, forSwitch: false);
             if (r != OK) return r;
         }
-        return sceFiberRun(fiber, argOnRunTo, argOnReturn);
+        return sceFiberRunThroughEntry(fiber, argOnRunTo, argOnReturn);
     }
 
     [Hle("_sceFiberAttachContextAndSwitch", Cost = HleCost.KernelEntry)]
@@ -389,6 +389,6 @@ public sealed unsafe partial class Fiber : HleModule
             int r = AttachContext(fiber, addrContext, sizeContext, Self(GuestThread.Current!).Current != null, forSwitch: true);
             if (r != OK) return r;
         }
-        return sceFiberSwitch(fiber, argOnRunTo, argOnRun);
+        return sceFiberSwitchThroughEntry(fiber, argOnRunTo, argOnRun);
     }
 }

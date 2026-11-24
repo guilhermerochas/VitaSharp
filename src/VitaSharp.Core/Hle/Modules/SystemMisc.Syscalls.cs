@@ -19,13 +19,13 @@ public sealed partial class SystemMisc
 
     [Hle]
     int _sceKernelStartModule(int uid, uint args, uint argp, uint opt)
-        => sceKernelStartModule(uid, args, argp, ModOpt(opt, 0), ModOpt(opt, 1), new Ptr<int>(ModOpt(opt, 2)));
+        => sceKernelStartModuleThroughEntry(uid, args, argp, ModOpt(opt, 0), ModOpt(opt, 1), new Ptr<int>(ModOpt(opt, 2)));
 
     [Hle]
     int _sceKernelStopModule(int uid, uint args, uint argp, uint opt)
-        => sceKernelStopModule(uid, args, argp, ModOpt(opt, 0), ModOpt(opt, 1), new Ptr<int>(ModOpt(opt, 2)));
+        => sceKernelStopModuleThroughEntry(uid, args, argp, ModOpt(opt, 0), ModOpt(opt, 1), new Ptr<int>(ModOpt(opt, 2)));
 
     [Hle]
     int _sceKernelStopUnloadModule(int uid, uint args, uint argp, uint opt)
-        => sceKernelStopUnloadModule(uid, args, argp, ModOpt(opt, 0), ModOpt(opt, 1), new Ptr<int>(ModOpt(opt, 2)));
+        => sceKernelStopUnloadModuleThroughEntry(uid, args, argp, ModOpt(opt, 0), ModOpt(opt, 1), new Ptr<int>(ModOpt(opt, 2)));
 }

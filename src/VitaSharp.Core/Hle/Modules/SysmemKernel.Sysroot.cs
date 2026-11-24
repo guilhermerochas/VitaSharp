@@ -151,9 +151,9 @@ public sealed partial class SysmemKernel
             case (0x360, 0x40):
                 return DefaultProcessSdkVersion(context.Gpr(0), context.Gpr(1));
             case (0x360, 0x18):
-                return ksceKernelAlloc(context.Gpr(1));
+                return ksceKernelAllocThroughEntry(context.Gpr(1));
             case (0x360, 0x1C):
-                return ksceKernelFree(context.Gpr(1));
+                return ksceKernelFreeThroughEntry(context.Gpr(1));
         }
 
         int key = (int)((offset << 16) | (entry & 0xFFFF));

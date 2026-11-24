@@ -266,15 +266,15 @@ public sealed partial class SysmemKernel
         uint context = Mem.Alloc(CmacSize, "SceAesCmac", MemoryRegion.Kernel, 0x10);
         try
         {
-            int result = ksceAesCmacInit(context, blockBits, keyBits, key);
+            int result = ksceAesCmacInitThroughEntry(context, blockBits, keyBits, key);
             if (result >= 0)
             {
-                result = ksceAesCmacUpdate(context, data, size);
+                result = ksceAesCmacUpdateThroughEntry(context, data, size);
             }
 
             if (result >= 0)
             {
-                result = ksceAesCmacFinal(context, mac);
+                result = ksceAesCmacFinalThroughEntry(context, mac);
             }
 
             return Math.Min(result, 0);

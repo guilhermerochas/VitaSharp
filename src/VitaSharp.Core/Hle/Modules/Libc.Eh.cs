@@ -165,14 +165,14 @@ public sealed partial class Libc
             v.D.CopyTo(vrs.D, 0);
             return r;
         }
-        finally { free(ctx); }
+        finally { freeThroughEntry(ctx); }
     }
 
     internal int FindFrame(uint ucb, uint returnAddress) => GetEitEntry(ucb, returnAddress);
     internal int FramePersonality(int state, uint ucb, Vrs vrs) => CallPersonality(state, ucb, vrs);
     internal uint AllocScratch(uint size) { uint p = HeapAlloc(size, HeapAlign); if (p != 0) GuestMemory.Fill(p, 0, size); return p; }
-    internal void FreeScratch(uint p) => free(p);
-    internal void AbortProcess() => abort();
+    internal void FreeScratch(uint p) => freeThroughEntry(p);
+    internal void AbortProcess() => abortThroughEntry();
 
     // ------------------------------------------------------------------ unwind instructions
 
@@ -467,7 +467,7 @@ public sealed partial class Libc
             return URC_CONTINUE_UNWIND;
         }
         // no call site covers pc: std::terminate (the module calls __cxa_call_terminate)
-        CallTerminate(ucb);
+        CallTerminateThroughEntry(ucb);
         return URC_FAILURE;
     }
 
@@ -504,7 +504,7 @@ public sealed partial class Libc
                     if (state != US_VIRTUAL_UNWIND_FRAME && start <= pc && pc < start + len)
                     {
                         GuestMemory.W32(ucb + UcbCleanupCache, d + 4);
-                        if (!BeginCleanup(ucb)) return URC_FAILURE;
+                        if (!BeginCleanupThroughEntry(ucb)) return URC_FAILURE;
                         vrs.Pc = Prel31(d) | (vrs.Pc & 1);
                         return URC_INSTALL_CONTEXT;
                     }
@@ -656,7 +656,7 @@ public sealed partial class Libc
                 return URC_INSTALL_CONTEXT;
             }
         }
-        finally { free(gctx); }
+        finally { freeThroughEntry(gctx); }
     }
 
     /// <summary>_Unwind_Resume (from a cleanup landing pad): the frame that ran the cleanup is finished by its

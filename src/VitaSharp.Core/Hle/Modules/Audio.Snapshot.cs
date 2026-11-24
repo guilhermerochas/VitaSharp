@@ -28,7 +28,7 @@ public sealed partial class Audio
     {
         lock (_ports)
         {
-            foreach (var id in _ports.Keys.ToList()) sceAudioOutReleasePort(id);
+            foreach (var id in _ports.Keys.ToList()) sceAudioOutReleasePortThroughEntry(id);
             int n = r.ReadInt32();
             for (int i = 0; i < n; i++)
             {

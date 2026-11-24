@@ -436,7 +436,8 @@ public sealed partial class Emulator : IDisposable
         if (Parent != null)
         {
             // a process of a multi-process system re-executes on its own: the host front-end only drives the first
-            Task.Run(() =>
+            // (its old image's memory goes on that task: the system's end waits for it)
+            Vita.TrackProcessTask(Task.Run(() =>
             {
                 try
                 {
@@ -447,7 +448,7 @@ public sealed partial class Emulator : IDisposable
                     Log.Error($"{Describe()}: LoadExec failed: {e}");
                     Terminate("LoadExec failed");
                 }
-            });
+            }));
             return;
         }
         ExecRequested?.Invoke();
@@ -468,13 +469,14 @@ public sealed partial class Emulator : IDisposable
     /// when every process shares one space (VITASHARP_SHARED_ADDRESS_SPACE=1, or a host that cannot map memory twice) can
     /// such an executable not be placed: then it ends and <paramref name="cannotPlace"/> runs instead.
     /// <paramref name="processTitleId"/> is the title the launch names for the process, when it names one
-    /// (<see cref="LaunchedTitleId"/>).
+    /// (<see cref="LaunchedTitleId"/>). <paramref name="createdByProcessmgr"/>: the process is the one a call of
+    /// ksceKernelCreateProcess makes (that call already went through the function's entry).
     /// </summary>
     public Emulator SpawnProcess(string appDir, string self, string[] args, bool activate = false, Action? cannotPlace = null, bool background = false,
-        AppObject? reservedApp = null, Action<Emulator>? started = null, string? processTitleId = null)
+        AppObject? reservedApp = null, Action<Emulator>? started = null, string? processTitleId = null, bool createdByProcessmgr = false)
     {
         Gpu.SharedByProcesses = true; // from now on GPU scenes are arbitrated between the processes
-        var child = new Emulator(this, reservedApp) { _background = background };
+        var child = new Emulator(this, reservedApp) { _background = background, _createdByProcessmgr = createdByProcessmgr };
         _children.Add(child);
         child.TitleId = Path.GetFileName(Path.TrimEndingDirectorySeparator(appDir));
         if (!string.IsNullOrEmpty(processTitleId) && !processTitleId.Equals(child.TitleId, StringComparison.OrdinalIgnoreCase))
@@ -529,7 +531,8 @@ public sealed partial class Emulator : IDisposable
             Vita.PostShellEvent(ShellEvents.AppCreated, child.Pid, child.AppId);
         }
 
-        Task.Run(() =>
+        // the child starts on a host task (its module_start may wait for the caller); the system's end waits for it
+        Vita.TrackProcessTask(Task.Run(() =>
         {
             try
             {
@@ -557,7 +560,7 @@ public sealed partial class Emulator : IDisposable
                     Vita.PostShellEvent(ShellEvents.AppLaunched, -1);
                 }
             }
-        });
+        }));
         return child;
     }
 
@@ -577,6 +580,11 @@ public sealed partial class Emulator : IDisposable
         if (e is TitleKeyException noKey)
         {
             return noKey.Error;
+        }
+
+        if (e is ProcessLoadException refused)
+        {
+            return refused.Error;
         }
 
         if (e is FileNotFoundException or DirectoryNotFoundException)
@@ -749,8 +757,9 @@ public sealed partial class Emulator : IDisposable
 
     /// <summary>Runs <paramref name="body"/> on a new kernel thread <paramref name="threadName"/> of the kernel process
     /// <paramref name="kernel"/> (where processmgr runs its calls into other kernel modules) and waits for it; the
-    /// thread goes once it returned. <paramref name="what"/> names the call in the warning when it does not return.</summary>
-    private void RunOnKernelThread(Emulator kernel, string threadName, Action<GuestThread> body, string what)
+    /// thread goes once it returned. <paramref name="what"/> names the call in the warning when it does not return.
+    /// Returns whether it returned.</summary>
+    internal bool RunOnKernelThread(Emulator kernel, string threadName, Action<GuestThread> body, string what)
     {
         using (ProcessScope.Enter(kernel))
         {
@@ -772,6 +781,8 @@ public sealed partial class Emulator : IDisposable
             {
                 Log.Warn($"{Describe()}: {what} did not return in time");
             }
+
+            return finished;
         }
     }
 
@@ -857,7 +868,8 @@ public sealed partial class Emulator : IDisposable
             c.Terminate("ended with its parent");
         }
 
-        Task.Run(() =>
+        // the system's end waits for this (VitaSystem.WaitForProcessTasks)
+        Vita.TrackProcessTask(Task.Run(() =>
         {
             if (!Kernel.WaitAllThreadsExit(10_000))
             {
@@ -874,7 +886,7 @@ public sealed partial class Emulator : IDisposable
                 }
             }
             Release();
-        });
+        }));
     }
 
     /// <summary>Gives everything the process holds back to the system.</summary>
@@ -1105,6 +1117,9 @@ public sealed partial class Emulator : IDisposable
     public void LoadTitle(string appPath, string self = "eboot.bin")
     {
         using ProcessScope.Scope scope = ProcessScope.Enter(this);
+        // the system's boot comes before any launch: the kernel and its *KERNEL plugins are up whatever the title, and
+        // whether its launch then works or not (once per system)
+        BootKernelPlugins();
         // a PSM title is started as the system starts it: its runtime with the title's folder as the launch parameter
         _launchParam = null;
         if (Package.InstalledContent.IsPsmTitleFolder(Options.FsRoot, appPath))
@@ -1145,6 +1160,8 @@ public sealed partial class Emulator : IDisposable
         Vfs.MountSaveData("savedata0", saveDir);
         Vfs.Mount("addcont0", Io.FirmwareLayout.AddCont.Host(Options.FsRoot, TitleId));
 
+        // appmgr creates the process (ksceKernelCreateProcess) before it mounts app0 for it
+        CreateProcessThroughProcessmgr(self);
         Klicensee = FindKlicensee();
         OpenApp0Image();
         string vs0 = Path.GetFullPath(Path.Combine(Options.FsRoot, "vs0")) + Path.DirectorySeparatorChar;
@@ -1762,51 +1779,6 @@ public sealed partial class Emulator : IDisposable
             Log.Warn($"Code cache: save failed: {e.Message}");
         }
     }
-    /// <summary>
-    /// An application folder that is still a PFS image gets app0 as appmgr mounts it: the licence where the firmware
-    /// keeps it, its title key by SceNpDrm's checks and the secure processor (<see cref="Package.LicenseTitleKey"/>),
-    /// then the PFS layer opened with that key (<see cref="Package.Pfs.PfsApp0View"/>), the key the executable's SELF
-    /// is decrypted with too. Without a licence the launch fails as appmgr's does
-    /// (<see cref="TitleLicenseMissingException"/>); without a key, or with one that does not open the image, as
-    /// <see cref="TitleKeyException"/>. The decrypted view is kept with the emulator's caches, next to the file system.
-    /// </summary>
-    private void OpenApp0Image()
-    {
-        if (!Package.Pfs.PfsApp0View.IsImage(AppPath))
-        {
-            return;
-        }
-
-        if (TitleLicense.FindFile(Options.FsRoot, AppPath, TitleId) is not { } licenseFile)
-        {
-            throw new TitleLicenseMissingException(TitleId, new FileNotFoundException($"{AppPath} is a PFS image and has no licence"));
-        }
-
-        string? activationFile = Vfs.Resolve("tm0:npdrm/act.dat");
-        byte[] activation = activationFile != null && File.Exists(activationFile) ? File.ReadAllBytes(activationFile) : [];
-        int error = Package.LicenseTitleKey.Get(File.ReadAllBytes(licenseFile), activation, SecureProcessorRifKey, out byte[]? key);
-        if (error != 0 || key == null)
-        {
-            Log.Error($"{TitleId}: app0 is a PFS image; the title key of its licence {licenseFile} is not available (0x{error:X8})");
-            throw new TitleKeyException(TitleId, error);
-        }
-
-        string fsRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(Options.FsRoot));
-        string dataRoot = Path.GetDirectoryName(fsRoot) ?? fsRoot;
-        byte[] folderHash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(AppPath.ToUpperInvariant()));
-        string view = Path.Combine(dataRoot, "cache", "pfs", $"{TitleId}-{Convert.ToHexString(folderHash, 0, 8)}");
-        try
-        {
-            Vfs.AddApp0BaseLayer(Package.Pfs.PfsApp0View.Open(AppPath, key, view, Log.Info));
-        }
-        catch (Package.Pfs.PfsKeyMismatchException e)
-        {
-            throw new TitleKeyException(TitleId, Package.LicenseTitleKey.BadLicense, e);
-        }
-
-        Klicensee = key;
-    }
-
     private byte[]? FindKlicensee() =>
         TitleLicense.FindFile(Options.FsRoot, AppPath, TitleId) is { } license ? PkgInstaller.ReadKlicensee(license) : null;
 
@@ -1895,6 +1867,19 @@ public sealed partial class Emulator : IDisposable
     public Hle.FirmwareKernelModules FirmwareKernel => IsKernelProcess
         ? LazyInitializer.EnsureInitialized(ref _firmwareKernel, () => new Hle.FirmwareKernelModules(this))
         : KernelHost.FirmwareKernel;
+
+    /// <summary><see cref="FirmwareKernel"/> when it already exists (null otherwise): reading it never makes the
+    /// kernel process (the check of every <see cref="Hle.HleEntryCalls"/> wrapper).</summary>
+    internal Hle.FirmwareKernelModules? FirmwareKernelIfShown
+    {
+        // not recursive (the kernel process's own field), so the wrappers' check inlines it
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        get
+        {
+            Emulator? kernel = IsKernelProcess ? this : Vita?.KernelProcess;
+            return kernel == null ? null : Volatile.Read(ref kernel._firmwareKernel);
+        }
+    }
 
     /// <summary>SCE_KERNEL_START_SUCCESS, _NO_RESIDENT and _FAILED: what module_start returns.</summary>
     public const int ModuleStartSuccess = 0, ModuleStartNoResident = 1, ModuleStartFailed = 2;
@@ -2184,7 +2169,7 @@ public sealed partial class Emulator : IDisposable
             }
 
             string result = LoadPlugin(path, kernel: true);
-            Log.Info($"kernel plugin {path}: {result}");
+            Log.Info($"kernel plugin {path}: {result} (at system boot)");
             results.Add($"{path}: {result}");
         }
 
@@ -2227,7 +2212,9 @@ public sealed partial class Emulator : IDisposable
                 .Where(n => !Linker.TryGetVisibleExport(n, i.LibNid, kernel, out _) && !Hle.Implements(n))
                 .Select(n => $"{i.Library}:{NidDatabase.NameOf(n)}")));
         string? hostFile = InPluginFolder(path) ? Path.Combine(KernelPluginsFolder, path) : Vfs.Resolve(path);
-        PluginHookStats.Of(this).RecordPlugin(path, kernel, loadedModule?.Name ?? "", hostFile, result, unresolved, Options.FsRoot);
+        // a kernel module loads at the system's boot (the *KERNEL section), a user module with its process
+        string moment = kernel ? KernelPluginMoment : $"with process {ProcessTitleId}";
+        PluginHookStats.Of(this).RecordPlugin(path, kernel, loadedModule?.Name ?? "", hostFile, result, unresolved, Options.FsRoot, moment);
         return result;
     }
 
@@ -2289,6 +2276,14 @@ public sealed partial class Emulator : IDisposable
         if (MainModule == null)
         {
             throw new InvalidOperationException("No title loaded");
+        }
+
+        if (Vita.Ending)
+        {
+            // a child's start that came after its system's end began (SpawnProcess starts it on a host task): it
+            // stays stopped, with no thread
+            Log.Info($"Process {Describe()} not started: the system is ending");
+            return;
         }
 
         using ProcessScope.Scope scope = ProcessScope.Enter(this);
@@ -2428,6 +2423,11 @@ public sealed partial class Emulator : IDisposable
 
     public void Dispose()
     {
+        if (Parent == null)
+        {
+            Vita.BeginEnd(); // no process starts any more (a child's start may still be on its host task)
+        }
+
         Stop();
         HleGuestCode.CodePlaced -= OnHleGuestCodePlaced;
         _codeCache?.Stop();
@@ -2441,6 +2441,19 @@ public sealed partial class Emulator : IDisposable
         if (Parent != null)
         {
             return; // the GPU and host devices are the first process's
+        }
+
+        // the processes still starting, re-executing or ending finish first: what they free is this system's
+        Vita.WaitForProcessTasks();
+        // what those tasks started before the end began stops too, and no guest thread of the system outlives it:
+        // one left running went on storing into memory its process no longer held
+        Stop();
+        foreach (Emulator process in Vita.Processes)
+        {
+            if (!process.Kernel.WaitAllThreadsExit(5_000))
+            {
+                Log.Warn($"system end: some threads of {process.Describe()} did not stop in time");
+            }
         }
 
         Vita.EndKernelProcess();

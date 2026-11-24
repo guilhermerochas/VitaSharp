@@ -54,6 +54,9 @@ public sealed class FirmwareKernelModules(Emulator emu)
     /// <summary>(library NID, function NID) -> the entry's address and its unpatched first word.</summary>
     private readonly Dictionary<(uint LibNid, uint Nid), (uint Entry, uint Svc)> _entries = new();
 
+    /// <summary>Function NID -> each library exporting it: (library NID, library name).</summary>
+    private readonly Dictionary<uint, List<(uint LibNid, string Library)>> _librariesOfNid = new();
+
     /// <summary>(importing module, library NID, function NID) -> the import stub and the code the linker put in it.</summary>
     private readonly Dictionary<(string Module, uint LibNid, uint Nid), (uint Stub, uint[] Bound)> _imports = new();
 
@@ -256,6 +259,7 @@ public sealed class FirmwareKernelModules(Emulator emu)
                         uint svc = emu.Hle.GetHleFunctionIndex(nid, export.LibNid, libName);
                         Linker.WriteHleStub(entry, svc, nid);
                         _entries[(export.LibNid, nid)] = (entry, SvcOpcode | (svc & 0xFFFFFF));
+                        Track();
                     }
                 }
 
@@ -326,6 +330,17 @@ public sealed class FirmwareKernelModules(Emulator emu)
             uint svc = emu.Hle.GetHleFunctionIndex(nid, libNid, libName);
             Linker.WriteHleStub(entry, svc, nid);
             _entries[(libNid, nid)] = (entry, SvcOpcode | (svc & 0xFFFFFF));
+            Track();
+            if (!_librariesOfNid.TryGetValue(nid, out List<(uint LibNid, string Library)>? exporting))
+            {
+                exporting = new List<(uint LibNid, string Library)>();
+                _librariesOfNid[nid] = exporting;
+            }
+
+            if (!exporting.Contains((libNid, libName)))
+            {
+                exporting.Add((libNid, libName));
+            }
         }
 
         foreach ((int library, int function, uint offset) in importStubs)
@@ -435,13 +450,93 @@ public sealed class FirmwareKernelModules(Emulator emu)
 
     private long _patchesCheckedAt = -1;
 
+    /// <summary>The firmware kernel modules of every emulated system of this host that has exported entries (each
+    /// added once, by <see cref="Track"/>), for <see cref="AnyEntryPatchedAnywhere"/>.</summary>
+    private static readonly List<WeakReference<FirmwareKernelModules>> s_withEntries = new();
+
+    /// <summary>(<see cref="Cpu.BlockCache.CodeChanges"/> shifted left by one) | patched, when the entries of
+    /// <see cref="s_withEntries"/> were last counted (-2: never): one word, so a reader sees both halves together.</summary>
+    private static long s_patchState = -2;
+
+    private bool _tracked;
+
+    /// <summary>Adds these modules to <see cref="s_withEntries"/> when their first entry is written (under
+    /// <see cref="_lock"/>), and makes the next <see cref="AnyEntryPatchedAnywhere"/> count again.</summary>
+    private void Track()
+    {
+        if (_tracked)
+        {
+            return;
+        }
+
+        _tracked = true;
+        lock (s_withEntries)
+        {
+            s_withEntries.Add(new WeakReference<FirmwareKernelModules>(this));
+        }
+
+        Volatile.Write(ref s_patchState, -2);
+    }
+
     /// <summary>
-    /// Whether any exported function's entry is patched (a hook): the fast check of <see cref="TryCallPatched"/>. Guest
-    /// code that patches code drops its translations (the framework does, and so does a plugin's own copy followed by
-    /// the cache maintenance the hardware needs), which moves <see cref="Cpu.BlockCache.CodeChanges"/>; only then are
-    /// the entries counted again. With nothing patched and no code change since, it reads two fields.
+    /// Whether any firmware kernel module entry of this host is patched: the static check of every
+    /// <see cref="HleEntryCalls"/> wrapper (two static reads while no guest code changed). Guest code that patches an
+    /// entry moves <see cref="Cpu.BlockCache.CodeChanges"/>; only then are the entries counted again, and a patch in any
+    /// emulated system sends every wrapper to its precise check (<see cref="PatchedEntryOf"/>).
     /// </summary>
-    private bool AnyEntryPatched()
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    internal static bool AnyEntryPatchedAnywhere()
+    {
+        long state = Volatile.Read(ref s_patchState);
+        if ((state >> 1) == Cpu.BlockCache.CodeChanges)
+        {
+            return (state & 1) != 0;
+        }
+
+        return CountEverywhere();
+    }
+
+    /// <summary><see cref="AnyEntryPatchedAnywhere"/>'s count after a code change. It holds no lock while it asks each
+    /// system's modules (their own lock), so it can run from any HLE call; two threads counting at once publish the
+    /// same answer, and a count published with an older change number is counted again by the next reader.</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static bool CountEverywhere()
+    {
+        long changes = Cpu.BlockCache.CodeChanges;
+        FirmwareKernelModules?[] systems;
+        lock (s_withEntries)
+        {
+            s_withEntries.RemoveAll(reference => !reference.TryGetTarget(out _));
+            systems = new FirmwareKernelModules?[s_withEntries.Count];
+            for (int i = 0; i < systems.Length; i++)
+            {
+                systems[i] = s_withEntries[i].TryGetTarget(out FirmwareKernelModules? modules) ? modules : null;
+            }
+        }
+
+        bool patched = false;
+        foreach (FirmwareKernelModules? modules in systems)
+        {
+            if (modules != null && modules.AnyEntryPatched())
+            {
+                patched = true;
+                break;
+            }
+        }
+
+        Volatile.Write(ref s_patchState, (changes << 1) | (patched ? 1L : 0L));
+        return patched;
+    }
+
+    /// <summary>
+    /// Whether any exported function's entry is patched (a hook): the fast check of <see cref="TryCallPatched"/> and of
+    /// the generated <see cref="HleEntryCalls"/> wrappers. Guest code that patches code drops its translations (the
+    /// framework does, and so does a plugin's own copy followed by the cache maintenance the hardware needs), which
+    /// moves <see cref="Cpu.BlockCache.CodeChanges"/>; only then are the entries counted again (once: the threads that
+    /// waited for the count find it done). With nothing patched and no code change since, it reads two fields.
+    /// </summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    internal bool AnyEntryPatched()
     {
         long changes = Cpu.BlockCache.CodeChanges;
         if (Volatile.Read(ref _patchesCheckedAt) == changes)
@@ -449,8 +544,21 @@ public sealed class FirmwareKernelModules(Emulator emu)
             return Volatile.Read(ref _patchedEntries) != 0;
         }
 
+        return CountPatchedEntries(changes);
+    }
+
+    /// <summary>Counts the patched entries again after guest code changed (<see cref="AnyEntryPatched"/>'s slow path,
+    /// kept out of the inlined check).</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private bool CountPatchedEntries(long changes)
+    {
         lock (_lock)
         {
+            if (_patchesCheckedAt == changes)
+            {
+                return _patchedEntries != 0;
+            }
+
             int patched = 0;
             foreach ((uint Entry, uint Svc) e in _entries.Values)
             {
@@ -484,6 +592,37 @@ public sealed class FirmwareKernelModules(Emulator emu)
 
         result = (int)RunGuest(thread, EntryOf(libNid, nid), [a0, a1, a2, a3]);
         return true;
+    }
+
+    /// <summary>
+    /// The patched entry of function <paramref name="nid"/> (a hook took it) in library <paramref name="library"/>
+    /// (null: any library exporting the NID), or 0 when no such entry is patched.
+    /// </summary>
+    internal uint PatchedEntryOf(uint nid, string? library)
+    {
+        lock (_lock)
+        {
+            if (!_librariesOfNid.TryGetValue(nid, out List<(uint LibNid, string Library)>? exporting))
+            {
+                return 0;
+            }
+
+            foreach ((uint libNid, string name) in exporting)
+            {
+                if (library != null && name != library)
+                {
+                    continue;
+                }
+
+                (uint Entry, uint Svc) e = _entries[(libNid, nid)];
+                if (GuestMemory.R32(e.Entry) != e.Svc || GuestMemory.R32(e.Entry + 4) != BxLr)
+                {
+                    return e.Entry;
+                }
+            }
+
+            return 0;
+        }
     }
 
     /// <summary>

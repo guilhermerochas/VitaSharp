@@ -73,7 +73,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x26F9EEA8, Library = "SceOledForDriver")]
     int ksceOledResetLineClear()
     {
-        ksceGpioPortClear(0, 0);
+        ksceGpioPortClearThroughEntry(0, 0);
         return 0;
     }
 
@@ -81,7 +81,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x6B1E0B52, Library = "SceOledForDriver")]
     int ksceOledResetLineSet()
     {
-        ksceGpioPortSet(0, 0);
+        ksceGpioPortSetThroughEntry(0, 0);
         return 0;
     }
 
@@ -89,7 +89,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x9F4ABDDC, Library = "SceOledForDriver")]
     int ksceOledIsResetLineLow()
     {
-        return ksceGpioPortRead(0, 0) == 0 ? 1 : 0;
+        return ksceGpioPortReadThroughEntry(0, 0) == 0 ? 1 : 0;
     }
 
     /// <summary>ksceOledWaitReady(): waits for the start-up DDB read, already done on the emulated unit; 0.</summary>
@@ -141,7 +141,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0xDDB1412B, Library = "SceOledForDriver")]
     int ksceOledPowerOn()
     {
-        ksceOledResetLineSet();
+        ksceOledResetLineSetThroughEntry();
         _oledBrightness = 0;
         int queued = OledQueue(PanelBuiltInSequence, wait: true);
         if (queued != 0)

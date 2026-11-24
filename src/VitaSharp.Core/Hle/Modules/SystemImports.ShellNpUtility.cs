@@ -118,7 +118,7 @@ public sealed partial class Shell : HleModule
 
 public sealed partial class AppMgrShell
 {
-    internal int LaunchAppByName2(uint name, uint param, uint launchParam) => sceAppMgrLaunchAppByName2(name, param, launchParam);
+    internal int LaunchAppByName2(uint name, uint param, uint launchParam) => sceAppMgrLaunchAppByName2ThroughEntry(name, param, launchParam);
 }
 
 public sealed partial class NpUtility

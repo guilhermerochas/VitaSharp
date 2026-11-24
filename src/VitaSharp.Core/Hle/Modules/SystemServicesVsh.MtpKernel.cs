@@ -169,7 +169,7 @@ public sealed partial class SystemServicesVsh
             return MTP_ERR_INVALID_ARGUMENT;
         }
 
-        return ksceUsbMtpStart();
+        return ksceUsbMtpStartThroughEntry();
     }
 
     /// <summary>ksceMtpIfStop(interface): a user-mode caller releases the start/stop pair (not taken: 0x80543602);
@@ -192,21 +192,21 @@ public sealed partial class SystemServicesVsh
             return MTP_ERR_INVALID_ARGUMENT;
         }
 
-        return ksceUsbMtpStop();
+        return ksceUsbMtpStopThroughEntry();
     }
 
     /// <summary>ksceMtpIfStartDriver(int number): 1 is SceUsbMtp's start; else 0x80543603.</summary>
     [Hle(Nid = 0xCB685AC0, Library = "SceMtpIfForDriver")]
     int ksceMtpIfStartDriver(uint number)
     {
-        return number == 1 ? ksceUsbMtpStart() : MTP_ERR_INVALID_ARGUMENT;
+        return number == 1 ? ksceUsbMtpStartThroughEntry() : MTP_ERR_INVALID_ARGUMENT;
     }
 
     /// <summary>ksceMtpIfStopDriver(int number): 1 is SceUsbMtp's stop; else 0x80543603.</summary>
     [Hle(Nid = 0xFDF8C3C0, Library = "SceMtpIfForDriver")]
     int ksceMtpIfStopDriver(uint number)
     {
-        return number == 1 ? ksceUsbMtpStop() : MTP_ERR_INVALID_ARGUMENT;
+        return number == 1 ? ksceUsbMtpStopThroughEntry() : MTP_ERR_INVALID_ARGUMENT;
     }
 
     /// <summary>ksceUsbMtpStart(): starts the USB device controller and the MTP driver, which waits for a host (none

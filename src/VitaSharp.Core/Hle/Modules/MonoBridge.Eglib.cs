@@ -235,7 +235,7 @@ public sealed unsafe partial class MonoBridge
     }
 
     [Hle("g_ascii_strcasecmp", Library = Lib)]
-    int GAsciiStrcasecmp(uint s1, uint s2) => GAsciiStrncasecmp(s1, s2, uint.MaxValue);
+    int GAsciiStrcasecmp(uint s1, uint s2) => GAsciiStrncasecmpThroughEntry(s1, s2, uint.MaxValue);
 
     [Hle("monoeg_g_ascii_tolower", Library = Lib)] int GAsciiTolower(int c) => c is >= 'A' and <= 'Z' ? c + 32 : c;
 
@@ -334,7 +334,7 @@ public sealed unsafe partial class MonoBridge
         Free(tmp);
     }
 
-    [Hle("monoeg_g_string_append", Library = Lib)] uint GStringAppend(uint s, uint val) => GStringAppendLen(s, val, -1);
+    [Hle("monoeg_g_string_append", Library = Lib)] uint GStringAppend(uint s, uint val) => GStringAppendLenThroughEntry(s, val, -1);
 
     [Hle("monoeg_g_string_append_c", Library = Lib)]
     uint GStringAppendC(uint s, int c)
@@ -444,7 +444,7 @@ public sealed unsafe partial class MonoBridge
         W32(a, Realloc(R32(a), size * 4));
     }
 
-    [Hle("monoeg_g_ptr_array_new", Library = Lib)] uint GPtrArrayNew() => GPtrArraySizedNew(0);
+    [Hle("monoeg_g_ptr_array_new", Library = Lib)] uint GPtrArrayNew() => GPtrArraySizedNewThroughEntry(0);
 
     [Hle("monoeg_g_ptr_array_sized_new", Library = Lib)]
     uint GPtrArraySizedNew(uint reserved)
@@ -510,7 +510,7 @@ public sealed unsafe partial class MonoBridge
     {
         int i = a == 0 ? -1 : PtrIndex(a, data);
         if (i < 0) return false;
-        GPtrArrayRemoveIndex(a, (uint)i);
+        GPtrArrayRemoveIndexThroughEntry(a, (uint)i);
         return true;
     }
 
@@ -519,7 +519,7 @@ public sealed unsafe partial class MonoBridge
     {
         int i = a == 0 ? -1 : PtrIndex(a, data);
         if (i < 0) return false;
-        GPtrArrayRemoveIndexFast(a, (uint)i);
+        GPtrArrayRemoveIndexFastThroughEntry(a, (uint)i);
         return true;
     }
 
@@ -560,7 +560,7 @@ public sealed unsafe partial class MonoBridge
     uint GListNth(uint list, uint n) { for (; list != 0 && n > 0; n--) list = R32(list + 4); return list; }
 
     [Hle("monoeg_g_list_nth_data", Library = Lib)]
-    uint GListNthData(uint list, uint n) => GListNth(list, n) is var l and not 0 ? R32(l) : 0;
+    uint GListNthData(uint list, uint n) => GListNthThroughEntry(list, n) is var l and not 0 ? R32(l) : 0;
 
     [Hle("monoeg_g_list_find", Library = Lib)]
     uint GListFind(uint list, uint data) { for (; list != 0; list = R32(list + 4)) if (R32(list) == data) return list; return 0; }
@@ -576,7 +576,7 @@ public sealed unsafe partial class MonoBridge
     [Hle("monoeg_g_list_remove", Library = Lib)]
     uint GListRemove(uint list, uint data)
     {
-        uint cur = GListFind(list, data);
+        uint cur = GListFindThroughEntry(list, data);
         if (cur == 0) return list;
         if (cur == list) list = R32(list + 4);
         Free(Disconnect(cur));
@@ -596,7 +596,7 @@ public sealed unsafe partial class MonoBridge
     [Hle("monoeg_g_list_delete_link", Library = Lib)]
     uint GListDeleteLink(uint list, uint link)
     {
-        list = GListRemoveLink(list, link);
+        list = GListRemoveLinkThroughEntry(list, link);
         Free(link);
         return list;
     }
@@ -645,7 +645,7 @@ public sealed unsafe partial class MonoBridge
     [Hle("monoeg_g_list_insert_before", Library = Lib)]
     uint GListInsertBefore(uint list, uint sibling, uint data)
     {
-        if (sibling == 0) return GListAppend(list, data);
+        if (sibling == 0) return GListAppendThroughEntry(list, data);
         uint node = NewList(data, R32(sibling + 8), sibling);
         return sibling == list ? node : list;
     }
@@ -695,9 +695,9 @@ public sealed unsafe partial class MonoBridge
     [Hle("monoeg_g_slist_append", Library = Lib)]
     uint GSlistAppend(uint list, uint data)
     {
-        uint n = GSlistPrepend(0, data);
+        uint n = GSlistPrependThroughEntry(0, data);
         if (list == 0) return n;
-        W32(GSlistLast(list) + 4, n);
+        W32(GSlistLastThroughEntry(list) + 4, n);
         return list;
     }
 
@@ -705,7 +705,7 @@ public sealed unsafe partial class MonoBridge
     uint GSlistConcat(uint l1, uint l2)
     {
         if (l1 == 0) return l2;
-        W32(GSlistLast(l1) + 4, l2);
+        W32(GSlistLastThroughEntry(l1) + 4, l2);
         return l1;
     }
 
@@ -715,7 +715,7 @@ public sealed unsafe partial class MonoBridge
         uint copy = 0, tail = 0;
         for (; list != 0; list = R32(list + 4))
         {
-            uint n = GSlistPrepend(0, R32(list));
+            uint n = GSlistPrependThroughEntry(0, R32(list));
             if (tail != 0) W32(tail + 4, n); else copy = n;
             tail = n;
         }
@@ -736,7 +736,7 @@ public sealed unsafe partial class MonoBridge
     }
 
     [Hle("monoeg_g_slist_remove", Library = Lib)]
-    uint GSlistRemove(uint list, uint data) => GSlistDeleteLink(list, GSlistFind(list, data));
+    uint GSlistRemove(uint list, uint data) => GSlistDeleteLinkThroughEntry(list, GSlistFindThroughEntry(list, data));
 
     [Hle("monoeg_g_slist_foreach", Library = Lib)]
     void GSlistForeach(uint list, uint func, uint userData)
@@ -758,11 +758,11 @@ public sealed unsafe partial class MonoBridge
     [Hle("monoeg_g_slist_insert_sorted", Library = Lib)]
     uint GSlistInsertSorted(uint list, uint data, uint func)
     {
-        if (list == 0 || (int)Call(func, R32(list), data) > 0) return GSlistPrepend(list, data);
+        if (list == 0 || (int)Call(func, R32(list), data) > 0) return GSlistPrependThroughEntry(list, data);
         uint prev = list;
         for (; R32(prev + 4) != 0; prev = R32(prev + 4))
             if ((int)Call(func, R32(R32(prev + 4)), data) > 0) break;
-        W32(prev + 4, GSlistPrepend(R32(prev + 4), data));
+        W32(prev + 4, GSlistPrependThroughEntry(R32(prev + 4), data));
         return list;
     }
 
@@ -773,7 +773,7 @@ public sealed unsafe partial class MonoBridge
     uint GSlistNth(uint list, uint n) { for (; list != 0 && n > 0; n--) list = R32(list + 4); return list; }
 
     [Hle("monoeg_g_slist_nth_data", Library = Lib)]
-    uint GSlistNthData(uint list, uint n) => GSlistNth(list, n) is var l and not 0 ? R32(l) : 0;
+    uint GSlistNthData(uint list, uint n) => GSlistNthThroughEntry(list, n) is var l and not 0 ? R32(l) : 0;
 
     [Hle("monoeg_g_slist_reverse", Library = Lib)]
     uint GSlistReverse(uint list)
@@ -788,7 +788,7 @@ public sealed unsafe partial class MonoBridge
     [Hle("monoeg_g_queue_new", Library = Lib)] uint GQueueNew() => Malloc0(12);
 
     [Hle("monoeg_g_queue_free", Library = Lib)]
-    void GQueueFree(uint q) { if (q == 0) return; GListFree(R32(q)); Free(q); }
+    void GQueueFree(uint q) { if (q == 0) return; GListFreeThroughEntry(R32(q)); Free(q); }
 
     [Hle("monoeg_g_queue_is_empty", Library = Lib)] bool GQueueIsEmpty(uint q) => q == 0 || R32(q + 8) == 0;
 
@@ -808,7 +808,7 @@ public sealed unsafe partial class MonoBridge
     void GQueuePushHead(uint q, uint data)
     {
         if (q == 0) return;
-        W32(q, GListPrepend(R32(q), data));
+        W32(q, GListPrependThroughEntry(R32(q), data));
         if (R32(q + 4) == 0) W32(q + 4, R32(q));
         W32(q + 8, R32(q + 8) + 1);
     }
@@ -826,7 +826,7 @@ public sealed unsafe partial class MonoBridge
         return KnownFunction(fn) switch
         {
             "monoeg_g_direct_hash" => key,
-            "monoeg_g_str_hash" => GStrHash(key),
+            "monoeg_g_str_hash" => GStrHashThroughEntry(key),
             _ => Call(fn, key),
         };
     }
@@ -837,7 +837,7 @@ public sealed unsafe partial class MonoBridge
         return KnownFunction(fn) switch
         {
             "monoeg_g_direct_equal" => a == b,
-            "monoeg_g_str_equal" => GStrEqual(a, b),
+            "monoeg_g_str_equal" => GStrEqualThroughEntry(a, b),
             _ => Call(fn, a, b) != 0,
         };
     }
@@ -853,14 +853,14 @@ public sealed unsafe partial class MonoBridge
     }
 
     [Hle("monoeg_g_hash_table_new", Library = Lib)]
-    uint GHashTableNew(uint hash, uint equal) => GHashTableNewFull(hash, equal, 0, 0);
+    uint GHashTableNew(uint hash, uint equal) => GHashTableNewFullThroughEntry(hash, equal, 0, 0);
 
     [Hle("monoeg_g_hash_table_new_full", Library = Lib)]
     uint GHashTableNewFull(uint hash, uint equal, uint keyDestroy, uint valueDestroy)
     {
         if (hash == 0) hash = ExportStub("monoeg_g_direct_hash");
         if (equal == 0) equal = ExportStub("monoeg_g_direct_equal");
-        uint ht = Malloc0(36), size = GSpacedPrimesClosest(1);
+        uint ht = Malloc0(36), size = GSpacedPrimesClosestThroughEntry(1);
         W32(ht + HtHash, hash); W32(ht + HtEqual, equal);
         W32(ht + HtSize, size); W32(ht + HtTable, Malloc0(size * 4)); W32(ht + HtLastRehash, size);
         W32(ht + HtKeyDestroy, keyDestroy); W32(ht + HtValueDestroy, valueDestroy);
@@ -872,7 +872,7 @@ public sealed unsafe partial class MonoBridge
         int diff = Math.Abs((int)R32(ht + HtLastRehash) - (int)R32(ht + HtInUse));
         if (!(diff * 0.75 > R32(ht + HtSize) * 2.0)) return;
         uint oldSize = R32(ht + HtSize), oldTable = R32(ht + HtTable);
-        uint size = GSpacedPrimesClosest(R32(ht + HtInUse)), table = Malloc0(size * 4);
+        uint size = GSpacedPrimesClosestThroughEntry(R32(ht + HtInUse)), table = Malloc0(size * 4);
         W32(ht + HtSize, size); W32(ht + HtTable, table);
         for (uint i = 0; i < oldSize; i++)
             for (uint s = R32(oldTable + i * 4), next; s != 0; s = next)

@@ -10,10 +10,10 @@ public sealed partial class NpCommerce2
     [Hle("sceNpCommerce2_3108F734", Nid = 0x3108F734, Library = C2)]
     [Hle("sceNpCommerce2_42A33732", Nid = 0x42A33732, Library = C2)]
     [Hle("sceNpCommerce2_53235A9F", Nid = 0x53235A9F, Library = C2)]
-    int C2BareReply2(uint rec, uint buf, uint size) => C2BareReply(rec, buf, size);
+    int C2BareReply2(uint rec, uint buf, uint size) => C2BareReplyThroughEntry(rec, buf, size);
 
     [Hle("sceNpCommerce2_486D6DE3", Nid = 0x486D6DE3, Library = C2)]
-    int C2ReplyStoreInfo2(uint rec, uint buf, uint size) => C2ReplyStoreInfo(rec, buf, size);
+    int C2ReplyStoreInfo2(uint rec, uint buf, uint size) => C2ReplyStoreInfoThroughEntry(rec, buf, size);
 
     /// <summary>Reply with an optional value 0x15 (word 0x17) and an optional 64-bit value 0x03 (word 0x18); 0x68 bytes.</summary>
     [Hle("sceNpCommerce2_2ED2CB51", Nid = 0x2ED2CB51, Library = C2)]
@@ -116,10 +116,10 @@ public sealed partial class NpCommerce2
     int C2Info68(uint parent, uint info) => Need(parent, info) ?? TwoValues(parent, Rd(parent, 3), Rd(parent, 4), 0x68, info);
 
     [Hle("sceNpCommerce2_4D3698A1", Nid = 0x4D3698A1, Library = C2)]
-    int C2Info33b(uint parent, uint info) => C2Info33(parent, info);
+    int C2Info33b(uint parent, uint info) => C2Info33ThroughEntry(parent, info);
 
     [Hle("sceNpCommerce2_5E7B03D8", Nid = 0x5E7B03D8, Library = C2)]
-    int C2Item39b(uint parent, uint index, uint info) => C2Item39(parent, index, info);
+    int C2Item39b(uint parent, uint index, uint info) => C2Item39ThroughEntry(parent, index, info);
 
     [Hle("sceNpCommerce2_3E8B077C", Nid = 0x3E8B077C, Library = C2)]
     [Hle("sceNpCommerce2_42799B8B", Nid = 0x42799B8B, Library = C2)]

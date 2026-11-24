@@ -419,7 +419,7 @@ public sealed partial class GpuEs4
 
     /// <summary>ksceGpuSignalWaitLockup (0x40E292D7)(): sceGpuSignalWaitLockup (the 100 ms wait; no lockup).</summary>
     [Hle(Nid = 0x40E292D7, Library = "SceGpuEs4ForDriver", Cost = HleCost.SchedulerWait)]
-    int ksceGpuSignalWaitLockup() => sceGpuSignalWaitLockup();
+    int ksceGpuSignalWaitLockup() => sceGpuSignalWaitLockupThroughEntry();
 
     /// <summary>ksceGpuGetRegisterDump (0x14ECCFCD)(buffer, size): clears the buffer; the dump of a locked-up GPU, which
     /// the emulated one never is: 0x804C0000.</summary>

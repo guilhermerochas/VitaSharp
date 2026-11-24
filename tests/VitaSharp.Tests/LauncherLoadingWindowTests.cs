@@ -30,6 +30,7 @@ public sealed class LauncherLoadingWindowTests : IDisposable
     private readonly List<Process> _standIns = [];
     private readonly List<ProcessStartInfo> _asked = [];
     private MainWindow? _main;
+    private Action<Process>? _onStandInStarted;
 
     public LauncherLoadingWindowTests()
     {
@@ -125,6 +126,8 @@ public sealed class LauncherLoadingWindowTests : IDisposable
             };
             Process process = Process.Start(standIn)!;
             _standIns.Add(process);
+            // before the launcher's own handlers: the test's come first in the events' order
+            _onStandInStarted?.Invoke(process);
             return process;
         };
         main.Show();
@@ -212,6 +215,39 @@ public sealed class LauncherLoadingWindowTests : IDisposable
         Assert.Contains(main.LogLines, line => line.Trim() == ShaderCacheLoad.CancelCommand);
         Assert.Null(main.LoadingWindowForTests);
         Assert.False(loading.IsVisible);
+    }
+
+    /// <summary>The process's end is handled only after everything it printed: the process ends as soon as its last
+    /// line is in the pipe, before the launcher read it, and its last lines are the ones that say why it ended (the
+    /// failure reason the end reads from the last error line). The order is forced: the stand-in's last line is held in
+    /// the output reader (a handler of the test's, ahead of the launcher's) until the launcher's Exited handler ran, the
+    /// order a loaded machine gave on CI (the cancel command missing from the log when the end was handled).</summary>
+    [Fact]
+    public void TheGameEndIsHandledAfterItsLastOutputLine()
+    {
+        const string Last = "zz the last line";
+        using var launcherSawTheExit = new ManualResetEventSlim();
+        _onStandInStarted = process => process.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data == Last)
+            {
+                // the limit only ends a test that would otherwise hang (the Exited handlers always run)
+                launcherSawTheExit.Wait(TimeSpan.FromMinutes(2));
+            }
+        };
+        MainWindow main = NewLauncher(Loc.English);
+        Assert.True(main.LaunchForTests(TitleId));
+        Pump();
+        Process standIn = main.RunningProcessForTests!;
+        // after the launcher's handler (the events' order): set once it handled the exit its way
+        standIn.Exited += (_, _) => launcherSawTheExit.Set();
+        string? lastSeenAtTheEnd = null;
+        main.EmulatorExited += _ => lastSeenAtTheEnd = main.LogLines.LastOrDefault();
+        standIn.StandardInput.WriteLine("a first line");
+        standIn.StandardInput.WriteLine(Last);
+        standIn.StandardInput.Close();
+        PumpUntil(() => !main.IsRunning, "the stand-in's exit");
+        Assert.Equal(Last, lastSeenAtTheEnd);
     }
 
     [Fact]

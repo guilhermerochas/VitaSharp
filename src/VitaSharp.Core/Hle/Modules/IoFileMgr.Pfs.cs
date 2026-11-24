@@ -1,3 +1,4 @@
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.SaveState;
 
@@ -27,6 +28,54 @@ public sealed partial class IoFileMgr
     /// <summary>The approved PFS mounts.</summary>
     [SnapshotMissing]
     readonly HashSet<string> _pfsApproved = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The launches mounting app0 through kscePfsMount's entry (<see cref="MountLaunchedApp0"/>), by the kernel
+    /// thread making the call: the launch's own mount.</summary>
+    [SnapshotIgnore]
+    readonly Dictionary<GuestThread, Func<int>> _launchMounts = new();
+
+    /// <summary>
+    /// app0's mount at a launch as SceAppMgr 3.74 makes it (decompiled, study only): appmgr calls kscePfsMount of
+    /// ScePfsMgrForKernel by its address on its own thread with the application's path, a mount point it names, the
+    /// process's program authority ID and the title key. In VitaSharp the launch mounts the image itself, so the call is
+    /// made through the entry only when kernel code hooked it: <paramref name="call"/> runs on a kernel thread, the hook
+    /// first, and the original it continues to answers with the launch's own mount (<paramref name="mount"/>, the same
+    /// as without a hook). Returns what the call returned.
+    /// </summary>
+    internal int MountLaunchedApp0(Func<int> mount, Func<int> call)
+    {
+        GuestThread thread = GuestThread.Current ?? throw new InvalidOperationException("the launch's app0 is mounted on a kernel thread");
+        lock (_launchMounts)
+        {
+            _launchMounts[thread] = mount;
+        }
+
+        try
+        {
+            return call();
+        }
+        finally
+        {
+            lock (_launchMounts)
+            {
+                _launchMounts.Remove(thread);
+            }
+        }
+    }
+
+    /// <summary>The launch mount the calling thread is making through the entry, if it is making one.</summary>
+    Func<int>? LaunchMountOfCaller()
+    {
+        if (GuestThread.Current is not { } thread)
+        {
+            return null;
+        }
+
+        lock (_launchMounts)
+        {
+            return _launchMounts.TryGetValue(thread, out Func<int>? mount) ? mount : null;
+        }
+    }
 
     /// <summary>A mount point the module takes: 1 to 30 bytes; the name, or null.</summary>
     static string? PfsMountPoint(uint mountPoint)
@@ -82,6 +131,13 @@ public sealed partial class IoFileMgr
     [Hle(Nid = 0xA772209C, Library = "ScePfsMgrForKernel")]
     int kscePfsMount(uint source, uint mountPoint, uint keys, uint type, uint unused, uint size)
     {
+        if (LaunchMountOfCaller() is { } launchMount)
+        {
+            // the system's launch mounting app0 through the entry: its own mount answers (the arguments are checked
+            // as any mount's)
+            return source == 0 || PfsMountPoint(mountPoint) == null ? VFS_ERR_INVAL : launchMount();
+        }
+
         if (size == 0x28)
         {
             if (PfsMountPoint(mountPoint) is not { } point)
@@ -95,8 +151,8 @@ public sealed partial class IoFileMgr
             }
         }
 
-        int result = kscePfsMount2(source, mountPoint, keys, type);
-        return result != 0 ? result : kscePfsApprove(mountPoint, keys, type, 0);
+        int result = kscePfsMount2ThroughEntry(source, mountPoint, keys, type);
+        return result != 0 ? result : kscePfsApproveThroughEntry(mountPoint, keys, type, 0);
     }
 
     /// <summary>kscePfsUnmount(mountPoint): unknown 0x80010013; the mount point no longer served.</summary>
@@ -184,7 +240,7 @@ public sealed partial class IoFileMgr
             return fd;
         }
 
-        sceIoDclose(fd);
+        sceIoDcloseThroughEntry(fd);
         return 0;
     }
 

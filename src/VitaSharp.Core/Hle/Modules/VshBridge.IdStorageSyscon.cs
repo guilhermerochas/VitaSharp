@@ -60,7 +60,7 @@ public sealed partial class VshBridge
     }
 
     /// <summary>(SceUID fd, SceIoDirent *dirent 0x160): sceIoDread.</summary>
-    [Hle] int _vshIoDread(int fd, uint dirent) => !Vsh ? VSH_ERR_PERM : dirent == 0 ? ERR_BAD_ADDR : Io.sceIoDread(fd, dirent);
+    [Hle] int _vshIoDread(int fd, uint dirent) => !Vsh ? VSH_ERR_PERM : dirent == 0 ? ERR_BAD_ADDR : Io.sceIoDreadThroughEntry(fd, dirent);
 
     /// <summary>The I/O scheduling priority new processes get (the one the system set, 0 at boot).</summary>
     [Hle] int vshIoGetProcessDefaultPriorityForSystem() => Vsh ? _ioDefaultPriority : VSH_ERR_PERM;

@@ -59,10 +59,10 @@ public sealed unsafe partial class MonoBridge
         int uid = Sm.sceKernelAllocMemBlockForVM("SceMonoBridgeJit", size);
         if (uid < 0) return uid;
         uint cell = Malloc0(4);
-        Sm.sceKernelGetMemBlockBase(uid, new Ptr<uint>(cell));
+        Sm.sceKernelGetMemBlockBaseThroughEntry(uid, new Ptr<uint>(cell));
         _codeBase = R32(cell);
         Free(cell);
-        _codeSpace = Cl.sceClibMspaceCreate(_codeBase, size);
+        _codeSpace = Cl.sceClibMspaceCreateThroughEntry(_codeBase, size);
         _codeBlock = uid;
         return 0;
     }
@@ -71,8 +71,8 @@ public sealed unsafe partial class MonoBridge
     int PssCodeMemTerminate()
     {
         if (_codeBlock < 0) return 0;
-        Cl.sceClibMspaceDestroy(_codeSpace);
-        Sm.sceKernelFreeMemBlockForVM(_codeBlock);
+        Cl.sceClibMspaceDestroyThroughEntry(_codeSpace);
+        Sm.sceKernelFreeMemBlockForVMThroughEntry(_codeBlock);
         _codeBlock = -1; _codeBase = _codeSpace = 0;
         return 0;
     }
@@ -81,23 +81,23 @@ public sealed unsafe partial class MonoBridge
     [Hle("pss_code_mem_alloc", Library = Lib)]
     uint PssCodeMemAlloc(uint size)
     {
-        if (_codeBlock < 0 && PssCodeMemInitialize(0) < 0) return 0;
+        if (_codeBlock < 0 && PssCodeMemInitializeThroughEntry(0) < 0) return 0;
         return Cl.MspaceMemalign(_codeSpace, 16, Math.Max(size, 1));
     }
 
     [Hle("pss_code_mem_free", Library = Lib)]
-    void PssCodeMemFree(uint p) { if (p != 0 && _codeSpace != 0) Cl.sceClibMspaceFree(_codeSpace, p); }
+    void PssCodeMemFree(uint p) { if (p != 0 && _codeSpace != 0) Cl.sceClibMspaceFreeThroughEntry(_codeSpace, p); }
 
     /// <summary>pss_code_mem_lock / unlock: the VM domain opened for writing code and closed again (always 0: a nested
     /// open is not an error for the caller).</summary>
-    [Hle("pss_code_mem_lock", Library = Lib)] int PssCodeMemLock() { Sm.sceKernelOpenVMDomain(); return 0; }
-    [Hle("pss_code_mem_unlock", Library = Lib)] int PssCodeMemUnlock() { Sm.sceKernelCloseVMDomain(); return 0; }
+    [Hle("pss_code_mem_lock", Library = Lib)] int PssCodeMemLock() { Sm.sceKernelOpenVMDomainThroughEntry(); return 0; }
+    [Hle("pss_code_mem_unlock", Library = Lib)] int PssCodeMemUnlock() { Sm.sceKernelCloseVMDomainThroughEntry(); return 0; }
 
     /// <summary>pss_code_mem_flush_icache(addr, size): drops the translations of the range (sceKernelSyncVMDomain).</summary>
     [Hle("pss_code_mem_flush_icache", Library = Lib)]
     int PssCodeMemFlushIcache(uint addr, uint size)
     {
-        if (_codeBlock >= 0 && addr >= _codeBase) return Sm.sceKernelSyncVMDomain(_codeBlock, addr, size) < 0 ? -1 : 0;
+        if (_codeBlock >= 0 && addr >= _codeBase) return Sm.sceKernelSyncVMDomainThroughEntry(_codeBlock, addr, size) < 0 ? -1 : 0;
         Emu.Code.Invalidate(addr, size);
         return 0;
     }
@@ -114,7 +114,7 @@ public sealed unsafe partial class MonoBridge
     [Hle("pss_resume_thread", Library = Lib)] void PssResumeThread(HleContext c) => Fwd(c, "sceKernelResumeThreadForMono", "SceKernelForMono");
 
     /// <summary>pss_delay_thread(microseconds).</summary>
-    [Hle("pss_delay_thread", Library = Lib)] int PssDelayThread(uint us) { Tm.sceKernelDelayThread(us); return 0; }
+    [Hle("pss_delay_thread", Library = Lib)] int PssDelayThread(uint us) { Tm.sceKernelDelayThreadThroughEntry(us); return 0; }
 
     /// <summary>pss_nanosleep(const timespec *req, timespec *rem): 0 (rem = 0), -1 with EINVAL for a bad request.</summary>
     [Hle("pss_nanosleep", Library = Lib)]
@@ -122,7 +122,7 @@ public sealed unsafe partial class MonoBridge
     {
         if (req == 0 || R32(req + 4) >= 1_000_000_000) { Libc.SetErrno(Libc.EINVAL); return -1; }
         ulong us = (ulong)R32(req) * 1_000_000 + (R32(req + 4) + 999) / 1000;
-        Tm.sceKernelDelayThread((uint)Math.Min(us, uint.MaxValue));
+        Tm.sceKernelDelayThreadThroughEntry((uint)Math.Min(us, uint.MaxValue));
         if (rem != 0) { W32(rem, 0); W32(rem + 4, 0); }
         return 0;
     }
@@ -131,7 +131,7 @@ public sealed unsafe partial class MonoBridge
     [Hle("pss_create_semaphore", Library = Lib)]
     int PssCreateSemaphore(int initial, int max) => Tm.sceKernelCreateSema("SceMonoBridgeSema", 0, Math.Max(initial, 0), max <= 0 ? 0x7FFFFFFF : max, 0);
 
-    [Hle("pss_delete_semaphore", Library = Lib)] int PssDeleteSemaphore(int uid) => Tm.sceKernelDeleteSema(uid) < 0 ? -1 : 0;
+    [Hle("pss_delete_semaphore", Library = Lib)] int PssDeleteSemaphore(int uid) => Tm.sceKernelDeleteSemaThroughEntry(uid) < 0 ? -1 : 0;
 
     /// <summary>pss_wait_semaphore(uid, timeout ms; -1 = forever): 0, 1 on timeout, -1 on an error.</summary>
     [Hle("pss_wait_semaphore", Library = Lib)]
@@ -139,14 +139,14 @@ public sealed unsafe partial class MonoBridge
     {
         uint cell = 0;
         if (timeoutMs >= 0) { cell = Malloc0(4); W32(cell, (uint)Math.Min((long)timeoutMs * 1000, uint.MaxValue)); }
-        int r = Tm.sceKernelWaitSema(uid, 1, new Ptr<uint>(cell));
+        int r = Tm.sceKernelWaitSemaThroughEntry(uid, 1, new Ptr<uint>(cell));
         Free(cell);
         return r == 0 ? 0 : r == unchecked((int)0x80028005) ? 1 : -1;
     }
 
     /// <summary>pss_signal_semaphore(uid, count): 0 or -1.</summary>
     [Hle("pss_signal_semaphore", Library = Lib)]
-    int PssSignalSemaphore(int uid, int count) => Tm.sceKernelSignalSema(uid, Math.Max(count, 1)) < 0 ? -1 : 0;
+    int PssSignalSemaphore(int uid, int count) => Tm.sceKernelSignalSemaThroughEntry(uid, Math.Max(count, 1)) < 0 ? -1 : 0;
 
     // ------------------------------------------------------------------ process, time, errno
 
@@ -243,12 +243,12 @@ public sealed unsafe partial class MonoBridge
     // ------------------------------------------------------------------ files
 
     [Hle("pss_io_open", Library = Lib)] int PssIoOpen(uint path, int flags, int mode) => Io.sceIoOpen(PsmPath(Utf8(path)), flags, mode);
-    [Hle("pss_io_close", Library = Lib)] int PssIoClose(int fd) => Io.sceIoClose(fd);
-    [Hle("pss_io_read", Library = Lib)] int PssIoRead(int fd, uint buf, uint size) => Io.sceIoRead(fd, buf, size);
-    [Hle("pss_io_write", Library = Lib)] int PssIoWrite(int fd, uint buf, uint size) => Io.sceIoWrite(fd, buf, size);
-    [Hle("pss_io_lseek", Library = Lib)] long PssIoLseek(int fd, long offset, int whence) => Io.sceIoLseek(fd, offset, whence);
+    [Hle("pss_io_close", Library = Lib)] int PssIoClose(int fd) => Io.sceIoCloseThroughEntry(fd);
+    [Hle("pss_io_read", Library = Lib)] int PssIoRead(int fd, uint buf, uint size) => Io.sceIoReadThroughEntry(fd, buf, size);
+    [Hle("pss_io_write", Library = Lib)] int PssIoWrite(int fd, uint buf, uint size) => Io.sceIoWriteThroughEntry(fd, buf, size);
+    [Hle("pss_io_lseek", Library = Lib)] long PssIoLseek(int fd, long offset, int whence) => Io.sceIoLseekThroughEntry(fd, offset, whence);
     [Hle("pss_io_dopen", Library = Lib)] int PssIoDopen(uint path) => Io.sceIoDopen(PsmPath(Utf8(path)));
-    [Hle("pss_io_dclose", Library = Lib)] int PssIoDclose(int fd) => Io.sceIoDclose(fd);
+    [Hle("pss_io_dclose", Library = Lib)] int PssIoDclose(int fd) => Io.sceIoDcloseThroughEntry(fd);
     [Hle("pss_io_mkdir", Library = Lib)] int PssIoMkdir(uint path, int mode) => Io.sceIoMkdir(PsmPath(Utf8(path)), mode);
     [Hle("pss_io_rmdir", Library = Lib)] int PssIoRmdir(uint path) => Io.sceIoRmdir(PsmPath(Utf8(path)));
     [Hle("pss_io_remove", Library = Lib)] int PssIoRemove(uint path) => Io.sceIoRemove(PsmPath(Utf8(path)));
@@ -287,7 +287,7 @@ public sealed unsafe partial class MonoBridge
         byte[]? plain = OpenPsse(file, titleId);
         if (plain == null)
         {
-            Io.sceIoClose(fd);
+            Io.sceIoCloseThroughEntry(fd);
             Log.WarnOnce("pss-crypto-license", $"pss_crypto_open: {guest} is protected and scePsmDrmGetRifKey gives no key for it from the licenses of {(titleId ?? "the PSM title")}");
             return NPDRM_ERR_NO_LICENSE;
         }
@@ -323,7 +323,7 @@ public sealed unsafe partial class MonoBridge
             _psseFiles.Remove(fd);
         }
 
-        return Io.sceIoClose(fd);
+        return Io.sceIoCloseThroughEntry(fd);
     }
 
     /// <summary>pss_crypto_read(fd, buf, size): bytes read or an error.</summary>
@@ -341,7 +341,7 @@ public sealed unsafe partial class MonoBridge
             }
         }
 
-        return Io.sceIoRead(fd, buf, size);
+        return Io.sceIoReadThroughEntry(fd, buf, size);
     }
 
     /// <summary>pss_crypto_fread(buf, size, count, fd): fread's shape, the number of whole items read.</summary>
@@ -354,7 +354,7 @@ public sealed unsafe partial class MonoBridge
         uint got = 0;
         while (got < total)
         {
-            int r = PssCryptoRead(fd, buf + got, (uint)total - got);
+            int r = PssCryptoReadThroughEntry(fd, buf + got, (uint)total - got);
             if (r <= 0) break;
             got += (uint)r;
         }

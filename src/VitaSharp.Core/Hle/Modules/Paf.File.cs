@@ -48,7 +48,7 @@ public sealed partial class Paf
     // ---- LocalFile
     [Hle("_ZN3paf9LocalFileC1Ev")]
     [Hle("_ZN3paf9LocalFileC2Ev")]
-    uint LfCtor(uint me) => LfCtorA(me, 0);
+    uint LfCtor(uint me) => LfCtorAThroughEntry(me, 0);
 
     [Hle("_ZN3paf9LocalFileC1EPNS_6memory13HeapAllocatorE")]
     [Hle("_ZN3paf9LocalFileC2EPNS_6memory13HeapAllocatorE")]
@@ -63,14 +63,14 @@ public sealed partial class Paf
     }
 
     [Hle("_ZN3paf9LocalFile10CreateImplEv")] void LfCreateImpl(uint me) { _files.TryAdd(me, new FileState()); U(me + 0x28, me); }
-    [Hle("_ZN3paf9LocalFile10DeleteImplEv")] void LfDeleteImpl(uint me) { if (_files.TryRemove(me, out var s) && s.Opened) Io.sceIoClose(s.Fd); U(me + 0x28, 0); }
+    [Hle("_ZN3paf9LocalFile10DeleteImplEv")] void LfDeleteImpl(uint me) { if (_files.TryRemove(me, out var s) && s.Opened) Io.sceIoCloseThroughEntry(s.Fd); U(me + 0x28, 0); }
 
     [Hle("_ZN3paf9LocalFileD1Ev")]
     [Hle("_ZN3paf9LocalFileD2Ev")]
-    uint LfDtor(uint me) { LfDeleteImpl(me); return me; }
+    uint LfDtor(uint me) { LfDeleteImplThroughEntry(me); return me; }
 
     [Hle("_ZN3paf9LocalFileD0Ev")]
-    void LfDelete(uint me) { LfDtor(me); Free(me); }
+    void LfDelete(uint me) { LfDtorThroughEntry(me); Free(me); }
 
     FileState? Lf(uint me) => _files.TryGetValue(me, out var s) ? s : null;
 
@@ -94,7 +94,7 @@ public sealed partial class Paf
         if (Lf(me) is not { } s) return FileNoImpl;
         if (s.Opened) return FileAlreadyOpen;
         if (s.AsyncOp != 0) return FileBusy;
-        int r = LfOpen(me, arg);
+        int r = LfOpenThroughEntry(me, arg);
         s.AsyncOp = 1; s.AsyncResult = r;
         return 0;
     }
@@ -105,13 +105,13 @@ public sealed partial class Paf
         if (Lf(me) is not { } s) return FileNoImpl;
         if (!s.Opened) return FileNotOpen;
         if (s.AsyncOp != 0) return FileBusy;
-        int r = Io.sceIoClose(s.Fd);
+        int r = Io.sceIoCloseThroughEntry(s.Fd);
         if (r < 0) return r;
         s.Fd = -1; s.Opened = false;
         return 0;
     }
 
-    [Hle("_ZN3paf9LocalFile10CloseAsyncEv")] int LfCloseAsync(uint me) => Async(me, 2, () => LfClose(me));
+    [Hle("_ZN3paf9LocalFile10CloseAsyncEv")] int LfCloseAsync(uint me) => Async(me, 2, () => LfCloseThroughEntry(me));
 
     int Async(uint me, int kind, Func<long> op)
     {
@@ -128,8 +128,8 @@ public sealed partial class Paf
     bool LfIsEof(uint me)
     {
         if (Lf(me) is not { Opened: true } s) return false;
-        long cur = Io.sceIoLseek(s.Fd, 0, 1), end = Io.sceIoLseek(s.Fd, 0, 2);
-        Io.sceIoLseek(s.Fd, cur, 0);
+        long cur = Io.sceIoLseekThroughEntry(s.Fd, 0, 1), end = Io.sceIoLseekThroughEntry(s.Fd, 0, 2);
+        Io.sceIoLseekThroughEntry(s.Fd, cur, 0);
         return cur == end;
     }
 
@@ -145,7 +145,7 @@ public sealed partial class Paf
         int total = 0;
         while (n > 0)
         {
-            int r = Io.sceIoRead(s.Fd, buf + (uint)total, n);
+            int r = Io.sceIoReadThroughEntry(s.Fd, buf + (uint)total, n);
             if (r < 0) return r;
             if (r == 0) break;
             total += r; n -= (uint)r;
@@ -161,7 +161,7 @@ public sealed partial class Paf
         int total = 0;
         while (n > 0)
         {
-            int r = Io.sceIoWrite(s.Fd, buf + (uint)total, n);
+            int r = Io.sceIoWriteThroughEntry(s.Fd, buf + (uint)total, n);
             if (r < 0) return r;
             if (r == 0) break;
             total += r; n -= (uint)r;
@@ -169,23 +169,23 @@ public sealed partial class Paf
         return total;
     }
 
-    [Hle("_ZN3paf9LocalFile9ReadAsyncEPvj")] int LfReadAsync(uint me, uint buf, uint n) => Async(me, 3, () => Io.sceIoRead(Lf(me)!.Fd, buf, n));
-    [Hle("_ZN3paf9LocalFile10WriteAsyncEPKvj")] int LfWriteAsync(uint me, uint buf, uint n) => Async(me, 4, () => Io.sceIoWrite(Lf(me)!.Fd, buf, n));
+    [Hle("_ZN3paf9LocalFile9ReadAsyncEPvj")] int LfReadAsync(uint me, uint buf, uint n) => Async(me, 3, () => Io.sceIoReadThroughEntry(Lf(me)!.Fd, buf, n));
+    [Hle("_ZN3paf9LocalFile10WriteAsyncEPKvj")] int LfWriteAsync(uint me, uint buf, uint n) => Async(me, 4, () => Io.sceIoWriteThroughEntry(Lf(me)!.Fd, buf, n));
 
     [Hle("_ZN3paf9LocalFile4SeekExi")]
     long LfSeek(uint me, long off, int whence)
     {
         if (Lf(me) is not { } s) return FileNoImpl;
         if (s.AsyncOp != 0) return FileBusy;
-        return Io.sceIoLseek(s.Fd, off, whence);
+        return Io.sceIoLseekThroughEntry(s.Fd, off, whence);
     }
 
-    [Hle("_ZN3paf9LocalFile9SeekAsyncExi")] int LfSeekAsync(uint me, long off, int whence) => Async(me, 5, () => Io.sceIoLseek(Lf(me)!.Fd, off, whence));
+    [Hle("_ZN3paf9LocalFile9SeekAsyncExi")] int LfSeekAsync(uint me, long off, int whence) => Async(me, 5, () => Io.sceIoLseekThroughEntry(Lf(me)!.Fd, off, whence));
 
     [Hle("_ZN3paf9LocalFile5FlushEv")]
-    int LfFlush(uint me) => Lf(me) is not { } s ? FileNoImpl : s.AsyncOp != 0 ? FileBusy : Math.Min(0, Io.sceIoSyncByFd(s.Fd, 0));
+    int LfFlush(uint me) => Lf(me) is not { } s ? FileNoImpl : s.AsyncOp != 0 ? FileBusy : Math.Min(0, Io.sceIoSyncByFdThroughEntry(s.Fd, 0));
 
-    [Hle("_ZN3paf9LocalFile10FlushAsyncEv")] int LfFlushAsync(uint me) => Async(me, 6, () => Io.sceIoSyncByFd(Lf(me)!.Fd, 0));
+    [Hle("_ZN3paf9LocalFile10FlushAsyncEv")] int LfFlushAsync(uint me) => Async(me, 6, () => Io.sceIoSyncByFdThroughEntry(Lf(me)!.Fd, 0));
 
     /// <summary>(int64 *result): the finished request's result; an open sets the file open, a close closed.</summary>
     [Hle("_ZN3paf9LocalFile9WaitAsyncEPx")]
@@ -206,7 +206,7 @@ public sealed partial class Paf
     {
         if (Lf(me) is not { } s) return FileNoImpl;
         uint st = Scratch(0x60);
-        int r = Io.sceIoGetstatByFd(s.Fd, st);
+        int r = Io.sceIoGetstatByFdThroughEntry(s.Fd, st);
         return r < 0 ? r : (long)Q(st + 8);
     }
 
@@ -231,7 +231,7 @@ public sealed partial class Paf
         if (stat == 0) return FileBadArg;
         if (Lf(me) is not { } s) return FileNoImpl;
         uint st = Scratch(0x60);
-        int r = Io.sceIoGetstatByFd(s.Fd, st);
+        int r = Io.sceIoGetstatByFdThroughEntry(s.Fd, st);
         if (r == 0) FileStatFromIo(stat, st);
         return r;
     }
@@ -285,11 +285,11 @@ public sealed partial class Paf
         int r = FileNoImpl;
         if (obj != 0)
         {
-            LfCtor(obj);
+            LfCtorThroughEntry(obj);
             uint arg = Scratch(0) + 0xD0;
             U(arg, TypeLocal); U(arg + 4, path); U(arg + 8, flag); U(arg + 0xC, mode);
-            r = LfOpen(obj, arg);
-            if (r < 0) { LfDtor(obj); Free(obj); obj = 0; }
+            r = LfOpenThroughEntry(obj, arg);
+            if (r < 0) { LfDtorThroughEntry(obj); Free(obj); obj = 0; }
         }
         if (err != 0) U(err, (uint)Math.Min(r, 0));
         SharedPtrNew(ret, obj, 23);
@@ -300,7 +300,7 @@ public sealed partial class Paf
     void LfOpenUrl(uint ret, uint path, uint flag, uint mode, uint err, uint ignored)
     {
         if (ignored == 0 || B(ignored) != 0) { U(ret, 0); U(ret + 4, 0); return; }
-        LfOpenStatic(ret, path, flag, mode, err);
+        LfOpenStaticThroughEntry(ret, path, flag, mode, err);
     }
 
     // ---- MemFile: reads (and writes, when writable) a block of memory
@@ -318,7 +318,7 @@ public sealed partial class Paf
     [Hle("_ZN3paf7MemFileD2Ev")]
     uint MfDtor(uint me) { if (Lf(me) is { } s) { SharedPtrRelease(s.BufferSp); _files.TryRemove(me, out _); } return me; }
 
-    [Hle("_ZN3paf7MemFileD0Ev")] void MfDelete(uint me) { MfDtor(me); Free(me); }
+    [Hle("_ZN3paf7MemFileD0Ev")] void MfDelete(uint me) { MfDtorThroughEntry(me); Free(me); }
 
     /// <summary>(OpenArg*): { type 2, SharedPtr&lt;Buffer const&gt; }: the buffer's address (+4) and size (+8).</summary>
     [Hle("_ZN3paf7MemFile4OpenEPKNS_4File7OpenArgE")]
@@ -335,7 +335,7 @@ public sealed partial class Paf
         return 0;
     }
 
-    [Hle("_ZN3paf7MemFile9OpenAsyncEPKNS_4File7OpenArgE")] int MfOpenAsync(uint me, uint arg) => MfAsync(me, 1, () => MfOpen(me, arg));
+    [Hle("_ZN3paf7MemFile9OpenAsyncEPKNS_4File7OpenArgE")] int MfOpenAsync(uint me, uint arg) => MfAsync(me, 1, () => MfOpenThroughEntry(me, arg));
 
     int MfAsync(uint me, int kind, Func<long> op)
     {
@@ -351,7 +351,7 @@ public sealed partial class Paf
     {
         uint obj = Alloc(0x48);
         if (obj == 0) { if (err != 0) U(err, unchecked((uint)FileNoImpl)); U(ret, 0); U(ret + 4, 0); return; }
-        MfCtor(obj);
+        MfCtorThroughEntry(obj);
         var s = Lf(obj)!;
         s.Addr = addr; s.Size = size; s.Opened = true;
         if (err != 0) U(err, 0);
@@ -364,11 +364,11 @@ public sealed partial class Paf
     {
         uint obj = Alloc(0x48);
         if (obj == 0) { if (err != 0) U(err, unchecked((uint)FileNoImpl)); U(ret, 0); U(ret + 4, 0); return; }
-        MfCtor(obj);
+        MfCtorThroughEntry(obj);
         uint arg = Scratch(0) + 0xD0;
         U(arg, TypeMem); U(arg + 4, U(bufSp)); U(arg + 8, U(bufSp + 4));
-        int r = MfOpen(obj, arg);
-        if (r < 0) { MfDelete(obj); obj = 0; }
+        int r = MfOpenThroughEntry(obj, arg);
+        if (r < 0) { MfDeleteThroughEntry(obj); obj = 0; }
         if (err != 0) U(err, (uint)Math.Min(r, 0));
         SharedPtrNew(ret, obj, 23);
     }
@@ -383,7 +383,7 @@ public sealed partial class Paf
         return 0;
     }
 
-    [Hle("_ZN3paf7MemFile10CloseAsyncEv")] int MfCloseAsync(uint me) => MfAsync(me, 2, () => MfClose(me));
+    [Hle("_ZN3paf7MemFile10CloseAsyncEv")] int MfCloseAsync(uint me) => MfAsync(me, 2, () => MfCloseThroughEntry(me));
     [Hle("_ZNK3paf7MemFile8IsOpenedEv")] bool MfIsOpened(uint me) => Lf(me) is { Opened: true };
     [Hle("_ZN3paf7MemFile5IsEofEv")] bool MfIsEof(uint me) => Lf(me) is { Opened: true } s && s.Pos >= s.Size;
     [Hle("_ZN3paf7MemFile5AbortEv")] int MfAbort(uint me) => Lf(me) is not { } s ? FileNoImpl : s.AsyncOp == 0 ? FileNoAsync : 0;
@@ -413,8 +413,8 @@ public sealed partial class Paf
         return (int)k;
     }
 
-    [Hle("_ZN3paf7MemFile9ReadAsyncEPvj")] int MfReadAsync(uint me, uint buf, uint n) => MfAsync(me, 3, () => MfRead(me, buf, n));
-    [Hle("_ZN3paf7MemFile10WriteAsyncEPKvj")] int MfWriteAsync(uint me, uint buf, uint n) => MfAsync(me, 4, () => MfWrite(me, buf, n));
+    [Hle("_ZN3paf7MemFile9ReadAsyncEPvj")] int MfReadAsync(uint me, uint buf, uint n) => MfAsync(me, 3, () => MfReadThroughEntry(me, buf, n));
+    [Hle("_ZN3paf7MemFile10WriteAsyncEPKvj")] int MfWriteAsync(uint me, uint buf, uint n) => MfAsync(me, 4, () => MfWriteThroughEntry(me, buf, n));
 
     /// <summary>Seeks inside the block (0 set, 1 current, 2 end); a position outside it is refused (0x80AF5002).</summary>
     [Hle("_ZN3paf7MemFile4SeekExi")]
@@ -426,12 +426,12 @@ public sealed partial class Paf
         return s.Pos = p;
     }
 
-    [Hle("_ZN3paf7MemFile9SeekAsyncExi")] int MfSeekAsync(uint me, long off, int whence) => MfAsync(me, 5, () => MfSeek(me, off, whence));
+    [Hle("_ZN3paf7MemFile9SeekAsyncExi")] int MfSeekAsync(uint me, long off, int whence) => MfAsync(me, 5, () => MfSeekThroughEntry(me, off, whence));
     [Hle("_ZN3paf7MemFile5FlushEv")] int MfFlush(uint me) => Lf(me) is null ? FileNoImpl : 0;
     [Hle("_ZN3paf7MemFile10FlushAsyncEv")] int MfFlushAsync(uint me) => MfAsync(me, 6, () => 0);
     [Hle("_ZN3paf7MemFile9WaitAsyncEPx")]
     [Hle("_ZN3paf7MemFile9PollAsyncEPx")]
-    int MfWaitAsync(uint me, uint result) => LfWaitAsync(me, result);
+    int MfWaitAsync(uint me, uint result) => LfWaitAsyncThroughEntry(me, result);
 
     /// <summary>A memory file's status: a regular file of the block's size, no dates.</summary>
     int MemGetstat(uint me, uint stat)
@@ -461,7 +461,7 @@ public sealed partial class Paf
     [Hle("_ZN3paf3Dir5CloseEv")]
     int DirClose(uint me)
     {
-        if ((int)U(me) != -1) Io.sceIoDclose((int)U(me));
+        if ((int)U(me) != -1) Io.sceIoDcloseThroughEntry((int)U(me));
         U(me, 0xFFFFFFFF);
         return 0;
     }
@@ -476,7 +476,7 @@ public sealed partial class Paf
         try
         {
             GuestMemory.Fill(d, 0, 0x168);
-            int r = Io.sceIoDread((int)U(me), d);
+            int r = Io.sceIoDreadThroughEntry((int)U(me), d);
             if (r < 0) return r;
             if (r == 0) return DirEnd;
             uint mode = U(d);
@@ -504,7 +504,7 @@ public sealed partial class Paf
         return Io.sceIoMkdir(p, (int)mode);
     }
 
-    [Hle("_ZN3paf3Dir15CreateRecursiveEPKc")] int DirCreateRecursive(uint path) => DirCreateRecursiveMode(path, 6);
+    [Hle("_ZN3paf3Dir15CreateRecursiveEPKc")] int DirCreateRecursive(uint path) => DirCreateRecursiveModeThroughEntry(path, 6);
     [Hle("_ZN3paf3Dir11IsDirectoryEPKc")] bool DirIsDir(uint path) => StatMode(path, 0x1000);
     [Hle("_ZN3paf3Dir7IsExistEPKc", Nid = 0x95F14046)] bool DirIsExist(uint path) { uint st = Scratch(0x60); return Io.sceIoGetstat(CRead(path), st) == 0; }
 
@@ -537,12 +537,12 @@ public sealed partial class Paf
             while (true)
             {
                 GuestMemory.Fill(d, 0, 0x168);
-                if (Io.sceIoDread(fd, d) <= 0) break;
+                if (Io.sceIoDreadThroughEntry(fd, d) <= 0) break;
                 string n = GuestMemory.ReadCString(d + 0x58, 256);
                 if (n is not "." and not "..") names.Add(n);
             }
         }
-        finally { Io.sceIoDclose(fd); Free(d); }
+        finally { Io.sceIoDcloseThroughEntry(fd); Free(d); }
         foreach (var n in names) { int r = RemoveTree(p.TrimEnd('/') + "/" + n); if (r < 0) return r; }
         return Io.sceIoRmdir(p);
     }

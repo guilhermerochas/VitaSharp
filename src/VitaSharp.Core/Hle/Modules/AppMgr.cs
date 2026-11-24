@@ -172,7 +172,7 @@ public sealed partial class AppMgr : HleModule
     /// A shell that crashes ends the VitaSharp session, so a running caller never sees one: 0.</summary>
     [Hle] int sceAppMgrIsPidShellAndCrashed(int pid) => 0;
 
-    [Hle] int _sceAppMgrTrophyMountById(int id, uint titleId, uint mountPoint, uint opt) => sceAppMgrTrophyMountById(id, titleId, mountPoint);
+    [Hle] int _sceAppMgrTrophyMountById(int id, uint titleId, uint mountPoint, uint opt) => sceAppMgrTrophyMountByIdThroughEntry(id, titleId, mountPoint);
 
     [Hle]
     internal int sceAppMgrUmount(uint mountPoint)
@@ -282,7 +282,7 @@ public sealed partial class AppMgr : HleModule
     /// <summary>Syscall form: the 16-byte mount point goes to <c>SceAppMgrGameDataMountOpt.mount_point</c> (+0).</summary>
     [Hle]
     int _sceAppMgrGameDataMount(uint appPath, uint patchPath, uint rifPath, uint opt)
-        => opt == 0 ? ERR_NULL_POINTER : sceAppMgrGameDataMount(appPath, patchPath, rifPath, GuestMemory.R32(opt));
+        => opt == 0 ? ERR_NULL_POINTER : sceAppMgrGameDataMountThroughEntry(appPath, patchPath, rifPath, GuestMemory.R32(opt));
 
     // SceAppMgrGenericMountContext (0x40): +0x00 title_id[16], +0x10 pass_code[32], +0x30 mount_drive[16]. The
     // passcode is not checked (no PFS keystone here).
@@ -578,8 +578,8 @@ public sealed partial class AppMgr : HleModule
 
     // ------------------------------------------------------------------ system parameters, paths, processes
 
-    [Hle] int sceAppMgrSystemParamGetInt(uint id, Ptr<int> value) => AppUtil.sceAppUtilSystemParamGetInt(id, value);
-    [Hle] int sceAppMgrSystemParamGetString(uint id, uint buf, uint size) => AppUtil.sceAppUtilSystemParamGetString(id, buf, size);
+    [Hle] int sceAppMgrSystemParamGetInt(uint id, Ptr<int> value) => AppUtil.sceAppUtilSystemParamGetIntThroughEntry(id, value);
+    [Hle] int sceAppMgrSystemParamGetString(uint id, uint buf, uint size) => AppUtil.sceAppUtilSystemParamGetStringThroughEntry(id, buf, size);
 
     /// <summary>
     /// <c>int (SceAppMgrDateTimeConf *conf)</c>, 0x14 bytes kept by the kernel for the shell (FW 3.60): +0 date format,
@@ -740,28 +740,28 @@ public sealed partial class AppMgr : HleModule
     int sceAppMgrSaveDataSlotCreate(uint data)
     {
         if (data == 0) return ERR_NULL_POINTER;
-        return AppUtil.sceAppUtilSaveDataSlotCreate(GuestMemory.R32(data + 4), data + 8, 0);
+        return AppUtil.sceAppUtilSaveDataSlotCreateThroughEntry(GuestMemory.R32(data + 4), data + 8, 0);
     }
 
     [Hle]
     int sceAppMgrSaveDataSlotDelete(uint data)
     {
         if (data == 0) return ERR_NULL_POINTER;
-        return AppUtil.sceAppUtilSaveDataSlotDelete(GuestMemory.R32(data + 4), 0);
+        return AppUtil.sceAppUtilSaveDataSlotDeleteThroughEntry(GuestMemory.R32(data + 4), 0);
     }
 
     [Hle]
     int sceAppMgrSaveDataSlotGetParam(uint data)
     {
         if (data == 0) return ERR_NULL_POINTER;
-        return AppUtil.sceAppUtilSaveDataSlotGetParam(GuestMemory.R32(data + 4), data + 8, 0);
+        return AppUtil.sceAppUtilSaveDataSlotGetParamThroughEntry(GuestMemory.R32(data + 4), data + 8, 0);
     }
 
     [Hle]
     int sceAppMgrSaveDataSlotSetParam(uint data)
     {
         if (data == 0) return ERR_NULL_POINTER;
-        return AppUtil.sceAppUtilSaveDataSlotSetParam(GuestMemory.R32(data + 4), data + 8, 0);
+        return AppUtil.sceAppUtilSaveDataSlotSetParamThroughEntry(GuestMemory.R32(data + 4), data + 8, 0);
     }
 
     // FW 3.60 SceDriverUser wrappers below hand their struct to the syscall with an 8-byte opt holding the struct's own
@@ -786,7 +786,7 @@ public sealed partial class AppMgr : HleModule
     int sceAppMgrSaveDataDataSave2(uint data)
     {
         int r = CheckSize(data, 0x4C);
-        return r < 0 ? r : sceAppMgrSaveDataDataSave(data);
+        return r < 0 ? r : sceAppMgrSaveDataDataSaveThroughEntry(data);
     }
 
     /// <summary>Same arguments as DataRemove (SceAppMgrSaveDataDataDelete, 0x44); see DataSave2.</summary>
@@ -794,7 +794,7 @@ public sealed partial class AppMgr : HleModule
     int sceAppMgrSaveDataDataRemove2(uint data)
     {
         int r = CheckSize(data, 0x44);
-        return r < 0 ? r : sceAppMgrSaveDataDataRemove(data);
+        return r < 0 ? r : sceAppMgrSaveDataDataRemoveThroughEntry(data);
     }
 
     /// <summary>SceAppMgrSaveDataQuota (0x1C, from libSceAppUtil's GetQuota): +0 size, +4 quota KiB (out), +8 used KiB
@@ -804,7 +804,7 @@ public sealed partial class AppMgr : HleModule
     {
         int r = CheckSize(data, 0x1C);
         if (r < 0) return r;
-        return AppUtil.sceAppUtilSaveDataGetQuota(new Ptr<uint>(data + 4), new Ptr<uint>(data + 8), data + 0xC);
+        return AppUtil.sceAppUtilSaveDataGetQuotaThroughEntry(new Ptr<uint>(data + 4), new Ptr<uint>(data + 8), data + 0xC);
     }
 
     /// <summary>SceAppMgrSaveDataSlotStatus (0x1C): +0 size, +4 slotId, +8 status (the first word of the slot's

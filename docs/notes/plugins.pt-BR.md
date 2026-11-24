@@ -59,7 +59,11 @@ os outros.
   de novo, como faz o gerenciador de módulos do firmware. O log diz o que aconteceu com cada um
   (`kernel plugin ...: loaded and started`, `... module_start of X returned 0x2, unloaded`).
 - Os módulos de `*KERNEL` carregam uma vez, no processo do kernel: o kernel único do sistema, criado no boot (com o
-  shell, ou com o primeiro jogo quando não há shell), como o carregador de plugins os carrega no boot do Vita. Todo
+  shell, ou com o primeiro jogo quando não há shell), como o carregador de plugins os carrega no boot do Vita. Eles
+  carregam no boot do sistema, antes de começar o lançamento do primeiro programa e qualquer que seja o título, então
+  um lançamento que depois falha (um app0 que não monta, um título PSM sem o runtime) já os tem carregados; o log diz
+  `kernel plugins: N of M loaded and started at system boot, before any application is launched` e as linhas de plugin
+  das gravações terminam com `system boot` (um módulo de usuário com `with process TITLEID`). Todo
   processo os vê: o shell, um app que o shell abre ao lado dele, o programa que um LoadExec inicia. Ficam até o sistema
   terminar; um módulo de kernel que um programa carrega (o gerenciador de módulos do kernel) também é do kernel e
   continua depois do programa.
@@ -208,7 +212,7 @@ originais de volta (o código saiu com o processo); os patches de kernel ficam a
 | Código traduzido: cada patch descarta os blocos que cobre; um bloco decodificado durante um patch é conferido de novo | Feito |
 | Chamadas de módulo para programas de usuário (carregar, iniciar, parar, descarregar módulo de kernel ou de processo; cópias usuário/kernel) | Feito |
 | Corrigir o código do próprio firmware por deslocamento | Impossível (não há código do firmware: o HLE o serve) |
-| Os chamadores internos de uma função do firmware (o HLE chamando a própria função) passam pelo hook na entrada | Em andamento: o roteamento (sem custo sem hook) existe; o ksceVopLookup (os caminhos do iofilemgr) já o usa, as chamadas internas das outras funções ainda não |
+| Os chamadores internos de uma função do firmware (o HLE chamando a própria função) passam pelo hook na entrada | Sim: toda chamada interna a uma função exportada passa pelo wrapper gerado `XxxThroughEntry` (ver abaixo) |
 
 ### Matriz de validação
 
@@ -232,11 +236,30 @@ cache de código: traduzido antes de rodar, depois com hook).
 | Hooks de kernel vistos por um aplicativo aberto depois deles, nas threads dele | ok | ok | ok | ok |
 | Save state com os hooks: carrega com eles ativos; um de antes carrega sem eles | ok | ok | ok | ok |
 | Fuzz da cadeia (kernel e usuário, 3 sementes cada) | ok | ok | ok | ok |
-| Chamador interno do firmware (a chamada do próprio HLE à função com hook) | corrigido no ksceVopLookup (teste `IoVfsMountTests.AHookOnTheVopLookupEntrySeesTheModulesOwnPathWalks`) | idem | idem | idem |
+| Chamador interno do firmware (a chamada do próprio HLE à função com hook) | ok (`HleEntryCallTests`, `HleEntryCallLibraryTests`, `IoVfsMountTests.AHookOnTheVopLookupEntrySeesTheModulesOwnPathWalks`) | idem | idem | idem |
 
 O sandbox ARM64 (Unicorn) roda blocos traduzidos soltos, não o despachante, então não é um caminho da matriz; a matriz
 roda em ARM64 nativo quando o host é ARM64. Carregar estado com `VITASHARP_LOAD_KEEP_CODE=1` (traduções mantidas e
 conferidas pelos bytes) é lido uma vez por processo e não é uma célula (o load padrão descarta todas as traduções).
+
+### As chamadas do próprio firmware a uma função com hook
+
+No Vita um hook de exportação corrige o código da função, então todo chamador passa por ele, inclusive as chamadas do
+próprio módulo do firmware. As funções do firmware servidas pelo HLE são métodos C#; quando uma chama outra função
+exportada, chama o wrapper gerado `XxxThroughEntry` (gerador de código `HleEntryCallGenerator`, feito para todo método
+`[Hle]` que algum código chama assim). Sem hook o wrapper lê três campos estáticos (quantos processos do host têm hook de
+usuário e se os módulos de kernel do firmware de algum sistema emulado têm entrada corrigida, recontado só quando o código
+do guest muda) e chama o método C#, sem alocar nada (`HleEntryCallBenchmarks`, `HleEntryCallTests`). Com hook, acha-o onde o framework o pôs: a entrada
+corrigida da função nos módulos de kernel do firmware (hook de um plugin de kernel, ou qualquer código escrito sobre a
+entrada) ou o thunk do hook de um plugin de usuário na função, no processo do módulo (achado por biblioteca e NID: um NID que duas
+bibliotecas exportam são duas funções, e o hook de uma não é o da outra); o código com hook roda na thread
+que chamou com os argumentos como palavras AAPCS (valores de 64 bits num par par de registradores ou numa posição
+alinhada da pilha) e o r0/r1 dele é o resultado. Função que o guest não consegue chamar pelo endereço (recebe uma string
+C#, um float, o contexto do HLE ou argumentos variáveis) não tem wrapper. O analisador VSHLE010 acusa a chamada direta a
+uma função exportada no VitaSharp.Core; as chamadas que não são a chamada do firmware àquela função ficam diretas com um
+`#pragma` dizendo o porquê: as formas de syscall por trás dos wrappers de uma biblioteca de usuário (`_sceIo*`,
+`_sceKernel*`, ...) e as entradas de kernel que dividem o corpo C# da chamada de usuário de mesmo nome (no Vita a chamada
+de usuário chega ao kernel pela syscall, então o hook numa não é visto pela outra).
 
 O início de processo do firmware chama o export ksceKernelStartPreloadingModules(pid) do modulemgr pelo endereço,
 quando a thread principal do processo novo já existe (processmgr 3.74). O VitaSharp inicia ele mesmo os módulos
@@ -246,6 +269,51 @@ hook. É assim que um módulo de kernel põe o seu módulo num processo (o módu
 usuário dele no processo do emulador de PSP). O processo que o shell inicia por caminho (sceAppMgrLaunchAppByPath4, o
 emulador de PSP do firmware vs0:app/NPXS10028) tem como título de processo o título que o launch informa
 (ksceKernelGetProcessTitleId, a seção da configuração de plugins): o da bolha que o shell abriu.
+
+### O mount do app0 no lançamento
+
+Uma pasta de aplicativo que ainda é uma imagem PFS é montada como o SceAppMgr 3.74 a monta ao lançar o título
+(appmgr descompilado, só estudo): acha o arquivo da licença, lê 0x200 bytes com ksceIoOpen (flags 0x10001), ksceIoRead e
+ksceIoClose do kernel, o SceNpDrm confere (ksceNpDrmGetRifInfo, ksceNpDrmGetRifVitaKey; o pfsmgr não importa nada do
+SceNpDrm, a chave chega com o kscePfsMount) e o app0 é montado pelo ScePfsMgr com a chave. Quando código de kernel
+enganchou uma dessas três funções de E/S, a leitura da licença passa pelas entradas delas numa thread de kernel, e o hook
+vê a leitura do lançamento (a continuação chega ao HLE); sem hook o arquivo é lido direto. O passo da chave é do
+processador seguro e responde 0x80020004 na unidade emulada, com ou sem hook. Uma falha diz o passo:
+`<título>: the launch stopped at app0's mount, step N of 4 (<passo>): ... (0x........)` (1 licença, 2 leitura da
+licença, 3 chave do título, 4 mount PFS); a mensagem ao usuário não muda. O mount em si é a chamada do appmgr ao
+kscePfsMount (ScePfsMgrForKernel 0xA067B56F / 0xA772209C) com o caminho do aplicativo, um ponto de montagem "ts" + doze
+dígitos hexadecimais + "d", o ID de autoridade do programa do processo, a chave do título de 16 bytes e o modo 5: quando
+código de kernel enganchou essa função, o lançamento faz a chamada pela entrada numa thread de kernel, o original para o
+qual o hook continua monta a imagem como o lançamento monta sem hook, e um erro respondido pelo hook falha o lançamento
+no passo 4. A chave do título é a que o lançamento já tem (nenhuma conferência da licença muda); o ID de autoridade é 0
+num primeiro lançamento, porque o VitaSharp o lê do executável dentro da imagem, depois do mount.
+
+### Caminhadas de caminho nos dispositivos do emulador
+
+No Vita o iofilemgr percorre cada caminho elemento por elemento com o ksceVopLookup a partir do vnode raiz do
+dispositivo (3.74, 0x81004bb8, só estudo), então um hook de kernel nele (o do fd_fix) vê toda abertura. No VitaSharp
+ux0:, app0: e os outros dispositivos são pastas do host; quando um hook pegou o ksceVopLookup, sceIoOpen (a syscall do
+usuário e o ksceIoOpen), sceIoDopen, sceIoGetstat, sceIoRemove, sceIoMkdir, sceIoRmdir, sceIoChstat e sceIoRename (o
+caminho antigo, depois o novo), com as formas ksceIo*, percorrem o caminho pela entrada da função sobre os vnodes do host,
+como o iofilemgr 3.74 percorre em cada uma delas (`IoFileMgr.VfsHost.cs`; o elemento que um mkdir ou o caminho novo de um
+rename cria é procurado, não é achado, e é criado): o hook recebe cada elemento e o que ele responde vale (um erro falha
+a chamada, outro vnode a
+leva ao caminho dele, uma abertura que cria continua criando). Sem esse hook nada é percorrido nem alocado
+(`IoVopLookupHookTests`). As formas assíncronas (sceIoOpenAsync, sceIoDopenAsync, sceIoGetstatAsync e os outros pedidos
+com caminho) rodam no Vita na thread de kernel do próprio iofilemgr (SceIoScheduler), que percorre o caminho do mesmo
+jeito: com esse hook o escalonador de E/S roda o pedido com caminho numa thread de kernel com esse nome, no contexto do
+processo que o enviou, então o hook é chamado para ele e a resposta dele é o resultado do pedido; sem hook o pedido
+continua na thread do host do escalonador.
+
+### A criação do processo no lançamento
+
+O SceAppMgr 3.74 cria o processo de um título com ksceKernelCreateProcess(ID do título, tipo 0x1000000 para aplicativo
+ou 0x2000000 para aplicativo do sistema, caminho do executável, opção de 0x40 bytes) antes de montar o app0, e não
+lança nada quando a chamada falha. Quando código de kernel enganchou essa função (SceProcessmgrForKernel 0xEB1F8EF7 /
+0x68068618 do FW 3.63 em diante; o 0x7A69DE86 / 0x71CF71FD do 3.60 o 3.74 não exporta, então um hook nele é recusado
+como no console), todo lançamento (o primeiro título, os do shell, LoadExec) chama a entrada numa thread de kernel: o
+hook roda, o original para o qual ele continua responde com o processo lançado, e um erro falha o lançamento com ele
+(`KernelPluginBootOrderTests`). Sem hook nada roda.
 
 ## Limites
 

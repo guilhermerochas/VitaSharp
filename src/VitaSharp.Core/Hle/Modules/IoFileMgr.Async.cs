@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
+using VitaSharp.Core.SaveState;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Hle.Modules;
@@ -42,6 +43,9 @@ public sealed class IoAsyncOp : EventObject
 
     /// <summary>The request's work (the synchronous call), run by the I/O scheduler; null once it ran.</summary>
     internal Func<long>? Request;
+
+    /// <summary>Where the I/O scheduler runs <see cref="Request"/> (null: on its own host thread).</summary>
+    internal IoScheduler.RequestRunner? Runner;
 
     /// <summary>The SceIoAsyncParam the result goes to on completion (0: none).</summary>
     internal uint Param;
@@ -161,8 +165,49 @@ public sealed partial class IoFileMgr
         }
 
         request.Request = op;
+        if (path != null || otherPath != null)
+        {
+            request.Runner = _runPathRequest ??= RunPathRequest;
+        }
+
         AsyncScheduler.Enqueue(request);
         return uid;
+    }
+
+    /// <summary>The cached <see cref="RunPathRequest"/> delegate (no allocation per request).</summary>
+    [SnapshotIgnore]
+    IoScheduler.RequestRunner? _runPathRequest;
+
+    /// <summary>
+    /// A request that names a path, as the I/O scheduler runs it. On the Vita the request runs on iofilemgr's own
+    /// kernel thread (the "SceIoScheduler" of 3.74, study only), which walks the path through the vfs as the
+    /// synchronous call does, one ksceVopLookup per element, for the process that submitted it. The emulator's devices
+    /// answer without the walk, so the request runs on the scheduler's host thread; only when a hook took ksceVopLookup
+    /// (<see cref="HostWalk"/>), checked when the request runs, it runs on a kernel thread named as the firmware's, in
+    /// the submitting process's context (its devices, its host vnodes and their ops, its address space; VitaSharp runs
+    /// kernel code on the threads of every process), so the hook is called for it as for a synchronous call and its
+    /// answer is the request's. The device time is the request's either way.
+    /// </summary>
+    long RunPathRequest(Func<long> work, long from, out long deviceDone)
+    {
+        if (!HleEntryCalls.IsHooked(this, s_hleEntry_ksceVopLookup) || Emu is not { } emu)
+        {
+            return IoScheduler.Execute(work, from, out deviceDone);
+        }
+
+        AddressSpace? space = AddressSpace.Current;
+        long result = SceError.IO_EINVAL;
+        long done = from;
+        // a kernel thread in the submitting process's context: its devices, its host vnodes and their ops, its memory
+        emu.RunOnKernelThread(emu, "SceIoScheduler", _ =>
+        {
+            using (AddressSpace.Use(space))
+            {
+                result = IoScheduler.Execute(work, from, out done);
+            }
+        }, "an asynchronous I/O request");
+        deviceDone = done;
+        return result;
     }
 
     /// <summary>Tests: waits until the I/O scheduler has done the host work of every queued request (their completion
@@ -189,25 +234,25 @@ public sealed partial class IoFileMgr
     }
 
     [Hle] int sceIoOpenAsync(string path, int flags, int mode, uint param) => Submit(-1, () => sceIoOpen(path, flags, mode), param, path);
-    [Hle] int sceIoCloseAsync(int fd, uint param) => Submit(fd, () => _dirs.ContainsKey(fd) ? sceIoDclose(fd) : sceIoClose(fd), param);
-    [Hle] int sceIoReadAsync(int fd, uint buf, uint size, uint param) => Submit(fd, () => sceIoRead(fd, buf, size), param);
-    [Hle] int sceIoWriteAsync(int fd, uint buf, uint size, uint param) => Submit(fd, () => sceIoWrite(fd, buf, size), param);
-    [Hle] int sceIoPreadAsync(int fd, uint buf, uint size, long offset, uint param) => Submit(fd, () => sceIoPread(fd, buf, size, offset), param);
-    [Hle] int sceIoPwriteAsync(int fd, uint buf, uint size, long offset, uint param) => Submit(fd, () => sceIoPwrite(fd, buf, size, offset), param);
-    [Hle] int sceIoLseekAsync(int fd, long offset, int whence, uint param) => Submit(fd, () => sceIoLseek(fd, offset, whence), param);
-    [Hle] int sceIoSyncAsync(uint device, int flags, uint param) => Submit(-1, () => sceIoSync(device, flags), param);
-    [Hle] int sceIoSyncByFdAsync(int fd, int flag, uint param) => Submit(fd, () => sceIoSyncByFd(fd, flag), param);
+    [Hle] int sceIoCloseAsync(int fd, uint param) => Submit(fd, () => _dirs.ContainsKey(fd) ? sceIoDcloseThroughEntry(fd) : sceIoCloseThroughEntry(fd), param);
+    [Hle] int sceIoReadAsync(int fd, uint buf, uint size, uint param) => Submit(fd, () => sceIoReadThroughEntry(fd, buf, size), param);
+    [Hle] int sceIoWriteAsync(int fd, uint buf, uint size, uint param) => Submit(fd, () => sceIoWriteThroughEntry(fd, buf, size), param);
+    [Hle] int sceIoPreadAsync(int fd, uint buf, uint size, long offset, uint param) => Submit(fd, () => sceIoPreadThroughEntry(fd, buf, size, offset), param);
+    [Hle] int sceIoPwriteAsync(int fd, uint buf, uint size, long offset, uint param) => Submit(fd, () => sceIoPwriteThroughEntry(fd, buf, size, offset), param);
+    [Hle] int sceIoLseekAsync(int fd, long offset, int whence, uint param) => Submit(fd, () => sceIoLseekThroughEntry(fd, offset, whence), param);
+    [Hle] int sceIoSyncAsync(uint device, int flags, uint param) => Submit(-1, () => sceIoSyncThroughEntry(device, flags), param);
+    [Hle] int sceIoSyncByFdAsync(int fd, int flag, uint param) => Submit(fd, () => sceIoSyncByFdThroughEntry(fd, flag), param);
     [Hle] int sceIoGetstatAsync(string path, uint stat, uint param) => Submit(-1, () => sceIoGetstat(path, stat), param, path);
-    [Hle] int sceIoGetstatByFdAsync(int fd, uint stat, uint param) => Submit(fd, () => sceIoGetstatByFd(fd, stat), param);
+    [Hle] int sceIoGetstatByFdAsync(int fd, uint stat, uint param) => Submit(fd, () => sceIoGetstatByFdThroughEntry(fd, stat), param);
     [Hle] int sceIoChstatAsync(string path, uint stat, int bits, uint param) => Submit(-1, () => sceIoChstat(path, stat, bits), param, path);
-    [Hle] int sceIoChstatByFdAsync(int fd, uint stat, int bits, uint param) => Submit(fd, () => sceIoChstatByFd(fd, stat, bits), param);
+    [Hle] int sceIoChstatByFdAsync(int fd, uint stat, int bits, uint param) => Submit(fd, () => sceIoChstatByFdThroughEntry(fd, stat, bits), param);
     [Hle] int sceIoMkdirAsync(string path, int mode, uint param) => Submit(-1, () => sceIoMkdir(path, mode), param, path);
     [Hle] int sceIoRmdirAsync(string path, uint param) => Submit(-1, () => sceIoRmdir(path), param, path);
     [Hle] int sceIoRemoveAsync(string path, uint param) => Submit(-1, () => sceIoRemove(path), param, path);
     [Hle] int sceIoRenameAsync(string oldPath, string newPath, uint param) => Submit(-1, () => sceIoRename(oldPath, newPath), param, oldPath, newPath);
     [Hle] int sceIoDopenAsync(string path, uint param) => Submit(-1, () => sceIoDopen(path), param, path);
-    [Hle] int sceIoDreadAsync(int fd, uint dirent, uint param) => Submit(fd, () => sceIoDread(fd, dirent), param);
-    [Hle] int sceIoDcloseAsync(int fd, uint param) => Submit(fd, () => sceIoDclose(fd), param);
+    [Hle] int sceIoDreadAsync(int fd, uint dirent, uint param) => Submit(fd, () => sceIoDreadThroughEntry(fd, dirent), param);
+    [Hle] int sceIoDcloseAsync(int fd, uint param) => Submit(fd, () => sceIoDcloseThroughEntry(fd), param);
 
     [Hle]
     int sceIoDevctlAsync(string dev, int cmd, uint arg, uint argLen, uint buf, uint bufLen, uint param)
@@ -215,7 +260,7 @@ public sealed partial class IoFileMgr
 
     [Hle]
     int sceIoIoctlAsync(int fd, int cmd, uint arg, uint argLen, uint buf, uint bufLen, uint param)
-        => Submit(fd, () => sceIoIoctl(fd, cmd, arg, argLen, buf, bufLen), param);
+        => Submit(fd, () => sceIoIoctlThroughEntry(fd, cmd, arg, argLen, buf, bufLen), param);
 
     /// <summary>Waits for the request if needed, returns its result (low 32 bits for Lseek) and frees the opid.</summary>
     [Hle]

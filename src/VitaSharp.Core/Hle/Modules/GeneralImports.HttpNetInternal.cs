@@ -133,9 +133,9 @@ public sealed partial class Http
     [Hle("NID_0B0D8E7A", Nid = 0x0B0D8E7A, Library = "SceHttp")]
     int HttpDebugDump()
     {
-        HttpDebugPool();
-        HttpDebugConnections();
-        HttpDebugRequests();
+        HttpDebugPoolThroughEntry();
+        HttpDebugConnectionsThroughEntry();
+        HttpDebugRequestsThroughEntry();
         return 0;
     }
 
@@ -237,7 +237,7 @@ public sealed partial class Net
     /// <summary>NID_65AFF9BE (SceNetInternal)(const SceNetInitParam *param, ...): libnet's init with the internal flag
     /// 0x2000; the same checks and set-up as sceNetInit.</summary>
     [Hle("NID_65AFF9BE", Nid = 0x65AFF9BE, Library = "SceNetInternal")]
-    int NetInternalInit(uint param, uint a, uint b, uint c) => sceNetInit(param);
+    int NetInternalInit(uint param, uint a, uint b, uint c) => sceNetInitThroughEntry(param);
 
     /// <summary>NID_E2F6CAEA / NID_873DE778 / NID_0F83B7A9 (SceNetInternal): sceNetSyscallDescriptorCreate (name,
     /// flags) / Close (id) / Ctl (id, op, arg, len), each after sceNetInit (0x804101C8), the kernel's -errno as
@@ -247,11 +247,11 @@ public sealed partial class Net
         Initialized ? KernelToNet(sceNetSyscallDescriptorCreate(name == 0 ? "" : GuestMemory.ReadCString(name, 32), flags)) : NotInitialized();
 
     [Hle("NID_873DE778", Nid = 0x873DE778, Library = "SceNetInternal")]
-    int NetInternalDescriptorClose(int id) => Initialized ? KernelToNet(sceNetSyscallDescriptorClose(id)) : NotInitialized();
+    int NetInternalDescriptorClose(int id) => Initialized ? KernelToNet(sceNetSyscallDescriptorCloseThroughEntry(id)) : NotInitialized();
 
     [Hle("NID_0F83B7A9", Nid = 0x0F83B7A9, Library = "SceNetInternal")]
     int NetInternalDescriptorCtl(int id, int op, uint argument, int length) =>
-        Initialized ? KernelToNet(sceNetSyscallDescriptorCtl(id, op, argument, length)) : NotInitialized();
+        Initialized ? KernelToNet(sceNetSyscallDescriptorCtlThroughEntry(id, op, argument, length)) : NotInitialized();
 
     /// <summary>NID_FE8C89AE (SceNetInternal)(name, namelen, old, oldlen, new, newlen): sceNetSyscallSysctl with the six
     /// words in a block.</summary>
@@ -272,7 +272,7 @@ public sealed partial class Net
                 GuestMemory.W32(block + (uint)i * 4, words[i]);
             }
 
-            return KernelToNet(sceNetSyscallSysctl(block));
+            return KernelToNet(sceNetSyscallSysctlThroughEntry(block));
         }
     }
 
@@ -378,7 +378,7 @@ public sealed partial class Net
             return NotInitialized();
         }
 
-        Emu.Hle.Modules.OfType<ThreadMgr>().First().sceKernelDeleteEventFlag((int)GuestMemory.R32(sync));
+        Emu.Hle.Modules.OfType<ThreadMgr>().First().sceKernelDeleteEventFlagThroughEntry((int)GuestMemory.R32(sync));
         return 0;
     }
 }

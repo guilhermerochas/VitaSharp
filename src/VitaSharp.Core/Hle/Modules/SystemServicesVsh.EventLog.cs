@@ -70,7 +70,7 @@ public sealed partial class SystemServicesVsh
     internal int EventLogPutForCurrentThread(int code, int subcode, uint value, uint data, uint size)
     {
         int thread = GuestThread.Current?.Uid ?? 0;
-        return ksceEventLogPut(KernelSpace.KernelPid, thread, code, subcode, value, data, size);
+        return ksceEventLogPutThroughEntry(KernelSpace.KernelPid, thread, code, subcode, value, data, size);
     }
 
     /// <summary>One record into CPU 0's ring (data of at most 0x80 bytes, checked by the caller).</summary>

@@ -23,5 +23,5 @@ public sealed partial class NpManager
 
     /// <summary>NID_CC8E6AC6(s): atoi, the module's strtol (NID_4C4AA451) in base 10 without an end pointer.</summary>
     [Hle(Nid = 0xCC8E6AC6, Library = "SceNpCommon")]
-    int NID_CC8E6AC6(uint text) => NpCommonStrtol(text, 0, 10);
+    int NID_CC8E6AC6(uint text) => NpCommonStrtolThroughEntry(text, 0, 10);
 }

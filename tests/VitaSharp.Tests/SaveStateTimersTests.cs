@@ -3,6 +3,7 @@ using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.SaveState;
+using VitaSharp.Core.Util;
 using static VitaSharp.Tests.HleHarness;
 
 namespace VitaSharp.Tests;
@@ -100,6 +101,19 @@ public sealed class SaveStateTimersTests : IDisposable
 
     private ulong NowUs => _kernel.Kernel.ProcessTimeUs;
 
+    /// <summary>How far ahead of the stopped clock a paced guest thread reads guest time (its CPU position; a pacing
+    /// window is about 1 ms at the default clock rate).</summary>
+    private const long ReadAheadUs = 2_000;
+
+    /// <summary>What the restored title's thread does while the clock is stopped (on macOS CI it had, and the alarm due
+    /// at the advanced time never fired): a paced thread reads guest time at its own CPU position, ahead of the
+    /// stopped clock, and every later reading is at least that (<see cref="GuestClock.Observed"/>). Made here so the
+    /// advance is checked against it every run.</summary>
+    private static void ReadAheadAsAPacedThread()
+    {
+        GuestClock.Observed(GuestClock.Ticks + GuestClock.FromMicroseconds(ReadAheadUs));
+    }
+
     /// <summary>A long-range Systimer counting with an interval of a minute raises its line after a load at the saved
     /// time; a second timer started after the save is not armed after the load.</summary>
     [Fact]
@@ -126,7 +140,8 @@ public sealed class SaveStateTimersTests : IDisposable
         Assert.Null(services.IntrSchedule(LongRangeLine0 + 1).Deadline);
         Assert.Equal(0u, GuestMemory.R32(seen));
         Assert.True(deadline > NowUs, "the loaded time is past the deadline");
-        clock.Advance((long)(deadline - NowUs) + 1);
+        ReadAheadAsAPacedThread();
+        clock.AdvanceTo(deadline);
         Until(() => GuestMemory.R32(seen) == 1, "the timer's handler after the load");
         Assert.Equal(id, GuestMemory.R32(seen + 4));
         Assert.Equal(0x77u, GuestMemory.R32(seen + 8));
@@ -156,7 +171,8 @@ public sealed class SaveStateTimersTests : IDisposable
         using var clock = ControlledGuestClock.Stop();
         Assert.Equal(due, services.IntrSchedule(ThreadmgrTimerLine).Deadline);
         Assert.True(due > NowUs, "the loaded time is past the alarm");
-        clock.Advance((long)(due - NowUs) + 1);
+        ReadAheadAsAPacedThread();
+        clock.AdvanceTo(due);
         Until(() => GuestMemory.R32(seen) == 1, "the alarm's handler after the load");
         Assert.Equal(0x55u, GuestMemory.R32(seen + 4));
     }

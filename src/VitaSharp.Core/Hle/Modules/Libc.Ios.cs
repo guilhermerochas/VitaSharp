@@ -43,7 +43,7 @@ public sealed partial class Libc
         if (hit == 0) return;
         if (reraise) { __cxa_rethrow(ctx); return; }
         string msg = (hit & 4) != 0 ? "ios_base::badbit set" : (hit & 2) != 0 ? "ios_base::failbit set" : "ios_base::eofbit set";
-        uint obj = AllocateException(ExcIosFailure.Size);
+        uint obj = AllocateExceptionThroughEntry(ExcIosFailure.Size);
         Construct(obj, ExcIosFailure, cstr: ConstString(msg));
         GuestMemory.W32(obj + 0x20, obj);
         GuestMemory.W32(obj + 0x24, 1); // io_errc::stream
@@ -68,14 +68,14 @@ public sealed partial class Libc
         }
         for (uint n = GuestMemory.R32(ios + IosCalls); n != 0; n = GuestMemory.R32(n))
             GuestThread.Current?.CallGuest(GuestMemory.R32(n + 8), 0, ios, GuestMemory.R32(n + 4));
-        for (uint n = GuestMemory.R32(ios + IosArr); n != 0;) { uint next = GuestMemory.R32(n); free(n); n = next; }
+        for (uint n = GuestMemory.R32(ios + IosArr); n != 0;) { uint next = GuestMemory.R32(n); freeThroughEntry(n); n = next; }
         GuestMemory.W32(ios + IosArr, 0);
-        for (uint n = GuestMemory.R32(ios + IosCalls); n != 0;) { uint next = GuestMemory.R32(n); free(n); n = next; }
+        for (uint n = GuestMemory.R32(ios + IosCalls); n != 0;) { uint next = GuestMemory.R32(n); freeThroughEntry(n); n = next; }
         GuestMemory.W32(ios + IosCalls, 0);
         return ios;
     }
 
-    [Hle] uint _ZNSt8ios_baseD0Ev(uint ios) { IosBaseDtor(ios); free(ios); return ios; }
+    [Hle] uint _ZNSt8ios_baseD0Ev(uint ios) { IosBaseDtorThroughEntry(ios); freeThroughEntry(ios); return ios; }
 
     /// <summary>ios_base::_Addstd(ios_base*): the stream takes the first free (or its own) of the 7 standard-stream
     /// slots, whose reference count goes up.</summary>
@@ -216,11 +216,11 @@ public sealed partial class Libc
         if (noreplace && (mode & 1) != 0)
         {
             uint probe = fopen(name, "r");
-            if (probe != 0) { fclose(probe); return 0; }
+            if (probe != 0) { fcloseThroughEntry(probe); return 0; }
         }
         uint fp = fopen(name, FiopenModes[i].Fopen);
         if (fp == 0) return 0;
-        if (ate && fseek(fp, 0, 2) != 0) { fclose(fp); return 0; }
+        if (ate && fseekThroughEntry(fp, 0, 2) != 0) { fcloseThroughEntry(fp); return 0; }
         return fp;
     }
 }

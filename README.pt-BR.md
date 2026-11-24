@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=6816d2a39ddfb7c7fbae246d1c98a400d108667112746e6810c27ee9a0cbb0ad -->
+<!-- pair: README.md sha256=48b28dd62026cd84eb984bf3517c86b3f7d5205aa61eed9a5b0830224eac5254 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -198,8 +198,9 @@ busca de exports e imports, injeção de dados, hooks de função), como um cons
   os arquivos de dados dos plugins ficam em `ur0:tai`. O arquivo do próprio framework nunca é carregado: o emulador
   oferece as bibliotecas dele. A pasta das versões anteriores (`kernel_plugins/` ao lado de `fs/` na pasta de dados)
   vai do mesmo jeito para `ur0:kernel_plugins/`, e a pasta antiga vazia é apagada.
-- **Log:** uma linha por plugin, `kernel plugin <caminho>: loaded and started (<nome>)`, `... not started: no module
-  provides ...` ou `... not loaded (...)`.
+- **Log:** uma linha por plugin, `kernel plugin <caminho>: loaded and started (<nome>) (at system boot)`, `... not
+  started: no module provides ...` ou `... not loaded (...)`. Os plugins de `*KERNEL` carregam no boot do sistema, antes
+  do lançamento do título, mesmo quando esse lançamento falha.
 
 Detalhes em [`docs/notes/plugins.pt-BR.md`](docs/notes/plugins.pt-BR.md).
 

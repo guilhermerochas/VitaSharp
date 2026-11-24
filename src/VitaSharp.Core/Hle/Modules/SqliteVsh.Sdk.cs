@@ -18,119 +18,119 @@ public sealed partial class SqliteVsh
 
     // ---- the entries shared with SceSqliteVsh
 
-    [Hle("sqlite3_initialize", Library = Sdk)] int SdkInitialize() => SqlInitialize();
-    [Hle("sqlite3_shutdown", Library = Sdk)] int SdkShutdown() => Shutdown();
-    [Hle("sqlite3_malloc", Library = Sdk)] uint SdkMalloc(int n) => SqlMalloc(n);
-    [Hle("sqlite3_realloc", Library = Sdk)] uint SdkRealloc(uint p, int n) => SqlRealloc(p, n);
-    [Hle("sqlite3_free", Library = Sdk)] void SdkFree(uint p) => SqlFree(p);
-    [Hle("sqlite3_sleep", Library = Sdk)] int SdkSleep(int ms) => Sleep(ms);
-    [Hle("sqlite3_randomness", Library = Sdk)] void SdkRandomness(int n, uint buf) => Randomness(n, buf);
-    [Hle("sqlite3_strnicmp", Library = Sdk)] int SdkStrnicmp(uint a, uint b, int n) => Strnicmp(a, b, n);
-    [Hle("sqlite3_open", Library = Sdk)] int SdkOpen(uint path, uint ppDb) => Open(path, ppDb);
-    [Hle("sqlite3_open_v2", Library = Sdk)] int SdkOpenV2(uint path, uint ppDb, int flags, uint vfs) => OpenV2(path, ppDb, flags, vfs);
-    [Hle("sqlite3_close", Library = Sdk)] int SdkClose(uint p) => Close(p);
-    [Hle("sqlite3_errcode", Library = Sdk)] int SdkErrCode(uint p) => ErrCode(p);
-    [Hle("sqlite3_extended_errcode", Library = Sdk)] int SdkExtErrCode(uint p) => ExtErrCode(p);
-    [Hle("sqlite3_errmsg", Library = Sdk)] uint SdkErrMsg(uint p) => ErrMsg(p);
-    [Hle("sqlite3_changes", Library = Sdk)] int SdkChanges(uint p) => Changes(p);
-    [Hle("sqlite3_total_changes", Library = Sdk)] int SdkTotalChanges(uint p) => TotalChanges(p);
-    [Hle("sqlite3_last_insert_rowid", Library = Sdk)] long SdkLastInsertRowid(uint p) => LastInsertRowid(p);
-    [Hle("sqlite3_get_autocommit", Library = Sdk)] int SdkGetAutocommit(uint p) => GetAutocommit(p);
-    [Hle("sqlite3_interrupt", Library = Sdk)] void SdkInterrupt(uint p) => Interrupt(p);
-    [Hle("sqlite3_busy_timeout", Library = Sdk)] int SdkBusyTimeout(uint p, int ms) => BusyTimeout(p, ms);
-    [Hle("sqlite3_busy_handler", Library = Sdk)] int SdkBusyHandler(uint p, uint cb, uint arg) => BusyHandler(p, cb, arg);
-    [Hle("sqlite3_config", Library = Sdk)] int SdkConfig(int op) => Config(op);
-    [Hle("sqlite3_extended_result_codes", Library = Sdk)] int SdkExtendedResultCodes(uint p, int on) => ExtendedResultCodes(p, on);
-    [Hle("sqlite3_limit", Library = Sdk)] int SdkLimit(uint p, int id, int v) => Limit(p, id, v);
-    [Hle("sqlite3_db_status", Library = Sdk)] int SdkDbStatus(uint p, int op, uint cur, uint hi, int reset) => DbStatus(p, op, cur, hi, reset);
-    [Hle("sqlite3_exec", Library = Sdk)] int SdkExec(uint p, uint sql, uint cb, uint arg, uint pErr) => Exec(p, sql, cb, arg, pErr);
+    [Hle("sqlite3_initialize", Library = Sdk)] int SdkInitialize() => SqlInitializeThroughEntry();
+    [Hle("sqlite3_shutdown", Library = Sdk)] int SdkShutdown() => ShutdownThroughEntry();
+    [Hle("sqlite3_malloc", Library = Sdk)] uint SdkMalloc(int n) => SqlMallocThroughEntry(n);
+    [Hle("sqlite3_realloc", Library = Sdk)] uint SdkRealloc(uint p, int n) => SqlReallocThroughEntry(p, n);
+    [Hle("sqlite3_free", Library = Sdk)] void SdkFree(uint p) => SqlFreeThroughEntry(p);
+    [Hle("sqlite3_sleep", Library = Sdk)] int SdkSleep(int ms) => SleepThroughEntry(ms);
+    [Hle("sqlite3_randomness", Library = Sdk)] void SdkRandomness(int n, uint buf) => RandomnessThroughEntry(n, buf);
+    [Hle("sqlite3_strnicmp", Library = Sdk)] int SdkStrnicmp(uint a, uint b, int n) => StrnicmpThroughEntry(a, b, n);
+    [Hle("sqlite3_open", Library = Sdk)] int SdkOpen(uint path, uint ppDb) => OpenThroughEntry(path, ppDb);
+    [Hle("sqlite3_open_v2", Library = Sdk)] int SdkOpenV2(uint path, uint ppDb, int flags, uint vfs) => OpenV2ThroughEntry(path, ppDb, flags, vfs);
+    [Hle("sqlite3_close", Library = Sdk)] int SdkClose(uint p) => CloseThroughEntry(p);
+    [Hle("sqlite3_errcode", Library = Sdk)] int SdkErrCode(uint p) => ErrCodeThroughEntry(p);
+    [Hle("sqlite3_extended_errcode", Library = Sdk)] int SdkExtErrCode(uint p) => ExtErrCodeThroughEntry(p);
+    [Hle("sqlite3_errmsg", Library = Sdk)] uint SdkErrMsg(uint p) => ErrMsgThroughEntry(p);
+    [Hle("sqlite3_changes", Library = Sdk)] int SdkChanges(uint p) => ChangesThroughEntry(p);
+    [Hle("sqlite3_total_changes", Library = Sdk)] int SdkTotalChanges(uint p) => TotalChangesThroughEntry(p);
+    [Hle("sqlite3_last_insert_rowid", Library = Sdk)] long SdkLastInsertRowid(uint p) => LastInsertRowidThroughEntry(p);
+    [Hle("sqlite3_get_autocommit", Library = Sdk)] int SdkGetAutocommit(uint p) => GetAutocommitThroughEntry(p);
+    [Hle("sqlite3_interrupt", Library = Sdk)] void SdkInterrupt(uint p) => InterruptThroughEntry(p);
+    [Hle("sqlite3_busy_timeout", Library = Sdk)] int SdkBusyTimeout(uint p, int ms) => BusyTimeoutThroughEntry(p, ms);
+    [Hle("sqlite3_busy_handler", Library = Sdk)] int SdkBusyHandler(uint p, uint cb, uint arg) => BusyHandlerThroughEntry(p, cb, arg);
+    [Hle("sqlite3_config", Library = Sdk)] int SdkConfig(int op) => ConfigThroughEntry(op);
+    [Hle("sqlite3_extended_result_codes", Library = Sdk)] int SdkExtendedResultCodes(uint p, int on) => ExtendedResultCodesThroughEntry(p, on);
+    [Hle("sqlite3_limit", Library = Sdk)] int SdkLimit(uint p, int id, int v) => LimitThroughEntry(p, id, v);
+    [Hle("sqlite3_db_status", Library = Sdk)] int SdkDbStatus(uint p, int op, uint cur, uint hi, int reset) => DbStatusThroughEntry(p, op, cur, hi, reset);
+    [Hle("sqlite3_exec", Library = Sdk)] int SdkExec(uint p, uint sql, uint cb, uint arg, uint pErr) => ExecThroughEntry(p, sql, cb, arg, pErr);
     [Hle("sqlite3_prepare", Library = Sdk)]
     [Hle("sqlite3_prepare_v2", Library = Sdk)]
-    int SdkPrepare(uint p, uint sql, int n, uint ppStmt, uint pTail) => Prepare(p, sql, n, ppStmt, pTail);
-    [Hle("sqlite3_step", Library = Sdk)] int SdkStep(uint p) => Step(p);
-    [Hle("sqlite3_reset", Library = Sdk)] int SdkReset(uint p) => Reset(p);
-    [Hle("sqlite3_finalize", Library = Sdk)] int SdkFinalize(uint p) { lock (_lock) _binds.Remove(p); return StmtFinalize(p); }
-    [Hle("sqlite3_clear_bindings", Library = Sdk)] int SdkClearBindings(uint p) { Binds(p)?.Clear(); return ClearBindings(p); }
-    [Hle("sqlite3_db_handle", Library = Sdk)] uint SdkDbHandle(uint p) => DbHandle(p);
-    [Hle("sqlite3_next_stmt", Library = Sdk)] uint SdkNextStmt(uint p, uint after) => NextStmt(p, after);
-    [Hle("sqlite3_bind_int64", Library = Sdk)] int SdkBindInt64(uint p, int i, long v) => Bound(p, i, new Val { Type = 1, I = v }, BindInt64(p, i, v));
-    [Hle("sqlite3_bind_int", Library = Sdk)] int SdkBindInt(uint p, int i, int v) => Bound(p, i, new Val { Type = 1, I = v }, BindInt(p, i, v));
+    int SdkPrepare(uint p, uint sql, int n, uint ppStmt, uint pTail) => PrepareThroughEntry(p, sql, n, ppStmt, pTail);
+    [Hle("sqlite3_step", Library = Sdk)] int SdkStep(uint p) => StepThroughEntry(p);
+    [Hle("sqlite3_reset", Library = Sdk)] int SdkReset(uint p) => ResetThroughEntry(p);
+    [Hle("sqlite3_finalize", Library = Sdk)] int SdkFinalize(uint p) { lock (_lock) _binds.Remove(p); return StmtFinalizeThroughEntry(p); }
+    [Hle("sqlite3_clear_bindings", Library = Sdk)] int SdkClearBindings(uint p) { Binds(p)?.Clear(); return ClearBindingsThroughEntry(p); }
+    [Hle("sqlite3_db_handle", Library = Sdk)] uint SdkDbHandle(uint p) => DbHandleThroughEntry(p);
+    [Hle("sqlite3_next_stmt", Library = Sdk)] uint SdkNextStmt(uint p, uint after) => NextStmtThroughEntry(p, after);
+    [Hle("sqlite3_bind_int64", Library = Sdk)] int SdkBindInt64(uint p, int i, long v) => Bound(p, i, new Val { Type = 1, I = v }, BindInt64ThroughEntry(p, i, v));
+    [Hle("sqlite3_bind_int", Library = Sdk)] int SdkBindInt(uint p, int i, int v) => Bound(p, i, new Val { Type = 1, I = v }, BindIntThroughEntry(p, i, v));
     [Hle("sqlite3_bind_double", Library = Sdk)]
     int SdkBindDouble(uint p, int i, HleContext c) => Bound(p, i, new Val { Type = 2, D = HleContext.ArgF64(c, 0) }, BindDouble(p, i, c));
-    [Hle("sqlite3_bind_null", Library = Sdk)] int SdkBindNull(uint p, int i) => Bound(p, i, new Val { Type = 5 }, BindNull(p, i));
+    [Hle("sqlite3_bind_null", Library = Sdk)] int SdkBindNull(uint p, int i) => Bound(p, i, new Val { Type = 5 }, BindNullThroughEntry(p, i));
     [Hle("sqlite3_bind_zeroblob", Library = Sdk)]
-    int SdkBindZeroblob(uint p, int i, int n) => Bound(p, i, new Val { Type = 4, Bytes = new byte[Math.Max(n, 0)] }, BindZeroblob(p, i, n));
+    int SdkBindZeroblob(uint p, int i, int n) => Bound(p, i, new Val { Type = 4, Bytes = new byte[Math.Max(n, 0)] }, BindZeroblobThroughEntry(p, i, n));
     [Hle("sqlite3_bind_text", Library = Sdk)]
     int SdkBindText(uint p, int i, uint z, int n, uint del)
     {
         var v = z == 0 ? new Val { Type = 5 } : new Val { Type = 3, Bytes = Encoding.UTF8.GetBytes(StrN(z, n) ?? "") };
-        return Bound(p, i, v, BindText(p, i, z, n, del));
+        return Bound(p, i, v, BindTextThroughEntry(p, i, z, n, del));
     }
     [Hle("sqlite3_bind_blob", Library = Sdk)]
     int SdkBindBlob(uint p, int i, uint data, int n, uint del)
     {
         var v = data == 0 ? new Val { Type = 5 } : new Val { Type = 4, Bytes = GuestMemory.ReadSpan(data, Math.Max(n, 0)).ToArray() };
-        return Bound(p, i, v, BindBlob(p, i, data, n, del));
+        return Bound(p, i, v, BindBlobThroughEntry(p, i, data, n, del));
     }
     [Hle("sqlite3_bind_value", Library = Sdk)]
     int SdkBindValue(uint p, int i, uint v)
     {
         var x = V(v);
-        return Bound(p, i, x == null ? new Val { Type = 5 } : new Val { Type = x.Type, I = x.I, D = x.D, Bytes = x.Bytes }, BindValue(p, i, v));
+        return Bound(p, i, x == null ? new Val { Type = 5 } : new Val { Type = x.Type, I = x.I, D = x.D, Bytes = x.Bytes }, BindValueThroughEntry(p, i, v));
     }
-    [Hle("sqlite3_bind_parameter_count", Library = Sdk)] int SdkBindParameterCount(uint p) => BindParameterCount(p);
-    [Hle("sqlite3_bind_parameter_index", Library = Sdk)] int SdkBindParameterIndex(uint p, uint name) => BindParameterIndex(p, name);
-    [Hle("sqlite3_bind_parameter_name", Library = Sdk)] uint SdkBindParameterName(uint p, int i) => BindParameterName(p, i);
-    [Hle("sqlite3_column_count", Library = Sdk)] int SdkColumnCount(uint p) => ColumnCount(p);
-    [Hle("sqlite3_data_count", Library = Sdk)] int SdkDataCount(uint p) => DataCount(p);
-    [Hle("sqlite3_column_type", Library = Sdk)] int SdkColumnType(uint p, int i) => ColumnType(p, i);
+    [Hle("sqlite3_bind_parameter_count", Library = Sdk)] int SdkBindParameterCount(uint p) => BindParameterCountThroughEntry(p);
+    [Hle("sqlite3_bind_parameter_index", Library = Sdk)] int SdkBindParameterIndex(uint p, uint name) => BindParameterIndexThroughEntry(p, name);
+    [Hle("sqlite3_bind_parameter_name", Library = Sdk)] uint SdkBindParameterName(uint p, int i) => BindParameterNameThroughEntry(p, i);
+    [Hle("sqlite3_column_count", Library = Sdk)] int SdkColumnCount(uint p) => ColumnCountThroughEntry(p);
+    [Hle("sqlite3_data_count", Library = Sdk)] int SdkDataCount(uint p) => DataCountThroughEntry(p);
+    [Hle("sqlite3_column_type", Library = Sdk)] int SdkColumnType(uint p, int i) => ColumnTypeThroughEntry(p, i);
     [Hle("sqlite3_column_int", Library = Sdk)]
     [Hle("sqlite3_column_int64", Library = Sdk)]
-    long SdkColumnInt64(uint p, int i) => ColumnInt64(p, i);
+    long SdkColumnInt64(uint p, int i) => ColumnInt64ThroughEntry(p, i);
     [Hle("sqlite3_column_double", Library = Sdk)] double SdkColumnDouble(uint p, int i) => ColumnDouble(p, i);
-    [Hle("sqlite3_column_bytes", Library = Sdk)] int SdkColumnBytes(uint p, int i) => ColumnBytes(p, i);
-    [Hle("sqlite3_column_text", Library = Sdk)] uint SdkColumnText(uint p, int i) => ColumnText(p, i);
-    [Hle("sqlite3_column_blob", Library = Sdk)] uint SdkColumnBlob(uint p, int i) => ColumnBlob(p, i);
-    [Hle("sqlite3_column_value", Library = Sdk)] uint SdkColumnValue(uint p, int i) => ColumnValue(p, i);
-    [Hle("sqlite3_column_name", Library = Sdk)] uint SdkColumnName(uint p, int i) => ColumnName(p, i);
-    [Hle("sqlite3_column_decltype", Library = Sdk)] uint SdkColumnDecltype(uint p, int i) => ColumnDecltype(p, i);
-    [Hle("sqlite3_value_type", Library = Sdk)] int SdkValueType(uint p) => ValueType(p);
+    [Hle("sqlite3_column_bytes", Library = Sdk)] int SdkColumnBytes(uint p, int i) => ColumnBytesThroughEntry(p, i);
+    [Hle("sqlite3_column_text", Library = Sdk)] uint SdkColumnText(uint p, int i) => ColumnTextThroughEntry(p, i);
+    [Hle("sqlite3_column_blob", Library = Sdk)] uint SdkColumnBlob(uint p, int i) => ColumnBlobThroughEntry(p, i);
+    [Hle("sqlite3_column_value", Library = Sdk)] uint SdkColumnValue(uint p, int i) => ColumnValueThroughEntry(p, i);
+    [Hle("sqlite3_column_name", Library = Sdk)] uint SdkColumnName(uint p, int i) => ColumnNameThroughEntry(p, i);
+    [Hle("sqlite3_column_decltype", Library = Sdk)] uint SdkColumnDecltype(uint p, int i) => ColumnDecltypeThroughEntry(p, i);
+    [Hle("sqlite3_value_type", Library = Sdk)] int SdkValueType(uint p) => ValueTypeThroughEntry(p);
     [Hle("sqlite3_value_int", Library = Sdk)]
     [Hle("sqlite3_value_int64", Library = Sdk)]
-    long SdkValueInt64(uint p) => ValueInt64(p);
+    long SdkValueInt64(uint p) => ValueInt64ThroughEntry(p);
     [Hle("sqlite3_value_double", Library = Sdk)] double SdkValueDouble(uint p) => ValueDouble(p);
-    [Hle("sqlite3_value_bytes", Library = Sdk)] int SdkValueBytes(uint p) => ValueBytes(p);
-    [Hle("sqlite3_value_text", Library = Sdk)] uint SdkValueText(uint p) => ValueText(p);
-    [Hle("sqlite3_value_blob", Library = Sdk)] uint SdkValueBlob(uint p) => ValueBlob(p);
+    [Hle("sqlite3_value_bytes", Library = Sdk)] int SdkValueBytes(uint p) => ValueBytesThroughEntry(p);
+    [Hle("sqlite3_value_text", Library = Sdk)] uint SdkValueText(uint p) => ValueTextThroughEntry(p);
+    [Hle("sqlite3_value_blob", Library = Sdk)] uint SdkValueBlob(uint p) => ValueBlobThroughEntry(p);
     [Hle("sqlite3_create_function", Library = Sdk)]
     int SdkCreateFunction(uint p, uint name, int nArg, int enc, uint app, uint xFunc, uint xStep, uint xFinal) =>
-        CreateFunction(p, name, nArg, enc, app, xFunc, xStep, xFinal);
-    [Hle("sqlite3_create_collation", Library = Sdk)] int SdkCreateCollation(uint p, uint name, int enc, uint arg, uint cmp) => CreateCollation(p, name, enc, arg, cmp);
-    [Hle("sqlite3_user_data", Library = Sdk)] uint SdkUserData(uint p) => UserData(p);
-    [Hle("sqlite3_result_null", Library = Sdk)] void SdkResultNull(uint p) => ResultNull(p);
-    [Hle("sqlite3_result_int", Library = Sdk)] void SdkResultInt(uint p, int v) => ResultInt(p, v);
-    [Hle("sqlite3_result_int64", Library = Sdk)] void SdkResultInt64(uint p, long v) => ResultInt64(p, v);
-    [Hle("sqlite3_result_zeroblob", Library = Sdk)] void SdkResultZeroblob(uint p, int n) => ResultZeroblob(p, n);
+        CreateFunctionThroughEntry(p, name, nArg, enc, app, xFunc, xStep, xFinal);
+    [Hle("sqlite3_create_collation", Library = Sdk)] int SdkCreateCollation(uint p, uint name, int enc, uint arg, uint cmp) => CreateCollationThroughEntry(p, name, enc, arg, cmp);
+    [Hle("sqlite3_user_data", Library = Sdk)] uint SdkUserData(uint p) => UserDataThroughEntry(p);
+    [Hle("sqlite3_result_null", Library = Sdk)] void SdkResultNull(uint p) => ResultNullThroughEntry(p);
+    [Hle("sqlite3_result_int", Library = Sdk)] void SdkResultInt(uint p, int v) => ResultIntThroughEntry(p, v);
+    [Hle("sqlite3_result_int64", Library = Sdk)] void SdkResultInt64(uint p, long v) => ResultInt64ThroughEntry(p, v);
+    [Hle("sqlite3_result_zeroblob", Library = Sdk)] void SdkResultZeroblob(uint p, int n) => ResultZeroblobThroughEntry(p, n);
     [Hle("sqlite3_result_double", Library = Sdk)] void SdkResultDouble(uint p, HleContext hc) => ResultDouble(p, hc);
-    [Hle("sqlite3_result_error_nomem", Library = Sdk)] void SdkResultErrorNomem(uint p) => ResultErrorNomem(p);
-    [Hle("sqlite3_result_error_toobig", Library = Sdk)] void SdkResultErrorTooBig(uint p) => ResultErrorTooBig(p);
-    [Hle("sqlite3_result_error_code", Library = Sdk)] void SdkResultErrorCode(uint p, int code) => ResultErrorCode(p, code);
-    [Hle("sqlite3_result_error", Library = Sdk)] void SdkResultError(uint p, uint msg, int n) => ResultError(p, msg, n);
-    [Hle("sqlite3_result_text", Library = Sdk)] void SdkResultText(uint p, uint z, int n, uint del) => ResultText(p, z, n, del);
-    [Hle("sqlite3_result_blob", Library = Sdk)] void SdkResultBlob(uint p, uint data, int n, uint del) => ResultBlob(p, data, n, del);
-    [Hle("sqlite3_result_value", Library = Sdk)] void SdkResultValue(uint p, uint v) => ResultValue(p, v);
-    [Hle("sqlite3_progress_handler", Library = Sdk)] void SdkProgressHandler(uint p, int n, uint cb, uint arg) => ProgressHandler(p, n, cb, arg);
-    [Hle("sqlite3_commit_hook", Library = Sdk)] uint SdkCommitHook(uint p, uint cb, uint arg) => CommitHook(p, cb, arg);
-    [Hle("sqlite3_rollback_hook", Library = Sdk)] uint SdkRollbackHook(uint p, uint cb, uint arg) => RollbackHook(p, cb, arg);
-    [Hle("sqlite3_update_hook", Library = Sdk)] uint SdkUpdateHook(uint p, uint cb, uint arg) => UpdateHook(p, cb, arg);
+    [Hle("sqlite3_result_error_nomem", Library = Sdk)] void SdkResultErrorNomem(uint p) => ResultErrorNomemThroughEntry(p);
+    [Hle("sqlite3_result_error_toobig", Library = Sdk)] void SdkResultErrorTooBig(uint p) => ResultErrorTooBigThroughEntry(p);
+    [Hle("sqlite3_result_error_code", Library = Sdk)] void SdkResultErrorCode(uint p, int code) => ResultErrorCodeThroughEntry(p, code);
+    [Hle("sqlite3_result_error", Library = Sdk)] void SdkResultError(uint p, uint msg, int n) => ResultErrorThroughEntry(p, msg, n);
+    [Hle("sqlite3_result_text", Library = Sdk)] void SdkResultText(uint p, uint z, int n, uint del) => ResultTextThroughEntry(p, z, n, del);
+    [Hle("sqlite3_result_blob", Library = Sdk)] void SdkResultBlob(uint p, uint data, int n, uint del) => ResultBlobThroughEntry(p, data, n, del);
+    [Hle("sqlite3_result_value", Library = Sdk)] void SdkResultValue(uint p, uint v) => ResultValueThroughEntry(p, v);
+    [Hle("sqlite3_progress_handler", Library = Sdk)] void SdkProgressHandler(uint p, int n, uint cb, uint arg) => ProgressHandlerThroughEntry(p, n, cb, arg);
+    [Hle("sqlite3_commit_hook", Library = Sdk)] uint SdkCommitHook(uint p, uint cb, uint arg) => CommitHookThroughEntry(p, cb, arg);
+    [Hle("sqlite3_rollback_hook", Library = Sdk)] uint SdkRollbackHook(uint p, uint cb, uint arg) => RollbackHookThroughEntry(p, cb, arg);
+    [Hle("sqlite3_update_hook", Library = Sdk)] uint SdkUpdateHook(uint p, uint cb, uint arg) => UpdateHookThroughEntry(p, cb, arg);
     [Hle("sqlite3_blob_open", Library = Sdk)]
-    int SdkBlobOpen(uint p, uint zDb, uint zTable, uint zCol, long row, int flags, uint ppBlob) => BlobOpen(p, zDb, zTable, zCol, row, flags, ppBlob);
-    [Hle("sqlite3_blob_bytes", Library = Sdk)] int SdkBlobBytes(uint p) => BlobBytes(p);
-    [Hle("sqlite3_blob_read", Library = Sdk)] int SdkBlobRead(uint p, uint buf, int n, int off) => BlobRead(p, buf, n, off);
-    [Hle("sqlite3_blob_write", Library = Sdk)] int SdkBlobWrite(uint p, uint data, int n, int off) => BlobWrite(p, data, n, off);
-    [Hle("sqlite3_blob_close", Library = Sdk)] int SdkBlobClose(uint p) => BlobClose(p);
+    int SdkBlobOpen(uint p, uint zDb, uint zTable, uint zCol, long row, int flags, uint ppBlob) => BlobOpenThroughEntry(p, zDb, zTable, zCol, row, flags, ppBlob);
+    [Hle("sqlite3_blob_bytes", Library = Sdk)] int SdkBlobBytes(uint p) => BlobBytesThroughEntry(p);
+    [Hle("sqlite3_blob_read", Library = Sdk)] int SdkBlobRead(uint p, uint buf, int n, int off) => BlobReadThroughEntry(p, buf, n, off);
+    [Hle("sqlite3_blob_write", Library = Sdk)] int SdkBlobWrite(uint p, uint data, int n, int off) => BlobWriteThroughEntry(p, data, n, off);
+    [Hle("sqlite3_blob_close", Library = Sdk)] int SdkBlobClose(uint p) => BlobCloseThroughEntry(p);
     [Hle("sqlite3_mprintf", Library = Sdk)] uint SdkMprintf(uint fmt, VarArgs va) => Mprintf(fmt, va);
-    [Hle("sqlite3_vmprintf", Library = Sdk)] uint SdkVmprintf(uint fmt, uint va) => Vmprintf(fmt, va);
+    [Hle("sqlite3_vmprintf", Library = Sdk)] uint SdkVmprintf(uint fmt, uint va) => VmprintfThroughEntry(fmt, va);
     [Hle("sqlite3_snprintf", Library = Sdk)] uint SdkSnprintf(int n, uint buf, uint fmt, VarArgs va) => Snprintf(n, buf, fmt, va);
 
     // ---- bindings kept for sqlite3_transfer_bindings (the engine underneath cannot read them back)
@@ -203,7 +203,7 @@ public sealed partial class SqliteVsh
         finally { Free(p8); }
     }
 
-    [Hle("sqlite3_open16", Library = Sdk)] int Open16(uint path, uint ppDb) => With8(path, p => OpenV2(p, ppDb, 6, 0));
+    [Hle("sqlite3_open16", Library = Sdk)] int Open16(uint path, uint ppDb) => With8(path, p => OpenV2ThroughEntry(p, ppDb, 6, 0));
 
     readonly Dictionary<Db, uint> _err16 = new();
 
@@ -228,7 +228,7 @@ public sealed partial class SqliteVsh
         uint p8 = GuestString(s), tail8 = pTail == 0 ? 0 : Malloc(4);
         try
         {
-            int rc = Prepare(p, p8, -1, ppStmt, tail8);
+            int rc = PrepareThroughEntry(p, p8, -1, ppStmt, tail8);
             if (pTail != 0)
             {
                 int used8 = (int)(GuestMemory.R32(tail8) - p8);
@@ -345,17 +345,17 @@ public sealed partial class SqliteVsh
 
     [Hle("sqlite3_create_function16", Library = Sdk)]
     int CreateFunction16(uint p, uint name, int nArg, int enc, uint app, uint xFunc, uint xStep, uint xFinal) =>
-        With8(name, n => CreateFunction(p, n, nArg, enc, app, xFunc, xStep, xFinal));
+        With8(name, n => CreateFunctionThroughEntry(p, n, nArg, enc, app, xFunc, xStep, xFinal));
 
     [Hle("sqlite3_create_collation16", Library = Sdk)]
-    int CreateCollation16(uint p, uint name, int enc, uint arg, uint cmp) => With8(name, n => CreateCollation(p, n, enc, arg, cmp));
+    int CreateCollation16(uint p, uint name, int enc, uint arg, uint cmp) => With8(name, n => CreateCollationThroughEntry(p, n, enc, arg, cmp));
 
     /// <summary>sqlite3_create_collation_v2(db, name, enc, arg, cmp, destroy): the destructor runs on the argument when
     /// the collation is replaced or the connection closes; here when it is replaced (or at once on failure).</summary>
     [Hle("sqlite3_create_collation_v2", Library = Sdk)]
     int CreateCollationV2(uint p, uint name, int enc, uint arg, uint cmp, uint destroy)
     {
-        int rc = CreateCollation(p, name, enc, arg, cmp);
+        int rc = CreateCollationThroughEntry(p, name, enc, arg, cmp);
         if (Get<Db>(p) is { } d && Str(name) is { } n)
             lock (_lock)
             {
@@ -648,7 +648,7 @@ public sealed partial class SqliteVsh
     /// <summary>sqlite3_create_module / _v2(db, name, module, arg[, destroy]): the module is registered on the
     /// connection; a CREATE VIRTUAL TABLE with it fails in the engine underneath (no guest virtual tables).</summary>
     [Hle("sqlite3_create_module", Library = Sdk)]
-    int CreateModule(uint p, uint name, uint module, uint arg) => CreateModuleV2(p, name, module, arg, 0);
+    int CreateModule(uint p, uint name, uint module, uint arg) => CreateModuleV2ThroughEntry(p, name, module, arg, 0);
 
     [Hle("sqlite3_create_module_v2", Library = Sdk)]
     int CreateModuleV2(uint p, uint name, uint module, uint arg, uint destroy) => DbOp(p, d =>
@@ -694,13 +694,13 @@ public sealed partial class SqliteVsh
     {
         if (m == 0) return;
         lock (_lock) if (_staticMutex.ContainsValue(m) || _dbMutex.ContainsValue(m)) return;
-        Tmx.sceKernelDeleteLwMutex(m);
+        Tmx.sceKernelDeleteLwMutexThroughEntry(m);
         Free(m);
     }
 
-    [Hle("sqlite3_mutex_enter", Library = Sdk)] void MutexEnter(uint m) { if (m != 0) Tmx.sceKernelLockLwMutex(m, 1, new Ptr<uint>(0)); }
-    [Hle("sqlite3_mutex_try", Library = Sdk)] int MutexTry(uint m) => m == 0 || Tmx.sceKernelTryLockLwMutex(m, 1) == 0 ? SQLITE_OK : SQLITE_BUSY;
-    [Hle("sqlite3_mutex_leave", Library = Sdk)] void MutexLeave(uint m) { if (m != 0) Tmx.sceKernelUnlockLwMutex(m, 1); }
+    [Hle("sqlite3_mutex_enter", Library = Sdk)] void MutexEnter(uint m) { if (m != 0) Tmx.sceKernelLockLwMutexThroughEntry(m, 1, new Ptr<uint>(0)); }
+    [Hle("sqlite3_mutex_try", Library = Sdk)] int MutexTry(uint m) => m == 0 || Tmx.sceKernelTryLockLwMutexThroughEntry(m, 1) == 0 ? SQLITE_OK : SQLITE_BUSY;
+    [Hle("sqlite3_mutex_leave", Library = Sdk)] void MutexLeave(uint m) { if (m != 0) Tmx.sceKernelUnlockLwMutexThroughEntry(m, 1); }
 
     /// <summary>sqlite3_db_mutex(db): the connection's own (recursive) mutex.</summary>
     [Hle("sqlite3_db_mutex", Library = Sdk)]

@@ -25,7 +25,7 @@ public sealed partial class Paf
         U(me, HeapVtable);
         bool attached = addr != 0;
         if (!attached) addr = Emu.Memory.Alloc(size, "paf heap " + CRead(name));
-        U(me + 4, Cl.sceClibMspaceCreate(addr, size));
+        U(me + 4, Cl.sceClibMspaceCreateThroughEntry(addr, size));
         U(me + 8, addr); U(me + 0xC, size);
         GuestMemory.WriteCString(me + 0x10, CRead(name), 31);
         B(me + 0x30, (byte)(attached ? 1 : 0));
@@ -37,20 +37,20 @@ public sealed partial class Paf
     [Hle("_ZN3paf6memory13HeapAllocatorD2Ev")]
     uint HeapDtor(uint me)
     {
-        if (U(me + 4) != 0) Cl.sceClibMspaceDestroy(U(me + 4));
+        if (U(me + 4) != 0) Cl.sceClibMspaceDestroyThroughEntry(U(me + 4));
         if (B(me + 0x30) == 0 && U(me + 8) != 0) Emu.Memory.Free(U(me + 8));
         U(me + 4, 0);
         return me;
     }
 
-    [Hle("_ZN3paf6memory13HeapAllocatorD0Ev")] void HeapDelete(uint me) { HeapDtor(me); Free(me); }
+    [Hle("_ZN3paf6memory13HeapAllocatorD0Ev")] void HeapDelete(uint me) { HeapDtorThroughEntry(me); Free(me); }
 
     /// <summary>The global allocator (heap id 0) is the HLE heap the C library and sce_paf_malloc share.</summary>
     bool IsGlobal(uint me) => me == 0 || U(me + 4) == 0;
 
     [Hle("_ZN3paf6memory13HeapAllocator14sce_paf_mallocEj")]
     [Hle("_ZN3paf6memory13HeapAllocator16sce_paf_malloc_dEjPKcii")]
-    uint HeapMalloc(uint me, uint size) => IsGlobal(me) ? Alloc(size) : Cl.sceClibMspaceMalloc(U(me + 4), size);
+    uint HeapMalloc(uint me, uint size) => IsGlobal(me) ? Alloc(size) : Cl.sceClibMspaceMallocThroughEntry(U(me + 4), size);
 
     [Hle("_ZN3paf6memory13HeapAllocator16sce_paf_memalignEjj")]
     [Hle("_ZN3paf6memory13HeapAllocator18sce_paf_memalign_dEjjPKcii")]
@@ -72,7 +72,7 @@ public sealed partial class Paf
     [Hle("_ZN3paf6memory13HeapAllocator17sce_paf_realloc_dEPvjPKcii")]
     uint HeapRealloc(uint me, uint p, uint size)
     {
-        if (!IsGlobal(me)) return Cl.sceClibMspaceRealloc(U(me + 4), p, size);
+        if (!IsGlobal(me)) return Cl.sceClibMspaceReallocThroughEntry(U(me + 4), p, size);
         uint n = Alloc(size);
         if (n != 0 && p != 0) { GuestMemory.Copy(n, p, Math.Min(size, Cl.UsableSize(p) is var u and > 0 ? u : size)); Free(p); }
         return n;
@@ -80,12 +80,12 @@ public sealed partial class Paf
 
     [Hle("_ZN3paf6memory13HeapAllocator12sce_paf_freeEPv")]
     [Hle("_ZN3paf6memory13HeapAllocator14sce_paf_free_dEPvPKcii")]
-    void HeapFree(uint me, uint p) { if (p == 0) return; if (IsGlobal(me)) Free(p); else Cl.sceClibMspaceFree(U(me + 4), p); }
+    void HeapFree(uint me, uint p) { if (p == 0) return; if (IsGlobal(me)) Free(p); else Cl.sceClibMspaceFreeThroughEntry(U(me + 4), p); }
 
     [Hle("_ZN3paf6memory13HeapAllocator20sce_paf_musable_sizeEPv")] uint HeapUsable(uint me, uint p) => p == 0 ? 0 : Cl.UsableSize(p);
     [Hle("_ZN3paf6memory13HeapAllocator13sce_paf_mtrimEv")] void HeapTrim(uint me) { }
-    [Hle("_ZN3paf6memory13HeapAllocator24sce_paf_dump_heap_statusEv")] void HeapDumpStatus(uint me) => Util.Log.Info($"paf heap {GuestMemory.ReadCString(me + 0x10, 32)}: {HeapFreeSize(me)} bytes free of {U(me + 0xC)}");
-    [Hle("_ZN3paf6memory13HeapAllocator22sce_paf_dump_heap_infoEi")] void HeapDumpInfo(uint me, int sort) => HeapDumpStatus(me);
+    [Hle("_ZN3paf6memory13HeapAllocator24sce_paf_dump_heap_statusEv")] void HeapDumpStatus(uint me) => Util.Log.Info($"paf heap {GuestMemory.ReadCString(me + 0x10, 32)}: {HeapFreeSizeThroughEntry(me)} bytes free of {U(me + 0xC)}");
+    [Hle("_ZN3paf6memory13HeapAllocator22sce_paf_dump_heap_infoEi")] void HeapDumpInfo(uint me, int sort) => HeapDumpStatusThroughEntry(me);
     [Hle("_ZN3paf6memory13HeapAllocator26sce_paf_check_memoryboundsEv")] int HeapCheckBounds(uint me) => 0;
     [Hle("_ZN3paf6memory13HeapAllocator17CheckMemoryBoundsEPv")] int HeapCheckBlock(uint me, uint p) => 0;
 
@@ -107,7 +107,7 @@ public sealed partial class Paf
 
     /// <summary>(HeapInfo*): { free blocks, free bytes } (the mspace's free space as one block).</summary>
     [Hle("_ZN3paf6memory13HeapAllocator9QueryInfoEPNS0_8HeapInfoE")]
-    void HeapQueryInfo(uint me, uint info) { if (info == 0) return; uint free = HeapFreeSize(me); U(info, free != 0 ? 1u : 0u); U(info + 4, free); }
+    void HeapQueryInfo(uint me, uint info) { if (info == 0) return; uint free = HeapFreeSizeThroughEntry(me); U(info, free != 0 ? 1u : 0u); U(info + 4, free); }
 
     [Hle("_ZN3paf6memory13HeapAllocator27sce_paf_report_memoryblocksEPFiPvjiS2_ES2_")] int HeapReport(uint me, uint cb, uint user) => 0;
 
@@ -162,7 +162,7 @@ public sealed partial class Paf
     [Hle("_ZN3paf15HeapAllocBuffer8AllocateEjPNS_6memory13HeapAllocatorE")]
     void HeapAllocBufferAllocate(uint ret, uint size, uint heap)
     {
-        uint p = HeapMemalign(heap, size >= 0x40 ? 0x40u : 8u, size);
+        uint p = HeapMemalignThroughEntry(heap, size >= 0x40 ? 0x40u : 8u, size);
         if (p == 0) NullSp(ret); else NewBuffer(ret, p, size, false, IsGlobal(heap));
     }
 

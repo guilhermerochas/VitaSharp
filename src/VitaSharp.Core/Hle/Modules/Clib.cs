@@ -105,11 +105,11 @@ public sealed partial class Clib : HleModule
     [Hle] internal uint sceClibMspaceMalloc(uint mspace, uint size) => Malloc(mspace, size, MinAlign);
     [Hle] uint sceClibMspaceMemalign(uint mspace, uint alignment, uint size) => Malloc(mspace, size, alignment);
     internal uint MspaceMemalign(uint mspace, uint alignment, uint size) => Malloc(mspace, size, alignment);
-    internal uint MspaceCalloc(uint mspace, uint num, uint size) => sceClibMspaceCalloc(mspace, num, size);
+    internal uint MspaceCalloc(uint mspace, uint num, uint size) => sceClibMspaceCallocThroughEntry(mspace, num, size);
     internal uint MspaceReallocalign(uint mspace, uint ptr, uint size, uint alignment) => Realloc(mspace, ptr, size, alignment);
-    internal uint UsableSize(uint ptr) => sceClibMspaceMallocUsableSize(ptr);
-    internal int IsHeapEmpty(uint mspace) => sceClibMspaceIsHeapEmpty(mspace);
-    internal void MallocStats(uint mspace, uint stats) => sceClibMspaceMallocStats(mspace, stats);
+    internal uint UsableSize(uint ptr) => sceClibMspaceMallocUsableSizeThroughEntry(ptr);
+    internal int IsHeapEmpty(uint mspace) => sceClibMspaceIsHeapEmptyThroughEntry(mspace);
+    internal void MallocStats(uint mspace, uint stats) => sceClibMspaceMallocStatsThroughEntry(mspace, stats);
 
     /// <summary>(block size, peak in use, in use) of an mspace; zeros for an unknown one.</summary>
     internal (uint Size, uint Peak, uint InUse) HeapStats(uint mspace)
@@ -401,8 +401,8 @@ public sealed partial class Clib : HleModule
         return dst;
     }
 
-    [Hle] uint sceClibStrlcpyChk(uint dst, uint src, uint size, uint dstSize) => sceClibStrlcpy(dst, src, Math.Min(size, dstSize));
-    [Hle] uint sceClibStrlcatChk(uint dst, uint src, uint size, uint dstSize) => sceClibStrlcat(dst, src, Math.Min(size, dstSize));
+    [Hle] uint sceClibStrlcpyChk(uint dst, uint src, uint size, uint dstSize) => sceClibStrlcpyThroughEntry(dst, src, Math.Min(size, dstSize));
+    [Hle] uint sceClibStrlcatChk(uint dst, uint src, uint size, uint dstSize) => sceClibStrlcatThroughEntry(dst, src, Math.Min(size, dstSize));
 
     [Hle]
     int sceClibSnprintfChk(uint buf, uint size, int flag, uint dstSize, string fmt, VarArgs va)

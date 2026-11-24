@@ -60,21 +60,21 @@ public sealed partial class VshBridge
     [Hle(Nid = 0x2964AD0A, Library = "SceCoredumpForDriver")]
     int ksceCoredumpCafContextCreate()
     {
-        return vshCoredumpCafContextCreate();
+        return vshCoredumpCafContextCreateThroughEntry();
     }
 
     /// <summary>ksceCoredumpCafContextDestroy(ctx): unknown 0x800200CB.</summary>
     [Hle(Nid = 0x95402BF3, Library = "SceCoredumpForDriver")]
     int ksceCoredumpCafContextDestroy(int ctx)
     {
-        return vshCoredumpCafContextDestroy(ctx);
+        return vshCoredumpCafContextDestroyThroughEntry(ctx);
     }
 
     /// <summary>ksceCoredumpCafHeaderInit(ctx, hmacKeyId).</summary>
     [Hle(Nid = 0x7C8120C5, Library = "SceCoredumpForDriver")]
     int ksceCoredumpCafHeaderInit(int ctx, uint keyId)
     {
-        return vshCoredumpCafHeaderInit(ctx, keyId);
+        return vshCoredumpCafHeaderInitThroughEntry(ctx, keyId);
     }
 
     /// <summary>ksceCoredumpCafHeaderTransform(ctx, data, size).</summary>

@@ -402,7 +402,7 @@ public sealed partial class Ssl
             int references = (int)GuestMemory.R32(bio + 0x2C);
             uint next = GuestMemory.R32(bio + 0x24);
             GuestMemory.W32(bio + 0x28, 0);
-            SslInternalBioFree(bio);
+            SslInternalBioFreeThroughEntry(bio);
             if (references >= 2)
             {
                 return;

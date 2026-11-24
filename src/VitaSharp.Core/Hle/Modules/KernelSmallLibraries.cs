@@ -20,7 +20,7 @@ public sealed partial class SysmemKernel
     [Hle(Nid = 0x337CBDF3, Library = "SceCpuForDriver")]
     int ksceKernelIsUncacheAddressInTmpFsGame(uint address)
     {
-        int type = ksceKernelMMUGetMemoryType(address);
+        int type = ksceKernelMMUGetMemoryTypeThroughEntry(address);
         return type is MmuTypeStronglyOrdered or MmuTypeDevice or MmuTypeInnerWriteBack or MmuTypeNonCacheable ? 1 : 0;
     }
 

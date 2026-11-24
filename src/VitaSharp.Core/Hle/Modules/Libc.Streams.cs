@@ -84,7 +84,7 @@ public sealed partial class Libc
     void StreambufCtor(uint sb, bool w)
     {
         GuestMemory.W32(sb, Rtti.Vptr(w ? VtStreambufW : VtStreambufC));
-        _ZNSt6_MutexC1Ev(sb + SbLock);
+        _ZNSt6_MutexC1EvThroughEntry(sb + SbLock);
         SbInitAreas(sb);
     }
 
@@ -93,22 +93,22 @@ public sealed partial class Libc
     uint StreambufDtor(uint sb, bool w)
     {
         GuestMemory.W32(sb, Rtti.Vptr(w ? VtStreambufW : VtStreambufC));
-        _ZNSt6_MutexD1Ev(sb + SbLock);
+        _ZNSt6_MutexD1EvThroughEntry(sb + SbLock);
         return sb;
     }
 
     [Hle("_ZNSt15basic_streambufIcSt11char_traitsIcEED1Ev")] uint SbDtorC(uint sb) => StreambufDtor(sb, false);
     [Hle("_ZNSt15basic_streambufIwSt11char_traitsIwEED1Ev")] uint SbDtorW(uint sb) => StreambufDtor(sb, true);
-    [Hle("_ZNSt15basic_streambufIcSt11char_traitsIcEED0Ev")] uint SbDelC(uint sb) { StreambufDtor(sb, false); free(sb); return sb; }
-    [Hle("_ZNSt15basic_streambufIwSt11char_traitsIwEED0Ev")] uint SbDelW(uint sb) { StreambufDtor(sb, true); free(sb); return sb; }
+    [Hle("_ZNSt15basic_streambufIcSt11char_traitsIcEED0Ev")] uint SbDelC(uint sb) { StreambufDtor(sb, false); freeThroughEntry(sb); return sb; }
+    [Hle("_ZNSt15basic_streambufIwSt11char_traitsIwEED0Ev")] uint SbDelW(uint sb) { StreambufDtor(sb, true); freeThroughEntry(sb); return sb; }
 
     [Hle("_ZNSt15basic_streambufIcSt11char_traitsIcEE5_LockEv")]
     [Hle("_ZNSt15basic_streambufIwSt11char_traitsIwEE5_LockEv")]
-    void SbLockFn(uint sb) => _ZNSt6_Mutex5_LockEv(sb + SbLock);
+    void SbLockFn(uint sb) => _ZNSt6_Mutex5_LockEvThroughEntry(sb + SbLock);
 
     [Hle("_ZNSt15basic_streambufIcSt11char_traitsIcEE7_UnlockEv")]
     [Hle("_ZNSt15basic_streambufIwSt11char_traitsIwEE7_UnlockEv")]
-    void SbUnlockFn(uint sb) => _ZNSt6_Mutex7_UnlockEv(sb + SbLock);
+    void SbUnlockFn(uint sb) => _ZNSt6_Mutex7_UnlockEvThroughEntry(sb + SbLock);
 
     /// <summary>uflow: underflow(), then the character at gptr() is taken (both counters advance).</summary>
     uint StreambufUflow(uint sb, bool w)
@@ -249,7 +249,7 @@ public sealed partial class Libc
             if (file != 0)
             {
                 FilebufEndwrite(fb, w);
-                fclose(GuestMemory.R32(fb + FbFile));
+                fcloseThroughEntry(GuestMemory.R32(fb + FbFile));
             }
             FilebufInit(fb, 0, false, w);
         }
@@ -259,16 +259,16 @@ public sealed partial class Libc
 
     [Hle("_ZNSt13basic_filebufIcSt11char_traitsIcEED1Ev")] uint FbDtorC(uint fb) => FilebufDtor(fb, false);
     [Hle("_ZNSt13basic_filebufIwSt11char_traitsIwEED1Ev")] uint FbDtorW(uint fb) => FilebufDtor(fb, true);
-    [Hle("_ZNSt13basic_filebufIcSt11char_traitsIcEED0Ev")] uint FbDelC(uint fb) { FilebufDtor(fb, false); free(fb); return fb; }
-    [Hle("_ZNSt13basic_filebufIwSt11char_traitsIwEED0Ev")] uint FbDelW(uint fb) { FilebufDtor(fb, true); free(fb); return fb; }
+    [Hle("_ZNSt13basic_filebufIcSt11char_traitsIcEED0Ev")] uint FbDelC(uint fb) { FilebufDtor(fb, false); freeThroughEntry(fb); return fb; }
+    [Hle("_ZNSt13basic_filebufIwSt11char_traitsIwEED0Ev")] uint FbDelW(uint fb) { FilebufDtor(fb, true); freeThroughEntry(fb); return fb; }
 
     [Hle("_ZNSt13basic_filebufIcSt11char_traitsIcEE5_LockEv")]
     [Hle("_ZNSt13basic_filebufIwSt11char_traitsIwEE5_LockEv")]
-    void FbLockFn(uint fb) => _Lockfilelock(GuestMemory.R32(fb + FbFile));
+    void FbLockFn(uint fb) => _LockfilelockThroughEntry(GuestMemory.R32(fb + FbFile));
 
     [Hle("_ZNSt13basic_filebufIcSt11char_traitsIcEE7_UnlockEv")]
     [Hle("_ZNSt13basic_filebufIwSt11char_traitsIwEE7_UnlockEv")]
-    void FbUnlockFn(uint fb) => _Unlockfilelock(GuestMemory.R32(fb + FbFile));
+    void FbUnlockFn(uint fb) => _UnlockfilelockThroughEntry(GuestMemory.R32(fb + FbFile));
 
     /// <summary>Guest scratch for a conversion: +0 the element, +4/+8 the two "next" pointers, +0x10 the byte buffer.</summary>
     uint CvtScratch(uint bufSize)
@@ -295,7 +295,7 @@ public sealed partial class Libc
                 if (r is not (0 or 1)) return false;
                 if (r == 0) GuestMemory.Write(fb + FbWrotesome(w), (byte)0);
                 uint n = GuestMemory.R32(s + 8) - buf;
-                if (n != 0 && fwrite(buf, 1, n, GuestMemory.R32(fb + FbFile)) != n) return false;
+                if (n != 0 && fwriteThroughEntry(buf, 1, n, GuestMemory.R32(fb + FbFile)) != n) return false;
                 if (B(fb + FbWrotesome(w)) == 0) return true;
                 if (n == 0)
                 {
@@ -304,7 +304,7 @@ public sealed partial class Libc
                 }
             }
         }
-        finally { free(s); }
+        finally { freeThroughEntry(s); }
     }
 
     [Hle("_ZNSt13basic_filebufIcSt11char_traitsIcEE9_EndwriteEv")] bool FbEndwriteC(uint fb) => FilebufEndwrite(fb, false);
@@ -326,7 +326,7 @@ public sealed partial class Libc
         if (file == 0) return EofE;
         FilebufResetBack(fb, w);
         if (CvtNoconv(fb))
-            return (w ? fputwc((int)c, file) != WEOF : fputc((sbyte)c, file) != EOF) ? c : EofE;
+            return (w ? fputwcThroughEntry((int)c, file) != WEOF : fputcThroughEntry((sbyte)c, file) != EOF) ? c : EofE;
         uint size = 8;
         uint s = CvtScratch(0x20);
         try
@@ -337,10 +337,10 @@ public sealed partial class Libc
                 uint buf = s + 0x10;
                 int r = (int)VCall(fb + FbCvt, VcOut, fb + FbState, s, s + ESize(w), s + 4, buf, buf + size, s + 8);
                 if (r == 3)
-                    return (w ? fputwc((int)RdE(s, true), file) != WEOF : fputc((sbyte)B(s), file) != EOF) ? c : EofE;
+                    return (w ? fputwcThroughEntry((int)RdE(s, true), file) != WEOF : fputcThroughEntry((sbyte)B(s), file) != EOF) ? c : EofE;
                 if (r is not (0 or 1)) return EofE;
                 uint n = GuestMemory.R32(s + 8) - buf;
-                if (n != 0 && fwrite(buf, 1, n, file) != n) return EofE;
+                if (n != 0 && fwriteThroughEntry(buf, 1, n, file) != n) return EofE;
                 GuestMemory.Write(fb + FbWrotesome(w), (byte)1);
                 if (GuestMemory.R32(s + 4) != s) return c;
                 if (n == 0)
@@ -350,7 +350,7 @@ public sealed partial class Libc
                 }
             }
         }
-        finally { free(s); }
+        finally { freeThroughEntry(s); }
     }
 
     [Hle("_ZNSt13basic_filebufIcSt11char_traitsIcEE8overflowEi")] uint FbOverflowC(uint fb, uint c) => FilebufOverflow(fb, c, false);
@@ -370,7 +370,7 @@ public sealed partial class Libc
         }
         uint file = GuestMemory.R32(fb + FbFile);
         if (file == 0 || c == EofE) return EofE;
-        if (CvtNoconv(fb) && (w ? ungetwc((ushort)c, file) != WEOF : ungetc((byte)c, file) != EOF)) return c;
+        if (CvtNoconv(fb) && (w ? ungetwcThroughEntry((ushort)c, file) != WEOF : ungetcThroughEntry((byte)c, file) != EOF)) return c;
         uint mc = fb + FbMychar;
         if (g == mc) return EofE;
         WrE(mc, c, w);
@@ -414,8 +414,8 @@ public sealed partial class Libc
         FilebufResetBack(fb, w);
         if (CvtNoconv(fb))
         {
-            if (w) { int wc = fgetwc(file); return wc == WEOF ? EofE : (uint)(wc & 0xFFFF); }
-            int ch = fgetc(file);
+            if (w) { int wc = fgetwcThroughEntry(file); return wc == WEOF ? EofE : (uint)(wc & 0xFFFF); }
+            int ch = fgetcThroughEntry(file);
             return ch == EOF ? EofE : (uint)(ch & 0xFF);
         }
         var str = new List<byte>();
@@ -424,7 +424,7 @@ public sealed partial class Libc
         {
             while (true)
             {
-                int ch = fgetc(file);
+                int ch = fgetcThroughEntry(file);
                 if (ch == EOF) return EofE;
                 str.Add((byte)ch);
                 if (str.Count > 0x30) return EofE;
@@ -436,7 +436,7 @@ public sealed partial class Libc
                     int used = (int)(GuestMemory.R32(s + 4) - buf);
                     if (GuestMemory.R32(s + 8) != s)
                     {
-                        for (int i = str.Count - 1; i >= used; i--) ungetc(str[i], file);
+                        for (int i = str.Count - 1; i >= used; i--) ungetcThroughEntry(str[i], file);
                         return RdE(s, w);
                     }
                     if (used >= str.Count) str.Clear();
@@ -449,7 +449,7 @@ public sealed partial class Libc
                 else return EofE;
             }
         }
-        finally { free(s); }
+        finally { freeThroughEntry(s); }
     }
 
     [Hle("_ZNSt13basic_filebufIcSt11char_traitsIcEE5uflowEv")] uint FbUflowC(uint fb) => FilebufUflow(fb, false);
@@ -478,7 +478,7 @@ public sealed partial class Libc
     {
         if (Deref(fb, SbIGnext) == fb + FbMychar && way == 1 && CvtNoconv(fb)) off--;
         uint file = GuestMemory.R32(fb + FbFile);
-        if (file != 0 && FilebufEndwrite(fb, w) && ((off == 0 && way == 1) || fseek(GuestMemory.R32(fb + FbFile), off, way) == 0)
+        if (file != 0 && FilebufEndwrite(fb, w) && ((off == 0 && way == 1) || fseekThroughEntry(GuestMemory.R32(fb + FbFile), off, way) == 0)
             && FilePos(GuestMemory.R32(fb + FbFile), out long pos))
         {
             FilebufResetBack(fb, w);
@@ -498,8 +498,8 @@ public sealed partial class Libc
     {
         int off = (int)GuestMemory.R32(pos);
         uint file = GuestMemory.R32(fb + FbFile);
-        if (file != 0 && FilebufEndwrite(fb, w) && fsetpos(GuestMemory.R32(fb + FbFile), pos + 8) == 0
-            && (off == 0 || fseek(GuestMemory.R32(fb + FbFile), off, 1) == 0) && FilePos(GuestMemory.R32(fb + FbFile), out long p))
+        if (file != 0 && FilebufEndwrite(fb, w) && fsetposThroughEntry(GuestMemory.R32(fb + FbFile), pos + 8) == 0
+            && (off == 0 || fseekThroughEntry(GuestMemory.R32(fb + FbFile), off, 1) == 0) && FilePos(GuestMemory.R32(fb + FbFile), out long p))
         {
             GuestMemory.Write(fb + FbState, GuestMemory.Read<ulong>(pos + 0x18));
             FilebufResetBack(fb, w);
@@ -519,7 +519,7 @@ public sealed partial class Libc
     uint FilebufSetbuf(uint fb, uint buf, int n, bool w)
     {
         uint file = GuestMemory.R32(fb + FbFile);
-        if (file == 0 || setvbuf(file, buf, buf == 0 && n == 0 ? 2 : 0, (uint)n * ESize(w)) != 0) return 0;
+        if (file == 0 || setvbufThroughEntry(file, buf, buf == 0 && n == 0 ? 2 : 0, (uint)n * ESize(w)) != 0) return 0;
         FilebufInit(fb, file, true, w);
         return fb;
     }
@@ -533,7 +533,7 @@ public sealed partial class Libc
     int FbSync(uint fb)
     {
         if (GuestMemory.R32(fb + FbFile) == 0 || VCall(fb, VsOverflow, EofE) == EofE) return 0;
-        return fflush(GuestMemory.R32(fb + FbFile)) >= 0 ? 0 : -1;
+        return fflushThroughEntry(GuestMemory.R32(fb + FbFile)) >= 0 ? 0 : -1;
     }
 
     // ------------------------------------------------------------------ _ctype<char>
@@ -556,16 +556,16 @@ public sealed partial class Libc
     };
 
     [Hle("_ZNSt6_ctypeIcED1Ev")] uint CtypeDtorC(uint obj) { GuestMemory.W32(obj, Rtti.Vptr(VtCtypeC)); return obj; }
-    [Hle("_ZNSt6_ctypeIcED0Ev")] uint CtypeDelC(uint obj) { CtypeDtorC(obj); free(obj); return obj; }
+    [Hle("_ZNSt6_ctypeIcED0Ev")] uint CtypeDelC(uint obj) { CtypeDtorCThroughEntry(obj); freeThroughEntry(obj); return obj; }
 
-    [Hle("_ZNKSt6_ctypeIcE10do_tolowerEc")] int CtypeTolowerC(uint obj, int c) => (sbyte)tolower((byte)c);
-    [Hle("_ZNKSt6_ctypeIcE10do_toupperEc")] int CtypeToupperC(uint obj, int c) => (sbyte)toupper((byte)c);
+    [Hle("_ZNKSt6_ctypeIcE10do_tolowerEc")] int CtypeTolowerC(uint obj, int c) => (sbyte)tolowerThroughEntry((byte)c);
+    [Hle("_ZNKSt6_ctypeIcE10do_toupperEc")] int CtypeToupperC(uint obj, int c) => (sbyte)toupperThroughEntry((byte)c);
 
     [Hle("_ZNKSt6_ctypeIcE10do_tolowerEPcPKc")]
-    uint CtypeTolowerRangeC(uint obj, uint f, uint l) { for (; f != l; f++) GuestMemory.Write(f, (byte)tolower(B(f))); return l; }
+    uint CtypeTolowerRangeC(uint obj, uint f, uint l) { for (; f != l; f++) GuestMemory.Write(f, (byte)tolowerThroughEntry(B(f))); return l; }
 
     [Hle("_ZNKSt6_ctypeIcE10do_toupperEPcPKc")]
-    uint CtypeToupperRangeC(uint obj, uint f, uint l) { for (; f != l; f++) GuestMemory.Write(f, (byte)toupper(B(f))); return l; }
+    uint CtypeToupperRangeC(uint obj, uint f, uint l) { for (; f != l; f++) GuestMemory.Write(f, (byte)toupperThroughEntry(B(f))); return l; }
 
     [Hle("_ZNKSt6_ctypeIcE8do_widenEc")] int CtypeWidenC(uint obj, int c) => (sbyte)c;
     [Hle("_ZNKSt6_ctypeIcE9do_narrowEcc")] int CtypeNarrowC(uint obj, int c, int dflt) => (sbyte)c;
@@ -579,7 +579,7 @@ public sealed partial class Libc
     // ------------------------------------------------------------------ _ctype<wchar_t> (through the C conversions)
 
     [Hle("_ZNSt6_ctypeIwED1Ev")] uint CtypeDtorW(uint obj) { GuestMemory.W32(obj, Rtti.Vptr(VtCtypeW)); return obj; }
-    [Hle("_ZNSt6_ctypeIwED0Ev")] uint CtypeDelW(uint obj) { CtypeDtorW(obj); free(obj); return obj; }
+    [Hle("_ZNSt6_ctypeIwED0Ev")] uint CtypeDelW(uint obj) { CtypeDtorWThroughEntry(obj); freeThroughEntry(obj); return obj; }
 
     const uint VwIs = 8, VwWiden = 0x28, VwNarrow = 0x30;
 
@@ -606,7 +606,7 @@ public sealed partial class Libc
     {
         uint n = VCall(obj, VwNarrow, (ushort)c, 0) & 0xFF;
         if (n == 0) return (ushort)c;
-        return VCall(obj, VwWiden, (uint)(sbyte)(upper ? toupper((int)n) : tolower((int)n)));
+        return VCall(obj, VwWiden, (uint)(sbyte)(upper ? toupperThroughEntry((int)n) : tolowerThroughEntry((int)n)));
     }
 
     [Hle("_ZNKSt6_ctypeIwE10do_tolowerEw")] uint CtypeTolowerW(uint obj, uint c) => CtypeCaseW(obj, c, false);
@@ -621,7 +621,7 @@ public sealed partial class Libc
     void CaseInPlaceW(uint obj, uint at, bool upper)
     {
         uint n = VCall(obj, VwNarrow, W(at), 0) & 0xFF;
-        if (n != 0) GuestMemory.Write(at, (ushort)VCall(obj, VwWiden, (uint)(sbyte)(upper ? toupper((int)n) : tolower((int)n))));
+        if (n != 0) GuestMemory.Write(at, (ushort)VCall(obj, VwWiden, (uint)(sbyte)(upper ? toupperThroughEntry((int)n) : tolowerThroughEntry((int)n))));
     }
 
     /// <summary>widen(c): the byte converted from a fresh state (WEOF when it is not a whole character).</summary>
@@ -653,7 +653,7 @@ public sealed partial class Libc
     [Hle("_ZNSt13_codecvt_baseD0Ev")]
     [Hle("_ZNSt8_codecvtIccSt9_MbstatetED0Ev")]
     [Hle("_ZNSt8_codecvtIwcSt9_MbstatetED0Ev")]
-    uint CodecvtDel(uint obj) { CodecvtDtor(obj); free(obj); return obj; }
+    uint CodecvtDel(uint obj) { CodecvtDtorThroughEntry(obj); freeThroughEntry(obj); return obj; }
 
     /// <summary>do_in / do_out of _codecvt&lt;char, char&gt;: noconv, next pointers at the starts.</summary>
     [Hle("_ZNKSt8_codecvtIccSt9_MbstatetE5do_inERS0_PKcS4_RS4_PcS6_RS6_")]
@@ -746,6 +746,6 @@ public sealed partial class Libc
             }
             return count;
         }
-        finally { free(st); }
+        finally { freeThroughEntry(st); }
     }
 }

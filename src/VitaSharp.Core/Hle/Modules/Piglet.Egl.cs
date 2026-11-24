@@ -612,7 +612,7 @@ public sealed partial class Piglet
         return EglTrue;
     }
 
-    [Hle] int eglWaitGL() => eglWaitClient();
+    [Hle] int eglWaitGL() => eglWaitClientThroughEntry();
 
     /// <summary>The only native engine is the core one; it renders nothing Piglet waits on.</summary>
     [Hle]

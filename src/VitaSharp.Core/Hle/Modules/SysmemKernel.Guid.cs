@@ -40,7 +40,7 @@ public sealed partial class SysmemKernel
     /// <summary>ksceGUIDKernelCreate(SceClass *cls, name, SceObjectBase **obj): ksceGUIDKernelCreateWithOpt with no
     /// option.</summary>
     [Hle(Nid = 0x56A13E90, Library = "SceSysmemForDriver")]
-    int ksceGUIDKernelCreate(uint cls, uint name, uint objOut) => ksceGUIDKernelCreateWithOpt(cls, name, 0, objOut);
+    int ksceGUIDKernelCreate(uint cls, uint name, uint objOut) => ksceGUIDKernelCreateWithOptThroughEntry(cls, name, 0, objOut);
 
     /// <summary>ksceGUIDGetClass(guid, SceClass **cls): the object's class (the root class for the HLE's own
     /// objects).</summary>
@@ -182,7 +182,7 @@ public sealed partial class SysmemKernel
             return SceError.INVALID_ARGUMENT;
         }
 
-        return ksceGUIDReferObjectWithClass(guid, cls, objOut);
+        return ksceGUIDReferObjectWithClassThroughEntry(guid, cls, objOut);
     }
 
     /// <summary>ksceGUIDReferObjectWithSubclass(guid, cls, SceObjectBase **obj): a reference when the object's class is
@@ -192,14 +192,14 @@ public sealed partial class SysmemKernel
 
     /// <summary>kscePUIDGetClass(pid, puid, SceClass **cls).</summary>
     [Hle(Nid = 0xE9728A12, Library = "SceSysmemForDriver")]
-    int kscePUIDGetClass(int pid, int puid, uint classOut) => ksceGUIDGetClass(puid, classOut);
+    int kscePUIDGetClass(int pid, int puid, uint classOut) => ksceGUIDGetClassThroughEntry(puid, classOut);
 
     /// <summary>kscePUIDGetObject(pid, puid, SceObjectBase **obj).</summary>
     [Hle(Nid = 0xFE6D7FAE, Library = "SceSysmemForDriver")]
-    int kscePUIDGetObject(int pid, int puid, uint objOut) => ksceGUIDGetObject(puid, objOut);
+    int kscePUIDGetObject(int pid, int puid, uint objOut) => ksceGUIDGetObjectThroughEntry(puid, objOut);
 
     /// <summary>kscePUIDOpenByGUIDWithFlags(pid, guid, flags): kscePUIDOpenByGUID (the flags choose the access the
     /// handle gets, which VitaSharp's single UID space does not separate).</summary>
     [Hle(Nid = 0xCED1547B, Library = "SceSysmemForDriver")]
-    int kscePUIDOpenByGUIDWithFlags(int pid, int guid, uint flags) => kscePUIDOpenByGUID(pid, guid);
+    int kscePUIDOpenByGUIDWithFlags(int pid, int guid, uint flags) => kscePUIDOpenByGUIDThroughEntry(pid, guid);
 }

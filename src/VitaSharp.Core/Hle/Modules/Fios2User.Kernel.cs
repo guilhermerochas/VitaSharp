@@ -105,7 +105,7 @@ public sealed partial class Fios2User
             }
         }
 
-        return sceFiosOverlayAddForProcess02(0, overlay, new Ptr<int>(outId));
+        return sceFiosOverlayAddForProcess02ThroughEntry(0, overlay, new Ptr<int>(outId));
     }
 
     /// <summary>ksceFiosKernelOverlayAdd(overlay, outId): for the process the overlay names (+8); NULLs 0x80820006.</summary>
@@ -136,21 +136,21 @@ public sealed partial class Fios2User
     [Hle(Nid = 0x2368FEB5, Library = "SceFios2KernelForDriver")]
     int ksceFiosKernelOverlayRemove(int id)
     {
-        return ksceFiosKernelOverlayRemoveForProcess(0, id);
+        return ksceFiosKernelOverlayRemoveForProcessThroughEntry(0, id);
     }
 
     /// <summary>ksceFiosKernelOverlayRemoveForProcess(pid, id): an unknown id 0x8082001A.</summary>
     [Hle(Nid = 0x23247EFB, Library = "SceFios2KernelForDriver")]
     int ksceFiosKernelOverlayRemoveForProcess(int pid, int id)
     {
-        return sceFiosOverlayRemoveForProcess02(pid, id);
+        return sceFiosOverlayRemoveForProcess02ThroughEntry(pid, id);
     }
 
     /// <summary>ksceFiosKernelOverlayGetInfo(id, outOverlay): NULL 0x80820006, unknown 0x8082001A.</summary>
     [Hle(Nid = 0x725E6817, Library = "SceFios2KernelForDriver")]
     int ksceFiosKernelOverlayGetInfo(int id, uint outOverlay)
     {
-        return ksceFiosKernelOverlayGetInfoForProcess(0, id, outOverlay);
+        return ksceFiosKernelOverlayGetInfoForProcessThroughEntry(0, id, outOverlay);
     }
 
     /// <summary>ksceFiosKernelOverlayGetInfoForProcess(pid, id, outOverlay): NULL 0x80820006, unknown 0x8082001A.</summary>
@@ -162,14 +162,14 @@ public sealed partial class Fios2User
             return FIOS_ERR_NULL;
         }
 
-        return sceFiosOverlayGetInfoForProcess02(pid, id, outOverlay);
+        return sceFiosOverlayGetInfoForProcess02ThroughEntry(pid, id, outOverlay);
     }
 
     /// <summary>ksceFiosKernelOverlayModify(id, overlay): NULL 0x80820006, the overlay's checks, unknown 0x8082001A.</summary>
     [Hle(Nid = 0x7F8B960C, Library = "SceFios2KernelForDriver")]
     int ksceFiosKernelOverlayModify(int id, uint overlay)
     {
-        return ksceFiosKernelOverlayModifyForProcess(0, id, overlay);
+        return ksceFiosKernelOverlayModifyForProcessThroughEntry(0, id, overlay);
     }
 
     /// <summary>ksceFiosKernelOverlayModifyForProcess(pid, id, overlay): as ksceFiosKernelOverlayModify.</summary>
@@ -187,7 +187,7 @@ public sealed partial class Fios2User
             return check;
         }
 
-        return sceFiosOverlayModifyForProcess02(pid, id, overlay);
+        return sceFiosOverlayModifyForProcess02ThroughEntry(pid, id, overlay);
     }
 
     /// <summary>ksceFiosKernelOverlayGetList(pid, minOrder, maxOrder, outIds, maxIds, actual): a count without a
@@ -206,7 +206,7 @@ public sealed partial class Fios2User
             GuestMemory.Fill(outIds, 0, maxIds * 4);
         }
 
-        return sceFiosOverlayGetList02(pid, minOrder, maxOrder, outIds, maxIds, new Ptr<uint>(actual));
+        return sceFiosOverlayGetList02ThroughEntry(pid, minOrder, maxOrder, outIds, maxIds, new Ptr<uint>(actual));
     }
 
     /// <summary>ksceFiosKernelOverlayGetRecommendedScheduler(count, path): 1 for a "hostN:" path with more than one
@@ -275,14 +275,14 @@ public sealed partial class Fios2User
     [Hle(Nid = 0xE71192C5, Library = "SceFios2KernelForDriver", ReturnsValue = true)]
     int ksceFiosKernelOverlayThreadIsDisabled()
     {
-        return sceFiosOverlayThreadIsDisabled02();
+        return sceFiosOverlayThreadIsDisabled02ThroughEntry();
     }
 
     /// <summary>ksceFiosKernelOverlayThreadSetDisabled(disabled): sets the calling thread's flag; 0.</summary>
     [Hle(Nid = 0x03727E5E, Library = "SceFios2KernelForDriver")]
     int ksceFiosKernelOverlayThreadSetDisabled(int disabled)
     {
-        return sceFiosOverlayThreadSetDisabled02(disabled);
+        return sceFiosOverlayThreadSetDisabled02ThroughEntry(disabled);
     }
 
     // ---- the overlay directory handles: the I/O manager opens a directory under overlays through them. A handle
@@ -354,7 +354,7 @@ public sealed partial class Fios2User
             return FIOS_ERR_BAD_HANDLE;
         }
 
-        return io.sceIoDread(fd, dirent);
+        return io.sceIoDreadThroughEntry(fd, dirent);
     }
 
     /// <summary>DH stat (handle, stat): NULL stat 0x80820006, not a handle 0x8082000C; the stat of a directory
@@ -420,7 +420,7 @@ public sealed partial class Fios2User
             }
         }
 
-        IoManager?.sceIoDclose(fd);
+        IoManager?.sceIoDcloseThroughEntry(fd);
         return 0;
     }
 }

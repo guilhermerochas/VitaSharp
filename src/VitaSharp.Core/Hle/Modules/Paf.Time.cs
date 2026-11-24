@@ -22,22 +22,22 @@ public sealed partial class Paf
     }
 
     // ---- paf::rtc
-    [Hle("_ZN3paf3rtc10IsLeapYearEt")] int RtcIsLeapYear(int year) => R.sceRtcIsLeapYear((ushort)year);
+    [Hle("_ZN3paf3rtc10IsLeapYearEt")] int RtcIsLeapYear(int year) => R.sceRtcIsLeapYearThroughEntry((ushort)year);
 
     [Hle("_ZN3paf3rtc10IsLeapYearEPKy")]
     int RtcIsLeapYearTick(uint tick)
     {
         uint d = Scratch(0x10);
-        RtcTickToDate(tick, d, 0);
-        return R.sceRtcIsLeapYear(H(d));
+        RtcTickToDateThroughEntry(tick, d, 0);
+        return R.sceRtcIsLeapYearThroughEntry(H(d));
     }
 
     [Hle("_ZN3paf3rtc14GetDaysInMonthEPKy")]
     int RtcDaysInMonth(uint tick)
     {
         uint d = Scratch(0x10);
-        RtcTickToDate(tick, d, 0);
-        return R.sceRtcGetDaysInMonth(H(d), H(d + 2));
+        RtcTickToDateThroughEntry(tick, d, 0);
+        return R.sceRtcGetDaysInMonthThroughEntry(H(d), H(d + 2));
     }
 
     uint _scratch;
@@ -56,7 +56,7 @@ public sealed partial class Paf
         if (tick == 0) return 0;
         uint t = Scratch(0x10);
         Q(t, Rtc.TrophyServerTick(Emu) ?? Rtc.NowTick);
-        int r = R.sceRtcConvertUtcToLocalTime(new Ptr<ulong>(t), new Ptr<ulong>(t + 8));
+        int r = R.sceRtcConvertUtcToLocalTimeThroughEntry(new Ptr<ulong>(t), new Ptr<ulong>(t + 8));
         if (r == 0) Q(tick, Q(t + 8));
         return r;
     }
@@ -66,7 +66,7 @@ public sealed partial class Paf
     {
         uint t = Scratch(0x10);
         Q(t, Q(utc));
-        int r = R.sceRtcConvertUtcToLocalTime(new Ptr<ulong>(t), new Ptr<ulong>(t + 8));
+        int r = R.sceRtcConvertUtcToLocalTimeThroughEntry(new Ptr<ulong>(t), new Ptr<ulong>(t + 8));
         if (local != 0) Q(local, Q(t + 8));
         return r;
     }
@@ -76,7 +76,7 @@ public sealed partial class Paf
     {
         uint t = Scratch(0x10);
         Q(t, Q(local));
-        int r = R.sceRtcConvertLocalTimeToUtc(new Ptr<ulong>(t), new Ptr<ulong>(t + 8));
+        int r = R.sceRtcConvertLocalTimeToUtcThroughEntry(new Ptr<ulong>(t), new Ptr<ulong>(t + 8));
         if (utc != 0) Q(utc, Q(t + 8));
         return r;
     }
@@ -87,7 +87,7 @@ public sealed partial class Paf
     {
         uint t = Scratch(0x18);
         GuestMemory.Copy(t, date, 0x10);
-        int r = R.sceRtcGetTick(t, new Ptr<ulong>(t + 0x10));
+        int r = R.sceRtcGetTickThroughEntry(t, new Ptr<ulong>(t + 0x10));
         if (tick != 0) Q(tick, Q(t + 0x10));
         return r;
     }
@@ -99,14 +99,14 @@ public sealed partial class Paf
     {
         uint t = _scratch != 0 ? _scratch + 0x80 : Scratch(0) + 0x80;
         Q(t, Q(tick));
-        int r = R.sceRtcSetTick(t + 8, new Ptr<ulong>(t));
+        int r = R.sceRtcSetTickThroughEntry(t + 8, new Ptr<ulong>(t));
         if (r == 0) GuestMemory.Copy(date, t + 8, 0x10);
         else WriteDate(date, ParseBase.Y, ParseBase.Mo, ParseBase.D, 0, 0, 0, 0);
         if (ex != 0 && r == 0)
         {
             GuestMemory.Fill(ex, 0, 8);
             int y = H(date), mo = H(date + 2), d = H(date + 4);
-            H(ex, (ushort)R.sceRtcGetDayOfWeek(y, mo, d));
+            H(ex, (ushort)R.sceRtcGetDayOfWeekThroughEntry(y, mo, d));
             int yday = d - 1;
             for (int m = 1; m < mo && m <= 12; m++) yday += DateTime.DaysInMonth(Math.Max(1, y), m);
             H(ex + 2, (ushort)yday);
@@ -120,7 +120,7 @@ public sealed partial class Paf
     {
         if (Emu.Hle.Modules.OfType<RegMgrSystem>().FirstOrDefault() is not { } reg) return 0;
         uint v = Scratch(0) + 0xF0;
-        return reg.sceRegMgrUtilityGetInt(id, new Ptr<int>(v)) < 0 ? 0 : (int)U(v);
+        return reg.sceRegMgrUtilityGetIntThroughEntry(id, new Ptr<int>(v)) < 0 ? 0 : (int)U(v);
     }
 
     /// <summary>The tick additions return 0 and wrap like libpaf's 64-bit arithmetic (no range check).</summary>
@@ -137,7 +137,7 @@ public sealed partial class Paf
     {
         uint t = Scratch(0x10);
         Q(t, Q(src));
-        int r = R.sceRtcTickAddMonths(new Ptr<ulong>(t + 8), new Ptr<ulong>(t), n);
+        int r = R.sceRtcTickAddMonthsThroughEntry(new Ptr<ulong>(t + 8), new Ptr<ulong>(t), n);
         if (r == 0) Q(dst, Q(t + 8));
         return r;
     }
@@ -147,7 +147,7 @@ public sealed partial class Paf
     {
         uint t = Scratch(0x10);
         Q(t, Q(src));
-        int r = R.sceRtcTickAddYears(new Ptr<ulong>(t + 8), new Ptr<ulong>(t), n);
+        int r = R.sceRtcTickAddYearsThroughEntry(new Ptr<ulong>(t + 8), new Ptr<ulong>(t), n);
         if (r == 0) Q(dst, Q(t + 8));
         return r;
     }
@@ -168,7 +168,7 @@ public sealed partial class Paf
     {
         uint t = Scratch(8);
         Q(t, tick == 0 ? Rtc.TrophyServerTick(Emu) ?? Rtc.NowTick : Q(tick));
-        return R.sceRtcFormatRFC3339(buf, new Ptr<ulong>(t), tz);
+        return R.sceRtcFormatRFC3339ThroughEntry(buf, new Ptr<ulong>(t), tz);
     }
 
     [Hle("_ZN3paf3rtc22FormatRFC3339LocalTimeEPcPKy")]
@@ -178,11 +178,11 @@ public sealed partial class Paf
         if (tick == 0)
         {
             Q(t + 0x10, Rtc.TrophyServerTick(Emu) ?? Rtc.NowTick);
-            int r = R.sceRtcConvertUtcToLocalTime(new Ptr<ulong>(t + 0x10), new Ptr<ulong>(t));
+            int r = R.sceRtcConvertUtcToLocalTimeThroughEntry(new Ptr<ulong>(t + 0x10), new Ptr<ulong>(t));
             if (r != 0) return r;
         }
         else Q(t, Q(tick));
-        return R.sceRtcFormatRFC3339LocalTime(buf, new Ptr<ulong>(t));
+        return R.sceRtcFormatRFC3339LocalTimeThroughEntry(buf, new Ptr<ulong>(t));
     }
 
     /// <summary>
@@ -236,7 +236,7 @@ public sealed partial class Paf
 
     /// <summary>"now" is the current tick; otherwise the parsed date as a tick (SceRtc's GetTick).</summary>
     [Hle("_ZN3paf3rtc19ParseSQLiteDateTimeEPyPKc")]
-    int RtcParseSqlite(uint tick, uint s) => RtcParseSqliteF(tick, 0, s);
+    int RtcParseSqlite(uint tick, uint s) => RtcParseSqliteFThroughEntry(tick, 0, s);
 
     [Hle("_ZN3paf3rtc19ParseSQLiteDateTimeEPyPNS0_24SQLiteDateTimeFormatTypeEPKc")]
     int RtcParseSqliteF(uint tick, uint fmt, uint s)
@@ -249,7 +249,7 @@ public sealed partial class Paf
         if (r != 0) return r;
         uint t = Scratch(0x18);
         WriteDate(t, d.Y, d.Mo, d.D, d.H, d.Mi, d.S, d.Us);
-        r = R.sceRtcGetTick(t, new Ptr<ulong>(t + 0x10));
+        r = R.sceRtcGetTickThroughEntry(t, new Ptr<ulong>(t + 0x10));
         Q(tick, Q(t + 0x10));
         return r;
     }
@@ -282,7 +282,7 @@ public sealed partial class Paf
     void DtFromClock(uint ret, bool local)
     {
         uint t = Scratch(0x10);
-        if (local) R.sceRtcGetCurrentClockLocalTime(t); else R.sceRtcGetCurrentClock(t, 0);
+        if (local) R.sceRtcGetCurrentClockLocalTimeThroughEntry(t); else R.sceRtcGetCurrentClockThroughEntry(t, 0);
         DtSet(ret, H(t), H(t + 2), H(t + 4), H(t + 6), H(t + 8), H(t + 0xA), U(t + 0xC));
     }
 
@@ -294,7 +294,7 @@ public sealed partial class Paf
     {
         uint t = Scratch(0x20);
         Q(t, Rtc.NowTick);
-        R.sceRtcSetTick(t + 8, new Ptr<ulong>(t));
+        R.sceRtcSetTickThroughEntry(t + 8, new Ptr<ulong>(t));
         DtSet(ret, H(t + 8), H(t + 0xA), H(t + 0xC), H(t + 0xE), H(t + 0x10), H(t + 0x12), U(t + 0x14));
     }
 
@@ -303,7 +303,7 @@ public sealed partial class Paf
     void DtFromTick(uint ret, uint tick)
     {
         uint d = Scratch(0) + 0x40;
-        RtcTickToDate(tick, d, 0);
+        RtcTickToDateThroughEntry(tick, d, 0);
         DtSet(ret, H(d), H(d + 2), H(d + 4), H(d + 6), H(d + 8), H(d + 0xA), U(d + 0xC));
     }
 
@@ -313,7 +313,7 @@ public sealed partial class Paf
     {
         uint t = Scratch(0x18);
         GuestMemory.Copy(t, dt, 0x10);
-        R.sceRtcGetTick(t, new Ptr<ulong>(t + 0x10));
+        R.sceRtcGetTickThroughEntry(t, new Ptr<ulong>(t + 0x10));
         return Q(t + 0x10);
     }
 
@@ -330,9 +330,9 @@ public sealed partial class Paf
     void DtParseSqlite(uint ret, uint s)
     {
         uint t = Scratch(8) + 0xC0;
-        int r = RtcParseSqlite(t, s);
+        int r = RtcParseSqliteThroughEntry(t, s);
         if (r != 0) { DtFailed(ret, r); return; }
-        DtFromTick(ret, t);
+        DtFromTickThroughEntry(ret, t);
         H(ret + 0x16, 0);
     }
 
@@ -341,9 +341,9 @@ public sealed partial class Paf
     void DtParseRfc3339(uint ret, uint s)
     {
         uint t = Scratch(8) + 0xC0;
-        int r = RtcParseRfc3339(t, s);
+        int r = RtcParseRfc3339ThroughEntry(t, s);
         if (r != 0) { DtFailed(ret, r); return; }
-        DtFromTick(ret, t);
+        DtFromTickThroughEntry(ret, t);
         U(ret + 0x10, (uint)Rfc3339Offset(CRead(s)));
         H(ret + 0x16, 0);
     }
@@ -362,18 +362,18 @@ public sealed partial class Paf
     void DtAdd(uint ret, uint me, uint other)
     {
         uint t = Scratch(0x20) + 0x40;
-        Q(t, DtToTick(me));
+        Q(t, DtToTickThroughEntry(me));
         var tick = new Ptr<ulong>(t);
-        if (H(other) != 0) R.sceRtcTickAddYears(tick, tick, H(other));
-        if (H(other + 2) != 0) R.sceRtcTickAddMonths(tick, tick, H(other + 2));
+        if (H(other) != 0) R.sceRtcTickAddYearsThroughEntry(tick, tick, H(other));
+        if (H(other + 2) != 0) R.sceRtcTickAddMonthsThroughEntry(tick, tick, H(other + 2));
         ulong v = Q(t);
         v += H(other + 4) * 86_400_000_000UL + H(other + 6) * 3_600_000_000UL + H(other + 8) * 60_000_000UL + H(other + 0xA) * 1_000_000UL + U(other + 0xC);
         Q(t, v);
-        DtFromTick(ret, t);
+        DtFromTickThroughEntry(ret, t);
     }
 
     [Hle("_ZNK3paf8datetime8DateTimeltERKS1_")]
-    bool DtLess(uint me, uint other) => DtToTick(me) < DtToTick(other);
+    bool DtLess(uint me, uint other) => DtToTickThroughEntry(me) < DtToTickThroughEntry(other);
 
     // the format strings of DateTime::Wcsftime: three static wide strings
     uint _dateFormat, _timeFormat, _dateTimeFormat;

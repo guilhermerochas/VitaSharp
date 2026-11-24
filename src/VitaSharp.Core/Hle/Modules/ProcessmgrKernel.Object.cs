@@ -63,7 +63,7 @@ public sealed partial class ProcessmgrKernel
 
     SystemServicesVsh Services => Emu.Hle.Modules.OfType<SystemServicesVsh>().First();
 
-    bool DebugConsole(uint bit) => Services.ksceKernelCheckDipsw(bit) != 0;
+    bool DebugConsole(uint bit) => Services.ksceKernelCheckDipswThroughEntry(bit) != 0;
 
     /// <summary>The process UID <paramref name="pid"/> stands for (0: the current thread's), or 0 when there is none.</summary>
     int ResolvePid(int pid)
@@ -492,13 +492,13 @@ public sealed partial class ProcessmgrKernel
     /// <summary>NID_5468892A(size, opt): a block of the current process's heap (+0x80: what
     /// ksceKernelAllocRemoteProcessHeap gives for that process).</summary>
     [Hle(Nid = 0x5468892A, Library = "SceProcessmgrForDriver", ReturnsValue = true)]
-    uint NID_5468892A(uint size, uint opt) => ksceKernelAllocRemoteProcessHeap(CurrentPid(), size, opt);
+    uint NID_5468892A(uint size, uint opt) => ksceKernelAllocRemoteProcessHeapThroughEntry(CurrentPid(), size, opt);
 
     /// <summary>NID_FC2A424E(ptr): frees a block of the current process's heap; 0.</summary>
     [Hle(Nid = 0xFC2A424E, Library = "SceProcessmgrForDriver")]
     int NID_FC2A424E(uint ptr)
     {
-        ksceKernelFreeRemoteProcessHeap(CurrentPid(), ptr);
+        ksceKernelFreeRemoteProcessHeapThroughEntry(CurrentPid(), ptr);
         return 0;
     }
 

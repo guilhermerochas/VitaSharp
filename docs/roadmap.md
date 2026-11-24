@@ -1948,7 +1948,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Firmware e sistema
 
-- [ ] [P1][G] Chamadas internas do HLE a funções do firmware passando pelo hook da entrada. No Vita um hook de exportação corrige o código da função, então todo chamador passa por ele, inclusive o próprio módulo do firmware; no VitaSharp o HLE chama o C# direto. Feito (test/hookval1): `FirmwareKernelModules.TryCallPatched` (sem alocação; sem hook lê dois campos, recontando as entradas corrigidas só quando `BlockCache.CodeChanges` muda) e os caminhos do iofilemgr que chamam `ksceVopLookup` (hook do fd_fix), com o teste `IoVfsMountTests.AHookOnTheVopLookupEntrySeesTheModulesOwnPathWalks`. Falta: as outras chamadas internas C#→C# a funções exportadas de bibliotecas de kernel (censo por regex: ~2.500 pontos em ~2.300 funções, a maioria sem chamador interno relevante); proposta: um gerador de código no `[Hle]` que emita para cada função exportada um wrapper `XxxThroughEntry` e um analisador que acuse a chamada direta, em vez de converter ponto a ponto.
+- [x] [P1][G] Chamadas internas do HLE a funções do firmware passando pelo hook da entrada. No Vita um hook de exportação corrige o código da função, então todo chamador passa por ele, inclusive o próprio módulo do firmware. Feito (test/hookval1, feat/hookgen1): o gerador `HleEntryCallGenerator` emite, para cada método `[Hle]` chamado como `XxxThroughEntry`, um wrapper no próprio módulo que, sem hook, lê três campos estáticos (`HleEntryCalls.AnyHook`: processos do host com hook de usuário e entradas corrigidas dos módulos de kernel do firmware de qualquer sistema emulado, recontadas só quando `BlockCache.CodeChanges` muda; com algum, o `TryCall` confere o processo e o sistema do próprio módulo) e chama o C# sem alocar; com hook, roda a entrada corrigida (kernel) ou o thunk do hook de usuário do processo na thread que chamou, com os argumentos em palavras AAPCS. O analisador VSHLE010 acusa chamada direta a função exportada no VitaSharp.Core. 1.567 chamadas internas migradas em 68 bibliotecas (Libc 369, Paf 179, SysmemKernel 117, SqliteVsh 100, MonoBridge 82, IoFileMgr 74, PigletGxm 65, SystemServicesVsh 60, VshBridge 41, GeneralImports 35, Devices 31, Fios2User 28, Xml 28, NetSyscalls 26, AppMgr 23, Fios2 22, Display 20, PluginFramework 15, ModulemgrKernel 12, ProcessmgrKernel 8, ThreadMgr 8, ThreadmgrKernel 6, NpDrm 9 e as demais); 215 ficam diretas com `#pragma` justificado (formas de syscall por trás dos wrappers de usuário e entradas de kernel que dividem o corpo C# da chamada de usuário). Testes: `HleEntryCallTests` (rotas de usuário e de kernel, AAPCS, 0 bytes sem hook, todo wrapper do core alcança um hook), `HleEntryCallLibraryTests` (um caminho interno por biblioteca: sysmem, threadmgr, modulemgr, processmgr, iofilemgr, sblacmgr/npdrm, threadmgr de usuário, appmgr, libc; falham sem a migração), benchmark `HleEntryCallBenchmarks`. Fica de fora: funções com string C#, float, contexto do HLE ou varargs (sem wrapper; a chamada do guest a elas já passa pelo hook) e hooks de import nos stubs de import dos módulos do firmware (`CallImport`, por módulo). Corrigido, falta o usuário testar: com um plugin de kernel que faz hook de uma função do firmware (ex.: fd_fix no ksceVopLookup, ou qualquer hook de IO/threadmgr), abrir um jogo e conferir que o plugin age também nas chamadas internas e que o jogo roda igual.
 - [x] Bateria de validação de ponta a ponta dos hooks (test/hookval1): matriz tipo de hook × caminho de execução (interpretador, IL, nativo do host, pré-compilado), processo criado depois, save state com e sem hook, fuzz determinístico da cadeia contra o modelo do framework; tabela em `docs/notes/plugins.md`. Corrigido, falta o usuário testar: com kubridge + fd_fix ligados, abrir um jogo que lê arquivos de um mount do guest e conferir que nada mudou.
 - [ ] [P2][G] Exceções da CPU chegando aos handlers do SceExcpmgr (kubridge kuKernelRegisterExceptionHandler e outros plugins): estudo de 16/11/2026 (kplug, decompilado os0__kd__excpmgr.skprx.c): no firmware o vetor de abort entra na cadeia em modo abort (lr_abt = PC+8, spsr_abt = CPSR), registro {next, reservado, código em +8} (o vetor entra em head+8; as duas primeiras palavras têm de ser 0; a cadeia termina no handler padrão do firmware); o handler do kubridge é assembly de modo abort (SRS/push, MRC p15 DFAR/DFSR, RFE). Falta na CPU emulada: modos de exceção (CPS/SRS/RFE hoje NOP; sem SPSR nem registros banqueados abt/und/svc; MRS/MSR SPSR; subs/movs pc,lr; ldm ^; MRC DFAR/DFSR/IFAR/IFSR). Plano: P1 modos na CpuState nos dois backends (0 custo sem exceção, medir fps); P2 handler de falha do host convertendo acesso a página não mapeada em data abort do guest (só no JIT nativo; hoje a página é commitada e o guest lê zeros — mudar só quando houver handler registrado); P3 caminho do usuário do kubridge (registro + retorno por RFE). Testes sintéticos no formato do firmware em cada parte.
   Feito (exc1, feat/exc1): P1 modos de exceção na CPU (`Cpu/ExceptionModes.cs`, `A32.Privileged.cs`): R13/R14 banqueados por modo (e R8-R12 do FIQ), SPSR por modo, CPS/SRS/RFE (ARM e Thumb-2, CPS de 16 bits), MRS/MSR do SPSR e do byte de controle, SUBS PC, LR / MOVS PC, LR e LDM ^ com PC como retorno de exceção, LDM/STM ^ dos registros de usuário, MRC/MCR p15 DFSR/DFAR/IFSR/IFAR/ADFSR/AIFSR; nos três backends (o nativo chama o interpretador para as novas instruções; MRC/MCR das falhas inline). Em modo usuário cada codificação faz o que fazia antes. Entrega: instrução indefinida e prefetch abort (salto para endereço não mapeado) entram na cadeia do SceExcpmgr quando há handler registrado (`GuestThread.Exceptions.cs`), com pilhas de abort/undef por thread; a cadeia termina num handler padrão (UDF em memória do kernel) que devolve a falha ao relatório de sempre. Registro do SceExcpmgr como o FW 3.74 (checagens de ponteiro/palavras/tipo/prioridade < 8, ordem por prioridade). P3: o protocolo do kubridge (contexto salvo na pilha do usuário, RFE para o handler de usuário, retorno por UDF + RFE) coberto por teste sintético; o kubridge real roda o próprio código (LLE).
@@ -3367,6 +3367,80 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `GxmHleTests.ColorSurfaceInitAcceptsNullData`. Testar: Zero Time Dilemma (PCSE00781) passa do boot, logos, menu e
   cenas como antes (nenhum `sceGxmBeginScene: 0x805B0003` ou `sceGxmColorSurfaceSetData: 0x805B0009` no log);
   Croixleur Sigma (framebuffers com dados NULL e SetData depois) abre e mostra imagem.
+- [ ] (23/11/2026, falta testar) [P1][M] O mount do app0 no lançamento passa pela entrada kscePfsMount (fix/hookfn2): no
+  SceAppMgr 3.74 (descompilado, só estudo) o lançamento chama o kscePfsMount exportado do pfsmgr (caminho do app, ponto
+  de montagem "ts" + 12 dígitos hex + "d", ID de autoridade do processo em duas palavras, chave do título, modo 5); aqui
+  a imagem era aberta direto e um hook nessa função nunca era chamado. Agora, quando código de kernel enganchou o
+  kscePfsMount, o lançamento faz a chamada pela entrada numa thread de kernel; o original monta a imagem igual a antes e
+  um erro do hook falha o lançamento no passo 4 (mount PFS). A chave continua vindo do caminho atual (sem processador
+  seguro o lançamento para antes, em 0x80020004); nenhuma função de licença mudou. Diferença conhecida: o ID de
+  autoridade vai 0 num primeiro lançamento (o executável está dentro da imagem e é lido depois do mount). Teste:
+  `KernelPluginBootOrderTests` (`TheLaunchMountsApp0ThroughAHookedPfsMountEntry`,
+  `AnErrorThePfsMountHookAnswersFailsTheLaunch`). Testar: com "Ativar Plugins do Kernel" e um plugin de kernel que
+  engancha o kscePfsMount, abrir um título cujo app0 é imagem PFS e que já abria; o `last.log` mostra
+  `plugin hook N called: kscePfsMount` antes de `Loaded module`, e o título abre igual.
+
+- [ ] (23/11/2026, falta testar) [P1][M] Remove, Rename, Mkdir, Rmdir e Chstat percorrem o caminho pelo hook do
+  ksceVopLookup (fix/hookfn2): no iofilemgr 3.74 (descompilado, só estudo) essas operações percorrem o caminho com o
+  ksceVopLookup como a abertura (remove 0x81007f14, mkdir 0x810090b4, rmdir 0x810066cc, chstat 0x8100694c, rename
+  0x81009278 com o caminho antigo e depois o novo; devctl e sync só olham o dispositivo, sem elemento); aqui elas iam
+  direto aos arquivos do host. Agora, com um hook no ksceVopLookup, sceIoRemove/Mkdir/Rmdir/Chstat/Rename (syscalls do
+  usuário, formas ksceIo* e Async) fazem a caminhada pela entrada; erro do hook falha a chamada sem mudar nada, outro
+  vnode leva a chamada a ele, e o elemento que o mkdir/rename cria continua sendo criado. Teste: `IoVopLookupHookTests`
+  (`RemoveMkdirRmdirRenameAndChstatWalkTheirPathsThroughTheHook`, `WhatTheHookAnswersIsWhatAPathCallGets`,
+  `AnAsynchronousRemoveWalksItsPathOnTheSchedulersKernelThread`). Testar: com "Ativar Plugins do Kernel" e o fd_fix
+  ligados, num jogo que grava save (criar, sobrescrever e apagar um save); o save funciona igual e o resumo do
+  `last.log` do hook `ksceVopLookup` conta essas chamadas.
+
+- [ ] (23/11/2026, falta testar) [P1][M] Pedidos assíncronos de E/S com caminho chamam o hook do ksceVopLookup
+  (fix/hookfn2): no Vita o sceIoOpenAsync (e Dopen/Getstat/Remove/Rename/Mkdir/Rmdir/Chstat Async) roda na thread de
+  kernel do iofilemgr (SceIoScheduler), que percorre o caminho pelo vfs como a chamada síncrona; aqui o escalonador de
+  E/S rodava o pedido numa thread do host, fora de uma thread do guest, e o hook nunca era chamado. Agora, quando um hook
+  pegou o ksceVopLookup (conferido na hora em que o pedido roda), o pedido com caminho roda numa thread de kernel
+  "SceIoScheduler" do processo de kernel, no contexto do processo que o enviou (dispositivos, memória), e a resposta do
+  hook é o resultado do pedido; sem hook nada muda. Teste: `IoVopLookupHookTests`
+  (`AnAsynchronousRequestWalksItsPathThroughTheHookOnAKernelThread`, `AnErrorTheHookAnswersIsTheAsynchronousRequestsResult`,
+  `WithoutAHookAnAsynchronousOpenWalksNothing`). Testar: com "Ativar Plugins do Kernel" e o fd_fix ligados, abrir um jogo
+  que carrega com E/S assíncrona (ex.: um título PSM ou o shell); o resumo do fim do `last.log` para o hook
+  `ksceVopLookup` conta também as chamadas da thread `SceIoScheduler`, e o jogo roda igual.
+
+- [ ] (23/11/2026, falta testar) [P1][M] Hook de kernel no ksceVopLookup vê toda abertura nos dispositivos do emulador
+  (fix/hookfn1): no Vita o iofilemgr 3.74 percorre cada caminho elemento por elemento com o ksceVopLookup (0x81004bb8)
+  em toda abertura, e um hook nele (fd_fix) vê tudo; aqui só os mounts de drivers do guest eram percorridos e as
+  aberturas em ux0:/app0:/... iam direto aos arquivos do host (`never called` nas duas sessões). Agora sceIoOpen
+  (syscall do usuário e ksceIoOpen), sceIoDopen e sceIoGetstat fazem a caminhada pelos vnodes do host através da entrada
+  quando um hook pegou o ksceVopLookup (sem hook nada muda nem aloca); o que o hook responde vale: erro falha a chamada,
+  outro vnode leva a chamada para o caminho dele, e uma abertura que cria continua criando. Teste:
+  `IoVopLookupHookTests`. Testar: com "Ativar Plugins do Kernel" e o fd_fix ligados, abrir um jogo (ex.: um título
+  PSM); no fim do `last.log` o resumo `plugin hook N ... ksceVopLookup ... installed by FdFix` mostra chamadas (não
+  `never called`) e o jogo roda igual.
+
+- [ ] (23/11/2026, falta testar) [P1][M] Lançamento cria o processo pela entrada ksceKernelCreateProcess (fix/hookfn1):
+  no Vita o SceAppMgr 3.74 cria o processo do título com ksceKernelCreateProcess(título, tipo, caminho do executável,
+  opção de 0x40 bytes) antes de montar o app0; aqui o processo era criado só pelo host e um hook nela nunca era chamado.
+  Agora todo lançamento (o primeiro título, os do shell, LoadExec) chama a entrada numa thread de kernel quando código de
+  kernel a enganchou; o original responde com o processo do lançamento, e um erro do hook falha o lançamento com ele.
+  Teste: `KernelPluginBootOrderTests` (`TheLaunchCreatesTheProcessThroughAHookedCreateProcessEntry`,
+  `AnErrorTheCreateProcessHookAnswersFailsTheLaunch`). Testar: com os plugins de kernel ligados, abrir um título; o
+  `last.log` mostra `plugin hook N called: ksceKernelCreateProcess ...` antes de `Loading ...`, e o resumo do fim não
+  diz mais `never called` para esse hook.
+
+- [x] (23/11/2026) Censo das exportações do FW 3.74 nas bibliotecas de kernel pedidas (fix/hookfn1, tabelas de
+  exportação dos módulos decifrados contra `docs/hle/data/kernel-exports.tsv` e `user-exports.tsv`): SceProcessmgr 137
+  funções (SceProcessmgr 31, ForDriver 46, ForKernel 60), SceIofilemgr 207 (ForDriver 148, syscall 59), SceSysmem
+  1.011 (as 22 bibliotecas do módulo), SceThreadmgr 497, SceModulemgr 83, SceAppMgr 279, SceNpDrm 62: 0 faltando
+  em todas. O hook recusado `NID_71CF71FD of library 0x7A69DE86 (module SceProcessmgr)` é o ksceKernelCreateProcess do
+  FW 3.60 (SceProcessmgrForKernel era 0x7A69DE86; no 3.63+ é 0xEB1F8EF7 / 0x68068618); o 3.74 não exporta essa
+  biblioteca, então a recusa (0x90010002) é o que o console faz e o plugin cai no NID do 3.74 (o hook seguinte).
+
+- [ ] (23/11/2026, falta testar) [P1][M] Plugins de kernel no boot do sistema, antes do lançamento do título
+  (fix/bootord1): os módulos `*KERNEL` carregam e iniciam no boot (uma vez por sistema, qualquer que seja o título),
+  antes do mount do app0; um título cujo app0 não monta continua falhando com 0x80020004 e a mesma mensagem, e o log diz
+  em que passo do lançamento parou (`the launch stopped at app0's mount, step 3 of 4 (title key ...)`). A leitura da
+  licença no lançamento passa pelas entradas de ksceIoOpen/ksceIoRead/ksceIoClose quando código de kernel as enganchou.
+  Teste: `KernelPluginBootOrderTests`. Testar: com "Ativar Plugins do Kernel" ligado, abrir um título; o `last.log`
+  mostra cada `kernel plugin ...: loaded and started (...) (at system boot)` e `kernel plugins: N of M loaded and started
+  at system boot` antes da linha do título (`PSM title ...`/`Loading ...`), também quando o título falha.
 
 - [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo analisável e reexecutável sem o jogo (feat/capself1,
   `docs/captures.md`): (1) nenhum arquivo da gravação leva dado pessoal: uma última etapa troca, em todo texto e no
@@ -3847,12 +3921,19 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   abaixo sempre visíveis, sem piscar.
 
 ## Bugs em aberto
-- [ ] [P1][M] Testes de hooks: interferência de memória compartilhada (23/11/2026, hookfix1): na suíte completa,
-  `PluginHookChainFuzzTests` e `PluginHookMatrixProcessTests` falham em 1-3 combinações por execução (registros do
-  framework lidos como 0, "jump to unmapped address 0x00000000"); isolados passam, e também falham na release sem o
-  log de hooks. Suspeita: outras classes do collection "guest" (Kernel*) liberam memória de kernel sob esses testes
-  (ex.: um FreeOwnedBy(KernelPid) tardio). Investigar se é só do teste (fixture compartilhada) ou um bug real (memória
-  de kernel liberada com hooks vivos), corrigir e tirar as duas classes da quarentena (Category=Slow desde 23/11).
+- [x] [P1][M] Testes de hooks: interferência de memória compartilhada (23/11/2026, hookfix1/cifix17/hookmem1):
+  `PluginHookChainFuzzTests` e `PluginHookMatrixProcessTests` (e, raramente, HleCost, Piglet, NpCommerce2,
+  KernelThreadmgrControl) falhavam na suíte completa por dois defeitos do fim do sistema, ambos corrigidos com teste
+  (`SystemEndProcessTasksTests`), e as duas classes saíram da quarentena (Category=Slow):
+  1. (cifix17) o fim do sistema não esperava as tarefas dos processos (fim de processo terminado, LoadExec e início
+     de filho em `Task.Run`): o fim tardio fazia `FreeOwnedBy(pid)` — pid único só dentro de um sistema — e liberava
+     blocos do sistema seguinte na mesma memória (`kernel:trap` → "Undefined instruction 0xE7F000F0").
+  2. (hookmem1) o início de um filho deixado na sua tarefa, vindo depois do `Stop()`, punha o filho rodando de novo
+     e criava a thread `main`, que nenhuma parada alcançava: ela seguia executando código guest depois do fim e
+     gravava zeros nos blocos de kernel dos testes seguintes (registros do framework lidos como 0; achado com
+     `VITASHARP_WATCH`). Agora o sistema marca o fim (`VitaSystem.Ending`: `Emulator.Start` não inicia mais), para de
+     novo depois das tarefas e espera as threads de todos os processos.
+  Nada a testar em jogo (fim de sessão / suíte).
 - [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053) em 2x: textura da parede piscando e imagem embaçada (relato do
   usuário, 23/11/2026; captura `PCSE00053_20261123_134501_tudo`, build 793a9e96, resolução interna 2x por atalho no
   quadro 1587, dump da GPU de 34 quadros): o relatório marca 20 [flash] alternando quadro sim, quadro não (presents

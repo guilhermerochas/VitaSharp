@@ -147,7 +147,7 @@ public sealed partial class ModulemgrKernel
             return SceError.LIBRARYDB_NO_MOD;
         }
 
-        return ksceKernelGetModuleCB(module.Uid, cbOut);
+        return ksceKernelGetModuleCBThroughEntry(module.Uid, cbOut);
     }
 
     /// <summary>ksceKernelGetModuleIsSharedByAddr(pid, addr): 1 when the module holding the address is a shared module
@@ -261,7 +261,7 @@ public sealed partial class ModulemgrKernel
 
         if (pid == KernelSpace.KernelPid)
         {
-            return ksceKernelStartModule(modid, args, argp, flags, opt, status);
+            return ksceKernelStartModuleThroughEntry(modid, args, argp, flags, opt, status);
         }
 
         if (ProcessOf(pid) is not { } process)

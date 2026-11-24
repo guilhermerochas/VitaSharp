@@ -445,7 +445,7 @@ public sealed partial class NpCommerce2
 
     [Hle("sceNpCommerce2_E9C58817", Nid = 0xE9C58817, Library = C2)]
     [Hle("sceNpCommerce2_F762E758", Nid = 0xF762E758, Library = C2)]
-    int C2BareReply3(uint rec, uint buf, uint size) => C2BareReply(rec, buf, size);
+    int C2BareReply3(uint rec, uint buf, uint size) => C2BareReplyThroughEntry(rec, buf, size);
 
     [Hle("sceNpCommerce2_A8459628", Nid = 0xA8459628, Library = C2)]
     int C2ReplyList72(uint rec, uint buf, uint size) => Need(rec, buf, size) ?? RootList8(rec, buf, size, 0x72, 0x8A);
@@ -546,17 +546,17 @@ public sealed partial class NpCommerce2
 
     [Hle("sceNpCommerce2_7377AEC9", Nid = 0x7377AEC9, Library = C2)]
     [Hle("sceNpCommerce2_C995829A", Nid = 0xC995829A, Library = C2)]
-    int C2Info2Cb(uint parent, uint info) => C2Info2C(parent, info);
+    int C2Info2Cb(uint parent, uint info) => C2Info2CThroughEntry(parent, info);
 
     [Hle("sceNpCommerce2_AEB340A6", Nid = 0xAEB340A6, Library = C2)]
-    int C2Info30b(uint parent, uint info) => C2Info30(parent, info);
+    int C2Info30b(uint parent, uint info) => C2Info30ThroughEntry(parent, info);
 
     [Hle("sceNpCommerce2_C3B1179E", Nid = 0xC3B1179E, Library = C2)]
-    int C2Item37b(uint parent, uint index, uint info) => C2Item37(parent, index, info);
+    int C2Item37b(uint parent, uint index, uint info) => C2Item37ThroughEntry(parent, index, info);
 
     [Hle("sceNpCommerce2_9B1AE84E", Nid = 0x9B1AE84E, Library = C2)]
     [Hle("sceNpCommerce2_F520899E", Nid = 0xF520899E, Library = C2)]
-    int C2Item18b(uint parent, uint index, uint info) => C2Item18(parent, index, info);
+    int C2Item18b(uint parent, uint index, uint info) => C2Item18ThroughEntry(parent, index, info);
 
     /// <summary>The 0x2F item: three values and the count of its section 0x2E (lenient reply); 0x6C bytes.</summary>
     [Hle("sceNpCommerce2_A1E8C739", Nid = 0xA1E8C739, Library = C2)]

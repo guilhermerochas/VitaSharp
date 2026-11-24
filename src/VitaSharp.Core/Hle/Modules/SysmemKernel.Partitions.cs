@@ -288,7 +288,7 @@ public sealed partial class SysmemKernel
         }
 
         KernelPhyMemPart();
-        return ksceGUIDGetUIDVectorByClass(SysmemClass("SceUIDPhyMemPartClass", PhyMemPartSize), level, vector, vectorBytes >> 2, countOut);
+        return ksceGUIDGetUIDVectorByClassThroughEntry(SysmemClass("SceUIDPhyMemPartClass", PhyMemPartSize), level, vector, vectorBytes >> 2, countOut);
     }
 
     /// <summary>NID_5CC56F87(name, flags, paddr, size, ScePhyMemPart **out): a physical partition: a chunk list
@@ -333,7 +333,7 @@ public sealed partial class SysmemKernel
 
     /// <summary>NID_A2DFA383(name, flags, size, out): NID_5CC56F87 with no physical address (main memory).</summary>
     [Hle(Nid = 0xA2DFA383, Library = "SceSysmemForKernel")]
-    int NID_A2DFA383(uint name, uint flags, uint size, uint partitionOut) => NID_5CC56F87(name, flags, 0, size, partitionOut);
+    int NID_A2DFA383(uint name, uint flags, uint size, uint partitionOut) => NID_5CC56F87ThroughEntry(name, flags, 0, size, partitionOut);
 
     /// <summary>NID_36FDA794(ScePhyMemPart *part, paddr, size): adds a chunk to a chunk-list partition ([paddr, +size),
     /// or main memory for paddr 0; none 0x80024308); a fixed partition 0; another kind 0x80024300; not valid
@@ -377,7 +377,7 @@ public sealed partial class SysmemKernel
 
     /// <summary>NID_5B434019(part, size): NID_36FDA794 with main memory.</summary>
     [Hle(Nid = 0x5B434019, Library = "SceSysmemForKernel")]
-    int NID_5B434019(uint record, uint size) => NID_36FDA794(record, 0, size);
+    int NID_5B434019(uint record, uint size) => NID_36FDA794ThroughEntry(record, 0, size);
 
     /// <summary>Drops one reference of the partition (+0x80): true while others remain.</summary>
     static bool PhyMemPartStillReferenced(uint record) => Interlocked.Decrement(ref GuestMemory.Ref<int>(record + 0x80)) >= 1;
@@ -741,7 +741,7 @@ public sealed partial class SysmemKernel
         List<MemBlock> blocks = new(K.Objects.Owned<MemBlock>(pid));
         foreach (MemBlock block in blocks)
         {
-            ksceKernelFreeMemBlock(block.Uid);
+            ksceKernelFreeMemBlockThroughEntry(block.Uid);
         }
 
         return 0;
@@ -767,7 +767,7 @@ public sealed partial class SysmemKernel
     [Hle(Nid = 0x47C55DCC, Library = "SceSysmemForKernel")]
     int NID_47C55DCC(uint index, uint partOut)
     {
-        uint record = NID_2E5CC243();
+        uint record = NID_2E5CC243ThroughEntry();
         uint part = GuestMemory.R32(record + 0x11C + index * 4);
         GuestMemory.W32(partOut, part);
         return part != 0 ? 0 : NoMemoryRegion;
@@ -784,7 +784,7 @@ public sealed partial class SysmemKernel
         }
 
         int lookup = AddressSpaceLookup(uid, out _);
-        return lookup < 0 ? lookup : ksceKernelMMUVAtoPAWithMode(mode, address, physicalOut);
+        return lookup < 0 ? lookup : ksceKernelMMUVAtoPAWithModeThroughEntry(mode, address, physicalOut);
     }
 
     /// <summary>NID_A7C91D62(uid, out): the address space's MMU context (+0x18); NULL 0x80020005.</summary>
@@ -973,7 +973,7 @@ public sealed partial class SysmemKernel
     [Hle(Nid = 0x0B5A3E93, Library = "SceSysmemForKernel", ReturnsValue = true)]
     uint NID_0B5A3E93(uint address)
     {
-        uint record = NID_2E5CC243();
+        uint record = NID_2E5CC243ThroughEntry();
         for (uint i = 0; i < 0x20; i++)
         {
             uint partition = GuestMemory.R32(record + 0x1C + i * 4);
@@ -1062,7 +1062,7 @@ public sealed partial class SysmemKernel
     [Hle(Nid = 0xFB101B86, Library = "SceSysmemForKernel")]
     int NID_FB101B86(int uid, uint info)
     {
-        uint partition = NID_FA6C098C(uid);
+        uint partition = NID_FA6C098CThroughEntry(uid);
         if (partition == 0)
         {
             return SceError.ERROR;
@@ -1146,7 +1146,7 @@ public sealed partial class SysmemKernel
             {
                 uint info = infos + written * 0x30;
                 GuestMemory.W32(info, 0x30);
-                NID_BA441FD0(block.Uid, info);
+                NID_BA441FD0ThroughEntry(block.Uid, info);
                 written++;
             }
         }

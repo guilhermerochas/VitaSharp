@@ -86,6 +86,13 @@ public sealed partial class IoFileMgr : HleModule
             return GuestOpen(guestMount, path, guestPath, flags, mode);
         }
 
+        // the walk the vfs makes before the open (a hook on ksceVopLookup sees it)
+        int walk = HostWalk(ref path);
+        if (walk < 0)
+        {
+            return walk;
+        }
+
         if (Emu.IsShell) NoteShellLiveArea(path);
         var host = HostPath(path, (flags & O_WRONLY) != 0);
         if (host == null) return SceError.IO_ENOENT;
@@ -213,14 +220,14 @@ int fd, long offset, int whence)
     {
         if (_files.TryGetValue(fd, out var guest) && guest.GuestFile != 0)
         {
-            return ksceVopLseek(guest.GuestVnode, guest.GuestFile, (uint)offset, (uint)(offset >> 32), (uint)whence);
+            return ksceVopLseekThroughEntry(guest.GuestVnode, guest.GuestFile, (uint)offset, (uint)(offset >> 32), (uint)whence);
         }
 
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
         lock (f) return f.Stream.Seek(offset, (SeekOrigin)whence);
     }
 
-    [Hle] int sceIoLseek32(int fd, int offset, int whence) => (int)sceIoLseek(fd, offset, whence);
+    [Hle] int sceIoLseek32(int fd, int offset, int whence) => (int)sceIoLseekThroughEntry(fd, offset, whence);
 
     [Hle]
     internal int sceIoPread(int fd, uint buf, uint size, long offset)
@@ -286,6 +293,12 @@ int fd, long offset, int whence)
             return GuestRemove(guestMount, guestPath, directoryToo: false);
         }
 
+        int walk = HostWalk(ref path);
+        if (walk < 0)
+        {
+            return walk;
+        }
+
         var host = HostPath(path, true);
         if (host == null || !File.Exists(host)) return SceError.IO_ENOENT;
         File.Delete(host);
@@ -298,6 +311,12 @@ int fd, long offset, int whence)
         if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
         {
             return GuestMkdir(guestMount, guestPath, mode);
+        }
+
+        int walk = HostWalk(ref path);
+        if (walk < 0)
+        {
+            return walk;
         }
 
         var host = HostPath(path, true);
@@ -315,6 +334,12 @@ int fd, long offset, int whence)
             return GuestRemove(guestMount, guestPath, directoryToo: true);
         }
 
+        int walk = HostWalk(ref path);
+        if (walk < 0)
+        {
+            return walk;
+        }
+
         var host = HostPath(path, true);
         if (host == null || !Directory.Exists(host)) return SceError.IO_ENOENT;
         try { Directory.Delete(host); return 0; }
@@ -324,6 +349,19 @@ int fd, long offset, int whence)
     [Hle]
     internal int sceIoRename(string oldPath, string newPath)
     {
+        // iofilemgr walks the old path, then the new one
+        int walk = HostWalk(ref oldPath);
+        if (walk < 0)
+        {
+            return walk;
+        }
+
+        walk = HostWalk(ref newPath);
+        if (walk < 0)
+        {
+            return walk;
+        }
+
         var a = HostPath(oldPath, true);
         var b = HostPath(newPath, true);
         if (a == null || b == null) return SceError.IO_ENOENT;
@@ -339,6 +377,12 @@ int fd, long offset, int whence)
         if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
         {
             return GuestDopen(guestMount, guestPath);
+        }
+
+        int walk = HostWalk(ref path);
+        if (walk < 0)
+        {
+            return walk;
         }
 
         _fios ??= Emu.Hle.Modules.OfType<Fios2User>().FirstOrDefault();
@@ -370,7 +414,7 @@ int fd, long offset, int whence)
         if (!_dirs.TryGetValue(fd, out var d)) return SceError.IO_EBADF;
         if (d.GuestFile != 0)
         {
-            return ksceVopDread(d.GuestVnode, d.GuestFile, dirent);
+            return ksceVopDreadThroughEntry(d.GuestVnode, d.GuestFile, dirent);
         }
 
         if (d.Index >= d.Entries.Length) return 0;
@@ -423,6 +467,12 @@ int fd, long offset, int whence)
             return GuestGetstat(guestMount, guestPath, stat);
         }
 
+        int walk = HostWalk(ref path);
+        if (walk < 0)
+        {
+            return walk;
+        }
+
         var host = HostPath(path);
         if (host == null || (!File.Exists(host) && !Directory.Exists(host))) return SceError.IO_ENOENT;
         GuestMemory.Span(stat, 88).Clear();
@@ -436,7 +486,7 @@ int fd, long offset, int whence)
     {
         if (_files.TryGetValue(fd, out var guest) && guest.GuestFile != 0)
         {
-            return ksceVopFgetstat(guest.GuestVnode, guest.GuestFile, stat);
+            return ksceVopFgetstatThroughEntry(guest.GuestVnode, guest.GuestFile, stat);
         }
 
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
@@ -499,6 +549,12 @@ int fd, long offset, int whence)
     {
         if (stat == 0) return SceError.IO_EINVAL;
         if (IsReadOnlyDevice(path)) return IO_EROFS;
+        int walk = HostWalk(ref path);
+        if (walk < 0)
+        {
+            return walk;
+        }
+
         var host = HostPath(path, true);
         if (host == null) return SceError.IO_ENOENT;
         return ApplyChstat(host, stat, bits, null);
@@ -554,7 +610,7 @@ int fd, long offset, int whence)
     internal string? HostPathFor(string path, bool write = false) => HostPath(path, write);
 
     internal int Devctl(string dev, int cmd, uint arg, uint argLen, uint buf, uint bufLen) => sceIoDevctl(dev, cmd, arg, argLen, buf, bufLen);
-    internal int Ioctl(int fd, int cmd, uint arg, uint argLen, uint buf, uint bufLen) => sceIoIoctl(fd, cmd, arg, argLen, buf, bufLen);
+    internal int Ioctl(int fd, int cmd, uint arg, uint argLen, uint buf, uint bufLen) => sceIoIoctlThroughEntry(fd, cmd, arg, argLen, buf, bufLen);
     internal int Chstat(string path, uint stat, int bits) => sceIoChstat(path, stat, bits);
 
     /// <summary>Sets the length of an open file (ftruncate); a sceIo error code when it cannot.</summary>

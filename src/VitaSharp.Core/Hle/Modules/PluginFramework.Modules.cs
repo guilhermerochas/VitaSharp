@@ -100,12 +100,12 @@ public sealed partial class PluginFramework
 
     /// <summary>Copies argp in (args bytes) for a start or stop; a negative result is the copy's error.</summary>
     int CopyArgs(in ModuleArgs moduleArgs, KernelBuffers buffers) =>
-        Sysmem.ksceKernelMemcpyUserToKernel(buffers.Args, moduleArgs.Argp, moduleArgs.Length);
+        Sysmem.ksceKernelMemcpyUserToKernelThroughEntry(buffers.Args, moduleArgs.Argp, moduleArgs.Length);
 
     /// <summary>Copies the user path in; false when it does not end within <see cref="MaxNameLength"/> bytes.</summary>
     bool CopyPath(uint path, KernelBuffers buffers, out string kernelPath)
     {
-        int length = Sysmem.ksceKernelStrncpyUserToKernel(buffers.Path, path, MaxNameLength);
+        int length = Sysmem.ksceKernelStrncpyUserToKernelThroughEntry(buffers.Path, path, MaxNameLength);
         kernelPath = GuestMemory.ReadCString(buffers.Path, MaxNameLength);
         return length < MaxNameLength;
     }
@@ -116,7 +116,7 @@ public sealed partial class PluginFramework
     {
         if (res != 0)
         {
-            Sysmem.ksceKernelMemcpyKernelToUser(res, buffers.Status, 4);
+            Sysmem.ksceKernelMemcpyKernelToUserThroughEntry(res, buffers.Status, 4);
         }
     }
 
@@ -175,7 +175,7 @@ public sealed partial class PluginFramework
             return ErrorUserMemory;
         }
 
-        int kernelId = Sysmem.kscePUIDtoGUID(0, moduleId);
+        int kernelId = Sysmem.kscePUIDtoGUIDThroughEntry(0, moduleId);
         if (kernelId < 0)
         {
             return kernelId;
@@ -188,7 +188,7 @@ public sealed partial class PluginFramework
             return result;
         }
 
-        result = Modulemgr.ksceKernelStartModule(kernelId, moduleArgs.Length, buffers.Args, moduleArgs.Flags, 0, buffers.Status);
+        result = Modulemgr.ksceKernelStartModuleThroughEntry(kernelId, moduleArgs.Length, buffers.Args, moduleArgs.Flags, 0, buffers.Status);
         WriteResult(res, buffers);
         return result;
     }
@@ -299,7 +299,7 @@ public sealed partial class PluginFramework
         }
 
         bool forPid = kind is StopKind.StopForPid or StopKind.StopUnloadForPid;
-        int kernelId = Sysmem.kscePUIDtoGUID(forPid ? moduleArgs.Pid : 0, moduleId);
+        int kernelId = Sysmem.kscePUIDtoGUIDThroughEntry(forPid ? moduleArgs.Pid : 0, moduleId);
         if (kernelId < 0)
         {
             return kernelId;
@@ -315,13 +315,13 @@ public sealed partial class PluginFramework
         ModulemgrKernel modulemgr = Modulemgr;
         result = kind switch
         {
-            StopKind.Stop => modulemgr.ksceKernelStopModule(kernelId, moduleArgs.Length, buffers.Args, moduleArgs.Flags, 0,
+            StopKind.Stop => modulemgr.ksceKernelStopModuleThroughEntry(kernelId, moduleArgs.Length, buffers.Args, moduleArgs.Flags, 0,
                 buffers.Status),
-            StopKind.StopUnload => modulemgr.ksceKernelStopUnloadModule(kernelId, moduleArgs.Length, buffers.Args,
+            StopKind.StopUnload => modulemgr.ksceKernelStopUnloadModuleThroughEntry(kernelId, moduleArgs.Length, buffers.Args,
                 moduleArgs.Flags, 0, buffers.Status),
-            StopKind.StopForPid => modulemgr.ksceKernelStopModuleForPid(moduleArgs.Pid, kernelId, moduleArgs.Length,
+            StopKind.StopForPid => modulemgr.ksceKernelStopModuleForPidThroughEntry(moduleArgs.Pid, kernelId, moduleArgs.Length,
                 buffers.Args, moduleArgs.Flags, 0, buffers.Status),
-            _ => modulemgr.ksceKernelStopUnloadModuleForPid(moduleArgs.Pid, kernelId, moduleArgs.Length, buffers.Args,
+            _ => modulemgr.ksceKernelStopUnloadModuleForPidThroughEntry(moduleArgs.Pid, kernelId, moduleArgs.Length, buffers.Args,
                 moduleArgs.Flags, 0, buffers.Status),
         };
         WriteResult(res, buffers);
@@ -373,7 +373,7 @@ public sealed partial class PluginFramework
             return ErrorInvalidArgs;
         }
 
-        int kernelId = Sysmem.kscePUIDtoGUID(pid, moduleId);
+        int kernelId = Sysmem.kscePUIDtoGUIDThroughEntry(pid, moduleId);
         if (kernelId < 0)
         {
             return kernelId;
@@ -381,10 +381,10 @@ public sealed partial class PluginFramework
 
         if (forPid)
         {
-            return Modulemgr.ksceKernelUnloadModuleForPid(pid, kernelId, flags, 0);
+            return Modulemgr.ksceKernelUnloadModuleForPidThroughEntry(pid, kernelId, flags, 0);
         }
 
-        return Modulemgr.ksceKernelUnloadModule(kernelId, flags, 0);
+        return Modulemgr.ksceKernelUnloadModuleThroughEntry(kernelId, flags, 0);
     }
 
     /// <summary>taiMemcpyUserToKernel(kernel_dst, user_src, len): the kernel's user copy, for a system program.</summary>
@@ -401,7 +401,7 @@ public sealed partial class PluginFramework
             return ErrorNotAllowed;
         }
 
-        return Sysmem.ksceKernelMemcpyUserToKernel(kernelDestination, userSource, length);
+        return Sysmem.ksceKernelMemcpyUserToKernelThroughEntry(kernelDestination, userSource, length);
     }
 
     /// <summary>taiMemcpyKernelToUser(user_dst, kernel_src, len): the kernel's copy to user memory, for a system
@@ -419,6 +419,6 @@ public sealed partial class PluginFramework
             return ErrorNotAllowed;
         }
 
-        return Sysmem.ksceKernelMemcpyKernelToUser(userDestination, kernelSource, length);
+        return Sysmem.ksceKernelMemcpyKernelToUserThroughEntry(userDestination, kernelSource, length);
     }
 }

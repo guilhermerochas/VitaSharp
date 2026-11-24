@@ -299,14 +299,14 @@ public sealed partial class SysmemKernel
         uint at = haystack;
         while (true)
         {
-            uint found = kstrchr(at, first);
+            uint found = kstrchrThroughEntry(at, first);
             if (found == 0)
             {
                 return 0;
             }
 
             at = found + 1;
-            if (kmemcmp(at, needle + 1, needleLength - 1) == 0)
+            if (kmemcmpThroughEntry(at, needle + 1, needleLength - 1) == 0)
             {
                 return found;
             }
@@ -465,7 +465,7 @@ public sealed partial class SysmemKernel
         c = R8(at);
         if (c == '0')
         {
-            uint upper = ktoupper(R8(at + 1));
+            uint upper = ktoupperThroughEntry(R8(at + 1));
             if (upper == 'B' && (numberBase & ~2u) == 0)
             {
                 numberBase = 2;
@@ -493,7 +493,7 @@ public sealed partial class SysmemKernel
                 numberBase = 10;
             }
 
-            if (ktoupper(c) == 'O')
+            if (ktoupperThroughEntry(c) == 'O')
             {
                 numberBase = 8;
                 at++;
@@ -524,7 +524,7 @@ public sealed partial class SysmemKernel
         byte c = R8(at);
         if (c == '0')
         {
-            uint upper = ktoupper(R8(at + 1));
+            uint upper = ktoupperThroughEntry(R8(at + 1));
             if (upper == 'B')
             {
                 numberBase = 2;
@@ -540,7 +540,7 @@ public sealed partial class SysmemKernel
                 at++;
             }
         }
-        else if (ktoupper(c) == 'O')
+        else if (ktoupperThroughEntry(c) == 'O')
         {
             numberBase = 8;
             at++;
@@ -1400,7 +1400,7 @@ public sealed partial class SysmemKernel
             CheckFailed("__memmove_chk");
         }
 
-        return kmemmove(dst, src, n);
+        return kmemmoveThroughEntry(dst, src, n);
     }
 
     /// <summary>__memset_chk(dst, c, n, dstSize): memset, or a panic when dstSize &lt; n.</summary>
@@ -1426,7 +1426,7 @@ public sealed partial class SysmemKernel
             CheckFailed("__strncpy_chk");
         }
 
-        return kstrncpy(dst, src, n);
+        return kstrncpyThroughEntry(dst, src, n);
     }
 
     /// <summary>__strncpy_chk2(dst, src, n): strncpy (its check, strnlen(src, n) &gt; n, never fails).</summary>
@@ -1438,7 +1438,7 @@ public sealed partial class SysmemKernel
             CheckFailed("__strncpy_chk2");
         }
 
-        return kstrncpy(dst, src, n);
+        return kstrncpyThroughEntry(dst, src, n);
     }
 
     /// <summary>__strncat_chk(dst, src, n, dstSize): strncat, or a panic when dstSize &lt; n.</summary>
@@ -1450,7 +1450,7 @@ public sealed partial class SysmemKernel
             CheckFailed("__strncat_chk");
         }
 
-        return kstrncat(dst, src, n);
+        return kstrncatThroughEntry(dst, src, n);
     }
 
     /// <summary>__strncat_chk2(dst, src, n): strncat into a buffer of n bytes; a panic when the string in dst does
@@ -1469,7 +1469,7 @@ public sealed partial class SysmemKernel
             CheckFailed("__strncat_chk2");
         }
 
-        return kstrncat(dst, src, n);
+        return kstrncatThroughEntry(dst, src, n);
     }
 
     /// <summary>__strlcpy_chk(dst, src, size, dstSize): strlcpy, or a kernel panic when dstSize &lt; size.</summary>
@@ -1481,7 +1481,7 @@ public sealed partial class SysmemKernel
             CheckFailed("__strlcpy_chk");
         }
 
-        return strlcpy(dst, src, size);
+        return strlcpyThroughEntry(dst, src, size);
     }
 
     /// <summary>__strlcat_chk(dst, src, size, dstSize): strlcat, or a kernel panic when dstSize &lt; size.</summary>
@@ -1493,7 +1493,7 @@ public sealed partial class SysmemKernel
             CheckFailed("__strlcat_chk");
         }
 
-        return strlcat(dst, src, size);
+        return strlcatThroughEntry(dst, src, size);
     }
 
     /// <summary>__vsnprintf_chk(buffer, size, flag, bufferSize, format, va_list): vsnprintf, or a kernel panic when

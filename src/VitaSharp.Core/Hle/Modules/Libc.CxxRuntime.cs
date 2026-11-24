@@ -64,7 +64,7 @@ public sealed partial class Libc
         string text = msg == 0 ? "" : GuestMemory.ReadCString(msg);
         Log.Error($"[guest] std::_Rng_abort: {text}");
         WriteStream(StderrFile(), Encoding.Latin1.GetBytes(text + "\n"));
-        abort();
+        abortThroughEntry();
     }
 
     /// <summary>_Fiopen(const wchar_t *name, openmode, prot): the name through wcstombs (a 1 KiB buffer; NULL when it

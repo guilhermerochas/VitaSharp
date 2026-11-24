@@ -30,7 +30,7 @@ public sealed partial class Libc
     [Hle]
     void _ZSt13_Xregex_errorNSt15regex_constants10error_typeE(HleContext ctx, int code)
     {
-        uint obj = AllocateException(ExcRegexError.Size);
+        uint obj = AllocateExceptionThroughEntry(ExcRegexError.Size);
         Construct(obj, ExcRegexError, cstr: ConstString(RegexErrorText(code)));
         GuestMemory.W32(obj + 0x20, (uint)code);
         Throw(ctx, obj, TiOf(ExcRegexError), ExportStubOfSlot(ExcRegexError, 0));
@@ -81,7 +81,7 @@ public sealed partial class Libc
         uint obj = p != 0 ? GuestMemory.R32(p) : 0;
         if (obj == 0)
         {
-            TerminateNow();
+            TerminateNowThroughEntry();
             return;
         }
         __cxa_rethrow_primary_exception(ctx, obj);

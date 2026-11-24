@@ -94,7 +94,7 @@ public sealed partial class Videodec
     /// frame into (not needed by the software decoder).</summary>
     [Hle("sceAvcdecDecodeGetPictureWithWorkPictureInternal")]
     [Hle("_sceAvcdecDecodeGetPictureWithWorkPictureInternal")]
-    int DecodeGetPictureWithWork(uint ctrl, uint array, uint work, uint more) => DecodeGetPicture(ctrl, array, more);
+    int DecodeGetPictureWithWork(uint ctrl, uint array, uint work, uint more) => DecodeGetPictureThroughEntry(ctrl, array, more);
 
     /// <summary>(ctrl, const SceAvcdecNalAu *au 0x30, ...): an access unit given as NAL units (Remote Play / PS4
     /// Link streams). The block starts like SceAvcdecAu (pts, dts, es pointer and size): the NAL units of the unit,
@@ -118,7 +118,7 @@ public sealed partial class Videodec
     }
 
     [Hle("_sceAvcdecDecodeNalAuWithWorkPicture")]
-    int DecodeNalAuWithWork(uint ctrl, uint au, uint work, uint array) => DecodeNalAu(ctrl, au, array);
+    int DecodeNalAuWithWork(uint ctrl, uint au, uint work, uint array) => DecodeNalAuThroughEntry(ctrl, au, array);
 
     [Hle("sceAvcdecDecodeAuNalAuInternal")]
     [Hle("_sceAvcdecDecodeAuNalAuInternal")]
@@ -189,12 +189,12 @@ public sealed partial class Videodec
 
     /// <summary>(ctrl, const SceAvcdecAu *au, workPicture, array): sceAvcdecDecode with a work picture.</summary>
     [Hle("_sceAvcdecDecodeWithWorkPicture")]
-    int DecodeWithWork(uint ctrl, uint au, uint work, uint array) => sceAvcdecDecode(ctrl, au, array);
+    int DecodeWithWork(uint ctrl, uint au, uint work, uint array) => sceAvcdecDecodeThroughEntry(ctrl, au, array);
 
     /// <summary>(ctrl, workPicture, array): sceAvcdecDecodeStop with a work picture.</summary>
     [Hle("sceAvcdecDecodeStopWithWorkPicture")]
     [Hle("_sceAvcdecDecodeStopWithWorkPicture")]
-    int DecodeStopWithWork(uint ctrl, uint work, uint array) => sceAvcdecDecodeStop(ctrl, array);
+    int DecodeStopWithWork(uint ctrl, uint work, uint array) => sceAvcdecDecodeStopThroughEntry(ctrl, array);
 
     // ---- AVC decoder modes: kept per decoder (the software decoder needs none of them)
     readonly Dictionary<uint, int> _modes = new();
@@ -497,28 +497,28 @@ public sealed partial class Videodec
 
     [Hle("sceM4vdecDecode")]
     [Hle("_sceM4vdecDecode")]
-    int M4vDecode(uint ctrl, uint au, uint array) => sceAvcdecDecode(ctrl, au, array);
+    int M4vDecode(uint ctrl, uint au, uint array) => sceAvcdecDecodeThroughEntry(ctrl, au, array);
 
     [Hle("sceM4vdecDecodeWithWorkPicture")]
     [Hle("_sceM4vdecDecodeWithWorkPicture")]
-    int M4vDecodeWithWork(uint ctrl, uint au, uint work, uint array) => sceAvcdecDecode(ctrl, au, array);
+    int M4vDecodeWithWork(uint ctrl, uint au, uint work, uint array) => sceAvcdecDecodeThroughEntry(ctrl, au, array);
 
     [Hle("_sceM4vdecDecodeStop")]
-    int M4vDecodeStop(uint ctrl, uint array) => sceAvcdecDecodeStop(ctrl, array);
+    int M4vDecodeStop(uint ctrl, uint array) => sceAvcdecDecodeStopThroughEntry(ctrl, array);
 
     [Hle("sceM4vdecDecodeStopWithWorkPicture")]
     [Hle("_sceM4vdecDecodeStopWithWorkPicture")]
-    int M4vDecodeStopWithWork(uint ctrl, uint work, uint array) => sceAvcdecDecodeStop(ctrl, array);
+    int M4vDecodeStopWithWork(uint ctrl, uint work, uint array) => sceAvcdecDecodeStopThroughEntry(ctrl, array);
 
     [Hle("sceM4vdecDecodeFlush")]
     [Hle("_sceM4vdecDecodeFlush")]
-    int M4vDecodeFlush(uint ctrl) => sceAvcdecDecodeFlush(ctrl);
+    int M4vDecodeFlush(uint ctrl) => sceAvcdecDecodeFlushThroughEntry(ctrl);
 
     [Hle("sceM4vdecDecodeAvailableSize")]
     [Hle("_sceM4vdecDecodeAvailableSize")]
-    int M4vDecodeAvailableSize(uint ctrl) => sceAvcdecDecodeAvailableSize(ctrl);
+    int M4vDecodeAvailableSize(uint ctrl) => sceAvcdecDecodeAvailableSizeThroughEntry(ctrl);
 
     [Hle("sceM4vdecDeleteDecoder")]
     [Hle("_sceM4vdecDeleteDecoder")]
-    int M4vDeleteDecoder(uint ctrl) => sceAvcdecDeleteDecoder(ctrl);
+    int M4vDeleteDecoder(uint ctrl) => sceAvcdecDeleteDecoderThroughEntry(ctrl);
 }

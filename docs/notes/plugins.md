@@ -55,7 +55,11 @@ modules of a section load in file order, and one that fails does not stop the ot
   the firmware's module manager does. The log says what happened to each one (`kernel plugin ...: loaded and started`,
   `... module_start of X returned 0x2, unloaded`).
 - `*KERNEL` modules load once, into the kernel process: the one kernel of the system, made at boot (with the shell, or with
-  the first game when no shell runs), as the plugin loader loads them at boot on the Vita. Every process sees them: the
+  the first game when no shell runs), as the plugin loader loads them at boot on the Vita. They load at the system's boot,
+  before the first program's launch starts and whatever the title is, so a launch that then fails (an app0 that does not
+  mount, a PSM title without its runtime) still has them loaded; the log says `kernel plugins: N of M loaded and started
+  at system boot, before any application is launched`, and the recordings' plugin lines end with `system boot` (a user
+  module with `with process TITLEID`). Every process sees them: the
   shell, an application the shell opens next to it, the program a LoadExec starts. They stay until the system ends; a
   kernel module a program loads (the kernel module manager) is the kernel's too and outlives that program.
 - Kernel code's process event handlers (`ksceKernelRegisterProcEventHandler`) are called as the firmware's process
@@ -198,7 +202,7 @@ the original bytes back (the code went with the process); kernel patches stay un
 | Translated code: each patch drops the blocks it covers; a block decoded during a patch is checked again | Done |
 | Module calls for user programs (load, start, stop, unload a kernel or process module; user/kernel copies) | Done |
 | Patching the firmware's own code by offset | Not possible (no firmware code: the HLE serves it) |
-| A firmware function's own internal callers (the HLE calling it) go through a hook on its entry | In progress: the routing (no cost without a hook) is in place; ksceVopLookup (iofilemgr's path walks) uses it, the other functions' internal calls not yet |
+| A firmware function's own internal callers (the HLE calling it) go through a hook on its entry | Yes: every internal call of an exported function goes through its generated `XxxThroughEntry` wrapper (see below) |
 
 ### Validation matrix
 
@@ -222,12 +226,31 @@ translated before it ever ran, then hooked).
 | Kernel hooks seen by an application opened after them, on its threads | ok | ok | ok | ok |
 | Save state with the hooks: loads them active; one from before loads without | ok | ok | ok | ok |
 | Chain fuzz (kernel and user, 3 seeds each) | ok | ok | ok | ok |
-| Firmware-internal caller (the HLE's own call of the hooked function) | fixed for ksceVopLookup (test `IoVfsMountTests.AHookOnTheVopLookupEntrySeesTheModulesOwnPathWalks`) | same | same | same |
+| Firmware-internal caller (the HLE's own call of the hooked function) | ok (`HleEntryCallTests`, `HleEntryCallLibraryTests`, `IoVfsMountTests.AHookOnTheVopLookupEntrySeesTheModulesOwnPathWalks`) | same | same | same |
 
 The ARM64 sandbox (Unicorn) runs single translated blocks, not the dispatcher, so it is not a path of the matrix; the
 matrix runs on ARM64 natively where the host is ARM64. Loading a state with `VITASHARP_LOAD_KEEP_CODE=1` (translations
 kept and revalidated by their bytes) is read once per process and is not a cell (the default load drops every
 translation).
+
+### The firmware's own calls of a hooked function
+
+On the Vita a hook on an export patches the function's code, so every caller runs it, the firmware module's own
+calls included. The firmware functions the HLE serves are C# methods; when one calls another exported function it calls
+the generated wrapper `XxxThroughEntry` (source generator `HleEntryCallGenerator`, made for every `[Hle]` method some code
+calls that way). Without a hook the wrapper reads three static fields (how many processes of the host have a user
+hook, and whether the firmware kernel modules of any emulated system have a patched entry, counted again only when
+guest code changes) and calls the C# method, allocating nothing (`HleEntryCallBenchmarks`, `HleEntryCallTests`). With a hook it finds it where the framework put it: the patched
+entry of the function in the firmware kernel modules (a kernel plugin's hook, or any code written over the entry) or the
+thunk of a user plugin's hook on the function in the module's process (found by library and NID: a NID two libraries
+export is two functions, and a hook on one is not the other's); the hooked code runs on the calling thread with
+the arguments as AAPCS words (64-bit values in an even register pair or an aligned stack slot) and its r0/r1 is the
+result. A function the guest cannot be called with by address (it takes a C# string, a float, the HLE context or
+variadic arguments) has no wrapper. The analyzer VSHLE010 reports a direct call of an exported function in VitaSharp.Core;
+the calls that are not the firmware's call of that function stay direct with a `#pragma` saying why: the syscall forms
+behind a user library's wrappers (`_sceIo*`, `_sceKernel*`, ...) and the kernel entries that share the C# body of the
+user call of the same name (on the Vita the user call reaches the kernel by its syscall, so a hook on one is not seen by
+the other).
 
 The firmware's process start calls modulemgr's export ksceKernelStartPreloadingModules(pid) by its address once a new
 process's main thread exists (processmgr 3.74). VitaSharp starts the preloaded modules itself, so the call is made
@@ -237,6 +260,50 @@ to a process this way (Adrenaline's kernel module adds its user module to the PS
 shell starts by path (sceAppMgrLaunchAppByPath4, the firmware's PSP emulator vs0:app/NPXS10028) has the title the
 launch names as its process title (ksceKernelGetProcessTitleId, the plugin configuration's section): the title of the
 bubble the shell opened.
+
+### The launch's app0 mount
+
+An application folder that is still a PFS image is mounted as SceAppMgr 3.74 mounts it when it launches the title
+(decompiled appmgr, study only): the licence file is found, read (0x200 bytes) with the kernel's ksceIoOpen (flags
+0x10001), ksceIoRead and ksceIoClose, checked by SceNpDrm (ksceNpDrmGetRifInfo, ksceNpDrmGetRifVitaKey; pfsmgr itself
+imports nothing of SceNpDrm, the key comes in with kscePfsMount), and app0 is mounted through ScePfsMgr with the key. When
+kernel code hooked one of those three I/O functions, the licence read runs through their entries on a kernel thread, so
+the hook sees the launch's read (and its continuation reaches the HLE); without a hook the file is read directly. The
+title key step is the secure processor's and answers 0x80020004 on the emulated unit, hooked or not. A failure names its
+step: `<title>: the launch stopped at app0's mount, step N of 4 (<step>): ... (0x........)` (1 licence, 2 licence read,
+3 title key, 4 PFS mount); the message to the user is unchanged. The mount itself is appmgr's call of kscePfsMount
+(ScePfsMgrForKernel 0xA067B56F / 0xA772209C) with the application's path, a mount point named "ts", twelve hex digits
+and "d", the process's program authority ID, the 16-byte title key and mode 5: when kernel code hooked that function,
+the launch makes the call through the entry on a kernel thread, the original the hook continues to mounts the image as
+the launch does without a hook, and an error the hook answers fails the launch at step 4. The title key is the one the
+launch already has (no check of the licence changes); the authority ID is 0 for a first launch, since VitaSharp reads it
+from the executable inside the image after the mount.
+
+### Path walks on the emulator's devices
+
+On the Vita iofilemgr walks every path element by element with ksceVopLookup from the device's root vnode (3.74,
+0x81004bb8, study only), so a kernel hook on it (fd_fix's) sees every open. In VitaSharp ux0:, app0: and the other
+devices are host folders; when a hook took ksceVopLookup, sceIoOpen (the user's syscall and ksceIoOpen), sceIoDopen,
+sceIoGetstat, sceIoRemove, sceIoMkdir, sceIoRmdir, sceIoChstat and sceIoRename (the old path, then the new one), with
+their ksceIo* forms, walk the path through the function's entry over the host vnodes, as iofilemgr 3.74 walks it for
+each of them (`IoFileMgr.VfsHost.cs`; the element a mkdir or a rename's new path makes is looked up, not found, and
+made): the hook gets each
+element, and what it answers counts (an error fails the call, another vnode sends it to that vnode's path, an open that
+creates still creates). Without such a hook nothing is walked and nothing is allocated (`IoVopLookupHookTests`).
+The asynchronous forms (sceIoOpenAsync, sceIoDopenAsync, sceIoGetstatAsync and the other path requests) run on
+iofilemgr's own kernel thread on the Vita (SceIoScheduler), which walks the path the same way: with such a hook the
+I/O scheduler runs a path request on a kernel thread of that name, in the submitting process's context, so the hook is
+called for it and its answer is the request's result; without one the request stays on the scheduler's host thread.
+
+### The launch's process creation
+
+SceAppMgr 3.74 creates a title's process with ksceKernelCreateProcess(title ID, type 0x1000000 for an application or
+0x2000000 for a system application, the executable's path, a 0x40-byte option) before it mounts app0, and launches
+nothing when the call fails. When kernel code hooked that function (SceProcessmgrForKernel 0xEB1F8EF7 / 0x68068618 from
+FW 3.63 on; 3.60's 0x7A69DE86 / 0x71CF71FD is not exported by 3.74, so a hook on it is refused as on the console),
+every launch (the first title, the shell's launches, LoadExec) calls the entry on a kernel thread: the hook runs, the
+original it continues to answers with the launched process, and an error fails the launch with it
+(`KernelPluginBootOrderTests`). Without a hook nothing runs.
 
 ## Limits
 

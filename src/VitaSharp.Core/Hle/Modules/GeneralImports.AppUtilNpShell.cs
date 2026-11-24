@@ -23,8 +23,8 @@ public sealed partial class AppUtil
             return ERR_NOT_INITIALIZED;
         }
 
-        int check = AppUtilSaveDataDataSaveCheck(slot, files, fileNum, mountPoint, requiredKiB);
-        return check != 0 ? check : sceAppUtilSaveDataDataSave(slot, files, fileNum, mountPoint, new Ptr<uint>(requiredKiB));
+        int check = AppUtilSaveDataDataSaveCheckThroughEntry(slot, files, fileNum, mountPoint, requiredKiB);
+        return check != 0 ? check : sceAppUtilSaveDataDataSaveThroughEntry(slot, files, fileNum, mountPoint, new Ptr<uint>(requiredKiB));
     }
 
     /// <summary>NID_7DA34311 (SceAppUtil)(const char *text, uint size): the UTF-8 check of the slot texts: the text (up
@@ -160,12 +160,12 @@ public sealed partial class CommonDialog
 {
     /// <summary>NID_2CD0649B(param): the system's Init of the IME dialog (family 0x4, OnInit): sceImeDialogInit.</summary>
     [Hle("NID_2CD0649B", Nid = 0x2CD0649B, Library = "SceCommonDialog")]
-    int CommonDialogImeInit(uint param) => sceImeDialogInit(param);
+    int CommonDialogImeInit(uint param) => sceImeDialogInitThroughEntry(param);
 
     /// <summary>NID_D474A749(param, block): the video import dialog (family 0x1C) with its block (OnInit2): as
     /// NID_FBE52F6D.</summary>
     [Hle("NID_D474A749", Nid = 0xD474A749, Library = "SceCommonDialog")]
-    int CommonDialogVideoImportInit2(uint param, uint block) => NID_FBE52F6D(param, block);
+    int CommonDialogVideoImportInit2(uint param, uint block) => NID_FBE52F6DThroughEntry(param, block);
 
     /// <summary>NID_64D21971(a, b): a request with a two-word block to the running Facebook dialog (family 0x11);
     /// NOT_IN_USE when it is not the active one.</summary>
@@ -179,7 +179,7 @@ public sealed partial class NpWebApi
     /// create request without content (0 context 0x80552902, unknown 0x80552904).</summary>
     [Hle("NID_93BBA612", Nid = 0x93BBA612, Library = "SceNpWebApi")]
     int NpWebApiCreateRequestForSystem2(int libCtxId, uint apiGroup, uint path, int method, uint requestId) =>
-        NpWebApiCreateRequestForSystem(libCtxId, apiGroup, path, method, 0, 0, requestId);
+        NpWebApiCreateRequestForSystemThroughEntry(libCtxId, apiGroup, path, method, 0, 0, requestId);
 
     /// <summary>NID_1140FA82 / NID_6E6AFA39 (SceNpWebApi)(int libCtxId, int id): unregister a context's push event
     /// callback and filter (an unknown context 0x80552904); nothing is kept for them here: 0.</summary>
