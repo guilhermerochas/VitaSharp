@@ -141,12 +141,13 @@ public sealed class GxmFlowTests : IDisposable
         return GuestMemory.R32(o);
     }
 
-    private uint RenderTarget(ushort w, ushort h)
+    private uint RenderTarget(ushort w, ushort h, ushort multisampleMode = 0)
     {
         uint p = _harness.Alloc(0x14), o = Out();
         GuestMemory.Write(p + 4, w);
         GuestMemory.Write(p + 6, h);
         GuestMemory.Write(p + 8, (ushort)1);
+        GuestMemory.Write(p + 10, multisampleMode);
         GuestMemory.W32(p + 16, 0x1234);
         Assert.Equal(0, Call(Gxm, "sceGxmCreateRenderTarget", p, new Ptr<uint>(o)));
         return GuestMemory.R32(o);
@@ -543,6 +544,111 @@ public sealed class GxmFlowTests : IDisposable
 
         Finish();
         Assert.Equal(4, _rec.Kinds.Count(kind => kind == "BeginSceneCommand"));
+    }
+
+    /// <summary>
+    /// What sceGxmBeginScene, sceGxmBeginSceneEx and _sceGxmBeginScene (libgxm, FW 3.74) check once the driver gave the
+    /// render target, in this order: a 2X multisample target needs a colour surface with the MSAA downscale mode
+    /// (UNSUPPORTED, before the region); the valid region { xMax, yMax } inside the target; the colour surface covering
+    /// the region in target pixels (a multisampled surface without downscale counts its size over the sample grid, a
+    /// downscaled one without multisampling twice its size); the depth/stencil stride covering the region's width
+    /// rounded up to 32, times the horizontal samples (before SDK 2.00 the width itself). Refused scenes stay closed.
+    /// </summary>
+    [Fact]
+    public void BeginSceneChecksTheSurfacesAgainstTheRenderTarget()
+    {
+        Init();
+        uint ctx = Context();
+        uint region = _harness.Alloc(0x20);
+        string[] entries = ["sceGxmBeginScene", "_sceGxmBeginScene", "sceGxmBeginSceneEx"];
+
+        uint Color(uint width, uint height, uint scaleMode)
+        {
+            uint surface = _harness.Alloc(0x40), stride = (width + 1) & ~1u;
+            Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceInit", surface, 0u, 0u, scaleMode, 0u, width, height, stride, _harness.Alloc(stride * height * 4)));
+            return surface;
+        }
+
+        uint Depth(uint strideInSamples)
+        {
+            uint surface = _harness.Alloc(0x20);
+            Assert.Equal(0, Call(Gxm, "sceGxmDepthStencilSurfaceInit", surface, 0x00044000u, 0u, strideInSamples, _harness.Alloc(strideInSamples * 256 * 4), 0u));
+            return surface;
+        }
+
+        // the old entry's region struct carries { xMax, yMax } at +8
+        int Begin(string entry, uint target, uint xMax, uint yMax, uint colorSurface, uint depthSurface)
+        {
+            GuestMemory.W32(region, xMax);
+            GuestMemory.W32(region + 4, yMax);
+            GuestMemory.W32(region + 8, xMax);
+            GuestMemory.W32(region + 12, yMax);
+            uint regionArgument = xMax == uint.MaxValue ? 0u : region;
+            int result = entry switch
+            {
+                "sceGxmBeginSceneEx" => Call(Gxm, entry, ctx, 0u, target, regionArgument, 0u, 0u, colorSurface, depthSurface, depthSurface),
+                _ => Call(Gxm, entry, ctx, 0u, target, regionArgument, 0u, 0u, colorSurface, depthSurface),
+            };
+            if (result == 0)
+            {
+                Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+            }
+
+            return result;
+        }
+
+        const uint Whole = uint.MaxValue;
+        const uint None = 0, Downscale = 1;
+        uint rt = RenderTarget(96, 64), rt2x = RenderTarget(96, 64, 1), rt4x = RenderTarget(96, 64, 2);
+        foreach (string entry in entries)
+        {
+            // the region lies inside the target
+            Assert.Equal(0, Begin(entry, rt, 95, 63, Color(96, 64, None), 0u));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt, 96, 63, Color(128, 128, None), 0u));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt, 95, 64, Color(128, 128, None), 0u));
+            // the colour surface covers it; with downscale and no multisampling, twice its size does
+            Assert.Equal(0, Begin(entry, rt, 31, 15, Color(32, 16, None), 0u));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt, Whole, 0, Color(95, 64, None), 0u));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt, 32, 15, Color(32, 16, None), 0u));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt, 31, 16, Color(32, 16, None), 0u));
+            Assert.Equal(0, Begin(entry, rt, Whole, 0, Color(48, 32, Downscale), 0u));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt, Whole, 0, Color(47, 32, Downscale), 0u));
+
+            // 2X (one sample across, two down) takes only a downscaled colour surface, before the region is looked at
+            Assert.Equal(UNSUPPORTED, Begin(entry, rt2x, Whole, 0, Color(96, 128, None), 0u));
+            Assert.Equal(UNSUPPORTED, Begin(entry, rt2x, 200, 63, Color(96, 128, None), 0u));
+            Assert.Equal(0, Begin(entry, rt2x, Whole, 0, Color(96, 64, Downscale), 0u));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt2x, Whole, 0, Color(96, 63, Downscale), 0u));
+            // 4X without downscale: a surface at the sample grid (two by two)
+            Assert.Equal(0, Begin(entry, rt4x, Whole, 0, Color(192, 128, None), 0u));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt4x, Whole, 0, Color(190, 128, None), 0u));
+            Assert.Equal(0, Begin(entry, rt4x, Whole, 0, Color(96, 64, Downscale), 0u));
+
+            // the depth/stencil stride covers the region's width rounded up to 32 samples, times the samples across;
+            // with no colour surface the 2X rule does not apply
+            Assert.Equal(0, Begin(entry, rt, Whole, 0, 0u, Depth(96)));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt, Whole, 0, 0u, Depth(64)));
+            Assert.Equal(0, Begin(entry, rt, 64, 63, 0u, Depth(96)));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt, 64, 63, 0u, Depth(64)));
+            Assert.Equal(0, Begin(entry, rt, 63, 63, 0u, Depth(64)));
+            Assert.Equal(0, Begin(entry, rt2x, Whole, 0, 0u, Depth(96)));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt4x, Whole, 0, 0u, Depth(160)));
+            Assert.Equal(0, Begin(entry, rt4x, Whole, 0, 0u, Depth(192)));
+            // the colour is checked before the depth/stencil
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt, Whole, 0, Color(32, 32, None), Depth(96)));
+        }
+
+        Assert.Equal(NOT_WITHIN_SCENE, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+
+        // before SDK 2.00 the depth/stencil stride only has to cover the region's width (without rounding it up to 32):
+        // with two samples across, 65 pixels need 130 samples instead of 192
+        Assert.Equal(INVALID_VALUE, Begin("sceGxmBeginScene", rt4x, 64, 63, 0u, Depth(160)));
+        Assert.Equal(0, Begin("sceGxmBeginScene", rt4x, 64, 63, 0u, Depth(192)));
+        SetMainModuleSdkVersion(0x01FFFFFF);
+        Assert.Equal(0, Begin("sceGxmBeginScene", rt4x, 64, 63, 0u, Depth(160)));
+        Assert.Equal(INVALID_VALUE, Begin("sceGxmBeginScene", rt4x, 64, 63, 0u, Depth(128)));
+        SetMainModuleSdkVersion(0x02000000);
+        Assert.Equal(INVALID_VALUE, Begin("sceGxmBeginScene", rt4x, 64, 63, 0u, Depth(160)));
     }
 
     /// <summary>Points the main module's SceProcessParam at an SDK version (+0xC, magic "PSP2" at +4).</summary>

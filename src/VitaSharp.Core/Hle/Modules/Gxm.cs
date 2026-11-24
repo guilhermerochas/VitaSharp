@@ -753,8 +753,8 @@ public sealed partial class Gxm : HleModule
     /// in its order: a NULL (here also an unknown) context is SCE_GXM_ERROR_INVALID_POINTER; a deferred context or
     /// <paramref name="badFlags"/> (scene flags outside bits 0-3) SCE_GXM_ERROR_INVALID_VALUE; a NULL render target or
     /// any vertex sync object (the hardware has none) SCE_GXM_ERROR_INVALID_POINTER; a context already in a scene
-    /// SCE_GXM_ERROR_WITHIN_SCENE; then the surfaces (SCE_GXM_ERROR_INVALID_VALUE), and last the render target the GPU
-    /// driver does not know (SCE_GXM_ERROR_DRIVER).
+    /// SCE_GXM_ERROR_WITHIN_SCENE; then the surfaces (SCE_GXM_ERROR_INVALID_VALUE), the render target the GPU driver
+    /// does not know (SCE_GXM_ERROR_DRIVER), and last the surfaces against the target (<see cref="CheckSceneSurfaces"/>).
     /// </summary>
     int BeginScene(uint ctx, uint badFlags, uint renderTarget, uint validRegion, uint vertexSync, uint fragmentSync, uint colorSurface,
         DepthSurfaceInfo? depth, bool depthValid)
@@ -807,11 +807,15 @@ public sealed partial class Gxm : HleModule
             return ERR_DRIVER;
         }
 
+        int surfacesError = CheckSceneSurfaces(rt, validRegion, colorEnabled ? colorSurface : 0, depth, out uint xMax, out uint yMax);
+        if (surfacesError != 0)
+        {
+            return surfacesError;
+        }
+
         c.InScene = true;
         c.RenderTarget = rt;
         c.FragmentSyncObject = fragmentSync;
-        uint xMax = validRegion != 0 ? GuestMemory.R32(validRegion) : rt.Width - 1u;
-        uint yMax = validRegion != 0 ? GuestMemory.R32(validRegion + 4) : rt.Height - 1u;
         SetDefaultRegionClipAndViewport(c, xMax, yMax);
         DisplayHold? hold = WaitForDisplayRelease(fragmentSync);
         if (hold != null)
@@ -832,6 +836,77 @@ public sealed partial class Gxm : HleModule
             Depth = depth,
             YuvProfiles = new GxmYuvProfiles(c.YuvProfile[0], c.YuvProfile[1]),
         });
+        return 0;
+    }
+
+    /// <summary>libgxm 3.74 sets bit 10 of its compatibility word for programs built with an SDK before 2.00: their
+    /// depth/stencil stride only has to cover the valid region's width, not that width rounded up to 32 samples.</summary>
+    const uint UnalignedDepthStrideSdkLimit = 0x02000000;
+
+    /// <summary>
+    /// The checks sceGxmBeginScene, sceGxmBeginSceneEx and _sceGxmBeginScene make once the GPU driver gave the render
+    /// target (libgxm, FW 3.74), in its order: a 2X multisample target takes only a colour surface with the MSAA
+    /// downscale mode (SCE_GXM_ERROR_UNSUPPORTED); the valid region { xMax, yMax } lies inside the target; the enabled
+    /// colour surface covers it (its size in target pixels: twice its size with downscale and no multisampling, its
+    /// size over the sample counts for a multisampled surface without downscale); the enabled depth/stencil surface's
+    /// stride in samples covers the region's width (rounded up to 32, before SDK 2.00 not) times the horizontal sample
+    /// count. Each other failure is SCE_GXM_ERROR_INVALID_VALUE. <paramref name="colorSurface"/> is 0 when the scene
+    /// has no enabled colour surface.
+    /// </summary>
+    int CheckSceneSurfaces(GxmRenderTarget rt, uint validRegion, uint colorSurface, DepthSurfaceInfo? depth, out uint xMax, out uint yMax)
+    {
+        // the driver's sample grid: 2X is one sample across and two down, 4X two by two, anything else one
+        uint samplesX = rt.MultisampleMode == 2 ? 2u : 1u;
+        uint samplesY = rt.MultisampleMode is 1 or 2 ? 2u : 1u;
+        bool downscale = colorSurface != 0 && sceGxmColorSurfaceGetScaleMode(colorSurface) == 1;
+        if (colorSurface != 0 && samplesX == 1 && samplesY == 2 && !downscale)
+        {
+            xMax = yMax = 0;
+            return ERR_UNSUPPORTED;
+        }
+
+        xMax = rt.Width - 1u;
+        yMax = rt.Height - 1u;
+        if (validRegion != 0)
+        {
+            xMax = GuestMemory.R32(validRegion);
+            yMax = GuestMemory.R32(validRegion + 4);
+            if (xMax >= rt.Width || yMax >= rt.Height)
+            {
+                return ERR_INVALID_VALUE;
+            }
+        }
+
+        if (colorSurface != 0)
+        {
+            uint width = GuestMemory.R32(colorSurface + 4);
+            uint height = GuestMemory.R32(colorSurface + 8);
+            if ((samplesX >= 2 || samplesY >= 2) && !downscale)
+            {
+                width /= samplesX;
+                height /= samplesY;
+            }
+            else if (samplesX == 1 && samplesY == 1 && downscale)
+            {
+                width <<= 1;
+                height <<= 1;
+            }
+
+            if (width < xMax + 1 || height < yMax + 1)
+            {
+                return ERR_INVALID_VALUE;
+            }
+        }
+
+        if (depth != null)
+        {
+            uint rowSamples = MainModuleSdkVersion() < UnalignedDepthStrideSdkLimit ? xMax + 1 : (xMax + 0x20) & ~0x1Fu;
+            if (depth.StrideInSamples < samplesX * rowSamples)
+            {
+                return ERR_INVALID_VALUE;
+            }
+        }
+
         return 0;
     }
 

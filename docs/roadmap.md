@@ -3335,6 +3335,18 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   antigo as ganhava. Agora as duas funções seguem o SDK do programa. Testes:
   `GxmFlowTests.YuvProfileAndVisibilityBufferFollowTheFirmwareChecks` (falha sem a correção). Testar: os filmes e as
   texturas YUV dos jogos continuam com as cores de antes (nenhum `sceGxmSetYuvProfile: 0x805B0003` novo no log).
+- [ ] (23/11/2026, falta testar) [P3][P] `sceGxmBeginScene` confere as superfícies contra o render target como o
+  libgxm 3.74 (fix/gxmex4; também `sceGxmBeginSceneEx` e `_sceGxmBeginScene`), depois do driver achar o render
+  target e nesta ordem: render target 2X com cor que não seja MSAA downscale → SCE_GXM_ERROR_UNSUPPORTED
+  (0x805B0009); região válida fora do render target → INVALID_VALUE; superfície de cor menor que a região (em pixels
+  do alvo: com MSAA sem downscale o tamanho dividido pela grade de amostras, com downscale sem MSAA o dobro) →
+  INVALID_VALUE; stride da profundidade menor que a largura da região arredondada para 32 vezes as amostras na
+  horizontal (antes do SDK 2.00, bit 0x400, sem arredondar) → INVALID_VALUE. A largura/altura da cor vem do que o
+  `sceGxmColorSurfaceInit` recebeu (o libgxm lê da textura embutida, igual para superfícies lineares e tiled).
+  Falta: a quarta palavra que o driver devolve do render target, que quando não é zero exige a região inteira (ver o
+  que é no SceGpuEs4). Testes: `GxmFlowTests.BeginSceneChecksTheSurfacesAgainstTheRenderTarget` (falha sem a
+  correção). Testar: os jogos que o usuário já abre continuam abrindo e mostrando imagem, em especial os com MSAA
+  (nenhum `sceGxmBeginScene: 0x805B0003` ou `0x805B0009` novo no log).
 
 - [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo analisável e reexecutável sem o jogo (feat/capself1,
   `docs/captures.md`): (1) nenhum arquivo da gravação leva dado pessoal: uma última etapa troca, em todo texto e no
