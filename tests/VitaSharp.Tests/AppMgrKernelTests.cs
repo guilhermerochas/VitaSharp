@@ -68,12 +68,33 @@ public sealed class AppMgrKernelTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(Argument, Call(Manager, "ksceAppMgr_DCADB9FE", 0u));
         Assert.Equal(Argument, Call(Manager, "ksceAppMgr_0813AFCA", 1, block, 0x10u));
         Assert.Equal(0, Call(Manager, "ksceAppMgr_0813AFCA", 1, block, 0x20u));
-        Assert.Equal(unchecked((int)0x80802016), Call(Manager, "ksceAppMgrLaunchAppByPath", 0u, 0u, 0u, 0u, 0u, 0u));
+    }
+
+    /// <summary>ksceAppMgrLaunchAppByPath is a development kit's entry (SceAppMgr 3.74 asks
+    /// ksceSblACMgrIsDevelopmentMode first): a retail unit answers 0x80020012 to every call, before any other check; with
+    /// the development kit's dip switch (0x9F) the launch's own checks follow. It launched on a retail unit.</summary>
+    [Fact]
+    public void TheLaunchByPathIsADevelopmentKitsEntry()
+    {
+        uint block = _harness.Alloc(0x40);
+        uint missing = _harness.Str("ux0:app/NONE00000/eboot.bin");
         GuestMemory.Fill(block, 0, 0x40);
-        GuestMemory.W32(block + 4, 1);
-        Assert.Equal(NoProcess, Call(Manager, "ksceAppMgrLaunchAppByPath", _harness.Str("ux0:app/NONE00000/eboot.bin"), 0u, 0u, 0u, block, 0u));
-        GuestMemory.W32(block + 4, 0);
-        Assert.Equal(unchecked((int)0x80800006), Call(Manager, "ksceAppMgrLaunchAppByPath", _harness.Str("ux0:app/NONE00000/eboot.bin"), 0u, 0u, 0u, block, 0u));
+        Assert.Equal(unchecked((int)0x80020012), Call(Manager, "ksceAppMgrLaunchAppByPath", 0u, 0u, 0u, 0u, 0u, 0u));
+        Assert.Equal(unchecked((int)0x80020012), Call(Manager, "ksceAppMgrLaunchAppByPath", missing, 0u, 0u, 0u, block, 0u));
+        SystemServicesVsh services = _harness.Module<SystemServicesVsh>();
+        Invoke(services, "ksceKernelSetDipsw", 0x9Fu);
+        try
+        {
+            Assert.Equal(unchecked((int)0x80802016), Call(Manager, "ksceAppMgrLaunchAppByPath", 0u, 0u, 0u, 0u, 0u, 0u));
+            GuestMemory.W32(block + 4, 1);
+            Assert.Equal(NoProcess, Call(Manager, "ksceAppMgrLaunchAppByPath", missing, 0u, 0u, 0u, block, 0u));
+            GuestMemory.W32(block + 4, 0);
+            Assert.Equal(unchecked((int)0x80800006), Call(Manager, "ksceAppMgrLaunchAppByPath", missing, 0u, 0u, 0u, block, 0u));
+        }
+        finally
+        {
+            Invoke(services, "ksceKernelClearDipsw", 0x9Fu);
+        }
     }
 
     /// <summary>NID_324DD34E launches a process through the process manager (SceAppMgr 3.74 0x81002794): the option

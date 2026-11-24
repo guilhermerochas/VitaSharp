@@ -3189,6 +3189,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (23/11/2026, falta testar) [P3][P] `ksceAppMgrLaunchAppByPath` (SceAppMgrForDriver B0A37065) como no 3.74 de
+  varejo (fix/quick3): no SceAppMgr 3.74 (0x8100c504) a primeira coisa é o `ksceSblACMgrIsDevelopmentMode`, então
+  num aparelho de varejo a entrada responde 0x80020012 a tudo; com o modo de desenvolvimento seguem as flags de
+  lançamento recusadas (0x80802002), um processo sendo depurado (0x80802025), o caminho nulo e o lançamento. O HLE
+  lançava também no varejo. Quem chama: nenhum módulo do firmware 3.74 importa essa entrada (só o próprio SceAppMgr a
+  exporta), e os plugins de kernel instalados e os módulos do Adrenaline também não; os
+  lançamentos do shell vão pelas chamadas de usuário. Teste: `AppMgrKernelTests.TheLaunchByPathIsADevelopmentKitsEntry`
+  (falha sem a correção). Testar: nada muda na tela; nenhum jogo, app do sistema ou plugin deixa de abrir.
+
 - [ ] (23/11/2026, falta testar) [P3][P] SceAppMgrForDriver NID_504023C8, o lançamento geral de um aplicativo pelo
   kernel (fix/quick3): no SceAppMgr 3.74 (0x8100d25c, estudo) ele não confere quem chama; copia a lista de argumentos
   (ponteiros para strings terminada em NULL) para um bloco de 0x400 bytes, cada string com o terminador (uma que

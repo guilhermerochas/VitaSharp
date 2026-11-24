@@ -692,7 +692,7 @@ public sealed partial class ProcessmgrKernel
 
     /// <summary>NID_C715591F(): 1 when a process is being debugged (bit 4 of its object's +0x4 word), else 0.</summary>
     [Hle(Nid = 0xC715591F, Library = "SceProcessmgrForDriver")]
-    int NID_C715591F()
+    internal int NID_C715591F()
     {
         lock (_processObjects)
         {

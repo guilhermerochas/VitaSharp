@@ -177,20 +177,34 @@ public sealed partial class AppMgr
     /// <summary>The launch flags the module accepts (+4 of the launch parameters, the other bits 0x80802002).</summary>
     const uint LaunchFlagsRefused = 0x0FD00FFF;
 
-    /// <summary>ksceAppMgrLaunchAppByPath(path, args, argsSize, ?, launchParam, ?): starts the program at a path as a
-    /// process of its own: NULL path 0x80802016, refused launch flags 0x80802002, a path that names no program
-    /// 0x80800006; the new application's id.</summary>
+    /// <summary>
+    /// ksceAppMgrLaunchAppByPath(path, args, argsSize, ?, launchParam, ?): starts the program at a path as a process
+    /// of its own, a development kit's entry (SceAppMgr 3.74 0x8100c504): first ksceSblACMgrIsDevelopmentMode, so a
+    /// retail unit answers 0x80020012 (no firmware module imports it; the shell's launches go through the user-side
+    /// calls); then refused launch flags 0x80802002, a process being debugged 0x80802025, NULL path 0x80802016, a
+    /// path that names no program 0x80800006; the new application's id.
+    /// </summary>
     [Hle(Nid = 0xB0A37065, Library = "SceAppMgrForDriver")]
     int ksceAppMgrLaunchAppByPath(uint path, uint args, uint argsSize, uint unused, uint launchParam, uint callback)
     {
-        if (path == 0)
+        if (Emu.Hle.Modules.OfType<SystemServicesVsh>().First().ksceSblACMgrIsDevelopmentMode() == 0)
         {
-            return ERR_NULL_POINTER;
+            return unchecked((int)0x80020012);
         }
 
         if (launchParam != 0 && (GuestMemory.R32(launchParam + 4) & LaunchFlagsRefused) != 0)
         {
             return ERR_PARAM;
+        }
+
+        if (Emu.Hle.Modules.OfType<ProcessmgrKernel>().First().NID_C715591F() == 1)
+        {
+            return unchecked((int)0x80802025);
+        }
+
+        if (path == 0)
+        {
+            return ERR_NULL_POINTER;
         }
 
         return LaunchAtPath(GuestMemory.ReadCString(path, 0x400), []);

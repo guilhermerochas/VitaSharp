@@ -218,7 +218,7 @@ public sealed partial class SystemServicesVsh
     /// <summary>ksceSblACMgrIsDevelopmentMode (): dip switch 0x9F (a development kit's; a retail unit's is clear).</summary>
     [Hle("ksceSblACMgrIsDevelopmentMode2", Nid = 0xBBA13D9C, Library = "SceSblACMgrForKernel", ReturnsValue = true)]
     [Hle("ksceSblACMgrIsDevelopmentMode", Nid = 0xE87D1777, Library = "SceSblACMgrForDriver", ReturnsValue = true)]
-    int ksceSblACMgrIsDevelopmentMode() => ksceKernelCheckDipswThroughEntry(0x9F);
+    internal int ksceSblACMgrIsDevelopmentMode() => ksceKernelCheckDipswThroughEntry(0x9F);
 
     /// <summary>Two exports that answer 0.</summary>
     [Hle("NID_FBA1A256", Nid = 0xFBA1A256, Library = "SceSblACMgrForKernel")]
