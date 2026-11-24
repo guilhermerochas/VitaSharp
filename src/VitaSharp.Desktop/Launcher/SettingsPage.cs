@@ -355,7 +355,9 @@ public sealed class SettingsPage : UserControl
                 i => Set(() => _settings.AudioDevice = audioValues[i]), 300)),
             _k.Row("mic", S.Microphone, S.MicrophoneDetail, _k.Dropdown(microphoneLabels,
                 Math.Max(0, microphoneValues.FindIndex(v => v.Equals(_settings.Microphone, StringComparison.OrdinalIgnoreCase))),
-                i => Set(() => _settings.Microphone = microphoneValues[i]), 300))));
+                i => Set(() => _settings.Microphone = microphoneValues[i]), 300)),
+            _k.Row("globe", S.Location, S.LocationDetail, _k.Field(_settings.Location,
+                text => Set(() => _settings.Location = text.Trim()), 300, S.LocationWatermark))));
 
         // ---------------------------------------------------------- Graficos
         s.Children.Add(Anchor(SectionGraphics, S.SectionGraphics));

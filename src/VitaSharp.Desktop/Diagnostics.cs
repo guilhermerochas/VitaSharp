@@ -231,7 +231,7 @@ public sealed class Diagnostics
         sb.AppendLine($"Build: {BuildVersion()}");
         sb.AppendLine($"Runtime: .NET {Environment.Version}, {System.Runtime.InteropServices.RuntimeInformation.OSDescription} {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture}, {Environment.ProcessorCount} logical CPUs");
         sb.AppendLine($"Data root: {Program.DataRoot}");
-        sb.AppendLine($"Command line: {string.Join(' ', Environment.GetCommandLineArgs().Skip(1))}");
+        sb.AppendLine($"Command line: {string.Join(' ', Environment.GetCommandLineArgs().Skip(1).Select(Core.Capture.CapturePrivacy.RedactLocation))}");
         sb.AppendLine(Core.Cpu.Jit.Describe());
         sb.AppendLine($"Debug mode: {(DebugMode.Enabled ? "on" : "off")}");
         sb.AppendLine(Core.Gpu.GpuDumpRecorder.Current is { } dump

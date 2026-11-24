@@ -91,6 +91,12 @@ public sealed class SettingsView : Screen<SettingsState>
                         () => Pick(Loc.Get("Microphone"), MicrophoneSettings.Choices, v => p.Microphone = v),
                         detail: Loc.Get("MMicrophoneDetail"))
                 ),
+                SectionTitle(Loc.Get("Location")),
+                Card(
+                    Row(Loc.Get("Location"), LocationSettings.Label(p.Location),
+                        () => Pick(Loc.Get("Location"), LocationSettings.Choices, v => p.Location = v),
+                        detail: Loc.Get("MLocationDetail"))
+                ),
                 SectionTitle(Loc.Get("MPerformance")),
                 Card(
                     Row("CPU", SettingsChoices.LabelOf(CpuChoices.Available(), p.CpuBackend),

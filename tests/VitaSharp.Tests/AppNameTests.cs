@@ -204,6 +204,35 @@ public sealed class AppNameTests : IDisposable
         Assert.Contains(events, e => e.Type == ShellEvents.AppEnded && e.Words[0] == app.Pid);
     }
 
+    /// <summary>The shell's own request by name (it asks for NPXS10079, its background download service, this way) is
+    /// one like any other in the FW 3.74 kernel appmgr (0x8100D89C): the call returns 0 with no process, the shell gets
+    /// event 6, and the application starts only when the shell's handler answers with the second stage. VitaSharp
+    /// started the shell's requests at once, as background processes the shell never asked the kernel for.</summary>
+    [Fact]
+    public void TheShellsOwnLaunchByNameIsARequestItAnswersWithTheSecondStage()
+    {
+        SyntheticTitle.Install(_harness.Root, "VSTS00004");
+        DrainEvents();
+        int processesBefore = _shell.Vita.Processes.Count;
+
+        Assert.Equal(0, Call(_harness.Module<AppMgrShell>(), "sceAppMgrLaunchAppByName", 0x20000, _harness.Str("VSTS00004"), _harness.Str("RemoteDownload")));
+
+        Assert.Equal(processesBefore, _shell.Vita.Processes.Count);
+        Assert.True(_shell.Vita.ShellUp);
+        (int Type, int[] Words, string Name) request = Events().Single(e => e.Type == ShellEvents.LaunchRequest);
+        int appId = request.Words[0];
+        PendingLaunch? pending = _shell.Vita.GetPendingLaunch(appId);
+        Assert.NotNull(pending);
+        Assert.Equal(("VSTS00004", 0x20000, "RemoteDownload"), (pending!.TitleId, pending.Flags, pending.Param));
+
+        Assert.Equal(0, Call(_harness.Module<AppMgrShell>(), "sceAppMgrLaunchAppByName2ndStage", appId, 0u, 0x20000, 0, 0u));
+
+        Emulator app = _shell.Vita.ByAppName("VSTS00004")!;
+        _apps.Add(app);
+        Assert.Equal(appId, app.AppId);
+        Assert.True(app.Running);
+    }
+
     /// <summary>Code in the shell asking for a title a process already runs is a request to the shell (event 6), as the
     /// kernel makes it for any caller: the shell's handler decides (it starts the bubble's application, and the older
     /// process of the name goes).</summary>

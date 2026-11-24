@@ -171,6 +171,14 @@ public sealed class HostServices : IDisposable
     /// microphone, the port delivers silence at its pace.</summary>
     public IMicrophoneSource? Microphone { get; set; }
 
+    /// <summary>Where the unit's position comes from (SceLibLocation): a fixed position or the host system's location
+    /// service; null = location off (the default: the application is not allowed to use it).</summary>
+    public ILocationSource? Location { get; set; }
+
+    /// <summary>"Gravar tudo" is armed or recording without --capture-location: the position is withheld (the service
+    /// answers "undetermined"), so a capture, which may go to a public report, never holds where the player is.</summary>
+    public bool LocationWithheld { get; set; }
+
     /// <summary>The host capture of each process's microphone port; survives a process exec so the new process image
     /// closes what the old one left open (the host device must not stay on without a port).</summary>
     private readonly Dictionary<object, MicrophoneFeed> _microphoneFeeds = new();
@@ -222,6 +230,7 @@ public sealed class HostServices : IDisposable
         }
 
         Microphone?.Dispose();
+        Location?.Dispose();
         lock (CameraStreams)
         {
             foreach (ICameraStream cameraStream in CameraStreams)

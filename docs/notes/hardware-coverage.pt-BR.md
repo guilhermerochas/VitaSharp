@@ -58,7 +58,7 @@ registrado, não é para emular); **ok** coberto.
 | Tela de toque frontal, touchpad traseiro | `SceTouch` | mouse/toque do host nos dois painéis | ok |
 | Movimento: acelerômetro, giroscópio | `SceMotionDev`, `SceMotion` | giroscópio/acelerômetro do host (controle SDL, sensores do celular) | ok |
 | Movimento: magnetômetro | `SceMotionDev`, `SceMotion` | só a chave é guardada, sem dados (`magFieldStability` sempre instável) | **(b)** |
-| GPS / localização | `SceGps` (driver do modem), `liblocation`, `location_provider` | sem posição: "localização ligada, este aplicativo sem permissão" | **(b)** |
+| GPS / localização | `SceGps` (driver do modem), `liblocation`, `location_provider` | desligada por padrão ("aplicativo sem permissão"); posição fixa (PC) ou a do celular (Android) quando a opção dá uma | **(b)** |
 | Modem 3G (PCH-1100) | `SceBbmc`, modem USB | ausente, como no modelo Wi-Fi que a unidade é (`0x80330003`) | (c) (fiel ao modelo; o serviço 3G acabou) |
 | Wi-Fi infraestrutura | `SceWlanBt`, `SceNetPs`, `wlanbt_robin_img_ax.skprx` | sockets do host (`--net=real`); perfil offline senão | ok |
 | Wi-Fi ad hoc | ad hoc do `SceNetPs`, `pspnet_adhoc`, `sceNetAdhocctl*`, Matching | perfil offline: a biblioteca funciona, nenhum par é achado | **(b)** |
@@ -157,7 +157,10 @@ compatibilidade PSP". Impacto: todo título de PSP e PSone, homebrew de PSP, Adr
 
 ### (b) GPS / localização
 
-- **Hoje:** sem posição; o aplicativo está "sem permissão" (`Hle/Modules/Location.cs`).
+- **Hoje:** desligada por padrão, o aplicativo "sem permissão" (`Hle/Modules/Location.cs`); com a opção de
+  localização (`--location=latitude,longitude`, "Localização do celular" no Android) o aplicativo tem permissão e recebe
+  essa posição (`Host/Location.cs`). Falta: o serviço de localização do PC, as entregas dos callbacks de localização, o
+  caminho do firmware (liblocation LLE contra o provedor do shell, `SceGps` de um modelo 3G).
 - **Impacto:** Near, Mapas e os recursos de localização de apps e jogos.
 - **Tamanho:** [M]: uma interface de localização do host (Geolocation do Windows, GeoClue, Core Location,
   `LocationManager` do Android) e uma opção de posição fixa. **Primeira entrega testável:** uma posição roteirizada;

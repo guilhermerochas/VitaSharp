@@ -31,6 +31,10 @@ the recording, by path, position, length and hash only. The bytes go with it onl
 The microphone is what the player and the people near them say: `audio.txt` gives only the microphone port's
 format, source and pace, and its sound goes in (`audio/NN_microphone_RATE.wav`) only with `--capture-mic-audio` (or
 `VITASHARP_CAPTURE_MIC_AUDIO=1`).
+The position is where the player is: while a capture is armed or recording, the Vita's location service answers
+"position undetermined" (so no position enters the guest memory the capture keeps) and `session.txt` keeps
+`--location=<location>`; only `--capture-location` (or `VITASHARP_CAPTURE_LOCATION=1`) lets it answer and keeps the
+option's value.
 
 ## What the capture says about the setup
 
