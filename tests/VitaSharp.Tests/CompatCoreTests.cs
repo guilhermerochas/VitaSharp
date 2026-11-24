@@ -602,6 +602,112 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
         });
     }
 
+    /// <summary>
+    /// A boot that draws into the PSP's VRAM (0x44000000: words 0..3 of line 0 and word 0 of line 1, stride 512),
+    /// points the DMACplus scan-out channel (0xBC800100) at it (ABGR8888, 480 of 512) and enables it, enables the
+    /// vertical blank (interrupt 30) and halts; the handler acknowledges the blank (1 &lt;&lt; 30 to 0xBC300000) and
+    /// counts it in the results word.
+    /// </summary>
+    private static byte[] DisplayBoot()
+    {
+        List<uint> main =
+        [
+            AllegrexAsm.Lui(AllegrexAsm.T0, 0x8860),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.T0, 0x1000),
+            AllegrexAsm.Mtc0(AllegrexAsm.T0, AllegrexCore.Cop0EBase),
+            AllegrexAsm.Lui(S0, 0x4400), // the VRAM, uncached
+        ];
+        uint[] pattern = [0xFF0000FF, 0xFF00FF00, 0xFFFF0000, 0x80808080];
+        for (int i = 0; i < pattern.Length; i++)
+        {
+            main.Add(AllegrexAsm.Lui(AllegrexAsm.T0, (int)(pattern[i] >> 16)));
+            main.Add(AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.T0, (int)(pattern[i] & 0xFFFF)));
+            main.Add(AllegrexAsm.Sw(AllegrexAsm.T0, S0, i * 4));
+        }
+
+        main.Add(AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 0x1234));
+        main.Add(AllegrexAsm.Sw(AllegrexAsm.T0, S0, 512 * 4)); // line 1, pixel 0
+        main.AddRange(
+        [
+            AllegrexAsm.Lui(S1, 0xBC80),
+            AllegrexAsm.Lui(AllegrexAsm.T0, 0x0400),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S1, 0x100), // the picture: PSP physical 0x04000000
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 3),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S1, 0x104), // ABGR8888
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 480),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S1, 0x108),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 512),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S1, 0x10C),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 1),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S1, 0x110), // scan-out on
+            AllegrexAsm.Lui(S2, 0xBC30),
+            AllegrexAsm.Lui(AllegrexAsm.T0, 0x4000),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S2, 8), // enable interrupt 30
+            AllegrexAsm.Lui(S4, 0x8820),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 0x0401),
+            AllegrexAsm.Mtc0(AllegrexAsm.T0, AllegrexCore.Cop0Status),
+            AllegrexAsm.Halt,
+            AllegrexAsm.Beq(AllegrexAsm.Zero, AllegrexAsm.Zero, -2),
+            AllegrexAsm.Nop,
+        ]);
+        uint[] handler =
+        [
+            AllegrexAsm.Lui(AllegrexAsm.K0, 0x4000),
+            AllegrexAsm.Sw(AllegrexAsm.K0, S2, 0), // acknowledge the vertical blank
+            AllegrexAsm.Lw(AllegrexAsm.K1, S4, 0),
+            AllegrexAsm.Addiu(AllegrexAsm.K1, AllegrexAsm.K1, 1),
+            AllegrexAsm.Sw(AllegrexAsm.K1, S4, 0),
+            AllegrexAsm.Eret,
+        ];
+        byte[] image = new byte[0x2000];
+        for (int i = 0; i < main.Count; i++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(i * 4), main[i]);
+        }
+
+        for (int i = 0; i < handler.Length; i++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(0x1000 + i * 4), handler[i]);
+        }
+
+        return image;
+    }
+
+    /// <summary>The image path: the PSP's picture in its VRAM reaches the framebuffer block (sceCompatFrameBufferInit)
+    /// at the PSP's vertical blanks through the LCD DMA sceCompatStart programs (480x272, pitch 0x800), and the blank
+    /// reaches the PSP side as interrupt 30 and the ARM side as the LCD DMA's frame (IRQ 0x4A).</summary>
+    [Fact]
+    public void ThePspPictureReachesTheFramebufferBlockAtTheVblank()
+    {
+        int block;
+        uint blockBase;
+        using (ProcessScope.Enter(_harness.Emu))
+        {
+            uint basePointer = _harness.Alloc(4);
+            block = Call(_harness.Module<SysmemKernel>(), "ksceKernelAllocMemBlock", _harness.Str("ScePspemuFrameBuffer"), 0x0C20D060u, 0x88000u, 0u);
+            Assert.True(block > 0, $"0x{block:X8}");
+            Assert.Equal(0, Call(_harness.Module<SysmemKernel>(), "ksceKernelGetMemBlockBase", block, basePointer));
+            blockBase = GuestMemory.R32(basePointer);
+        }
+
+        _harness.OnGuest(_ =>
+        {
+            uint window = Init(DisplayBoot());
+            Assert.Equal(0, Call(Compat, "sceCompatFrameBufferInit", block));
+            Assert.Equal(0, Compat.ReleaseCoreForTests());
+            uint results = window + MipsResults;
+            Until(() => Compat.LcdDma.Frames >= 2 && GuestMemory.R32(results) >= 2, "two PSP frames copied and taken");
+            Assert.Null(Compat.Runner!.Failure);
+            Assert.Equal(0xFF0000FFu, GuestMemory.R32(blockBase));
+            Assert.Equal(0xFF00FF00u, GuestMemory.R32(blockBase + 4));
+            Assert.Equal(0xFFFF0000u, GuestMemory.R32(blockBase + 8));
+            Assert.Equal(0x80808080u, GuestMemory.R32(blockBase + 12));
+            Assert.Equal(0x1234u, GuestMemory.R32(blockBase + 0x800)); // line 1 at the block's pitch
+            Assert.Equal(0, Call(Compat, "sceCompatStop"));
+            Assert.False(Compat.LcdDma.Running);
+        });
+    }
+
     /// <summary>A channel's ring holds 16 requests: the 17th stays in the core's slot (not acknowledged) with the
     /// overflow flag, and goes in when a request is taken (then acknowledged), as the 3.74 module does it: without
     /// adding it to the ring's count, so the wake it had finds the count at 0 (0x80010016, an empty ring's answer). A
