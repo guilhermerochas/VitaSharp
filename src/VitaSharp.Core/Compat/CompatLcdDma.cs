@@ -89,7 +89,7 @@ public sealed class CompatLcdDma(IAllegrexBus source, PspLcdc lcdc)
         int stride = (int)(lcdc.Stride != 0 ? lcdc.Stride : lcdc.Width);
         int width = _width;
         BeforeRead?.Invoke(lcdc.FramebufferAddress, stride * bytesPerPixel * _height);
-        IGeMemory? spans = source as IGeMemory;
+        var spans = source as IGeMemory;
         for (int row = 0; row < _height; row++)
         {
             uint from = lcdc.FramebufferAddress + (uint)(row * stride * bytesPerPixel);
