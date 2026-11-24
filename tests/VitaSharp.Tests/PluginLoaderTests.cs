@@ -80,7 +80,7 @@ public sealed class PluginLoaderTests(GuestMemoryFixture fx, Xunit.Abstractions.
         Assert.EndsWith("not loaded (the emulator provides its libraries)", results[0]);
         Assert.Contains("loaded and started", results[1], StringComparison.Ordinal);
         Assert.Contains("not started: no module provides VsNothingForKernel", results[2], StringComparison.Ordinal);
-        List<LoadedModule> plugins = HleHarness.KernelModules(emu).Values.Where(m => m.IsKernel && m.Name.StartsWith("Vs", StringComparison.Ordinal)).ToList();
+        var plugins = HleHarness.KernelModules(emu).Values.Where(m => m.IsKernel && m.Name.StartsWith("Vs", StringComparison.Ordinal)).ToList();
         LoadedModule started = Assert.Single(plugins);
         Assert.Equal("VsKernelPlugin", started.Name);
         Assert.True(started.Started);
