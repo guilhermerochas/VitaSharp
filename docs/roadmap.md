@@ -3347,6 +3347,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   que é no SceGpuEs4). Testes: `GxmFlowTests.BeginSceneChecksTheSurfacesAgainstTheRenderTarget` (falha sem a
   correção). Testar: os jogos que o usuário já abre continuam abrindo e mostrando imagem, em especial os com MSAA
   (nenhum `sceGxmBeginScene: 0x805B0003` ou `0x805B0009` novo no log).
+- [ ] (23/11/2026, falta testar) [P3][P] `sceGxmColorSurfaceSetFormat` como o libgxm 3.74 (fix/gxmex4): superfície
+  NULL → INVALID_POINTER; desligada → UNSUPPORTED (antes do SDK 3.10, bit 0x8000, é a sem dados; do 3.10 em diante a
+  que o `sceGxmColorSurfaceInit` não descreveu); formato que a tabela do libgxm não conhece → INVALID_VALUE
+  (0xD0800000 só antes do SDK 3.10); formato de outro tamanho de pixel (bits; bytes antes do SDK 1.60) ou que uma
+  superfície com downscale não aceita → UNSUPPORTED; ao aceitar, a textura da superfície também troca de formato
+  (antes só gravava o formato, sem conferir nada). Falta: as mesmas checagens de formato no
+  `sceGxmColorSurfaceInit` (formato desconhecido, downscale, tipos tiled/swizzled). Testes:
+  `GxmFlowTests.ColorSurfaceSetFormatFollowsTheFirmwareRules` (SDK 1.50/3.0F/3.10/3.57). Testar: os jogos que o
+  usuário já abre continuam com as cores de antes (nenhum `sceGxmColorSurfaceSetFormat: 0x805B000x` no log).
 
 - [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo analisável e reexecutável sem o jogo (feat/capself1,
   `docs/captures.md`): (1) nenhum arquivo da gravação leva dado pessoal: uma última etapa troca, em todo texto e no

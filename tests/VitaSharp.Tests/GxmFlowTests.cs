@@ -651,6 +651,65 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(INVALID_VALUE, Begin("sceGxmBeginScene", rt4x, 64, 63, 0u, Depth(160)));
     }
 
+    /// <summary>
+    /// sceGxmColorSurfaceSetFormat (libgxm, FW 3.74): NULL INVALID_POINTER; a disabled surface UNSUPPORTED, which before
+    /// SDK 3.10 (compatibility bit 0x8000) is a surface without data, from 3.10 on one sceGxmColorSurfaceInit did not
+    /// describe (InitDisabled, zeroed memory); an unknown format INVALID_VALUE (0xD0800000 only before SDK 3.10); a
+    /// format of another pixel size UNSUPPORTED (bits per pixel, bytes before SDK 1.60: 0x60000000 is 16 bits in 4
+    /// bytes); a format a downscaled surface cannot take UNSUPPORTED. The format and the surface's texture change only
+    /// when it is taken.
+    /// </summary>
+    [Theory]
+    [InlineData(0x03570011u)]
+    [InlineData(0x03100000u)]
+    [InlineData(0x030FFFFFu)]
+    [InlineData(0x01500011u)]
+    public void ColorSurfaceSetFormatFollowsTheFirmwareRules(uint sdkVersion)
+    {
+        SetMainModuleSdkVersion(sdkVersion);
+        bool enabledByData = sdkVersion < 0x03100000;
+        bool bytesPerPixel = sdkVersion < 0x01600000;
+        uint described = _harness.Alloc(0x40), disabled = _harness.Alloc(0x40), zeroed = _harness.Alloc(0x40);
+        uint data = _harness.Alloc(64 * 64 * 4);
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceInit", described, 0x00000000u, 0u, 0u, 0u, 64u, 64u, 64u, 0u));
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceInitDisabled", disabled));
+
+        Assert.Equal(INVALID_POINTER, Call(Gxm, "sceGxmColorSurfaceSetFormat", 0u, 0u));
+        Assert.Equal(UNSUPPORTED, Call(Gxm, "sceGxmColorSurfaceSetFormat", disabled, 0x00100000u));
+        Assert.Equal(UNSUPPORTED, Call(Gxm, "sceGxmColorSurfaceSetFormat", zeroed, 0x00100000u));
+        // described without data: enabled from SDK 3.10 on, disabled before
+        Assert.Equal(enabledByData ? UNSUPPORTED : 0, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x00100000u));
+        // before 3.10 a surface is enabled by its data, and SetData refuses a disabled one: give it data by hand
+        Assert.Equal(enabledByData ? UNSUPPORTED : 0, Call(Gxm, "sceGxmColorSurfaceSetData", described, data));
+        GuestMemory.W32(described + 16, data);
+
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x00100000u));
+        Assert.Equal(0x00100000u, (uint)Invoke(Gxm, "sceGxmColorSurfaceGetFormat", described)!);
+        // the surface's texture follows: U8U8U8U8 with the ARGB swizzle
+        Assert.Equal(0x0C001000u, (uint)Invoke(Gxm, "sceGxmTextureGetFormat", described + 32)!);
+
+        // unknown formats; 0xD0800000 (32 bits) only before SDK 3.10
+        Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x20000000u));
+        Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x01800000u));
+        Assert.Equal(enabledByData ? 0 : INVALID_VALUE, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0xD0800000u));
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x00000000u));
+
+        // another pixel size: 16 or 64 bits on a 32-bit surface; 0x60000000 is 16 bits, but 4 bytes before SDK 1.60
+        Assert.Equal(UNSUPPORTED, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x50000000u));
+        Assert.Equal(UNSUPPORTED, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x01000000u));
+        Assert.Equal(bytesPerPixel ? 0 : UNSUPPORTED, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x60000000u));
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x00000000u));
+        Assert.Equal(0x00000000u, (uint)Invoke(Gxm, "sceGxmColorSurfaceGetFormat", described)!);
+
+        // a downscaled surface takes only the formats that can be downscaled (0x10800000 cannot)
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x10800000u));
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x00000000u));
+        Invoke(Gxm, "sceGxmColorSurfaceSetScaleMode", described, 1u);
+        Assert.Equal(UNSUPPORTED, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x10800000u));
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x00800000u));
+        Assert.Equal(0x00800000u, (uint)Invoke(Gxm, "sceGxmColorSurfaceGetFormat", described)!);
+    }
+
     /// <summary>Points the main module's SceProcessParam at an SDK version (+0xC, magic "PSP2" at +4).</summary>
     private void SetMainModuleSdkVersion(uint sdkVersion)
     {
@@ -1248,7 +1307,9 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(1u, (uint)Invoke(Gxm, "sceGxmColorSurfaceGetScaleMode", cs)!);
         Invoke(Gxm, "sceGxmColorSurfaceSetScaleMode", cs, 0u);
         Assert.Equal(0u, (uint)Invoke(Gxm, "sceGxmColorSurfaceGetScaleMode", cs)!);
-        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceSetFormat", cs, 0x0u));
+        // a 24-bit format takes another 24-bit one (here another swizzle), not a 32-bit one
+        Assert.Equal(UNSUPPORTED, Call(Gxm, "sceGxmColorSurfaceSetFormat", cs, 0x0u));
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceSetFormat", cs, 0x10100000u));
         Assert.Equal(INVALID_POINTER, Call(Gxm, "sceGxmColorSurfaceSetDitherMode", 0u, 8u));
 
         // textures: power-of-two sizes for swizzled and cube, limits on size and mips

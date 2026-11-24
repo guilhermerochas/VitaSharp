@@ -505,7 +505,93 @@ public sealed partial class Gxm : HleModule
     }
 
     [Hle(ReturnsValue = true)] uint sceGxmColorSurfaceGetFormat(uint surface) => GuestMemory.R32(surface + 20);
-    [Hle] int sceGxmColorSurfaceSetFormat(uint surface, uint f) { GuestMemory.W32(surface + 20, f); return 0; }
+    /// <summary>
+    /// sceGxmColorSurfaceSetFormat (libgxm, FW 3.74): NULL surface SCE_GXM_ERROR_INVALID_POINTER; a disabled surface
+    /// (<see cref="ColorSurfaceEnabled"/>: before SDK 3.10, compatibility bit 0x8000, one without data; from 3.10 on, one
+    /// sceGxmColorSurfaceInit did not describe) SCE_GXM_ERROR_UNSUPPORTED; a format libgxm does not know (or 0xD0800000
+    /// from SDK 3.10 on) SCE_GXM_ERROR_INVALID_VALUE; a format of another pixel size (bits, or bytes before SDK 1.60),
+    /// or one a downscaled surface cannot take, SCE_GXM_ERROR_UNSUPPORTED. The surface's texture takes the format too.
+    /// </summary>
+    [Hle]
+    int sceGxmColorSurfaceSetFormat(uint surface, uint format)
+    {
+        if (surface == 0)
+        {
+            return ERR_INVALID_POINTER;
+        }
+
+        if (!ColorSurfaceEnabled(surface))
+        {
+            return ERR_UNSUPPORTED;
+        }
+
+        if (!ColorFormatKnown(format, out GxmColorFormatInfo info))
+        {
+            return ERR_INVALID_VALUE;
+        }
+
+        ColorFormatKnown(GuestMemory.R32(surface + 20), out GxmColorFormatInfo current);
+        bool samePixelSize = MainModuleSdkVersion() < ColorFormatBytesSdkLimit
+            ? current.BytesPerPixel == info.BytesPerPixel
+            : current.BitsPerPixel == info.BitsPerPixel;
+        if (!samePixelSize)
+        {
+            return ERR_UNSUPPORTED;
+        }
+
+        if (sceGxmColorSurfaceGetScaleMode(surface) != 0 && !info.Downscalable)
+        {
+            return ERR_UNSUPPORTED;
+        }
+
+        GuestMemory.W32(surface + 20, format);
+        sceGxmTextureSetFormat(surface + 32, ColorToTextureFormat(format));
+        return 0;
+    }
+
+    /// <summary>libgxm 3.74 sets bit 2 of its compatibility word for programs built with an SDK before 1.60: they
+    /// compare colour formats by bytes per pixel (its format table keeps both sizes; one format differs).</summary>
+    const uint ColorFormatBytesSdkLimit = 0x01600000;
+
+    /// <summary>A colour format of libgxm 3.74's table: its pixel size in bits and the byte size the pre-1.60 rules
+    /// use, whether a downscaled (MSAA) surface takes it, and whether only programs before SDK 3.10 may use it.</summary>
+    readonly record struct GxmColorFormatInfo(byte BitsPerPixel, byte BytesPerPixel, bool Downscalable, bool BeforeSdk310Only);
+
+    /// <summary>Whether libgxm 3.74 takes <paramref name="format"/> as a colour format (its base: bits 28-31 and
+    /// 23-24); the rest of the word is the swizzle.</summary>
+    bool ColorFormatKnown(uint format, out GxmColorFormatInfo info)
+    {
+        info = ColorFormatTable(format & 0xF1800000);
+        if (info.BitsPerPixel == 0)
+        {
+            return false;
+        }
+
+        return !info.BeforeSdk310Only || MainModuleSdkVersion() < ColorSurfaceEnabledByDataSdkLimit;
+    }
+
+    static GxmColorFormatInfo ColorFormatTable(uint formatBase) => formatBase switch
+    {
+        0x00000000 => new(32, 4, true, false),
+        0x10000000 => new(24, 3, true, false),
+        0x30000000 or 0x40000000 or 0x50000000 => new(16, 2, true, false),
+        0x60000000 => new(16, 4, true, false),
+        0xF0000000 => new(16, 2, true, false),
+        0x00800000 => new(32, 4, true, false),
+        0x10800000 => new(32, 4, false, false),
+        0x20800000 => new(16, 2, true, false),
+        0x30800000 => new(32, 4, true, false),
+        0x40800000 => new(16, 2, true, false),
+        0x50800000 or 0x60800000 => new(32, 4, true, false),
+        0x80800000 or 0x90800000 => new(8, 1, true, false),
+        0xA0800000 or 0xB0800000 or 0xC0800000 => new(16, 2, true, false),
+        0xD0800000 => new(32, 4, true, true),
+        0xE0800000 => new(32, 4, true, false),
+        0x01000000 => new(64, 8, true, false),
+        0x11000000 => new(64, 8, false, false),
+        0x21000000 or 0x31000000 or 0x41000000 => new(32, 4, true, false),
+        _ => default,
+    };
     [Hle(ReturnsValue = true)] uint sceGxmColorSurfaceGetType(uint surface) => GuestMemory.R32(surface + 24);
     [Hle] uint sceGxmColorSurfaceGetStrideInPixels(uint surface) => GuestMemory.R32(surface + 12);
     [Hle] bool sceGxmColorSurfaceIsEnabled(uint surface) => ColorSurfaceEnabled(surface);
