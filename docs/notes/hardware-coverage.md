@@ -94,7 +94,8 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
   unchanged (LLE), so the only path is emulating the engine. Unlike `pcbc`, `vnzimg.skprx` comes out of `self2elf`
   in plain form (measured entropy 4.4-5.5 bits/byte, readable strings): no key blocks it. The IVC2 coprocessor (the
   vector unit of each core) is documented nowhere public; VitaLoader Redux lists it as not implemented.
-- **(b) part (codecs):** the HLE has no CELP decoder (creating one answers the invalid type error, with a warning), and the CELP and G.729
+- **(b) part (codecs):** the CELP decoder takes the frames of its bit rate but outputs silence (no synthesis yet; no
+  open MPEG-4 CELP implementation exists, the standard's tables come from the ISO/IEC 14496-5 reference software), and the CELP and G.729
   encoders produce zero frames; the split JPEG decoder is refused. Users: voice chat (`SceVoice`, Party), voice
   recording, games that record and play back the microphone.
 - **Size:** MeP core interpreter [G]; IVC2 [G, unknown ISA]; running `vnzimg` to state 8 and serving RPCs [G]. CELP

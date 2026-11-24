@@ -2420,10 +2420,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   sem chave. Primeira entrega: interpretador do núcleo MeP-c5 numa thread de guest com programa sintético no teste
   (aritmética, memória, desvios, escrita de mailbox lida pelo ARM). Depois o IVC2 (sem documentação pública), o boot
   do `vnzimg` até o estado 8 que o `SceCodecEngineWrapper` espera e os RPCs.
-- [ ] [P3][G] Codecs que faltam no HLE do codec engine (`docs/notes/hardware-coverage.md`): decodificador CELP
-  (`sceAudiodec` tipo `0x1006` recusa hoje), codificadores CELP e G.729 (quadros zerados), decodificador JPEG
-  dividido. Primeira entrega: tabela de tamanho de quadro CELP por modo de taxa conferida com o contrato do
-  `SceAudiodec`, depois quadros decodificados contra valores calculados pela ISO/IEC 14496-3.
+- [ ] [P3][G] Codecs que faltam no HLE do codec engine (`docs/notes/hardware-coverage.md`): a síntese CELP (o
+  decodificador já aceita os quadros, ver "Corrigido, falta o usuário testar", e devolve silêncio), os codificadores
+  CELP e G.729 (quadros zerados), o decodificador JPEG dividido. Estudo (24/11/2026): os codecs rodam no Venezia
+  (MeP), então não há código ARM do firmware para rodar em LLE; o formato é o MPEG-4 CELP narrowband (ISO/IEC
+  14496-3 subparte 3, excitação MPE, 8 kHz, 10 taxas de 3850 a 12200 bps). Não há implementação aberta (o FFmpeg
+  não tem MPEG-4 CELP, só QCELP, outro codec); a síntese precisa das tabelas da norma (quantização vetorial dos LSP,
+  codebooks de ganho) do software de referência ISO/IEC 14496-5. Próximo passo: obter essas tabelas e escrever o
+  decodificador (LSP → LPC, excitação adaptativa + MPE, filtro de síntese), testado com quadros sintéticos cujos
+  parâmetros dão uma saída calculável; depois o codificador (análise LPC, busca MPE) com ida e volta.
 - [ ] [P3][G] Cartão de memória e eMMC como dispositivos de bloco (`docs/notes/hardware-coverage.md`): hoje o acesso a
   setores falha (`0x803D0000`, `0x8032001A`). Primeira entrega: log de todo acesso a setor por chamador (formatação,
   atualização pelos Ajustes, homebrew) e um arquivo de imagem como base de um dispositivo do `sdstor`, com setor
@@ -3292,6 +3297,14 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (24/11/2026, falta testar) [P3][G] CELP no `SceAudiodec`, 1ª parte (fix/adr4): no Vita o decodificador CELP
+  aceita `SceAudiodecInfoCelp` (excitação MPE, 8 kHz, uma das 10 taxas do MPEG-4 CELP narrowband; outra coisa é
+  0x807F3800), anuncia `maxEsSize` 24 (`SCE_AUDIODEC_CELP_MAX_ES_SIZE`) e tira um quadro da taxa por chamada (4650 bps:
+  24 bytes → 320 amostras, 40 ms; 12200 bps: 16 bytes → 80 amostras, 10 ms; a tabela do codificador). O VitaSharp
+  recusava o tipo (0x807F0001). Agora o decodificador é criado e consome os quadros com o tamanho certo; as amostras
+  saem em silêncio (a síntese está no item de codecs). Testes: `AudiodecHleTests.ACelpDecoderTakesTheFramesOfItsBitRate`.
+  Testar: um jogo com chat de voz ou que toca voz CELP não falha mais ao criar o decodificador (o log diz "no CELP
+  decoder yet").
 - [ ] (24/11/2026, falta testar) [P3][M] Teclado e mouse Bluetooth (fix/adr4; `docs/notes/hardware-coverage.md`): no
   3.74 o SceHid guarda até 8 teclados e 8 mouses; `sceHid{Keyboard,Mouse}Enumerate` copia os handles dos conectados
   (lista NULL 0x803B0001, no máximo 8), `Read`/`Peek` conferem o handle (< 1: 0x803B0002; lista NULL ou contagem
