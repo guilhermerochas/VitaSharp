@@ -307,7 +307,7 @@ L/R, SELECT/PS/START, um botão TRÁS para o touchpad traseiro); toques na image
 Bluetooth ou USB são detectados sozinhos com o layout posicional do desktop (os controles na tela somem enquanto um está
 conectado), e um teclado físico usa as teclas do desktop. **Controles** remapeia os botões de cada controle (toque
 no controle da lista e aperte o botão no controle; **Restaurar padrão** volta ao padrão) e ajusta a troca O/X, zona morta, opacidade,
-vibração (a cada toque, também com o outro dedo no analógico; fraca, média ou forte) e esconder sozinho. O giroscópio e o acelerômetro do celular alimentam o sensor de movimento do Vita.
+vibração (a cada toque, também com o outro dedo no analógico; fraca, média ou forte) e esconder sozinho. O giroscópio e o acelerômetro do celular alimentam o sensor de movimento do Vita, e o magnetômetro, a bússola do Vita (quando o jogo liga o magnetômetro).
 **Ajustes > Sistema > Ao abrir o emulador** pode dar boot no Sistema do Vita (o shell do firmware) ao abrir o app,
 como no desktop. **Ajustes > Câmeras** escolhe o que cada câmera do Vita mostra, como as opções de câmera do desktop: a câmera do
 celular daquele lado (o padrão), uma imagem PNG/JPEG ou nenhuma (quadros cinza).

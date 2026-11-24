@@ -57,4 +57,20 @@ public static class MotionAxes
         Quaternion deviceToFlat = Quaternion.CreateFromAxisAngle(Vector3.UnitX, pitch) * Quaternion.CreateFromAxisAngle(Vector3.UnitY, roll);
         return Vector3.Transform(new Vector3(0, 0, -1), Quaternion.Conjugate(deviceToFlat));
     }
+
+    /// <summary>The Earth's field (microtesla) a magnetometer reads in the axes of a Vita whose top edge points
+    /// <paramref name="headingDegrees"/> clockwise from magnetic north while lying flat, then tilted as in
+    /// <see cref="TiltGravity"/>: a horizontal component towards north and a vertical one downwards (the northern
+    /// hemisphere's dip; <see cref="EarthFieldHorizontal"/> and <see cref="EarthFieldVertical"/>). Scripted input and
+    /// synthetic tests.</summary>
+    public static Vector3 EarthField(float headingDegrees, float pitch, float roll)
+    {
+        float heading = headingDegrees * MathF.PI / 180f;
+        var flat = new Vector3(-MathF.Sin(heading) * EarthFieldHorizontal, MathF.Cos(heading) * EarthFieldHorizontal, -EarthFieldVertical);
+        Quaternion deviceToFlat = Quaternion.CreateFromAxisAngle(Vector3.UnitX, pitch) * Quaternion.CreateFromAxisAngle(Vector3.UnitY, roll);
+        return Vector3.Transform(flat, Quaternion.Conjugate(deviceToFlat));
+    }
+
+    /// <summary>The components of <see cref="EarthField"/>, microtesla (a mid-latitude field of about 45 uT).</summary>
+    public const float EarthFieldHorizontal = 20f, EarthFieldVertical = 40f;
 }

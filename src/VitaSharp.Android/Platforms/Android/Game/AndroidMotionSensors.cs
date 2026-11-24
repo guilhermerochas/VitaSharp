@@ -211,6 +211,12 @@ public sealed class AndroidMotionSensors : IDisposable
         var listener = new Listener(source);
         bool ok = sm.RegisterListener(listener, accel, SensorDelay.Game, _handler)
                   & sm.RegisterListener(listener, gyro, SensorDelay.Game, _handler);
+        // the magnetometer, when the device has one (SceMotion's NED matrix and field stability)
+        if (sm.GetDefaultSensor(SensorType.MagneticField) is { } magnetometer)
+        {
+            sm.RegisterListener(listener, magnetometer, SensorDelay.Game, _handler);
+        }
+
         _listener = listener;
         listener.Manager = sm;
         Log.Info($"Motion: {source.Name} registered ({accel.Name}, {gyro.Name}, rotation {_display.Rotation * 90}){(ok ? "" : ", a listener was refused")}");
@@ -264,6 +270,9 @@ public sealed class AndroidMotionSensors : IDisposable
                     break;
                 case SensorType.Gyroscope:
                     source.OnGyroscope(e.Timestamp, vec);
+                    break;
+                case SensorType.MagneticField:
+                    source.OnMagneticField(vec);
                     break;
             }
         }

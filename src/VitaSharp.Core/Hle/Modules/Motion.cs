@@ -29,7 +29,9 @@ public sealed partial class Sensors : HleModule
     [Hle] int sceMotionStopSampling() { if (!_sampling) return ERR_NOT_SAMPLING; _sampling = false; return 0; }
     /// <summary>The current attitude becomes the origin (tilt from gravity, heading zero).</summary>
     [Hle] int sceMotionReset() { _device.Reset(); return 0; }
-    // no magnetometer is emulated: only the switch is kept (magFieldStability stays UNSTABLE, nedMatrix = rotation)
+    // driver_us 3.74: the switch goes to the sensor driver (SceMotionDev) and is kept for GetMagnetometerState. With it
+    // on and the host source's magnetometer giving a stable field, sceMotionGetState reports the NED matrix and STABLE
+    // (MotionDevice.WriteState); without one, UNSTABLE and the NED matrix = the rotation matrix, as before
     [Hle] int sceMotionMagnetometerOn() { _magnetometer = true; return 0; }
     [Hle] int sceMotionMagnetometerOff() { _magnetometer = false; return 0; }
     [Hle] int sceMotionGetMagnetometerState() => _magnetometer ? 1 : 0;
@@ -159,7 +161,7 @@ public sealed partial class Sensors : HleModule
         }
 
         Poll();
-        _device.WriteState(state, NowUs);
+        _device.WriteState(state, NowUs, _magnetometer);
         return 0;
     }
 

@@ -107,7 +107,8 @@ public static class AndroidMotionAxes
 
     /// <summary>A sample with the re-centre rotation applied to both vectors (a constant rotation of the body frame).</summary>
     public static MotionSample Rotate(MotionSample motionSample, Quaternion quaternion) => quaternion.IsIdentity ? motionSample
-        : new MotionSample(motionSample.TimestampUs, Vector3.Transform(motionSample.Acceleration, quaternion), Vector3.Transform(motionSample.AngularVelocity, quaternion));
+        : new MotionSample(motionSample.TimestampUs, Vector3.Transform(motionSample.Acceleration, quaternion), Vector3.Transform(motionSample.AngularVelocity, quaternion),
+            Vector3.Transform(motionSample.MagneticField, quaternion));
 }
 
 /// <summary>Which frame a <see cref="SensorMotionSource"/>'s raw vectors are in.</summary>
@@ -133,7 +134,7 @@ public sealed class SensorMotionSource : IMotionSource
     private readonly MotionSample[] _ring = new MotionSample[Capacity];
     private readonly SensorFrame _frame;
     private int _head, _count;
-    private Vector3 _accel, _gravity;
+    private Vector3 _accel, _gravity, _field;
     private bool _hasAccel, _hasGyro;
     private Quaternion _recentre = Quaternion.Identity;
     private volatile int _rotation;
@@ -186,6 +187,16 @@ public sealed class SensorMotionSource : IMotionSource
         }
     }
 
+    /// <summary>A magnetometer event (the phone's TYPE_MAGNETIC_FIELD): microtesla in the sensor's own frame; the next
+    /// samples carry it (SceMotion's NED matrix and field stability).</summary>
+    public void OnMagneticField(Vector3 microtesla)
+    {
+        lock (_lock)
+        {
+            _field = microtesla;
+        }
+    }
+
     /// <summary>A gyroscope event: rad/s in the sensor's own frame, <paramref name="timestampNs"/> = SensorEvent.timestamp.</summary>
     public void OnGyroscope(long timestampNs, Vector3 rads)
     {
@@ -197,7 +208,7 @@ public sealed class SensorMotionSource : IMotionSource
                 return;
             }
 
-            MotionSample motionSample = Map((ulong)Math.Max(0, timestampNs / 1000), _accel, rads);
+            MotionSample motionSample = Map((ulong)Math.Max(0, timestampNs / 1000), _accel, rads) with { MagneticField = MapField(_field) };
             _ring[_head] = AndroidMotionAxes.Rotate(motionSample, _recentre);
             _head = (_head + 1) % Capacity;
             if (_count < Capacity)
@@ -206,6 +217,12 @@ public sealed class SensorMotionSource : IMotionSource
             }
         }
     }
+
+    /// <summary>The phone's field in the Vita's axes (the gyroscope's remap: a true vector, no sign change); a
+    /// controller has no magnetometer.</summary>
+    private Vector3 MapField(Vector3 microtesla) => _frame == SensorFrame.Phone && microtesla != Vector3.Zero
+        ? AndroidMotionAxes.DeviceToScreen(microtesla, _rotation)
+        : Vector3.Zero;
 
     private MotionSample Map(ulong us, Vector3 accel, Vector3 gyro) => _frame == SensorFrame.Phone
         ? AndroidMotionAxes.FromPhone(us, accel, gyro, _rotation)

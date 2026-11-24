@@ -303,7 +303,7 @@ SELECT/PS/START, a TRÁS toggle for the rear touchpad); touches on the picture a
 USB controllers are detected on their own with the desktop's positional layout (the on-screen controls hide while one
 is connected), and a hardware keyboard uses the desktop's keys. **Controles** remaps each controller's buttons (tap a
 control, then press the button on the controller; **Restore defaults** goes back), and sets the O/X swap, deadzone, opacity,
-vibration (on every press, also with the other thumb on the stick; weak, medium or strong) and auto-hide. The phone's gyroscope and accelerometer feed the Vita's motion sensor.
+vibration (on every press, also with the other thumb on the stick; weak, medium or strong) and auto-hide. The phone's gyroscope and accelerometer feed the Vita's motion sensor, and its magnetometer the Vita's compass (when the game turns the magnetometer on).
 **Ajustes > Sistema > Ao abrir o emulador** can boot the Vita system (the firmware's shell) as the app opens, as on
 the desktop. **Ajustes > Câmeras** chooses what each Vita camera shows, as the desktop's camera options: the phone's camera of
 that side (the default), a PNG/JPEG picture or none (grey frames).

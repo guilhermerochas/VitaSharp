@@ -55,7 +55,7 @@ recorded, not to be emulated); **ok** covered.
 | Cameras (front/back), MIPI CSI-2, ISP | `SceCamera`, `lowio` (CSI) | host webcam / still picture / grey per camera (`Host/Camera.cs`, `CameraSetup.cs`); sensor registers kept | ok |
 | Front touch screen, rear touchpad | `SceTouch` | host mouse/touch for both panels | ok |
 | Motion: accelerometer, gyroscope | `SceMotionDev`, `SceMotion` | host gyro/accelerometer (SDL controller, phone sensors) | ok |
-| Motion: magnetometer | `SceMotionDev`, `SceMotion` | switch kept, no data (`magFieldStability` always unstable) | **(b)** |
+| Motion: magnetometer | `SceMotionDev`, `SceMotion` | host field (phone magnetometer on Android, scripted `heading@` on the PC): NED matrix and stable field while the magnetometer is on | done (was **(b)**); raw calibration records missing |
 | GPS / location | `SceGps` (driver from the modem), `liblocation`, `location_provider` | off by default ("this application not allowed"); a fixed position (PC) or the phone's location (Android) when the setting gives one | **(b)** |
 | 3G modem (PCH-1100) | `SceBbmc`, USB modem | absent, as on the Wi-Fi model the unit is (`0x80330003`) | (c) (faithful to the model; the 3G service is gone) |
 | Wi-Fi infrastructure | `SceWlanBt`, `SceNetPs`, `wlanbt_robin_img_ax.skprx` | host sockets (`--net=real`), offline profile otherwise | ok |
@@ -162,7 +162,9 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
 
 ### (b) Magnetometer
 
-- **Today:** `sceMotionMagnetometerOn` keeps the switch only (`Hle/Modules/Motion.cs`).
+- **Today:** the host motion sample carries the magnetic field (phone magnetometer, scripted `heading@`); with the
+  magnetometer on and a stable field, `sceMotionGetState` gives the NED matrix and STABLE (`Hle/Motion/MotionDevice.cs`).
+  Missing: the raw records for the shell's calibration and the field in the fused quaternion.
 - **Impact:** compass heading (Maps, Near, AR titles that use the north), `magFieldStability` and the NED matrix.
 - **Size:** [M]. **First testable delivery:** the host motion reading gets a magnetic field; a scripted field gives
   the heading and a stable `magFieldStability` in `sceMotionGetSensorState`/`GetState`.

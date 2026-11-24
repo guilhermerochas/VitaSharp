@@ -214,7 +214,7 @@ public sealed partial class Sensors
         }
 
         Poll();
-        _device.WriteState(state, NowUs);
+        _device.WriteState(state, NowUs, _magnetometer);
         return 0;
     }
 }

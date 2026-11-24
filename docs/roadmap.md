@@ -2371,9 +2371,10 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `location_provider` do shell, que nos modelos 3G lê o `SceGps` (driver do modem); o VitaSharp emula um modelo Wi-Fi
   (sem receptor, o `ksceGps` fica no estado 2 com driver e sem sessão), e o Near (NPXS10000) já usa o liblocation real
   contra o provedor do shell sem posição. Usa: Near, Mapas.
-- [ ] [P3][M] Magnetômetro (`docs/notes/hardware-coverage.md`): o `sceMotionMagnetometerOn` só guarda a chave. Campo
-  magnético na leitura de movimento do host (sensor do celular, roteiro); primeira entrega: campo roteirizado dá a
-  direção e `magFieldStability` estável em `sceMotionGetSensorState`/`GetState`.
+- [ ] [P3][M] Magnetômetro, o que falta (o feito está em "Corrigido, falta o usuário testar"): (1) os registros brutos
+  do magnetômetro para a calibração do shell (`sceMotionDevReadForMagnCalib`, `GetCurrentMagnCalibData`) e o
+  `dataInfo`; (2) a fusão do campo no `deviceQuat` como o driver_us faz (hoje só a matriz NED e a estabilidade usam o
+  campo); (3) o magnetômetro de um controle no PC (o SDL não expõe um).
 - [ ] [P3][M] Teclado e mouse Bluetooth (`SceHid`) a partir do host, como opção (`docs/notes/hardware-coverage.md`):
   primeira entrega: `sceHidKeyboardEnumerate` devolve um handle e `sceHidKeyboardRead` informa teclas roteirizadas.
 - [ ] [P3][G] Processador de mídia Venezia (núcleos MeP + IVC2) para código MeP que não é do firmware (plugin
@@ -3252,6 +3253,19 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (24/11/2026, falta testar) [P3][M] Magnetômetro (fix/adr4; `docs/notes/hardware-coverage.md`): no Vita o
+  `sceMotionMagnetometerOn` liga o magnetômetro no driver de sensores e o `sceMotionGetState` traz a estabilidade do
+  campo (+0xF4, copiada do registro do driver, driver_us 3.74) e a matriz NED (os eixos do aparelho em Norte-Leste-
+  Baixo). O VitaSharp só guardava a chave: estabilidade sempre UNSTABLE e a NED igual à matriz de rotação. Agora a
+  amostra de movimento do host traz o campo magnético (µT): o magnetômetro do celular no Android (TYPE_MAGNETIC_FIELD,
+  nos eixos do Vita pela mesma rotação do giroscópio) e, no PC, o passo `heading@T:graus` do `--input` (o campo da
+  Terra para essa direção, com a inclinação dos passos `tilt`). Com o magnetômetro ligado e o campo estável (8
+  leituras que concordam em 3 µT, magnitude da Terra), `magFieldStability` = STABLE e a NED vem da gravidade e do
+  campo (TRIAD); desligado, sem campo ou perturbado (ímã, metal), UNSTABLE e a NED = rotação, como antes. Testes:
+  `MotionMagnetometerTests` (norte, leste, em pé, desligado, sem campo, campo perturbado e forte). Testar: no Android,
+  um jogo ou app que usa bússola (mapas, AR) aponta o norte ao girar o celular; no PC,
+  `--input=heading@0:90` faz o Vita apontar para o leste.
 
 - [ ] (24/11/2026, falta testar) [P3][M] Localização pelo host (fix/adr4; `docs/notes/hardware-coverage.md`): no Vita
   o SceLibLocation responde a posição do serviço de localização quando o usuário permite o aplicativo (Configurações

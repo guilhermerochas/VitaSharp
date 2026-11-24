@@ -57,7 +57,7 @@ registrado, não é para emular); **ok** coberto.
 | Câmeras (frontal/traseira), MIPI CSI-2, ISP | `SceCamera`, `lowio` (CSI) | webcam do host / imagem fixa / cinza por câmera (`Host/Camera.cs`, `CameraSetup.cs`); registradores do sensor guardados | ok |
 | Tela de toque frontal, touchpad traseiro | `SceTouch` | mouse/toque do host nos dois painéis | ok |
 | Movimento: acelerômetro, giroscópio | `SceMotionDev`, `SceMotion` | giroscópio/acelerômetro do host (controle SDL, sensores do celular) | ok |
-| Movimento: magnetômetro | `SceMotionDev`, `SceMotion` | só a chave é guardada, sem dados (`magFieldStability` sempre instável) | **(b)** |
+| Movimento: magnetômetro | `SceMotionDev`, `SceMotion` | campo do host (magnetômetro do celular no Android, `heading@` roteirizado no PC): matriz NED e campo estável com o magnetômetro ligado | feito (era **(b)**); faltam os registros brutos da calibração |
 | GPS / localização | `SceGps` (driver do modem), `liblocation`, `location_provider` | desligada por padrão ("aplicativo sem permissão"); posição fixa (PC) ou a do celular (Android) quando a opção dá uma | **(b)** |
 | Modem 3G (PCH-1100) | `SceBbmc`, modem USB | ausente, como no modelo Wi-Fi que a unidade é (`0x80330003`) | (c) (fiel ao modelo; o serviço 3G acabou) |
 | Wi-Fi infraestrutura | `SceWlanBt`, `SceNetPs`, `wlanbt_robin_img_ax.skprx` | sockets do host (`--net=real`); perfil offline senão | ok |
@@ -169,7 +169,9 @@ compatibilidade PSP". Impacto: todo título de PSP e PSone, homebrew de PSP, Adr
 
 ### (b) Magnetômetro
 
-- **Hoje:** o `sceMotionMagnetometerOn` só guarda a chave (`Hle/Modules/Motion.cs`).
+- **Hoje:** a amostra de movimento do host traz o campo magnético (magnetômetro do celular, `heading@` no roteiro);
+  com o magnetômetro ligado e o campo estável, o `sceMotionGetState` dá a matriz NED e STABLE
+  (`Hle/Motion/MotionDevice.cs`). Falta: os registros brutos da calibração do shell e o campo no quaternion da fusão.
 - **Impacto:** direção da bússola (Mapas, Near, títulos de RA que usam o norte), `magFieldStability` e a matriz NED.
 - **Tamanho:** [M]. **Primeira entrega testável:** a leitura de movimento do host ganha campo magnético; um campo
   roteirizado dá a direção e um `magFieldStability` estável no `sceMotionGetSensorState`/`GetState`.
