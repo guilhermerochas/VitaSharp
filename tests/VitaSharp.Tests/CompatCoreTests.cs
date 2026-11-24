@@ -608,9 +608,22 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
         public int Draws;
         public bool Disposed;
 
-        public void Draw(GeTopology topology, ReadOnlySpan<GeVertex> vertices, GeRenderState state, GeTarget target)
+        public void Draw(GeTopology topology, ReadOnlySpan<GeVertex> vertices, GeRenderState state, GeSurface color, GeSurface? depth, IGeMemory memory)
         {
             Draws++;
+        }
+
+        public void Flush(IGeMemory memory)
+        {
+        }
+
+        public bool Holds(uint address, int length)
+        {
+            return false;
+        }
+
+        public void Invalidate(uint address, int length)
+        {
         }
 
         public void Dispose()

@@ -114,6 +114,10 @@ public sealed class GeRenderState
     /// <summary>The texture decoded to RGBA8 (row after row), when <see cref="Texture"/>.</summary>
     public uint[] TexturePixels = [];
 
+    /// <summary>The identity of <see cref="TexturePixels"/>' content: the same id is the same texture (a rasterizer may
+    /// keep it); a texture whose memory changed gets a new one.</summary>
+    public long TextureId;
+
     /// <summary>TEXFUNC bits 0..2: 0 modulate, 1 decal, 2 blend, 3 replace, 4 add; bit 8: use the texture's alpha;
     /// bit 16: double the colour.</summary>
     public int TextureFunction;
@@ -133,21 +137,44 @@ public sealed class GeRenderState
 }
 
 /// <summary>
-/// The framebuffer region a draw renders into, as RGBA8 and 16-bit depth arrays the GE side converts from and back
-/// to PSP memory: <see cref="Width"/> x <see cref="Height"/> pixels from the framebuffer's first row.
+/// A buffer the GE draws into, in PSP memory: the colour framebuffer (<see cref="Format"/> one of the GePixels formats)
+/// or the 16-bit depth buffer (<see cref="DepthFormat"/>), <see cref="Stride"/> pixels a row and the rows the draw can
+/// reach (<see cref="Height"/>, its scissor's bottom + 1).
 /// </summary>
-public sealed class GeTarget
+public readonly record struct GeSurface(uint Address, int Stride, int Height, int Format)
 {
-    public int Width;
-    public int Height;
-    public uint[] Color = [];
+    /// <summary>The format of a depth buffer.</summary>
+    public const int DepthFormat = 4;
 
-    /// <summary>The depth buffer (null when the draw neither tests nor writes depth).</summary>
-    public ushort[]? Depth;
+    public int BytesPerPixel => Format == GePixels.Format8888 ? 4 : 2;
+
+    public int Bytes => Stride * Height * BytesPerPixel;
+
+    public bool Overlaps(uint address, int length)
+    {
+        return address < Address + (uint)Bytes && Address < address + (uint)length;
+    }
 }
 
-/// <summary>Draws the GE's batches (the Vulkan rasterizer in VitaSharp.Renderer.Vulkan; tests give their own).</summary>
+/// <summary>
+/// Draws the GE's batches (the Vulkan rasterizer in VitaSharp.Renderer.Vulkan; tests give their own). A rasterizer
+/// may keep the surfaces on its side between draws: memory has their pixels again after <see cref="Flush"/>, which the
+/// GE calls when its list stops (END, the stall address) and before memory a surface overlaps is read (the LCD DMA, a
+/// block transfer, a texture drawn into); <see cref="Invalidate"/> says memory changed outside the rasterizer (a
+/// block transfer into a surface). Between flushes the GE side does not read or write the surfaces' memory.
+/// </summary>
 public interface IGeRasterizer
 {
-    void Draw(GeTopology topology, ReadOnlySpan<GeVertex> vertices, GeRenderState state, GeTarget target);
+    /// <summary>A batch into <paramref name="color"/> (and <paramref name="depth"/> when the draw tests or writes
+    /// depth), memory being where the surfaces live.</summary>
+    void Draw(GeTopology topology, ReadOnlySpan<GeVertex> vertices, GeRenderState state, GeSurface color, GeSurface? depth, IGeMemory memory);
+
+    /// <summary>The draws done, every surface they changed written back to memory.</summary>
+    void Flush(IGeMemory memory);
+
+    /// <summary>A surface the rasterizer changed and has not written back overlaps the range.</summary>
+    bool Holds(uint address, int length);
+
+    /// <summary>Memory in the range was changed outside the rasterizer: the surfaces in it are read again.</summary>
+    void Invalidate(uint address, int length);
 }

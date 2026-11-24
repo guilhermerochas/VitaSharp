@@ -90,23 +90,47 @@ public sealed class GeListBuilder(GeTestMemory memory, uint start)
     }
 }
 
-/// <summary>A rasterizer that keeps what it was given (and can paint the target).</summary>
+/// <summary>A rasterizer that keeps what it was given (the surfaces of each draw, the flushes) and can paint the
+/// colour surface in memory as a GPU would.</summary>
 public sealed class GeCapturingRasterizer : IGeRasterizer
 {
     public readonly List<(GeTopology Topology, GeVertex[] Vertices)> Draws = [];
 
     public GeRenderState? LastState;
 
-    public GeTarget? LastTarget;
+    public GeSurface LastColor;
 
-    public Action<GeTarget>? Paint;
+    public GeSurface? LastDepth;
 
-    public void Draw(GeTopology topology, ReadOnlySpan<GeVertex> vertices, GeRenderState state, GeTarget target)
+    public int Flushes;
+
+    public bool Dirty;
+
+    public Action<GeSurface, IGeMemory>? Paint;
+
+    public void Draw(GeTopology topology, ReadOnlySpan<GeVertex> vertices, GeRenderState state, GeSurface color, GeSurface? depth, IGeMemory memory)
     {
         Draws.Add((topology, vertices.ToArray()));
         LastState = state;
-        LastTarget = target;
-        Paint?.Invoke(target);
+        LastColor = color;
+        LastDepth = depth;
+        Dirty = true;
+        Paint?.Invoke(color, memory);
+    }
+
+    public void Flush(IGeMemory memory)
+    {
+        Flushes++;
+        Dirty = false;
+    }
+
+    public bool Holds(uint address, int length)
+    {
+        return Dirty && LastColor.Overlaps(address, length);
+    }
+
+    public void Invalidate(uint address, int length)
+    {
     }
 }
 

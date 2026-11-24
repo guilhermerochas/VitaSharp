@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Compat.Ge;
@@ -7,8 +6,9 @@ namespace VitaSharp.Core.Compat.Ge;
 /// The GE's drawing: PRIM's vertices decoded by VTYPE, transformed (world, view, projection, viewport, the screen
 /// offset) or taken as framebuffer coordinates ("through" mode), the primitive expanded to points, lines or
 /// triangles (strips, fans and rectangles become lists; flat shading takes the last vertex's colour), the state read
-/// from the command registers, the texture and CLUT decoded, and the framebuffer and depth buffer converted to RGBA8
-/// and 16-bit arrays for the rasterizer and back. LOADCLUT and the block transfer (TRANSFERSTART) work on memory
+/// from the command registers, the texture and CLUT decoded (once while their memory stays the same), and the batch
+/// handed to the rasterizer with its framebuffer and depth surfaces, which it may keep until the list stops. LOADCLUT
+/// and the block transfer (TRANSFERSTART) work on memory
 /// here. Not drawn yet: lighting, skinning, fog, the stencil test, logic ops, colour test, patches, texture
 /// mipmaps (level 0 only), DXT textures; each logs once when a list uses it.
 /// </summary>
@@ -19,7 +19,6 @@ public sealed partial class GeEngine
 
     private readonly uint[] _clut = new uint[256 * 4 / 4]; // 1 KB of CLUT entries (as 32-bit words)
     private readonly GeRenderState _state = new();
-    private readonly GeTarget _target = new();
     private GeVertex[] _vertices = new GeVertex[256];
     private GeVertex[] _assembled = new GeVertex[768];
 
@@ -100,8 +99,6 @@ public sealed partial class GeEngine
             return;
         }
 
-        ReadState(format);
-        PrepareTarget();
         if (Rasterizer == null && !_rasterizerAsked)
         {
             _rasterizerAsked = true;
@@ -109,8 +106,8 @@ public sealed partial class GeEngine
             _rasterizerOwned = Rasterizer != null;
         }
 
-        Rasterizer?.Draw(topology, _assembled.AsSpan(0, assembled), _state, _target);
-        WriteTarget();
+        ReadState(format);
+        Rasterizer?.Draw(topology, _assembled.AsSpan(0, assembled), _state, ColorSurface(), DepthSurface(), _memory);
         Batches++;
     }
 
@@ -492,102 +489,79 @@ public sealed partial class GeEngine
 
     // ---- framebuffer
 
-    /// <summary>The framebuffer's address (FBP's low 24 bits in VRAM), row length in pixels and pixel format
-    /// (FRAMEBUFPIXFORMAT: 0 565, 1 5551, 2 4444, 3 8888).</summary>
-    private (uint Address, int Stride, int Format) FrameBuffer()
+    /// <summary>The framebuffer (FBP's low 24 bits in VRAM, FBW, FRAMEBUFPIXFORMAT: 0 565, 1 5551, 2 4444, 3 8888) as far
+    /// down as the scissor reaches.</summary>
+    private GeSurface ColorSurface()
     {
         uint address = VramBase + (Command(GeCommand.FrameBufferPointer) & 0x1FFFF0);
-        int stride = (int)(Command(GeCommand.FrameBufferWidth) & 0x7FC);
-        return (address, Math.Max(stride, 4), (int)(Command(GeCommand.FrameBufferPixelFormat) & 3));
+        int stride = Math.Max((int)(Command(GeCommand.FrameBufferWidth) & 0x7FC), 4);
+        int height = Math.Clamp(_state.ScissorBottom + 1, 1, 1024);
+        return new GeSurface(address, stride, height, (int)(Command(GeCommand.FrameBufferPixelFormat) & 3));
     }
 
-    private (uint Address, int Stride) DepthBuffer()
+    /// <summary>The depth buffer (ZBP, ZBW), when the draw tests or writes depth.</summary>
+    private GeSurface? DepthSurface()
     {
-        uint address = VramBase + (Command(GeCommand.DepthBufferPointer) & 0x1FFFF0);
-        int stride = (int)(Command(GeCommand.DepthBufferWidth) & 0x7FC);
-        return (address, Math.Max(stride, 4));
-    }
-
-    /// <summary>The framebuffer rows down to the scissor's bottom, as RGBA8, and the depth buffer when the draw uses it.</summary>
-    private void PrepareTarget()
-    {
-        (uint address, int stride, int format) = FrameBuffer();
-        int height = Math.Min(_state.ScissorBottom + 1, 1024);
-        _target.Width = stride;
-        _target.Height = height;
-        int pixels = stride * height;
-        if (_target.Color.Length != pixels)
-        {
-            _target.Color = new uint[pixels];
-        }
-
-        int bytesPerPixel = format == 3 ? 4 : 2;
-        Span<byte> source = _memory.Span(address, pixels * bytesPerPixel);
-        if (source.Length == pixels * bytesPerPixel)
-        {
-            GePixels.ToRgba(source, format, _target.Color);
-        }
-
         bool usesDepth = _state.ClearMode ? _state.ClearDepth : _state.DepthTest || _state.DepthWrite;
         if (!usesDepth)
         {
-            _target.Depth = null;
-            return;
+            return null;
         }
 
-        (uint depthAddress, int depthStride) = DepthBuffer();
-        if (_target.Depth == null || _target.Depth.Length != pixels)
-        {
-            _target.Depth = new ushort[pixels];
-        }
+        uint address = VramBase + (Command(GeCommand.DepthBufferPointer) & 0x1FFFF0);
+        int stride = Math.Max((int)(Command(GeCommand.DepthBufferWidth) & 0x7FC), 4);
+        int height = Math.Clamp(_state.ScissorBottom + 1, 1, 1024);
+        return new GeSurface(address, stride, height, GeSurface.DepthFormat);
+    }
 
-        for (int row = 0; row < height; row++)
+    /// <summary>Memory the GE's surfaces may hold changes for is about to be read outside the GE (the LCD DMA reading
+    /// the picture, the CPU): the rasterizer writes them back first. On the thread that runs the GE (the core's).</summary>
+    public void SynchronizeMemory(uint address, int length)
+    {
+        IGeRasterizer? rasterizer = Rasterizer;
+        if (rasterizer != null && rasterizer.Holds(address, length))
         {
-            Span<byte> line = _memory.Span(depthAddress + (uint)(row * depthStride * 2), Math.Min(depthStride, stride) * 2);
-            for (int column = 0; column < line.Length / 2; column++)
-            {
-                _target.Depth[row * stride + column] = BinaryPrimitives.ReadUInt16LittleEndian(line[(column * 2)..]);
-            }
+            rasterizer.Flush(_memory);
         }
     }
 
-    private void WriteTarget()
+    /// <summary>The list stopped (END, the stall address): the rasterizer finishes and memory has its pixels.</summary>
+    partial void OnExecutionEnd()
     {
-        (uint address, int stride, int format) = FrameBuffer();
-        int pixels = _target.Width * _target.Height;
-        int bytesPerPixel = format == 3 ? 4 : 2;
-        Span<byte> destination = _memory.Span(address, pixels * bytesPerPixel);
-        if (destination.Length == pixels * bytesPerPixel)
-        {
-            GePixels.FromRgba(_target.Color.AsSpan(0, pixels), format, destination);
-        }
+        Rasterizer?.Flush(_memory);
+    }
 
-        if (_target.Depth == null)
-        {
-            return;
-        }
-
-        (uint depthAddress, int depthStride) = DepthBuffer();
-        for (int row = 0; row < _target.Height; row++)
-        {
-            Span<byte> line = _memory.Span(depthAddress + (uint)(row * depthStride * 2), Math.Min(depthStride, stride) * 2);
-            for (int column = 0; column < line.Length / 2; column++)
-            {
-                BinaryPrimitives.WriteUInt16LittleEndian(line[(column * 2)..], _target.Depth[row * stride + column]);
-            }
-        }
+    partial void OnExecutionStart()
+    {
+        _executionEpoch++;
     }
 
     // ---- textures
 
-    /// <summary>Level 0 of the texture (TEXADDR0/TBW0/TSIZE0, TPSM, TMODE swizzle bit), decoded to RGBA8 into the
-    /// state; false when it cannot be read.</summary>
+    /// <summary>A texture decoded once: the memory it came from, checked again once per list run.</summary>
+    private sealed class CachedTexture
+    {
+        public uint[] Pixels = [];
+        public ulong Hash;
+        public long Id;
+        public long CheckedEpoch = -1;
+    }
+
+    private const int TextureCacheLimit = 256;
+
+    private readonly Dictionary<(uint Address, int Format, int Width, int Height, int BufferWidth, bool Swizzled, ulong Clut), CachedTexture> _textures = [];
+    private long _executionEpoch;
+    private long _nextTextureId = 1;
+
+    /// <summary>Level 0 of the texture (TEXADDR0/TBW0/TSIZE0, TPSM, TMODE swizzle bit) decoded to RGBA8 into the state;
+    /// false when it cannot be read. A texture is decoded once and reused while its memory (checked once per list
+    /// run) and its CLUT stay the same; one the rasterizer drew into is written back first.</summary>
     private bool DecodeTexture()
     {
         int width = TextureWidth();
         int height = TextureHeight();
         uint address = (Command(GeCommand.TextureAddress0) & 0xFFFFF0) | ((Command(GeCommand.TextureBufferWidth0) & 0x0F0000) << 8);
-        int bufferWidth = (int)(Command(GeCommand.TextureBufferWidth0) & 0x7FF);
+        int bufferWidth = Math.Max((int)(Command(GeCommand.TextureBufferWidth0) & 0x7FF), 1);
         int format = (int)(Command(GeCommand.TextureFormat) & 0xF);
         bool swizzled = (Command(GeCommand.TextureMode) & 1) != 0;
         if (format >= 8)
@@ -596,14 +570,56 @@ public sealed partial class GeEngine
             return false;
         }
 
-        if (_state.TexturePixels.Length != width * height)
+        int bytes = GeTextureDecoder.SourceBytes(bufferWidth, height, format, swizzled);
+        SynchronizeMemory(address, bytes);
+        ulong clutHash = format >= 4 ? ClutHash() : 0;
+        (uint Address, int Format, int Width, int Height, int BufferWidth, bool Swizzled, ulong Clut) key = (address, format, width, height, bufferWidth, swizzled, clutHash);
+        if (!_textures.TryGetValue(key, out CachedTexture? cached))
         {
-            _state.TexturePixels = new uint[width * height];
+            if (_textures.Count >= TextureCacheLimit)
+            {
+                _textures.Clear();
+            }
+
+            cached = new CachedTexture { Pixels = new uint[width * height] };
+            _textures[key] = cached;
         }
 
+        if (cached.CheckedEpoch != _executionEpoch)
+        {
+            Span<byte> source = _memory.Span(address, bytes);
+            if (source.Length != bytes)
+            {
+                return false;
+            }
+
+            ulong hash = System.IO.Hashing.XxHash3.HashToUInt64(source);
+            if (hash != cached.Hash || cached.Id == 0)
+            {
+                if (!GeTextureDecoder.Decode(_memory, address, bufferWidth, width, height, format, swizzled, _clut, Command(GeCommand.ClutFormat), cached.Pixels))
+                {
+                    return false;
+                }
+
+                cached.Hash = hash;
+                cached.Id = _nextTextureId++;
+            }
+
+            cached.CheckedEpoch = _executionEpoch;
+        }
+
+        _state.TexturePixels = cached.Pixels;
         _state.TextureWidth = width;
         _state.TextureHeight = height;
-        return GeTextureDecoder.Decode(_memory, address, Math.Max(bufferWidth, 1), width, height, format, swizzled, _clut, Command(GeCommand.ClutFormat), _state.TexturePixels);
+        _state.TextureId = cached.Id;
+        return true;
+    }
+
+    /// <summary>The loaded CLUT and CLUTFORMAT, for the key of an indexed texture.</summary>
+    private ulong ClutHash()
+    {
+        ulong hash = System.IO.Hashing.XxHash3.HashToUInt64(System.Runtime.InteropServices.MemoryMarshal.AsBytes(_clut.AsSpan()));
+        return hash ^ Command(GeCommand.ClutFormat);
     }
 
     /// <summary>LOADCLUT: (argument & 0x3F) blocks of 32 bytes from CBP/CBPH into the CLUT.</summary>
@@ -611,6 +627,7 @@ public sealed partial class GeEngine
     {
         uint address = (Command(GeCommand.ClutAddress) & 0xFFFFF0) | ((Command(GeCommand.ClutAddressUpper) & 0x0F0000) << 8);
         int words = Math.Min((int)(argument & 0x3F) * 8, _clut.Length);
+        SynchronizeMemory(address, words * 4);
         for (int i = 0; i < words; i++)
         {
             _clut[i] = _memory.Read32(address + (uint)(i * 4));
@@ -618,7 +635,8 @@ public sealed partial class GeEngine
     }
 
     /// <summary>TRANSFERSTART (bit 0: 32-bit pixels, else 16-bit): a rectangle copied from the source buffer (TRXSBP,
-    /// TRXSBW, TRXPOS) to the destination (TRXDBP, TRXDBW, TRXDPOS), TRXSIZE (width - 1, height - 1).</summary>
+    /// TRXSBW, TRXPOS) to the destination (TRXDBP, TRXDBW, TRXDPOS), TRXSIZE (width - 1, height - 1). Surfaces the
+    /// rasterizer holds in either buffer are written back first; the destination's are read again after.</summary>
     private void BlockTransfer(uint argument)
     {
         int bytesPerPixel = (argument & 1) != 0 ? 4 : 2;
@@ -635,6 +653,12 @@ public sealed partial class GeEngine
         int sourceY = (int)((sourcePosition >> 10) & 0x3FF);
         int destinationX = (int)(destinationPosition & 0x3FF);
         int destinationY = (int)((destinationPosition >> 10) & 0x3FF);
+        uint sourceStart = source + (uint)((sourceY * sourceWidth + sourceX) * bytesPerPixel);
+        uint destinationStart = destination + (uint)((destinationY * destinationWidth + destinationX) * bytesPerPixel);
+        int sourceSpan = ((height - 1) * sourceWidth + width) * bytesPerPixel;
+        int destinationSpan = ((height - 1) * destinationWidth + width) * bytesPerPixel;
+        SynchronizeMemory(sourceStart, sourceSpan);
+        SynchronizeMemory(destinationStart, destinationSpan);
         for (int row = 0; row < height; row++)
         {
             uint from = source + (uint)(((sourceY + row) * sourceWidth + sourceX) * bytesPerPixel);
@@ -646,6 +670,8 @@ public sealed partial class GeEngine
                 fromSpan.CopyTo(toSpan);
             }
         }
+
+        Rasterizer?.Invalidate(destinationStart, destinationSpan);
     }
 
     // ---- memory

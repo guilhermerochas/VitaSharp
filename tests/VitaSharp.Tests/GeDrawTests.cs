@@ -187,7 +187,7 @@ public sealed class GeDrawTests
         Assert.Equal(0xFFu, state.WriteMaskRgb);
         Assert.Equal((3, true, true), (state.TextureFunction, state.TextureAlpha, state.ColorDouble));
         Assert.Equal((0, 0, 479, 271), (state.ScissorLeft, state.ScissorTop, state.ScissorRight, state.ScissorBottom));
-        Assert.NotNull(_rasterizer.LastTarget!.Depth); // a clear that writes depth reads the depth buffer
+        Assert.NotNull(_rasterizer.LastDepth); // a clear that writes depth uses the depth buffer
     }
 
     /// <summary>As on the PSP, the depth buffer is written only while the depth test is on: with the test off (and
@@ -201,25 +201,29 @@ public sealed class GeDrawTests
             .Command(GeCommand.DepthTestEnable, 0).Command(GeCommand.DepthWriteDisable, 0)
             .Command(GeCommand.Primitive, (6u << 16) | 2).End().Start);
         Assert.False(_rasterizer.LastState!.DepthWrite);
-        Assert.Null(_rasterizer.LastTarget!.Depth);
+        Assert.Null(_rasterizer.LastDepth);
     }
 
-    /// <summary>The framebuffer goes to the rasterizer as RGBA8 and comes back in its own format (565 here).</summary>
+    /// <summary>A draw names its framebuffer (VRAM + FBP, FBW, the scissor's rows, the pixel format) and no depth
+    /// buffer when it neither tests nor writes depth; the list's end flushes the rasterizer once, and a block transfer
+    /// reading what the rasterizer holds flushes it before copying.</summary>
     [Fact]
-    public void TheFramebufferIsConvertedForTheRasterizerAndBack()
+    public void TheDrawNamesItsSurfacesAndTheRasterizerIsFlushedWhereMemoryIsRead()
     {
-        _memory.Write16(GeTestMemory.VramBase + 2, GePixels.To565(0x0000FF00)); // pixel (1, 0): green
-        _rasterizer.Paint = target =>
-        {
-            Assert.Equal(GePixels.From565(GePixels.To565(0x0000FF00)), target.Color[1]);
-            target.Color[512 * 3 + 2] = 0x000000FF; // pixel (2, 3): red
-        };
         ThroughVertex(0, 0, 0, 0, 0xFFFFFFFF);
         ThroughVertex(1, 4, 4, 0, 0xFFFFFFFF);
         GeRegisters.Run(_engine, Setup(GePixels.Format565).Command(GeCommand.VertexType, ThroughColorS16)
             .Command(GeCommand.Primitive, (6u << 16) | 2).End().Start);
-        Assert.Equal(GePixels.To565(0x000000FF), _memory.Read16(GeTestMemory.VramBase + (512 * 3 + 2) * 2));
-        Assert.Equal(GePixels.To565(0x0000FF00), _memory.Read16(GeTestMemory.VramBase + 2));
+        Assert.Equal(new GeSurface(GeTestMemory.VramBase, 512, 272, GePixels.Format565), _rasterizer.LastColor);
+        Assert.Null(_rasterizer.LastDepth);
+        Assert.Equal(1, _rasterizer.Flushes);
+
+        GeRegisters.Run(_engine, new GeListBuilder(_memory, 0x08002000).RamBase()
+            .Command(GeCommand.VertexAddress, Vertices & 0xFFFFFF).Command(GeCommand.Primitive, (6u << 16) | 2)
+            .Command(GeCommand.TransferSource, 0).Command(GeCommand.TransferSourceWidth, 512 | 0x040000)
+            .Command(GeCommand.TransferDestination, 0x040000).Command(GeCommand.TransferDestinationWidth, 512 | 0x080000)
+            .Command(GeCommand.TransferSize, 3 | (3u << 10)).Command(GeCommand.TransferStart, 0).End().Start);
+        Assert.Equal(3, _rasterizer.Flushes); // before the transfer read the framebuffer, and at the end
     }
 
     private void TextureSetup(GeListBuilder list, int format, int log2Width, int log2Height, int bufferWidth, bool swizzled = false)

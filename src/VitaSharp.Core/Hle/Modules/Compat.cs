@@ -119,6 +119,7 @@ public sealed class Compat : HleModule, IDisposable
 
         // the LCD DMA copies the PSP's picture into the framebuffer block at every PSP vertical blank
         _lcdDma = new CompatLcdDma(_bus, _hardware.Lcdc!);
+        _lcdDma.BeforeRead = SynchronizeGe;
         _hardware.Display!.VblankStarted = _lcdDma.OnVblank;
     }
 
@@ -508,6 +509,13 @@ public sealed class Compat : HleModule, IDisposable
         }
 
         _hardware.Ge?.ReleaseRasterizer();
+    }
+
+    /// <summary>The LCD DMA reads the PSP's picture: what the GE drew there and still holds on the GPU goes to memory
+    /// first (PSP address, any segment).</summary>
+    void SynchronizeGe(uint address, int length)
+    {
+        _hardware.Ge?.SynchronizeMemory(address & AllegrexCore.PhysicalMask, length);
     }
 
     /// <summary>The process ends (or re-executes): the core stops as the module's process event handler stops it, and

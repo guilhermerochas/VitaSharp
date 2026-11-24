@@ -6,19 +6,21 @@ using VitaSharp.Core.Util;
 using Buffer = Silk.NET.Vulkan.Buffer;
 
 namespace VitaSharp.Renderer.Vulkan;
-
 /// <summary>
-/// The PSP GE's rasterizer on Vulkan (docs/notes/psp-compat.md, "The GE"), separate from the GXM renderer: each batch
-/// the GE hands over is drawn into an RGBA8 colour image and a 16-bit depth image holding the PSP framebuffer region
-/// (uploaded from the GE's target, read back into it after the draw), with the GE's per-fragment state: the texture
-/// function (modulate, decal, blend, replace, add, colour doubling; the texture sampled at U/Q, V/Q), the secondary
-/// (separate specular) colour added after it, fog (FOGCOLOR by the vertices' factor), the alpha test, blending (the GE's factors and
-/// equations; a fixed factor is the blend constant), the depth test and write, the scissor, the RGB write masks and
-/// clear mode (colour, alpha and depth written as they are). The framebuffer's alpha is the PSP's stencil: normal
-/// draws leave it (the stencil operations are later work), clear mode writes it.
+/// The PSP GE's rasterizer on Vulkan (docs/notes/psp-compat.md, "The GE"), separate from the GXM renderer, with the
+/// GE's per-fragment state: the texture function (modulate, decal, blend, replace, add, colour doubling; sampled at
+/// U/Q, V/Q), the secondary (separate specular) colour added after it, fog (FOGCOLOR by the vertices' factor), the
+/// alpha test, blending (the GE's factors and equations; a fixed factor is the blend constant), the depth test and
+/// write, the scissor, the RGB write masks and clear mode (colour, alpha and depth written as they are). The
+/// framebuffer's alpha is the PSP's stencil: normal draws leave it, clear mode writes it.
 /// <para>
-/// One submission per batch, waited for: correct and simple; keeping the target on the GPU between batches is the
-/// performance step after this one. Not thread-safe (the GE runs one list at a time).
+/// The framebuffers and depth buffers stay on the GPU (RGBA8 / D16 images per address, stride and format) between
+/// draws and between lists, as the GXM renderer keeps its surfaces: a surface is loaded from memory at its first use
+/// and again only when memory changed under it (its hash, checked once between write-backs: the PSP's CPU or a block
+/// transfer wrote it), and written back at <see cref="Flush"/> (the GE's list stopped, or memory a surface holds is
+/// about to be read). The draws of a list go in one command buffer, one submission per flush; consecutive draws with
+/// the same pipeline, texture, constants and scissor become one vkCmdDraw. Textures are uploaded once per decoded
+/// content (the GE's texture id). Not thread-safe: the GE runs one list at a time, on the core's thread.
 /// </para>
 /// </summary>
 public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
@@ -145,6 +147,51 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         }
         """;
 
+    /// <summary>A framebuffer or depth buffer kept on the GPU: its image, whether the GPU holds changes memory does not
+    /// have yet, and the hash of its memory when they last agreed.</summary>
+    private sealed class Surface
+    {
+        public GeSurface Key;
+        public Image Image;
+        public DeviceMemory Memory;
+        public ImageView View;
+        public ImageLayout Layout = ImageLayout.Undefined;
+        public bool Loaded;          // the image has the memory's pixels (or newer)
+        public bool GpuDirty;        // drawn into since the last write-back
+        public bool Checked;         // compared with memory since the last write-back
+        public ulong MemoryHash;
+        public Buffer Staging;       // the upload and read-back buffer (the surface's pixels as the image holds them)
+        public DeviceMemory StagingMemory;
+        public nint StagingMapped;
+    }
+
+    private sealed class CachedTexture
+    {
+        public Image Image;
+        public DeviceMemory Memory;
+        public ImageView View;
+        public int Width;
+        public int Height;
+        public long LastUse;
+    }
+
+    /// <summary>The draw being gathered: consecutive draws with the same pipeline, texture, constants, scissor and
+    /// blend constant whose vertices follow each other become one vkCmdDraw.</summary>
+    private struct PendingDraw
+    {
+        public bool Active;
+        public Pipeline Pipeline;
+        public DescriptorSet Set;
+        public Rect2D Scissor;
+        public uint BlendConstant;
+        public uint FirstVertex;
+        public uint VertexCount;
+    }
+
+    private const int TextureCacheLimit = 128;
+    private const uint DescriptorSetsPerBatch = 256;
+    private const ulong UploadRingSize = 8 << 20;
+
     private readonly VkCore _core;
     private readonly Vk _vk;
     private readonly Device _device;
@@ -154,38 +201,36 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
     private readonly RenderPass _renderPass;
     private readonly DescriptorSetLayout _setLayout;
     private readonly DescriptorPool _descriptorPool;
-    private readonly DescriptorSet _descriptorSet;
     private readonly PipelineLayout _pipelineLayout;
     private readonly ShaderModule _vertexModule;
     private readonly ShaderModule _fragmentModule;
     private readonly Sampler[] _samplers = new Sampler[8];
     private readonly Dictionary<ulong, Pipeline> _pipelines = [];
+    private readonly Dictionary<(uint, int, int), Surface> _surfaces = [];
+    private readonly Dictionary<(ulong, ulong), Framebuffer> _framebuffers = [];
+    private readonly Dictionary<(int, int), Surface> _scratchDepth = [];
+    private readonly Dictionary<long, CachedTexture> _textures = [];
+    private readonly Dictionary<(long, int), DescriptorSet> _sets = [];
+    private readonly byte[] _pushConstants = new byte[PushConstantSize];
+    private readonly byte[] _pendingConstants = new byte[PushConstantSize];
 
-    private int _targetWidth;
-    private int _targetHeight;
-    private Image _colorImage;
-    private DeviceMemory _colorMemory;
-    private ImageView _colorView;
-    private Image _depthImage;
-    private DeviceMemory _depthMemory;
-    private ImageView _depthView;
-    private Framebuffer _framebuffer;
+    private readonly CachedTexture _dummyTexture;
+    private bool _recording;
+    private Surface? _passColor;
+    private Surface? _passDepth;
+    private PendingDraw _pending;
+    private uint _setsUsed;
+    private long _batch;
 
-    private int _textureWidth;
-    private int _textureHeight;
-    private Image _textureImage;
-    private DeviceMemory _textureMemory;
-    private ImageView _textureView;
-    private bool _textureReadable;
-
-    private Buffer _staging;
-    private DeviceMemory _stagingMemory;
-    private nint _stagingMapped;
-    private ulong _stagingSize;
+    private readonly Buffer _uploadRing;
+    private readonly DeviceMemory _uploadRingMemory;
+    private readonly nint _uploadRingMapped;
+    private ulong _uploadRingUsed;
     private Buffer _vertexBuffer;
     private DeviceMemory _vertexMemory;
     private nint _vertexMapped;
     private ulong _vertexSize;
+    private uint _verticesUsed;
 
     public GeVulkanRasterizer(VkCore core, ShaderCompiler compiler)
     {
@@ -212,7 +257,8 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         _vk.CreateFence(_device, in fenceInfo, null, out _fence).Ok("GE fence");
 
         _renderPass = CreateRenderPass();
-        (_setLayout, _descriptorPool, _descriptorSet) = CreateDescriptors();
+        _setLayout = CreateSetLayout();
+        _descriptorPool = CreateDescriptorPool();
         _pipelineLayout = CreatePipelineLayout();
         _vertexModule = CreateModule(compiler, VertexShader, vertex: true);
         _fragmentModule = CreateModule(compiler, FragmentShader, vertex: false);
@@ -221,138 +267,522 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             _samplers[i] = CreateSampler((i & 1) != 0, (i & 2) != 0, (i & 4) != 0);
         }
 
-        EnsureTexture(1, 1);
+        (_uploadRing, _uploadRingMemory, _uploadRingMapped) = _core.CreateHostBuffer(UploadRingSize, BufferUsageFlags.TransferSrcBit, MemCat.UploadRing);
+        EnsureVertexBuffer(1UL << 20); // before anything is recorded: growing it later submits the batch first
+        _dummyTexture = CreateTexture(1, 1);
     }
 
-    /// <summary>The batches drawn.</summary>
+    /// <summary>The batches given (each PRIM).</summary>
     public long Draws { get; private set; }
 
-    public void Draw(GeTopology topology, ReadOnlySpan<GeVertex> vertices, GeRenderState state, GeTarget target)
+    /// <summary>The vkCmdDraw calls recorded (batches with the same state merge into one).</summary>
+    public long RecordedDraws { get; private set; }
+
+    /// <summary>The submissions to the queue (one per flush, more when a batch outgrows its rings).</summary>
+    public long Submissions { get; private set; }
+
+    /// <summary>Surfaces loaded from memory / written back to it.</summary>
+    public long SurfaceUploads { get; private set; }
+
+    public long SurfaceReadbacks { get; private set; }
+
+    public void Draw(GeTopology topology, ReadOnlySpan<GeVertex> vertices, GeRenderState state, GeSurface color, GeSurface? depth, IGeMemory memory)
     {
-        if (vertices.Length == 0 || target.Width <= 0 || target.Height <= 0)
+        if (vertices.Length == 0 || color.Stride <= 0 || color.Height <= 0)
         {
             return;
         }
 
-        bool usesDepth = target.Depth != null;
-        bool textured = state.Texture && !state.ClearMode && state.TexturePixels.Length >= state.TextureWidth * state.TextureHeight;
-        EnsureTarget(target.Width, target.Height);
-        if (textured)
-        {
-            EnsureTexture(state.TextureWidth, state.TextureHeight);
-        }
-
-        ulong colorBytes = (ulong)target.Width * (ulong)target.Height * 4;
-        ulong depthOffset = colorBytes;
-        ulong depthBytes = ((ulong)target.Width * (ulong)target.Height * 2 + 3) & ~3UL;
-        ulong textureOffset = depthOffset + depthBytes;
-        ulong textureBytes = textured ? (ulong)state.TextureWidth * (ulong)state.TextureHeight * 4 : 0;
-        EnsureStaging(textureOffset + textureBytes);
-        EnsureVertexBuffer((ulong)(vertices.Length * s_vertexStride));
-
-        target.Color.AsSpan(0, target.Width * target.Height).CopyTo(new Span<uint>((void*)_stagingMapped, target.Width * target.Height));
-        if (usesDepth)
-        {
-            target.Depth!.AsSpan(0, target.Width * target.Height).CopyTo(new Span<ushort>((void*)(_stagingMapped + (nint)depthOffset), target.Width * target.Height));
-        }
-
-        if (textured)
-        {
-            state.TexturePixels.AsSpan(0, state.TextureWidth * state.TextureHeight).CopyTo(new Span<uint>((void*)(_stagingMapped + (nint)textureOffset), state.TextureWidth * state.TextureHeight));
-        }
-
-        MemoryMarshal.AsBytes(vertices).CopyTo(new Span<byte>((void*)_vertexMapped, vertices.Length * s_vertexStride));
-
-        Pipeline pipeline = PipelineFor(topology, state, usesDepth);
-        UpdateDescriptor(state, textured);
-        Record(target, usesDepth, textured, depthOffset, textureOffset, pipeline, state, vertices.Length);
-        Submit();
-
-        new Span<uint>((void*)_stagingMapped, target.Width * target.Height).CopyTo(target.Color);
-        if (usesDepth)
-        {
-            new Span<ushort>((void*)(_stagingMapped + (nint)depthOffset), target.Width * target.Height).CopyTo(target.Depth);
-        }
-
         Draws++;
+        if (_verticesUsed + (uint)vertices.Length > _vertexSize / (ulong)s_vertexStride || _setsUsed >= DescriptorSetsPerBatch)
+        {
+            SubmitAndWait(readBack: false, memory);
+        }
+
+        EnsureVertexBuffer((ulong)(_verticesUsed + (uint)vertices.Length) * (ulong)s_vertexStride);
+        Surface colorSurface = SurfaceFor(color, memory);
+        Surface depthSurface = depth is { } depthKey ? SurfaceFor(depthKey, memory) : ScratchDepth(color.Stride, color.Height);
+        bool textured = state.Texture && !state.ClearMode && state.TexturePixels.Length >= state.TextureWidth * state.TextureHeight;
+        CachedTexture texture = textured ? TextureFor(state) : _dummyTexture;
+        BeginRecording();
+        EnsureLoaded(colorSurface, memory);
+        if (depth != null)
+        {
+            EnsureLoaded(depthSurface, memory);
+        }
+        else
+        {
+            EnsureAttachment(depthSurface, ImageAspectFlags.DepthBit, ImageLayout.DepthStencilAttachmentOptimal);
+        }
+
+        Pipeline pipeline = PipelineFor(topology, state, depth != null);
+        DescriptorSet set = SetFor(texture, state, textured);
+        int left = Math.Clamp(state.ScissorLeft, 0, color.Stride);
+        int top = Math.Clamp(state.ScissorTop, 0, color.Height);
+        int right = Math.Clamp(state.ScissorRight + 1, left, color.Stride);
+        int bottom = Math.Clamp(state.ScissorBottom + 1, top, color.Height);
+        Rect2D scissor = new(new Offset2D(left, top), new Extent2D((uint)(right - left), (uint)(bottom - top)));
+        uint blendConstant = BlendConstant(state);
+        FillPushConstants(_pushConstants, color.Stride, color.Height, state, textured);
+
+        uint first = _verticesUsed;
+        MemoryMarshal.AsBytes(vertices).CopyTo(new Span<byte>((void*)(_vertexMapped + (nint)(first * (uint)s_vertexStride)), vertices.Length * s_vertexStride));
+        _verticesUsed += (uint)vertices.Length;
+
+        BeginPass(colorSurface, depthSurface);
+        bool merges = _pending.Active && _pending.Pipeline.Handle == pipeline.Handle && _pending.Set.Handle == set.Handle
+            && _pending.Scissor.Offset.X == scissor.Offset.X && _pending.Scissor.Offset.Y == scissor.Offset.Y
+            && _pending.Scissor.Extent.Width == scissor.Extent.Width && _pending.Scissor.Extent.Height == scissor.Extent.Height
+            && _pending.BlendConstant == blendConstant && _pending.FirstVertex + _pending.VertexCount == first
+            && _pendingConstants.AsSpan().SequenceEqual(_pushConstants);
+        if (merges)
+        {
+            _pending.VertexCount += (uint)vertices.Length;
+        }
+        else
+        {
+            RecordPending();
+            _pending = new PendingDraw
+            {
+                Active = true,
+                Pipeline = pipeline,
+                Set = set,
+                Scissor = scissor,
+                BlendConstant = blendConstant,
+                FirstVertex = first,
+                VertexCount = (uint)vertices.Length,
+            };
+            _pushConstants.CopyTo(_pendingConstants, 0);
+        }
+
+        if (ColorMask(state) != 0)
+        {
+            colorSurface.GpuDirty = true;
+        }
+
+        if (depth != null && (state.ClearMode ? state.ClearDepth : state.DepthWrite))
+        {
+            depthSurface.GpuDirty = true;
+        }
+    }
+
+    public void Flush(IGeMemory memory)
+    {
+        bool dirty = false;
+        foreach (Surface surface in _surfaces.Values)
+        {
+            dirty |= surface.GpuDirty;
+        }
+
+        if (_recording || dirty)
+        {
+            SubmitAndWait(readBack: true, memory);
+        }
+
+        foreach (Surface surface in _surfaces.Values)
+        {
+            surface.Checked = false;
+        }
+    }
+
+    public bool Holds(uint address, int length)
+    {
+        foreach (Surface surface in _surfaces.Values)
+        {
+            if (surface.GpuDirty && surface.Key.Overlaps(address, length))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public void Invalidate(uint address, int length)
+    {
+        foreach (Surface surface in _surfaces.Values)
+        {
+            if (surface.Key.Overlaps(address, length))
+            {
+                surface.Loaded = false;
+                surface.Checked = false;
+            }
+        }
+    }
+
+    // ---- surfaces
+
+    /// <summary>The GPU side of a surface; one of the same address, stride and format that is too short is replaced (its
+    /// changes written back first).</summary>
+    private Surface SurfaceFor(GeSurface key, IGeMemory memory)
+    {
+        (uint, int, int) id = (key.Address, key.Stride, key.Format);
+        if (_surfaces.TryGetValue(id, out Surface? existing))
+        {
+            if (existing.Key.Height >= key.Height)
+            {
+                return existing;
+            }
+
+            if (existing.GpuDirty || _recording)
+            {
+                SubmitAndWait(readBack: true, memory);
+            }
+
+            DestroySurface(existing);
+            _surfaces.Remove(id);
+        }
+
+        bool depth = key.Format == GeSurface.DepthFormat;
+        Surface surface = new() { Key = key };
+        (surface.Image, surface.Memory, surface.View) = CreateImage(key.Stride, key.Height, depth ? DepthFormat : ColorFormat,
+            (depth ? ImageUsageFlags.DepthStencilAttachmentBit : ImageUsageFlags.ColorAttachmentBit) | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit,
+            depth ? ImageAspectFlags.DepthBit : ImageAspectFlags.ColorBit);
+        ulong stagingBytes = (ulong)key.Stride * (ulong)key.Height * (depth ? 2UL : 4UL);
+        (surface.Staging, surface.StagingMemory, surface.StagingMapped) = _core.CreateHostBuffer(stagingBytes,
+            BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit, MemCat.Readback);
+        _surfaces[id] = surface;
+        return surface;
+    }
+
+    /// <summary>A depth image for draws without a depth buffer (the render pass has one): never loaded nor read back.</summary>
+    private Surface ScratchDepth(int width, int height)
+    {
+        if (_scratchDepth.TryGetValue((width, height), out Surface? existing))
+        {
+            return existing;
+        }
+
+        Surface surface = new() { Key = new GeSurface(0, width, height, GeSurface.DepthFormat) };
+        (surface.Image, surface.Memory, surface.View) = CreateImage(width, height, DepthFormat, ImageUsageFlags.DepthStencilAttachmentBit, ImageAspectFlags.DepthBit);
+        _scratchDepth[(width, height)] = surface;
+        return surface;
+    }
+
+    /// <summary>Loads a surface from memory when the GPU does not have its current pixels: first use, or memory changed
+    /// since the last write-back (the CPU, a block transfer). Checked once between write-backs.</summary>
+    private void EnsureLoaded(Surface surface, IGeMemory memory)
+    {
+        bool depth = surface.Key.Format == GeSurface.DepthFormat;
+        ImageLayout attachment = depth ? ImageLayout.DepthStencilAttachmentOptimal : ImageLayout.ColorAttachmentOptimal;
+        ImageAspectFlags aspect = depth ? ImageAspectFlags.DepthBit : ImageAspectFlags.ColorBit;
+        if (surface.Checked || surface.GpuDirty)
+        {
+            EnsureAttachment(surface, aspect, attachment);
+            return;
+        }
+
+        surface.Checked = true;
+        Span<byte> source = memory.Span(surface.Key.Address, surface.Key.Bytes);
+        ulong hash = source.Length == surface.Key.Bytes ? System.IO.Hashing.XxHash3.HashToUInt64(source) : 0;
+        if (surface.Loaded && hash == surface.MemoryHash)
+        {
+            EnsureAttachment(surface, aspect, attachment);
+            return;
+        }
+
+        int pixels = surface.Key.Stride * surface.Key.Height;
+        if (source.Length == surface.Key.Bytes)
+        {
+            if (depth)
+            {
+                source.CopyTo(new Span<byte>((void*)surface.StagingMapped, pixels * 2));
+            }
+            else
+            {
+                GePixels.ToRgba(source, surface.Key.Format, new Span<uint>((void*)surface.StagingMapped, pixels));
+            }
+        }
+
+        EndPass();
+        Transition(_commandBuffer, surface.Image, aspect, surface.Layout, ImageLayout.TransferDstOptimal);
+        CopyBuffer(surface.Staging, 0, surface.Image, aspect, (uint)surface.Key.Stride, (uint)surface.Key.Height, toImage: true);
+        Transition(_commandBuffer, surface.Image, aspect, ImageLayout.TransferDstOptimal, attachment);
+        surface.Layout = attachment;
+        surface.Loaded = true;
+        surface.MemoryHash = hash;
+        SurfaceUploads++;
+    }
+
+    private void EnsureAttachment(Surface surface, ImageAspectFlags aspect, ImageLayout attachment)
+    {
+        if (surface.Layout == attachment)
+        {
+            return;
+        }
+
+        EndPass();
+        Transition(_commandBuffer, surface.Image, aspect, surface.Layout, attachment);
+        surface.Layout = attachment;
+    }
+
+    private void DestroySurface(Surface surface)
+    {
+        foreach ((ulong, ulong) key in _framebuffers.Keys.ToArray())
+        {
+            if (key.Item1 == surface.View.Handle || key.Item2 == surface.View.Handle)
+            {
+                _vk.DestroyFramebuffer(_device, _framebuffers[key], null);
+                _framebuffers.Remove(key);
+            }
+        }
+
+        DestroyImage(ref surface.Image, ref surface.Memory, ref surface.View);
+        if (surface.Staging.Handle != 0)
+        {
+            _core.DestroyBuffer(surface.Staging, surface.StagingMemory);
+            surface.Staging = default;
+        }
+    }
+
+    // ---- textures
+
+    private CachedTexture CreateTexture(int width, int height)
+    {
+        CachedTexture texture = new() { Width = width, Height = height };
+        (texture.Image, texture.Memory, texture.View) = CreateImage(width, height, ColorFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
+        BeginRecording();
+        Transition(_commandBuffer, texture.Image, ImageAspectFlags.ColorBit, ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal);
+        return texture;
+    }
+
+    /// <summary>The image of a decoded texture by its id (uploaded once; the oldest go when the cache is full).</summary>
+    private CachedTexture TextureFor(GeRenderState state)
+    {
+        if (_textures.TryGetValue(state.TextureId, out CachedTexture? cached) && cached.Width == state.TextureWidth && cached.Height == state.TextureHeight)
+        {
+            cached.LastUse = _batch;
+            return cached;
+        }
+
+        ulong bytes = (ulong)state.TextureWidth * (ulong)state.TextureHeight * 4;
+        if (_uploadRingUsed + bytes > UploadRingSize)
+        {
+            SubmitAndWait(readBack: false, null);
+        }
+
+        if (_textures.Count >= TextureCacheLimit)
+        {
+            EvictTextures();
+        }
+
+        CachedTexture texture = new() { Width = state.TextureWidth, Height = state.TextureHeight, LastUse = _batch };
+        (texture.Image, texture.Memory, texture.View) = CreateImage(texture.Width, texture.Height, ColorFormat,
+            ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
+        ulong offset = _uploadRingUsed;
+        state.TexturePixels.AsSpan(0, texture.Width * texture.Height).CopyTo(new Span<uint>((void*)(_uploadRingMapped + (nint)offset), texture.Width * texture.Height));
+        _uploadRingUsed = (offset + bytes + 15) & ~15UL;
+        BeginRecording();
+        EndPass();
+        Transition(_commandBuffer, texture.Image, ImageAspectFlags.ColorBit, ImageLayout.Undefined, ImageLayout.TransferDstOptimal);
+        CopyBuffer(_uploadRing, offset, texture.Image, ImageAspectFlags.ColorBit, (uint)texture.Width, (uint)texture.Height, toImage: true);
+        Transition(_commandBuffer, texture.Image, ImageAspectFlags.ColorBit, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal);
+        if (cached != null)
+        {
+            RetireTexture(state.TextureId, cached);
+        }
+
+        _textures[state.TextureId] = texture;
+        return texture;
+    }
+
+    /// <summary>Half the cache, the least recently used (after the work that may sample them is done).</summary>
+    private void EvictTextures()
+    {
+        SubmitAndWait(readBack: false, null);
+        long[] oldest = _textures.OrderBy(entry => entry.Value.LastUse).Take(_textures.Count / 2).Select(entry => entry.Key).ToArray();
+        foreach (long id in oldest)
+        {
+            CachedTexture texture = _textures[id];
+            _textures.Remove(id);
+            DestroyImage(ref texture.Image, ref texture.Memory, ref texture.View);
+        }
+    }
+
+    private readonly List<CachedTexture> _retired = [];
+
+    /// <summary>A texture replaced by a new upload of the same id: destroyed once the batch that may sample it is done.</summary>
+    private void RetireTexture(long id, CachedTexture texture)
+    {
+        _textures.Remove(id);
+        _retired.Add(texture);
+    }
+
+    private DescriptorSet SetFor(CachedTexture texture, GeRenderState state, bool textured)
+    {
+        int samplerIndex = textured ? (state.TextureLinear ? 1 : 0) | (state.ClampU ? 2 : 0) | (state.ClampV ? 4 : 0) : 0;
+        long textureKey = (long)texture.View.Handle;
+        if (_sets.TryGetValue((textureKey, samplerIndex), out DescriptorSet existing))
+        {
+            return existing;
+        }
+
+        DescriptorSetLayout layout = _setLayout;
+        DescriptorSetAllocateInfo allocateInfo = new()
+        {
+            SType = StructureType.DescriptorSetAllocateInfo,
+            DescriptorPool = _descriptorPool,
+            DescriptorSetCount = 1,
+            PSetLayouts = &layout,
+        };
+        _vk.AllocateDescriptorSets(_device, in allocateInfo, out DescriptorSet set).Ok("GE descriptor set");
+        _setsUsed++;
+        DescriptorImageInfo image = new(_samplers[samplerIndex], texture.View, ImageLayout.ShaderReadOnlyOptimal);
+        WriteDescriptorSet write = new()
+        {
+            SType = StructureType.WriteDescriptorSet,
+            DstSet = set,
+            DstBinding = 0,
+            DescriptorCount = 1,
+            DescriptorType = DescriptorType.CombinedImageSampler,
+            PImageInfo = &image,
+        };
+        _vk.UpdateDescriptorSets(_device, 1, in write, 0, null);
+        _sets[(textureKey, samplerIndex)] = set;
+        return set;
     }
 
     // ---- recording
 
-    private void Record(GeTarget target, bool usesDepth, bool textured, ulong depthOffset, ulong textureOffset, Pipeline pipeline,
-        GeRenderState state, int vertexCount)
+    private void BeginRecording()
     {
-        CommandBuffer cb = _commandBuffer;
-        _vk.ResetCommandBuffer(cb, 0).Ok("GE reset command buffer");
+        if (_recording)
+        {
+            return;
+        }
+
+        _vk.ResetCommandBuffer(_commandBuffer, 0).Ok("GE reset command buffer");
         CommandBufferBeginInfo begin = new() { SType = StructureType.CommandBufferBeginInfo, Flags = CommandBufferUsageFlags.OneTimeSubmitBit };
-        _vk.BeginCommandBuffer(cb, in begin).Ok("GE begin");
+        _vk.BeginCommandBuffer(_commandBuffer, in begin).Ok("GE begin");
+        _recording = true;
+    }
 
-        uint width = (uint)target.Width;
-        uint height = (uint)target.Height;
-        Transition(cb, _colorImage, ImageAspectFlags.ColorBit, ImageLayout.Undefined, ImageLayout.TransferDstOptimal);
-        Copy(cb, _colorImage, ImageAspectFlags.ColorBit, 0, width, height, toImage: true);
-        Transition(cb, _colorImage, ImageAspectFlags.ColorBit, ImageLayout.TransferDstOptimal, ImageLayout.ColorAttachmentOptimal);
-        if (usesDepth)
+    private void BeginPass(Surface color, Surface depth)
+    {
+        if (_passColor == color && _passDepth == depth)
         {
-            Transition(cb, _depthImage, ImageAspectFlags.DepthBit, ImageLayout.Undefined, ImageLayout.TransferDstOptimal);
-            Copy(cb, _depthImage, ImageAspectFlags.DepthBit, depthOffset, width, height, toImage: true);
-            Transition(cb, _depthImage, ImageAspectFlags.DepthBit, ImageLayout.TransferDstOptimal, ImageLayout.DepthStencilAttachmentOptimal);
-        }
-        else
-        {
-            Transition(cb, _depthImage, ImageAspectFlags.DepthBit, ImageLayout.Undefined, ImageLayout.DepthStencilAttachmentOptimal);
+            return;
         }
 
-        if (textured)
-        {
-            Transition(cb, _textureImage, ImageAspectFlags.ColorBit, ImageLayout.Undefined, ImageLayout.TransferDstOptimal);
-            Copy(cb, _textureImage, ImageAspectFlags.ColorBit, textureOffset, (uint)_textureWidth, (uint)_textureHeight, toImage: true);
-            Transition(cb, _textureImage, ImageAspectFlags.ColorBit, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal);
-            _textureReadable = true;
-        }
-        else if (!_textureReadable)
-        {
-            Transition(cb, _textureImage, ImageAspectFlags.ColorBit, ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal);
-            _textureReadable = true;
-        }
-
+        EndPass();
+        Framebuffer framebuffer = FramebufferFor(color, depth);
         RenderPassBeginInfo pass = new()
         {
             SType = StructureType.RenderPassBeginInfo,
             RenderPass = _renderPass,
-            Framebuffer = _framebuffer,
-            RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(width, height)),
+            Framebuffer = framebuffer,
+            RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D((uint)color.Key.Stride, (uint)color.Key.Height)),
         };
-        _vk.CmdBeginRenderPass(cb, in pass, SubpassContents.Inline);
-        Viewport viewport = new(0, 0, width, height, 0, 1);
-        _vk.CmdSetViewport(cb, 0, 1, in viewport);
-        int left = Math.Clamp(state.ScissorLeft, 0, target.Width);
-        int top = Math.Clamp(state.ScissorTop, 0, target.Height);
-        int right = Math.Clamp(state.ScissorRight + 1, left, target.Width);
-        int bottom = Math.Clamp(state.ScissorBottom + 1, top, target.Height);
-        Rect2D scissor = new(new Offset2D(left, top), new Extent2D((uint)(right - left), (uint)(bottom - top)));
-        _vk.CmdSetScissor(cb, 0, 1, in scissor);
-        uint constantColor = BlendConstant(state);
-        float* constants = stackalloc float[4];
-        constants[0] = (constantColor & 0xFF) / 255f;
-        constants[1] = ((constantColor >> 8) & 0xFF) / 255f;
-        constants[2] = ((constantColor >> 16) & 0xFF) / 255f;
-        constants[3] = 1;
-        _vk.CmdSetBlendConstants(cb, constants);
-        _vk.CmdBindPipeline(cb, PipelineBindPoint.Graphics, pipeline);
-        DescriptorSet set = _descriptorSet;
-        _vk.CmdBindDescriptorSets(cb, PipelineBindPoint.Graphics, _pipelineLayout, 0, 1, in set, 0, null);
-        PushConstants(cb, target, state, textured);
+        _vk.CmdBeginRenderPass(_commandBuffer, in pass, SubpassContents.Inline);
+        Viewport viewport = new(0, 0, color.Key.Stride, color.Key.Height, 0, 1);
+        _vk.CmdSetViewport(_commandBuffer, 0, 1, in viewport);
         Buffer vertexBuffer = _vertexBuffer;
         ulong offset = 0;
-        _vk.CmdBindVertexBuffers(cb, 0, 1, in vertexBuffer, in offset);
-        _vk.CmdDraw(cb, (uint)vertexCount, 1, 0, 0);
-        _vk.CmdEndRenderPass(cb);
+        _vk.CmdBindVertexBuffers(_commandBuffer, 0, 1, in vertexBuffer, in offset);
+        _passColor = color;
+        _passDepth = depth;
+    }
 
-        Copy(cb, _colorImage, ImageAspectFlags.ColorBit, 0, width, height, toImage: false);
-        if (usesDepth)
+    private void EndPass()
+    {
+        if (_passColor == null)
         {
-            Copy(cb, _depthImage, ImageAspectFlags.DepthBit, depthOffset, width, height, toImage: false);
+            return;
+        }
+
+        RecordPending();
+        _vk.CmdEndRenderPass(_commandBuffer);
+        _passColor = null;
+        _passDepth = null;
+    }
+
+    private void RecordPending()
+    {
+        if (!_pending.Active)
+        {
+            return;
+        }
+
+        CommandBuffer cb = _commandBuffer;
+        Rect2D scissor = _pending.Scissor;
+        _vk.CmdSetScissor(cb, 0, 1, in scissor);
+        float* constants = stackalloc float[4];
+        constants[0] = (_pending.BlendConstant & 0xFF) / 255f;
+        constants[1] = ((_pending.BlendConstant >> 8) & 0xFF) / 255f;
+        constants[2] = ((_pending.BlendConstant >> 16) & 0xFF) / 255f;
+        constants[3] = 1;
+        _vk.CmdSetBlendConstants(cb, constants);
+        _vk.CmdBindPipeline(cb, PipelineBindPoint.Graphics, _pending.Pipeline);
+        DescriptorSet set = _pending.Set;
+        _vk.CmdBindDescriptorSets(cb, PipelineBindPoint.Graphics, _pipelineLayout, 0, 1, in set, 0, null);
+        fixed (byte* data = _pendingConstants)
+        {
+            _vk.CmdPushConstants(cb, _pipelineLayout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, 0, PushConstantSize, data);
+        }
+
+        _vk.CmdDraw(cb, _pending.VertexCount, 1, _pending.FirstVertex, 0);
+        RecordedDraws++;
+        _pending.Active = false;
+    }
+
+    private Framebuffer FramebufferFor(Surface color, Surface depth)
+    {
+        (ulong, ulong) key = (color.View.Handle, depth.View.Handle);
+        if (_framebuffers.TryGetValue(key, out Framebuffer existing))
+        {
+            return existing;
+        }
+
+        ImageView* views = stackalloc ImageView[2];
+        views[0] = color.View;
+        views[1] = depth.View;
+        FramebufferCreateInfo info = new()
+        {
+            SType = StructureType.FramebufferCreateInfo,
+            RenderPass = _renderPass,
+            AttachmentCount = 2,
+            PAttachments = views,
+            Width = (uint)color.Key.Stride,
+            Height = (uint)Math.Min(color.Key.Height, depth.Key.Height),
+            Layers = 1,
+        };
+        _vk.CreateFramebuffer(_device, in info, null, out Framebuffer framebuffer).Ok("GE framebuffer");
+        _framebuffers[key] = framebuffer;
+        return framebuffer;
+    }
+
+    /// <summary>Ends the batch: the draws submitted and waited for; with <paramref name="readBack"/>, every surface the
+    /// GPU changed is copied back to memory (and becomes clean).</summary>
+    private void SubmitAndWait(bool readBack, IGeMemory? memory)
+    {
+        List<Surface> written = [];
+        if (readBack)
+        {
+            foreach (Surface surface in _surfaces.Values)
+            {
+                if (surface.GpuDirty)
+                {
+                    written.Add(surface);
+                }
+            }
+        }
+
+        if (!_recording && written.Count == 0)
+        {
+            return;
+        }
+
+        BeginRecording();
+        EndPass();
+        foreach (Surface surface in written)
+        {
+            bool depth = surface.Key.Format == GeSurface.DepthFormat;
+            ImageAspectFlags aspect = depth ? ImageAspectFlags.DepthBit : ImageAspectFlags.ColorBit;
+            ImageLayout attachment = depth ? ImageLayout.DepthStencilAttachmentOptimal : ImageLayout.ColorAttachmentOptimal;
+            Transition(_commandBuffer, surface.Image, aspect, surface.Layout, ImageLayout.TransferSrcOptimal);
+            CopyBuffer(surface.Staging, 0, surface.Image, aspect, (uint)surface.Key.Stride, (uint)surface.Key.Height, toImage: false);
+            Transition(_commandBuffer, surface.Image, aspect, ImageLayout.TransferSrcOptimal, attachment);
+            surface.Layout = attachment;
         }
 
         MemoryBarrier hostRead = new()
@@ -361,63 +791,76 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             SrcAccessMask = AccessFlags.TransferWriteBit,
             DstAccessMask = AccessFlags.HostReadBit,
         };
-        _vk.CmdPipelineBarrier(cb, PipelineStageFlags.TransferBit, PipelineStageFlags.HostBit, 0, 1, in hostRead, 0, null, 0, null);
-        _vk.EndCommandBuffer(cb).Ok("GE end");
+        _vk.CmdPipelineBarrier(_commandBuffer, PipelineStageFlags.TransferBit, PipelineStageFlags.HostBit, 0, 1, in hostRead, 0, null, 0, null);
+        _vk.EndCommandBuffer(_commandBuffer).Ok("GE end");
+        CommandBuffer cb = _commandBuffer;
+        SubmitInfo submit = new() { SType = StructureType.SubmitInfo, CommandBufferCount = 1, PCommandBuffers = &cb };
+        Fence fence = _fence;
+        _vk.ResetFences(_device, 1, in fence).Ok("GE reset fence");
+        _vk.QueueSubmit(_core.Queue, 1, in submit, _fence).Ok("GE submit");
+        _vk.WaitForFences(_device, 1, in fence, true, ulong.MaxValue).Ok("GE wait");
+        Submissions++;
+        _recording = false;
+        _batch++;
+
+        foreach (Surface surface in written)
+        {
+            WriteBack(surface, memory!);
+        }
+
+        _vk.ResetDescriptorPool(_device, _descriptorPool, 0).Ok("GE reset descriptor pool");
+        _sets.Clear();
+        _setsUsed = 0;
+        _uploadRingUsed = 0;
+        _verticesUsed = 0;
+        foreach (CachedTexture texture in _retired)
+        {
+            CachedTexture retired = texture;
+            DestroyImage(ref retired.Image, ref retired.Memory, ref retired.View);
+        }
+
+        _retired.Clear();
     }
 
-    private void PushConstants(CommandBuffer cb, GeTarget target, GeRenderState state, bool textured)
+    private void WriteBack(Surface surface, IGeMemory memory)
     {
-        byte* data = stackalloc byte[PushConstantSize];
-        float* floats = (float*)data;
-        int* ints = (int*)data;
-        floats[0] = target.Width;
-        floats[1] = target.Height;
-        int flags = 0;
-        if (textured)
+        int pixels = surface.Key.Stride * surface.Key.Height;
+        Span<byte> destination = memory.Span(surface.Key.Address, surface.Key.Bytes);
+        if (destination.Length == surface.Key.Bytes)
         {
-            flags |= 1;
+            if (surface.Key.Format == GeSurface.DepthFormat)
+            {
+                new Span<byte>((void*)surface.StagingMapped, pixels * 2).CopyTo(destination);
+            }
+            else
+            {
+                GePixels.FromRgba(new Span<uint>((void*)surface.StagingMapped, pixels), surface.Key.Format, destination);
+            }
+
+            surface.MemoryHash = System.IO.Hashing.XxHash3.HashToUInt64(destination);
         }
 
-        if (state.TextureAlpha)
-        {
-            flags |= 2;
-        }
+        surface.GpuDirty = false;
+        surface.Loaded = true;
+        SurfaceReadbacks++;
+    }
 
-        if (state.ColorDouble)
+    private void CopyBuffer(Buffer buffer, ulong offset, Image image, ImageAspectFlags aspect, uint width, uint height, bool toImage)
+    {
+        BufferImageCopy region = new()
         {
-            flags |= 4;
-        }
-
-        if (state.AlphaTest && !state.ClearMode)
+            BufferOffset = offset,
+            ImageSubresource = new ImageSubresourceLayers(aspect, 0, 0, 1),
+            ImageExtent = new Extent3D(width, height, 1),
+        };
+        if (toImage)
         {
-            flags |= 8;
+            _vk.CmdCopyBufferToImage(_commandBuffer, buffer, image, ImageLayout.TransferDstOptimal, 1, in region);
         }
-
-        if (!state.ClearMode)
+        else
         {
-            flags |= 32; // the secondary (specular) colour: 0 when the vertices have none
+            _vk.CmdCopyImageToBuffer(_commandBuffer, image, ImageLayout.TransferSrcOptimal, buffer, 1, in region);
         }
-
-        if (state.Fog && !state.ClearMode)
-        {
-            flags |= 16;
-        }
-
-        ints[2] = flags;
-        ints[3] = state.TextureFunction;
-        floats[4] = (state.TextureEnvironment & 0xFF) / 255f;
-        floats[5] = ((state.TextureEnvironment >> 8) & 0xFF) / 255f;
-        floats[6] = ((state.TextureEnvironment >> 16) & 0xFF) / 255f;
-        floats[7] = 1;
-        ints[8] = state.AlphaFunction;
-        ints[9] = state.AlphaReference;
-        ints[10] = state.AlphaMask;
-        ints[11] = 0;
-        floats[12] = (state.FogColor & 0xFF) / 255f;
-        floats[13] = ((state.FogColor >> 8) & 0xFF) / 255f;
-        floats[14] = ((state.FogColor >> 16) & 0xFF) / 255f;
-        floats[15] = 1;
-        _vk.CmdPushConstants(cb, _pipelineLayout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, 0, PushConstantSize, data);
     }
 
     private void Transition(CommandBuffer cb, Image image, ImageAspectFlags aspect, ImageLayout from, ImageLayout to)
@@ -439,37 +882,150 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         _vk.CmdPipelineBarrier(cb, PipelineStageFlags.AllCommandsBit, PipelineStageFlags.AllCommandsBit, 0, 0, null, 0, null, 1, in barrier);
     }
 
-    private void Copy(CommandBuffer cb, Image image, ImageAspectFlags aspect, ulong offset, uint width, uint height, bool toImage)
+    private static void FillPushConstants(Span<byte> data, int width, int height, GeRenderState state, bool textured)
     {
-        BufferImageCopy region = new()
+        Span<float> floats = MemoryMarshal.Cast<byte, float>(data);
+        Span<int> ints = MemoryMarshal.Cast<byte, int>(data);
+        floats[0] = width;
+        floats[1] = height;
+        int flags = 0;
+        if (textured)
         {
-            BufferOffset = offset,
-            ImageSubresource = new ImageSubresourceLayers(aspect, 0, 0, 1),
-            ImageExtent = new Extent3D(width, height, 1),
-        };
-        if (toImage)
-        {
-            _vk.CmdCopyBufferToImage(cb, _staging, image, ImageLayout.TransferDstOptimal, 1, in region);
+            flags |= 1;
         }
-        else
+
+        if (state.TextureAlpha)
         {
-            _vk.CmdCopyImageToBuffer(cb, image, ImageLayout.TransferSrcOptimal, _staging, 1, in region);
+            flags |= 2;
         }
+
+        if (state.ColorDouble)
+        {
+            flags |= 4;
+        }
+
+        if (state.AlphaTest && !state.ClearMode)
+        {
+            flags |= 8;
+        }
+
+        if (state.Fog && !state.ClearMode)
+        {
+            flags |= 16;
+        }
+
+        if (!state.ClearMode)
+        {
+            flags |= 32; // the secondary (specular) colour: 0 when the vertices have none
+        }
+
+        ints[2] = flags;
+        ints[3] = state.TextureFunction;
+        floats[4] = (state.TextureEnvironment & 0xFF) / 255f;
+        floats[5] = ((state.TextureEnvironment >> 8) & 0xFF) / 255f;
+        floats[6] = ((state.TextureEnvironment >> 16) & 0xFF) / 255f;
+        floats[7] = 1;
+        ints[8] = state.AlphaFunction;
+        ints[9] = state.AlphaReference;
+        ints[10] = state.AlphaMask;
+        ints[11] = 0;
+        floats[12] = (state.FogColor & 0xFF) / 255f;
+        floats[13] = ((state.FogColor >> 8) & 0xFF) / 255f;
+        floats[14] = ((state.FogColor >> 16) & 0xFF) / 255f;
+        floats[15] = 1;
     }
 
-    private void Submit()
+    private DescriptorSetLayout CreateSetLayout()
     {
-        CommandBuffer cb = _commandBuffer;
-        SubmitInfo submit = new()
+        DescriptorSetLayoutBinding binding = new()
         {
-            SType = StructureType.SubmitInfo,
-            CommandBufferCount = 1,
-            PCommandBuffers = &cb,
+            Binding = 0,
+            DescriptorType = DescriptorType.CombinedImageSampler,
+            DescriptorCount = 1,
+            StageFlags = ShaderStageFlags.FragmentBit,
         };
-        Fence fence = _fence;
-        _vk.ResetFences(_device, 1, in fence).Ok("GE reset fence");
-        _vk.QueueSubmit(_core.Queue, 1, in submit, _fence).Ok("GE submit");
-        _vk.WaitForFences(_device, 1, in fence, true, ulong.MaxValue).Ok("GE wait");
+        DescriptorSetLayoutCreateInfo layoutInfo = new() { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = 1, PBindings = &binding };
+        _vk.CreateDescriptorSetLayout(_device, in layoutInfo, null, out DescriptorSetLayout layout).Ok("GE set layout");
+        return layout;
+    }
+
+    private DescriptorPool CreateDescriptorPool()
+    {
+        DescriptorPoolSize size = new(DescriptorType.CombinedImageSampler, DescriptorSetsPerBatch);
+        DescriptorPoolCreateInfo poolInfo = new()
+        {
+            SType = StructureType.DescriptorPoolCreateInfo,
+            MaxSets = DescriptorSetsPerBatch,
+            PoolSizeCount = 1,
+            PPoolSizes = &size,
+        };
+        _vk.CreateDescriptorPool(_device, in poolInfo, null, out DescriptorPool pool).Ok("GE descriptor pool");
+        return pool;
+    }
+
+    private void EnsureVertexBuffer(ulong size)
+    {
+        if (size <= _vertexSize)
+        {
+            return;
+        }
+
+        // a larger ring: the batch so far is submitted first (its draws read the old one)
+        SubmitAndWait(readBack: false, null);
+        if (_vertexBuffer.Handle != 0)
+        {
+            _core.DestroyBuffer(_vertexBuffer, _vertexMemory);
+        }
+
+        ulong rounded = Math.Max(size, Math.Max(_vertexSize * 2, 1UL << 20));
+        (_vertexBuffer, _vertexMemory, _vertexMapped) = _core.CreateHostBuffer(rounded, BufferUsageFlags.VertexBufferBit, MemCat.UploadRing);
+        _vertexSize = rounded;
+    }
+
+    public void Dispose()
+    {
+        _vk.DeviceWaitIdle(_device);
+        foreach (Pipeline pipeline in _pipelines.Values)
+        {
+            _vk.DestroyPipeline(_device, pipeline, null);
+        }
+
+        foreach (Framebuffer framebuffer in _framebuffers.Values)
+        {
+            _vk.DestroyFramebuffer(_device, framebuffer, null);
+        }
+
+        _framebuffers.Clear();
+        foreach (Surface surface in _surfaces.Values.Concat(_scratchDepth.Values))
+        {
+            DestroySurface(surface);
+        }
+
+        foreach (CachedTexture texture in _textures.Values.Concat(_retired).Append(_dummyTexture))
+        {
+            CachedTexture owned = texture;
+            DestroyImage(ref owned.Image, ref owned.Memory, ref owned.View);
+        }
+
+        foreach (Sampler sampler in _samplers)
+        {
+            _vk.DestroySampler(_device, sampler, null);
+        }
+
+        _core.DestroyBuffer(_uploadRing, _uploadRingMemory);
+        if (_vertexBuffer.Handle != 0)
+        {
+            _core.DestroyBuffer(_vertexBuffer, _vertexMemory);
+        }
+
+        _vk.DestroyShaderModule(_device, _vertexModule, null);
+        _vk.DestroyShaderModule(_device, _fragmentModule, null);
+        _vk.DestroyPipelineLayout(_device, _pipelineLayout, null);
+        _vk.DestroyDescriptorPool(_device, _descriptorPool, null);
+        _vk.DestroyDescriptorSetLayout(_device, _setLayout, null);
+        _vk.DestroyRenderPass(_device, _renderPass, null);
+        _vk.DestroyFence(_device, _fence, null);
+        _vk.DestroyCommandPool(_device, _commandPool, null);
     }
 
     // ---- state to Vulkan
@@ -729,7 +1285,6 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         }
     }
 
-    // ---- resources
 
     private RenderPass CreateRenderPass()
     {
@@ -743,7 +1298,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             StencilLoadOp = AttachmentLoadOp.DontCare,
             StencilStoreOp = AttachmentStoreOp.DontCare,
             InitialLayout = ImageLayout.ColorAttachmentOptimal,
-            FinalLayout = ImageLayout.TransferSrcOptimal,
+            FinalLayout = ImageLayout.ColorAttachmentOptimal,
         };
         attachments[1] = new AttachmentDescription
         {
@@ -754,7 +1309,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             StencilLoadOp = AttachmentLoadOp.DontCare,
             StencilStoreOp = AttachmentStoreOp.DontCare,
             InitialLayout = ImageLayout.DepthStencilAttachmentOptimal,
-            FinalLayout = ImageLayout.TransferSrcOptimal,
+            FinalLayout = ImageLayout.DepthStencilAttachmentOptimal,
         };
         AttachmentReference color = new(0, ImageLayout.ColorAttachmentOptimal);
         AttachmentReference depth = new(1, ImageLayout.DepthStencilAttachmentOptimal);
@@ -783,7 +1338,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             SrcStageMask = PipelineStageFlags.AllCommandsBit,
             DstStageMask = PipelineStageFlags.AllCommandsBit,
             SrcAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit,
-            DstAccessMask = AccessFlags.TransferReadBit,
+            DstAccessMask = AccessFlags.TransferReadBit | AccessFlags.ColorAttachmentReadBit | AccessFlags.DepthStencilAttachmentReadBit,
         };
         RenderPassCreateInfo info = new()
         {
@@ -799,30 +1354,6 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         return renderPass;
     }
 
-    private (DescriptorSetLayout, DescriptorPool, DescriptorSet) CreateDescriptors()
-    {
-        DescriptorSetLayoutBinding binding = new()
-        {
-            Binding = 0,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.FragmentBit,
-        };
-        DescriptorSetLayoutCreateInfo layoutInfo = new() { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = 1, PBindings = &binding };
-        _vk.CreateDescriptorSetLayout(_device, in layoutInfo, null, out DescriptorSetLayout layout).Ok("GE set layout");
-        DescriptorPoolSize size = new(DescriptorType.CombinedImageSampler, 1);
-        DescriptorPoolCreateInfo poolInfo = new() { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 1, PoolSizeCount = 1, PPoolSizes = &size };
-        _vk.CreateDescriptorPool(_device, in poolInfo, null, out DescriptorPool pool).Ok("GE descriptor pool");
-        DescriptorSetAllocateInfo allocateInfo = new()
-        {
-            SType = StructureType.DescriptorSetAllocateInfo,
-            DescriptorPool = pool,
-            DescriptorSetCount = 1,
-            PSetLayouts = &layout,
-        };
-        _vk.AllocateDescriptorSets(_device, in allocateInfo, out DescriptorSet set).Ok("GE descriptor set");
-        return (layout, pool, set);
-    }
 
     private PipelineLayout CreatePipelineLayout()
     {
@@ -869,21 +1400,6 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         return sampler;
     }
 
-    private void UpdateDescriptor(GeRenderState state, bool textured)
-    {
-        int samplerIndex = textured ? (state.TextureLinear ? 1 : 0) | (state.ClampU ? 2 : 0) | (state.ClampV ? 4 : 0) : 0;
-        DescriptorImageInfo image = new(_samplers[samplerIndex], _textureView, ImageLayout.ShaderReadOnlyOptimal);
-        WriteDescriptorSet write = new()
-        {
-            SType = StructureType.WriteDescriptorSet,
-            DstSet = _descriptorSet,
-            DstBinding = 0,
-            DescriptorCount = 1,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            PImageInfo = &image,
-        };
-        _vk.UpdateDescriptorSets(_device, 1, in write, 0, null);
-    }
 
     private (Image, DeviceMemory, ImageView) CreateImage(int width, int height, Format format, ImageUsageFlags usage, ImageAspectFlags aspect)
     {
@@ -931,132 +1447,5 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         image = default;
         memory = default;
         view = default;
-    }
-
-    private void EnsureTarget(int width, int height)
-    {
-        if (width == _targetWidth && height == _targetHeight)
-        {
-            return;
-        }
-
-        if (_framebuffer.Handle != 0)
-        {
-            _vk.DestroyFramebuffer(_device, _framebuffer, null);
-        }
-
-        DestroyImage(ref _colorImage, ref _colorMemory, ref _colorView);
-        DestroyImage(ref _depthImage, ref _depthMemory, ref _depthView);
-        (_colorImage, _colorMemory, _colorView) = CreateImage(width, height, ColorFormat,
-            ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
-        (_depthImage, _depthMemory, _depthView) = CreateImage(width, height, DepthFormat,
-            ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.DepthBit);
-        ImageView* views = stackalloc ImageView[2];
-        views[0] = _colorView;
-        views[1] = _depthView;
-        FramebufferCreateInfo info = new()
-        {
-            SType = StructureType.FramebufferCreateInfo,
-            RenderPass = _renderPass,
-            AttachmentCount = 2,
-            PAttachments = views,
-            Width = (uint)width,
-            Height = (uint)height,
-            Layers = 1,
-        };
-        _vk.CreateFramebuffer(_device, in info, null, out _framebuffer).Ok("GE framebuffer");
-        _targetWidth = width;
-        _targetHeight = height;
-    }
-
-    private void EnsureTexture(int width, int height)
-    {
-        if (width == _textureWidth && height == _textureHeight)
-        {
-            return;
-        }
-
-        DestroyImage(ref _textureImage, ref _textureMemory, ref _textureView);
-        (_textureImage, _textureMemory, _textureView) = CreateImage(width, height, ColorFormat,
-            ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
-        _textureWidth = width;
-        _textureHeight = height;
-        _textureReadable = false;
-    }
-
-    private void EnsureStaging(ulong size)
-    {
-        if (size <= _stagingSize)
-        {
-            return;
-        }
-
-        if (_staging.Handle != 0)
-        {
-            _core.DestroyBuffer(_staging, _stagingMemory);
-        }
-
-        ulong rounded = Math.Max(size, _stagingSize * 2);
-        (_staging, _stagingMemory, _stagingMapped) = _core.CreateHostBuffer(rounded, BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit,
-            MemCat.Readback);
-        _stagingSize = rounded;
-    }
-
-    private void EnsureVertexBuffer(ulong size)
-    {
-        if (size <= _vertexSize)
-        {
-            return;
-        }
-
-        if (_vertexBuffer.Handle != 0)
-        {
-            _core.DestroyBuffer(_vertexBuffer, _vertexMemory);
-        }
-
-        ulong rounded = Math.Max(size, Math.Max(_vertexSize * 2, 4096));
-        (_vertexBuffer, _vertexMemory, _vertexMapped) = _core.CreateHostBuffer(rounded, BufferUsageFlags.VertexBufferBit, MemCat.UploadRing);
-        _vertexSize = rounded;
-    }
-
-    public void Dispose()
-    {
-        _vk.DeviceWaitIdle(_device);
-        foreach (Pipeline pipeline in _pipelines.Values)
-        {
-            _vk.DestroyPipeline(_device, pipeline, null);
-        }
-
-        foreach (Sampler sampler in _samplers)
-        {
-            _vk.DestroySampler(_device, sampler, null);
-        }
-
-        if (_framebuffer.Handle != 0)
-        {
-            _vk.DestroyFramebuffer(_device, _framebuffer, null);
-        }
-
-        DestroyImage(ref _colorImage, ref _colorMemory, ref _colorView);
-        DestroyImage(ref _depthImage, ref _depthMemory, ref _depthView);
-        DestroyImage(ref _textureImage, ref _textureMemory, ref _textureView);
-        if (_staging.Handle != 0)
-        {
-            _core.DestroyBuffer(_staging, _stagingMemory);
-        }
-
-        if (_vertexBuffer.Handle != 0)
-        {
-            _core.DestroyBuffer(_vertexBuffer, _vertexMemory);
-        }
-
-        _vk.DestroyShaderModule(_device, _vertexModule, null);
-        _vk.DestroyShaderModule(_device, _fragmentModule, null);
-        _vk.DestroyPipelineLayout(_device, _pipelineLayout, null);
-        _vk.DestroyDescriptorPool(_device, _descriptorPool, null);
-        _vk.DestroyDescriptorSetLayout(_device, _setLayout, null);
-        _vk.DestroyRenderPass(_device, _renderPass, null);
-        _vk.DestroyFence(_device, _fence, null);
-        _vk.DestroyCommandPool(_device, _commandPool, null);
     }
 }

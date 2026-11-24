@@ -202,11 +202,81 @@ public sealed class GeVulkanRasterizerTests : IDisposable
         Assert.Equal((ushort)0x1234, Depth(10, 10));
     }
 
+    /// <summary>The framebuffer stays on the GPU through a list: many draws with one state are one vkCmdDraw in one
+    /// submission, the surface is loaded once and written back once at the list's end; a second list over memory
+    /// nobody touched loads nothing.</summary>
+    [SoftwareVulkanFact]
+    public void TheFramebufferStaysOnTheGpuAndTheDrawsMerge()
+    {
+        GeListBuilder list = Setup().Command(GeCommand.VertexType, ThroughColorS16).Command(GeCommand.VertexAddress, Vertices & 0xFFFFFF);
+        for (int i = 0; i < 100; i++)
+        {
+            Vertex(Vertices, i * 2, (short)(i * 4), 0, 0, 0xFF0000FF);
+            Vertex(Vertices, i * 2 + 1, (short)(i * 4 + 2), 2, 0, 0xFF0000FF);
+            list.Command(GeCommand.Primitive, (6u << 16) | 2);
+        }
+
+        list.End();
+        GeRegisters.Run(_engine, list.Start);
+        Assert.Equal(100, _rasterizer!.Draws);
+        Assert.Equal(1, _rasterizer.RecordedDraws);
+        Assert.Equal(1, _rasterizer.Submissions);
+        Assert.Equal(1, _rasterizer.SurfaceUploads);
+        Assert.Equal(1, _rasterizer.SurfaceReadbacks);
+        Assert.Equal(0x0000FFu, Pixel(4 * 50, 1) & 0xFFFFFF);
+
+        _engine.Write32(GeRegisters.InterruptAcknowledge, 0xF);
+        GeRegisters.Run(_engine, list.Start);
+        Assert.Equal(1, _rasterizer.SurfaceUploads);
+        Assert.Equal(2, _rasterizer.SurfaceReadbacks);
+    }
+
+    /// <summary>What the PSP's CPU writes into the framebuffer between lists is kept: the next list loads the surface
+    /// again (its memory changed) instead of writing its old copy back over it.</summary>
+    [SoftwareVulkanFact]
+    public void TheCpusWritesBetweenListsAreKept()
+    {
+        GeListBuilder first = Setup();
+        Rectangle(first, Vertices, 0, 0, 8, 8, 0, 0xFF0000FF).End();
+        GeRegisters.Run(_engine, first.Start);
+        _memory.Write32(GeTestMemory.VramBase + (uint)((100 * Stride + 100) * 4), 0xFFFF0000);
+        GeListBuilder second = new GeListBuilder(_memory, 0x08003000).RamBase();
+        Rectangle(second, Vertices + 0x100, 20, 20, 28, 28, 0, 0xFF00FF00).End();
+        _engine.Write32(GeRegisters.InterruptAcknowledge, 0xF);
+        GeRegisters.Run(_engine, second.Start);
+        Assert.Equal(0xFFFF0000u, Pixel(100, 100));
+        Assert.Equal(0x0000FFu, Pixel(4, 4) & 0xFFFFFF);
+        Assert.Equal(0x00FF00u, Pixel(24, 24) & 0xFFFFFF);
+        Assert.Equal(2, _rasterizer!.SurfaceUploads);
+    }
+
+    /// <summary>A block transfer in the middle of a list copies what the list drew before it (the rasterizer writes
+    /// back first), and the draws after it see what it copied into the framebuffer.</summary>
+    [SoftwareVulkanFact]
+    public void ABlockTransferSeesTheDrawsBeforeItAndTheDrawsAfterSeeIt()
+    {
+        GeListBuilder list = Setup();
+        Rectangle(list, Vertices, 0, 0, 8, 8, 0, 0xFF0000FF)
+            .Command(GeCommand.TransferSource, 0).Command(GeCommand.TransferSourceWidth, (uint)Stride | 0x040000)
+            .Command(GeCommand.TransferDestination, 0).Command(GeCommand.TransferDestinationWidth, (uint)Stride | 0x040000)
+            .Command(GeCommand.TransferSourcePosition, 0).Command(GeCommand.TransferDestinationPosition, 50 | (50u << 10))
+            .Command(GeCommand.TransferSize, 7 | (7u << 10)).Command(GeCommand.TransferStart, 1)
+            .Command(GeCommand.AlphaBlendEnable, 1).Command(GeCommand.BlendMode, 2 | (3 << 4));
+        Rectangle(list, Vertices + 0x100, 50, 50, 54, 54, 0, 0x8000FF00).End(); // half green over the copied red
+        GeRegisters.Run(_engine, list.Start);
+        Assert.Equal(0x0000FFu, Pixel(4, 4) & 0xFFFFFF);
+        Assert.Equal(0x0000FFu, Pixel(56, 56) & 0xFFFFFF); // copied, not drawn over
+        uint mixed = Pixel(52, 52);
+        Assert.InRange((int)(mixed & 0xFF), 0x78, 0x88); // the copied red under the half green
+        Assert.InRange((int)((mixed >> 8) & 0xFF), 0x78, 0x88);
+    }
+
     /// <summary>A 16x16 target and a screen-covering pair of triangles with the given vertex fields, for the
     /// rasterizer's own inputs (the secondary colour, fog, Q), drawn without the GE side.</summary>
     private uint DrawQuad(GeRenderState state, Func<GeVertex, GeVertex> fill)
     {
-        GeTarget target = new() { Width = 16, Height = 16, Color = new uint[256] };
+        const uint Surface = GeTestMemory.VramBase + 0x100000;
+        _memory.Span(Surface, 16 * 16 * 4).Clear();
         state.ScissorRight = 15;
         state.ScissorBottom = 15;
         (float X, float Y, float U)[] corners = [(0, 0, 0), (16, 0, 1), (0, 16, 0), (16, 0, 1), (16, 16, 1), (0, 16, 0)];
@@ -216,8 +286,9 @@ public sealed class GeVulkanRasterizerTests : IDisposable
             vertices[i] = fill(new GeVertex { X = corners[i].X, Y = corners[i].Y, W = 1, U = corners[i].U, V = 0.5f, Color = 0xFF404040 });
         }
 
-        _rasterizer!.Draw(GeTopology.Triangles, vertices, state, target);
-        return target.Color[8 * 16 + 4];
+        _rasterizer!.Draw(GeTopology.Triangles, vertices, state, new GeSurface(Surface, 16, 16, GePixels.Format8888), null, _memory);
+        _rasterizer.Flush(_memory);
+        return _memory.Read32(Surface + (8 * 16 + 4) * 4);
     }
 
     /// <summary>The secondary (separate specular) colour is added to the colour after the texture stage.</summary>

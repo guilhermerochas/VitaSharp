@@ -9,17 +9,31 @@ namespace VitaSharp.Core.Compat.Ge;
 /// </summary>
 public static class GeTextureDecoder
 {
-    /// <summary>Decodes into <paramref name="destination"/> (width * height); false when the memory is not readable.</summary>
-    public static bool Decode(IGeMemory memory, uint address, int bufferWidth, int width, int height, int format,
-        bool swizzled, ReadOnlySpan<uint> clut, uint clutFormat, Span<uint> destination)
+    /// <summary>The bits of one texel of a format.</summary>
+    public static int BitsPerTexel(int format)
     {
-        int bitsPerTexel = format switch
+        return format switch
         {
             0 or 1 or 2 or 6 => 16,
             3 or 7 => 32,
             4 => 4,
             _ => 8,
         };
+    }
+
+    /// <summary>The bytes of memory a texture of <paramref name="height"/> rows reads (swizzled: whole 8-row blocks).</summary>
+    public static int SourceBytes(int bufferWidth, int height, int format, bool swizzled)
+    {
+        int rowBytes = Math.Max(bufferWidth * BitsPerTexel(format) / 8, swizzled ? 16 : 1);
+        int rows = swizzled ? (height + 7) & ~7 : height;
+        return rowBytes * rows;
+    }
+
+    /// <summary>Decodes into <paramref name="destination"/> (width * height); false when the memory is not readable.</summary>
+    public static bool Decode(IGeMemory memory, uint address, int bufferWidth, int width, int height, int format,
+        bool swizzled, ReadOnlySpan<uint> clut, uint clutFormat, Span<uint> destination)
+    {
+        int bitsPerTexel = BitsPerTexel(format);
         int rowBytes = Math.Max(bufferWidth * bitsPerTexel / 8, swizzled ? 16 : 1);
         int rows = swizzled ? (height + 7) & ~7 : height;
         Span<byte> texels = memory.Span(address, rowBytes * rows);
