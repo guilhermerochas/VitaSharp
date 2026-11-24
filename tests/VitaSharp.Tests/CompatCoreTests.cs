@@ -43,11 +43,16 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
         return host;
     }
 
-    /// <summary>The user's decrypted boot code and a plain pcff image (our own bytes: a magic word and a pattern).</summary>
-    private void PlaceBootImages()
+    /// <summary>The user's decrypted boot code (by default a magic word; or the test's MIPS boot) and a plain pcff
+    /// image (our own bytes).</summary>
+    private void PlaceBootImages(byte[]? bootCode = null)
     {
-        byte[] pcbc = new byte[0x200];
-        BinaryPrimitives.WriteUInt32LittleEndian(pcbc, PcbcMagic);
+        byte[] pcbc = bootCode ?? new byte[0x200];
+        if (bootCode == null)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(pcbc, PcbcMagic);
+        }
+
         File.WriteAllBytes(HostPath("os0:kd/pcbc.bin"), pcbc);
         byte[] pcff = new byte[0x100];
         BinaryPrimitives.WriteUInt32LittleEndian(pcff, PcffMagic);
@@ -80,10 +85,10 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
     }
 
     /// <summary>The window taken, the images and the license placed, InitEx and SetRif done.</summary>
-    private uint Init()
+    private uint Init(byte[]? bootCode = null)
     {
         _harness.Emu.IsSystemProgram = true;
-        PlaceBootImages();
+        PlaceBootImages(bootCode);
         PlaceLicense();
         uint bases = _harness.Alloc(8);
         Assert.Equal(0, Call(Compat, "sceCompatAllocCdramWithHole", bases));
@@ -285,6 +290,176 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
         });
     }
 
+    private const int S0 = 16, S1 = 17, S2 = 18, S3 = 19, S4 = 20;
+    private const uint MipsResults = 0x200000; // window offset (PSP 0x88200000) where the boot writes what it saw
+
+    private static uint Andi(int rt, int rs, int immediate)
+    {
+        return AllegrexAsm.IType(0x0C, rt, rs, immediate);
+    }
+
+    private static uint And(int rd, int rs, int rt)
+    {
+        return AllegrexAsm.RType(0x24, rd, rs, rt);
+    }
+
+    /// <summary>
+    /// A synthetic boot code (our own MIPS, assembled here), at PSP 0x88600000 with its interrupt handler at
+    /// 0x88601000: s0 = the handshake word 0x8BD78000, s1 = the shared SRAM 0xBFC00000, s2 = the mailbox 0xBC500000,
+    /// s3 = its request 0x88100000, s4 = its results 0x88200000. It sets EBase and Status (IE, IM2: the reset Status
+    /// has ERL and BEV), writes handshake state 1, spins until 2, writes 3, posts command 0x1234 on channel 3 in slot 0
+    /// and rings line 4, then halts in a loop. The handler reads the pending lines: line 4 (the slot taken) is
+    /// acknowledged; line 7 (the answer) is acknowledged, its six words copied to the results and line 7 rung back to
+    /// the ARM; line 0x19 (virtual interrupt 9) is acknowledged, its slot's word saved and cleared, the controller
+    /// words (0x140, 0x120..0x128) saved, and 9 written as the "done" mark; then eret.
+    /// </summary>
+    private static byte[] MipsBoot()
+    {
+        uint[] main =
+        [
+            AllegrexAsm.Lui(S0, 0x8BD7),
+            AllegrexAsm.Ori(S0, S0, 0x8000),
+            AllegrexAsm.Lui(S1, 0xBFC0),
+            AllegrexAsm.Lui(S2, 0xBC50),
+            AllegrexAsm.Lui(S3, 0x8810),
+            AllegrexAsm.Lui(S4, 0x8820),
+            AllegrexAsm.Lui(AllegrexAsm.T0, 0x8860),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.T0, 0x1000),
+            AllegrexAsm.Mtc0(AllegrexAsm.T0, AllegrexCore.Cop0EBase),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 0x0401), // IM2 | IE
+            AllegrexAsm.Mtc0(AllegrexAsm.T0, AllegrexCore.Cop0Status),
+            AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, 1),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S0, 0), // state 1
+            AllegrexAsm.Addiu(AllegrexAsm.T2, AllegrexAsm.Zero, 2),
+            AllegrexAsm.Lw(AllegrexAsm.T1, S0, 0), // 14: wait for 2
+            AllegrexAsm.Bne(AllegrexAsm.T1, AllegrexAsm.T2, -2),
+            AllegrexAsm.Nop,
+            AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, 3),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S0, 0), // state 3
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 0x1234),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S3, 0), // the request's command
+            AllegrexAsm.Lui(AllegrexAsm.T0, 3),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S1, 0x800), // slot 0: channel 3
+            AllegrexAsm.Sw(S3, S1, 0x804), // slot 0: the request's address
+            AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, 1),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S2, 4 * 4), // ring line 4
+            AllegrexAsm.Halt, // 26
+            AllegrexAsm.Beq(AllegrexAsm.Zero, AllegrexAsm.Zero, -2),
+            AllegrexAsm.Nop,
+        ];
+        uint[] handler =
+        [
+            AllegrexAsm.Lw(AllegrexAsm.K0, S2, 0x100), // the lines pending for the core
+            Andi(AllegrexAsm.K1, AllegrexAsm.K0, 1 << 4),
+            AllegrexAsm.Beq(AllegrexAsm.K1, AllegrexAsm.Zero, 3),
+            AllegrexAsm.Nop,
+            AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, 1),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S2, 0x80 + 4 * 4), // acknowledge line 4
+            Andi(AllegrexAsm.K1, AllegrexAsm.K0, 1 << 7), // 6
+            AllegrexAsm.Beq(AllegrexAsm.K1, AllegrexAsm.Zero, 16),
+            AllegrexAsm.Nop,
+            AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, 1),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S2, 0x80 + 7 * 4), // acknowledge line 7
+            AllegrexAsm.Lw(AllegrexAsm.T1, S1, 0x840),
+            AllegrexAsm.Sw(AllegrexAsm.T1, S4, 0),
+            AllegrexAsm.Lw(AllegrexAsm.T1, S1, 0x844),
+            AllegrexAsm.Sw(AllegrexAsm.T1, S4, 4),
+            AllegrexAsm.Lw(AllegrexAsm.T1, S1, 0x848),
+            AllegrexAsm.Sw(AllegrexAsm.T1, S4, 8),
+            AllegrexAsm.Lw(AllegrexAsm.T1, S1, 0x84C),
+            AllegrexAsm.Sw(AllegrexAsm.T1, S4, 0xC),
+            AllegrexAsm.Lw(AllegrexAsm.T1, S1, 0x850),
+            AllegrexAsm.Sw(AllegrexAsm.T1, S4, 0x10),
+            AllegrexAsm.Lw(AllegrexAsm.T1, S1, 0x854),
+            AllegrexAsm.Sw(AllegrexAsm.T1, S4, 0x14),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S2, 7 * 4), // ring line 7 to the ARM: the answer interrupt
+            AllegrexAsm.Lui(AllegrexAsm.K1, 0x0200), // 24
+            And(AllegrexAsm.K1, AllegrexAsm.K0, AllegrexAsm.K1),
+            AllegrexAsm.Beq(AllegrexAsm.K1, AllegrexAsm.Zero, 16),
+            AllegrexAsm.Nop,
+            AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, 1),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S2, 0x80 + 0x19 * 4), // acknowledge line 0x19
+            AllegrexAsm.Lw(AllegrexAsm.T1, S1, 0x8C0 + 9 * 8),
+            AllegrexAsm.Sw(AllegrexAsm.T1, S4, 0x18), // virtual interrupt 9's slot
+            AllegrexAsm.Sw(AllegrexAsm.Zero, S1, 0x8C0 + 9 * 8),
+            AllegrexAsm.Lw(AllegrexAsm.T1, S1, 0x140),
+            AllegrexAsm.Sw(AllegrexAsm.T1, S4, 0x1C),
+            AllegrexAsm.Lw(AllegrexAsm.T1, S1, 0x120),
+            AllegrexAsm.Sw(AllegrexAsm.T1, S4, 0x20),
+            AllegrexAsm.Lw(AllegrexAsm.T1, S1, 0x124),
+            AllegrexAsm.Sw(AllegrexAsm.T1, S4, 0x24),
+            AllegrexAsm.Lw(AllegrexAsm.T1, S1, 0x128),
+            AllegrexAsm.Sw(AllegrexAsm.T1, S4, 0x28),
+            AllegrexAsm.Addiu(AllegrexAsm.T1, AllegrexAsm.Zero, 9),
+            AllegrexAsm.Sw(AllegrexAsm.T1, S4, 0x2C), // done
+            AllegrexAsm.Eret, // 43
+        ];
+        byte[] image = new byte[0x2000];
+        for (int i = 0; i < main.Length; i++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(i * 4), main[i]);
+        }
+
+        for (int i = 0; i < handler.Length; i++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(0x1000 + i * 4), handler[i]);
+        }
+
+        return image;
+    }
+
+    /// <summary>The same protocol with the real Allegrex interpreter running <see cref="MipsBoot"/>: the boot
+    /// handshake, channel 3's request and its answer (and the core's answer interrupt reaching WaitIntr), the
+    /// controller words and virtual interrupt 9 through the interrupt controller line, then Stop.</summary>
+    [Fact]
+    public void TheAllegrexRunsASyntheticBootThroughTheWholeProtocol()
+    {
+        _harness.OnGuest(_ =>
+        {
+            uint window = Init(MipsBoot());
+            Assert.Equal(0, Compat.ReleaseCoreForTests()); // past the start path's license step
+            Assert.Equal(0, Call(Compat, "sceCompatWaitSpecialRequest", 1));
+            Assert.Equal(0u, GuestMemory.R32(window + 0x3D78000));
+
+            int request = Call(Compat, "sceCompatWaitAndGetRequest", 3u, 0u);
+            Assert.Equal((int)(0x88100000u >> 1), request);
+            Assert.Equal(0x1234u, GuestMemory.R32(window + (((uint)request << 1) & 0x3FFFFFF)));
+
+            Assert.Equal(0, Call(Compat, "sceCompatWaitIntr", 0u)); // the semaphore starts at 1
+            uint info = _harness.Alloc(8);
+            GuestMemory.W32(info, 7);
+            GuestMemory.W32(info + 4, 0x88100100);
+            Assert.Equal(0, Call(Compat, "sceCompatReturnValueEx", 0u, info, 0xA1B2C3D4E5F60718UL));
+            Assert.Equal(0, Call(Compat, "sceCompatWaitIntr", 0u)); // rung back by the handler
+            uint results = window + MipsResults;
+            Assert.Equal(0xE5F60718u, GuestMemory.R32(results));
+            Assert.Equal(0xA1B2C3D4u, GuestMemory.R32(results + 4));
+            Assert.Equal(7u, GuestMemory.R32(results + 8));
+            Assert.Equal(0u, GuestMemory.R32(results + 0xC));
+            Assert.Equal(0x88100100u, GuestMemory.R32(results + 0x10));
+            Assert.Equal(0u, GuestMemory.R32(results + 0x14));
+
+            uint controller = _harness.Alloc(12);
+            GuestMemory.W32(controller, 0x0000_4000);
+            GuestMemory.W32(controller + 4, 0x8080_8080);
+            GuestMemory.W32(controller + 8, 0x0000_0002);
+            Assert.Equal(0, Call(Compat, "sceCompatWriteSharedCtrl", controller));
+            Assert.Equal(0, Call(Compat, "sceCompatInterrupt", 9));
+            Until(() => GuestMemory.R32(results + 0x2C) == 9, "the boot's handler to take virtual interrupt 9");
+            Assert.Equal(1u, GuestMemory.R32(results + 0x18));
+            Assert.Equal(0u, Compat.SharedSram.Read32(0x8C0 + 9 * 8));
+            Assert.Equal(0x0000_4000u, GuestMemory.R32(results + 0x1C));
+            Assert.Equal(0x0000_4000u, GuestMemory.R32(results + 0x20));
+            Assert.Equal(0x8080_8080u, GuestMemory.R32(results + 0x24));
+            Assert.Equal(0x0000_0002u, GuestMemory.R32(results + 0x28));
+            Assert.Null(Compat.Runner!.Failure);
+
+            Assert.Equal(0, Call(Compat, "sceCompatStop"));
+            Assert.Null(Compat.Runner);
+            Assert.Equal(1, Call(Compat, "sceCompatGetStatus"));
+        });
+    }
+
     /// <summary>A channel's ring holds 16 requests: the 17th stays in the core's slot (not acknowledged) with the
     /// overflow flag, and goes in when a request is taken (then acknowledged), as the 3.74 module does it: without
     /// adding it to the ring's count, so the wake it had finds the count at 0 (0x80010016, an empty ring's answer). A
@@ -385,6 +560,11 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
 
         public int Run(int cycles)
         {
+            if (Done)
+            {
+                return 0; // halted
+            }
+
             switch (_state)
             {
                 case 0:
