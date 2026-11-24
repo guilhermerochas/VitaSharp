@@ -44,20 +44,24 @@ public static class HleCallTrace
         /// still add one).</summary>
         public readonly Call[]?[] Chunks = new Call[]?[MaxCalls / ChunkSize + 1];
         public int Count;
-        /// <summary>Where the thread's calls were when a save state was taken (<see cref="MarkState"/>): guest time of
-        /// the state and the number of calls made before it.</summary>
-        public readonly List<(long GuestUs, int Count)> StateMarks = [];
     }
 
     /// <summary>The comment lines of hle_calls.tsv that say where each thread was when a save state was taken:
-    /// "#state", the state's guest time, the thread, its number of calls before it.</summary>
+    /// "#state", the state's guest time, the thread, its number of calls before it, and "in-call" when the thread was
+    /// inside a call then (a wait the re-run makes again when it releases the thread).</summary>
     public const string StateMarkLine = "#state";
+
+    /// <summary>The flag of a <see cref="StateMarkLine"/> whose thread was inside a call when the state was taken.</summary>
+    public const string InCallFlag = "in-call";
 
     private static volatile bool s_active;
     private static int s_generation;
     private static int s_total;
     private static long s_dropped;
     private static readonly List<ThreadBuffer> s_buffers = [];
+    /// <summary>Where every guest thread was at each save state of the recording (<see cref="MarkState"/>), also the
+    /// threads that had made no call yet.</summary>
+    private static readonly List<(long GuestUs, string Thread, int Count, bool InCall)> s_marks = [];
     private static readonly object s_lock = new();
 
     /// <summary>A recording is collecting calls (one static read per HLE call when it is not).</summary>
@@ -69,6 +73,7 @@ public static class HleCallTrace
         lock (s_lock)
         {
             s_buffers.Clear();
+            s_marks.Clear();
             s_total = 0;
             s_dropped = 0;
             s_generation++;
@@ -78,8 +83,22 @@ public static class HleCallTrace
 
     /// <summary>A save state was taken (its threads still stopped): every thread's calls so far came before it. A
     /// re-run from that state makes the calls after the mark; guest time cannot say it (the clock stops while the
-    /// game runs on to the safe point and until it is released).</summary>
-    public static void MarkState()
+    /// game runs on to the safe point and until it is released). Every thread of the state is marked, also one that
+    /// has made no call since the recording began: a thread blocked since before then in a call (a vblank wait) makes
+    /// that call again in the re-run, and the comparison has to know that the re-run's first call is one the
+    /// capture's trace does not hold.</summary>
+    public static void MarkState(IEnumerable<(GuestThread Thread, bool InCall)> threads)
+    {
+        if (!s_active)
+        {
+            return;
+        }
+
+        Mark(threads.Select(t => ((object)t.Thread, t.Thread.Name, t.InCall)));
+    }
+
+    /// <summary><see cref="MarkState"/> for threads given by the key their buffer belongs to (a test's own).</summary>
+    internal static void Mark(IEnumerable<(object Thread, string Name, bool InCall)> threads)
     {
         if (!s_active)
         {
@@ -89,9 +108,18 @@ public static class HleCallTrace
         long us = GuestClock.Microseconds;
         lock (s_lock)
         {
-            foreach (ThreadBuffer buffer in s_buffers)
+            foreach ((object thread, string name, bool inCall) in threads)
             {
-                buffer.StateMarks.Add((us, Volatile.Read(ref buffer.Count)));
+                int count = 0;
+                foreach (ThreadBuffer buffer in s_buffers)
+                {
+                    if (ReferenceEquals(buffer.Thread, thread))
+                    {
+                        count = Volatile.Read(ref buffer.Count);
+                    }
+                }
+
+                s_marks.Add((us, name, count, inCall));
             }
         }
     }
@@ -183,12 +211,10 @@ public static class HleCallTrace
             w.WriteLine("# guestUs\tthread\tfunction\tlibrary\tr0\tr1\tr2\tr3\tresult\tlr");
             lock (s_lock)
             {
-                foreach (ThreadBuffer buffer in s_buffers)
+                foreach ((long us, string thread, int count, bool inCall) in s_marks)
                 {
-                    foreach ((long us, int count) in buffer.StateMarks)
-                    {
-                        w.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{StateMarkLine}\t{us}\t{buffer.Thread.Name}\t{count}"));
-                    }
+                    string flag = inCall ? "\t" + InCallFlag : "";
+                    w.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{StateMarkLine}\t{us}\t{thread}\t{count}{flag}"));
                 }
             }
 
@@ -225,7 +251,7 @@ public static class HleCallTrace
         Dictionary<string, List<(long Us, string Function, string Result)>> a = Read(originalFile), b = Read(rerunFile);
         // where each thread of the capture was when the state the re-run started from was taken (the marks closest to
         // its guest time): exact, where guest time is not
-        Dictionary<string, int>? marks = stateUs is { } wanted ? StateMarks(originalFile, wanted) : null;
+        Dictionary<string, (int Count, bool InCall)>? marks = stateUs is { } wanted ? StateMarks(originalFile, wanted) : null;
         var differences = new List<(long Us, string Text)>();
         foreach ((string thread, List<(long Us, string Function, string Result)> calls) in a)
         {
@@ -258,7 +284,7 @@ public static class HleCallTrace
             if (marks != null)
             {
                 // a thread that had made no call yet when the state was taken: all its calls are after it
-                skip = Math.Min(marks.GetValueOrDefault(thread), calls.Count - 1);
+                skip = Math.Min(marks.GetValueOrDefault(thread).Count, calls.Count - 1);
             }
 
             int offset;
@@ -268,13 +294,22 @@ public static class HleCallTrace
                 // state may be missing, never extra ones. The capture's calls from the cut on are matched in order to
                 // the re-run's first ones.
                 int start = -1;
+                int rerunStart = 0;
                 if (marks != null)
                 {
+                    (int markedCount, bool inCall) = marks.GetValueOrDefault(thread);
                     // a thread blocked in a call when the state was taken (a vblank wait) makes that call again when
-                    // the re-run releases it: the re-run then starts with the capture's last call before the mark
+                    // the re-run releases it: the re-run then starts with the capture's last call before the mark,
+                    // or, when the thread had been in that call since before the recording began (no call of its
+                    // own before the mark), with a call the capture's trace does not hold
                     if (skip > 0 && StartsAt(calls, skip - 1, other))
                     {
                         start = skip - 1;
+                    }
+                    else if (inCall && markedCount == 0 && other.Count > 1 && StartsAt(calls, skip, other, 1))
+                    {
+                        start = skip;
+                        rerunStart = 1;
                     }
                     else if (StartsAt(calls, skip, other))
                     {
@@ -288,7 +323,7 @@ public static class HleCallTrace
                 }
 
                 skip = start >= 0 ? start : skip;
-                offset = start >= 0 ? 0 : -1;
+                offset = start >= 0 ? rerunStart : -1;
             }
             else
             {
@@ -347,13 +382,15 @@ public static class HleCallTrace
         return -1;
     }
 
-    /// <summary>The capture's calls from <paramref name="start"/> on (up to 8) are to the re-run's first functions.</summary>
-    private static bool StartsAt(List<(long Us, string Function, string Result)> capture, int start, List<(long Us, string Function, string Result)> rerun)
+    /// <summary>The capture's calls from <paramref name="start"/> on (up to 8) are to the re-run's functions from
+    /// <paramref name="rerunStart"/> on.</summary>
+    private static bool StartsAt(List<(long Us, string Function, string Result)> capture, int start, List<(long Us, string Function, string Result)> rerun,
+        int rerunStart = 0)
     {
-        int length = Math.Min(8, Math.Min(capture.Count - start, rerun.Count));
+        int length = Math.Min(8, Math.Min(capture.Count - start, rerun.Count - rerunStart));
         for (int i = 0; i < length; i++)
         {
-            if (capture[start + i].Function != rerun[i].Function)
+            if (capture[start + i].Function != rerun[rerunStart + i].Function)
             {
                 return false;
             }
@@ -397,9 +434,9 @@ public static class HleCallTrace
 
     /// <summary>The state marks of a trace (<see cref="StateMarkLine"/>) of the state taken at
     /// <paramref name="stateUs"/> (the closest, within a millisecond), by thread; null when it has none.</summary>
-    private static Dictionary<string, int>? StateMarks(string file, long stateUs)
+    private static Dictionary<string, (int Count, bool InCall)>? StateMarks(string file, long stateUs)
     {
-        var byState = new Dictionary<long, Dictionary<string, int>>();
+        var byState = new Dictionary<long, Dictionary<string, (int Count, bool InCall)>>();
         foreach (string line in File.ReadLines(file))
         {
             if (!line.StartsWith(StateMarkLine + "\t", StringComparison.Ordinal))
@@ -414,19 +451,19 @@ public static class HleCallTrace
                 continue;
             }
 
-            if (!byState.TryGetValue(us, out Dictionary<string, int>? threads))
+            if (!byState.TryGetValue(us, out Dictionary<string, (int Count, bool InCall)>? threads))
             {
-                threads = new Dictionary<string, int>(StringComparer.Ordinal);
+                threads = new Dictionary<string, (int Count, bool InCall)>(StringComparer.Ordinal);
                 byState[us] = threads;
             }
 
             // a name reused by a later thread: its first buffer's count (the later one starts after the state)
-            threads.TryAdd(f[2], count);
+            threads.TryAdd(f[2], (count, f.Length > 4 && f[4] == InCallFlag));
         }
 
         long best = long.MaxValue;
-        Dictionary<string, int>? found = null;
-        foreach ((long us, Dictionary<string, int> threads) in byState)
+        Dictionary<string, (int Count, bool InCall)>? found = null;
+        foreach ((long us, Dictionary<string, (int Count, bool InCall)> threads) in byState)
         {
             long distance = Math.Abs(us - stateUs);
             if (distance <= 1000 && distance < best)

@@ -178,7 +178,7 @@ public static partial class SaveStates
                         {
                             long pausedMs = sw.ElapsedMilliseconds;
                             // a recording's HLE trace notes where every thread was (a re-run from this state is compared from there)
-                            VitaSharp.Core.Capture.HleCallTrace.MarkState();
+                            VitaSharp.Core.Capture.HleCallTrace.MarkState(kinds.Select(k => (k.Key, k.Value == GuestThread.SafeKind.Reissue)));
                             // the game goes on while the file is compressed and written
                             if (!wasPaused)
                             {
