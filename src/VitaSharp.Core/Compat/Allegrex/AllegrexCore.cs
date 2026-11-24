@@ -56,6 +56,9 @@ public sealed partial class AllegrexCore
     public const uint CauseBranchDelay = 0x80000000;
     public const uint CauseInterruptPending = 0x0000FF00;
     public const uint CauseSoftwareInterrupts = 0x00000300;
+
+    /// <summary>Cause.IP7: Count reached Compare (MIPS32), cleared by a write to Compare.</summary>
+    public const uint CauseTimerInterrupt = 0x00008000;
     public const uint CauseExceptionCodeMask = 0x0000007C;
 
     private readonly IAllegrexBus _bus;
@@ -74,6 +77,7 @@ public sealed partial class AllegrexCore
     private uint _hardwareLines;     // Cause.IP2..IP7 as driven by RaiseInterrupt/ClearInterrupt (Cause bit positions)
     private uint _interruptControl;  // the mtic/mfic register ($ic)
     private uint _countOffset;       // Count = executed instructions + offset
+    private bool _timerInterrupt;    // Count reached Compare: Cause.IP7 until Compare is written
     private bool _linkBit;
     private bool _halted;
     private bool _stopped;
@@ -137,7 +141,7 @@ public sealed partial class AllegrexCore
     }
 
     /// <summary>Cause, with IP2..IP7 showing the hardware lines.</summary>
-    public uint Cause => (_cop0[Cop0Cause] & ~(CauseInterruptPending & ~CauseSoftwareInterrupts)) | _hardwareLines;
+    public uint Cause => (_cop0[Cop0Cause] & ~(CauseInterruptPending & ~CauseSoftwareInterrupts)) | _hardwareLines | (_timerInterrupt ? CauseTimerInterrupt : 0);
 
     public uint Epc
     {
@@ -169,6 +173,7 @@ public sealed partial class AllegrexCore
         _interruptControl = 0;
         _fcr31 = 0;
         _countOffset = 0;
+        _timerInterrupt = false;
         _linkBit = false;
         _halted = false;
         _stopped = false;
@@ -236,6 +241,10 @@ public sealed partial class AllegrexCore
         {
             case Cop0Count:
                 _countOffset = value - (uint)_executedInstructions;
+                break;
+            case Cop0Compare:
+                _cop0[Cop0Compare] = value;
+                _timerInterrupt = false;
                 break;
             case Cop0Cause:
                 _cop0[Cop0Cause] = (_cop0[Cop0Cause] & ~CauseSoftwareInterrupts) | (value & CauseSoftwareInterrupts);
@@ -306,6 +315,11 @@ public sealed partial class AllegrexCore
         _currentInDelaySlot = _nextIsDelaySlot;
         _nextIsDelaySlot = false;
         _executedInstructions++;
+        if ((uint)_executedInstructions + _countOffset == _cop0[Cop0Compare])
+        {
+            _timerInterrupt = true;
+        }
+
         if ((pc & 3) != 0)
         {
             AddressError(pc, AllegrexExceptionCode.AddressErrorLoad);

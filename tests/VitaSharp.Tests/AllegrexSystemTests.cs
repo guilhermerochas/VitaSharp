@@ -320,4 +320,31 @@ public sealed class AllegrexSystemTests
         Assert.Equal(0u, core.InterruptControl);
     }
 
+    [Fact]
+    public void CountReachingCompareRaisesTheTimerLineUntilCompareIsWritten()
+    {
+        AllegrexRig rig = new(Nop, Nop, Nop, Nop, Nop, Nop, Nop, Nop);
+        rig.Core.WriteCop0(AllegrexCore.Cop0Compare, 5);
+        rig.Step(4);
+        Assert.Equal(0u, rig.Core.Cause & AllegrexCore.CauseTimerInterrupt);
+        rig.Step();
+        Assert.Equal(AllegrexCore.CauseTimerInterrupt, rig.Core.Cause & AllegrexCore.CauseTimerInterrupt);
+        rig.Step();
+        Assert.Equal(AllegrexCore.CauseTimerInterrupt, rig.Core.Cause & AllegrexCore.CauseTimerInterrupt); // level, stays
+        rig.Core.WriteCop0(AllegrexCore.Cop0Compare, 100);
+        Assert.Equal(0u, rig.Core.Cause & AllegrexCore.CauseTimerInterrupt);
+    }
+
+    [Fact]
+    public void TimerInterruptIsTakenOnLineSeven()
+    {
+        AllegrexRig rig = new(Nop, Nop, Nop, Nop, Nop, Nop, Nop, Nop);
+        rig.Core.Status = AllegrexCore.StatusIe | AllegrexCore.CauseTimerInterrupt; // IM7
+        rig.Core.WriteCop0(AllegrexCore.Cop0Compare, 3);
+        rig.Step(3);
+        rig.Step();
+        Assert.Equal(AllegrexRig.ExceptionBase + 4, rig.Core.Pc);
+        Assert.Equal(AllegrexRig.CodeBase + 12, rig.Core.Epc);
+        Assert.Equal((uint)AllegrexExceptionCode.Interrupt, ExceptionCode(rig.Core));
+    }
 }
