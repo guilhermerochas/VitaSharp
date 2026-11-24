@@ -333,6 +333,35 @@ public sealed class GeDrawTests
         Assert.Equal(0u, _memory.Read32(Destination + (21 * 512 + 13) * 4));
     }
 
+    /// <summary>A GE without a rasterizer makes one from its factory at its first batch, once; a list that draws
+    /// nothing never asks for it.</summary>
+    [Fact]
+    public void TheRasterizerIsMadeAtTheFirstBatchOnce()
+    {
+        int made = 0;
+        GeCapturingRasterizer rasterizer = new();
+        GeEngine engine = new(_memory)
+        {
+            RasterizerFactory = () =>
+            {
+                made++;
+                return rasterizer;
+            },
+        };
+        GeRegisters.Run(engine, Setup().Command(GeCommand.VertexType, ThroughColorS16).End().Start);
+        Assert.Equal(0, made);
+
+        ThroughVertex(0, 0, 0, 0, 0xFFFFFFFF);
+        ThroughVertex(1, 4, 4, 0, 0xFFFFFFFF);
+        GeRegisters.Run(engine, Setup().Command(GeCommand.VertexType, ThroughColorS16)
+            .Command(GeCommand.Primitive, (6u << 16) | 2)
+            .Command(GeCommand.VertexAddress, Vertices & 0xFFFFFF)
+            .Command(GeCommand.Primitive, (6u << 16) | 2).End().Start);
+        Assert.Equal(1, made);
+        Assert.Equal(2, rasterizer.Draws.Count);
+        Assert.Same(rasterizer, engine.Rasterizer);
+    }
+
     /// <summary>A 565 texel has no alpha bits and reads as opaque (as the PSP samples it), not as transparent.</summary>
     [Fact]
     public void A565TextureIsOpaque()

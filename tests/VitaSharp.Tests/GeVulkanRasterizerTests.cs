@@ -271,6 +271,19 @@ public sealed class GeVulkanRasterizerTests : IDisposable
         Assert.Equal(0x00FF00u, sampled & 0xFFFFFF);
     }
 
+    /// <summary>The emulator's GE rasterizer comes on a Vulkan device of its own and draws like the one above.</summary>
+    [SoftwareVulkanFact]
+    public void TheEmulatorsRasterizerDrawsOnItsOwnDevice()
+    {
+        using GeVulkanRasterizerDevice device = Assert.IsType<GeVulkanRasterizerDevice>(GeVulkanRasterizerDevice.Create());
+        GeEngine engine = new(_memory) { RasterizerFactory = () => device };
+        GeListBuilder list = Setup();
+        Rectangle(list, Vertices, 2, 2, 6, 6, 0, 0xFF00FF00).End();
+        GeRegisters.Run(engine, list.Start);
+        Assert.Equal(1, device.Draws);
+        Assert.Equal(0x00FF00u, Pixel(3, 3) & 0xFFFFFF);
+    }
+
     [SoftwareVulkanFact]
     public void A565FramebufferGetsItsPixels()
     {
