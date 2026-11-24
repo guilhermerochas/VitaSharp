@@ -318,7 +318,7 @@ public sealed partial class SystemServicesVsh
     /// SceRtcTick *start, SceRtcTick *expiration): the title key of a PSP license (the secure processor's: not
     /// available, see <see cref="RifKey"/>).</summary>
     [Hle(Nid = 0xDACB71F4, Library = "SceNpDrmForDriver")]
-    int ksceNpDrmGetRifPspKey(uint license, uint key, uint flags, uint start, uint expiration)
+    internal int ksceNpDrmGetRifPspKey(uint license, uint key, uint flags, uint start, uint expiration)
     {
         return RifKey(license, key, flags, 0, start, expiration);
     }
