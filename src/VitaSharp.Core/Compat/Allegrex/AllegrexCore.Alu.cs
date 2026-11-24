@@ -4,7 +4,7 @@ namespace VitaSharp.Core.Compat.Allegrex;
 public sealed partial class AllegrexCore
 {
     /// <summary>add: as addu, but a signed overflow raises the overflow exception and leaves rd unchanged (MIPS32).</summary>
-    void Add(uint instruction)
+    private void Add(uint instruction)
     {
         uint left = _gpr[Rs(instruction)];
         uint right = _gpr[Rt(instruction)];
@@ -18,7 +18,7 @@ public sealed partial class AllegrexCore
         _gpr[Rd(instruction)] = sum;
     }
 
-    void AddImmediate(uint instruction)
+    private void AddImmediate(uint instruction)
     {
         uint left = _gpr[Rs(instruction)];
         uint right = SignedImmediate(instruction);
@@ -32,7 +32,7 @@ public sealed partial class AllegrexCore
         _gpr[Rt(instruction)] = sum;
     }
 
-    void Subtract(uint instruction)
+    private void Subtract(uint instruction)
     {
         uint left = _gpr[Rs(instruction)];
         uint right = _gpr[Rt(instruction)];
@@ -47,7 +47,7 @@ public sealed partial class AllegrexCore
     }
 
     /// <summary>srl, or rotr when bit 0 of the (otherwise unused) rs field is set: the Allegrex decodes only that bit.</summary>
-    void ShiftRightLogicalOrRotate(uint instruction)
+    private void ShiftRightLogicalOrRotate(uint instruction)
     {
         uint value = _gpr[Rt(instruction)];
         int amount = Sa(instruction);
@@ -62,7 +62,7 @@ public sealed partial class AllegrexCore
     }
 
     /// <summary>srlv, or rotrv when bit 0 of the (otherwise unused) sa field is set.</summary>
-    void ShiftRightLogicalOrRotateVariable(uint instruction)
+    private void ShiftRightLogicalOrRotateVariable(uint instruction)
     {
         uint value = _gpr[Rt(instruction)];
         int amount = (int)(_gpr[Rs(instruction)] & 31);

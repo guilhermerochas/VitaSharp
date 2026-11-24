@@ -5,12 +5,12 @@ namespace VitaSharp.Tests;
 /// <summary>The Allegrex additions: ext/ins, seb/seh/wsbh/wsbw/bitrev (with the partial sa decode), clz/clo, max/min, movz/movn.</summary>
 public sealed class AllegrexExtensionTests
 {
-    static uint Ext(int rt, int rs, int position, int size)
+    private static uint Ext(int rt, int rs, int position, int size)
     {
         return Special3(0x00, size - 1, rs, rt, position);
     }
 
-    static uint Ins(int rt, int rs, int position, int size)
+    private static uint Ins(int rt, int rs, int position, int size)
     {
         return Special3(0x04, position + size - 1, rs, rt, position);
     }

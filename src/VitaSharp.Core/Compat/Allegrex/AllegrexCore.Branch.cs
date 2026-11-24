@@ -7,7 +7,7 @@ namespace VitaSharp.Core.Compat.Allegrex;
 /// </summary>
 public sealed partial class AllegrexCore
 {
-    void BranchIf(bool condition, uint instruction)
+    private void BranchIf(bool condition, uint instruction)
     {
         _nextIsDelaySlot = true;
         if (condition)
@@ -16,7 +16,7 @@ public sealed partial class AllegrexCore
         }
     }
 
-    void BranchLikelyIf(bool condition, uint instruction)
+    private void BranchLikelyIf(bool condition, uint instruction)
     {
         if (condition)
         {
@@ -30,26 +30,26 @@ public sealed partial class AllegrexCore
         }
     }
 
-    void Jump(uint instruction)
+    private void Jump(uint instruction)
     {
         _nextIsDelaySlot = true;
         _nextPc = (_pc & 0xF0000000) | ((instruction & 0x03FFFFFF) << 2);
     }
 
-    void JumpAndLink(uint instruction)
+    private void JumpAndLink(uint instruction)
     {
         _gpr[31] = _pc + 4;
         Jump(instruction);
     }
 
-    void JumpRegister(uint instruction)
+    private void JumpRegister(uint instruction)
     {
         _nextIsDelaySlot = true;
         _nextPc = _gpr[Rs(instruction)];
     }
 
     /// <summary>jalr rd, rs: the target is read before rd is written.</summary>
-    void JumpAndLinkRegister(uint instruction)
+    private void JumpAndLinkRegister(uint instruction)
     {
         uint target = _gpr[Rs(instruction)];
         _gpr[Rd(instruction)] = _pc + 4;
@@ -57,7 +57,7 @@ public sealed partial class AllegrexCore
         _nextPc = target;
     }
 
-    void ExecuteRegImm(uint instruction)
+    private void ExecuteRegImm(uint instruction)
     {
         int value = (int)_gpr[Rs(instruction)];
         switch (Rt(instruction))

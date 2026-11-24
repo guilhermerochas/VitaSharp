@@ -58,26 +58,26 @@ public sealed partial class AllegrexCore
     public const uint CauseSoftwareInterrupts = 0x00000300;
     public const uint CauseExceptionCodeMask = 0x0000007C;
 
-    readonly IAllegrexBus _bus;
-    readonly uint[] _gpr = new uint[32];
-    readonly uint[] _cop0 = new uint[32];
-    readonly uint[] _cop0Control = new uint[32];
+    private readonly IAllegrexBus _bus;
+    private readonly uint[] _gpr = new uint[32];
+    private readonly uint[] _cop0 = new uint[32];
+    private readonly uint[] _cop0Control = new uint[32];
 
-    uint _pc;
-    uint _nextPc;
-    bool _nextIsDelaySlot;
+    private uint _pc;
+    private uint _nextPc;
+    private bool _nextIsDelaySlot;
 
     // the instruction being executed (exceptions report it)
-    uint _currentPc;
-    bool _currentInDelaySlot;
+    private uint _currentPc;
+    private bool _currentInDelaySlot;
 
-    uint _hardwareLines;     // Cause.IP2..IP7 as driven by RaiseInterrupt/ClearInterrupt (Cause bit positions)
-    uint _interruptControl;  // the mtic/mfic register ($ic)
-    uint _countOffset;       // Count = executed instructions + offset
-    bool _linkBit;
-    bool _halted;
-    bool _stopped;
-    long _executedInstructions;
+    private uint _hardwareLines;     // Cause.IP2..IP7 as driven by RaiseInterrupt/ClearInterrupt (Cause bit positions)
+    private uint _interruptControl;  // the mtic/mfic register ($ic)
+    private uint _countOffset;       // Count = executed instructions + offset
+    private bool _linkBit;
+    private bool _halted;
+    private bool _stopped;
+    private long _executedInstructions;
 
     public AllegrexCore(IAllegrexBus bus)
     {
@@ -291,14 +291,14 @@ public sealed partial class AllegrexCore
         return executed;
     }
 
-    bool InterruptsAccepted()
+    private bool InterruptsAccepted()
     {
         uint status = _cop0[Cop0Status];
         bool enabled = (status & StatusIe) != 0 || _interruptControl != 0;
         return enabled && (status & (StatusExl | StatusErl)) == 0;
     }
 
-    void Step()
+    private void Step()
     {
         uint pc = _pc;
         _currentPc = pc;
@@ -323,7 +323,7 @@ public sealed partial class AllegrexCore
     /// the branch before it when it is in a delay slot (Cause.BD), Cause.ExcCode the code, Status.EXL is set and the
     /// core goes to EBase (0xBFC00200 with Status.BEV).
     /// </summary>
-    void RaiseException(AllegrexExceptionCode code)
+    private void RaiseException(AllegrexExceptionCode code)
     {
         uint status = _cop0[Cop0Status];
         uint cause = _cop0[Cop0Cause] & ~(CauseExceptionCodeMask | CauseBranchDelay);
@@ -347,13 +347,13 @@ public sealed partial class AllegrexCore
         Pc = (status & StatusBev) != 0 ? BootExceptionVector : _cop0[Cop0EBase];
     }
 
-    void AddressError(uint address, AllegrexExceptionCode code)
+    private void AddressError(uint address, AllegrexExceptionCode code)
     {
         _cop0[Cop0BadVAddr] = address;
         RaiseException(code);
     }
 
-    void Unimplemented(uint instruction, string unit)
+    private void Unimplemented(uint instruction, string unit)
     {
         AllegrexTrapHandler? handler = TrapHandler;
         if (handler != null && handler(this, AllegrexTrapKind.Unimplemented, instruction, _currentPc))

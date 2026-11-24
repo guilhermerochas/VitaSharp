@@ -6,9 +6,9 @@ namespace VitaSharp.Tests;
 /// <summary>Allegrex loads and stores: sign/zero extension, segment mirrors, alignment exceptions, lwl/lwr/swl/swr, ll/sc.</summary>
 public sealed class AllegrexMemoryTests
 {
-    const uint Data = 0x88010000;
+    private const uint Data = 0x88010000;
 
-    static AllegrexRig RigWithData(uint instruction, uint word)
+    private static AllegrexRig RigWithData(uint instruction, uint word)
     {
         AllegrexRig rig = new(instruction);
         rig.Bus.Load(Data, [word]);

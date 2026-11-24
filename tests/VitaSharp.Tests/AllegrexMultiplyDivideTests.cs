@@ -5,7 +5,7 @@ namespace VitaSharp.Tests;
 /// <summary>Allegrex HI/LO: multiplies (signed vs unsigned), the madd/msub accumulators and the hardware's division edge cases.</summary>
 public sealed class AllegrexMultiplyDivideTests
 {
-    static (uint Hi, uint Lo) RunHiLo(int funct, uint left, uint right, uint hiBefore = 0, uint loBefore = 0)
+    private static (uint Hi, uint Lo) RunHiLo(int funct, uint left, uint right, uint hiBefore = 0, uint loBefore = 0)
     {
         AllegrexRig rig = new(RType(funct, 0, T0, T1));
         rig[T0] = left;

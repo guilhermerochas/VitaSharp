@@ -6,7 +6,7 @@ namespace VitaSharp.Core.Compat.Allegrex;
 /// </summary>
 public sealed partial class AllegrexCore
 {
-    ulong HiLo
+    private ulong HiLo
     {
         get => ((ulong)Hi << 32) | Lo;
         set
@@ -16,32 +16,32 @@ public sealed partial class AllegrexCore
         }
     }
 
-    void Multiply(uint instruction)
+    private void Multiply(uint instruction)
     {
         HiLo = (ulong)((long)(int)_gpr[Rs(instruction)] * (int)_gpr[Rt(instruction)]);
     }
 
-    void MultiplyUnsigned(uint instruction)
+    private void MultiplyUnsigned(uint instruction)
     {
         HiLo = (ulong)_gpr[Rs(instruction)] * _gpr[Rt(instruction)];
     }
 
-    void MultiplyAdd(uint instruction)
+    private void MultiplyAdd(uint instruction)
     {
         HiLo += (ulong)((long)(int)_gpr[Rs(instruction)] * (int)_gpr[Rt(instruction)]);
     }
 
-    void MultiplyAddUnsigned(uint instruction)
+    private void MultiplyAddUnsigned(uint instruction)
     {
         HiLo += (ulong)_gpr[Rs(instruction)] * _gpr[Rt(instruction)];
     }
 
-    void MultiplySubtract(uint instruction)
+    private void MultiplySubtract(uint instruction)
     {
         HiLo -= (ulong)((long)(int)_gpr[Rs(instruction)] * (int)_gpr[Rt(instruction)]);
     }
 
-    void MultiplySubtractUnsigned(uint instruction)
+    private void MultiplySubtractUnsigned(uint instruction)
     {
         HiLo -= (ulong)_gpr[Rs(instruction)] * _gpr[Rt(instruction)];
     }
@@ -51,7 +51,7 @@ public sealed partial class AllegrexCore
     /// cpu_alu/cpu_div, as PPSSPP records them): 0x80000000 / -1 gives LO = 0x80000000, HI = 0; a division by zero
     /// gives LO = 1 for a negative dividend, else 0xFFFFFFFF, and HI = the dividend. No exception either way.
     /// </summary>
-    void Divide(uint instruction)
+    private void Divide(uint instruction)
     {
         int dividend = (int)_gpr[Rs(instruction)];
         int divisor = (int)_gpr[Rt(instruction)];
@@ -73,7 +73,7 @@ public sealed partial class AllegrexCore
     }
 
     /// <summary>divu: a division by zero gives LO = 0xFFFF for a dividend up to 0xFFFF, else 0xFFFFFFFF, and HI = the dividend.</summary>
-    void DivideUnsigned(uint instruction)
+    private void DivideUnsigned(uint instruction)
     {
         uint dividend = _gpr[Rs(instruction)];
         uint divisor = _gpr[Rt(instruction)];

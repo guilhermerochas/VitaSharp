@@ -9,10 +9,10 @@ namespace VitaSharp.Tests;
 /// </summary>
 public sealed class AllegrexBranchTests
 {
-    const uint Base = AllegrexRig.CodeBase;
+    private const uint Base = AllegrexRig.CodeBase;
 
     // branch at Base, slot at Base + 4 (addiu t1, t1, 1), fall-through at Base + 8, target at Base + 16
-    static AllegrexRig RunBranch(uint branch, uint rsValue, uint rtValue = 0)
+    private static AllegrexRig RunBranch(uint branch, uint rsValue, uint rtValue = 0)
     {
         AllegrexRig rig = new(branch, Addiu(T1, T1, 1), Nop, Nop, Nop);
         rig[T0] = rsValue;

@@ -3,37 +3,37 @@ namespace VitaSharp.Core.Compat.Allegrex;
 /// <summary>The instruction decoder: the primary opcode table and its sub-tables (SPECIAL, REGIMM, SPECIAL2/3, COP0).</summary>
 public sealed partial class AllegrexCore
 {
-    static int Rs(uint instruction)
+    private static int Rs(uint instruction)
     {
         return (int)((instruction >> 21) & 31);
     }
 
-    static int Rt(uint instruction)
+    private static int Rt(uint instruction)
     {
         return (int)((instruction >> 16) & 31);
     }
 
-    static int Rd(uint instruction)
+    private static int Rd(uint instruction)
     {
         return (int)((instruction >> 11) & 31);
     }
 
-    static int Sa(uint instruction)
+    private static int Sa(uint instruction)
     {
         return (int)((instruction >> 6) & 31);
     }
 
-    static uint SignedImmediate(uint instruction)
+    private static uint SignedImmediate(uint instruction)
     {
         return (uint)(int)(short)(ushort)instruction;
     }
 
-    static uint UnsignedImmediate(uint instruction)
+    private static uint UnsignedImmediate(uint instruction)
     {
         return instruction & 0xFFFF;
     }
 
-    void Execute(uint instruction)
+    private void Execute(uint instruction)
     {
         switch (instruction >> 26)
         {
@@ -154,7 +154,7 @@ public sealed partial class AllegrexCore
         }
     }
 
-    void ExecuteSpecial(uint instruction)
+    private void ExecuteSpecial(uint instruction)
     {
         int rs = Rs(instruction);
         int rt = Rt(instruction);

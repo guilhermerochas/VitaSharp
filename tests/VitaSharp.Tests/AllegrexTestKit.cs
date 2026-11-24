@@ -8,12 +8,12 @@ public sealed class AllegrexTestBus : IAllegrexBus
     public const uint RamBase = 0x08000000;
     public const uint SramBase = 0x1FC00000;
 
-    readonly byte[] _ram = new byte[0x100000];
-    readonly byte[] _sram = new byte[0x1000];
+    private readonly byte[] _ram = new byte[0x100000];
+    private readonly byte[] _sram = new byte[0x1000];
 
     public int Writes { get; private set; }
 
-    Span<byte> At(uint address, int size)
+    private Span<byte> At(uint address, int size)
     {
         address &= AllegrexCore.PhysicalMask;
         if (address >= RamBase && address + size <= RamBase + _ram.Length)

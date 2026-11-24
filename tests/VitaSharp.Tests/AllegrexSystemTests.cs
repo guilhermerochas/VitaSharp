@@ -9,7 +9,7 @@ namespace VitaSharp.Tests;
 /// </summary>
 public sealed class AllegrexSystemTests
 {
-    static uint ExceptionCode(AllegrexCore core)
+    private static uint ExceptionCode(AllegrexCore core)
     {
         return (core.Cause & AllegrexCore.CauseExceptionCodeMask) >> 2;
     }

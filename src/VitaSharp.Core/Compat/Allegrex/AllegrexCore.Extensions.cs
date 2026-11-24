@@ -9,7 +9,7 @@ namespace VitaSharp.Core.Compat.Allegrex;
 /// </summary>
 public sealed partial class AllegrexCore
 {
-    void ExecuteSpecial3(uint instruction)
+    private void ExecuteSpecial3(uint instruction)
     {
         switch (instruction & 0x3F)
         {
@@ -29,7 +29,7 @@ public sealed partial class AllegrexCore
     }
 
     /// <summary>ext rt, rs, pos, size: rt = the size bits of rs from pos (size - 1 in the rd field).</summary>
-    void Extract(uint instruction)
+    private void Extract(uint instruction)
     {
         int position = Sa(instruction);
         int sizeMinusOne = Rd(instruction);
@@ -41,7 +41,7 @@ public sealed partial class AllegrexCore
     /// ins rt, rs, pos, size: the low bits of rs replace bits pos..msb of rt (msb in the rd field). The mask is built
     /// from msb and moved down by pos, so msb &lt; pos (unpredictable in MIPS32) is consistent: nothing above msb changes.
     /// </summary>
-    void Insert(uint instruction)
+    private void Insert(uint instruction)
     {
         int position = Sa(instruction);
         int mostSignificantBit = Rd(instruction);
@@ -55,7 +55,7 @@ public sealed partial class AllegrexCore
     /// SPECIAL3 function 0x20: the Allegrex decodes only some bits of the sa field (PPSSPP, pspautotests
     /// cpu_alu/allegrex_encodings): bit 4 clear = wsbh/wsbw by bit 0; else bit 2 = bitrev, else bit 3 = seh, else seb.
     /// </summary>
-    void BitOperation(uint instruction)
+    private void BitOperation(uint instruction)
     {
         int operation = Sa(instruction);
         uint value = _gpr[Rt(instruction)];
@@ -87,7 +87,7 @@ public sealed partial class AllegrexCore
         _gpr[Rd(instruction)] = result;
     }
 
-    static uint ReverseBits(uint value)
+    private static uint ReverseBits(uint value)
     {
         value = ((value >> 1) & 0x55555555) | ((value & 0x55555555) << 1);
         value = ((value >> 2) & 0x33333333) | ((value & 0x33333333) << 2);
@@ -95,27 +95,27 @@ public sealed partial class AllegrexCore
         return BinaryPrimitives.ReverseEndianness(value);
     }
 
-    void CountLeadingZeros(uint instruction)
+    private void CountLeadingZeros(uint instruction)
     {
         _gpr[Rd(instruction)] = (uint)BitOperations.LeadingZeroCount(_gpr[Rs(instruction)]);
     }
 
-    void CountLeadingOnes(uint instruction)
+    private void CountLeadingOnes(uint instruction)
     {
         _gpr[Rd(instruction)] = (uint)BitOperations.LeadingZeroCount(~_gpr[Rs(instruction)]);
     }
 
-    void Maximum(uint instruction)
+    private void Maximum(uint instruction)
     {
         _gpr[Rd(instruction)] = (uint)Math.Max((int)_gpr[Rs(instruction)], (int)_gpr[Rt(instruction)]);
     }
 
-    void Minimum(uint instruction)
+    private void Minimum(uint instruction)
     {
         _gpr[Rd(instruction)] = (uint)Math.Min((int)_gpr[Rs(instruction)], (int)_gpr[Rt(instruction)]);
     }
 
-    void MoveIfZero(uint instruction)
+    private void MoveIfZero(uint instruction)
     {
         if (_gpr[Rt(instruction)] == 0)
         {
@@ -123,7 +123,7 @@ public sealed partial class AllegrexCore
         }
     }
 
-    void MoveIfNotZero(uint instruction)
+    private void MoveIfNotZero(uint instruction)
     {
         if (_gpr[Rt(instruction)] != 0)
         {

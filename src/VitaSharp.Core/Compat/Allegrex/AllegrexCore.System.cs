@@ -7,7 +7,7 @@ namespace VitaSharp.Core.Compat.Allegrex;
 public sealed partial class AllegrexCore
 {
     /// <summary>syscall/break: offered to <see cref="TrapHandler"/>, else the syscall (SCCode = code &lt;&lt; 2) or breakpoint exception.</summary>
-    void SystemCall(uint instruction, AllegrexTrapKind kind)
+    private void SystemCall(uint instruction, AllegrexTrapKind kind)
     {
         uint code = (instruction >> 6) & 0xFFFFF;
         AllegrexTrapHandler? handler = TrapHandler;
@@ -27,7 +27,7 @@ public sealed partial class AllegrexCore
         }
     }
 
-    void TrapIf(bool condition)
+    private void TrapIf(bool condition)
     {
         if (condition)
         {
@@ -35,7 +35,7 @@ public sealed partial class AllegrexCore
         }
     }
 
-    void ExecuteTrap(uint instruction)
+    private void ExecuteTrap(uint instruction)
     {
         uint left = _gpr[Rs(instruction)];
         uint right = _gpr[Rt(instruction)];
@@ -65,7 +65,7 @@ public sealed partial class AllegrexCore
         }
     }
 
-    void ExecuteCop0(uint instruction)
+    private void ExecuteCop0(uint instruction)
     {
         int rt = Rt(instruction);
         int rd = Rd(instruction);
@@ -130,7 +130,7 @@ public sealed partial class AllegrexCore
     }
 
     /// <summary>eret (MIPS32): to ErrorEPC clearing Status.ERL when it is set, else to EPC clearing Status.EXL; no delay slot; clears the LL bit.</summary>
-    void ReturnFromException()
+    private void ReturnFromException()
     {
         uint status = _cop0[Cop0Status];
         _linkBit = false;
@@ -147,7 +147,7 @@ public sealed partial class AllegrexCore
     }
 
     /// <summary>SPECIAL2: halt, mfic rt and mtic rt (only $ic, register 0, exists; only bit 0 of the value counts).</summary>
-    void ExecuteSpecial2(uint instruction)
+    private void ExecuteSpecial2(uint instruction)
     {
         switch (instruction & 0x3F)
         {

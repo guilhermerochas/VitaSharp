@@ -6,12 +6,12 @@ namespace VitaSharp.Core.Compat.Allegrex;
 /// </summary>
 public sealed partial class AllegrexCore
 {
-    uint EffectiveAddress(uint instruction)
+    private uint EffectiveAddress(uint instruction)
     {
         return _gpr[Rs(instruction)] + SignedImmediate(instruction);
     }
 
-    void ExecuteLoad(uint instruction)
+    private void ExecuteLoad(uint instruction)
     {
         uint address = EffectiveAddress(instruction);
         int rt = Rt(instruction);
@@ -65,7 +65,7 @@ public sealed partial class AllegrexCore
         }
     }
 
-    void ExecuteStore(uint instruction)
+    private void ExecuteStore(uint instruction)
     {
         uint address = EffectiveAddress(instruction);
         int rt = Rt(instruction);
@@ -106,7 +106,7 @@ public sealed partial class AllegrexCore
     }
 
     /// <summary>sc: stores and sets rt = 1 while the LL bit (set by ll, cleared by eret and exceptions) holds, else rt = 0.</summary>
-    void StoreConditional(uint address, int rt, uint value)
+    private void StoreConditional(uint address, int rt, uint value)
     {
         if ((address & 3) != 0)
         {
@@ -126,7 +126,7 @@ public sealed partial class AllegrexCore
     }
 
     /// <summary>lwl: the bytes from the aligned word's start up to <paramref name="address"/> go to the top of rt.</summary>
-    void LoadWordLeft(uint address, int rt)
+    private void LoadWordLeft(uint address, int rt)
     {
         uint word = _bus.Read32(address & PhysicalMask & ~3u);
         int shift = (int)(address & 3) * 8;
@@ -134,14 +134,14 @@ public sealed partial class AllegrexCore
     }
 
     /// <summary>lwr: the bytes from <paramref name="address"/> to the aligned word's end go to the bottom of rt.</summary>
-    void LoadWordRight(uint address, int rt)
+    private void LoadWordRight(uint address, int rt)
     {
         uint word = _bus.Read32(address & PhysicalMask & ~3u);
         int shift = (int)(address & 3) * 8;
         _gpr[rt] = (_gpr[rt] & ~(0xFFFFFFFFu >> shift)) | (word >> shift);
     }
 
-    void StoreWordLeft(uint address, uint value)
+    private void StoreWordLeft(uint address, uint value)
     {
         uint aligned = address & PhysicalMask & ~3u;
         int shift = (int)(address & 3) * 8;
@@ -149,7 +149,7 @@ public sealed partial class AllegrexCore
         _bus.Write32(aligned, (value >> (24 - shift)) | (word & ~(0xFFFFFFFFu >> (24 - shift))));
     }
 
-    void StoreWordRight(uint address, uint value)
+    private void StoreWordRight(uint address, uint value)
     {
         uint aligned = address & PhysicalMask & ~3u;
         int shift = (int)(address & 3) * 8;
