@@ -86,8 +86,14 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0xD78B04A2, Library = "SceSblAIMgrForDriver")]
     int ksceSblAimgrIsCEX()
     {
+        return AimgrIsCex() ? 1 : 0;
+    }
+
+    /// <summary>ksceSblAimgrIsCEX's answer, for the kernel modules that ask it (pfsmgr's mounts).</summary>
+    internal static bool AimgrIsCex()
+    {
         bool retail = (ushort)(ConsoleIdentity.ProductCode - ProductFirstCex) < 0xF;
-        return retail && !AimgrIsJapaneseFat() ? 1 : 0;
+        return retail && !AimgrIsJapaneseFat();
     }
 
     /// <summary>Whether the hardware info word names one of the PS TV boards (0x51, 0x70, 0x72 in bits 16..23).</summary>

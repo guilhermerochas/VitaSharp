@@ -286,7 +286,11 @@ dígitos hexadecimais + "d", o ID de autoridade do programa do processo, a chave
 código de kernel enganchou essa função, o lançamento faz a chamada pela entrada numa thread de kernel, o original para o
 qual o hook continua monta a imagem como o lançamento monta sem hook, e um erro respondido pelo hook falha o lançamento
 no passo 4. A chave do título é a que o lançamento já tem (nenhuma conferência da licença muda); o ID de autoridade é 0
-num primeiro lançamento, porque o VitaSharp o lê do executável dentro da imagem, depois do mount.
+num primeiro lançamento, porque o VitaSharp o lê do executável dentro da imagem, depois do mount. O kscePfsMount do
+pfsmgr 3.74 recebe (origem, ponto de montagem, o ID de autoridade como argumento de 64 bits na 3ª e 4ª palavras, chave,
+modo): o modo 0x28 responde o modo de um mount em que o ID está aprovado; qualquer outro é Mount2(origem, ponto, chave,
+modo) e depois Approve(ponto, ID). O Mount2 aceita só os modos do firmware (0, 2 a 10, 12, 13, 20 a 23; outros
+0x80142109) e serve a imagem no dispositivo "<ponto>0:"; Approve e Disapprove guardam os IDs permitidos no mount (até 16).
 
 ### Caminhadas de caminho nos dispositivos do emulador
 

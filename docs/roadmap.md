@@ -3183,6 +3183,23 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (23/11/2026, falta testar) [P1][M] Os mounts PFS (ScePfsMgrForKernel) com os argumentos do pfsmgr 3.74
+  (fix/hookfn3): no pfsmgr 3.74 (descompilado e desmontado, só estudo) o kscePfsMount é (origem, ponto de montagem, ID
+  de autoridade de 64 bits na 3ª e 4ª palavras, chave, modo): o modo 0x28 responde o modo de um mount em que esse ID
+  está aprovado (senão 0x80010013); qualquer outro é Mount2(origem, ponto, chave, modo) e depois Approve(ponto, ID). O
+  HLE lia a 3ª e a 4ª palavras como chave e modo e o 6º argumento como tamanho, então o Mount2 recebia a metade alta do
+  ID como modo e o Approve não guardava ID nenhum. Agora: Mount2 aceita só os modos do firmware (dados de jogo/save 2, 3,
+  5, 6, 7, 9, 10, 13; AC 4, 8, 12; redirecionamento 0, 20 a 23; outro 0x80142109), modo 10 sem chave e 2/3/10/13 sem
+  chave numa unidade de varejo dão 0x80010016, origem até 62 bytes, ponto de montagem de 1 a 31 bytes, e a imagem é
+  servida no dispositivo "<ponto>0:" (o "%s0:" do pfsmgr); Approve/Disapprove guardam e removem o ID (até 16 por mount;
+  repetido 0x80010011, cheio 0x8001001C, ausente 0x80010002). A chave do título continua vindo do caminho atual; nada
+  de licença mudou. Fica aberto: o NID 0x4C148288, que no 3.74 lê as informações de um mount do vfs (não o estado de
+  aprovação que o HLE responde). Testes: `IofilemgrKernelTests` (`PfsMountTakesTheAuthorityIdTheKeyAndTheMode`,
+  `PfsMountAcceptsTheFirmwareModes`, `PfsMountsServeTheSourceAtTheMountPoint`; falham sem a correção). Testar: com
+  "Ativar Plugins do Kernel" e um plugin de kernel que monta uma pasta com kscePfsMount (ou engancha o kscePfsMount),
+  conferir no `last.log` que o mount responde 0 e o conteúdo aparece no dispositivo "<ponto>0:"; os títulos que já
+  abriam abrem igual.
+
 - [ ] (23/11/2026, falta testar) [P1][M] O mount do app0 no lançamento passa pela entrada kscePfsMount (fix/hookfn2): no
   SceAppMgr 3.74 (descompilado, só estudo) o lançamento chama o kscePfsMount exportado do pfsmgr (caminho do app, ponto
   de montagem "ts" + 12 dígitos hex + "d", ID de autoridade do processo em duas palavras, chave do título, modo 5); aqui
