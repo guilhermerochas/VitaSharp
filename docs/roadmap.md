@@ -3328,6 +3328,13 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `GxmHleTests.ColorSurfaceInitAcceptsNullData`. Testar: Zero Time Dilemma (PCSE00781) passa do boot, logos, menu e
   cenas como antes (nenhum `sceGxmBeginScene: 0x805B0003` ou `sceGxmColorSurfaceSetData: 0x805B0009` no log);
   Croixleur Sigma (framebuffers com dados NULL e SetData depois) abre e mostra imagem.
+- [ ] (23/11/2026, falta testar) [P3][P] SDK do programa lido no lugar certo para as regras antigas do libgxm
+  (fix/gxmex4): o libgxm 3.74 pede o SDK ao `sceKernelGetMainModuleSdkVersion` (SceProcessParam +0xC); o VitaSharp
+  lia +0x10, que é o ponteiro do nome da thread principal: com nome NULL todo programa ganhava as regras dos SDKs
+  antes do 2.50 (perfil YUV acima de 3 no `sceGxmSetYuvProfile`, modo 2 no NID_D352F90A), e com nome nenhum programa
+  antigo as ganhava. Agora as duas funções seguem o SDK do programa. Testes:
+  `GxmFlowTests.YuvProfileAndVisibilityBufferFollowTheFirmwareChecks` (falha sem a correção). Testar: os filmes e as
+  texturas YUV dos jogos continuam com as cores de antes (nenhum `sceGxmSetYuvProfile: 0x805B0003` novo no log).
 
 - [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo analisável e reexecutável sem o jogo (feat/capself1,
   `docs/captures.md`): (1) nenhum arquivo da gravação leva dado pessoal: uma última etapa troca, em todo texto e no

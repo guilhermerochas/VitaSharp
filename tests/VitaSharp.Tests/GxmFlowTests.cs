@@ -920,15 +920,21 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmSetVisibilityBuffer", deferred, buf + 4, 0x18u));
         Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmSetYuvProfile", deferred, 0u, 0u));
 
-        // a profile above 3 is taken only from a program built with an SDK before 2.50 (process param +0x10)
+        // a profile above 3 is taken only from a program built with an SDK before 2.50: libgxm asks
+        // sceKernelGetMainModuleSdkVersion (SceProcessParam +0xC); +0x10 is the main thread's name pointer, NULL for
+        // many programs, and does not make a recent program lenient
         Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmSetYuvProfile", ctx, 0u, 4u));
-        uint processParam = _harness.Alloc(0x20);
-        GuestMemory.W32(processParam, 0x20);
-        GuestMemory.W32(processParam + 0x10, 0x02400011);
-        typeof(VitaSharp.Core.Loader.Linker).GetProperty("ProcessParam")!.SetValue(_harness.Emu.Linker, processParam);
+        SetMainModuleSdkVersion(0x03570011);
+        Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmSetYuvProfile", ctx, 0u, 4u));
+        Assert.Equal(INVALID_VALUE, Call(Gxm, "GxmTestSetMode", ctx, 2u, 0u));
+        SetMainModuleSdkVersion(0x02400011);
+        uint processParam = _harness.Emu.Linker.ProcessParam;
+        GuestMemory.W32(processParam + 0x10, _harness.Alloc(0x10));
+        Assert.Equal(0x02400011, Call(_harness.Module<SystemSoftware>(), "sceKernelGetMainModuleSdkVersion"));
         Assert.Equal(0, Call(Gxm, "sceGxmSetYuvProfile", ctx, 0u, 4u));
         Assert.Equal((byte)4, context.YuvProfile[0]);
-        GuestMemory.W32(processParam + 0x10, 0x02500000);
+        Assert.Equal(0, Call(Gxm, "GxmTestSetMode", ctx, 2u, 0u));
+        SetMainModuleSdkVersion(0x02500000);
         Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmSetYuvProfile", ctx, 0u, 5u));
     }
 
