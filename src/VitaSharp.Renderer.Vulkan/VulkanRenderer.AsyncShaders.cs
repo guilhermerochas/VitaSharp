@@ -728,6 +728,10 @@ public sealed unsafe partial class VulkanRenderer
             _stopShaderJobs = true;
         }
 
+        // Dekker with Prefetch (announce in _prefetchActive, then re-read the flag): the flag store must be visible
+        // before the count is read. Leaving the lock is only a release (ARM64: the store may pass the later load), so
+        // a Prefetch could miss the flag while this reads a count of 0 and the device is destroyed under it.
+        Interlocked.MemoryBarrier();
         var spin = new SpinWait();
         while (Volatile.Read(ref _prefetchActive) != 0)
         {

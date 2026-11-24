@@ -70,7 +70,10 @@ public interface IGpuBackend : IDisposable
     }
 
     /// <summary>Called on the submitting thread for each command before it is queued (no worker state may be touched):
-    /// lets a backend start slow preparation, e.g. shader compilation, ahead of execution.</summary>
+    /// lets a backend start slow preparation, e.g. shader compilation, ahead of execution. The queue calls it without
+    /// its backend lock (it is on every command's path), so it can overlap <see cref="IDisposable.Dispose"/> of a
+    /// backend being detached or replaced: a backend that does work here makes its Dispose wait for the calls in
+    /// progress and turns later calls into no-ops (the Vulkan renderer: <c>_prefetchActive</c> / StopShaderWorkers).</summary>
     void Prefetch(GpuCommand command)
     {
     }

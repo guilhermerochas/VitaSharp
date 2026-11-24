@@ -4154,8 +4154,11 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   esvazia (submit, espera de fences); todos os testes de Vulkan fazem `WaitIdle(); Backend = null; renderer.Dispose()`
   e destruíam o device sob o worker. Corrigido: o setter toma o `_backendLock` (a troca pelo `ReplaceOn` usa
   `InstallBackend` sem tomar de novo); teste `GpuQueueDetachTests` (falha sem a correção). Falta: pegar um dump de uma
-  queda real para confirmar que era essa a pilha (o laço de Piglet/Renderer sob carga não reproduziu no timebox) e o
-  `Prefetch` do `Submit`, que ainda chama o backend fora do lock na thread que envia.
+  queda real para confirmar que era essa a pilha (o laço de Piglet/Renderer sob carga não reproduziu no timebox).
+  O `Prefetch` do `Submit` (fora do lock, na thread que envia) já era protegido pelo próprio renderer
+  (`_prefetchActive` + `StopShaderWorkers` no início do `Dispose`); faltava a barreira completa entre gravar o flag
+  e ler a contagem (no ARM64 a saída do lock é só release). Feito, contrato descrito no `IGpuBackend.Prefetch` e
+  coberto por `RendererPrefetchDisposeTests`.
 - [x] Minecraft (PCSE00491) no Android fica mais lento com o tempo: duplicado (15/11/2026), junto no item "Minecraft
   (PCSE00491) fica lento jogando no celular" da seção Android. Nota que só estava aqui: no desktop o UC passou 18 s em
   sceAvcdecDeleteDecoder na tela de título com o main num PC só (f1567), a conferir
