@@ -282,8 +282,6 @@ public sealed class AllegrexSystemTests
     }
 
     [Theory]
-    [InlineData(0x60000000u, "VFPU")] // vadd
-    [InlineData(0x64000000u, "VFPU")] // vmul
     [InlineData(0xF0000000u, "VFPU")] // vmmul
     public void VfpuIsReportedAsNotEmulated(uint instruction, string unit)
     {

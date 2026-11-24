@@ -115,9 +115,17 @@ public sealed partial class AllegrexCore
                 ExecuteVfpuFlush(instruction);
                 break;
             case 0x18:
+                ExecuteVfpu0(instruction);
+                break;
             case 0x19:
+                ExecuteVfpu1(instruction);
+                break;
             case 0x1B:
+                ExecuteVfpu3(instruction);
+                break;
             case 0x34:
+                ExecuteVfpu4Jump(instruction);
+                break;
             case 0x3C:
                 Unimplemented(instruction, "VFPU (COP2)");
                 break;
