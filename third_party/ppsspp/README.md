@@ -13,6 +13,6 @@ Only the tables are taken; the code that evaluates them, and the rest of the cor
 Copyright (c) 2012- PPSSPP Project and its contributors and is licensed under the GNU General Public License version
 2.0 or later, which allows its use in VitaSharp under the GPL version 3 ([LICENSE](../../LICENSE)).
 
-The tests compare the results with outputs recorded on a PSP by
-[pspautotests](https://github.com/hrydgard/pspautotests) (`tests/cpu/vfpu/exact` and `tests/cpu/vfpu/vrnd`), kept as
-`tests/VitaSharp.Tests/Fixtures/Allegrex/*.expected`.
+The tests compare the results with a small subset of the outputs recorded on a PSP by
+[pspautotests](https://github.com/hrydgard/pspautotests) (`tests/cpu/vfpu/exact` and `tests/cpu/vfpu/vrnd`), embedded
+as measurement data in `tests/VitaSharp.Tests/AllegrexVfpuHardwareTests.cs`.

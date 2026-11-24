@@ -34,7 +34,6 @@
        build/android-media-parity.sh/.ps1 -->
   <ItemGroup>
     <None Update="Fixtures\Media\*" CopyToOutputDirectory="PreserveNewest" />
-    <None Update="Fixtures\Allegrex\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
