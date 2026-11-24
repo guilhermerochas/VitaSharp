@@ -282,12 +282,10 @@ public sealed class AllegrexSystemTests
     }
 
     [Theory]
-    [InlineData(0x46000000u, "FPU")]  // add.s
-    [InlineData(0xC4000000u, "FPU")]  // lwc1
     [InlineData(0x60000000u, "VFPU")] // vadd
     [InlineData(0xD8000000u, "VFPU")] // lv.q
     [InlineData(0x48000000u, "VFPU")] // mfv
-    public void FpuAndVfpuAreReportedAsNotEmulated(uint instruction, string unit)
+    public void VfpuIsReportedAsNotEmulated(uint instruction, string unit)
     {
         AllegrexRig rig = new(instruction);
         AllegrexUnimplementedException error = Assert.Throws<AllegrexUnimplementedException>(() => rig.Core.Run(1));
@@ -321,4 +319,5 @@ public sealed class AllegrexSystemTests
         Assert.False(core.Halted);
         Assert.Equal(0u, core.InterruptControl);
     }
+
 }

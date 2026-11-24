@@ -167,6 +167,7 @@ public sealed partial class AllegrexCore
         _cop0[Cop0ErrorEpc] = _pc;
         _hardwareLines = 0;
         _interruptControl = 0;
+        _fcr31 = 0;
         _countOffset = 0;
         _linkBit = false;
         _halted = false;

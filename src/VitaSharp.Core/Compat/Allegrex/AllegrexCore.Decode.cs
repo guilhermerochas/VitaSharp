@@ -89,9 +89,13 @@ public sealed partial class AllegrexCore
                 ExecuteCop0(instruction);
                 break;
             case 0x11:
+                ExecuteCop1(instruction);
+                break;
             case 0x31:
+                LoadWordToFpu(instruction);
+                break;
             case 0x39:
-                Unimplemented(instruction, "FPU (COP1)");
+                StoreWordFromFpu(instruction);
                 break;
             case 0x12:
             case 0x18:

@@ -51,4 +51,5 @@ public enum AllegrexExceptionCode : uint
     CoprocessorUnusable = 11,
     Overflow = 12,
     Trap = 13,
+    FloatingPoint = 15,
 }
