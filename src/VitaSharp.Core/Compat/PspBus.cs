@@ -1,4 +1,5 @@
 using VitaSharp.Core.Compat.Allegrex;
+using VitaSharp.Core.Compat.Ge;
 using VitaSharp.Core.Compat.Psp;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
@@ -22,7 +23,7 @@ namespace VitaSharp.Core.Compat;
 /// (GE, KIRK, the rest of phase 3): reads give 0, writes are dropped, and the first accesses of each address are
 /// logged ("unknown MMIO"), which is how the boot trace finds what the firmware touches.
 /// </summary>
-public sealed class PspBus(CompatSharedSram sram, CompatMailbox mailbox) : IAllegrexBus
+public sealed class PspBus(CompatSharedSram sram, CompatMailbox mailbox) : IAllegrexBus, IGeMemory
 {
     /// <summary>The main RAM banks: PSP physical <see cref="RamBase"/> + bank * <see cref="BankSize"/>.</summary>
     public const int Banks = 4;
@@ -112,6 +113,26 @@ public sealed class PspBus(CompatSharedSram sram, CompatMailbox mailbox) : IAlle
 
         uint bank = Volatile.Read(ref _banks[offset / BankSize]);
         return bank == 0 ? 0 : bank + (offset % BankSize);
+    }
+
+    /// <summary>The GE's contiguous view of memory: <paramref name="length"/> bytes from a PSP address in main RAM,
+    /// the VRAM or the scratchpad when they are one piece of Vita memory (inside one bank, not across a VRAM mirror);
+    /// empty otherwise.</summary>
+    public Span<byte> Span(uint physical, int length)
+    {
+        if (length <= 0)
+        {
+            return [];
+        }
+
+        uint first = ToVita(physical);
+        uint last = ToVita(physical + (uint)(length - 1));
+        if (first == 0 || last != first + (uint)(length - 1))
+        {
+            return [];
+        }
+
+        return GuestMemory.Span(first, length);
     }
 
     public byte Read8(uint address)

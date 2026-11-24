@@ -1,4 +1,5 @@
 using VitaSharp.Core.Compat.Allegrex;
+using VitaSharp.Core.Compat.Ge;
 
 namespace VitaSharp.Core.Compat.Psp;
 
@@ -35,13 +36,17 @@ public sealed class PspHardware
     /// <summary>The interrupt controller (0xBC300000), the core's IP2.</summary>
     public PspInterruptController Interrupts { get; }
 
+    /// <summary>The GE (0xBD400000 and its EDRAM controller 0xBD500000, interrupt 25), when the core's bus gives it
+    /// memory (<see cref="IGeMemory"/>); null otherwise.</summary>
+    public GeEngine? Ge { get; private set; }
+
     /// <summary>The blocks, in the order they were added.</summary>
     public IReadOnlyList<IPspMmioDevice> Devices => _devices;
 
     /// <summary>
     /// The compat core's standard set: the interrupt controller, the system control registers, the CPU/bus clocks,
     /// the four hardware timers, the system time, the two DMA controllers (over <paramref name="memory"/>, the core's
-    /// bus) and the DDR controller.
+    /// bus), the DDR controller and, when <paramref name="memory"/> is also the GE's memory, the GE.
     /// </summary>
     public static PspHardware CreateStandard(IAllegrexBus memory)
     {
@@ -54,6 +59,14 @@ public sealed class PspHardware
         hardware.Add(new PspDmac(PspDmac.Base0, PspInterrupt.Dma0, hardware.Interrupts, memory));
         hardware.Add(new PspDmac(PspDmac.Base1, PspInterrupt.Dma1, hardware.Interrupts, memory));
         hardware.Add(new PspDdrController());
+        if (memory is IGeMemory geMemory)
+        {
+            GeEngine ge = new(geMemory);
+            ge.InterruptLevel = high => hardware.Interrupts.SetLine(PspInterrupt.Ge, high);
+            hardware.Ge = ge;
+            hardware.Add(new PspGeDevice(ge, GeEngine.PhysicalBase));
+            hardware.Add(new PspGeDevice(ge, GeEngine.EdramPhysicalBase));
+        }
         return hardware;
     }
 

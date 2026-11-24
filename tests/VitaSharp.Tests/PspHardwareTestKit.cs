@@ -1,13 +1,20 @@
 using VitaSharp.Core.Compat.Allegrex;
+using VitaSharp.Core.Compat.Ge;
 using VitaSharp.Core.Compat.Psp;
 using static VitaSharp.Tests.AllegrexAsm;
 
 namespace VitaSharp.Tests;
 
-/// <summary>The test RAM of <see cref="AllegrexTestBus"/> with the PSP-side register blocks in front of it.</summary>
-public sealed class PspTestBus(AllegrexTestBus memory) : IAllegrexBus
+/// <summary>The test RAM of <see cref="AllegrexTestBus"/> with the PSP-side register blocks in front of it; also the
+/// GE's memory, word by word (no contiguous views: the tests' lists do not draw).</summary>
+public sealed class PspTestBus(AllegrexTestBus memory) : IAllegrexBus, IGeMemory
 {
     public AllegrexTestBus Memory => memory;
+
+    public Span<byte> Span(uint physical, int length)
+    {
+        return [];
+    }
 
     public PspHardware? Hardware { get; set; }
 

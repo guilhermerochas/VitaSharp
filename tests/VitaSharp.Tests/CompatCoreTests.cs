@@ -115,6 +115,13 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(0u, bus.Read32(0x04800000)); // past the mirrors
         Assert.Equal(1, bus.UnknownAccesses);
 
+        // the GE's contiguous views: one piece of memory, none across the end of a VRAM mirror or outside memory
+        Assert.Equal(0x11223344u, BinaryPrimitives.ReadUInt32LittleEndian(bus.Span(0x04000010, 4)));
+        Assert.Equal(0x11223344u, BinaryPrimitives.ReadUInt32LittleEndian(bus.Span(0x04200010, 4)));
+        Assert.Equal(0, bus.Span(0x041FFFFE, 4).Length);
+        Assert.Equal(0, bus.Span(0x04800000, 4).Length);
+        Assert.Equal(0, bus.Span(0x04000010, 0).Length);
+
         bus.SetBank(3, (memory - 0xD00000) | 1); // bank 3 + 0xD00000 (PSP 0x8BD00000) = memory
         bus.Write16(0x00010040, 0xBEEF);
         Assert.Equal((ushort)0xBEEF, GuestMemory.Read<ushort>(memory + 0x40));
