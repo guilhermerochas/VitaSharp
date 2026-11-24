@@ -1,4 +1,4 @@
-<!-- pair: hardware-coverage.md sha256=cda6b76cd11444a75260162c3438c87ed51bddb9d0bfa13a23033ca08dba4bc2 -->
+<!-- pair: hardware-coverage.md sha256=b5c0b764569353c25d46f43b40882d24287169e94a24ef119dbd9cd05b8ac459 -->
 # Cobertura do hardware (SoC e console do PS Vita)
 
 *English: [hardware-coverage.md](hardware-coverage.md).*
