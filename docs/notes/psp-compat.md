@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.pt-BR.md sha256=2f473cf8db43b75f43b028f4bca7f344803d963900e162f1f76031b8e230dd2d -->
+<!-- pair: psp-compat.pt-BR.md sha256=f36b94babc891d80b72a0ac0b87fdd34822a138a9faa67f247db572a49f82f5a -->
 # PSP compatibility core (SceCompat, ScePspemu, Allegrex)
 
 *Português: [psp-compat.pt-BR.md](psp-compat.pt-BR.md).*
@@ -241,8 +241,19 @@ framebuffer in PSP memory and writes the pixels back, apart from the GXM rendere
   source), to confirm with the boot trace.
 - **On screen:** ScePspemu shows the block with `sceCompatSetDisplayConfig` (`ksceDisplaySetFrameBuf`, 480x272 pitch
   512). `sceDisplaySetFrameBufForCompat(x, y, width, height, pParam, opt)` (syscall `0x45BCB941`: x, y, width and a
-  block {height, pParam, opt, sizes}) is a second plane ScePspemu places over it (checks in `Display.Compat.cs`); the
-  presenter keeps it but does not composite it yet.
+  block {height, pParam, opt, sizes}; checks in `Display.Compat.cs`) is **not a second plane**: display.skprx 3.74
+  (`FUN_810023b8`, study only) programs the head's **plane 0** IFTU unit (the one `sceDisplaySetFrameBuf` uses) with
+  the framebuffer scaled into the rectangle (x, y, width, height), and writes the process's plane 0 record, the record
+  `ksceDisplaySetFrameBufInternal` writes (and whose rectangle it clears). So the last of the two calls is on screen,
+  `sceDisplayGetFrameBuf` reads it back, null leaves plane 0 without a framebuffer, the rest of the screen is black,
+  bit 20 of the SceDisplayFrameBuf's flags is the IFTU's bilinear filter (not a plane number), and with `opt` the IFTU
+  converts into the `opt` buffer instead of the screen (not done yet: the screen is left alone). Format `0x50000000`
+  is 16-bit A1B5G5R5 (IFTU format 4, the partner of A8B8G8R8's `0x10`). `ksceDisplaySetMergeConf(head, merge, alpha)`
+  only acts on **plane 1** (IFTU unit `2h+1`, the shell's overlay): `SceIftuForDriver_AF19FD85` and `_357EAE24` accept
+  units 1 and 3 only, so its `alpha(2h, 0)` call fails (`0x803F0700`) and does nothing; boot sets merge 4 and alpha
+  `0xFF` on head 1 only. The presenter shows the placed plane 0 (`PresentCommand.Placement`,
+  `VulkanRenderer.CompatPlane.cs`; not part of GPU dumps) with the shell's overlay over it, as plane 1 is merged over
+  plane 0.
 
 ### What needs keys and what does not
 
