@@ -1,3 +1,4 @@
+using VitaSharp.Core.Compat.Psp;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Util;
 
@@ -27,6 +28,7 @@ public sealed class CompatCoreRunner
     private readonly ICompatCore _core;
     private readonly int _interruptLine;
     private readonly int _clockMhz;
+    private readonly PspHardware? _hardware;
     private readonly object _lock = new();
     private GuestThread? _thread;
     private bool _stopRequested;
@@ -42,12 +44,15 @@ public sealed class CompatCoreRunner
     /// <param name="core">The core.</param>
     /// <param name="interruptLine">The core's line the mailbox drives.</param>
     /// <param name="clockMhz">The compat clock (ScePowerForDriver_FFC84E69: 333 MHz while the core runs).</param>
-    public CompatCoreRunner(Emulator emulator, ICompatCore core, int interruptLine, int clockMhz)
+    /// <param name="hardware">The PSP-side hardware of the core (timers, DMA...): reset with the core, moved to the
+    /// core's time after every slice, and a halted core wakes at its next event. Null: none.</param>
+    public CompatCoreRunner(Emulator emulator, ICompatCore core, int interruptLine, int clockMhz, PspHardware? hardware = null)
     {
         _emulator = emulator;
         _core = core;
         _interruptLine = interruptLine;
         _clockMhz = Math.Max(1, clockMhz);
+        _hardware = hardware;
     }
 
     /// <summary>The core's thread runs.</summary>
@@ -85,9 +90,22 @@ public sealed class CompatCoreRunner
         }
     }
 
+    /// <summary>The core's time in nanoseconds (the PSP-side hardware's clock).</summary>
+    public long CoreTimeNs
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return CoreTimeNsLocked();
+            }
+        }
+    }
+
     /// <summary>Releases the core from reset at <paramref name="pc"/> and starts its thread.</summary>
     public void Start(uint pc)
     {
+        _hardware?.Reset();
         _core.Reset(pc);
         GuestThread thread = _emulator.Kernel.CreateThread(ThreadName, 0, 64, 0x4000, 0, 0);
         thread.KernelMode = true;
@@ -96,14 +114,21 @@ public sealed class CompatCoreRunner
         thread.Start(0, 0);
     }
 
-    /// <summary>The mailbox's drive of the core's interrupt line (any thread): applied by the core's thread before its
-    /// next slice, and wakes a halted core.</summary>
+    /// <summary>The drive of the core's interrupt line (the PSP interrupt controller's output, any thread): applied by
+    /// the core's thread before its next slice, and wakes a halted core. On the core's own thread (a register access of
+    /// the core acknowledged or raised a line) it applies at once, as the wire does.</summary>
     public void SetInterruptLevel(bool high)
     {
         lock (_lock)
         {
             _wantedLevel = high ? 1 : 0;
             Monitor.PulseAll(_lock);
+        }
+
+        GuestThread? thread = _thread;
+        if (thread != null && ReferenceEquals(thread, GuestThread.Current))
+        {
+            ApplyLevel(high ? 1 : 0);
         }
     }
 
@@ -177,6 +202,7 @@ public sealed class CompatCoreRunner
                 // a halted core runs again first: a line raised since it halted wakes it inside Run
                 int ran = _core.Run(SliceCycles);
                 Interlocked.Add(ref _cycles, ran);
+                AdvanceHardware();
                 NotifyProgress();
                 if (ran == 0 && _core.Halted)
                 {
@@ -185,6 +211,7 @@ public sealed class CompatCoreRunner
                         break;
                     }
 
+                    AdvanceHardware();
                     continue;
                 }
 
@@ -220,25 +247,52 @@ public sealed class CompatCoreRunner
             wanted = _wantedLevel;
         }
 
-        if (wanted != _appliedLevel)
-        {
-            _appliedLevel = wanted;
-            if (wanted != 0)
-            {
-                _core.RaiseInterrupt(_interruptLine);
-            }
-            else
-            {
-                _core.ClearInterrupt(_interruptLine);
-            }
-        }
-
+        ApplyLevel(wanted);
         return true;
     }
 
-    /// <summary>Sleeps while the core is halted and its interrupt line keeps its level; false when a stop was asked.</summary>
+    /// <summary>Drives the core's line (the core's thread only).</summary>
+    private void ApplyLevel(int wanted)
+    {
+        if (wanted == _appliedLevel)
+        {
+            return;
+        }
+
+        _appliedLevel = wanted;
+        if (wanted != 0)
+        {
+            _core.RaiseInterrupt(_interruptLine);
+        }
+        else
+        {
+            _core.ClearInterrupt(_interruptLine);
+        }
+    }
+
+    /// <summary>The hardware to the core's time (outside the runner's lock: its devices call back into
+    /// <see cref="SetInterruptLevel"/>).</summary>
+    private void AdvanceHardware()
+    {
+        _hardware?.Advance(CoreTimeNs);
+    }
+
+    private long CoreTimeNsLocked()
+    {
+        long halted = _haltedUs;
+        if (_haltStartUs >= 0)
+        {
+            halted += Math.Max(0, (long)_emulator.Kernel.ProcessTimeUs - _haltStartUs);
+        }
+
+        return (Interlocked.Read(ref _cycles) * 1000 / _clockMhz) + (halted * 1000);
+    }
+
+    /// <summary>Sleeps while the core is halted, its interrupt line keeps its level and the hardware's next event
+    /// (a timer, an alarm) is still ahead of the core's time; false when a stop was asked.</summary>
     private bool WaitWhileHalted()
     {
+        long nextEventNs = _hardware?.NextEventNs ?? long.MaxValue;
         using (Scheduler.Block())
         {
             lock (_lock)
@@ -247,7 +301,15 @@ public sealed class CompatCoreRunner
                 Monitor.PulseAll(_lock); // the waiters see a halted core's time pass
                 while (!_stopRequested && _wantedLevel == _appliedLevel)
                 {
-                    Monitor.Wait(_lock, 50);
+                    long leftNs = nextEventNs == long.MaxValue ? long.MaxValue : nextEventNs - CoreTimeNsLocked();
+                    if (leftNs <= 0)
+                    {
+                        break;
+                    }
+
+                    // the halted time runs on the guest clock: wake in time for the event (at most every 50 ms)
+                    int waitMs = (int)Math.Clamp((Math.Min(leftNs, 50_000_000) + 999_999) / 1_000_000, 1, 50);
+                    Monitor.Wait(_lock, waitMs);
                 }
 
                 _haltedUs += Math.Max(0, (long)_emulator.Kernel.ProcessTimeUs - _haltStartUs);

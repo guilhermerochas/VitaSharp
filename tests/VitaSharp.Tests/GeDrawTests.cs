@@ -192,6 +192,20 @@ public sealed class GeDrawTests
         Assert.NotNull(_rasterizer.LastTarget!.Depth); // a clear that writes depth reads the depth buffer
     }
 
+    /// <summary>As on the PSP, the depth buffer is written only while the depth test is on: with the test off (and
+    /// depth writes not disabled) the draw neither writes nor reads depth.</summary>
+    [Fact]
+    public void DepthWritesNeedTheDepthTest()
+    {
+        ThroughVertex(0, 0, 0, 0, 0xFFFFFFFF);
+        ThroughVertex(1, 4, 4, 0, 0xFFFFFFFF);
+        GeRegisters.Run(_engine, Setup().Command(GeCommand.VertexType, ThroughColorS16)
+            .Command(GeCommand.DepthTestEnable, 0).Command(GeCommand.DepthWriteDisable, 0)
+            .Command(GeCommand.Primitive, (6u << 16) | 2).End().Start);
+        Assert.False(_rasterizer.LastState!.DepthWrite);
+        Assert.Null(_rasterizer.LastTarget!.Depth);
+    }
+
     /// <summary>The framebuffer goes to the rasterizer as RGBA8 and comes back in its own format (565 here).</summary>
     [Fact]
     public void TheFramebufferIsConvertedForTheRasterizerAndBack()
@@ -319,6 +333,53 @@ public sealed class GeDrawTests
         Assert.Equal((1u << 8) | 2, _memory.Read32(Destination + (20 * 512 + 10) * 4));
         Assert.Equal((2u << 8) | 4, _memory.Read32(Destination + (21 * 512 + 12) * 4));
         Assert.Equal(0u, _memory.Read32(Destination + (21 * 512 + 13) * 4));
+    }
+
+    /// <summary>A GE without a rasterizer makes one from its factory at its first batch, once; a list that draws
+    /// nothing never asks for it.</summary>
+    [Fact]
+    public void TheRasterizerIsMadeAtTheFirstBatchOnce()
+    {
+        int made = 0;
+        GeCapturingRasterizer rasterizer = new();
+        GeEngine engine = new(_memory)
+        {
+            RasterizerFactory = () =>
+            {
+                made++;
+                return rasterizer;
+            },
+        };
+        GeRegisters.Run(engine, Setup().Command(GeCommand.VertexType, ThroughColorS16).End().Start);
+        Assert.Equal(0, made);
+
+        ThroughVertex(0, 0, 0, 0, 0xFFFFFFFF);
+        ThroughVertex(1, 4, 4, 0, 0xFFFFFFFF);
+        GeRegisters.Run(engine, Setup().Command(GeCommand.VertexType, ThroughColorS16)
+            .Command(GeCommand.Primitive, (6u << 16) | 2)
+            .Command(GeCommand.VertexAddress, Vertices & 0xFFFFFF)
+            .Command(GeCommand.Primitive, (6u << 16) | 2).End().Start);
+        Assert.Equal(1, made);
+        Assert.Equal(2, rasterizer.Draws.Count);
+        Assert.Same(rasterizer, engine.Rasterizer);
+    }
+
+    /// <summary>ReleaseRasterizer leaves a rasterizer set from outside alone (it is its setter's).</summary>
+    [Fact]
+    public void ReleaseKeepsARasterizerSetFromOutside()
+    {
+        _engine.ReleaseRasterizer();
+        Assert.Same(_rasterizer, _engine.Rasterizer);
+    }
+
+    /// <summary>A 565 texel has no alpha bits and reads as opaque (as the PSP samples it), not as transparent.</summary>
+    [Fact]
+    public void A565TextureIsOpaque()
+    {
+        _memory.Write16(Texture, GePixels.To565(0x000000FF));
+        uint[] pixels = new uint[1];
+        Assert.True(GeTextureDecoder.Decode(_memory, Texture, 4, 1, 1, GePixels.Format565, false, new uint[256], 0, pixels));
+        Assert.Equal(0xFF0000FFu, pixels[0]);
     }
 
     [Theory]

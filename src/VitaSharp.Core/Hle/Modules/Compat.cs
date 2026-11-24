@@ -1,5 +1,6 @@
 using VitaSharp.Core.Compat;
 using VitaSharp.Core.Compat.Allegrex;
+using VitaSharp.Core.Compat.Psp;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
@@ -24,7 +25,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// configuration and LCDC sync, rif name, title list, ID storage, secure tick, update state, peripheral state).
 /// Every entry is for the PSP emulator or a system program (0x80010058 otherwise).
 /// </summary>
-public sealed class Compat : HleModule
+public sealed class Compat : HleModule, IDisposable
 {
     const int ERR_PERM = unchecked((int)0x80010058), ERR_NOT_STARTED = unchecked((int)0x80027205),
         ERR_NOT_OWNER = unchecked((int)0x8002F001), ERR_ARG = unchecked((int)0x80020005), ERR_INVAL = unchecked((int)0x80010016),
@@ -99,14 +100,26 @@ public sealed class Compat : HleModule
     readonly CompatSharedSram _sram = new();
     readonly CompatMailbox _mailbox = new();
     readonly PspBus _bus;
+    readonly PspHardware _hardware;
+    readonly CompatLcdDma _lcdDma;
     ICompatCore? _core;
     CompatCoreRunner? _runner;
 
     public Compat()
     {
         _bus = new PspBus(_sram, _mailbox);
+        _hardware = PspHardware.CreateStandard(_bus);
+        _bus.Hardware = _hardware;
         _mailbox.ArmInterrupt = ArmInterrupt;
-        _mailbox.PspInterruptLevel = PspInterruptLevel;
+
+        // the doorbells hold the core's IP2 beside the PSP interrupt controller's lines (their PSP interrupt number is
+        // not known yet), and the controller's output is the core's IP2
+        _mailbox.PspInterruptLevel = _hardware.Interrupts.SetExternalLevel;
+        _hardware.Interrupts.OutputChanged = PspInterruptLevel;
+
+        // the LCD DMA copies the PSP's picture into the framebuffer block at every PSP vertical blank
+        _lcdDma = new CompatLcdDma(_bus, _hardware.Lcdc!);
+        _hardware.Display!.VblankStarted = _lcdDma.OnVblank;
     }
 
     /// <summary>One channel's ring of request addresses (16 entries; full: the overflow flag, the core's entry left in
@@ -151,6 +164,10 @@ public sealed class Compat : HleModule
     internal CompatMailbox Mailbox => _mailbox;
 
     internal CompatCoreRunner? Runner => _runner;
+
+    internal PspHardware Hardware => _hardware;
+
+    internal CompatLcdDma LcdDma => _lcdDma;
 
     internal uint Window => _window;
 
@@ -411,7 +428,8 @@ public sealed class Compat : HleModule
         lock (_apiLock)
         {
             _status = 2;
-            _runner = new CompatCoreRunner(Emu, _core, AllegrexCore.InterruptControllerLine, CompatClockMhz);
+            _runner = new CompatCoreRunner(Emu, _core, AllegrexCore.InterruptControllerLine, CompatClockMhz, _hardware);
+            StartLcdDma();
             _runner.Start(BootEntry);
         }
 
@@ -454,10 +472,22 @@ public sealed class Compat : HleModule
         return Services.ksceNpDrmGetRifPspKeyThroughEntry(rif, outputs, outputs + 0x10, outputs + 0x18, outputs + 0x20);
     }
 
+    /// <summary>sceCompatStart's LCD DMA: with a framebuffer block, its destination side (480x272, pitch 0x800) and
+    /// the start; without one the engine stays idle.</summary>
+    void StartLcdDma()
+    {
+        if (_fbUid > 0 && K.Objects.Get<MemBlock>(_fbUid) is { } block)
+        {
+            _lcdDma.Configure(block.Address, 480, 272, 0x800);
+            _lcdDma.Start();
+        }
+    }
+
     /// <summary>The stop path: the core held in reset (its thread ends), the banks released, the clock off, state 1.</summary>
     void StopCore()
     {
         StopRunner();
+        _lcdDma.Stop();
         lock (_apiLock)
         {
             _bus.UnmapBanks();
@@ -467,6 +497,7 @@ public sealed class Compat : HleModule
         }
     }
 
+    /// <summary>The core's thread ends and the GE lets its Vulkan device go (a later start makes a new one).</summary>
     void StopRunner()
     {
         CompatCoreRunner? runner = _runner;
@@ -475,6 +506,16 @@ public sealed class Compat : HleModule
             runner.Stop();
             _runner = null;
         }
+
+        _hardware.Ge?.ReleaseRasterizer();
+    }
+
+    /// <summary>The process ends (or re-executes): the core stops as the module's process event handler stops it, and
+    /// nothing of it outlives the process (the core's thread, the GE's Vulkan device). Safe to call again.</summary>
+    public void Dispose()
+    {
+        StopRunner();
+        _hardware.Ge?.Dispose();
     }
 
     [Hle]

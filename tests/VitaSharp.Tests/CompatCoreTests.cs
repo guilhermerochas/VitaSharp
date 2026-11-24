@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using VitaSharp.Core.Compat;
 using VitaSharp.Core.Compat.Allegrex;
+using VitaSharp.Core.Compat.Ge;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
@@ -95,6 +96,44 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(0, Call(Compat, "sceCompatSetRif", _harness.Str(ContentId)));
         Assert.Equal(0, Call(Compat, "sceCompatInitEx", 1));
         return GuestMemory.R32(bases);
+    }
+
+    /// <summary>The PSP's VRAM (physical 0x04000000, 2 MB and its mirrors) is bank 3's PSP 0x8BE00000 (window +
+    /// 0x3E00000), the scratchpad (physical 0x00010000, 16 KB) bank 3's 0x8BD00000, from every segment.</summary>
+    [Fact]
+    public void TheVramAndTheScratchpadAreBankThreesTopOfRam()
+    {
+        uint memory = _harness.Alloc(0x100);
+        PspBus bus = new(new CompatSharedSram(), new CompatMailbox());
+        bus.SetBank(3, (memory - 0xE00000) | 1); // bank 3 + 0xE00000 (PSP 0x8BE00000) = memory
+        bus.Write32(0x44000010, 0x11223344);
+        Assert.Equal(0x11223344u, GuestMemory.R32(memory + 0x10));
+        Assert.Equal(0x11223344u, bus.Read32(0x8BE00010));
+        Assert.Equal(0x11223344u, bus.Read32(0x04200010)); // the first mirror
+        Assert.Equal(0x11223344u, bus.Read32(0xA4600010)); // the last one, uncached
+        bus.Write8(0x04000020, 0x55);
+        Assert.Equal((byte)0x55, GuestMemory.Read<byte>(memory + 0x20));
+        Assert.Equal(0u, bus.Read32(0x04800000)); // past the mirrors
+        Assert.Equal(1, bus.UnknownAccesses);
+
+        // the GE's contiguous views: one piece of memory, none across the end of a VRAM mirror or outside memory
+        Assert.Equal(0x11223344u, BinaryPrimitives.ReadUInt32LittleEndian(bus.Span(0x04000010, 4)));
+        Assert.Equal(0x11223344u, BinaryPrimitives.ReadUInt32LittleEndian(bus.Span(0x04200010, 4)));
+        Assert.Equal(0, bus.Span(0x041FFFFE, 4).Length);
+        Assert.Equal(0, bus.Span(0x04800000, 4).Length);
+        Assert.Equal(0, bus.Span(0x04000010, 0).Length);
+
+        bus.SetBank(3, (memory - 0xD00000) | 1); // bank 3 + 0xD00000 (PSP 0x8BD00000) = memory
+        bus.Write16(0x00010040, 0xBEEF);
+        Assert.Equal((ushort)0xBEEF, GuestMemory.Read<ushort>(memory + 0x40));
+        Assert.Equal((ushort)0xBEEF, bus.Read16(0x80010040));
+        Assert.Equal(0xBEEFu, bus.Read32(0x8BD00040) & 0xFFFF);
+        Assert.Equal(0u, bus.Read32(0x00014000)); // past the 16 KB
+        Assert.Equal(2, bus.UnknownAccesses);
+
+        bus.SetBank(3, 0); // bank 3 unmapped: neither is memory
+        Assert.Equal(0u, bus.Read32(0x04000010));
+        Assert.Equal(3, bus.UnknownAccesses);
     }
 
     [Fact]
@@ -490,6 +529,259 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
             Assert.Equal(0, Call(Compat, "sceCompatStop"));
             Assert.Null(Compat.Runner);
             Assert.Equal(1, Call(Compat, "sceCompatGetStatus"));
+        });
+    }
+
+    /// <summary>
+    /// A boot that sets hardware timer 0 (0xBC500000) to a 100 µs cycle with its interrupt, enables interrupt 15 in
+    /// the PSP interrupt controller and halts in a loop; the handler reads the timer's status (the acknowledge) and
+    /// counts in the results word. With the real interpreter on the core's thread: the runner moves the PSP-side
+    /// hardware with the core's time and wakes the halted core at the timer's events.
+    /// </summary>
+    private static byte[] TimerBoot()
+    {
+        uint[] main =
+        [
+            AllegrexAsm.Lui(AllegrexAsm.T0, 0x8860),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.T0, 0x1000),
+            AllegrexAsm.Mtc0(AllegrexAsm.T0, AllegrexCore.Cop0EBase),
+            AllegrexAsm.Lui(S0, 0xBC50),
+            AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, -1),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S0, 8), // prescaler -1/-1: 48 MHz
+            AllegrexAsm.Sw(AllegrexAsm.T0, S0, 12),
+            AllegrexAsm.Lui(AllegrexAsm.T0, 0x80C0), // reset overflow | counting | interrupt enable
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.T0, 4800), // 100 µs
+            AllegrexAsm.Sw(AllegrexAsm.T0, S0, 0),
+            AllegrexAsm.Lui(AllegrexAsm.T1, 0xBC30),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 1 << 15),
+            AllegrexAsm.Sw(AllegrexAsm.T0, AllegrexAsm.T1, 8), // enable interrupt 15 (timer 0)
+            AllegrexAsm.Lui(S4, 0x8820),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 0x0401), // IM2 | IE
+            AllegrexAsm.Mtc0(AllegrexAsm.T0, AllegrexCore.Cop0Status),
+            AllegrexAsm.Halt,
+            AllegrexAsm.Beq(AllegrexAsm.Zero, AllegrexAsm.Zero, -2),
+            AllegrexAsm.Nop,
+        ];
+        uint[] handler =
+        [
+            AllegrexAsm.Lw(AllegrexAsm.K0, S0, 0), // the acknowledge
+            AllegrexAsm.Lw(AllegrexAsm.K1, S4, 0),
+            AllegrexAsm.Addiu(AllegrexAsm.K1, AllegrexAsm.K1, 1),
+            AllegrexAsm.Sw(AllegrexAsm.K1, S4, 0),
+            AllegrexAsm.Eret,
+        ];
+        byte[] image = new byte[0x2000];
+        for (int i = 0; i < main.Length; i++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(i * 4), main[i]);
+        }
+
+        for (int i = 0; i < handler.Length; i++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(0x1000 + i * 4), handler[i]);
+        }
+
+        return image;
+    }
+
+    [Fact]
+    public void TheRunnerMovesThePspHardwareAndWakesAHaltedCoreAtATimer()
+    {
+        _harness.OnGuest(_ =>
+        {
+            uint window = Init(TimerBoot());
+            Assert.Equal(0, Compat.ReleaseCoreForTests());
+            uint results = window + MipsResults;
+            Until(() => GuestMemory.R32(results) >= 3, "three timer interrupts on the halted core");
+            CompatCoreRunner runner = Compat.Runner!;
+            Assert.Null(runner.Failure);
+            uint taken = GuestMemory.R32(results);
+
+            // 100 µs a period on the core's clock: never more interrupts than periods of core time
+            Assert.True(taken <= (ulong)(runner.CoreTimeNs / 100_000) + 1, $"{taken} interrupts in {runner.CoreTimeNs} ns");
+            Assert.Equal(0, Call(Compat, "sceCompatStop"));
+        });
+    }
+
+    private sealed class DisposableRasterizer : IGeRasterizer, IDisposable
+    {
+        public int Draws;
+        public bool Disposed;
+
+        public void Draw(GeTopology topology, ReadOnlySpan<GeVertex> vertices, GeRenderState state, GeTarget target)
+        {
+            Draws++;
+        }
+
+        public void Dispose()
+        {
+            Disposed = true;
+        }
+    }
+
+    /// <summary>The GE draws one rectangle from a list written into the window (PSP 0x88100000), through the bus.</summary>
+    private void GeDrawsOnce(uint window)
+    {
+        const uint ListOffset = 0x100000, VertexOffset = 0x101000;
+        uint[] list =
+        [
+            (uint)GeCommand.Base << 24 | 0x080000,
+            (uint)GeCommand.FrameBufferWidth << 24 | 512,
+            (uint)GeCommand.Scissor2 << 24 | 15 | (15u << 10),
+            (uint)GeCommand.VertexAddress << 24 | (0x08000000 + VertexOffset) & 0xFFFFFF,
+            (uint)GeCommand.VertexType << 24 | (1u << 23) | (7u << 2) | (2u << 7),
+            (uint)GeCommand.Primitive << 24 | (6u << 16) | 2,
+            (uint)GeCommand.Finish << 24,
+            (uint)GeCommand.End << 24,
+        ];
+        for (int i = 0; i < list.Length; i++)
+        {
+            GuestMemory.W32(window + ListOffset + (uint)(i * 4), list[i]);
+        }
+
+        GuestMemory.W32(window + VertexOffset + 12 + 4, 4 | (4u << 16)); // the second corner at (4, 4)
+        GeEngine ge = Compat.Hardware.Ge!;
+        ge.Write32(GeEngine.PhysicalBase + 0x108, 0x08000000 + ListOffset);
+        ge.Write32(GeEngine.PhysicalBase + 0x100, GeEngine.ExecRunning);
+    }
+
+    /// <summary>The GE's rasterizer (its own Vulkan device in the emulator) is made at the first draw and ended when
+    /// the core stops; the next session makes a new one; the process's end ends the one it holds.</summary>
+    [Fact]
+    public void TheGesRasterizerEndsWithTheCoreAndTheProcess()
+    {
+        List<DisposableRasterizer> made = [];
+        _harness.OnGuest(_ =>
+        {
+            uint window = Init();
+            Compat.Hardware.Ge!.RasterizerFactory = () =>
+            {
+                DisposableRasterizer rasterizer = new();
+                made.Add(rasterizer);
+                return rasterizer;
+            };
+            Assert.Equal(0, Compat.ReleaseCoreForTests());
+            GeDrawsOnce(window);
+            DisposableRasterizer first = Assert.Single(made);
+            Assert.Equal(1, first.Draws);
+            Assert.Equal(0, Call(Compat, "sceCompatStop"));
+            Assert.True(first.Disposed);
+            Assert.Null(Compat.Hardware.Ge!.Rasterizer);
+
+            Assert.Equal(0, Call(Compat, "sceCompatInitEx", 1));
+            Assert.Equal(0, Compat.ReleaseCoreForTests());
+            GeDrawsOnce(window);
+            Assert.Equal(2, made.Count);
+        });
+
+        _harness.Emu.Hle.DisposeModules(); // the process ends
+        Assert.True(made[1].Disposed);
+        Assert.Null(Compat.Runner);
+    }
+
+    /// <summary>
+    /// A boot that draws into the PSP's VRAM (0x44000000: words 0..3 of line 0 and word 0 of line 1, stride 512),
+    /// points the DMACplus scan-out channel (0xBC800100) at it (ABGR8888, 480 of 512) and enables it, enables the
+    /// vertical blank (interrupt 30) and halts; the handler acknowledges the blank (1 &lt;&lt; 30 to 0xBC300000) and
+    /// counts it in the results word.
+    /// </summary>
+    private static byte[] DisplayBoot()
+    {
+        List<uint> main =
+        [
+            AllegrexAsm.Lui(AllegrexAsm.T0, 0x8860),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.T0, 0x1000),
+            AllegrexAsm.Mtc0(AllegrexAsm.T0, AllegrexCore.Cop0EBase),
+            AllegrexAsm.Lui(S0, 0x4400), // the VRAM, uncached
+        ];
+        uint[] pattern = [0xFF0000FF, 0xFF00FF00, 0xFFFF0000, 0x80808080];
+        for (int i = 0; i < pattern.Length; i++)
+        {
+            main.Add(AllegrexAsm.Lui(AllegrexAsm.T0, (int)(pattern[i] >> 16)));
+            main.Add(AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.T0, (int)(pattern[i] & 0xFFFF)));
+            main.Add(AllegrexAsm.Sw(AllegrexAsm.T0, S0, i * 4));
+        }
+
+        main.Add(AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 0x1234));
+        main.Add(AllegrexAsm.Sw(AllegrexAsm.T0, S0, 512 * 4)); // line 1, pixel 0
+        main.AddRange(
+        [
+            AllegrexAsm.Lui(S1, 0xBC80),
+            AllegrexAsm.Lui(AllegrexAsm.T0, 0x0400),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S1, 0x100), // the picture: PSP physical 0x04000000
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 3),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S1, 0x104), // ABGR8888
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 480),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S1, 0x108),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 512),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S1, 0x10C),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 1),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S1, 0x110), // scan-out on
+            AllegrexAsm.Lui(S2, 0xBC30),
+            AllegrexAsm.Lui(AllegrexAsm.T0, 0x4000),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S2, 8), // enable interrupt 30
+            AllegrexAsm.Lui(S4, 0x8820),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 0x0401),
+            AllegrexAsm.Mtc0(AllegrexAsm.T0, AllegrexCore.Cop0Status),
+            AllegrexAsm.Halt,
+            AllegrexAsm.Beq(AllegrexAsm.Zero, AllegrexAsm.Zero, -2),
+            AllegrexAsm.Nop,
+        ]);
+        uint[] handler =
+        [
+            AllegrexAsm.Lui(AllegrexAsm.K0, 0x4000),
+            AllegrexAsm.Sw(AllegrexAsm.K0, S2, 0), // acknowledge the vertical blank
+            AllegrexAsm.Lw(AllegrexAsm.K1, S4, 0),
+            AllegrexAsm.Addiu(AllegrexAsm.K1, AllegrexAsm.K1, 1),
+            AllegrexAsm.Sw(AllegrexAsm.K1, S4, 0),
+            AllegrexAsm.Eret,
+        ];
+        byte[] image = new byte[0x2000];
+        for (int i = 0; i < main.Count; i++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(i * 4), main[i]);
+        }
+
+        for (int i = 0; i < handler.Length; i++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(0x1000 + i * 4), handler[i]);
+        }
+
+        return image;
+    }
+
+    /// <summary>The image path: the PSP's picture in its VRAM reaches the framebuffer block (sceCompatFrameBufferInit)
+    /// at the PSP's vertical blanks through the LCD DMA sceCompatStart programs (480x272, pitch 0x800), and the blank
+    /// reaches the PSP side as interrupt 30 and the ARM side as the LCD DMA's frame (IRQ 0x4A).</summary>
+    [Fact]
+    public void ThePspPictureReachesTheFramebufferBlockAtTheVblank()
+    {
+        int block;
+        uint blockBase;
+        using (ProcessScope.Enter(_harness.Emu))
+        {
+            uint basePointer = _harness.Alloc(4);
+            block = Call(_harness.Module<SysmemKernel>(), "ksceKernelAllocMemBlock", _harness.Str("ScePspemuFrameBuffer"), 0x0C20D060u, 0x88000u, 0u);
+            Assert.True(block > 0, $"0x{block:X8}");
+            Assert.Equal(0, Call(_harness.Module<SysmemKernel>(), "ksceKernelGetMemBlockBase", block, basePointer));
+            blockBase = GuestMemory.R32(basePointer);
+        }
+
+        _harness.OnGuest(_ =>
+        {
+            uint window = Init(DisplayBoot());
+            Assert.Equal(0, Call(Compat, "sceCompatFrameBufferInit", block));
+            Assert.Equal(0, Compat.ReleaseCoreForTests());
+            uint results = window + MipsResults;
+            Until(() => Compat.LcdDma.Frames >= 2 && GuestMemory.R32(results) >= 2, "two PSP frames copied and taken");
+            Assert.Null(Compat.Runner!.Failure);
+            Assert.Equal(0xFF0000FFu, GuestMemory.R32(blockBase));
+            Assert.Equal(0xFF00FF00u, GuestMemory.R32(blockBase + 4));
+            Assert.Equal(0xFFFF0000u, GuestMemory.R32(blockBase + 8));
+            Assert.Equal(0x80808080u, GuestMemory.R32(blockBase + 12));
+            Assert.Equal(0x1234u, GuestMemory.R32(blockBase + 0x800)); // line 1 at the block's pitch
+            Assert.Equal(0, Call(Compat, "sceCompatStop"));
+            Assert.False(Compat.LcdDma.Running);
         });
     }
 

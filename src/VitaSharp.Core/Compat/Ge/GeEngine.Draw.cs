@@ -24,8 +24,42 @@ public sealed partial class GeEngine
     private GeVertexTransformer? _transformer;
     private GeVertex[] _assembled = new GeVertex[768];
 
-    /// <summary>The rasterizer the batches go to (none: the batches are decoded and dropped).</summary>
+    /// <summary>The rasterizer the batches go to (none: the batches are decoded and dropped). Unset, the first batch
+    /// takes one from <see cref="RasterizerFactory"/>.</summary>
     public IGeRasterizer? Rasterizer { get; set; }
+
+    /// <summary>
+    /// Makes the rasterizer of a GE that has none, at its first batch (so a core that never draws costs nothing): the
+    /// front-end sets <see cref="DefaultRasterizerFactory"/> once (the Vulkan renderer: GeVulkanRasterizerDevice.Create). Null
+    /// or a null result: no rasterizer, the batches are decoded and dropped.
+    /// </summary>
+    public Func<IGeRasterizer?>? RasterizerFactory { get; set; } = DefaultRasterizerFactory;
+
+    /// <summary>The <see cref="RasterizerFactory"/> every new GE starts with (set by the front-end at start-up).</summary>
+    public static Func<IGeRasterizer?>? DefaultRasterizerFactory { get; set; }
+
+    private bool _rasterizerAsked;
+    private bool _rasterizerOwned;     // made by the factory: the GE ends it
+
+    /// <summary>Ends the rasterizer the GE made (its Vulkan device): the core stopped or its process ended. A later
+    /// batch makes a new one. A rasterizer set from outside is its setter's.</summary>
+    public void ReleaseRasterizer()
+    {
+        IGeRasterizer? rasterizer = Rasterizer;
+        if (_rasterizerOwned)
+        {
+            Rasterizer = null;
+            _rasterizerOwned = false;
+            (rasterizer as IDisposable)?.Dispose();
+        }
+
+        _rasterizerAsked = false;
+    }
+
+    public void Dispose()
+    {
+        ReleaseRasterizer();
+    }
 
     /// <summary>The batches drawn so far.</summary>
     public long Batches { get; private set; }
@@ -65,6 +99,13 @@ public sealed partial class GeEngine
 
         ReadState(format);
         PrepareTarget();
+        if (Rasterizer == null && !_rasterizerAsked)
+        {
+            _rasterizerAsked = true;
+            Rasterizer = RasterizerFactory?.Invoke();
+            _rasterizerOwned = Rasterizer != null;
+        }
+
         Rasterizer?.Draw(topology, _assembled.AsSpan(0, assembled), _state, _target);
         WriteTarget();
         Batches++;
@@ -515,7 +556,7 @@ public sealed partial class GeEngine
         state.ScissorBottom = (int)((scissor2 >> 10) & 0x3FF);
         state.DepthTest = Enabled(GeCommand.DepthTestEnable);
         state.DepthFunction = (int)(Command(GeCommand.DepthTest) & 7);
-        state.DepthWrite = (Command(GeCommand.DepthWriteDisable) & 1) == 0;
+        state.DepthWrite = state.DepthTest && (Command(GeCommand.DepthWriteDisable) & 1) == 0; // no depth test: no depth writes either
         state.AlphaTest = Enabled(GeCommand.AlphaTestEnable);
         uint alpha = Command(GeCommand.AlphaTest);
         state.AlphaFunction = (int)(alpha & 7);
@@ -546,10 +587,8 @@ public sealed partial class GeEngine
             Log.WarnOnce("ge-stencil", "GE: the stencil test is not applied yet");
         }
 
-        if (Enabled(GeCommand.FogEnable) && !format.Through)
-        {
-            Log.WarnOnce("ge-fog", "GE: fog is not applied yet");
-        }
+        state.Fog = Enabled(GeCommand.FogEnable) && !format.Through && !state.ClearMode;
+        state.FogColor = Command(GeCommand.FogColor) & 0xFFFFFF;
     }
 
     private bool Enabled(int command)

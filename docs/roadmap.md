@@ -2339,6 +2339,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   3. [G] Hardware do lado PSP: boot do `pcbc` real (depende do `pcbc.bin` do usuário) + `pcff` com log de MMIO
      desconhecido; controlador de interrupções, timer, DMAC, DMA do LCD para o framebuffer do ScePspemu, KIRK, GE em
      Vulkan. Meta: estado 1 do aperto de mão e os primeiros pedidos msfs/flashfs atendidos pelo ScePspemu real.
+     Feito (feat/alg3, `src/VitaSharp.Core/Compat/Psp`, testes `Psp*Tests` com programas MIPS sintéticos):
+     controlador de interrupções `0xBC300000` (saída no IP2, a linha da mailbox junto), os 4 timers `0xBC500000`,
+     o tempo do sistema `0xBC600000` (alarme → interrupção 19), os dois DMAC `0xBC900000`/`0xBCA00000` (PL080,
+     interrupções 22/23), o sysreg `0xBC100000`, os clocks `0xBC200000` e o flush DDR `0xBD000000` do kermit o GE
+     (`0xBD400000`/`0xBD500000`, interrupção 25, do feat/alg4), o controlador de display `0xBE740000` (vblank →
+     interrupção 30), o canal de scan-out `0xBC800100` e o LCD DMA para o bloco do framebuffer do ScePspemu, no
+     tempo do próprio núcleo pelo runner; VRAM e scratchpad do PSP no topo do banco 3. Falta: número de IRQ PSP das
+     campainhas da mailbox, versão do chip/fuses do núcleo, o compor do segundo plano do `sceDisplaySetFrameBufForCompat`, KIRK (confirmar tudo pelo trace
+     do boot real).
   4. [G] ScePspemu de ponta a ponta: lacunas de HLE pelos logs, homebrew de PSP, jogo de PSP e de PSone,
      suspensão/retomada e save state do núcleo.
   5. [M] Adrenaline 6.61 pelos hooks dele (sem código específico), flash0 de `ux0:app/PSPEMUCFW/flash0`.
@@ -2354,6 +2363,12 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   3.74 e o SceSblFwLoader carregando o `pcff` (segmento do SELF) e o `pcbc` (só pelo `os0:kd/pcbc.bin` do usuário);
   testado com um núcleo roteirizado no teste. Falta o teste com código MIPS sintético quando o interpretador inteiro
   do Allegrex entrar.
+  GE (feat/alg4, em andamento; como o 3.74 o atende: `docs/notes/psp-compat.md`, "The GE"): registradores
+  `0xBD400000`/`0xBD500000` e processador de listas (`src/VitaSharp.Core/Compat/Ge/GeEngine.cs`), estado dos comandos,
+  texturas/CLUT, framebuffer e rasterizador Vulkan num dispositivo próprio (`GeVulkanRasterizer`), testados com listas
+  sintéticas no Vulkan por software. Falta: stencil (o alpha do framebuffer), color test, logic op, máscaras parciais,
+  dither, mipmaps, DXT, patches (Bezier/spline), bounding box; manter o alvo na GPU entre lotes (hoje sobe/desce a
+  região a cada PRIM); o DMA do LCD levando a VRAM ao `ScePspemuFrameBuffer`.
   Bloqueio do Start real (licença): o `sceCompatStart` do 3.74, antes de soltar o núcleo, (1) lê
   `tm0:npdrm/act.dat` (0x1038 bytes, `ksceNpDrmReadActData`: conta atual e, da versão 2 em diante, o OpenPSID) para o
   bloco "dat" que o lado PSP lê por `sceCompatDatRead` — erro devolvido, exceto num DEX; (2) lê o rif
