@@ -2342,10 +2342,11 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
      Feito (feat/alg3, `src/VitaSharp.Core/Compat/Psp`, testes `Psp*Tests` com programas MIPS sintéticos):
      controlador de interrupções `0xBC300000` (saída no IP2, a linha da mailbox junto), os 4 timers `0xBC500000`,
      o tempo do sistema `0xBC600000` (alarme → interrupção 19), os dois DMAC `0xBC900000`/`0xBCA00000` (PL080,
-     interrupções 22/23), o sysreg `0xBC100000`, os clocks `0xBC200000` e o flush DDR `0xBD000000` do kermit e o GE
-     (`0xBD400000`/`0xBD500000`, interrupção 25, do feat/alg4), no
+     interrupções 22/23), o sysreg `0xBC100000`, os clocks `0xBC200000` e o flush DDR `0xBD000000` do kermit o GE
+     (`0xBD400000`/`0xBD500000`, interrupção 25, do feat/alg4), o controlador de display `0xBE740000` (vblank →
+     interrupção 30), o canal de scan-out `0xBC800100` e o LCD DMA para o bloco do framebuffer do ScePspemu, no
      tempo do próprio núcleo pelo runner; VRAM e scratchpad do PSP no topo do banco 3. Falta: número de IRQ PSP das
-     campainhas da mailbox, versão do chip/fuses do núcleo, LCD, KIRK (confirmar tudo pelo trace
+     campainhas da mailbox, versão do chip/fuses do núcleo, o compor do segundo plano do `sceDisplaySetFrameBufForCompat`, KIRK (confirmar tudo pelo trace
      do boot real).
   4. [G] ScePspemu de ponta a ponta: lacunas de HLE pelos logs, homebrew de PSP, jogo de PSP e de PSone,
      suspensão/retomada e save state do núcleo.
