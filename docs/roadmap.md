@@ -3196,9 +3196,10 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Agora, com um framebuffer de CPU na tela, o worker da GPU ocioso olha a memória dele uma vez por vblank (hash) e
   mostra de novo quando mudou (`DisplayScanout`, `VulkanRenderer.Scanout.cs`); framebuffer renderizado pela GPU não é
   olhado, e o ritmo do guest não muda. O fps na tela conta esses quadros, a gravação F8 grava eles, e o report diz
-  "frames: 0 presented" quando nada mudou. Testes: `DisplayScanoutTests`. Testar: abrir o Adrenaline
+  "frames: 0 presented" quando nada mudou. Também: o indicador "REC" (e os outros avisos do emulador) sai da tela
+  ao parar a gravação mesmo sem quadro novo do jogo. Testes: `DisplayScanoutTests`. Testar: abrir o Adrenaline
   (PSPEMUCFW): a tela de instalação mostra o texto (não fica preta) e o fps sai de 0 quando a tela muda; gravar com
-  F8 ("Gravar tudo") nessa tela e parar: o report tem a linha "frames:" com os quadros da tela.
+  F8 ("Gravar tudo") nessa tela e parar: o "REC" some da tela na hora, e o report tem a linha "frames:" com os quadros da tela.
 
 - [ ] (23/11/2026, falta testar) [P3][P] `ksceAppMgrLaunchAppByPath` (SceAppMgrForDriver B0A37065) como no 3.74 de
   varejo (fix/quick3): no SceAppMgr 3.74 (0x8100c504) a primeira coisa é o `ksceSblACMgrIsDevelopmentMode`, então

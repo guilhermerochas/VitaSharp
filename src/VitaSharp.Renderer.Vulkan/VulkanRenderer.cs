@@ -2116,6 +2116,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     private void PresentOutCore(RenderTarget src, DisplayFrame frame)
     {
+        NoteShown(); // the overlays this frame goes out with (VulkanRenderer.Scanout.cs)
         if (_swapchain.Handle != 0)
         {
             if (AcquireSwapchain(out uint index))

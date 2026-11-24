@@ -177,6 +177,44 @@ public sealed class DisplayScanoutTests(GuestMemoryFixture fx)
         Assert.Equal(1, renderer.PresentCount);
     }
 
+    /// <summary>The emulator's overlays change while the guest shows nothing new (the recording stops: its "REC" badge
+    /// goes): the last frame is shown again with them, two vblanks after the last frame shown, not before.</summary>
+    [SoftwareVulkanFact]
+    public void AnOverlayThatGoesWhileNoFrameComesLeavesTheScreen()
+    {
+        using IDisposable driver = SoftwareVulkan.Use();
+        using var h = new HleHarness(fx, "scanoverlay");
+        uint data = h.Alloc(W * H * 4);
+        Fill(data, Red);
+        using var renderer = new VulkanRenderer(new VulkanRendererOptions { VSync = false, AsyncShaders = false, AsyncPipelines = false });
+        using var clock = ControlledGuestClock.Stop();
+        byte[] badge = new byte[16 * 8 * 4];
+        Array.Fill(badge, (byte)0xFF);
+
+        renderer.SetStatusOverlay(badge, 16, 8); // recording: "REC"
+        renderer.Execute(new PresentCommand { Frame = Frame(data), Flip = 0 });
+        renderer.Execute(new FinishCommand());
+        clock.Advance(3 * VblankUs);
+        renderer.Idle();
+        Assert.Equal(0, renderer.IdleRepresents); // the frame went out with the badge: nothing to show again
+
+        renderer.Execute(new PresentCommand { Frame = Frame(data), Flip = 1 }); // a last flip, then none
+        renderer.Execute(new FinishCommand());
+        renderer.SetStatusOverlay(null, 0, 0); // the recording stops
+        renderer.Idle();
+        clock.Advance(VblankUs);
+        renderer.Idle();
+        Assert.Equal(0, renderer.IdleRepresents); // within two vblanks of the last frame shown: a flip may still come
+        clock.Advance(VblankUs);
+        renderer.Idle();
+        Assert.Equal(1, renderer.IdleRepresents); // shown again without the badge
+        clock.Advance(3 * VblankUs);
+        renderer.Idle();
+        Assert.Equal(1, renderer.IdleRepresents); // once
+        renderer.Execute(new FinishCommand());
+        Assert.Equal(2, renderer.PresentCount); // not a frame of the guest's
+    }
+
     /// <summary>The whole path: a guest thread sets a CPU framebuffer once (sceDisplaySetFrameBuf) and writes into it
     /// afterwards, the renderer on the GPU queue's worker, which looks at the next vblank on its own while idle.</summary>
     [SoftwareVulkanFact]
