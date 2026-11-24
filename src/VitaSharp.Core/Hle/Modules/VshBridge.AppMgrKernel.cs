@@ -259,7 +259,8 @@ public sealed partial class AppMgr
     [Hle(Nid = 0x324DD34E, Library = "SceAppMgrForDriver", Cost = HleCost.SchedulerWait)]
     int ksceAppMgr_324DD34E(uint titleId, uint type, uint path, uint argSize, uint args, uint option)
     {
-        Span<byte> options = stackalloc byte[ProcessmgrKernel.ProcessOptionSize];
+        const int OptionSize = ProcessmgrKernel.ProcessOptionSize;
+        Span<byte> options = stackalloc byte[OptionSize];
         options.Clear();
         if (option == 0)
         {
@@ -281,8 +282,23 @@ public sealed partial class AppMgr
             BitConverter.TryWriteBytes(options[4..], BitConverter.ToUInt32(options[4..]) | 0x180000);
         }
 
-        ProcessmgrKernel processmgr = Emu.Hle.Modules.OfType<ProcessmgrKernel>().First();
-        return processmgr.LaunchProcess(titleId, type, path, argSize, args, options, 0);
+        // the firmware's copy is on the calling kernel thread's stack; here a kernel block of its own for the call
+        uint block;
+        using (ProcessScope.Enter(KernelSpace.KernelPid))
+        {
+            block = Mem.Alloc(OptionSize, "kernel:SceAppMgrLaunchOption", MemoryRegion.Kernel);
+        }
+
+        try
+        {
+            options.CopyTo(GuestMemory.Span(block, OptionSize));
+            ProcessmgrKernel processmgr = Emu.Hle.Modules.OfType<ProcessmgrKernel>().First();
+            return processmgr.NID_5A57766CThroughEntry(titleId, type, path, argSize, args, block, 0);
+        }
+        finally
+        {
+            Mem.Free(block);
+        }
     }
 
     /// <summary>

@@ -125,9 +125,8 @@ public sealed partial class ProcessmgrKernel
     /// <summary>The size of the option of a process creation (the first word of a valid one).</summary>
     internal const int ProcessOptionSize = 0x40;
 
-    /// <summary><see cref="ksceKernelCreateProcess"/> with the option's bytes (empty: none), for the kernel callers
-    /// that build it on their stack (SceAppMgrForDriver NID_324DD34E).</summary>
-    internal int CreateProcess(uint titleId, uint type, uint path, ReadOnlySpan<byte> option)
+    /// <summary><see cref="ksceKernelCreateProcess"/> with the option's bytes (empty: none).</summary>
+    int CreateProcess(uint titleId, uint type, uint path, ReadOnlySpan<byte> option)
     {
         if (SystemServicesVsh.InInterrupt)
         {
@@ -328,51 +327,38 @@ public sealed partial class ProcessmgrKernel
     /// that fails ends the created process (NID_F388F05C) and gives the start's error. The new process's ID.</summary>
     [Hle(Nid = 0x1E5B38E5, Library = "SceProcessmgrForKernel", Cost = HleCost.SchedulerWait)]
     int NID_1E5B38E5(uint titleId, uint type, uint path, uint argSize, uint args, uint option, uint flags)
-    {
-        if (option == 0)
-        {
-            return LaunchProcess(titleId, type, path, argSize, args, [], flags);
-        }
+        => LaunchProcess(titleId, type, path, argSize, args, option, flags);
 
-        Span<byte> options = stackalloc byte[ProcessOptionSize];
-        GuestMemory.Span(option, ProcessOptionSize).CopyTo(options);
-        return LaunchProcess(titleId, type, path, argSize, args, options, flags);
-    }
-
-    // VSHLE010: 0x81004b48 is processmgr's own function; both exports and LaunchProcess call it (and its create, start and
-    // terminate steps) inside the module, by its internal address, not through the exports' entries, so a hook on those
-    // entries does not see these calls on the Vita either
-#pragma warning disable VSHLE010
-    /// <summary>NID_5A57766C(titleid, type, path, arg size, args, option, flags): the same entry (both run
+    /// <summary>NID_5A57766C(titleid, type, path, arg size, args, option, flags): the same (both entries run
     /// 0x81004b48).</summary>
     [Hle(Nid = 0x5A57766C, Library = "SceProcessmgrForKernel", Cost = HleCost.SchedulerWait)]
-    int NID_5A57766C(uint titleId, uint type, uint path, uint argSize, uint args, uint option, uint flags)
-        => NID_1E5B38E5(titleId, type, path, argSize, args, option, flags);
+    internal int NID_5A57766C(uint titleId, uint type, uint path, uint argSize, uint args, uint option, uint flags)
+        => LaunchProcess(titleId, type, path, argSize, args, option, flags);
 
-    /// <summary>The launch of <see cref="NID_1E5B38E5"/> with the option's bytes (empty: none).</summary>
-    internal int LaunchProcess(uint titleId, uint type, uint path, uint argSize, uint args, ReadOnlySpan<byte> option, uint flags)
+    /// <summary>processmgr 3.74 0x81004b48, the body of <see cref="NID_1E5B38E5"/> and <see cref="NID_5A57766C"/>: it
+    /// calls the creation, the start and, on a failed start, the exit by their addresses (through their entries).</summary>
+    int LaunchProcess(uint titleId, uint type, uint path, uint argSize, uint args, uint option, uint flags)
     {
         if (SystemServicesVsh.InInterrupt)
         {
             return IllegalContext;
         }
 
-        int pid = CreateProcess(titleId, type & 0x7FFFFFFF, path, option);
+        int pid = ksceKernelCreateProcessThroughEntry(titleId, type & 0x7FFFFFFF, path, option);
         if (pid < 0)
         {
             return pid;
         }
 
-        int started = NID_026F3E87(pid, type & 0x80000000, argSize, args, flags);
+        int started = NID_026F3E87ThroughEntry(pid, type & 0x80000000, argSize, args, flags);
         if (started < 0)
         {
-            NID_F388F05C(pid, 0);
+            NID_F388F05CThroughEntry(pid, 0);
             return started;
         }
 
         return pid;
     }
-#pragma warning restore VSHLE010
 
     /// <summary>NID_0B9BE51B(pid, int *status, timeout): waits until the process ended and gives its exit status.</summary>
     [Hle(Nid = 0x0B9BE51B, Library = "SceProcessmgrForKernel", Cost = HleCost.SchedulerWait)]
