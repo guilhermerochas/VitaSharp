@@ -362,6 +362,14 @@ public sealed class GeDrawTests
         Assert.Same(rasterizer, engine.Rasterizer);
     }
 
+    /// <summary>ReleaseRasterizer leaves a rasterizer set from outside alone (it is its setter's).</summary>
+    [Fact]
+    public void ReleaseKeepsARasterizerSetFromOutside()
+    {
+        _engine.ReleaseRasterizer();
+        Assert.Same(_rasterizer, _engine.Rasterizer);
+    }
+
     /// <summary>A 565 texel has no alpha bits and reads as opaque (as the PSP samples it), not as transparent.</summary>
     [Fact]
     public void A565TextureIsOpaque()

@@ -38,6 +38,27 @@ public sealed partial class GeEngine
     public static Func<IGeRasterizer?>? DefaultRasterizerFactory { get; set; }
 
     private bool _rasterizerAsked;
+    private bool _rasterizerOwned;     // made by the factory: the GE ends it
+
+    /// <summary>Ends the rasterizer the GE made (its Vulkan device): the core stopped or its process ended. A later
+    /// batch makes a new one. A rasterizer set from outside is its setter's.</summary>
+    public void ReleaseRasterizer()
+    {
+        IGeRasterizer? rasterizer = Rasterizer;
+        if (_rasterizerOwned)
+        {
+            Rasterizer = null;
+            _rasterizerOwned = false;
+            (rasterizer as IDisposable)?.Dispose();
+        }
+
+        _rasterizerAsked = false;
+    }
+
+    public void Dispose()
+    {
+        ReleaseRasterizer();
+    }
 
     /// <summary>The batches drawn so far.</summary>
     public long Batches { get; private set; }
@@ -85,6 +106,7 @@ public sealed partial class GeEngine
         {
             _rasterizerAsked = true;
             Rasterizer = RasterizerFactory?.Invoke();
+            _rasterizerOwned = Rasterizer != null;
         }
 
         Rasterizer?.Draw(topology, _assembled.AsSpan(0, assembled), _state, _target);

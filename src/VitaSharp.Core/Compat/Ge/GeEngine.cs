@@ -15,7 +15,7 @@ namespace VitaSharp.Core.Compat.Ge;
 /// sees it running until END, as with the hardware's own pace; a host thread for the GE is later work).
 /// </para>
 /// </summary>
-public sealed partial class GeEngine
+public sealed partial class GeEngine : IDisposable
 {
     /// <summary>The register block (PSP physical) and the EDRAM controller's.</summary>
     public const uint PhysicalBase = 0x1D400000, EdramPhysicalBase = 0x1D500000, BlockSize = 0x1000;

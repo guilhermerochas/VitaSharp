@@ -253,6 +253,28 @@ public sealed partial class HleRegistry : IImportResolver
 
     public HleRegistry(Emulator emu) => _emu = emu;
 
+    /// <summary>Ends the modules that hold host resources (the <see cref="IDisposable"/> ones: SceCompat's core and its GE
+    /// device) when their process ends or re-executes; each once, a failure logged.</summary>
+    public void DisposeModules()
+    {
+        foreach (HleModule module in Modules)
+        {
+            if (module is not IDisposable disposable)
+            {
+                continue;
+            }
+
+            try
+            {
+                disposable.Dispose();
+            }
+            catch (Exception failure) when (failure is InvalidOperationException or ObjectDisposedException)
+            {
+                Log.Warn($"{module.GetType().Name}: end failed: {failure.Message}");
+            }
+        }
+    }
+
     public IReadOnlyList<HleFunction> Functions => _functions;
 
     public void RegisterVariable(string name, Func<uint> factory)
