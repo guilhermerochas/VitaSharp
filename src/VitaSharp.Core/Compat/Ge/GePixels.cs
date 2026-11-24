@@ -4,7 +4,7 @@ namespace VitaSharp.Core.Compat.Ge;
 
 /// <summary>
 /// The GE's pixel formats and RGBA8 (R in the low byte, A in the high one: the 8888 format's own layout). 16-bit
-/// formats put red in the low bits: 565 (no alpha), 5551 (alpha in bit 15), 4444; wider channels repeat their top
+/// formats put red in the low bits: 565 (no alpha: read as opaque), 5551 (alpha in bit 15), 4444; wider channels repeat their top
 /// bits, narrower ones keep the top bits.
 /// </summary>
 public static class GePixels
@@ -17,7 +17,7 @@ public static class GePixels
         uint red = Expand5(value & 0x1Fu);
         uint green = Expand6((value >> 5) & 0x3Fu);
         uint blue = Expand5((value >> 11) & 0x1Fu);
-        return red | (green << 8) | (blue << 16);
+        return red | (green << 8) | (blue << 16) | 0xFF000000; // opaque, as the PSP reads a 565 texel or vertex colour
     }
 
     public static uint From5551(ushort pixel)

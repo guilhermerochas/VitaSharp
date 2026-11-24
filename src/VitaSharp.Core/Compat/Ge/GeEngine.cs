@@ -360,12 +360,22 @@ public sealed partial class GeEngine
         }
     }
 
+    /// <summary>The reset bit: the GE back to its power-on state, the accepted interrupts too (ge.prx writes
+    /// SIGNAL|END|FINISH to +0x308 again after every reset, uofw's sceGeInit/reset path).</summary>
     private void ResetState()
     {
         _running = false;
         _branchFalse = false;
         _depth = 0;
         _interruptStatus = 0;
+        _interruptEnable = 0;
+        _list = 0;
+        _stall = 0;
+        _vertexAddress = 0;
+        _indexAddress = 0;
+        _origin = 0;
+        Array.Clear(_returnAddresses);
+        Array.Clear(_savedOrigins);
         Array.Clear(_commands);
     }
 

@@ -175,6 +175,19 @@ public sealed class GeListProcessorTests
         Assert.Equal(BitConverter.SingleToUInt32Bits(-2.5f) >> 8, _engine.Read32(GeRegisters.Base + 0xDE0 + 15 * 4));
     }
 
+    /// <summary>The reset bit clears the accepted interrupts with the rest (the driver writes them again after a
+    /// reset): an END after a reset sets its status without raising the line.</summary>
+    [Fact]
+    public void ResetClearsTheAcceptedInterrupts()
+    {
+        _engine.Write32(GeRegisters.Base, 1);
+        Assert.Equal(0u, _engine.Read32(GeRegisters.InterruptEnable));
+        Assert.Equal(0u, _engine.Read32(GeRegisters.List));
+        GeRegisters.Run(_engine, List().Command(GeCommand.End).Start);
+        Assert.Equal(GeEngine.InterruptEnd, _engine.Read32(GeRegisters.InterruptStatus));
+        Assert.Empty(_levels);
+    }
+
     [Fact]
     public void TheEdramBlockFinishesItsInitialisationAtOnce()
     {
