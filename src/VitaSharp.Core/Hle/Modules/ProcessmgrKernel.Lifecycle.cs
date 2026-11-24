@@ -339,6 +339,10 @@ public sealed partial class ProcessmgrKernel
         return LaunchProcess(titleId, type, path, argSize, args, options, flags);
     }
 
+    // VSHLE010: 0x81004b48 is processmgr's own function; both exports and LaunchProcess call it (and its create, start and
+    // terminate steps) inside the module, by its internal address, not through the exports' entries, so a hook on those
+    // entries does not see these calls on the Vita either
+#pragma warning disable VSHLE010
     /// <summary>NID_5A57766C(titleid, type, path, arg size, args, option, flags): the same entry (both run
     /// 0x81004b48).</summary>
     [Hle(Nid = 0x5A57766C, Library = "SceProcessmgrForKernel", Cost = HleCost.SchedulerWait)]
@@ -368,6 +372,7 @@ public sealed partial class ProcessmgrKernel
 
         return pid;
     }
+#pragma warning restore VSHLE010
 
     /// <summary>NID_0B9BE51B(pid, int *status, timeout): waits until the process ended and gives its exit status.</summary>
     [Hle(Nid = 0x0B9BE51B, Library = "SceProcessmgrForKernel", Cost = HleCost.SchedulerWait)]
