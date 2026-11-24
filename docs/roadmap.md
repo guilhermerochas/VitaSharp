@@ -2412,9 +2412,9 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   do magnetômetro para a calibração do shell (`sceMotionDevReadForMagnCalib`, `GetCurrentMagnCalibData`) e o
   `dataInfo`; (2) a fusão do campo no `deviceQuat` como o driver_us faz (hoje só a matriz NED e a estabilidade usam o
   campo); (3) o magnetômetro de um controle no PC (o SDL não expõe um).
-- [ ] [P3][M] Teclado e mouse Bluetooth, o que falta (o feito está em "Corrigido, falta o usuário testar"): os
-  callbacks de dica (enumeração e leitura) ainda não são notificados; as configurações de Bluetooth do shell não
-  listam o dispositivo (o `SceBt` do kernel não conhece os pareados); o `ConsumerControl` e o `Controller` do SceHid.
+- [ ] [P3][M] Teclado e mouse Bluetooth, o que falta (o feito está em "Corrigido, falta o usuário testar"): conferir
+  no Sistema do Vita que Configurações > Bluetooth lista os dois dispositivos (os registros do `SceBt` seguem o 3.74,
+  mas a tela não foi aberta); os eventos do `sceBtReadEvent` de conexão; o `ConsumerControl` e o `Controller` do SceHid.
 - [ ] [P3][G] Processador de mídia Venezia (núcleos MeP + IVC2) para código MeP que não é do firmware (plugin
   VVNZRunner e o homebrew sobre ele; `docs/notes/hardware-coverage.md`): o `vnzimg.skprx` sai do `self2elf` em claro,
   sem chave. Primeira entrega: interpretador do núcleo MeP-c5 numa thread de guest com programa sintético no teste
@@ -3299,7 +3299,11 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   mouse 0x10) e voltam na hora com quantos copiaram, da fila do dispositivo com posição por leitor. Feito: o teclado
   e o mouse do host como dispositivos pareados (`HostServices.HidKeyboard/HidMouse`, filas de relatórios com uso USB
   HID, modificadores, botões, deslocamento e roda), `Enumerate`, `Read`, `Peek`, `Clear`, `Set/GetIntercept` e o
-  registro dos callbacks de dica como o 3.74; sem a opção nada é pareado, como antes. Testes: `HidDeviceTests`.
+  registro dos callbacks de dica como o 3.74; sem a opção nada é pareado, como antes. Os callbacks de dica de
+  enumeração são notificados quando um teclado/mouse conecta ou desconecta e os de leitura a cada relatório novo; o
+  `SceBt` lista os pareados (`sceBtGetRegisteredInfo`: registros de 0x100 bytes com endereço, classe de dispositivo,
+  conectado e nome, como o 0x81000554 do 3.74; `sceBtGetConnectingInfo` = 2, conectado) para as Configurações >
+  Bluetooth do shell. Testes: `HidDeviceTests`.
   Opção (desligada por padrão; as teclas continuam valendo como controle): PC, Configurações > Emulação > Teclado e
   mouse Bluetooth (`--bt-keyboard-mouse=on`); Android, Ajustes > Teclado e mouse Bluetooth (teclado e mouse físicos
   do celular). Testar: ligar a opção e abrir o navegador do Vita (ou um app que lê teclado): digitar no teclado físico
