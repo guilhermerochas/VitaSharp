@@ -127,6 +127,7 @@ public sealed class AndroidOptionParityTests : IDisposable
     /// app or placed here: every option of the PC is on Android in the same delivery.</summary>
     private static readonly string[] s_sameOnAndroid =
     [
+        nameof(LauncherSettings.BluetoothKeyboardMouse),
         nameof(LauncherSettings.VSync), nameof(LauncherSettings.CameraFront), nameof(LauncherSettings.CameraBack),
         nameof(LauncherSettings.CpuBackend), nameof(LauncherSettings.CpuMhz), nameof(LauncherSettings.FastLoading), nameof(LauncherSettings.ResScale),
         nameof(LauncherSettings.FastShaderCompile), nameof(LauncherSettings.BackgroundShaderCompile),

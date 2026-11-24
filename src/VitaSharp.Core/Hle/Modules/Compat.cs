@@ -59,7 +59,8 @@ public sealed class Compat : HleModule, IDisposable
     /// <summary>The handshake word's states.</summary>
     internal const uint HandshakeReady = 1, HandshakeAcknowledged = 2, HandshakeRunning = 3, HandshakeIdle = 0;
 
-    const string PcffPath = "vs0:app/NPXS10028/pcff.skprx", PcbcPath = "os0:kd/pcbc.skprx";
+    static readonly string PcffPath = Io.FirmwareLayout.SystemApplications.Guest("NPXS10028", "pcff.skprx");
+    static readonly string PcbcPath = Io.FirmwareLayout.KernelModules.Guest("pcbc.skprx");
 
     /// <summary>The request channels, the entries of a channel's ring, the command / answer slots.</summary>
     const int Channels = 16, RingEntries = 16, Slots = 3;

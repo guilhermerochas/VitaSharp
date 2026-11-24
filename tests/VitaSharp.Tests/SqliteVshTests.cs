@@ -144,7 +144,8 @@ public sealed class SqliteVshTests(GuestMemoryFixture fixture) : IDisposable
         var bindings = VitaSharp.Core.Hle.HleBindings.Modules.SelectMany(m => m.Bindings()).ToList();
         bool IsDefault(string name) => bindings.Where(b => (b.Name ?? b.Method) == name).All(b => b.Default) && bindings.Any(b => (b.Name ?? b.Method) == name);
         Assert.True(IsDefault("sceBtStartAudio"));
-        Assert.True(IsDefault("sceCompatInitEx"));
+        // the compat core is emulated now: its InitEx is a real entry
+        Assert.False(IsDefault("sceCompatInitEx"));
         Assert.True(IsDefault("_sceSblGcAuthMgrPkgVry"));
         Assert.False(IsDefault("sqlite3_open"));
         Assert.False(IsDefault("sceCompatLCDCSync"));
