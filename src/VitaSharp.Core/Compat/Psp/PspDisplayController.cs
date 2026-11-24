@@ -19,7 +19,7 @@ namespace VitaSharp.Core.Compat.Psp;
 /// 286 lines, the vblank interrupt) and <c>MMIOHandlerLcdc</c> (the reset timings), the PSP IPL SDK
 /// (<c>display.c</c>: the boot writes and the +0x20 polls).
 /// </summary>
-public sealed class PspDisplayController : IPspMmioDevice, IPspTimedDevice
+public sealed partial class PspDisplayController : IPspMmioDevice, IPspTimedDevice
 {
     /// <summary>PSP physical 0xBE740000.</summary>
     public const uint Base = 0x1E740000;

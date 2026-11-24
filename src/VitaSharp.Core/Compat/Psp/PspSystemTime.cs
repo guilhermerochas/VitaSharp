@@ -15,7 +15,7 @@ namespace VitaSharp.Core.Compat.Psp;
 /// previous one, the boot writes) and <c>SystemTimeManager</c> (microseconds). Writing the count is inferred (Jpcsp
 /// ignores the boot's write of 0, which this model also leaves at 0).
 /// </summary>
-public sealed class PspSystemTime : IPspMmioDevice, IPspTimedDevice
+public sealed partial class PspSystemTime : IPspMmioDevice, IPspTimedDevice
 {
     /// <summary>PSP physical 0xBC600000.</summary>
     public const uint Base = 0x1C600000;

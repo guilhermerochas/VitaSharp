@@ -15,7 +15,7 @@ namespace VitaSharp.Core.Compat.Psp;
 /// its source from these registers is inferred (SceCompat programs only the destination side, see
 /// <see cref="CompatLcdDma"/>); the boot trace confirms it. The rest of the DMACplus block (0xBC800000) is not here.
 /// </summary>
-public sealed class PspLcdc : IPspMmioDevice
+public sealed partial class PspLcdc : IPspMmioDevice
 {
     /// <summary>PSP physical 0xBC800100.</summary>
     public const uint Base = 0x1C800100;

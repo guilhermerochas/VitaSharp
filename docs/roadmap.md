@@ -2374,6 +2374,10 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   máscaras de bits parciais (MASKRGB por bit num passe de merge só quando parcial; MASKALPHA como máscara do stencil),
   patches Bezier/spline e bounding box (vértices/patches na feat/alg5, mesclada), ciclo de vida do dispositivo Vulkan
   do GE (Stop e fim do processo).
+  Save state do núcleo PSP (feat/alg4-savestate): todo o lado PSP vai na seção do SceCompat (Allegrex, runner, PSP
+  hardware com GE e listas em andamento, LCD DMA, mailbox, SRAM, bancos, anéis/semáforos); a thread SceCompatCore
+  para entre fatias para o save e para a pausa; teste `CompatSaveStateTests` (save no meio, load em outro emulador,
+  resultado igual ao de quem não salvou).
   Bloqueio do Start real (licença): o `sceCompatStart` do 3.74, antes de soltar o núcleo, (1) lê
   `tm0:npdrm/act.dat` (0x1038 bytes, `ksceNpDrmReadActData`: conta atual e, da versão 2 em diante, o OpenPSID) para o
   bloco "dat" que o lado PSP lê por `sceCompatDatRead` — erro devolvido, exceto num DEX; (2) lê o rif

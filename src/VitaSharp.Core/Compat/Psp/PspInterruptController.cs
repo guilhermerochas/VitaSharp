@@ -26,7 +26,7 @@ namespace VitaSharp.Core.Compat.Psp;
 /// (0xBC300040..0x5F, <see cref="CompatMailbox"/>).
 /// </para>
 /// </summary>
-public sealed class PspInterruptController : IPspMmioDevice
+public sealed partial class PspInterruptController : IPspMmioDevice
 {
     /// <summary>PSP physical 0xBC300000.</summary>
     public const uint Base = 0x1C300000;

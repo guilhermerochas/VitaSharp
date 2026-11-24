@@ -19,7 +19,7 @@ namespace VitaSharp.Core.Compat;
 /// core holds the core's interrupt controller line high.
 /// </para>
 /// </summary>
-public sealed class CompatMailbox
+public sealed partial class CompatMailbox
 {
     /// <summary>The doorbell lines.</summary>
     public const int Lines = 32;

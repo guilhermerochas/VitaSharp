@@ -1,4 +1,5 @@
 using VitaSharp.Core.Compat.Allegrex;
+using VitaSharp.Core.SaveState;
 
 namespace VitaSharp.Core.Compat;
 
@@ -28,11 +29,22 @@ public interface ICompatCore
     void Stop();
 }
 
-/// <summary>The Allegrex interpreter as the compat core.</summary>
-public sealed class AllegrexCompatCore(AllegrexCore core) : ICompatCore
+/// <summary>The Allegrex interpreter as the compat core; its save state is the interpreter's
+/// (<see cref="AllegrexCore"/>, a core that cannot be saved does not implement <see cref="ISnapshotState"/>).</summary>
+public sealed class AllegrexCompatCore(AllegrexCore core) : ICompatCore, ISnapshotState
 {
     /// <summary>The interpreter.</summary>
     public AllegrexCore Core => core;
+
+    public void SaveState(SnapshotWriter w)
+    {
+        ((ISnapshotState)core).SaveState(w);
+    }
+
+    public void LoadState(SnapshotReader r)
+    {
+        ((ISnapshotState)core).LoadState(r);
+    }
 
     public bool Halted => core.Halted;
 

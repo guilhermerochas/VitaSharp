@@ -39,7 +39,7 @@ public interface IPspTimedDevice
 /// side that runs the core says so (<see cref="PspHardware.Advance"/>): the devices are deterministic functions of the
 /// core's own time, never of the host clock.
 /// </summary>
-public sealed class PspHardwareClock
+public sealed partial class PspHardwareClock
 {
     private long _nanoseconds;
 
