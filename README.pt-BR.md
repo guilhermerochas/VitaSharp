@@ -190,6 +190,12 @@ próprio PC ainda não é lido. A posição nunca vai para o log; uma captura **
 "posição indeterminada" enquanto a captura está armada ou gravando, e o `session.txt` guarda `--location=<location>`),
 a não ser com `--capture-location` (ou `VITASHARP_CAPTURE_LOCATION=1`).
 
+**Modelo do console.** **Configurações > Emulação > Modelo** (ou `--model=pstv`, `VITASHARP_MODEL=pstv`) faz o
+aparelho emulado ser um PlayStation TV em vez do PS Vita portátil (PCH-1000, o padrão): os jogos veem um PS TV (vários
+controles suportados), cada controle conectado é um jogador nas portas 1-4 (o teclado joga junto com o primeiro
+controle) e a vibração chega aos controles. O software de sistema próprio do PS TV, os ajustes de HDMI e o USB host
+ainda não são emulados.
+
 Os dados ficam em `%APPDATA%\VitaSharp` no Windows (`~/.local/share/VitaSharp` no Linux,
 `~/Library/Application Support/VitaSharp` no macOS; `--data=<pasta>` ou `VITASHARP_DATA` trocam a pasta): jogos em
 `fs/ux0/app`, firmware em `fs/os0`... , `logs/`, `savestates/`, `captures/` (Gravar tudo), `gpudumps/`,

@@ -3117,6 +3117,18 @@
   <data name="LocationFixed" xml:space="preserve">
     <value>Fixed position</value>
   </data>
+  <data name="ConsoleModel" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="ConsoleModelDetail" xml:space="preserve">
+    <value>Which console the emulator is. A PlayStation TV takes up to four controllers (ports 1-4: the keyboard with the first controller, then each other connected controller) and their vibration, for games with local multiplayer. Takes effect when a game starts</value>
+  </data>
+  <data name="ConsoleModelVita" xml:space="preserve">
+    <value>PS Vita (PCH-1000)</value>
+  </data>
+  <data name="ConsoleModelPsTv" xml:space="preserve">
+    <value>PlayStation TV</value>
+  </data>
   <data name="MOn" xml:space="preserve">
     <value>On</value>
   </data>

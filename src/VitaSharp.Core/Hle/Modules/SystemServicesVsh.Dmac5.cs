@@ -52,7 +52,7 @@ public sealed partial class SystemServicesVsh
 
         GuestMemory.Write(pscode, ConsoleIdentity.CompanyCode);
         GuestMemory.Write(pscode + 2, ConsoleIdentity.ProductCode);
-        GuestMemory.Write(pscode + 4, ConsoleIdentity.ProductSubCode);
+        GuestMemory.Write(pscode + 4, ConsoleIdentity.ProductSubCodeOf(Emu.Options.Model));
         GuestMemory.Write(pscode + 6, ConsoleIdentity.FactoryCode);
         return 0;
     }

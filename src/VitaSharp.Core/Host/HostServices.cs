@@ -44,6 +44,27 @@ public interface IInputBackend
 }
 
 /// <summary>
+/// The host's controllers one by one, for a PS TV's ports 1-4 (<see cref="Hle.ConsoleModel.PsTv"/>): the first is the
+/// keyboard with the first controller, as on the handheld's single port.
+/// </summary>
+public interface IMultiControllerInput
+{
+    /// <summary>How many controllers the host has now (at least 1: the keyboard is the first player), at most 4.</summary>
+    int ControllerCount { get; }
+
+    /// <summary>The state of controller <paramref name="index"/> (0-based); neutral when it is not connected.</summary>
+    ControllerState GetPad(int index);
+}
+
+/// <summary>Vibration of the host controller of a port (sceCtrlSetActuator on a PS TV).</summary>
+public interface IControllerVibration
+{
+    /// <summary>Sets the motors of the controller on <paramref name="port"/> (1-4): the small (high frequency) and the
+    /// large (low frequency) motor, 0 = off, 255 = full.</summary>
+    void SetVibration(int port, byte small, byte large);
+}
+
+/// <summary>
 /// An input source that is told which read of the guest it answers: the <paramref name="guestRead"/>-th read of that
 /// port (or panel) by the process, counted by its controller and touch drivers and kept in its save states. A "Gravar
 /// tudo" recording notes at which read the guest first saw each change; its re-run hands the change to that same read,
@@ -174,6 +195,9 @@ public sealed class HostServices : IDisposable
     /// <summary>Where the unit's position comes from (SceLibLocation): a fixed position or the host system's location
     /// service; null = location off (the default: the application is not allowed to use it).</summary>
     public ILocationSource? Location { get; set; }
+
+    /// <summary>Where the controllers' vibration goes (the host's gamepads); null = dropped.</summary>
+    public IControllerVibration? Vibration { get; set; }
 
     /// <summary>"Gravar tudo" is armed or recording without --capture-location: the position is withheld (the service
     /// answers "undetermined"), so a capture, which may go to a public report, never holds where the player is.</summary>

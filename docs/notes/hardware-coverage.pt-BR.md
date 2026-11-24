@@ -88,9 +88,11 @@ compatibilidade PSP". Impacto: todo título de PSP e PSone, homebrew de PSP, Adr
   registradores pervasive e espera o engine informar o estado 8. Os decodificadores (`SceAvcodec`: AVC, MPEG-4, MP3,
   AAC, ATRAC9, CELP, JPEG), o caminho do microfone (`SceAudioin`) e o `SceNgs` mandam RPCs ao firmware dele. O mesmo
   módulo carrega o `os0:kd/vipimg.skprx` nas duas unidades VIP ("SceVipDriverPu0/1"; a confirmar o que atendem).
-- **Hoje:** as bibliotecas são HLE no nível de usuário; o wrapper guarda a contabilidade por processo, os memblocks
-  sem mapeamento e as listas de transferência, e aceita os RPCs (0) sem rodar nada
-  (`Hle/Modules/CodecEngine.Kernel.cs`).
+- **Hoje:** a opção de modelo (`--model=pstv`, `VITASHARP_MODEL`, Configurações > Emulação > Modelo; `ConsoleModel`)
+  faz o aparelho ser um PS TV: bit 0x200 do sub code (IsDolce / IsGenuineDolce = 1), `sceCtrlIsMultiControllerSupported`
+  = 1, portas 1-4 = os controles do host um a um, `sceCtrlSetActuator` nos motores do controle (rumble do SDL). Falta:
+  o `vs0` do PS TV, os dispositivos do PS TV (câmera/toque/movimento "dummy"), HDMI, USB host, barra de luz, o tipo de
+  placa na informação de hardware, os controles no Android.
 - **Parte (a):** código que manda os próprios programas MeP ao Venezia não tem onde rodar. O plugin de kernel
   homebrew VVNZRunner faz exatamente isso (uma API para rodar código Toshiba MeP em até 6 núcleos, 7 no modo
   estendido do `sceCodecEngineChangeNumWorkerCoresMax`), e o homebrew feito sobre ele não recebe resultado. Pela

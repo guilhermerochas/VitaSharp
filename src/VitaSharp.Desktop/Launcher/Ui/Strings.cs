@@ -381,6 +381,10 @@ public static class Strings
     public static string Location => T();
     public static string LocationDetail => T();
     public static string LocationWatermark => T();
+    public static string ConsoleModel => T();
+    public static string ConsoleModelDetail => T();
+    public static string ConsoleModelVita => T();
+    public static string ConsoleModelPsTv => T();
     public static string SectionAdvanced => T();
     public static string StartSection => T();
     public static string StartupView => T();

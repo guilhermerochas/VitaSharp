@@ -112,8 +112,11 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
   controllers (ports 1-4, rumble through `sceCtrlSetActuator`, light bar), the HDMI transmitter and CEC are live,
   `SceCameraDummy`, `SceTouchDummy` and `SceMotionDevDummy` replace the handheld's devices, and the USB host ports and
   the USB Ethernet adapter work.
-- **Today:** the unit is always a PCH-1000 (`Hle/ConsoleIdentity.cs`). Port 0 only, rumble and light bar dropped,
-  HDMI and USB host answer "not a PS TV" / "nothing attached".
+- **Today:** the model option (`--model=pstv`, `VITASHARP_MODEL`, Settings > Emulation > Model; `ConsoleModel`) makes
+  the unit a PS TV: sub code bit 0x200 (IsDolce / IsGenuineDolce = 1), `sceCtrlIsMultiControllerSupported` = 1, ports
+  1-4 = the host's controllers one by one, `sceCtrlSetActuator` to the controller's motors (SDL rumble). Missing: the
+  PS TV `vs0`, the PS TV devices (camera/touch/motion dummies), HDMI ("a monitor that accepts every mode"), USB host,
+  light bar, the hardware info board kind, Android controllers.
 - **Impact:** local multiplayer with several controllers (titles that check `sceCtrlIsMultiControllerSupported` and
   read ports 1-4; which titles is to confirm), rumble on host gamepads, the PS TV's own system software and its
   settings (HDMI resolution, controllers, Ethernet).

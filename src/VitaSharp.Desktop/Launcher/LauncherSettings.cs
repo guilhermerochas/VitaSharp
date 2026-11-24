@@ -25,6 +25,9 @@ public sealed class LauncherSettings
     /// <summary>"Localizacao" (--location=): "" = off (the default), or "latitude,longitude[,altitude[,accuracy]]", a fixed
     /// position the Vita's location service answers (<see cref="Core.Host.LocationSpec"/>).</summary>
     public string Location { get; set; } = "";
+    /// <summary>"Modelo" (--model=): "" = the PS Vita handheld (PCH-1000, the default), "pstv" = a PlayStation TV (up to four
+    /// controllers on ports 1-4, vibration; <see cref="Core.Hle.ConsoleModel"/>).</summary>
+    public string Model { get; set; } = "";
     /// <summary>CPU backend: "" = best supported on this PC, or "native", "il", "interp" (--cpu=).</summary>
     public string CpuBackend { get; set; } = "";
     /// <summary>Emulated ARM clock in MHz (--cpu-mhz=): 0 = the Vita's default for applications (333), 444 = the
@@ -337,6 +340,11 @@ public sealed class LauncherSettings
         if (!string.IsNullOrWhiteSpace(Location))
         {
             yield return $"--location={Location.Trim()}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(Model))
+        {
+            yield return $"--model={Model.Trim()}";
         }
 
         if (!string.IsNullOrWhiteSpace(AudioDevice))

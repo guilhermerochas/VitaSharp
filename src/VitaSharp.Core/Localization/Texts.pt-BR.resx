@@ -3117,6 +3117,18 @@
   <data name="LocationFixed" xml:space="preserve">
     <value>Posição fixa</value>
   </data>
+  <data name="ConsoleModel" xml:space="preserve">
+    <value>Modelo</value>
+  </data>
+  <data name="ConsoleModelDetail" xml:space="preserve">
+    <value>Qual console o emulador é. Um PlayStation TV aceita até quatro controles (portas 1-4: o teclado com o primeiro controle, depois cada outro controle conectado) e a vibração deles, para jogos com multijogador local. Vale ao iniciar um jogo</value>
+  </data>
+  <data name="ConsoleModelVita" xml:space="preserve">
+    <value>PS Vita (PCH-1000)</value>
+  </data>
+  <data name="ConsoleModelPsTv" xml:space="preserve">
+    <value>PlayStation TV</value>
+  </data>
   <data name="MOn" xml:space="preserve">
     <value>Ligado</value>
   </data>

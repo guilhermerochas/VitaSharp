@@ -18,13 +18,13 @@ public sealed class HleHarness : IDisposable
     public string Root { get; }
     public Emulator Emu { get; }
 
-    public HleHarness(GuestMemoryFixture fixture, string tag, bool? kernelPlugins = null, string cpuBackend = "interp")
+    public HleHarness(GuestMemoryFixture fixture, string tag, bool? kernelPlugins = null, string cpuBackend = "interp", Core.Hle.ConsoleModel model = Core.Hle.ConsoleModel.Handheld)
     {
         _fixture = fixture;
         _tag = tag;
         Root = Path.Combine(Path.GetTempPath(), $"vitasharp-{tag}-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Root);
-        Emu = new Emulator(new EmulatorOptions { FsRoot = Root, Memory = fixture.Memory, EnableJit = cpuBackend != "interp", CpuBackend = cpuBackend, KernelPlugins = kernelPlugins, KernelPluginsDir = Path.Combine(Root, "kernel_plugins") });
+        Emu = new Emulator(new EmulatorOptions { FsRoot = Root, Memory = fixture.Memory, EnableJit = cpuBackend != "interp", CpuBackend = cpuBackend, KernelPlugins = kernelPlugins, KernelPluginsDir = Path.Combine(Root, "kernel_plugins"), Model = model });
     }
 
     /// <summary>The kernel modules of <paramref name="emu"/>'s system: the kernel process's (every kernel module lives

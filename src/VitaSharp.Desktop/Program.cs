@@ -1033,6 +1033,7 @@ public static class Program
         Console.WriteLine("               back = the next other webcam, else the same one)");
         Console.WriteLine("               --microphone=<name|index|none|tone[:HZ]>  source of the Vita microphone (default: the system's default capture device)");
         Console.WriteLine("               --location=<none|lat,lon[,alt[,accuracy]]>  position of the Vita (SceLibLocation; default: off)");
+        Console.WriteLine("               --model=<vita|pstv>  console model: a PlayStation TV takes up to 4 controllers on ports 1-4, with vibration");
         Console.WriteLine("               --ime-text=<text>  answer every IME dialog / in-game keyboard with this text and Enter, no UI");
         Console.WriteLine("               --dialogs=auto     answer message / save data dialogs at once (no panel over the game)");
         Console.WriteLine("               --overlay-dump=<dir>  also write every panel drawn over the game (dialogs, save state picker) as PNG");

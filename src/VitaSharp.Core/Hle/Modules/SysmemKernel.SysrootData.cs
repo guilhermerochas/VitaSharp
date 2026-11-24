@@ -158,7 +158,7 @@ public sealed partial class SysmemKernel
                 ConsoleIdentity.OpenPsId.CopyTo(bytes.Slice(0x70, 0x10));
                 WriteBigEndian16(param + 0xA0, ConsoleIdentity.CompanyCode);
                 WriteBigEndian16(param + 0xA2, ConsoleIdentity.ProductCode);
-                WriteBigEndian16(param + 0xA4, ConsoleIdentity.ProductSubCode);
+                WriteBigEndian16(param + 0xA4, ConsoleIdentity.ProductSubCodeOf(Emu.Options.Model));
                 WriteBigEndian16(param + 0xA6, ConsoleIdentity.FactoryCode);
                 GuestMemory.W32(param + 0xD4, ConsoleIdentity.HardwareInfo);
                 _kblParam = param;

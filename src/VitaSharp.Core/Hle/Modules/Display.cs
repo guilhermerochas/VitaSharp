@@ -460,7 +460,12 @@ public sealed partial class Ctrl : HleModule
     {
         ControllerState s;
         long read = NextRead(ref _padReads, port);
-        if (Emu.Host.Input is IGuestReadInput ordered)
+        if (PsTv && port >= 1 && Emu.Host.Input is Host.IMultiControllerInput multi)
+        {
+            // a PS TV: the guest's port n (1-4) is the host's n-th controller; one not connected is neutral
+            s = port <= Math.Clamp(multi.ControllerCount, 0, 4) ? multi.GetPad(port - 1) : ControllerState.Neutral;
+        }
+        else if (Emu.Host.Input is IGuestReadInput ordered)
         {
             s = ordered.GetController(port, read);
         }
@@ -555,7 +560,9 @@ public sealed partial class Ctrl : HleModule
         return Peek(port, data, count, negative, api);
     }
 
-    static int Port(int port) => port <= 1 ? 0 : port - 1;
+    /// <summary>The host port a guest port reads: on a handheld ports 0 and 1 are the built-in pad and n the host's n-1;
+    /// on a PS TV the port itself (<see cref="State"/> serves ports 1-4 from the host's controllers).</summary>
+    int Port(int port) => PsTv ? port : port <= 1 ? 0 : port - 1;
 
     /// <summary>Upper bound on the samples one call writes.</summary>
     const uint MaxSamples = 64;
@@ -646,10 +653,40 @@ public sealed partial class Ctrl : HleModule
         lock (_rapid) _rapid[idx] = null;
         return 0;
     }
-    [Hle] int sceCtrlSetActuator(int port, uint state) => 0;
+    /// <summary>SceCtrlPortInfo port types (psp2/ctrl.h).</summary>
+    const byte PortUnpaired = 0, PortPhysical = 1, PortVirtual = 2, PortDualShock3 = 4;
+
+    /// <summary>The unit is a PS TV (<see cref="ConsoleModel.PsTv"/>): ports 1-4 are the host's controllers.</summary>
+    bool PsTv => Emu.Options.Model == ConsoleModel.PsTv;
+
+    /// <summary>How many host controllers a PS TV has on ports 1-4.</summary>
+    int PsTvControllers => Emu.Host.Input is Host.IMultiControllerInput multi ? Math.Clamp(multi.ControllerCount, 0, 4) : 1;
+
+    /// <summary>
+    /// (int port, const SceCtrlActuator *state {small, large, reserved[6]}): the controller's vibration. FW 3.74 SceCtrl
+    /// copies the 8 bytes (a NULL state is 0x80340001) and, while an external controller driver serves ports 1-4 (a PS
+    /// TV's SceDs3/SceBt), hands them to it; on a handheld nothing vibrates and the call answers 0.
+    /// </summary>
+    [Hle]
+    int sceCtrlSetActuator(int port, uint state)
+    {
+        if (state == 0)
+        {
+            return unchecked((int)0x80340001);
+        }
+
+        if (PsTv && port is >= 1 and <= 4)
+        {
+            Emu.Host.Vibration?.SetVibration(port, GuestMemory.Read<byte>(state), GuestMemory.Read<byte>(state + 1));
+        }
+
+        return 0;
+    }
+
     [Hle] int sceCtrlSetLightBar(int port, byte r, byte g, byte b) => 0;
     [Hle] int sceCtrlResetLightBar(int port) => 0;
-    [Hle] int sceCtrlIsMultiControllerSupported() => 0;
+    /// <summary>FW 3.74 SceCtrl asks SceSysroot for the model's capability: 1 on a PS TV, 0 on a handheld.</summary>
+    [Hle] int sceCtrlIsMultiControllerSupported() => PsTv ? 1 : 0;
     [Hle] int sceCtrlSingleControllerMode(int mode) => 0;
 
     [Hle]
@@ -657,8 +694,21 @@ public sealed partial class Ctrl : HleModule
     {
         if (info == 0) return unchecked((int)0x80340002);
         GuestMemory.Fill(info, 0, 5);
-        GuestMemory.Write(info, (byte)1);     // port 0: vita built-in
-        GuestMemory.Write(info + 1, (byte)1);
+        if (PsTv)
+        {
+            // a PS TV: port 0 is the virtual port, ports 1-4 the controllers connected (a DualShock 3 each)
+            GuestMemory.Write(info, PortVirtual);
+            int connected = PsTvControllers;
+            for (int port = 1; port <= 4; port++)
+            {
+                GuestMemory.Write(info + (uint)port, port <= connected ? PortDualShock3 : PortUnpaired);
+            }
+
+            return 0;
+        }
+
+        GuestMemory.Write(info, PortPhysical);     // port 0: vita built-in
+        GuestMemory.Write(info + 1, PortPhysical);
         return 0;
     }
 

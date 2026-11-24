@@ -187,6 +187,12 @@ service is not read yet. The position is never written to the log; a **Record ev
 Vita answers "position undetermined" while the capture is armed or recording, and `session.txt` keeps
 `--location=<location>`) unless `--capture-location` (or `VITASHARP_CAPTURE_LOCATION=1`).
 
+**Console model.** **Settings > Emulation > Model** (or `--model=pstv`, `VITASHARP_MODEL=pstv`) makes the emulated
+unit a PlayStation TV instead of the PS Vita handheld (PCH-1000, the default): games see a PS TV (several controllers
+supported), each connected controller is a player on ports 1-4 (the keyboard plays with the first controller) and
+their vibration reaches the controllers. The PS TV's own system software, HDMI settings and USB host are not
+emulated yet.
+
 Data lives in `%APPDATA%\VitaSharp` on Windows (`~/.local/share/VitaSharp` on Linux,
 `~/Library/Application Support/VitaSharp` on macOS; `--data=<folder>` or `VITASHARP_DATA` change the folder): games in
 `fs/ux0/app`, firmware in `fs/os0`... , `logs/`, `savestates/`, `captures/` (Record everything), `gpudumps/`,

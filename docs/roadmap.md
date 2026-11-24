@@ -2351,14 +2351,11 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Manager, câmera/AR, apps de vídeo/música/browser) e abrir um item por recurso com o caminho (LLE do módulo real +
   HLE do que falta); os grupos que o plano do VitaSDK marcou como "não se aplica" (Mono do PSM, Piglet, ShaccCg)
   entram aqui como recursos a emular, não como ignorados
-- [ ] [P3][G] Modelo PS TV (VTE-1000) como opção do console (`docs/notes/hardware-coverage.md`): identidade do KBL
-  (bit `0x200` do product sub code, tipo de placa no hardware info) a partir de uma opção num lugar só
-  (`ConsoleIdentity`, variável no `EnvVars.cs`), o `vs0` do target 2 do pacote, até quatro controles do host nas
-  portas 1-4 pelo caminho do `SceDs3`/`SceHid`, vibração (`sceCtrlSetActuator`) e light bar nos controles do host,
-  HDMI como monitor que aceita os modos, USB host e Ethernet. Primeira entrega: com o modelo PS TV
-  `ksceSblAimgrIsDolce` = 1, AVConfig HDMI sem `0x803A0109`, `sceCtrlIsMultiControllerSupported` = 1, um segundo
-  controle roteirizado aparece na porta 1 e a vibração chega a um destino que grava; o modelo padrão continua igual.
-  Também cobre os outros modelos (PCH-2000: LCD e cartão interno de 1 GB; PCH-1100: modem 3G ausente = fiel).
+- [ ] [P3][G] Modelo PS TV (VTE-1000), o que falta (`docs/notes/hardware-coverage.md`; a 1ª entrega está em
+  "Corrigido, falta o usuário testar"): o tipo de placa no hardware info, o `vs0` do target 2 do pacote (o software
+  de sistema do PS TV), os dispositivos "dummy" (câmera, toque, movimento), light bar, HDMI como monitor que aceita os
+  modos (AVConfig HDMI sem `0x803A0109`), USB host e Ethernet, e os controles do celular no Android. Também cobre os
+  outros modelos (PCH-2000: LCD e cartão interno de 1 GB; PCH-1100: modem 3G ausente = fiel).
 - [ ] [P3][G] Wi-Fi ad hoc entre instâncias do emulador (`docs/notes/hardware-coverage.md`,
   `docs/notes/online-features.md`): hoje `pspnet_adhoc`/Matching não acham nenhum par. Primeira entrega: duas pilhas
   emuladas num teste sobre UDP de loopback, uma cria o grupo, a outra acha (`sceNetAdhocctlScan`), entra e troca um
@@ -3254,6 +3251,20 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (24/11/2026, falta testar) [P3][G] Modelo PS TV, 1ª entrega (fix/adr4; `docs/notes/hardware-coverage.md`): no
+  3.74 um PS TV se distingue pela identidade (bit 0x200 do sub code de produto, que o SceSblAIMgr testa:
+  `ksceSblAimgrIsDolce`/`IsGenuineDolce` = 1, `IsGenuineVITA` = 0); o SceCtrl pergunta ao SceSysroot se o modelo
+  aceita vários controles (`sceCtrlIsMultiControllerSupported` = 1) e entrega as portas 1-4, a vibração e a lista de
+  portas ao driver de controles externos (SceDs3/SceBt). Feito: opção de modelo (`EmulatorOptions.Model`,
+  `--model=pstv`, `VITASHARP_MODEL`, Configurações > Emulação > Modelo; o portátil PCH-1000 é o padrão e responde tudo
+  como antes); no PS TV o sub code 0x201, as portas 1-4 lidas dos controles do host um a um (o teclado com o
+  primeiro), `sceCtrlGetControllerPortInfo` = porta virtual + um DualShock 3 por controle conectado,
+  `sceCtrlSetActuator` levado ao controle da porta (SDL rumble; NULL agora responde 0x80340001 como o 3.74 também no
+  portátil). Testes: `PsTvModelTests`. Testar: Configurações > Emulação > Modelo = PlayStation TV, dois controles
+  conectados e um jogo com multijogador local (ou que vibra): cada controle move um jogador e a vibração chega.
+  Falta (item "Modelo PS TV" em "Firmware e sistema"): o `vs0` do PS TV, HDMI, USB host, barra de luz, os
+  dispositivos dummy, o tipo de placa na informação de hardware e os controles no Android.
+
 - [ ] (24/11/2026, falta testar) [P3][M] Magnetômetro (fix/adr4; `docs/notes/hardware-coverage.md`): no Vita o
   `sceMotionMagnetometerOn` liga o magnetômetro no driver de sensores e o `sceMotionGetState` traz a estabilidade do
   campo (+0xF4, copiada do registro do driver, driver_us 3.74) e a matriz NED (os eixos do aparelho em Norte-Leste-
@@ -4127,6 +4138,13 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
 
 ## Bugs em aberto
 - [x] [P1][M] Testes de hooks: interferência de memória compartilhada (23/11/2026, hookfix1/cifix17/hookmem1):
+- [ ] [P2][M] Fim de processo com thread presa num bloqueio do host: um processo encerrado de fora (EndProcess ou
+  destroy) cuja thread está em `sceDisplayWaitVblankStart` ("blocked in the host") não para em 10 s; a memória é
+  liberada e a thread volta a rodar e cai ("Prefetch abort: jump to unmapped address"). Visto em
+  `AppNameTests.AnApplicationEndingByItselfGetsNoDestroyEvent`; em
+  `DestroyingAnApplicationByNameTellsTheShellAtOnceWithItsName` a thread main começa depois do destroy (lr=0x40001000,
+  pc=entrada). No Vita o kill acorda toda espera e nenhuma thread roda depois do processo sair. Corrigir o
+  StopAllThreads/WaitAllThreadsExit para as esperas do host e o início de um processo já destruído, com teste.
   `PluginHookChainFuzzTests` e `PluginHookMatrixProcessTests` (e, raramente, HleCost, Piglet, NpCommerce2,
   KernelThreadmgrControl) falhavam na suíte completa por dois defeitos do fim do sistema, ambos corrigidos com teste
   (`SystemEndProcessTasksTests`), e as duas classes saíram da quarentena (Category=Slow):

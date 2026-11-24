@@ -336,6 +336,9 @@ public static class EnvVars
     /// <summary>=1: the location source keeps answering while "Gravar tudo" is armed or recording, and session.txt keeps
     /// the --location= value (by default the position is withheld: it is where the player is; --capture-location).</summary>
     public const string CaptureLocation = "VITASHARP_CAPTURE_LOCATION";
+    /// <summary>The console model when --model= is not given: "pstv" makes the unit a PlayStation TV (ports 1-4, vibration;
+    /// <see cref="Hle.ConsoleModel"/>); anything else, or unset, the PCH-1000 handheld.</summary>
+    public const string Model = "VITASHARP_MODEL";
 
 
 

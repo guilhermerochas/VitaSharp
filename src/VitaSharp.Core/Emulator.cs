@@ -17,6 +17,9 @@ public sealed class EmulatorOptions
 {
     /// <summary>Root of the virtual Vita filesystem (contains ux0/, ur0/, ...).</summary>
     public required string FsRoot { get; init; }
+    /// <summary>The console model the unit is (<see cref="Hle.ConsoleModel"/>): its identity (SceSblAIMgr), the
+    /// controllers on ports 1-4 and their vibration on a PS TV. The handheld by default.</summary>
+    public Hle.ConsoleModel Model { get; init; }
     public bool EnableJit { get; init; } = true;
     /// <summary>CPU backend: "native", "il", "interp" or null/"auto" (then VITASHARP_CPU, else the best one the host supports).</summary>
     public string? CpuBackend { get; init; }

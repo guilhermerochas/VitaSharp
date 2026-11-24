@@ -11,7 +11,7 @@ namespace VitaSharp.Desktop.Input;
 /// accelerometer of the first controller that has them, else the tilt keys and mouse look (<see cref="VirtualMotion"/>),
 /// as the keyboard profile's <see cref="ControllerProfile.MotionSource"/> chooses.
 /// </summary>
-public sealed class HostInput : IMotionSource, IDisposable
+public sealed class HostInput : IMotionSource, IMultiControllerInput, IControllerVibration, IDisposable
 {
     readonly object _lock = new();
     readonly InputProfileStore _store;
@@ -172,6 +172,71 @@ public sealed class HostInput : IMotionSource, IDisposable
             }
 
             return m;
+        }
+    }
+
+    static readonly HashSet<string> s_noKeys = [];
+
+    /// <summary>The players of a PS TV: the keyboard with the first controller, then one per other controller (at most 4).</summary>
+    public int ControllerCount
+    {
+        get
+        {
+            int pads = _pads?.Devices.Count ?? (_fallback != null ? 1 : 0);
+            return Math.Clamp(pads, 1, 4);
+        }
+    }
+
+    /// <summary>Player <paramref name="index"/>'s input on a PS TV: the keyboard (and the mouse stick) go with the first
+    /// controller; every other controller is a player of its own.</summary>
+    public ControllerState GetPad(int index)
+    {
+        lock (_lock)
+        {
+            ReloadIfChanged();
+            // no key held: a neutral pad (sticks centred) the player's own controller is added to
+            MappedInput m = InputMapper.Map(_keyboard, null, index == 0 ? _keys : s_noKeys);
+            if (index == 0)
+            {
+                _keySlew.Apply(ref m, System.Diagnostics.Stopwatch.GetTimestamp(), System.Diagnostics.Stopwatch.Frequency);
+                if (MouseIsStick)
+                {
+                    m = InputMapper.Combine(m, _mouse.Mapped(_mouseMode));
+                }
+            }
+
+            if (_pads != null)
+            {
+                IReadOnlyList<PadInfo> devices = _pads.Devices;
+                if (index < devices.Count && _pads.TryGetState(devices[index].InstanceId, _scratch))
+                {
+                    m = index == 0
+                        ? InputMapper.Combine(m, InputMapper.Map(ProfileFor(devices[index]), _scratch, null), 100)
+                        : InputMapper.Map(ProfileFor(devices[index]), _scratch, null);
+                }
+            }
+            else if (index == 0 && _fallback != null && _fallbackProfile != null)
+            {
+                m = InputMapper.Combine(m, InputMapper.Map(_fallbackProfile, _fallback, null));
+            }
+
+            return m.State;
+        }
+    }
+
+    /// <summary>sceCtrlSetActuator on a PS TV: the motors of port <paramref name="port"/>'s controller (the port-th
+    /// connected one). Until the guest sets them again they keep going (SDL's longest rumble, renewed by each call).</summary>
+    public void SetVibration(int port, byte small, byte large)
+    {
+        if (_pads == null)
+        {
+            return;
+        }
+
+        IReadOnlyList<PadInfo> devices = _pads.Devices;
+        if (port >= 1 && port <= devices.Count)
+        {
+            _pads.Rumble(devices[port - 1].InstanceId, (ushort)(large * 257), (ushort)(small * 257));
         }
     }
 

@@ -1,5 +1,16 @@
 namespace VitaSharp.Core.Hle;
 
+/// <summary>The console model the emulated unit is (the emulator option "Modelo"; --model=, VITASHARP_MODEL).</summary>
+public enum ConsoleModel
+{
+    /// <summary>A PS Vita handheld, PCH-1000 (the default).</summary>
+    Handheld,
+
+    /// <summary>A PlayStation TV (VTE-1000, "dolce"): no screen, touch panels or motion sensors of its own; up to four
+    /// controllers on ports 1-4.</summary>
+    PsTv,
+}
+
 /// <summary>
 /// The identity of the emulated unit as the boot loader hands it to the kernel (the KBL parameters, read by
 /// SceSblAIMgr in SceSysmem 3.74): the product code block (pscode, +0xA0: company, product, sub code, factory code;
@@ -17,6 +28,22 @@ public static class ConsoleIdentity
 
     /// <summary>The product sub code: 0x10, a PCH-1000 handheld (bit 0x200 marks a PS TV).</summary>
     public const ushort ProductSubCode = 0x10;
+
+    /// <summary>The product sub code of the PS TV model: bit 0x200, the one FW 3.74's SceSblAIMgr tests
+    /// (ksceSblAimgrIsGenuineDolce / IsDolce). The exact sub code of a retail VTE-1000 is unconfirmed; only the bit is
+    /// read by the firmware modules studied.</summary>
+    public const ushort PsTvProductSubCode = 0x201;
+
+    /// <summary>The product sub code of <paramref name="model"/>.</summary>
+    public static ushort ProductSubCodeOf(ConsoleModel model) => model == ConsoleModel.PsTv ? PsTvProductSubCode : ProductSubCode;
+
+    /// <summary>The model a --model= / VITASHARP_MODEL value names: "pstv" (also "vte-1000", "dolce", "tv") is the PS
+    /// TV; anything else, or nothing, the handheld.</summary>
+    public static ConsoleModel ParseModel(string? value)
+    {
+        string text = (value ?? "").Trim().ToLowerInvariant();
+        return text is "pstv" or "ps-tv" or "vte-1000" or "vte1000" or "dolce" or "tv" ? ConsoleModel.PsTv : ConsoleModel.Handheld;
+    }
 
     /// <summary>The factory code: 0.</summary>
     public const ushort FactoryCode = 0;

@@ -397,6 +397,8 @@ public sealed class SettingsPage : UserControl
                 i => Set(() => _settings.CpuMhz = i == 1 ? 444 : 0), 300)),
             _k.Row("zap", S.FastLoading, S.FastLoadingGlobalDetail, _k.Switch(_settings.FastLoading, v => Set(() => _settings.FastLoading = v)),
                 tip: S.FastLoadingTip),
+            _k.Row("vita", S.ConsoleModel, S.ConsoleModelDetail, _k.Dropdown([S.ConsoleModelVita, S.ConsoleModelPsTv],
+                _settings.Model == "pstv" ? 1 : 0, i => Set(() => _settings.Model = i == 1 ? "pstv" : ""), 300)),
             CameraRow(webcams, back: false),
             CameraRow(webcams, back: true)));
 

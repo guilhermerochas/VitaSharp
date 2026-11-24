@@ -26,7 +26,7 @@ public interface ITextCapture
 }
 
 /// <summary>Desktop window: Vulkan surface, keyboard/gamepad/mouse input.</summary>
-public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDisposable
+public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMultiControllerInput, IDisposable
 {
     readonly IWindow _window;
     // windowed size/position to restore when F11 leaves fullscreen (no position when the window started fullscreen)
@@ -1051,6 +1051,14 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     }
 
     public ControllerState GetController(int port) => TextCapture != null ? ControllerState.Neutral : _hostInput.Poll().State;
+
+    /// <summary>The host's controllers one by one (a PS TV's ports 1-4).</summary>
+    public int ControllerCount => _hostInput.ControllerCount;
+
+    public ControllerState GetPad(int index) => TextCapture != null ? ControllerState.Neutral : _hostInput.GetPad(index);
+
+    /// <summary>The controllers' vibration (sceCtrlSetActuator on a PS TV).</summary>
+    public IControllerVibration Vibration => _hostInput;
 
     /// <summary>Controller gyroscope/accelerometer for SceMotion.</summary>
     public IMotionSource Motion => _hostInput;

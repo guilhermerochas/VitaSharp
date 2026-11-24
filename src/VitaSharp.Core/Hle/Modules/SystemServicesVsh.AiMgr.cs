@@ -29,8 +29,11 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0xB33CEC8F, Library = "SceSblAIMgrForDriver")]
     int ksceSblAimgrGetProductSubCode()
     {
-        return ConsoleIdentity.ProductSubCode;
+        return SubCode;
     }
+
+    /// <summary>The product sub code of the unit's model (<see cref="ConsoleIdentity.ProductSubCodeOf"/>).</summary>
+    ushort SubCode => ConsoleIdentity.ProductSubCodeOf(Emu?.Options.Model ?? ConsoleModel.Handheld);
 
     /// <summary>ksceSblAimgrGetSMI (0x47D9CF13)(uint *smi): the secure module information word of the boot
     /// parameters; NULL is 0x800F0C16.</summary>
@@ -103,10 +106,10 @@ public sealed partial class SystemServicesVsh
         return board is 0x700000 or 0x720000 or 0x510000;
     }
 
-    static bool AimgrIsGenuineDolce()
+    bool AimgrIsGenuineDolce()
     {
-        bool toolDolce = ConsoleIdentity.ProductCode == ProductTool && ConsoleIdentity.ProductSubCode == 0x408;
-        if (toolDolce || (ConsoleIdentity.ProductSubCode & 0x200) != 0)
+        bool toolDolce = ConsoleIdentity.ProductCode == ProductTool && SubCode == 0x408;
+        if (toolDolce || (SubCode & 0x200) != 0)
         {
             return true;
         }
@@ -122,7 +125,7 @@ public sealed partial class SystemServicesVsh
         return AimgrIsGenuineDolce() ? 1 : 0;
     }
 
-    static bool AimgrIsGenuineVita()
+    bool AimgrIsGenuineVita()
     {
         bool known = (ushort)(ConsoleIdentity.ProductCode - ProductTest) <= 0x11;
         if (known && !AimgrIsGenuineDolce())

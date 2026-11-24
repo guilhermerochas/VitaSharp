@@ -409,6 +409,8 @@ public static class Runner
         using var emu = new Emulator(new EmulatorOptions
         {
             FsRoot = Program.FsRoot,
+            // --model=pstv: the launcher's "Modelo" (a PlayStation TV; default VITASHARP_MODEL, else the handheld)
+            Model = VitaSharp.Core.Hle.ConsoleIdentity.ParseModel(Opt(options, "--model") ?? Environment.GetEnvironmentVariable(EnvVars.Model)),
             EnableJit = !noJit,
             CpuBackend = Opt(options, "--cpu"),
             TraceHle = trace,
@@ -499,6 +501,8 @@ public static class Runner
         // scripted input also works in a window (automated checks of the windowed path: swapchain, LoadExec)
         var scripted = Opt(options, "--input") is { } windowScript ? new ScriptedInput(windowScript) : null;
         emu.Host.Input = scripted ?? (IInputBackend)window;
+        // a PS TV's controllers vibrate (sceCtrlSetActuator); a script has none
+        emu.Host.Vibration = scripted == null ? window.Vibration : null;
         // motion sensors: the controller's gyro (SDL), or the script's tilt steps
         emu.Host.Motion = scripted ?? window.Motion;
         emu.Host.Audio = audio;
