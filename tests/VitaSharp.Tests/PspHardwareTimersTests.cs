@@ -163,7 +163,7 @@ public sealed class PspHardwareTimersTests
     [Fact]
     public void StandardHardwareHasTheTimersOnTheirLines()
     {
-        PspHardware hardware = PspHardware.CreateStandard(new AllegrexTestBus());
+        var hardware = PspHardware.CreateStandard(new AllegrexTestBus());
         hardware.Interrupts.Write32(0x08, 1u << PspInterrupt.SystemTimer2);
         Assert.True(hardware.TryWrite32(0x1C500028, 1));
         Assert.True(hardware.TryWrite32(0x1C50002C, 1));

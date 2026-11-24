@@ -274,10 +274,7 @@ public sealed class CompatCoreRunner
     /// <see cref="SetInterruptLevel"/>).</summary>
     private void AdvanceHardware()
     {
-        if (_hardware != null)
-        {
-            _hardware.Advance(CoreTimeNs);
-        }
+        _hardware?.Advance(CoreTimeNs);
     }
 
     private long CoreTimeNsLocked()
