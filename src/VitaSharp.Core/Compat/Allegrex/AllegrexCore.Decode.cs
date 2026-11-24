@@ -67,6 +67,24 @@ public sealed partial class AllegrexCore
             case 0x1F:
                 ExecuteSpecial3(instruction);
                 break;
+            case 0x20:
+            case 0x21:
+            case 0x22:
+            case 0x23:
+            case 0x24:
+            case 0x25:
+            case 0x26:
+            case 0x30:
+                ExecuteLoad(instruction);
+                break;
+            case 0x28:
+            case 0x29:
+            case 0x2A:
+            case 0x2B:
+            case 0x2E:
+            case 0x38:
+                ExecuteStore(instruction);
+                break;
             default:
                 Unimplemented(instruction, "integer");
                 break;
