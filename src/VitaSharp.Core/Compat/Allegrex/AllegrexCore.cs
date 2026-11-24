@@ -363,9 +363,4 @@ public sealed partial class AllegrexCore
 
         throw new AllegrexUnimplementedException(_currentPc, instruction, unit);
     }
-
-    void Execute(uint instruction)
-    {
-        Unimplemented(instruction, "integer");
-    }
-}
+}
