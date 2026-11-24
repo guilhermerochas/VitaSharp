@@ -1,4 +1,5 @@
 using VitaSharp.Core.Compat.Allegrex;
+using VitaSharp.Core.Compat.Psp;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
 
@@ -14,8 +15,8 @@ namespace VitaSharp.Core.Compat;
 /// <item>The shared SRAM, PSP 0xBFC00000 (<see cref="CompatSharedSram"/>).</item>
 /// <item>The mailbox's core side (<see cref="CompatMailbox"/>, address inferred).</item>
 /// </list>
-/// Anything else is hardware of phase 3 (interrupt controller, timers, DMA, GE, KIRK): reads give 0, writes are
-/// dropped, and the first accesses of each address are logged ("unknown MMIO"), which is how the boot trace finds
+/// Then the PSP-side register blocks of <see cref="Hardware"/> (interrupt controller, timers, DMA...). Anything else
+/// (GE, KIRK, the rest of phase 3): reads give 0, writes are dropped, and the first accesses of each address are logged ("unknown MMIO"), which is how the boot trace finds
 /// what the firmware touches.
 /// </summary>
 public sealed class PspBus(CompatSharedSram sram, CompatMailbox mailbox) : IAllegrexBus
@@ -33,6 +34,10 @@ public sealed class PspBus(CompatSharedSram sram, CompatMailbox mailbox) : IAlle
     private readonly uint[] _banks = new uint[Banks];
     private readonly HashSet<uint> _unknownLogged = [];
     private int _unknownAccesses;
+
+    /// <summary>The PSP-side register blocks (interrupt controller, timers, DMA...), reached for any address that
+    /// is not RAM, the shared SRAM or the mailbox; null: none (every such access is unknown).</summary>
+    public PspHardware? Hardware { get; set; }
 
     /// <summary>The unknown accesses so far (logged or not).</summary>
     public int UnknownAccesses => Volatile.Read(ref _unknownAccesses);
@@ -93,6 +98,11 @@ public sealed class PspBus(CompatSharedSram sram, CompatMailbox mailbox) : IAlle
             return sram.Read8((int)(physical - CompatSharedSram.PspPhysicalBase));
         }
 
+        if (Hardware != null && Hardware.TryReadNarrow(physical, 1, out uint register))
+        {
+            return (byte)register;
+        }
+
         Unknown(physical, "read8");
         return 0;
     }
@@ -109,6 +119,11 @@ public sealed class PspBus(CompatSharedSram sram, CompatMailbox mailbox) : IAlle
         if (physical - CompatSharedSram.PspPhysicalBase < CompatSharedSram.Size)
         {
             return sram.Read16((int)(physical - CompatSharedSram.PspPhysicalBase));
+        }
+
+        if (Hardware != null && Hardware.TryReadNarrow(physical, 2, out uint register))
+        {
+            return (ushort)register;
         }
 
         Unknown(physical, "read16");
@@ -134,6 +149,11 @@ public sealed class PspBus(CompatSharedSram sram, CompatMailbox mailbox) : IAlle
             return mailbox.PspRead32(physical - CompatMailbox.PspPhysicalBase);
         }
 
+        if (Hardware != null && Hardware.TryRead32(physical, out uint register))
+        {
+            return register;
+        }
+
         Unknown(physical, "read32");
         return 0;
     }
@@ -154,6 +174,11 @@ public sealed class PspBus(CompatSharedSram sram, CompatMailbox mailbox) : IAlle
             return;
         }
 
+        if (Hardware != null && Hardware.TryWriteNarrow(physical, 1, value))
+        {
+            return;
+        }
+
         Unknown(physical, "write8");
     }
 
@@ -170,6 +195,11 @@ public sealed class PspBus(CompatSharedSram sram, CompatMailbox mailbox) : IAlle
         if (physical - CompatSharedSram.PspPhysicalBase < CompatSharedSram.Size)
         {
             sram.Write16((int)(physical - CompatSharedSram.PspPhysicalBase), value);
+            return;
+        }
+
+        if (Hardware != null && Hardware.TryWriteNarrow(physical, 2, value))
+        {
             return;
         }
 
@@ -195,6 +225,11 @@ public sealed class PspBus(CompatSharedSram sram, CompatMailbox mailbox) : IAlle
         if (physical - CompatMailbox.PspPhysicalBase < CompatMailbox.Size)
         {
             mailbox.PspWrite32(physical - CompatMailbox.PspPhysicalBase, value);
+            return;
+        }
+
+        if (Hardware != null && Hardware.TryWrite32(physical, value))
+        {
             return;
         }
 
