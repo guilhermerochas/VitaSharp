@@ -174,7 +174,9 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
 
 ### (b) Bluetooth keyboard and mouse
 
-- **Today:** `SceHid` enumerates no device.
+- **Today:** with the option (`--bt-keyboard-mouse=on`, Settings > Emulation; Android: Ajustes) the host keyboard and
+  mouse are the paired devices: `sceHid{Keyboard,Mouse}Enumerate/Read/Peek` as FW 3.74 (`Hle/Modules/Hid.cs`,
+  `Host/Hid.cs`). Missing: the hint callbacks' notifications, the shell's Bluetooth settings listing them.
 - **Impact:** typing in the browser, the IME and apps that read a keyboard directly; mouse in the browser.
 - **Size:** [M]. **First testable delivery:** the host keyboard offered as one paired keyboard (an option):
   `sceHidKeyboardEnumerate` returns one handle and `sceHidKeyboardRead` reports scripted key presses.

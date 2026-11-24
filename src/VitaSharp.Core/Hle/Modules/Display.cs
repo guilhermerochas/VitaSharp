@@ -763,27 +763,6 @@ public sealed partial class Ctrl : HleModule
     int sceCtrlGetBatteryInfo(int port, Ptr<byte> level) { level.TrySet(5); return 0; }
 }
 
-/// <summary>SceHid: USB/Bluetooth keyboards and mice. None are attached, so enumeration finds no devices.</summary>
-public sealed partial class Hid : HleModule
-{
-    /// <summary>sceHid{Keyboard,Mouse}Enumerate(int *handles, int count): returns the number of devices written.</summary>
-    [Hle("sceHidKeyboardEnumerate")]
-    [Hle("sceHidMouseEnumerate")]
-    int sceHidEnumerate(uint handles, int count) => 0;
-
-    /// <summary>
-    /// psp2/hid.h: <c>int sceHidKeyboardRead/Peek(SceUInt32 handle, SceHidKeyboardReport *reports[], int nReports)</c>
-    /// and <c>int sceHidMouseRead(SceUInt32 handle, SceHidMouseReport *reports[], int nReports)</c>; the result is the
-    /// number of reports filled. No device is ever attached, so there is never a report: return 0 at once instead of
-    /// blocking (Read is documented as blocking, which would hang a caller polling a handle it never enumerated).
-    /// The report buffers are not touched.
-    /// </summary>
-    [Hle("sceHidKeyboardRead")]
-    [Hle("sceHidKeyboardPeek")]
-    [Hle("sceHidMouseRead")]
-    int sceHidRead(uint handle, uint reports, int nReports) => 0;
-}
-
 public sealed partial class Touch : HleModule
 {
     /// <summary>libtouch's calls are syscalls into the touch driver (SceTouch, FW 3.74): Peek, the regions and the

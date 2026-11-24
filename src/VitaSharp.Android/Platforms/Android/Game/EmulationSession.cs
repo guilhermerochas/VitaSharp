@@ -293,7 +293,19 @@ public sealed partial class EmulationSession : IDisposable
         _emu.Host.Microphone = VitaSharp.Core.Host.MicrophoneSpec.Parse(prefs.Microphone).CreateSource(_ => microphone);
         // SceLibLocation: the "Localizacao" setting (off by default, the phone's location service, or a fixed position)
         _emu.Host.Location = VitaSharp.Core.Host.LocationSpec.Parse(prefs.Location).CreateSource(() => location);
+        // SceHid: the "Teclado e mouse Bluetooth" setting pairs the phone's keyboard and mouse with the Vita
+        if (prefs.BluetoothKeyboardMouse)
+        {
+            _emu.Host.HidKeyboard = HidKeyboard = new VitaSharp.Core.Host.HidKeyboard();
+            _emu.Host.HidMouse = HidMouse = new VitaSharp.Core.Host.HidMouse();
+        }
     }
+
+    /// <summary>The phone's keyboard as the Vita's paired keyboard (the setting), null = not paired.</summary>
+    public VitaSharp.Core.Host.HidKeyboard? HidKeyboard { get; private set; }
+
+    /// <summary>The phone's mouse as the Vita's paired mouse (the setting), null = not paired.</summary>
+    public VitaSharp.Core.Host.HidMouse? HidMouse { get; private set; }
 
     /// <summary>surfaceCreated: the first one boots the game, later ones re-attach the renderer.</summary>
     public void SurfaceCreated(AndroidVulkanSurface surface)

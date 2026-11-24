@@ -385,6 +385,8 @@ public static class Strings
     public static string ConsoleModelDetail => T();
     public static string ConsoleModelVita => T();
     public static string ConsoleModelPsTv => T();
+    public static string BluetoothKeyboardMouse => T();
+    public static string BluetoothKeyboardMouseDetail => T();
     public static string SectionAdvanced => T();
     public static string StartSection => T();
     public static string StartupView => T();

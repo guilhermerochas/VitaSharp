@@ -199,6 +199,10 @@ supported), each connected controller is a player on ports 1-4 (the keyboard pla
 their vibration reaches the controllers. The PS TV's own system software, HDMI settings and USB host are not
 emulated yet.
 
+**Bluetooth keyboard and mouse.** **Settings > Emulation > Bluetooth keyboard and mouse** (or `--bt-keyboard-mouse=on`)
+pairs the PC keyboard and mouse with the Vita, for games and apps that read a keyboard or mouse (SceHid: the browser,
+chat). Off by default; the keys still work as the controller while it is on.
+
 Data lives in `%APPDATA%\VitaSharp` on Windows (`~/.local/share/VitaSharp` on Linux,
 `~/Library/Application Support/VitaSharp` on macOS; `--data=<folder>` or `VITASHARP_DATA` change the folder): games in
 `fs/ux0/app`, firmware in `fs/os0`... , `logs/`, `savestates/`, `captures/` (Record everything), `gpudumps/`,

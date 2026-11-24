@@ -480,17 +480,68 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         // a controller's own keys (and their auto-repeats, which DispatchKeyEvent leaves to us) are not keyboard keys
         if (AppServices.Gamepads.IsConnected(e.DeviceId))
             return false;
+        // the paired Bluetooth keyboard (the setting): the key also goes to it as a USB HID usage
+        bool toHid = false;
+        if (_session?.HidKeyboard is { } hidKeyboard && e.RepeatCount == 0
+            && VitaSharp.Core.Host.HidUsages.FromAndroidKeyCode((int)keyCode) is var usage and not 0)
+        {
+            hidKeyboard.Key(usage, down, VitaSharp.Core.Hle.Modules.Hid.NowUs);
+            toHid = true;
+        }
+
         var action = _keyboard.OnKey((int)keyCode, down, e.RepeatCount > 0);
         if ((action & KeyboardKeyAction.Pause) != 0)
             OpenMenu();
         // the PS key in a game without the shell: the pause menu, like the on-screen PS and a controller's PS button
         if ((action & KeyboardKeyAction.PsButton) != 0 && !_isSystem)
             OnPsPressed();
-        return action != KeyboardKeyAction.None;
+        return action != KeyboardKeyAction.None || toHid;
+    }
+
+    /// <summary>The last pointer position the paired mouse moved from.</summary>
+    float _hidMouseX = float.NaN, _hidMouseY = float.NaN;
+
+    /// <summary>A mouse event for the paired Bluetooth mouse (the setting): its travel, wheel and buttons.</summary>
+    bool OnHidMouse(MotionEvent e)
+    {
+        if (_session?.HidMouse is not { } mouse || (e.Source & InputSourceType.Mouse) != InputSourceType.Mouse)
+            return false;
+        ulong now = VitaSharp.Core.Hle.Modules.Hid.NowUs;
+        switch (e.Action)
+        {
+            case MotionEventActions.HoverMove:
+            case MotionEventActions.Move:
+                if (!float.IsNaN(_hidMouseX))
+                    mouse.Move((int)MathF.Round(e.GetX() - _hidMouseX), (int)MathF.Round(e.GetY() - _hidMouseY), 0, now);
+                _hidMouseX = e.GetX();
+                _hidMouseY = e.GetY();
+                return true;
+            case MotionEventActions.Scroll:
+                mouse.Move(0, 0, (int)MathF.Round(e.GetAxisValue(Axis.Vscroll)), now);
+                return true;
+            case MotionEventActions.ButtonPress:
+            case MotionEventActions.ButtonRelease:
+                int button = e.ActionButton switch
+                {
+                    MotionEventButtonState.Primary => 0,
+                    MotionEventButtonState.Secondary => 1,
+                    MotionEventButtonState.Tertiary => 2,
+                    _ => -1,
+                };
+                mouse.Button(button, e.Action == MotionEventActions.ButtonPress, now);
+                return true;
+            default:
+                return false;
+        }
     }
 
     public override bool OnGenericMotionEvent(MotionEvent? e)
     {
+        if (e != null && !MenuVisible && OnHidMouse(e))
+        {
+            return true;
+        }
+
         // the pause menu: sticks and hats are left to Android, which turns them into D-pad keys that move the focus
         if (e != null && !MenuVisible && (e.Source & InputSourceType.Joystick) == InputSourceType.Joystick && e.Action == MotionEventActions.Move
             && AppServices.Gamepads.OnMotion(e.DeviceId, axis => e.GetAxisValue((Axis)axis)))
