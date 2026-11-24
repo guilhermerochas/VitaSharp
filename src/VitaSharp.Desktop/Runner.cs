@@ -523,12 +523,15 @@ public static class Runner
         }
         var titleTimer = new System.Threading.Timer(_ =>
         {
-            long frames = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
+            // the frames that reached the screen: flips, and the scanout's pictures of a CPU framebuffer changed
+            // without a flip (DisplayScanout)
+            long frames = VitaSharp.Core.Hle.Modules.Display.FramesShown;
             fps = (frames - lastFrames) / 1.0;
             lastFrames = frames;
             if (++titleTicks % 5 == 0)
             {
-                Log.Info($"FPS frame {frames}: {fps:F0} frames/s");
+                long scanned = Interlocked.Read(ref VitaSharp.Core.Gpu.DisplayScanout.Frames);
+                Log.Info($"FPS frame {VitaSharp.Core.Hle.Modules.Display.FramesPresented}: {fps:F0} frames/s{(scanned > 0 ? $" ({scanned} frames shown by the scanout of a CPU framebuffer, without a flip)" : "")}");
             }
 
             ShowTitle();

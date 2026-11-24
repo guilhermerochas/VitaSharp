@@ -2002,6 +2002,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             UploadSurfaceFromGuest(_cpuFramebuffer);
             CompositeRenderTargetsInFramebuffer(_cpuFramebuffer, frame);
             src = _cpuFramebuffer;
+            NoteScanoutSource(frame, cpu: true); // VulkanRenderer.Scanout.cs: the display's scanout watches its memory
+        }
+        else
+        {
+            NoteScanoutSource(frame, cpu: false);
         }
         SyncRenderTargetForRead(src);
         src.LastUsedFrame = src.LastTouchedFrame = FrameCount;

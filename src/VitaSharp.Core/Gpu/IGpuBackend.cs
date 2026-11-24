@@ -15,6 +15,11 @@ public interface IGpuBackend : IDisposable
     {
     }
 
+    /// <summary>How long (host milliseconds) the idle worker may sleep before it calls <see cref="Idle"/> again when no
+    /// command comes: shorter while the backend watches a CPU framebuffer for the display's scanout
+    /// (<see cref="DisplayScanout"/>), so the next vblank is not missed.</summary>
+    int IdleWakeMs => 50;
+
     /// <summary>The backend was installed on <paramref name="queue"/> (lets <see cref="Idle"/> notice newly queued work).</summary>
     void Attach(GpuQueue queue)
     {

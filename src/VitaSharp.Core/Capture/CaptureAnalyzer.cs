@@ -138,6 +138,14 @@ public static class CaptureAnalyzer
             sb.AppendLine($"input: {input.Count(e => e.Kind == "pad")} pad, {input.Count(e => e.Kind == "touch")} touch, {input.Count(e => e.Kind == "motion")} motion, {input.Count(e => e.Kind == "rng")} random, {input.Count(e => e.Kind == "key")} hotkey events");
             sb.AppendLine(FpsLine(stats));
         }
+        else
+        {
+            // said, not left out: a recording in which the screen never changed (a program waiting for input over a
+            // framebuffer it drew once) read as a capture whose frames line was lost
+            sb.AppendLine("frames: 0 presented (the screen did not change during the recording: no flip and no change in the memory of the framebuffer shown)");
+            sb.AppendLine(dumpPresents.Count > 0 ? $"GPU dump: {dumpPresents.Count} frames" : "GPU dump: none");
+            sb.AppendLine($"input: {input.Count(e => e.Kind == "pad")} pad, {input.Count(e => e.Kind == "touch")} touch, {input.Count(e => e.Kind == "motion")} motion, {input.Count(e => e.Kind == "rng")} random, {input.Count(e => e.Kind == "key")} hotkey events");
+        }
 
         // where the player is, what the screen showed, what they did just before
         sb.AppendLine();

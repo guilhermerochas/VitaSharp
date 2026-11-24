@@ -250,6 +250,10 @@ public sealed partial class Display : HleModule
     }
 
     public static long FramesPresented;
+    /// <summary>Frames that reached the screen: the flips plus the pictures the display's scanout showed of a CPU
+    /// framebuffer the program changed without a flip (<see cref="DisplayScanout"/>). The frame rate on screen counts
+    /// these; the guest's own frame count (<see cref="FramesPresented"/>) does not.</summary>
+    public static long FramesShown => FramesPresented + Interlocked.Read(ref DisplayScanout.Frames);
     /// <summary>Called on the presenting guest thread after each frame the foreground process shows (the Android app
     /// reports the frame's work duration to its performance hint session here). Must be cheap and must not throw.</summary>
     public static Action? Presented;

@@ -3189,6 +3189,17 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (24/11/2026, falta testar) [P1][M] Tela de CPU framebuffer preta e 0 fps (Adrenaline, fix/disp1): no Vita o
+  `sceDisplaySetFrameBuf` só entrega ao display o endereço do framebuffer, e o display lê essa memória a cada vblank;
+  um programa que define o framebuffer uma vez e depois escreve o texto com a CPU (a tela de instalação do Adrenaline,
+  que fica esperando um botão) tem o texto na tela no vblank seguinte. O emulador só mostrava um quadro a cada flip.
+  Agora, com um framebuffer de CPU na tela, o worker da GPU ocioso olha a memória dele uma vez por vblank (hash) e
+  mostra de novo quando mudou (`DisplayScanout`, `VulkanRenderer.Scanout.cs`); framebuffer renderizado pela GPU não é
+  olhado, e o ritmo do guest não muda. O fps na tela conta esses quadros, a gravação F8 grava eles, e o report diz
+  "frames: 0 presented" quando nada mudou. Testes: `DisplayScanoutTests`. Testar: abrir o Adrenaline
+  (PSPEMUCFW): a tela de instalação mostra o texto (não fica preta) e o fps sai de 0 quando a tela muda; gravar com
+  F8 ("Gravar tudo") nessa tela e parar: o report tem a linha "frames:" com os quadros da tela.
+
 - [ ] (23/11/2026, falta testar) [P3][P] `ksceAppMgrLaunchAppByPath` (SceAppMgrForDriver B0A37065) como no 3.74 de
   varejo (fix/quick3): no SceAppMgr 3.74 (0x8100c504) a primeira coisa é o `ksceSblACMgrIsDevelopmentMode`, então
   num aparelho de varejo a entrada responde 0x80020012 a tudo; com o modo de desenvolvimento seguem as flags de

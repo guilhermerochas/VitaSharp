@@ -329,7 +329,7 @@ public sealed partial class EmulationSession : IDisposable
             Log.Info($"Renderer: {_renderer.DeviceName}");
             _emu.Gpu.Backend = _renderer;
             _emu.LoadTitle(_game.AppDir, BootExecutable());
-            _framesAtStart = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
+            _framesAtStart = VitaSharp.Core.Hle.Modules.Display.FramesShown;
             _played.Start();
             _emu.Start();
             _emuStarted = true;
@@ -406,8 +406,9 @@ public sealed partial class EmulationSession : IDisposable
     /// failure or a crash terminated it): nothing more will be drawn, the activity offers to leave.</summary>
     public bool Ended => _emuStarted && !_disposed && !_emu.Running && _emu.ExecRequest == null && !_emu.Execing;
 
-    /// <summary>Frames the guest presented since the game started.</summary>
-    public long Frames => VitaSharp.Core.Hle.Modules.Display.FramesPresented - _framesAtStart;
+    /// <summary>Frames shown since the game started: the flips and the scanout's pictures of a CPU framebuffer
+    /// changed without a flip (Display.FramesShown).</summary>
+    public long Frames => VitaSharp.Core.Hle.Modules.Display.FramesShown - _framesAtStart;
 
     /// <summary>The audio device and every stream's buffering and underruns (periodic log line).</summary>
     public string AudioSummary => _audio?.Describe() ?? "no audio backend";

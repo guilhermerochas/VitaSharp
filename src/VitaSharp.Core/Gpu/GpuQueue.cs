@@ -874,6 +874,7 @@ public sealed class GpuQueue : IDisposable
                         Log.Error($"GPU backend idle failed: {e}");
                     }
                     GpuDumpRecorder.Current?.AfterIdle();
+                    int idleWakeMs = _held.Count > 0 ? 2 : Backend?.IdleWakeMs ?? 50;
                     long ti = FrameLedger.Now();
                     if (s_lightSignals)
                     {
@@ -882,7 +883,7 @@ public sealed class GpuQueue : IDisposable
                         Interlocked.Exchange(ref _workerSleeping, 1);
                         if (_queue.IsEmpty)
                         {
-                            _available.Wait(_held.Count > 0 ? 2 : 50);
+                            _available.Wait(idleWakeMs);
                         }
 
                         Interlocked.Exchange(ref _workerSleeping, 0);
@@ -894,7 +895,7 @@ public sealed class GpuQueue : IDisposable
                     }
                     else
                     {
-                        bool got = _available.Wait(_held.Count > 0 ? 2 : 50);
+                        bool got = _available.Wait(idleWakeMs);
                         FrameLedger.AddSince(FrameLedger.Cat.GpuIdle, ti);
                         if (!got || !_queue.TryDequeue(out cmd))
                         {

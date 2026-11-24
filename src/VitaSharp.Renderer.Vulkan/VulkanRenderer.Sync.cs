@@ -144,6 +144,10 @@ public sealed unsafe partial class VulkanRenderer
         {
             PresentBootSplash(); // VulkanRenderer.BootSplash.cs
         }
+        else
+        {
+            ShowWhileIdle(); // the display's scanout of a CPU framebuffer, overlay changes (VulkanRenderer.Scanout.cs)
+        }
         // keep latency low when the guest stops producing work (loading screens etc.)
         bool resultsRecorded = F.Recording && HasPendingResults(F);
         if (F.Recording && (!_inScene || resultsRecorded) && (_drawsSinceSubmit > 0 || resultsRecorded))
