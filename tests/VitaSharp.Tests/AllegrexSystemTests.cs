@@ -5,7 +5,7 @@ namespace VitaSharp.Tests;
 
 /// <summary>
 /// Allegrex system side: syscall/break (host handler and exception), traps, COP0 moves, eret, interrupts (Status.IE or
-/// mtic, masks, EXL), halt, reserved and not-yet-emulated instructions.
+/// mtic, masks, EXL), halt, reserved instructions, the COP0 timer.
 /// </summary>
 public sealed class AllegrexSystemTests
 {
@@ -281,26 +281,6 @@ public sealed class AllegrexSystemTests
         Assert.Equal(AllegrexRig.ExceptionBase, rig.Core.Pc);
     }
 
-    [Theory]
-    [InlineData(0x46000000u, "FPU")]  // add.s
-    [InlineData(0xC4000000u, "FPU")]  // lwc1
-    [InlineData(0x60000000u, "VFPU")] // vadd
-    [InlineData(0xD8000000u, "VFPU")] // lv.q
-    [InlineData(0x48000000u, "VFPU")] // mfv
-    public void FpuAndVfpuAreReportedAsNotEmulated(uint instruction, string unit)
-    {
-        AllegrexRig rig = new(instruction);
-        AllegrexUnimplementedException error = Assert.Throws<AllegrexUnimplementedException>(() => rig.Core.Run(1));
-        Assert.Equal(instruction, error.Instruction);
-        Assert.Equal(AllegrexRig.CodeBase, error.Address);
-        Assert.StartsWith(unit, error.Unit);
-
-        AllegrexRig handled = new(instruction, Addiu(T0, Zero, 1));
-        handled.Core.TrapHandler = (core, kind, code, address) => kind == AllegrexTrapKind.Unimplemented && code == instruction;
-        handled.Step(2);
-        Assert.Equal(1u, handled[T0]);
-    }
-
     [Fact]
     public void CacheAndSyncDoNothing()
     {
@@ -320,5 +300,33 @@ public sealed class AllegrexSystemTests
         Assert.Equal(AllegrexCore.ResetConfig, core.ReadCop0(AllegrexCore.Cop0Config));
         Assert.False(core.Halted);
         Assert.Equal(0u, core.InterruptControl);
+    }
+
+    [Fact]
+    public void CountReachingCompareRaisesTheTimerLineUntilCompareIsWritten()
+    {
+        AllegrexRig rig = new(Nop, Nop, Nop, Nop, Nop, Nop, Nop, Nop);
+        rig.Core.WriteCop0(AllegrexCore.Cop0Compare, 5);
+        rig.Step(4);
+        Assert.Equal(0u, rig.Core.Cause & AllegrexCore.CauseTimerInterrupt);
+        rig.Step();
+        Assert.Equal(AllegrexCore.CauseTimerInterrupt, rig.Core.Cause & AllegrexCore.CauseTimerInterrupt);
+        rig.Step();
+        Assert.Equal(AllegrexCore.CauseTimerInterrupt, rig.Core.Cause & AllegrexCore.CauseTimerInterrupt); // level, stays
+        rig.Core.WriteCop0(AllegrexCore.Cop0Compare, 100);
+        Assert.Equal(0u, rig.Core.Cause & AllegrexCore.CauseTimerInterrupt);
+    }
+
+    [Fact]
+    public void TimerInterruptIsTakenOnLineSeven()
+    {
+        AllegrexRig rig = new(Nop, Nop, Nop, Nop, Nop, Nop, Nop, Nop);
+        rig.Core.Status = AllegrexCore.StatusIe | AllegrexCore.CauseTimerInterrupt; // IM7
+        rig.Core.WriteCop0(AllegrexCore.Cop0Compare, 3);
+        rig.Step(3);
+        rig.Step();
+        Assert.Equal(AllegrexRig.ExceptionBase + 4, rig.Core.Pc);
+        Assert.Equal(AllegrexRig.CodeBase + 12, rig.Core.Epc);
+        Assert.Equal((uint)AllegrexExceptionCode.Interrupt, ExceptionCode(rig.Core));
     }
 }

@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.md sha256=0d56a6e8bc94fbc8e9ddf75f17d5482f98c0d141f305219318600cdb55599f7a -->
+<!-- pair: psp-compat.md sha256=caf18c21dfc08bda821f9f599c19ae818e4fc1f49024ddb84499db6c45f5704a -->
 # Núcleo de compatibilidade PSP (SceCompat, ScePspemu, Allegrex)
 
 *English: [psp-compat.md](psp-compat.md).*
@@ -162,6 +162,16 @@ controlador de interrupções do PSP é a IP2) tomadas com Status.IE ou `mtic`, 
 primeiro ao host. Os resultados que o MIPS32 deixa imprevisíveis seguem as notas do PPSSPP conferidas no hardware
 (pspautotests): divisão por zero, `0x80000000 / -1`, a decodificação parcial de rotr/rotrv e do grupo
 seb/seh/wsbh/wsbw/bitrev, `ins` com msb < pos, o estado de reset. Testes: `tests/VitaSharp.Tests/Allegrex*Tests.cs`.
+
+A FPU (COP1) calcula cada resultado exato em software para os quatro modos de arredondamento do FCR31, sem depender do
+modo da FPU do host, com as cinco causas, flags e enables IEEE (uma habilitada toma o ExcCode 15), o `0x7FC00000` do
+PSP para NaNs gerados e a regra dele de flush-to-zero (o FS zera resultados, pequenez antes do arredondamento, nunca
+as entradas). A VFPU (COP2) está completa: as visões S/C/R/M/E dos registradores, os prefixos com o alcance de cada
+instrução, todos os opcodes, a aritmética dela (arredonda para o mais próximo, denormais como zeros, NaNs sem payload
+`0x7F800001`), o produto escalar exato, e `vrcp`/`vrsq`/`vsqrt`/`vsin`/`vcos`/`vasin`/`vexp2`/`vlog2` pelas tabelas
+do interpolador do hardware ([third_party/ppsspp](../../third_party/ppsspp/README.md)); elas e o gerador aleatório
+batem bit a bit com saídas gravadas num PSP (pspautotests `cpu/vfpu/exact`, `cpu/vfpu/vrnd`). O Count do COP0 chegando
+ao Compare liga o Cause.IP7.
 
 Três pontos não têm teste de hardware conhecido; o VitaSharp segue a arquitetura MIPS32, que o Allegrex implementa:
 

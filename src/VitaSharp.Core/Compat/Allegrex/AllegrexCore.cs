@@ -8,8 +8,8 @@ namespace VitaSharp.Core.Compat.Allegrex;
 /// <c>address &amp; 0x1FFFFFFF</c> (the 0x0/0x4/0x8/0xA segments are mirrors). Caches are not modelled (the cache
 /// instruction does nothing). COP0 holds what the PSP kernel uses: Status, Cause, EPC, ErrorEPC, EBase, BadVAddr,
 /// Count, the syscall code, the CPU id and the 32 control registers of cfc0/ctc0; every exception and interrupt goes to
-/// EBase (0xBFC00200 while Status.BEV is set) as on the PSP. The FPU (COP1) and VFPU (COP2) are phase 2: their
-/// instructions reach <see cref="TrapHandler"/> as <see cref="AllegrexTrapKind.Unimplemented"/>.
+/// EBase (0xBFC00200 while Status.BEV is set) as on the PSP; Count reaching Compare raises IP7. The FPU (COP1) and the
+/// VFPU (COP2) are in their own files (AllegrexCore.Fpu.cs, AllegrexCore.Vfpu*.cs).
 /// Not thread-safe: one thread calls <see cref="Run"/>, <see cref="RaiseInterrupt"/> and the accessors.
 /// Sources: MIPS32 architecture manual (exceptions, delay slots), PPSSPP's interpreter and its hardware-checked notes
 /// (pspautotests cpu_alu: division by zero, the Allegrex encodings, the ME reset state and interrupt gating) and Jpcsp's
@@ -56,6 +56,9 @@ public sealed partial class AllegrexCore
     public const uint CauseBranchDelay = 0x80000000;
     public const uint CauseInterruptPending = 0x0000FF00;
     public const uint CauseSoftwareInterrupts = 0x00000300;
+
+    /// <summary>Cause.IP7: Count reached Compare (MIPS32), cleared by a write to Compare.</summary>
+    public const uint CauseTimerInterrupt = 0x00008000;
     public const uint CauseExceptionCodeMask = 0x0000007C;
 
     private readonly IAllegrexBus _bus;
@@ -74,6 +77,7 @@ public sealed partial class AllegrexCore
     private uint _hardwareLines;     // Cause.IP2..IP7 as driven by RaiseInterrupt/ClearInterrupt (Cause bit positions)
     private uint _interruptControl;  // the mtic/mfic register ($ic)
     private uint _countOffset;       // Count = executed instructions + offset
+    private bool _timerInterrupt;    // Count reached Compare: Cause.IP7 until Compare is written
     private bool _linkBit;
     private bool _halted;
     private bool _stopped;
@@ -127,7 +131,7 @@ public sealed partial class AllegrexCore
     /// <summary>The LL bit of ll/sc.</summary>
     public bool LinkBit => _linkBit;
 
-    /// <summary>Offered syscall, break and not-yet-emulated instructions first (see <see cref="AllegrexTrapHandler"/>).</summary>
+    /// <summary>Offered syscall and break first (see <see cref="AllegrexTrapHandler"/>).</summary>
     public AllegrexTrapHandler? TrapHandler { get; set; }
 
     public uint Status
@@ -137,7 +141,7 @@ public sealed partial class AllegrexCore
     }
 
     /// <summary>Cause, with IP2..IP7 showing the hardware lines.</summary>
-    public uint Cause => (_cop0[Cop0Cause] & ~(CauseInterruptPending & ~CauseSoftwareInterrupts)) | _hardwareLines;
+    public uint Cause => (_cop0[Cop0Cause] & ~(CauseInterruptPending & ~CauseSoftwareInterrupts)) | _hardwareLines | (_timerInterrupt ? CauseTimerInterrupt : 0);
 
     public uint Epc
     {
@@ -167,7 +171,10 @@ public sealed partial class AllegrexCore
         _cop0[Cop0ErrorEpc] = _pc;
         _hardwareLines = 0;
         _interruptControl = 0;
+        _fcr31 = 0;
+        ResetVfpu();
         _countOffset = 0;
+        _timerInterrupt = false;
         _linkBit = false;
         _halted = false;
         _stopped = false;
@@ -235,6 +242,10 @@ public sealed partial class AllegrexCore
         {
             case Cop0Count:
                 _countOffset = value - (uint)_executedInstructions;
+                break;
+            case Cop0Compare:
+                _cop0[Cop0Compare] = value;
+                _timerInterrupt = false;
                 break;
             case Cop0Cause:
                 _cop0[Cop0Cause] = (_cop0[Cop0Cause] & ~CauseSoftwareInterrupts) | (value & CauseSoftwareInterrupts);
@@ -305,6 +316,11 @@ public sealed partial class AllegrexCore
         _currentInDelaySlot = _nextIsDelaySlot;
         _nextIsDelaySlot = false;
         _executedInstructions++;
+        if ((uint)_executedInstructions + _countOffset == _cop0[Cop0Compare])
+        {
+            _timerInterrupt = true;
+        }
+
         if ((pc & 3) != 0)
         {
             AddressError(pc, AllegrexExceptionCode.AddressErrorLoad);
@@ -351,16 +367,5 @@ public sealed partial class AllegrexCore
     {
         _cop0[Cop0BadVAddr] = address;
         RaiseException(code);
-    }
-
-    private void Unimplemented(uint instruction, string unit)
-    {
-        AllegrexTrapHandler? handler = TrapHandler;
-        if (handler != null && handler(this, AllegrexTrapKind.Unimplemented, instruction, _currentPc))
-        {
-            return;
-        }
-
-        throw new AllegrexUnimplementedException(_currentPc, instruction, unit);
     }
 }
