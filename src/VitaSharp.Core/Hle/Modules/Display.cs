@@ -171,9 +171,27 @@ public sealed partial class Display : HleModule
         Util.Developer.DevTrace.GuestFrame();
 #endif
 
-        if (pParam == 0) { _base = 0; if (Emu.IsShell) Emu.Vita.SetShellOverlay(null, VBlank.Count); return 0; }
+        if (pParam == 0)
+        {
+            _base = 0;
+            _compatPlaced = false;
+            if (Emu.IsShell)
+            {
+                Emu.Vita.SetShellOverlay(null, VBlank.Count);
+            }
+
+            return 0;
+        }
+
         uint size = GuestMemory.R32(pParam);
-        if (size is not (0x18 or 0x1C)) return ERR_INVALID_VALUE; // SceDisplayFrameBuf or SceDisplayFrameBufExt
+        if (size is not (0x18 or 0x1C))
+        {
+            return ERR_INVALID_VALUE; // SceDisplayFrameBuf or SceDisplayFrameBufExt
+        }
+
+        // the plane 0 record the compat framebuffer shares: a framebuffer set here is shown whole again
+        // (ksceDisplaySetFrameBufInternal clears the record's destination rectangle, Display.Compat.cs)
+        _compatPlaced = false;
         _base = GuestMemory.R32(pParam + 4);
         _pitch = GuestMemory.R32(pParam + 8);
         _format = GuestMemory.R32(pParam + 12);
@@ -194,6 +212,14 @@ public sealed partial class Display : HleModule
             using (FrameLedger.Time(FrameLedger.Cat.GuestGpuWait)) VBlank.WaitFor(_lastFlipVcount + k);
         }
         _lastSetVcount = _lastFlipVcount = VBlank.Count;
+        PresentCurrent();
+        return 0;
+    }
+
+    /// <summary>What the process set last (<see cref="Current"/>, placed by <see cref="CurrentPlacement"/>) goes to the
+    /// screen when the process is in front.</summary>
+    void PresentCurrent()
+    {
         // the display shows the foreground process (the shell, or the application it launched); a process in the
         // background keeps flipping its buffers, and what it last set comes back on screen when it is in front again.
         // A system program in front draws into the shell's shared framebuffer: the shell shows that frame with its own
@@ -202,15 +228,24 @@ public sealed partial class Display : HleModule
         // plane (its on-screen keyboard, notifications): blended over that application's frames (VitaSystem.ShellOverlay).
         if (!Emu.IsForeground && !(Emu.IsShell && SharedFb.ComposesForeground(Emu)))
         {
-            if (Emu.IsShell) Emu.Vita.SetShellOverlay(Current, _lastSetVcount);
-            return 0;
+            if (Emu.IsShell)
+            {
+                Emu.Vita.SetShellOverlay(Current, _lastSetVcount);
+            }
+
+            return;
         }
+
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         var present = new PresentCommand
         {
             Frame = new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format),
+            Placement = CurrentPlacement,
             Overlay = Emu.IsShell ? null : Emu.Vita.ShellOverlay(_lastSetVcount),
-            Flip = FramesPresented, VBlank = _lastSetVcount, GuestUs = GuestClock.Microseconds, HostTicks = now,
+            Flip = FramesPresented,
+            VBlank = _lastSetVcount,
+            GuestUs = GuestClock.Microseconds,
+            HostTicks = now,
         };
         // the GXM display queue's callback flips a frame whose rendering is done: the flip is not ordered behind the
         // work the game queued since (a later scene into this very buffer, waiting for this flip: GpuQueue.SubmitFlip)
@@ -233,7 +268,6 @@ public sealed partial class Display : HleModule
         VitaSharp.Core.Util.FrameLedger.OnPresent(FramesPresented);
         FramesPresented++;
         Presented?.Invoke();
-        return 0;
     }
 
     /// <summary>The process has set a framebuffer (it is showing frames).</summary>
@@ -245,8 +279,16 @@ public sealed partial class Display : HleModule
     /// <summary>The process came to the foreground: its last framebuffer is shown again right away.</summary>
     internal void Represent()
     {
-        if (_base == 0) return;
-        Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format) });
+        if (_base == 0)
+        {
+            return;
+        }
+
+        Emu.Gpu.Submit(new PresentCommand
+        {
+            Frame = new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format),
+            Placement = CurrentPlacement,
+        });
     }
 
     public static long FramesPresented;

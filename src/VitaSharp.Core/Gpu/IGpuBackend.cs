@@ -110,6 +110,65 @@ public enum DisplayPixelFormat : uint
 {
     A8B8G8R8 = 0x0,
     A2B10G10R10 = 0x60000000,
+
+    /// <summary>16 bits per pixel, red in the low 5 bits, then green, blue and the 1-bit alpha (the PSP's 5551): the
+    /// other format sceDisplaySetFrameBufForCompat takes. FW 3.74 display.skprx hands it to the IFTU as its format 4, the
+    /// 16-bit partner of A8B8G8R8's 0x10, and sizes the framebuffer at 2 bytes per pixel. The display ignores the
+    /// alpha (plane 0 is opaque).</summary>
+    A1B5G5R5 = 0x50000000,
 }
 
-public readonly record struct DisplayFrame(uint Address, uint Pitch, uint Width, uint Height, DisplayPixelFormat Format);
+public readonly record struct DisplayFrame(uint Address, uint Pitch, uint Width, uint Height, DisplayPixelFormat Format)
+{
+    /// <summary>Bytes per pixel the display reads: 2 for <see cref="DisplayPixelFormat.A1B5G5R5"/>, 4 for the
+    /// others.</summary>
+    public int BytesPerPixel => Format == DisplayPixelFormat.A1B5G5R5 ? 2 : 4;
+}
+
+/// <summary>
+/// Where plane 0 shows its framebuffer when sceDisplaySetFrameBufForCompat set it (ScePspemu's PSP picture): the
+/// framebuffer scaled into the rectangle (<see cref="X"/>, <see cref="Y"/>, <see cref="Width"/>, <see cref="Height"/>)
+/// of the 960x544 screen, black around it. FW 3.74 display.skprx programs the head's plane 0 IFTU unit with that
+/// destination rectangle; <see cref="Bilinear"/> is bit 20 of the SceDisplayFrameBuf's flags, the IFTU's filter.
+/// </summary>
+public readonly record struct DisplayPlacement(int X, int Y, int Width, int Height, bool Bilinear)
+{
+    /// <summary>The panel the rectangle is on (head 0).</summary>
+    public const int ScreenWidth = 960;
+
+    /// <inheritdoc cref="ScreenWidth"/>
+    public const int ScreenHeight = 544;
+
+    /// <summary>The part of the rectangle on the screen and the part of a <paramref name="sourceWidth"/> x
+    /// <paramref name="sourceHeight"/> framebuffer it shows, as [start, end) pairs; false when nothing of it is on the
+    /// screen.</summary>
+    public bool TryClip(uint sourceWidth, uint sourceHeight, out (int X0, int Y0, int X1, int Y1) source,
+        out (int X0, int Y0, int X1, int Y1) destination)
+    {
+        bool horizontal = ClipAxis(X, Width, ScreenWidth, sourceWidth, out int sourceX0, out int sourceX1, out int destinationX0, out int destinationX1);
+        bool vertical = ClipAxis(Y, Height, ScreenHeight, sourceHeight, out int sourceY0, out int sourceY1, out int destinationY0, out int destinationY1);
+        source = (sourceX0, sourceY0, sourceX1, sourceY1);
+        destination = (destinationX0, destinationY0, destinationX1, destinationY1);
+        return horizontal && vertical;
+    }
+
+    static bool ClipAxis(int start, int length, int screen, uint sourceLength, out int source0, out int source1,
+        out int destination0, out int destination1)
+    {
+        long end = (long)start + length;
+        destination0 = (int)Math.Clamp(start, 0, screen);
+        destination1 = (int)Math.Clamp(end, 0, screen);
+        source0 = 0;
+        source1 = 0;
+        if (length <= 0 || sourceLength == 0 || destination1 <= destination0)
+        {
+            return false;
+        }
+
+        // the source span the clipped destination span samples (rounded to whole texels)
+        source0 = (int)Math.Round((double)(destination0 - start) * sourceLength / length);
+        source1 = (int)Math.Round((double)(destination1 - start) * sourceLength / length);
+        source1 = Math.Max(source1, source0 + 1);
+        return true;
+    }
+}

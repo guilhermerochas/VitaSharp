@@ -67,8 +67,11 @@ public sealed unsafe class DisplayScanout
         return (int)Math.Clamp(ms, 2, 50);
     }
 
-    /// <summary>Bytes the display reads for <paramref name="frame"/>: both display formats are 32 bits per pixel.</summary>
-    public static int Bytes(DisplayFrame frame) => (int)Math.Min(int.MaxValue, (long)frame.Pitch * frame.Height * 4);
+    /// <summary>The framebuffer watched (the source of the frame last shown).</summary>
+    public DisplayFrame Frame => _frame;
+
+    /// <summary>Bytes the display reads for <paramref name="frame"/> (pitch x height at its bytes per pixel).</summary>
+    public static int Bytes(DisplayFrame frame) => (int)Math.Min(int.MaxValue, (long)frame.Pitch * frame.Height * frame.BytesPerPixel);
 
     /// <summary>The framebuffer's memory, read in place (not through <see cref="GuestMemory.ReadSpan(uint, int)"/>: a
     /// look that shows nothing must not enter a GPU dump).</summary>
