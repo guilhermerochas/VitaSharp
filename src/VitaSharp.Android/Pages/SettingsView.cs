@@ -91,6 +91,11 @@ public sealed class SettingsView : Screen<SettingsState>
                         () => Pick(Loc.Get("Microphone"), MicrophoneSettings.Choices, v => p.Microphone = v),
                         detail: Loc.Get("MMicrophoneDetail"))
                 ),
+                SectionTitle(Loc.Get("BluetoothKeyboardMouse")),
+                Card(
+                    ToggleRow(Loc.Get("BluetoothKeyboardMouse"), p.BluetoothKeyboardMouse, v => Change(x => x.BluetoothKeyboardMouse = v),
+                        detail: Loc.Get("MBluetoothKeyboardMouseDetail"))
+                ),
                 SectionTitle(Loc.Get("Location")),
                 Card(
                     Row(Loc.Get("Location"), LocationSettings.Label(p.Location),
