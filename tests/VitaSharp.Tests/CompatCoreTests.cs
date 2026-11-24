@@ -97,6 +97,44 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
         return GuestMemory.R32(bases);
     }
 
+    /// <summary>The PSP's VRAM (physical 0x04000000, 2 MB and its mirrors) is bank 3's PSP 0x8BE00000 (window +
+    /// 0x3E00000), the scratchpad (physical 0x00010000, 16 KB) bank 3's 0x8BD00000, from every segment.</summary>
+    [Fact]
+    public void TheVramAndTheScratchpadAreBankThreesTopOfRam()
+    {
+        uint memory = _harness.Alloc(0x100);
+        PspBus bus = new(new CompatSharedSram(), new CompatMailbox());
+        bus.SetBank(3, (memory - 0xE00000) | 1); // bank 3 + 0xE00000 (PSP 0x8BE00000) = memory
+        bus.Write32(0x44000010, 0x11223344);
+        Assert.Equal(0x11223344u, GuestMemory.R32(memory + 0x10));
+        Assert.Equal(0x11223344u, bus.Read32(0x8BE00010));
+        Assert.Equal(0x11223344u, bus.Read32(0x04200010)); // the first mirror
+        Assert.Equal(0x11223344u, bus.Read32(0xA4600010)); // the last one, uncached
+        bus.Write8(0x04000020, 0x55);
+        Assert.Equal((byte)0x55, GuestMemory.Read<byte>(memory + 0x20));
+        Assert.Equal(0u, bus.Read32(0x04800000)); // past the mirrors
+        Assert.Equal(1, bus.UnknownAccesses);
+
+        // the GE's contiguous views: one piece of memory, none across the end of a VRAM mirror or outside memory
+        Assert.Equal(0x11223344u, BinaryPrimitives.ReadUInt32LittleEndian(bus.Span(0x04000010, 4)));
+        Assert.Equal(0x11223344u, BinaryPrimitives.ReadUInt32LittleEndian(bus.Span(0x04200010, 4)));
+        Assert.Equal(0, bus.Span(0x041FFFFE, 4).Length);
+        Assert.Equal(0, bus.Span(0x04800000, 4).Length);
+        Assert.Equal(0, bus.Span(0x04000010, 0).Length);
+
+        bus.SetBank(3, (memory - 0xD00000) | 1); // bank 3 + 0xD00000 (PSP 0x8BD00000) = memory
+        bus.Write16(0x00010040, 0xBEEF);
+        Assert.Equal((ushort)0xBEEF, GuestMemory.Read<ushort>(memory + 0x40));
+        Assert.Equal((ushort)0xBEEF, bus.Read16(0x80010040));
+        Assert.Equal(0xBEEFu, bus.Read32(0x8BD00040) & 0xFFFF);
+        Assert.Equal(0u, bus.Read32(0x00014000)); // past the 16 KB
+        Assert.Equal(2, bus.UnknownAccesses);
+
+        bus.SetBank(3, 0); // bank 3 unmapped: neither is memory
+        Assert.Equal(0u, bus.Read32(0x04000010));
+        Assert.Equal(3, bus.UnknownAccesses);
+    }
+
     [Fact]
     public void TheBankMapReachesTheWindowFromEverySegmentAndTheHoleMirrorsBankOne()
     {
@@ -490,6 +528,77 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
             Assert.Equal(0, Call(Compat, "sceCompatStop"));
             Assert.Null(Compat.Runner);
             Assert.Equal(1, Call(Compat, "sceCompatGetStatus"));
+        });
+    }
+
+    /// <summary>
+    /// A boot that sets hardware timer 0 (0xBC500000) to a 100 µs cycle with its interrupt, enables interrupt 15 in
+    /// the PSP interrupt controller and halts in a loop; the handler reads the timer's status (the acknowledge) and
+    /// counts in the results word. With the real interpreter on the core's thread: the runner moves the PSP-side
+    /// hardware with the core's time and wakes the halted core at the timer's events.
+    /// </summary>
+    private static byte[] TimerBoot()
+    {
+        uint[] main =
+        [
+            AllegrexAsm.Lui(AllegrexAsm.T0, 0x8860),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.T0, 0x1000),
+            AllegrexAsm.Mtc0(AllegrexAsm.T0, AllegrexCore.Cop0EBase),
+            AllegrexAsm.Lui(S0, 0xBC50),
+            AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, -1),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S0, 8), // prescaler -1/-1: 48 MHz
+            AllegrexAsm.Sw(AllegrexAsm.T0, S0, 12),
+            AllegrexAsm.Lui(AllegrexAsm.T0, 0x80C0), // reset overflow | counting | interrupt enable
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.T0, 4800), // 100 µs
+            AllegrexAsm.Sw(AllegrexAsm.T0, S0, 0),
+            AllegrexAsm.Lui(AllegrexAsm.T1, 0xBC30),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 1 << 15),
+            AllegrexAsm.Sw(AllegrexAsm.T0, AllegrexAsm.T1, 8), // enable interrupt 15 (timer 0)
+            AllegrexAsm.Lui(S4, 0x8820),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 0x0401), // IM2 | IE
+            AllegrexAsm.Mtc0(AllegrexAsm.T0, AllegrexCore.Cop0Status),
+            AllegrexAsm.Halt,
+            AllegrexAsm.Beq(AllegrexAsm.Zero, AllegrexAsm.Zero, -2),
+            AllegrexAsm.Nop,
+        ];
+        uint[] handler =
+        [
+            AllegrexAsm.Lw(AllegrexAsm.K0, S0, 0), // the acknowledge
+            AllegrexAsm.Lw(AllegrexAsm.K1, S4, 0),
+            AllegrexAsm.Addiu(AllegrexAsm.K1, AllegrexAsm.K1, 1),
+            AllegrexAsm.Sw(AllegrexAsm.K1, S4, 0),
+            AllegrexAsm.Eret,
+        ];
+        byte[] image = new byte[0x2000];
+        for (int i = 0; i < main.Length; i++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(i * 4), main[i]);
+        }
+
+        for (int i = 0; i < handler.Length; i++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(0x1000 + i * 4), handler[i]);
+        }
+
+        return image;
+    }
+
+    [Fact]
+    public void TheRunnerMovesThePspHardwareAndWakesAHaltedCoreAtATimer()
+    {
+        _harness.OnGuest(_ =>
+        {
+            uint window = Init(TimerBoot());
+            Assert.Equal(0, Compat.ReleaseCoreForTests());
+            uint results = window + MipsResults;
+            Until(() => GuestMemory.R32(results) >= 3, "three timer interrupts on the halted core");
+            CompatCoreRunner runner = Compat.Runner!;
+            Assert.Null(runner.Failure);
+            uint taken = GuestMemory.R32(results);
+
+            // 100 µs a period on the core's clock: never more interrupts than periods of core time
+            Assert.True(taken <= (ulong)(runner.CoreTimeNs / 100_000) + 1, $"{taken} interrupts in {runner.CoreTimeNs} ns");
+            Assert.Equal(0, Call(Compat, "sceCompatStop"));
         });
     }
 
