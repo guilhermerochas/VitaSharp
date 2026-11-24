@@ -64,6 +64,9 @@ public sealed partial class AllegrexCore
             case 0x0F:
                 _gpr[Rt(instruction)] = instruction << 16;
                 break;
+            case 0x1F:
+                ExecuteSpecial3(instruction);
+                break;
             default:
                 Unimplemented(instruction, "integer");
                 break;
@@ -95,6 +98,18 @@ public sealed partial class AllegrexCore
             case 0x07:
                 _gpr[rd] = (uint)((int)_gpr[rt] >> (int)(_gpr[rs] & 31));
                 break;
+            case 0x0A:
+                MoveIfZero(instruction);
+                break;
+            case 0x0B:
+                MoveIfNotZero(instruction);
+                break;
+            case 0x16:
+                CountLeadingZeros(instruction);
+                break;
+            case 0x17:
+                CountLeadingOnes(instruction);
+                break;
             case 0x20:
                 Add(instruction);
                 break;
@@ -124,6 +139,12 @@ public sealed partial class AllegrexCore
                 break;
             case 0x2B:
                 _gpr[rd] = _gpr[rs] < _gpr[rt] ? 1u : 0u;
+                break;
+            case 0x2C:
+                Maximum(instruction);
+                break;
+            case 0x2D:
+                Minimum(instruction);
                 break;
             default:
                 Unimplemented(instruction, "integer");
