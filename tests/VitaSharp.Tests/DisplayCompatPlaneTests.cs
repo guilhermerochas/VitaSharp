@@ -195,20 +195,103 @@ public sealed class DisplayCompatPlaneTests(GuestMemoryFixture fixture) : IDispo
         Assert.Equal(0u, GuestMemory.R32(read + 4)); // plane 0's record has no framebuffer
     }
 
-    /// <summary>With opt the IFTU converts into the opt buffer: the screen and plane 0's record are left alone.</summary>
+    /// <summary>With opt the IFTU converts the framebuffer, scaled into the rectangle, into opt's buffer (A8B8G8R8, the
+    /// rest 0): the screen and plane 0's record are left alone; opt's base, format and size are checked.</summary>
     [Fact]
-    public void WithOptTheScreenIsLeftAlone()
+    public void WithOptThePictureIsConvertedIntoTheOptBufferAndTheScreenIsLeftAlone()
     {
         var recorder = new PresentRecorder();
         _harness.Emu.Gpu.Backend = recorder;
         _harness.Emu.IsSystemProgram = true;
-        uint compat = _harness.Alloc(512 * 272 * 4 + 0x100) + 0xFF & ~0xFFu;
-        Assert.Equal(0, Call(Display, "sceDisplaySetFrameBufForCompat", 0, 0, 480, 272, FrameBuf(0x1C, compat, 512, 0, 480, 272), _harness.Alloc(0x20)));
+        // a 64x32 A1B5G5R5 framebuffer: red
+        uint compat = _harness.Alloc(64 * 32 * 2 + 0x100) + 0xFF & ~0xFFu;
+        for (uint i = 0; i < 64 * 32; i++)
+        {
+            GuestMemory.Write(compat + i * 2, (ushort)0x801F);
+        }
+
+        uint output = _harness.Alloc(128 * 64 * 4 + 0x100) + 0xFF & ~0xFFu;
+        for (uint i = 0; i < 128 * 64; i++)
+        {
+            GuestMemory.W32(output + i * 4, 0x12345678);
+        }
+
+        uint opt = FrameBuf(0x18, output, 128, 0, 128, 64);
+        uint param = FrameBuf(0x1C, compat, 64, Display.CompatPlaneFormatOther, 64, 32);
+        // on a guest thread: the conversion runs in GPU order, in the caller's address space
+        int result = -1;
+        GuestRun guest = _harness.Start(_ =>
+        {
+            result = Call(Display, "sceDisplaySetFrameBufForCompat", 32, 16, 64, 32, param, opt);
+        });
+        _harness.Join(guest);
+        Assert.Equal(0, result);
+        Assert.Equal(0xFF0000FFu, GuestMemory.R32(output + (24 * 128 + 50) * 4)); // inside the rectangle: red, opaque
+        Assert.Equal(0u, GuestMemory.R32(output + (8 * 128 + 8) * 4)); // outside: the background
+        Assert.Equal(0u, GuestMemory.R32(output + (63 * 128 + 127) * 4));
+
         Assert.Equal(0u, Display.CompatPlane.Base);
         _harness.Emu.Gpu.WaitFor(_harness.Emu.Gpu.Submit(new FinishCommand()));
         lock (recorder.Presents)
         {
             Assert.Empty(recorder.Presents);
         }
+
+        Assert.Equal(InvalidAddress, Call(Display, "sceDisplaySetFrameBufForCompat", 0, 0, 64, 32, param, FrameBuf(0x18, output + 0x40, 128, 0, 128, 64)));
+        Assert.Equal(InvalidFormat, Call(Display, "sceDisplaySetFrameBufForCompat", 0, 0, 64, 32, param, FrameBuf(0x18, output, 128, 1, 128, 64)));
+        Assert.Equal(InvalidValue, Call(Display, "sceDisplaySetFrameBufForCompat", 0, 0, 64, 32, param, FrameBuf(0x18, output, 128, 0, 128, 0)));
+    }
+
+    private const int InvalidUpdateTiming = unchecked((int)0x80290006);
+
+    /// <summary>sceDisplaySetFrameBuf(null) as ksceDisplaySetFrameBufInternal does it: NEXTFRAME removes the framebuffer
+    /// and the screen goes black (a present without a framebuffer); IMMEDIATE is refused once the plane has had one (its
+    /// record keeps the pitch) and is accepted before; a sync above 1 is refused.</summary>
+    [Fact]
+    public void ANullFramebufferBlanksTheScreenAtTheNextFrameAndIsRefusedImmediate()
+    {
+        var recorder = new PresentRecorder();
+        _harness.Emu.Gpu.Backend = recorder;
+        uint whole = _harness.Alloc(64 * 64 * 4);
+
+        Assert.Equal(0, Call(Display, "sceDisplaySetFrameBuf", 0u, 0u)); // never set: removed at once
+        Assert.Equal(0u, recorder.WaitFor(1).Frame.Address);
+
+        Assert.Equal(0, Call(Display, "sceDisplaySetFrameBuf", FrameBuf(0x18, whole, 64, 0, 64, 64), 1u));
+        Assert.Equal(whole, recorder.WaitFor(2).Frame.Address);
+
+        Assert.Equal(InvalidUpdateTiming, Call(Display, "sceDisplaySetFrameBuf", 0u, 0u));
+        Assert.Equal(InvalidUpdateTiming, Call(Display, "sceDisplaySetFrameBuf", FrameBuf(0x18, whole, 64, 0, 64, 64), 2u));
+        uint read = FrameBuf(0x18, 0, 0, 0, 0, 0);
+        Assert.Equal(0, Call(Display, "sceDisplayGetFrameBuf", read, 0u));
+        Assert.Equal(whole, GuestMemory.R32(read + 4)); // refused: the framebuffer stays
+
+        Assert.Equal(0, Call(Display, "sceDisplaySetFrameBuf", 0u, 1u));
+        PresentCommand blank = recorder.WaitFor(3);
+        Assert.Equal(default, blank.Frame);
+        Assert.Null(blank.Placement);
+        Assert.Equal(0, Call(Display, "sceDisplayGetFrameBuf", read, 0u));
+        Assert.Equal(0u, GuestMemory.R32(read + 4));
+        _harness.Emu.Gpu.WaitFor(_harness.Emu.Gpu.Submit(new FinishCommand()));
+        lock (recorder.Presents)
+        {
+            Assert.Equal(3, recorder.Presents.Count); // the refused calls showed nothing
+        }
+    }
+
+    /// <summary>sceDisplaySetFrameBufForCompat(null) gives plane 0's IFTU unit an empty input: a black screen.</summary>
+    [Fact]
+    public void ANullCompatFramebufferBlanksTheScreen()
+    {
+        var recorder = new PresentRecorder();
+        _harness.Emu.Gpu.Backend = recorder;
+        _harness.Emu.IsSystemProgram = true;
+        uint compat = _harness.Alloc(512 * 272 * 4 + 0x100) + 0xFF & ~0xFFu;
+        Assert.Equal(0, Call(Display, "sceDisplaySetFrameBufForCompat", 240, 136, 480, 272, FrameBuf(0x1C, compat, 512, 0, 480, 272), 0u));
+        Assert.Equal(compat, recorder.WaitFor(1).Frame.Address);
+        Assert.Equal(0, Call(Display, "sceDisplaySetFrameBufForCompat", 0, 0, 0, 0, 0u, 0u));
+        PresentCommand blank = recorder.WaitFor(2);
+        Assert.Equal(default, blank.Frame);
+        Assert.Null(blank.Placement);
     }
 }
