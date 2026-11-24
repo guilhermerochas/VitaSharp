@@ -98,19 +98,27 @@ public sealed partial class AllegrexCore
                 StoreWordFromFpu(instruction);
                 break;
             case 0x12:
+                ExecuteCop2(instruction);
+                break;
+            case 0x32:
+            case 0x35:
+            case 0x36:
+            case 0x3A:
+            case 0x3D:
+            case 0x3E:
+                ExecuteVfpuMemory(instruction);
+                break;
+            case 0x37:
+                ExecuteVfpu5(instruction);
+                break;
+            case 0x3F:
+                ExecuteVfpuFlush(instruction);
+                break;
             case 0x18:
             case 0x19:
             case 0x1B:
-            case 0x32:
             case 0x34:
-            case 0x35:
-            case 0x36:
-            case 0x37:
-            case 0x3A:
             case 0x3C:
-            case 0x3D:
-            case 0x3E:
-            case 0x3F:
                 Unimplemented(instruction, "VFPU (COP2)");
                 break;
             case 0x14:

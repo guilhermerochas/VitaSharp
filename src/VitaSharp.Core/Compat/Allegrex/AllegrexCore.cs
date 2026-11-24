@@ -172,6 +172,7 @@ public sealed partial class AllegrexCore
         _hardwareLines = 0;
         _interruptControl = 0;
         _fcr31 = 0;
+        ResetVfpu();
         _countOffset = 0;
         _timerInterrupt = false;
         _linkBit = false;
