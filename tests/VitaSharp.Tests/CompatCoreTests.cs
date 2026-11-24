@@ -493,6 +493,77 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
         });
     }
 
+    /// <summary>
+    /// A boot that sets hardware timer 0 (0xBC500000) to a 100 µs cycle with its interrupt, enables interrupt 15 in
+    /// the PSP interrupt controller and halts in a loop; the handler reads the timer's status (the acknowledge) and
+    /// counts in the results word. With the real interpreter on the core's thread: the runner moves the PSP-side
+    /// hardware with the core's time and wakes the halted core at the timer's events.
+    /// </summary>
+    private static byte[] TimerBoot()
+    {
+        uint[] main =
+        [
+            AllegrexAsm.Lui(AllegrexAsm.T0, 0x8860),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.T0, 0x1000),
+            AllegrexAsm.Mtc0(AllegrexAsm.T0, AllegrexCore.Cop0EBase),
+            AllegrexAsm.Lui(S0, 0xBC50),
+            AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, -1),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S0, 8), // prescaler -1/-1: 48 MHz
+            AllegrexAsm.Sw(AllegrexAsm.T0, S0, 12),
+            AllegrexAsm.Lui(AllegrexAsm.T0, 0x80C0), // reset overflow | counting | interrupt enable
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.T0, 4800), // 100 µs
+            AllegrexAsm.Sw(AllegrexAsm.T0, S0, 0),
+            AllegrexAsm.Lui(AllegrexAsm.T1, 0xBC30),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 1 << 15),
+            AllegrexAsm.Sw(AllegrexAsm.T0, AllegrexAsm.T1, 8), // enable interrupt 15 (timer 0)
+            AllegrexAsm.Lui(S4, 0x8820),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 0x0401), // IM2 | IE
+            AllegrexAsm.Mtc0(AllegrexAsm.T0, AllegrexCore.Cop0Status),
+            AllegrexAsm.Halt,
+            AllegrexAsm.Beq(AllegrexAsm.Zero, AllegrexAsm.Zero, -2),
+            AllegrexAsm.Nop,
+        ];
+        uint[] handler =
+        [
+            AllegrexAsm.Lw(AllegrexAsm.K0, S0, 0), // the acknowledge
+            AllegrexAsm.Lw(AllegrexAsm.K1, S4, 0),
+            AllegrexAsm.Addiu(AllegrexAsm.K1, AllegrexAsm.K1, 1),
+            AllegrexAsm.Sw(AllegrexAsm.K1, S4, 0),
+            AllegrexAsm.Eret,
+        ];
+        byte[] image = new byte[0x2000];
+        for (int i = 0; i < main.Length; i++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(i * 4), main[i]);
+        }
+
+        for (int i = 0; i < handler.Length; i++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(0x1000 + i * 4), handler[i]);
+        }
+
+        return image;
+    }
+
+    [Fact]
+    public void TheRunnerMovesThePspHardwareAndWakesAHaltedCoreAtATimer()
+    {
+        _harness.OnGuest(_ =>
+        {
+            uint window = Init(TimerBoot());
+            Assert.Equal(0, Compat.ReleaseCoreForTests());
+            uint results = window + MipsResults;
+            Until(() => GuestMemory.R32(results) >= 3, "three timer interrupts on the halted core");
+            CompatCoreRunner runner = Compat.Runner!;
+            Assert.Null(runner.Failure);
+            uint taken = GuestMemory.R32(results);
+
+            // 100 µs a period on the core's clock: never more interrupts than periods of core time
+            Assert.True(taken <= (ulong)(runner.CoreTimeNs / 100_000) + 1, $"{taken} interrupts in {runner.CoreTimeNs} ns");
+            Assert.Equal(0, Call(Compat, "sceCompatStop"));
+        });
+    }
+
     /// <summary>A channel's ring holds 16 requests: the 17th stays in the core's slot (not acknowledged) with the
     /// overflow flag, and goes in when a request is taken (then acknowledged), as the 3.74 module does it: without
     /// adding it to the ring's count, so the wake it had finds the count at 0 (0x80010016, an empty ring's answer). A

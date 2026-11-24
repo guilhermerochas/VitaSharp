@@ -1,5 +1,6 @@
 using VitaSharp.Core.Compat;
 using VitaSharp.Core.Compat.Allegrex;
+using VitaSharp.Core.Compat.Psp;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
@@ -99,14 +100,21 @@ public sealed class Compat : HleModule
     readonly CompatSharedSram _sram = new();
     readonly CompatMailbox _mailbox = new();
     readonly PspBus _bus;
+    readonly PspHardware _hardware;
     ICompatCore? _core;
     CompatCoreRunner? _runner;
 
     public Compat()
     {
         _bus = new PspBus(_sram, _mailbox);
+        _hardware = PspHardware.CreateStandard(_bus);
+        _bus.Hardware = _hardware;
         _mailbox.ArmInterrupt = ArmInterrupt;
-        _mailbox.PspInterruptLevel = PspInterruptLevel;
+
+        // the doorbells hold the core's IP2 beside the PSP interrupt controller's lines (their PSP interrupt number is
+        // not known yet), and the controller's output is the core's IP2
+        _mailbox.PspInterruptLevel = _hardware.Interrupts.SetExternalLevel;
+        _hardware.Interrupts.OutputChanged = PspInterruptLevel;
     }
 
     /// <summary>One channel's ring of request addresses (16 entries; full: the overflow flag, the core's entry left in
@@ -151,6 +159,8 @@ public sealed class Compat : HleModule
     internal CompatMailbox Mailbox => _mailbox;
 
     internal CompatCoreRunner? Runner => _runner;
+
+    internal PspHardware Hardware => _hardware;
 
     internal uint Window => _window;
 
@@ -411,7 +421,7 @@ public sealed class Compat : HleModule
         lock (_apiLock)
         {
             _status = 2;
-            _runner = new CompatCoreRunner(Emu, _core, AllegrexCore.InterruptControllerLine, CompatClockMhz);
+            _runner = new CompatCoreRunner(Emu, _core, AllegrexCore.InterruptControllerLine, CompatClockMhz, _hardware);
             _runner.Start(BootEntry);
         }
 
