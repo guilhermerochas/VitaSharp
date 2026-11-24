@@ -103,6 +103,12 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     private Thread? _encoder;
     /// <summary>Tests: runs first on a new encoder thread (to hold it while the capture stops).</summary>
     internal Action? EncoderStarting { get; set; }
+    /// <summary>Tests: takes the start save state in place of <see cref="SaveStates.Save"/> (the path; throws a
+    /// <see cref="SnapshotException"/> when no safe point is reached).</summary>
+    internal Func<string, SaveStateHeader>? SaveStartState { get; set; }
+    /// <summary>Milliseconds between the tries of a start save state that found no safe point (a thread of the shell
+    /// running guest code): the recording goes on and the state is taken at the first safe point.</summary>
+    internal int StartStateRetryMs { get; set; } = 1000;
     private int _busy;
     private Recording? _rec;
     private bool _disposed;
@@ -156,6 +162,10 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         public long RandomCalls;
         public volatile bool LimitReached;
         public double StartStateMs;
+        /// <summary>The tries of the start save state after the first one found no safe point, until one does or the
+        /// recording stops.</summary>
+        public Thread? StartStateRetry;
+        public readonly ManualResetEventSlim Stopping = new(false);
         public long ProcessCpuMs0;
         /// <summary>The last pad/touch changes before the start (input_before.tsv); the last "where" line written.</summary>
         public List<InputEvent> Before = new();
@@ -912,35 +922,13 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         WriteText(dir, "threads_start.txt", _options.Threads);
         WriteText(dir, "context.txt", () => SafeDescribe("start of the recording"));
 
-        if (_options.StartState)
+        if (_options.StartState && !TryStartState(r, 3000, out string? notSafe))
         {
-            _stateGate.Wait(5000);
-            try
-            {
-                var sw = Stopwatch.StartNew();
-                long ns = CaptureClock.NowNs, flip = Hle.Modules.Display.FramesPresented;
-                lock (_lock)
-                {
-                    r.Input.Add(InputEvent.Now("mark", "state_start begin"));
-                }
-
-                SaveStateHeader saveStateHeader = SaveStates.Save(_emu, Path.Combine(dir, "state_start.vss"), null, 3000);
-                r.StartStateMs = sw.Elapsed.TotalMilliseconds;
-                r.StartState = ((long)(saveStateHeader.GuestSeconds * 1e6), ns, flip);
-                lock (_lock)
-                {
-                    r.Input.Add(InputEvent.Now("mark", "state_start"));
-                }
-            }
-            catch (SnapshotException e)
-            {
-                r.Notes.Add($"no start save state: {e.Message}");
-                Log.Info($"[capture] start save state: {e.Message}");
-            }
-            finally
-            {
-                _stateGate.Release();
-            }
+            // a thread running guest code (the shell with its apps) can keep the first tries from a safe point: the
+            // recording goes on and the state is taken at the first one (a re-run starts there)
+            Log.Info($"[capture] start save state: {notSafe}; trying again every {StartStateRetryMs} ms");
+            r.StartStateRetry = new Thread(() => RetryStartState(r, notSafe)) { IsBackground = true, Name = "capture-start-state" };
+            r.StartStateRetry.Start();
         }
 
         if (_options.GpuDump && _rec == r)
@@ -1019,9 +1007,84 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         Idle.Wait(timeoutMs);
     }
 
+    /// <summary>Takes state_start.vss and marks it in the input log; false (with the reason) when no safe point was
+    /// reached in <paramref name="timeoutMs"/>.</summary>
+    private bool TryStartState(Recording r, int timeoutMs, out string? why)
+    {
+        why = null;
+        if (!_stateGate.Wait(5000))
+        {
+            why = "the pre-roll was saving a state";
+            return false;
+        }
+
+        try
+        {
+            var sw = Stopwatch.StartNew();
+            long ns = CaptureClock.NowNs, flip = Hle.Modules.Display.FramesPresented;
+            lock (_lock)
+            {
+                r.Input.Add(InputEvent.Now("mark", "state_start begin"));
+            }
+
+            string path = Path.Combine(r.Dir, "state_start.vss");
+            SaveStateHeader saveStateHeader = SaveStartState != null ? SaveStartState(path) : SaveStates.Save(_emu, path, null, timeoutMs);
+            r.StartStateMs = sw.Elapsed.TotalMilliseconds;
+            r.StartState = ((long)(saveStateHeader.GuestSeconds * 1e6), ns, flip);
+            lock (_lock)
+            {
+                r.Input.Add(InputEvent.Now("mark", "state_start"));
+            }
+
+            return true;
+        }
+        catch (SnapshotException e)
+        {
+            why = e.Message;
+            return false;
+        }
+        finally
+        {
+            _stateGate.Release();
+        }
+    }
+
+    /// <summary>Tries the start save state again until a safe point or the stop; the notes say when it was taken.</summary>
+    private void RetryStartState(Recording r, string? firstWhy)
+    {
+        int tries = 1;
+        string? why = firstWhy;
+        while (!r.Stopping.Wait(StartStateRetryMs))
+        {
+            tries++;
+            if (TryStartState(r, 1000, out why))
+            {
+                double late = (CaptureClock.NowNs - r.StartNs) / 1e9;
+                lock (r.Notes)
+                {
+                    r.Notes.Add(FormattableString.Invariant(
+                        $"start save state taken {late:F1} s after the start, at try {tries} (before: {firstWhy}); a re-run starts there"));
+                }
+
+                Log.Info(FormattableString.Invariant($"[capture] start save state taken {late:F1} s after the start (try {tries})"));
+                return;
+            }
+        }
+
+        lock (r.Notes)
+        {
+            r.Notes.Add($"no start save state: {why} ({tries} tries until the stop)");
+        }
+
+        Log.Info($"[capture] no start save state: {why} ({tries} tries)");
+    }
+
     private void StopCore(string reason)
     {
         Recording r = _rec!;
+        // a start save state still being retried stops trying (one being written completes first)
+        r.Stopping.Set();
+        r.StartStateRetry?.Join(10_000);
         r.StopNs = CaptureClock.NowNs;
         r.StopFlip = Hle.Modules.Display.FramesPresented;
         r.StopUs = GuestClock.Microseconds;

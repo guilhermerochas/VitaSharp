@@ -13,8 +13,8 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
     buffers das vozes NGS durante a gravação, para o rerun sem o jogo reproduzir buracos e erros de decodificação
     (hoje só a saída em WAV).
   - Estados de vários processos (o shell com aplicativos abertos) ainda não sobem sem os programas
-    (`SaveStates.BootFromState` recusa); e a gravação do shell pode sair sem `state_start.vss` quando uma thread do
-    shell está em código do guest ("not at a safe point": tentar de novo até um ponto seguro).
+    (`SaveStates.BootFromState` recusa). (O `state_start.vss` que faltava quando uma thread do shell estava em código
+    do guest está em "Corrigido, falta o usuário testar".)
   - Módulos de firmware carregados pela primeira vez durante a gravação vêm do firmware de quem analisa.
 
 - [ ] [P3][G] **O log e a captura F8 dizem a causa de uma trava de cara:**
@@ -1204,7 +1204,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 ## Android
 
 - [x] App Android, tela da biblioteca: tirar a palavra "VitaSharp" em cima do título da biblioteca, o botão de instalar e o botão de Ajustes ao lado do texto da biblioteca. Feito (feat/andpar): o cabeçalho é só o título; instalar continua no botão flutuante e em Ajustes > Instalar jogo (`AndroidNarrowLayoutTests`). **Falta validar no aparelho.**
-- [ ] [P2][M] Dead Space (port, DEADSPACE) no Android sem som e engasgando (relato do usuário, 15/11/2026, APK build-1f8c024, com "Ativar Plugins do Kernel" e kubridge + fd_fix; no PC roda com som). Logs do celular guardados pelo lead (`<scratchpad>ds_android`). Ler o log primeiro: áudio (saída aberta? grãos/s), fps e tiers da CPU, threads em espera; comparar com o PC na mesma cena.
+- [ ] [P2][M] (precisa do usuário/aparelho) Dead Space (port, DEADSPACE) no Android sem som e engasgando (relato do usuário, 15/11/2026, APK build-1f8c024, com "Ativar Plugins do Kernel" e kubridge + fd_fix; no PC roda com som). Logs do celular guardados pelo lead (`<scratchpad>ds_android`). Ler o log primeiro: áudio (saída aberta? grãos/s), fps e tiers da CPU, threads em espera; comparar com o PC na mesma cena.
 - [x] Paridade de opções PC/Android: toda opção do launcher do desktop também no app Android, com o mesmo nome, padrão
   e efeito (`AndroidOptionParityTests`; regra no README, "Code style"). Feito: compilação rápida de shaders e
   compilar shaders em segundo plano em Ajustes (feat/android-shader-options); Ativar Plugins do Kernel já existe nos
@@ -1745,7 +1745,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   novo depois de pegar o núcleo (`ThreadMgrHleTests.AWaitingThreadTakesNoCoreUntilItIsWoken`,
   `ContendedLocksNeverLetTwoThreadsIn`). No PC, boot-shell depois de 35 s: 2-4 fps antes, 47-59 fps depois; TestGame
   225/0 antes e depois. Falta confirmar no celular.
-- [ ] [P2][M] Sistema do Vita no Android: o shell demora para abrir e as opções do app Configurações não aparecem/não funcionam (relato do usuário, 16/11/2026, APK com a correção da espera sem núcleo). Próximo passo: captura "Gravar tudo" no app Configurações no celular e comparar com o mesmo app no PC; medir o tempo de boot do shell (PC x celular).
+- [ ] [P2][M] (precisa do usuário/aparelho) Sistema do Vita no Android: o shell demora para abrir e as opções do app Configurações não aparecem/não funcionam (relato do usuário, 16/11/2026, APK com a correção da espera sem núcleo). Próximo passo: captura "Gravar tudo" no app Configurações no celular e comparar com o mesmo app no PC; medir o tempo de boot do shell (PC x celular).
 - [x] App .NET MAUI com interface declarativa em C# (MauiReactor), seguindo os mockups em `docs/android/` (biblioteca
   e troféus, ajustes, firmware, conta PSN e rede, driver e informações da GPU, Sistema do Vita) (30/10/2026: gera o
   APK, `src/VitaSharp.Android`; ainda não rodou num aparelho nem no emulador)
@@ -3302,6 +3302,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (24/11/2026, falta testar) [P2][M] Gravar tudo: o `state_start.vss` sai também quando o começo não é um ponto
+  seguro (fix/adr4). A gravação do shell (ou de um jogo com uma thread presa em código do guest) tentava o estado do
+  início por 3 s e, sem ponto seguro ("not at a safe point"), seguia sem estado nenhum, e o rerun sem o jogo ficava
+  impossível. Agora a gravação segue e o estado é tentado de novo a cada segundo até o primeiro ponto seguro (ou o
+  fim): o `session.txt` traz o estado e uma nota diz quão tarde ele foi tirado ("start save state taken N s after the
+  start, at try T"; o rerun começa dali); sem nenhum ponto seguro até o fim, a nota diz o motivo e as tentativas.
+  Testes: `SessionCaptureFlowTests.AStartStateWithoutASafePointIsTriedAgain`. Testar: no Sistema do Vita (shell com um
+  app aberto), F8 para gravar; a pasta da captura tem `state_start.vss` (ou a nota "start save state taken ...").
+
 - [ ] (24/11/2026, falta testar) [P3][G] CELP no `SceAudiodec`, 1ª parte (fix/adr4): no Vita o decodificador CELP
   aceita `SceAudiodecInfoCelp` (excitação MPE, 8 kHz, uma das 10 taxas do MPEG-4 CELP narrowband; outra coisa é
   0x807F3800), anuncia `maxEsSize` 24 (`SCE_AUDIODEC_CELP_MAX_ES_SIZE`) e tira um quadro da taxa por chamada (4650 bps:
@@ -4320,7 +4329,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   "refused (0x90010006)". Falta: (5) o ScePspemuMain chega ao sceCompatInitEx e para ("the PSP compat core is not
   emulated"): o núcleo de compatibilidade (pcbc) é o bloqueio até o menu do Adrenaline; (6) e (7) feitos (fix/adr4,
   ver "Corrigido, falta o usuário testar": diálogo de erro e NPXS10028 em dobro).
-- [ ] [P2][M] Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
+- [ ] [P2][M] (precisa do usuário/aparelho) Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
   capturas de 21/11/2026, e um engasgo de 132 ms por leitura de arquivo (fileIo 134 ms; quadro 302 do dump da
   `_232150_tudo`). Achado (perf/ac3pace): fora das gravações o jogo fica em 30 fps (linhas `FPS frame` da sessão) e
   só cai nelas, porque o gravador do GPU dump gasta 21-28 ms/quadro no GPU worker; o rerun headless sem dump dá 29-31
@@ -4405,7 +4414,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   vermelhas e pista cinza (antes verde listrado e ruído). Outros dumps: só os do RR3 e o `VSTEST001_20261111` têm ETC1
   (o caminho mudado é exclusivo do ETC1). O `GL_INVALID_VALUE: mtTextureGL::CreateEmpty` do log é outro assunto (o
   vitaGL recusou um formato numa textura vazia) e não muda a imagem do replay. Falta o usuário confirmar no jogo.
-- [ ] [P1][M] Textura quebrada no MGS3 depois de trocar de jogo pelo shell (relato do usuário, 15/11/2026; captura `shell_20261115_225727_tudo`, com dump da GPU de 177 quadros): shell → Metal Gear Solid HD → God of War Collection → de volta ao MGS, e na abertura do MGS3 (avião) a cabeça do tripulante sai com textura errada e sombra em blocos. Pistas do log: dois jogos vivos ao mesmo tempo ("scenes of several processes interleaved"), e `[vram] pressure 198% ... evicting 0 MB` repetido (VRAM acima do orçamento e nada liberado). Suspeitas: cache de texturas/alvos chaveado só pelo endereço do guest e compartilhado entre processos (o GoW usa os mesmos endereços), ou textura descartada/não recarregada sob pressão de VRAM. Primeiro passo: `replay-gpu --frame=37` do dump e comparar com o MGS aberto direto, sem o GoW.
+- [ ] [P1][M] (precisa do usuário/aparelho) Textura quebrada no MGS3 depois de trocar de jogo pelo shell (relato do usuário, 15/11/2026; captura `shell_20261115_225727_tudo`, com dump da GPU de 177 quadros): shell → Metal Gear Solid HD → God of War Collection → de volta ao MGS, e na abertura do MGS3 (avião) a cabeça do tripulante sai com textura errada e sombra em blocos. Pistas do log: dois jogos vivos ao mesmo tempo ("scenes of several processes interleaved"), e `[vram] pressure 198% ... evicting 0 MB` repetido (VRAM acima do orçamento e nada liberado). Suspeitas: cache de texturas/alvos chaveado só pelo endereço do guest e compartilhado entre processos (o GoW usa os mesmos endereços), ou textura descartada/não recarregada sob pressão de VRAM. Primeiro passo: `replay-gpu --frame=37` do dump e comparar com o MGS aberto direto, sem o GoW.
   Achados (16/11/2026, kill2, 1h20): (1) o `--frame` do replay-gpu é o número do present, não o índice no dump:
   o "quadro 37" da captura é `--frame=17120`. (2) O defeito **reproduz no replay de um renderer novo**, inclusive com
   `--no-targets` (sem o estado de render targets gravado no início do dump): não vem de estado do renderer deixado
@@ -4531,7 +4540,8 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   fila. Prova: `GxmFlowTests.ASceneBegunBeforeTheEntryThatReleasesItsBufferDoesNotStallTheGpu` (sem a correção a espera
   só termina no limite de 250 ms) e `ATransferIntoTheBufferAfterItsSceneIsWaitedForByTheEntry`. Falta a confirmação no
   Wipeout pelo usuário.
-- [ ] [P3][P] Tamanho da classe "espera no escalonador" (12.000 ciclos): `sceKernelDelayThread*` é uma espera como as outras
+- [ ] [P3][P] (precisa de medida num Vita ou de A/B do usuário: nenhum agente fecha sozinho) Tamanho da classe
+  "espera no escalonador" (12.000 ciclos): `sceKernelDelayThread*` é uma espera como as outras
   (o threadmgr 3.74 põe a thread na lista de timers e troca de contexto, o mesmo caminho de uma espera com timeout),
   então fica na classe `SchedulerWait` (`HleCostTests.DelaysAreSchedulerWaits`); baixar só o delay para 2.000
   (perf/desktop-24, não medido) deixaria ele como a única chamada bloqueante fora da classe. O que falta é calibrar a
@@ -4831,7 +4841,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   AndroidAppTests.AndroidGamepadMapsToTheStandardLayout (controle que lista LTRIGGER e move BRAKE; falha sem a
   correção). Se o L2 do controle do usuário ainda não funcionar, o log do `Connect` (eixos listados) e um
   `getevent -l` do gatilho mostram o eixo real. A parte (2), o touchpad do DualShock 4, continua aberta
-- [ ] [P2][M] Android, controle de PS4 no celular, o que sobrou do relato de 10/11/2026 (o L2 está em "[x]" acima):
+- [ ] [P2][M] (precisa do usuário/aparelho) Android, controle de PS4 no celular, o que sobrou do relato de 10/11/2026 (o L2 está em "[x]" acima):
   o touchpad do DualShock 4 vira mouse no Android e esse ponteiro se mistura com o toque na tela; tratar o touchpad
   como entrada do controle (SOURCE_TOUCHPAD/MOUSE do dispositivo do controle, separado do SOURCE_TOUCHSCREEN do
   aparelho; ou capturar o ponteiro) e mapear para o toque frontal/traseiro do Vita sem mexer no toque da tela. Validar
