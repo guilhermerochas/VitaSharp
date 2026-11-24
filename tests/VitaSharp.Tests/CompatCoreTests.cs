@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using VitaSharp.Core.Compat;
 using VitaSharp.Core.Compat.Allegrex;
+using VitaSharp.Core.Compat.Ge;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
@@ -600,6 +601,82 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
             Assert.True(taken <= (ulong)(runner.CoreTimeNs / 100_000) + 1, $"{taken} interrupts in {runner.CoreTimeNs} ns");
             Assert.Equal(0, Call(Compat, "sceCompatStop"));
         });
+    }
+
+    private sealed class DisposableRasterizer : IGeRasterizer, IDisposable
+    {
+        public int Draws;
+        public bool Disposed;
+
+        public void Draw(GeTopology topology, ReadOnlySpan<GeVertex> vertices, GeRenderState state, GeTarget target)
+        {
+            Draws++;
+        }
+
+        public void Dispose()
+        {
+            Disposed = true;
+        }
+    }
+
+    /// <summary>The GE draws one rectangle from a list written into the window (PSP 0x88100000), through the bus.</summary>
+    private void GeDrawsOnce(uint window)
+    {
+        const uint ListOffset = 0x100000, VertexOffset = 0x101000;
+        uint[] list =
+        [
+            (uint)GeCommand.Base << 24 | 0x080000,
+            (uint)GeCommand.FrameBufferWidth << 24 | 512,
+            (uint)GeCommand.Scissor2 << 24 | 15 | (15u << 10),
+            (uint)GeCommand.VertexAddress << 24 | (0x08000000 + VertexOffset) & 0xFFFFFF,
+            (uint)GeCommand.VertexType << 24 | (1u << 23) | (7u << 2) | (2u << 7),
+            (uint)GeCommand.Primitive << 24 | (6u << 16) | 2,
+            (uint)GeCommand.Finish << 24,
+            (uint)GeCommand.End << 24,
+        ];
+        for (int i = 0; i < list.Length; i++)
+        {
+            GuestMemory.W32(window + ListOffset + (uint)(i * 4), list[i]);
+        }
+
+        GuestMemory.W32(window + VertexOffset + 12 + 4, 4 | (4u << 16)); // the second corner at (4, 4)
+        GeEngine ge = Compat.Hardware.Ge!;
+        ge.Write32(GeEngine.PhysicalBase + 0x108, 0x08000000 + ListOffset);
+        ge.Write32(GeEngine.PhysicalBase + 0x100, GeEngine.ExecRunning);
+    }
+
+    /// <summary>The GE's rasterizer (its own Vulkan device in the emulator) is made at the first draw and ended when
+    /// the core stops; the next session makes a new one; the process's end ends the one it holds.</summary>
+    [Fact]
+    public void TheGesRasterizerEndsWithTheCoreAndTheProcess()
+    {
+        List<DisposableRasterizer> made = [];
+        _harness.OnGuest(_ =>
+        {
+            uint window = Init();
+            Compat.Hardware.Ge!.RasterizerFactory = () =>
+            {
+                DisposableRasterizer rasterizer = new();
+                made.Add(rasterizer);
+                return rasterizer;
+            };
+            Assert.Equal(0, Compat.ReleaseCoreForTests());
+            GeDrawsOnce(window);
+            DisposableRasterizer first = Assert.Single(made);
+            Assert.Equal(1, first.Draws);
+            Assert.Equal(0, Call(Compat, "sceCompatStop"));
+            Assert.True(first.Disposed);
+            Assert.Null(Compat.Hardware.Ge!.Rasterizer);
+
+            Assert.Equal(0, Call(Compat, "sceCompatInitEx", 1));
+            Assert.Equal(0, Compat.ReleaseCoreForTests());
+            GeDrawsOnce(window);
+            Assert.Equal(2, made.Count);
+        });
+
+        _harness.Emu.Hle.DisposeModules(); // the process ends
+        Assert.True(made[1].Disposed);
+        Assert.Null(Compat.Runner);
     }
 
     /// <summary>

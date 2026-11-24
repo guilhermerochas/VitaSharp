@@ -1,6 +1,6 @@
-using System.Runtime.InteropServices;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
+using System.Runtime.InteropServices;
 using VitaSharp.Core.Compat.Ge;
 using VitaSharp.Core.Util;
 using Buffer = Silk.NET.Vulkan.Buffer;
@@ -11,7 +11,8 @@ namespace VitaSharp.Renderer.Vulkan;
 /// The PSP GE's rasterizer on Vulkan (docs/notes/psp-compat.md, "The GE"), separate from the GXM renderer: each batch
 /// the GE hands over is drawn into an RGBA8 colour image and a 16-bit depth image holding the PSP framebuffer region
 /// (uploaded from the GE's target, read back into it after the draw), with the GE's per-fragment state: the texture
-/// function (modulate, decal, blend, replace, add, colour doubling), the alpha test, blending (the GE's factors and
+/// function (modulate, decal, blend, replace, add, colour doubling; the texture sampled at U/Q, V/Q), the secondary
+/// (separate specular) colour added after it, fog (FOGCOLOR by the vertices' factor), the alpha test, blending (the GE's factors and
 /// equations; a fixed factor is the blend constant), the depth test and write, the scissor, the RGB write masks and
 /// clear mode (colour, alpha and depth written as they are). The framebuffer's alpha is the PSP's stencil: normal
 /// draws leave it (the stencil operations are later work), clear mode writes it.
@@ -24,17 +25,29 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
 {
     private const Format ColorFormat = Format.R8G8B8A8Unorm;
     private const Format DepthFormat = Format.D16Unorm;
-    private const int VertexStride = 28;
-    private const int PushConstantSize = 48;
+    /// <summary>The vertex buffer is the GeVertex array as it is: its size and field offsets give the layout.</summary>
+    private static readonly int s_vertexStride = Marshal.SizeOf<GeVertex>();
+    private static readonly uint s_positionOffset = (uint)Marshal.OffsetOf<GeVertex>(nameof(GeVertex.X));
+    private static readonly uint s_uvOffset = (uint)Marshal.OffsetOf<GeVertex>(nameof(GeVertex.U));
+    private static readonly uint s_colorOffset = (uint)Marshal.OffsetOf<GeVertex>(nameof(GeVertex.Color));
+    private static readonly uint s_color1Offset = (uint)Marshal.OffsetOf<GeVertex>(nameof(GeVertex.Color1));
+    private static readonly uint s_fogOffset = (uint)Marshal.OffsetOf<GeVertex>(nameof(GeVertex.Fog));
+    private static readonly uint s_qOffset = (uint)Marshal.OffsetOf<GeVertex>(nameof(GeVertex.Q));
+    private const int PushConstantSize = 64;
 
     private const string VertexShader = """
         #version 450
         layout(location = 0) in vec4 inPosition;
         layout(location = 1) in vec2 inUv;
         layout(location = 2) in vec4 inColor;
-        layout(push_constant) uniform Constants { vec2 size; int flags; int textureFunction; vec4 environment; ivec4 alpha; } pc;
+        layout(location = 3) in vec4 inColor1;
+        layout(location = 4) in float inFog;
+        layout(location = 5) in float inQ;
+        layout(push_constant) uniform Constants { vec2 size; int flags; int textureFunction; vec4 environment; ivec4 alpha; vec4 fog; } pc;
         layout(location = 0) out vec4 vColor;
-        layout(location = 1) out vec2 vUv;
+        layout(location = 1) out vec3 vUvq;
+        layout(location = 2) out vec4 vColor1;
+        layout(location = 3) out float vFog;
         void main()
         {
             float w = inPosition.w;
@@ -42,16 +55,20 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             gl_Position = vec4(ndc * w, inPosition.z * w, w);
             gl_PointSize = 1.0;
             vColor = inColor;
-            vUv = inUv;
+            vUvq = vec3(inUv, inQ);
+            vColor1 = inColor1;
+            vFog = inFog;
         }
         """;
 
     private const string FragmentShader = """
         #version 450
         layout(location = 0) in vec4 vColor;
-        layout(location = 1) in vec2 vUv;
+        layout(location = 1) in vec3 vUvq;
+        layout(location = 2) in vec4 vColor1;
+        layout(location = 3) in float vFog;
         layout(set = 0, binding = 0) uniform sampler2D textureSampler;
-        layout(push_constant) uniform Constants { vec2 size; int flags; int textureFunction; vec4 environment; ivec4 alpha; } pc;
+        layout(push_constant) uniform Constants { vec2 size; int flags; int textureFunction; vec4 environment; ivec4 alpha; vec4 fog; } pc;
         layout(location = 0) out vec4 outColor;
         bool Compare(int function, int value, int reference)
         {
@@ -72,7 +89,8 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             vec4 color = vColor;
             if ((pc.flags & 1) != 0)
             {
-                vec4 texel = texture(textureSampler, vUv);
+                float q = vUvq.z == 0.0 ? 1.0 : vUvq.z;
+                vec4 texel = texture(textureSampler, vUvq.xy / q);
                 bool textureAlpha = (pc.flags & 2) != 0;
                 float alpha = textureAlpha ? color.a * texel.a : color.a;
                 if (pc.textureFunction == 0)
@@ -102,6 +120,16 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
                 }
 
                 color = clamp(color, 0.0, 1.0);
+            }
+
+            if ((pc.flags & 32) != 0)
+            {
+                color.rgb = clamp(color.rgb + vColor1.rgb, 0.0, 1.0);
+            }
+
+            if ((pc.flags & 16) != 0)
+            {
+                color.rgb = mix(pc.fog.rgb, color.rgb, clamp(vFog, 0.0, 1.0));
             }
 
             if ((pc.flags & 8) != 0)
@@ -220,7 +248,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         ulong textureOffset = depthOffset + depthBytes;
         ulong textureBytes = textured ? (ulong)state.TextureWidth * (ulong)state.TextureHeight * 4 : 0;
         EnsureStaging(textureOffset + textureBytes);
-        EnsureVertexBuffer((ulong)(vertices.Length * VertexStride));
+        EnsureVertexBuffer((ulong)(vertices.Length * s_vertexStride));
 
         target.Color.AsSpan(0, target.Width * target.Height).CopyTo(new Span<uint>((void*)_stagingMapped, target.Width * target.Height));
         if (usesDepth)
@@ -233,7 +261,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             state.TexturePixels.AsSpan(0, state.TextureWidth * state.TextureHeight).CopyTo(new Span<uint>((void*)(_stagingMapped + (nint)textureOffset), state.TextureWidth * state.TextureHeight));
         }
 
-        MemoryMarshal.AsBytes(vertices).CopyTo(new Span<byte>((void*)_vertexMapped, vertices.Length * VertexStride));
+        MemoryMarshal.AsBytes(vertices).CopyTo(new Span<byte>((void*)_vertexMapped, vertices.Length * s_vertexStride));
 
         Pipeline pipeline = PipelineFor(topology, state, usesDepth);
         UpdateDescriptor(state, textured);
@@ -365,6 +393,16 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             flags |= 8;
         }
 
+        if (!state.ClearMode)
+        {
+            flags |= 32; // the secondary (specular) colour: 0 when the vertices have none
+        }
+
+        if (state.Fog && !state.ClearMode)
+        {
+            flags |= 16;
+        }
+
         ints[2] = flags;
         ints[3] = state.TextureFunction;
         floats[4] = (state.TextureEnvironment & 0xFF) / 255f;
@@ -375,6 +413,10 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         ints[9] = state.AlphaReference;
         ints[10] = state.AlphaMask;
         ints[11] = 0;
+        floats[12] = (state.FogColor & 0xFF) / 255f;
+        floats[13] = ((state.FogColor >> 8) & 0xFF) / 255f;
+        floats[14] = ((state.FogColor >> 16) & 0xFF) / 255f;
+        floats[15] = 1;
         _vk.CmdPushConstants(cb, _pipelineLayout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, 0, PushConstantSize, data);
     }
 
@@ -600,17 +642,20 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             stages[0] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = _vertexModule, PName = entry };
             stages[1] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = _fragmentModule, PName = entry };
 
-            VertexInputBindingDescription binding = new(0, VertexStride, VertexInputRate.Vertex);
-            VertexInputAttributeDescription* attributes = stackalloc VertexInputAttributeDescription[3];
-            attributes[0] = new VertexInputAttributeDescription(0, 0, Format.R32G32B32A32Sfloat, 0);
-            attributes[1] = new VertexInputAttributeDescription(1, 0, Format.R32G32Sfloat, 16);
-            attributes[2] = new VertexInputAttributeDescription(2, 0, Format.R8G8B8A8Unorm, 24);
+            VertexInputBindingDescription binding = new(0, (uint)s_vertexStride, VertexInputRate.Vertex);
+            VertexInputAttributeDescription* attributes = stackalloc VertexInputAttributeDescription[6];
+            attributes[0] = new VertexInputAttributeDescription(0, 0, Format.R32G32B32A32Sfloat, s_positionOffset);
+            attributes[1] = new VertexInputAttributeDescription(1, 0, Format.R32G32Sfloat, s_uvOffset);
+            attributes[2] = new VertexInputAttributeDescription(2, 0, Format.R8G8B8A8Unorm, s_colorOffset);
+            attributes[3] = new VertexInputAttributeDescription(3, 0, Format.R8G8B8A8Unorm, s_color1Offset);
+            attributes[4] = new VertexInputAttributeDescription(4, 0, Format.R32Sfloat, s_fogOffset);
+            attributes[5] = new VertexInputAttributeDescription(5, 0, Format.R32Sfloat, s_qOffset);
             PipelineVertexInputStateCreateInfo vertexInput = new()
             {
                 SType = StructureType.PipelineVertexInputStateCreateInfo,
                 VertexBindingDescriptionCount = 1,
                 PVertexBindingDescriptions = &binding,
-                VertexAttributeDescriptionCount = 3,
+                VertexAttributeDescriptionCount = 6,
                 PVertexAttributeDescriptions = attributes,
             };
             PipelineInputAssemblyStateCreateInfo assembly = new()

@@ -189,6 +189,101 @@ public sealed class GeVulkanRasterizerTests : IDisposable
         Assert.InRange(Depth(30, 30), (ushort)59990, (ushort)60010);
     }
 
+    /// <summary>Without the depth test nothing writes the depth buffer, even with depth writes on.</summary>
+    [SoftwareVulkanFact]
+    public void WithoutTheDepthTestTheDepthBufferIsLeft()
+    {
+        GeListBuilder list = Setup().Command(GeCommand.ClearMode, 1 | 0x400);
+        Rectangle(list, Vertices, 0, 0, 64, 64, 0x1234, 0).Command(GeCommand.ClearMode, 0)
+            .Command(GeCommand.DepthTestEnable, 0).Command(GeCommand.DepthWriteDisable, 0);
+        Rectangle(list, Vertices + 0x100, 0, 0, 32, 32, 50000, 0xFF0000FF).End();
+        GeRegisters.Run(_engine, list.Start);
+        Assert.Equal(0x0000FFu, Pixel(10, 10) & 0xFFFFFF);
+        Assert.Equal((ushort)0x1234, Depth(10, 10));
+    }
+
+    /// <summary>A 16x16 target and a screen-covering pair of triangles with the given vertex fields, for the
+    /// rasterizer's own inputs (the secondary colour, fog, Q), drawn without the GE side.</summary>
+    private uint DrawQuad(GeRenderState state, Func<GeVertex, GeVertex> fill)
+    {
+        GeTarget target = new() { Width = 16, Height = 16, Color = new uint[256] };
+        state.ScissorRight = 15;
+        state.ScissorBottom = 15;
+        (float X, float Y, float U)[] corners = [(0, 0, 0), (16, 0, 1), (0, 16, 0), (16, 0, 1), (16, 16, 1), (0, 16, 0)];
+        var vertices = new GeVertex[corners.Length];
+        for (int i = 0; i < corners.Length; i++)
+        {
+            vertices[i] = fill(new GeVertex { X = corners[i].X, Y = corners[i].Y, W = 1, U = corners[i].U, V = 0.5f, Color = 0xFF404040 });
+        }
+
+        _rasterizer!.Draw(GeTopology.Triangles, vertices, state, target);
+        return target.Color[8 * 16 + 4];
+    }
+
+    /// <summary>The secondary (separate specular) colour is added to the colour after the texture stage.</summary>
+    [SoftwareVulkanFact]
+    public void TheSecondaryColourIsAddedAfterTheTexture()
+    {
+        uint pixel = DrawQuad(new GeRenderState(), vertex =>
+        {
+            vertex.Color1 = 0x00203040;
+            return vertex;
+        });
+        Assert.InRange((int)(pixel & 0xFF), 0x7F, 0x81); // 0x40 + 0x40
+        Assert.InRange((int)((pixel >> 8) & 0xFF), 0x6F, 0x71);
+        Assert.InRange((int)((pixel >> 16) & 0xFF), 0x5F, 0x61); // 0x40 + 0x20
+    }
+
+    /// <summary>With fog on, the vertices' factor mixes the colour with FOGCOLOR (0: all fog).</summary>
+    [SoftwareVulkanFact]
+    public void FogMixesTowardsTheFogColour()
+    {
+        GeRenderState state = new() { Fog = true, FogColor = 0x00FF00 };
+        uint fogged = DrawQuad(state, vertex =>
+        {
+            vertex.Fog = 0;
+            return vertex;
+        });
+        Assert.Equal(0x00FF00u, fogged & 0xFFFFFF);
+        uint clear = DrawQuad(new GeRenderState { Fog = true, FogColor = 0x00FF00 }, vertex => vertex);
+        Assert.Equal(0x404040u, clear & 0xFFFFFF);
+    }
+
+    /// <summary>The texture is sampled at U/Q: with Q = 0.5 the pixel at x = 4 (U = 4.5 / 16) samples U/Q = 0.56, the
+    /// right texel (without the division it would be the left one).</summary>
+    [SoftwareVulkanFact]
+    public void TheTextureIsSampledAtUOverQ()
+    {
+        GeRenderState state = new()
+        {
+            Texture = true,
+            TextureWidth = 2,
+            TextureHeight = 1,
+            TexturePixels = [0xFF0000FF, 0xFF00FF00],
+            TextureFunction = 3,
+            TextureAlpha = true,
+        };
+        uint sampled = DrawQuad(state, vertex =>
+        {
+            vertex.Q = 0.5f;
+            return vertex;
+        });
+        Assert.Equal(0x00FF00u, sampled & 0xFFFFFF);
+    }
+
+    /// <summary>The emulator's GE rasterizer comes on a Vulkan device of its own and draws like the one above.</summary>
+    [SoftwareVulkanFact]
+    public void TheEmulatorsRasterizerDrawsOnItsOwnDevice()
+    {
+        using GeVulkanRasterizerDevice device = Assert.IsType<GeVulkanRasterizerDevice>(GeVulkanRasterizerDevice.Create());
+        GeEngine engine = new(_memory) { RasterizerFactory = () => device };
+        GeListBuilder list = Setup();
+        Rectangle(list, Vertices, 2, 2, 6, 6, 0, 0xFF00FF00).End();
+        GeRegisters.Run(engine, list.Start);
+        Assert.Equal(1, device.Draws);
+        Assert.Equal(0x00FF00u, Pixel(3, 3) & 0xFFFFFF);
+    }
+
     [SoftwareVulkanFact]
     public void A565FramebufferGetsItsPixels()
     {

@@ -2363,6 +2363,12 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   3.74 e o SceSblFwLoader carregando o `pcff` (segmento do SELF) e o `pcbc` (só pelo `os0:kd/pcbc.bin` do usuário);
   testado com um núcleo roteirizado no teste. Falta o teste com código MIPS sintético quando o interpretador inteiro
   do Allegrex entrar.
+  GE (feat/alg4, em andamento; como o 3.74 o atende: `docs/notes/psp-compat.md`, "The GE"): registradores
+  `0xBD400000`/`0xBD500000` e processador de listas (`src/VitaSharp.Core/Compat/Ge/GeEngine.cs`), estado dos comandos,
+  texturas/CLUT, framebuffer e rasterizador Vulkan num dispositivo próprio (`GeVulkanRasterizer`), testados com listas
+  sintéticas no Vulkan por software. Falta: stencil (o alpha do framebuffer), color test, logic op, máscaras parciais,
+  dither, mipmaps, DXT, patches (Bezier/spline), bounding box; manter o alvo na GPU entre lotes (hoje sobe/desce a
+  região a cada PRIM); o DMA do LCD levando a VRAM ao `ScePspemuFrameBuffer`.
   Bloqueio do Start real (licença): o `sceCompatStart` do 3.74, antes de soltar o núcleo, (1) lê
   `tm0:npdrm/act.dat` (0x1038 bytes, `ksceNpDrmReadActData`: conta atual e, da versão 2 em diante, o OpenPSID) para o
   bloco "dat" que o lado PSP lê por `sceCompatDatRead` — erro devolvido, exceto num DEX; (2) lê o rif

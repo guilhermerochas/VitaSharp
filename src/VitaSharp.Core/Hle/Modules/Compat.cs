@@ -25,7 +25,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// configuration and LCDC sync, rif name, title list, ID storage, secure tick, update state, peripheral state).
 /// Every entry is for the PSP emulator or a system program (0x80010058 otherwise).
 /// </summary>
-public sealed class Compat : HleModule
+public sealed class Compat : HleModule, IDisposable
 {
     const int ERR_PERM = unchecked((int)0x80010058), ERR_NOT_STARTED = unchecked((int)0x80027205),
         ERR_NOT_OWNER = unchecked((int)0x8002F001), ERR_ARG = unchecked((int)0x80020005), ERR_INVAL = unchecked((int)0x80010016),
@@ -497,6 +497,7 @@ public sealed class Compat : HleModule
         }
     }
 
+    /// <summary>The core's thread ends and the GE lets its Vulkan device go (a later start makes a new one).</summary>
     void StopRunner()
     {
         CompatCoreRunner? runner = _runner;
@@ -505,6 +506,16 @@ public sealed class Compat : HleModule
             runner.Stop();
             _runner = null;
         }
+
+        _hardware.Ge?.ReleaseRasterizer();
+    }
+
+    /// <summary>The process ends (or re-executes): the core stops as the module's process event handler stops it, and
+    /// nothing of it outlives the process (the core's thread, the GE's Vulkan device). Safe to call again.</summary>
+    public void Dispose()
+    {
+        StopRunner();
+        _hardware.Ge?.Dispose();
     }
 
     [Hle]
