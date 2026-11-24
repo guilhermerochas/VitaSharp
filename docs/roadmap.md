@@ -2343,8 +2343,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
      controlador de interrupções `0xBC300000` (saída no IP2, a linha da mailbox junto), os 4 timers `0xBC500000`,
      o tempo do sistema `0xBC600000` (alarme → interrupção 19), os dois DMAC `0xBC900000`/`0xBCA00000` (PL080,
      interrupções 22/23), o sysreg `0xBC100000`, os clocks `0xBC200000` e o flush DDR `0xBD000000` do kermit, no
-     tempo do próprio núcleo pelo runner. Falta: timer Count/Compare do COP0 (IP7, no interpretador), número de
-     IRQ PSP das campainhas da mailbox, versão do chip/fuses do núcleo, LCD, KIRK, GE (confirmar tudo pelo trace
+     tempo do próprio núcleo pelo runner; VRAM e scratchpad do PSP no topo do banco 3. Falta: número de IRQ PSP das
+     campainhas da mailbox, versão do chip/fuses do núcleo, LCD, KIRK, GE (confirmar tudo pelo trace
      do boot real).
   4. [G] ScePspemu de ponta a ponta: lacunas de HLE pelos logs, homebrew de PSP, jogo de PSP e de PSone,
      suspensão/retomada e save state do núcleo.

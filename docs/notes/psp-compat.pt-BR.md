@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.md sha256=caf18c21dfc08bda821f9f599c19ae818e4fc1f49024ddb84499db6c45f5704a -->
+<!-- pair: psp-compat.md sha256=6724b5df71f912941cfbe0a8a28585ffe873f9e67522487918a778879d8db938 -->
 # Núcleo de compatibilidade PSP (SceCompat, ScePspemu, Allegrex)
 
 *English: [psp-compat.md](psp-compat.md).*
@@ -201,8 +201,8 @@ trace do boot confirma.
 
 Tempo: os blocos andam no tempo do próprio núcleo (`CompatCoreRunner.CoreTimeNs`: ciclos no clock de compatibilidade
 mais o tempo em halt), nunca no relógio do host; o runner os avança a cada fatia e acorda um núcleo em halt no próximo
-evento deles. Ainda não: o timer Count/Compare do COP0 (IP7, interrupção 67, parte do interpretador), o controlador
-do LCD, o KIRK e o GE.
+evento deles (o timer Count/Compare do COP0, IP7, é do próprio interpretador). Ainda não: o controlador do LCD, o
+KIRK e o GE.
 
 ### O que exige chaves e o que não exige
 

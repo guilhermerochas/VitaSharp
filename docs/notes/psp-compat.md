@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.pt-BR.md sha256=a06263a568f539577e9ef53566b37ca830ba7f29c7a4a0dcf1de086210f8b59b -->
+<!-- pair: psp-compat.pt-BR.md sha256=02024f1557fb3743c8c10c63363e4beb76d22ded2de27abb0a01c9544871adb9 -->
 # PSP compatibility core (SceCompat, ScePspemu, Allegrex)
 
 *Português: [psp-compat.pt-BR.md](psp-compat.pt-BR.md).*
@@ -193,8 +193,7 @@ has no PSP-side block here. Which of the blocks below the compat core really has
 
 Time: the blocks run on the core's own time (`CompatCoreRunner.CoreTimeNs`: cycles at the compat clock plus the
 time halted), never the host clock; the runner moves them after every slice and wakes a halted core at their next
-event. Not here yet: the COP0 Count/Compare timer (IP7, interrupt 67, part of the interpreter), the LCD controller,
-KIRK and GE.
+event (the COP0 Count/Compare timer, IP7, is the interpreter's own). Not here yet: the LCD controller, KIRK and GE.
 
 ### What needs keys and what does not
 
