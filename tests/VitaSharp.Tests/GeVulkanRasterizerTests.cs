@@ -421,6 +421,25 @@ public sealed class GeVulkanRasterizerTests : IDisposable
         Assert.Equal(0x0000, _memory.Read16(GeTestMemory.VramBase + (uint)((3 * Stride + 3) * 2))); // stencil 0: not drawn
     }
 
+    /// <summary>MASKRGB per bit: the masked bits keep the framebuffer's (high nibbles of red and green here), the others
+    /// take the draw's; two masked draws in one list each merge with what was there before them.</summary>
+    [SoftwareVulkanFact]
+    public void APartialColourMaskKeepsTheMaskedBits()
+    {
+        for (int x = 0; x < 24; x++)
+        {
+            _memory.Write32(GeTestMemory.VramBase + (uint)((4 * Stride + x) * 4), 0xFFA5A5A5);
+        }
+
+        GeListBuilder list = Setup().Command(GeCommand.MaskRgb, 0x00F0F0);
+        Rectangle(list, Vertices, 0, 0, 8, 8, 0, 0xFFFFFFFF);
+        Rectangle(list, Vertices + 0x100, 8, 0, 16, 8, 0, 0xFF563412).End();
+        GeRegisters.Run(_engine, list.Start);
+        Assert.Equal(0xFFFFAFAFu, Pixel(4, 4));
+        Assert.Equal(0xFF56A4A2u, Pixel(12, 4));
+        Assert.Equal(0xFFA5A5A5u, Pixel(16, 4)); // outside the draws: untouched
+    }
+
     /// <summary>A 16x16 target and a screen-covering pair of triangles with the given vertex fields, for the
     /// rasterizer's own inputs (the secondary colour, fog, Q), drawn without the GE side.</summary>
     private uint DrawQuad(GeRenderState state, Func<GeVertex, GeVertex> fill)

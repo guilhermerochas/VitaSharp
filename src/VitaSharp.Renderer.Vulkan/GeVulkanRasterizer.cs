@@ -62,6 +62,34 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         }
         """;
 
+    /// <summary>The merge of a draw with a partial bit mask (MASKRGB bits of a channel): a full-screen triangle.</summary>
+    private const string MergeVertexShader = """
+        #version 450
+        void main()
+        {
+            vec2 corner = vec2((gl_VertexIndex << 1) & 2, gl_VertexIndex & 2);
+            gl_Position = vec4(corner * 2.0 - 1.0, 0.0, 1.0);
+        }
+        """;
+
+    /// <summary>The masked bits from the framebuffer before the draw, the others from the draw.</summary>
+    private const string MergeFragmentShader = """
+        #version 450
+        layout(set = 0, binding = 0) uniform sampler2D previous;
+        layout(set = 0, binding = 1) uniform sampler2D drawn;
+        layout(push_constant) uniform Constants { uint mask; } pc;
+        layout(location = 0) out vec4 outColor;
+        void main()
+        {
+            ivec2 pixel = ivec2(gl_FragCoord.xy);
+            uvec4 before = uvec4(texelFetch(previous, pixel, 0) * 255.0 + 0.5);
+            uvec4 after = uvec4(texelFetch(drawn, pixel, 0) * 255.0 + 0.5);
+            uvec3 masked = uvec3(pc.mask & 0xFFu, (pc.mask >> 8) & 0xFFu, (pc.mask >> 16) & 0xFFu);
+            uvec3 rgb = (after.rgb & ~masked) | (before.rgb & masked);
+            outColor = vec4(vec3(rgb) / 255.0, float(after.a) / 255.0);
+        }
+        """;
+
     private const string FragmentShader = """
         #version 450
         layout(location = 0) in vec4 vColor;
@@ -227,6 +255,16 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
     private readonly Format _depthStencilFormat;
     private readonly int _depthTexelBytes;   // a depth texel in a buffer copy of the depth aspect
 
+    // the merge of draws with a partial bit mask: made at the first one
+    private readonly ShaderCompiler _compiler;
+    private DescriptorSetLayout _mergeSetLayout;
+    private PipelineLayout _mergeLayout;
+    private ShaderModule _mergeVertexModule;
+    private ShaderModule _mergeFragmentModule;
+    private Pipeline _mergePipeline;
+    private readonly Dictionary<(int, int, bool), Surface> _maskImages = [];
+    private readonly Dictionary<(int, int), DescriptorSet> _mergeSets = [];
+
     private const int TextureCacheLimit = 128;
     private const uint DescriptorSetsPerBatch = 256;
     private const ulong UploadRingSize = 8 << 20;
@@ -276,6 +314,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         _core = core;
         _vk = core.Vk;
         _device = core.Device;
+        _compiler = compiler;
 
         CommandPoolCreateInfo poolInfo = new()
         {
@@ -382,6 +421,15 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         MemoryMarshal.AsBytes(vertices).CopyTo(new Span<byte>((void*)(_vertexMapped + (nint)(first * (uint)s_vertexStride)), vertices.Length * s_vertexStride));
         _verticesUsed += (uint)vertices.Length;
 
+        uint partialMask = PartialMask(state);
+        if (partialMask != 0)
+        {
+            // a mask of some bits of a channel: the framebuffer before the draw, kept to merge the masked bits back
+            RecordPending();
+            EndPass();
+            CopyColor(colorSurface, MaskImage(color.Stride, color.Height, previous: true));
+        }
+
         BeginPass(colorSurface, depthSurface);
         bool merges = _pending.Active && _pending.Pipeline.Handle == pipeline.Handle && _pending.Set.Handle == set.Handle
             && _pending.Scissor.Offset.X == scissor.Offset.X && _pending.Scissor.Offset.Y == scissor.Offset.Y
@@ -410,6 +458,11 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
                 StencilWriteMask = stencilWrite,
             };
             _pushConstants.CopyTo(_pendingConstants, 0);
+        }
+
+        if (partialMask != 0)
+        {
+            MergeMasked(colorSurface, depthSurface, partialMask, scissor);
         }
 
         if (ColorMask(state) != 0)
@@ -1145,6 +1198,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
 
         _vk.ResetDescriptorPool(_device, _descriptorPool, 0).Ok("GE reset descriptor pool");
         _sets.Clear();
+        _mergeSets.Clear();
         _setsUsed = 0;
         _uploadRingUsed = 0;
         _verticesUsed = 0;
@@ -1193,6 +1247,201 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         surface.Loaded = true;
         surface.AlphaInStencil = null; // memory has it now; the stencil keeps the same values (still valid)
         SurfaceReadbacks++;
+    }
+
+    // ---- partial bit masks
+
+    /// <summary>MASKRGB when it masks some bits of a channel (a whole channel is the pipeline's write mask): the draw
+    /// then goes through <see cref="MergeMasked"/>; 0 otherwise (the common case costs nothing).</summary>
+    private static uint PartialMask(GeRenderState state)
+    {
+        if (state.ClearMode)
+        {
+            return 0;
+        }
+
+        uint rgb = state.WriteMaskRgb;
+        for (int shift = 0; shift < 24; shift += 8)
+        {
+            uint channel = (rgb >> shift) & 0xFF;
+            if (channel is not (0 or 0xFF))
+            {
+                return rgb;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>The image a masked draw's framebuffer is copied into, before the draw (<paramref name="previous"/>) or
+    /// after it.</summary>
+    private Surface MaskImage(int width, int height, bool previous)
+    {
+        if (_maskImages.TryGetValue((width, height, previous), out Surface? existing))
+        {
+            return existing;
+        }
+
+        Surface image = new() { Key = new GeSurface(0, width, height, GePixels.Format8888) };
+        (image.Image, image.Memory, image.View) = CreateImage(width, height, ColorFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
+        _maskImages[(width, height, previous)] = image;
+        return image;
+    }
+
+    /// <summary>The colour surface's image copied into <paramref name="target"/> (left readable by the merge).</summary>
+    private void CopyColor(Surface color, Surface target)
+    {
+        Transition(_commandBuffer, color.Image, ImageAspectFlags.ColorBit, color.Layout, ImageLayout.TransferSrcOptimal);
+        Transition(_commandBuffer, target.Image, ImageAspectFlags.ColorBit, target.Layout, ImageLayout.TransferDstOptimal);
+        ImageCopy region = new()
+        {
+            SrcSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
+            DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
+            Extent = new Extent3D((uint)target.Key.Stride, (uint)target.Key.Height, 1),
+        };
+        _vk.CmdCopyImage(_commandBuffer, color.Image, ImageLayout.TransferSrcOptimal, target.Image, ImageLayout.TransferDstOptimal, 1, in region);
+        Transition(_commandBuffer, color.Image, ImageAspectFlags.ColorBit, ImageLayout.TransferSrcOptimal, ImageLayout.ColorAttachmentOptimal);
+        color.Layout = ImageLayout.ColorAttachmentOptimal;
+        Transition(_commandBuffer, target.Image, ImageAspectFlags.ColorBit, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal);
+        target.Layout = ImageLayout.ShaderReadOnlyOptimal;
+    }
+
+    /// <summary>After a draw with a partial mask: the framebuffer with the draw is copied, and a full-screen pass (in the
+    /// draw's scissor) writes the draw's bits where the mask lets them through and the earlier ones where it does not.</summary>
+    private void MergeMasked(Surface color, Surface depth, uint mask, Rect2D scissor)
+    {
+        RecordPending();
+        EndPass();
+        Surface previous = MaskImage(color.Key.Stride, color.Key.Height, previous: true);
+        Surface drawn = MaskImage(color.Key.Stride, color.Key.Height, previous: false);
+        CopyColor(color, drawn);
+        EnsureMergePipeline();
+        if (!_mergeSets.TryGetValue((color.Key.Stride, color.Key.Height), out DescriptorSet set))
+        {
+            set = AllocateMergeSet(previous, drawn);
+            _mergeSets[(color.Key.Stride, color.Key.Height)] = set;
+        }
+
+        BeginPass(color, depth);
+        CommandBuffer cb = _commandBuffer;
+        Viewport viewport = new(0, 0, color.Key.Stride, color.Key.Height, 0, 1);
+        _vk.CmdSetViewport(cb, 0, 1, in viewport);
+        _vk.CmdSetScissor(cb, 0, 1, in scissor);
+        _vk.CmdBindPipeline(cb, PipelineBindPoint.Graphics, _mergePipeline);
+        _vk.CmdBindDescriptorSets(cb, PipelineBindPoint.Graphics, _mergeLayout, 0, 1, in set, 0, null);
+        uint constant = mask & 0xFFFFFF;
+        _vk.CmdPushConstants(cb, _mergeLayout, ShaderStageFlags.FragmentBit, 0, sizeof(uint), &constant);
+        _vk.CmdDraw(cb, 3, 1, 0, 0);
+        RecordedDraws++;
+    }
+
+    private DescriptorSet AllocateMergeSet(Surface previous, Surface drawn)
+    {
+        DescriptorSetLayout layout = _mergeSetLayout;
+        DescriptorSetAllocateInfo allocateInfo = new()
+        {
+            SType = StructureType.DescriptorSetAllocateInfo,
+            DescriptorPool = _descriptorPool,
+            DescriptorSetCount = 1,
+            PSetLayouts = &layout,
+        };
+        _vk.AllocateDescriptorSets(_device, in allocateInfo, out DescriptorSet set).Ok("GE merge descriptor set");
+        DescriptorImageInfo* images = stackalloc DescriptorImageInfo[2];
+        images[0] = new DescriptorImageInfo(SamplerAt(0), previous.View, ImageLayout.ShaderReadOnlyOptimal);
+        images[1] = new DescriptorImageInfo(SamplerAt(0), drawn.View, ImageLayout.ShaderReadOnlyOptimal);
+        WriteDescriptorSet* writes = stackalloc WriteDescriptorSet[2];
+        for (int i = 0; i < 2; i++)
+        {
+            writes[i] = new WriteDescriptorSet
+            {
+                SType = StructureType.WriteDescriptorSet,
+                DstSet = set,
+                DstBinding = (uint)i,
+                DescriptorCount = 1,
+                DescriptorType = DescriptorType.CombinedImageSampler,
+                PImageInfo = &images[i],
+            };
+        }
+
+        _vk.UpdateDescriptorSets(_device, 2, writes, 0, null);
+        return set;
+    }
+
+    /// <summary>The merge's shaders, layouts and pipeline (RGB written, no depth or stencil), at the first masked draw.</summary>
+    private void EnsureMergePipeline()
+    {
+        if (_mergePipeline.Handle != 0)
+        {
+            return;
+        }
+
+        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[2];
+        bindings[0] = new DescriptorSetLayoutBinding(0, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit);
+        bindings[1] = new DescriptorSetLayoutBinding(1, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit);
+        DescriptorSetLayoutCreateInfo layoutInfo = new() { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = 2, PBindings = bindings };
+        _vk.CreateDescriptorSetLayout(_device, in layoutInfo, null, out _mergeSetLayout).Ok("GE merge set layout");
+        PushConstantRange range = new(ShaderStageFlags.FragmentBit, 0, sizeof(uint));
+        DescriptorSetLayout setLayout = _mergeSetLayout;
+        PipelineLayoutCreateInfo pipelineLayoutInfo = new()
+        {
+            SType = StructureType.PipelineLayoutCreateInfo,
+            SetLayoutCount = 1,
+            PSetLayouts = &setLayout,
+            PushConstantRangeCount = 1,
+            PPushConstantRanges = &range,
+        };
+        _vk.CreatePipelineLayout(_device, in pipelineLayoutInfo, null, out _mergeLayout).Ok("GE merge pipeline layout");
+        _mergeVertexModule = CreateModule(_compiler, MergeVertexShader, vertex: true);
+        _mergeFragmentModule = CreateModule(_compiler, MergeFragmentShader, vertex: false);
+
+        byte* entry = (byte*)SilkMarshal.StringToPtr("main");
+        try
+        {
+            PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
+            stages[0] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = _mergeVertexModule, PName = entry };
+            stages[1] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = _mergeFragmentModule, PName = entry };
+            PipelineVertexInputStateCreateInfo vertexInput = new() { SType = StructureType.PipelineVertexInputStateCreateInfo };
+            PipelineInputAssemblyStateCreateInfo assembly = new() { SType = StructureType.PipelineInputAssemblyStateCreateInfo, Topology = PrimitiveTopology.TriangleList };
+            PipelineViewportStateCreateInfo viewport = new() { SType = StructureType.PipelineViewportStateCreateInfo, ViewportCount = 1, ScissorCount = 1 };
+            PipelineRasterizationStateCreateInfo rasterization = new()
+            {
+                SType = StructureType.PipelineRasterizationStateCreateInfo,
+                PolygonMode = PolygonMode.Fill,
+                CullMode = CullModeFlags.None,
+                FrontFace = FrontFace.CounterClockwise,
+                LineWidth = 1,
+            };
+            PipelineMultisampleStateCreateInfo multisample = new() { SType = StructureType.PipelineMultisampleStateCreateInfo, RasterizationSamples = SampleCountFlags.Count1Bit };
+            PipelineDepthStencilStateCreateInfo depth = new() { SType = StructureType.PipelineDepthStencilStateCreateInfo };
+            PipelineColorBlendAttachmentState attachment = new()
+            {
+                ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit,
+            };
+            PipelineColorBlendStateCreateInfo colorBlend = new() { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = 1, PAttachments = &attachment };
+            DynamicState* dynamics = stackalloc DynamicState[] { DynamicState.Viewport, DynamicState.Scissor };
+            PipelineDynamicStateCreateInfo dynamic = new() { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = 2, PDynamicStates = dynamics };
+            GraphicsPipelineCreateInfo info = new()
+            {
+                SType = StructureType.GraphicsPipelineCreateInfo,
+                StageCount = 2,
+                PStages = stages,
+                PVertexInputState = &vertexInput,
+                PInputAssemblyState = &assembly,
+                PViewportState = &viewport,
+                PRasterizationState = &rasterization,
+                PMultisampleState = &multisample,
+                PDepthStencilState = &depth,
+                PColorBlendState = &colorBlend,
+                PDynamicState = &dynamic,
+                Layout = _mergeLayout,
+                RenderPass = _renderPass,
+            };
+            _vk.CreateGraphicsPipelines(_device, default, 1, in info, null, out _mergePipeline).Ok("GE merge pipeline");
+        }
+        finally
+        {
+            SilkMarshal.Free((nint)entry);
+        }
     }
 
     private void CopyBuffer(Buffer buffer, ulong offset, Image image, ImageAspectFlags aspect, uint width, uint height, bool toImage)
@@ -1319,7 +1568,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
 
     private DescriptorPool CreateDescriptorPool()
     {
-        DescriptorPoolSize size = new(DescriptorType.CombinedImageSampler, DescriptorSetsPerBatch);
+        DescriptorPoolSize size = new(DescriptorType.CombinedImageSampler, DescriptorSetsPerBatch * 2); // the masked-draw merges take two
         DescriptorPoolCreateInfo poolInfo = new()
         {
             SType = StructureType.DescriptorPoolCreateInfo,
@@ -1367,6 +1616,20 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         foreach (Surface surface in _surfaces.Values.Concat(_scratchDepth.Values))
         {
             DestroySurface(surface);
+        }
+
+        foreach (Surface image in _maskImages.Values)
+        {
+            DestroySurface(image);
+        }
+
+        if (_mergePipeline.Handle != 0)
+        {
+            _vk.DestroyPipeline(_device, _mergePipeline, null);
+            _vk.DestroyShaderModule(_device, _mergeVertexModule, null);
+            _vk.DestroyShaderModule(_device, _mergeFragmentModule, null);
+            _vk.DestroyPipelineLayout(_device, _mergeLayout, null);
+            _vk.DestroyDescriptorSetLayout(_device, _mergeSetLayout, null);
         }
 
         foreach (CachedTexture texture in _textures.Values.Concat(_retired).Append(_dummyTexture))
@@ -1508,7 +1771,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
     }
 
     /// <summary>The RGB channels the draw writes: a channel whose 8 mask bits are all set is kept (a partial mask is
-    /// taken as no mask).</summary>
+    /// written, its masked bits put back by <see cref="MergeMasked"/>).</summary>
     private static ColorComponentFlags ColorMask(GeRenderState state)
     {
         if (state.ClearMode)
@@ -1532,11 +1795,6 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         if (((rgb >> 16) & 0xFF) != 0xFF)
         {
             mask |= ColorComponentFlags.BBit;
-        }
-
-        if ((rgb & 0xFF) is not (0 or 0xFF) || ((rgb >> 8) & 0xFF) is not (0 or 0xFF) || ((rgb >> 16) & 0xFF) is not (0 or 0xFF))
-        {
-            Log.WarnOnce("ge-partial-mask", "GE: partial colour bit masks are not applied yet");
         }
 
         return mask;
