@@ -110,6 +110,36 @@ public sealed partial class AllegrexCore
             case 0x17:
                 CountLeadingOnes(instruction);
                 break;
+            case 0x10:
+                _gpr[rd] = Hi;
+                break;
+            case 0x11:
+                Hi = _gpr[rs];
+                break;
+            case 0x12:
+                _gpr[rd] = Lo;
+                break;
+            case 0x13:
+                Lo = _gpr[rs];
+                break;
+            case 0x18:
+                Multiply(instruction);
+                break;
+            case 0x19:
+                MultiplyUnsigned(instruction);
+                break;
+            case 0x1A:
+                Divide(instruction);
+                break;
+            case 0x1B:
+                DivideUnsigned(instruction);
+                break;
+            case 0x1C:
+                MultiplyAdd(instruction);
+                break;
+            case 0x1D:
+                MultiplyAddUnsigned(instruction);
+                break;
             case 0x20:
                 Add(instruction);
                 break;
@@ -145,6 +175,12 @@ public sealed partial class AllegrexCore
                 break;
             case 0x2D:
                 Minimum(instruction);
+                break;
+            case 0x2E:
+                MultiplySubtract(instruction);
+                break;
+            case 0x2F:
+                MultiplySubtractUnsigned(instruction);
                 break;
             default:
                 Unimplemented(instruction, "integer");
