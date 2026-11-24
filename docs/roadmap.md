@@ -2345,9 +2345,11 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
      interrupções 22/23), o sysreg `0xBC100000`, os clocks `0xBC200000` e o flush DDR `0xBD000000` do kermit o GE
      (`0xBD400000`/`0xBD500000`, interrupção 25, do feat/alg4), o controlador de display `0xBE740000` (vblank →
      interrupção 30), o canal de scan-out `0xBC800100` e o LCD DMA para o bloco do framebuffer do ScePspemu, no
-     tempo do próprio núcleo pelo runner; VRAM e scratchpad do PSP no topo do banco 3. Falta: número de IRQ PSP das
-     campainhas da mailbox, versão do chip/fuses do núcleo, a conversão para memória do `sceDisplaySetFrameBufForCompat`
-     com `opt` (`SceIftuForDriver_67E37EFC`; o plano 0 posicionado no retângulo já é mostrado: feat/alg6), KIRK (confirmar tudo pelo trace
+     tempo do próprio núcleo pelo runner; VRAM e scratchpad do PSP no topo do banco 3.
+     Feito (feat/alg6): o `sceDisplaySetFrameBufForCompat` na tela como plano 0 no retângulo com escala (preto em
+     volta, bilinear pelo bit 20, overlay do shell por cima), tela preta com framebuffer null e a conversão com `opt`
+     para a memória. Falta: número de IRQ PSP das
+     campainhas da mailbox, versão do chip/fuses do núcleo, KIRK (confirmar tudo pelo trace
      do boot real).
   4. [G] ScePspemu de ponta a ponta: lacunas de HLE pelos logs, homebrew de PSP, jogo de PSP e de PSone,
      suspensão/retomada e save state do núcleo.

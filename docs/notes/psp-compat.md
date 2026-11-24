@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.pt-BR.md sha256=f36b94babc891d80b72a0ac0b87fdd34822a138a9faa67f247db572a49f82f5a -->
+<!-- pair: psp-compat.pt-BR.md sha256=ead6778429e0dff3830771ddc2ad0c4dcb5ae435ec2eef193b277caeb4edf009 -->
 # PSP compatibility core (SceCompat, ScePspemu, Allegrex)
 
 *Português: [psp-compat.pt-BR.md](psp-compat.pt-BR.md).*
@@ -247,7 +247,11 @@ framebuffer in PSP memory and writes the pixels back, apart from the GXM rendere
   `ksceDisplaySetFrameBufInternal` writes (and whose rectangle it clears). So the last of the two calls is on screen,
   `sceDisplayGetFrameBuf` reads it back, null leaves plane 0 without a framebuffer, the rest of the screen is black,
   bit 20 of the SceDisplayFrameBuf's flags is the IFTU's bilinear filter (not a plane number), and with `opt` the IFTU
-  converts into the `opt` buffer instead of the screen (not done yet: the screen is left alone). Format `0x50000000`
+  converts into the `opt` buffer instead of the screen: opt's width x height A8B8G8R8 pixels at opt's pitch, the
+  picture scaled into the rectangle and every other pixel 0, the call waiting for the unit (`IftuMemoryConversion`,
+  run in GPU order). A null framebuffer (here or in `sceDisplaySetFrameBuf`) gives the plane's unit an input without
+  a framebuffer: a black screen with the shell's overlay over it; `sceDisplaySetFrameBuf(null, IMMEDIATE)` is refused
+  (`0x80290006`) once the plane has had a framebuffer (the record keeps its pitch), and a sync above 1 always is. Format `0x50000000`
   is 16-bit A1B5G5R5 (IFTU format 4, the partner of A8B8G8R8's `0x10`). `ksceDisplaySetMergeConf(head, merge, alpha)`
   only acts on **plane 1** (IFTU unit `2h+1`, the shell's overlay): `SceIftuForDriver_AF19FD85` and `_357EAE24` accept
   units 1 and 3 only, so its `alpha(2h, 0)` call fails (`0x803F0700`) and does nothing; boot sets merge 4 and alpha
