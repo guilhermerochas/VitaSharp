@@ -92,7 +92,8 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             if ((pc.flags & 1) != 0)
             {
                 float q = vUvq.z == 0.0 ? 1.0 : vUvq.z;
-                vec4 texel = texture(textureSampler, vUvq.xy / q);
+                vec2 uv = vUvq.xy / q;
+                vec4 texel = pc.colorTest.w == 1 ? textureLod(textureSampler, uv, pc.environment.w) : texture(textureSampler, uv, pc.environment.w);
                 bool textureAlpha = (pc.flags & 2) != 0;
                 float alpha = textureAlpha ? color.a * texel.a : color.a;
                 if (pc.textureFunction == 0)
@@ -192,6 +193,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         public ImageView View;
         public int Width;
         public int Height;
+        public int Levels = 1;
         public long LastUse;
     }
 
@@ -224,7 +226,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
     private readonly PipelineLayout _pipelineLayout;
     private readonly ShaderModule _vertexModule;
     private readonly ShaderModule _fragmentModule;
-    private readonly Sampler[] _samplers = new Sampler[8];
+    private readonly Sampler[] _samplers = new Sampler[64]; // made at first use: see SamplerIndex
     private readonly Dictionary<ulong, Pipeline> _pipelines = [];
     private readonly Dictionary<(uint, int, int), Surface> _surfaces = [];
     private readonly Dictionary<(ulong, ulong), Framebuffer> _framebuffers = [];
@@ -282,10 +284,6 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         _pipelineLayout = CreatePipelineLayout();
         _vertexModule = CreateModule(compiler, VertexShader, vertex: true);
         _fragmentModule = CreateModule(compiler, FragmentShader, vertex: false);
-        for (int i = 0; i < _samplers.Length; i++)
-        {
-            _samplers[i] = CreateSampler((i & 1) != 0, (i & 2) != 0, (i & 4) != 0);
-        }
 
         (_uploadRing, _uploadRingMemory, _uploadRingMapped) = _core.CreateHostBuffer(UploadRingSize, BufferUsageFlags.TransferSrcBit, MemCat.UploadRing);
         EnsureVertexBuffer(1UL << 20); // before anything is recorded: growing it later submits the batch first
@@ -572,13 +570,21 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
     /// <summary>The image of a decoded texture by its id (uploaded once; the oldest go when the cache is full).</summary>
     private CachedTexture TextureFor(GeRenderState state)
     {
-        if (_textures.TryGetValue(state.TextureId, out CachedTexture? cached) && cached.Width == state.TextureWidth && cached.Height == state.TextureHeight)
+        int levels = Math.Max(state.TextureLevels, 1);
+        if (_textures.TryGetValue(state.TextureId, out CachedTexture? cached) && cached.Width == state.TextureWidth
+            && cached.Height == state.TextureHeight && cached.Levels == levels)
         {
             cached.LastUse = _batch;
             return cached;
         }
 
-        ulong bytes = (ulong)state.TextureWidth * (ulong)state.TextureHeight * 4;
+        int pixels = 0;
+        for (int level = 0; level < levels; level++)
+        {
+            pixels += Math.Max(state.TextureWidth >> level, 1) * Math.Max(state.TextureHeight >> level, 1);
+        }
+
+        ulong bytes = (ulong)pixels * 4;
         if (_uploadRingUsed + bytes > UploadRingSize)
         {
             SubmitAndWait(readBack: false, null);
@@ -589,17 +595,31 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             EvictTextures();
         }
 
-        CachedTexture texture = new() { Width = state.TextureWidth, Height = state.TextureHeight, LastUse = _batch };
+        CachedTexture texture = new() { Width = state.TextureWidth, Height = state.TextureHeight, Levels = levels, LastUse = _batch };
         (texture.Image, texture.Memory, texture.View) = CreateImage(texture.Width, texture.Height, ColorFormat,
-            ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
+            ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit, levels);
         ulong offset = _uploadRingUsed;
-        state.TexturePixels.AsSpan(0, texture.Width * texture.Height).CopyTo(new Span<uint>((void*)(_uploadRingMapped + (nint)offset), texture.Width * texture.Height));
+        state.TexturePixels.AsSpan(0, pixels).CopyTo(new Span<uint>((void*)(_uploadRingMapped + (nint)offset), pixels));
         _uploadRingUsed = (offset + bytes + 15) & ~15UL;
         BeginRecording();
         EndPass();
-        Transition(_commandBuffer, texture.Image, ImageAspectFlags.ColorBit, ImageLayout.Undefined, ImageLayout.TransferDstOptimal);
-        CopyBuffer(_uploadRing, offset, texture.Image, ImageAspectFlags.ColorBit, (uint)texture.Width, (uint)texture.Height, toImage: true);
-        Transition(_commandBuffer, texture.Image, ImageAspectFlags.ColorBit, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal);
+        Transition(_commandBuffer, texture.Image, ImageAspectFlags.ColorBit, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, levels);
+        ulong levelOffset = offset;
+        for (int level = 0; level < levels; level++)
+        {
+            uint levelWidth = (uint)Math.Max(texture.Width >> level, 1);
+            uint levelHeight = (uint)Math.Max(texture.Height >> level, 1);
+            BufferImageCopy region = new()
+            {
+                BufferOffset = levelOffset,
+                ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, (uint)level, 0, 1),
+                ImageExtent = new Extent3D(levelWidth, levelHeight, 1),
+            };
+            _vk.CmdCopyBufferToImage(_commandBuffer, _uploadRing, texture.Image, ImageLayout.TransferDstOptimal, 1, in region);
+            levelOffset += levelWidth * levelHeight * 4;
+        }
+
+        Transition(_commandBuffer, texture.Image, ImageAspectFlags.ColorBit, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, levels);
         if (cached != null)
         {
             RetireTexture(state.TextureId, cached);
@@ -633,7 +653,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
 
     private DescriptorSet SetFor(CachedTexture texture, GeRenderState state, bool textured)
     {
-        int samplerIndex = textured ? (state.TextureLinear ? 1 : 0) | (state.ClampU ? 2 : 0) | (state.ClampV ? 4 : 0) : 0;
+        int samplerIndex = textured ? SamplerIndex(state) : 0;
         long textureKey = (long)texture.View.Handle;
         if (_sets.TryGetValue((textureKey, samplerIndex), out DescriptorSet existing))
         {
@@ -650,7 +670,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         };
         _vk.AllocateDescriptorSets(_device, in allocateInfo, out DescriptorSet set).Ok("GE descriptor set");
         _setsUsed++;
-        DescriptorImageInfo image = new(_samplers[samplerIndex], texture.View, ImageLayout.ShaderReadOnlyOptimal);
+        DescriptorImageInfo image = new(SamplerAt(samplerIndex), texture.View, ImageLayout.ShaderReadOnlyOptimal);
         WriteDescriptorSet write = new()
         {
             SType = StructureType.WriteDescriptorSet,
@@ -886,7 +906,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         }
     }
 
-    private void Transition(CommandBuffer cb, Image image, ImageAspectFlags aspect, ImageLayout from, ImageLayout to)
+    private void Transition(CommandBuffer cb, Image image, ImageAspectFlags aspect, ImageLayout from, ImageLayout to, int levels = 1)
     {
         ImageMemoryBarrier barrier = new()
         {
@@ -896,7 +916,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
             DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
             Image = image,
-            SubresourceRange = new ImageSubresourceRange(aspect, 0, 1, 0, 1),
+            SubresourceRange = new ImageSubresourceRange(aspect, 0, (uint)levels, 0, 1),
             SrcAccessMask = AccessFlags.TransferWriteBit | AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit,
             DstAccessMask = AccessFlags.TransferReadBit | AccessFlags.TransferWriteBit | AccessFlags.ColorAttachmentReadBit
                 | AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit
@@ -957,7 +977,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         floats[4] = (state.TextureEnvironment & 0xFF) / 255f;
         floats[5] = ((state.TextureEnvironment >> 8) & 0xFF) / 255f;
         floats[6] = ((state.TextureEnvironment >> 16) & 0xFF) / 255f;
-        floats[7] = 1;
+        floats[7] = state.LodBias; // the texture level bias (TEXLEVEL), with the mode in ints[19]
         ints[8] = state.AlphaFunction;
         ints[9] = state.AlphaReference;
         ints[10] = state.AlphaMask;
@@ -969,7 +989,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         ints[16] = state.ColorTestFunction;
         ints[17] = (int)state.ColorReference;
         ints[18] = (int)state.ColorTestMask;
-        ints[19] = 0;
+        ints[19] = state.LodMode;
         for (int row = 0; row < 4; row++)
         {
             ints[20 + row] = state.DitherRows[row];
@@ -1050,7 +1070,10 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
 
         foreach (Sampler sampler in _samplers)
         {
-            _vk.DestroySampler(_device, sampler, null);
+            if (sampler.Handle != 0)
+            {
+                _vk.DestroySampler(_device, sampler, null);
+            }
         }
 
         _core.DestroyBuffer(_uploadRing, _uploadRingMemory);
@@ -1432,26 +1455,48 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         }
     }
 
-    private Sampler CreateSampler(bool linear, bool clampU, bool clampV)
+    /// <summary>A sampler's index: bit 0 linear minification, 1 linear magnification, 2..3 the mipmap filter (0 none,
+    /// 1 nearest level, 2 linear between levels), 4 clamp on U, 5 clamp on V.</summary>
+    private static int SamplerIndex(GeRenderState state)
     {
-        Filter filter = linear ? Filter.Linear : Filter.Nearest;
+        int index = state.MinLinear ? 1 : 0;
+        index |= state.MagLinear ? 2 : 0;
+        index |= (state.TextureLevels > 1 ? state.MipFilter : 0) << 2;
+        index |= state.ClampU ? 16 : 0;
+        index |= state.ClampV ? 32 : 0;
+        return index;
+    }
+
+    private Sampler SamplerAt(int index)
+    {
+        if (_samplers[index].Handle == 0)
+        {
+            _samplers[index] = CreateSampler(index);
+        }
+
+        return _samplers[index];
+    }
+
+    private Sampler CreateSampler(int index)
+    {
+        int mipFilter = (index >> 2) & 3;
         SamplerCreateInfo info = new()
         {
             SType = StructureType.SamplerCreateInfo,
-            MagFilter = filter,
-            MinFilter = filter,
-            MipmapMode = SamplerMipmapMode.Nearest,
-            AddressModeU = clampU ? SamplerAddressMode.ClampToEdge : SamplerAddressMode.Repeat,
-            AddressModeV = clampV ? SamplerAddressMode.ClampToEdge : SamplerAddressMode.Repeat,
+            MinFilter = (index & 1) != 0 ? Filter.Linear : Filter.Nearest,
+            MagFilter = (index & 2) != 0 ? Filter.Linear : Filter.Nearest,
+            MipmapMode = mipFilter == 2 ? SamplerMipmapMode.Linear : SamplerMipmapMode.Nearest,
+            AddressModeU = (index & 16) != 0 ? SamplerAddressMode.ClampToEdge : SamplerAddressMode.Repeat,
+            AddressModeV = (index & 32) != 0 ? SamplerAddressMode.ClampToEdge : SamplerAddressMode.Repeat,
             AddressModeW = SamplerAddressMode.ClampToEdge,
-            MaxLod = 0,
+            MaxLod = mipFilter == 0 ? 0 : 16,
         };
         _vk.CreateSampler(_device, in info, null, out Sampler sampler).Ok("GE sampler");
         return sampler;
     }
 
 
-    private (Image, DeviceMemory, ImageView) CreateImage(int width, int height, Format format, ImageUsageFlags usage, ImageAspectFlags aspect)
+    private (Image, DeviceMemory, ImageView) CreateImage(int width, int height, Format format, ImageUsageFlags usage, ImageAspectFlags aspect, int levels = 1)
     {
         ImageCreateInfo info = new()
         {
@@ -1459,7 +1504,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             ImageType = ImageType.Type2D,
             Format = format,
             Extent = new Extent3D((uint)width, (uint)height, 1),
-            MipLevels = 1,
+            MipLevels = (uint)levels,
             ArrayLayers = 1,
             Samples = SampleCountFlags.Count1Bit,
             Tiling = ImageTiling.Optimal,
@@ -1478,7 +1523,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             Image = image,
             ViewType = ImageViewType.Type2D,
             Format = format,
-            SubresourceRange = new ImageSubresourceRange(aspect, 0, 1, 0, 1),
+            SubresourceRange = new ImageSubresourceRange(aspect, 0, (uint)levels, 0, 1),
         };
         _vk.CreateImageView(_device, in viewInfo, null, out ImageView view).Ok("GE image view");
         return (image, memory, view);

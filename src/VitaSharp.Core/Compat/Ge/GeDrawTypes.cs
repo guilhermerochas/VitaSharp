@@ -130,6 +130,20 @@ public sealed class GeRenderState
     public bool ClampU;
     public bool ClampV;
 
+    /// <summary>TEXFILTER in full: minification and magnification linear, and the mipmap filter of the minification
+    /// (0 none, 1 nearest level, 2 between levels).</summary>
+    public bool MinLinear;
+    public bool MagLinear;
+    public int MipFilter;
+
+    /// <summary>The levels in <see cref="TexturePixels"/> (level 0 first, each half the one before, down to 1x1).</summary>
+    public int TextureLevels = 1;
+
+    /// <summary>TEXLEVEL: 0 the GPU picks the level (plus <see cref="LodBias"/>), 1 the level is <see cref="LodBias"/>,
+    /// 2 by the slope (taken as 0 here).</summary>
+    public int LodMode;
+    public float LodBias;
+
     /// <summary>FOGENABLE (transformed vertices only): each fragment is factor * colour + (1 - factor) * FOGCOLOR with the
     /// vertices' <see cref="GeVertex.Fog"/> factor.</summary>
     public bool Fog;

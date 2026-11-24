@@ -459,6 +459,13 @@ public sealed partial class GeEngine
         state.TextureEnvironment = Command(GeCommand.TextureEnvironmentColor) & 0xFFFFFF;
         uint filter = Command(GeCommand.TextureFilter);
         state.TextureLinear = (filter & 1) != 0 || ((filter >> 8) & 1) != 0;
+        int minFilter = (int)(filter & 7);
+        state.MinLinear = (minFilter & 1) != 0;
+        state.MagLinear = ((filter >> 8) & 1) != 0;
+        state.MipFilter = minFilter >= 6 ? 2 : minFilter >= 4 ? 1 : 0;
+        uint level = Command(GeCommand.TextureLevel);
+        state.LodMode = (int)(level & 3);
+        state.LodBias = (sbyte)((level >> 16) & 0xFF) / 16f;
         uint wrap = Command(GeCommand.TextureWrap);
         state.ClampU = (wrap & 1) != 0;
         state.ClampV = (wrap & 0x100) != 0;
@@ -565,15 +572,14 @@ public sealed partial class GeEngine
     private long _executionEpoch;
     private long _nextTextureId = 1;
 
-    /// <summary>Level 0 of the texture (TEXADDR0/TBW0/TSIZE0, TPSM, TMODE swizzle bit) decoded to RGBA8 into the state;
+    /// <summary>The texture (TPSM, TMODE swizzle bit; level n at TEXADDRn/TBWn/TSIZEn) decoded to RGBA8 into the state:
+    /// level 0, and with a mipmap filter the levels TMODE's bits 16..18 name, as long as each is half the one before;
     /// false when it cannot be read. A texture is decoded once and reused while its memory (checked once per list
     /// run) and its CLUT stay the same; one the rasterizer drew into is written back first.</summary>
     private bool DecodeTexture()
     {
         int width = TextureWidth();
         int height = TextureHeight();
-        uint address = (Command(GeCommand.TextureAddress0) & 0xFFFFF0) | ((Command(GeCommand.TextureBufferWidth0) & 0x0F0000) << 8);
-        int bufferWidth = Math.Max((int)(Command(GeCommand.TextureBufferWidth0) & 0x7FF), 1);
         int format = (int)(Command(GeCommand.TextureFormat) & 0xF);
         bool swizzled = (Command(GeCommand.TextureMode) & 1) != 0;
         if (format > GeTextureDecoder.FormatDxt5)
@@ -582,10 +588,32 @@ public sealed partial class GeEngine
             return false;
         }
 
-        int bytes = GeTextureDecoder.SourceBytes(bufferWidth, height, format, swizzled);
-        SynchronizeMemory(address, bytes);
-        ulong clutHash = format is >= 4 and <= 7 ? ClutHash() : 0;
-        (uint Address, int Format, int Width, int Height, int BufferWidth, bool Swizzled, ulong Clut) key = (address, format, width, height, bufferWidth, swizzled, clutHash);
+        int levels = _state.MipFilter != 0 ? 1 + Math.Min((int)((Command(GeCommand.TextureMode) >> 16) & 7), 7) : 1;
+        Span<uint> addresses = stackalloc uint[8];
+        Span<int> bufferWidths = stackalloc int[8];
+        Span<int> sizes = stackalloc int[8];
+        int totalPixels = 0;
+        ulong hash = format is >= 4 and <= 7 ? ClutHash() : 0;
+        bool changed = false;
+        int usable = 0;
+        for (int level = 0; level < levels; level++)
+        {
+            uint sizeWord = Command(GeCommand.TextureSize0 + level);
+            int levelWidth = 1 << (int)(sizeWord & 0xF);
+            int levelHeight = 1 << (int)((sizeWord >> 8) & 0xF);
+            if (level > 0 && (levelWidth != Math.Max(width >> level, 1) || levelHeight != Math.Max(height >> level, 1)))
+            {
+                break;
+            }
+
+            addresses[level] = (Command(GeCommand.TextureAddress0 + level) & 0xFFFFF0) | ((Command(GeCommand.TextureBufferWidth0 + level) & 0x0F0000) << 8);
+            bufferWidths[level] = Math.Max((int)(Command(GeCommand.TextureBufferWidth0 + level) & 0x7FF), 1);
+            sizes[level] = GeTextureDecoder.SourceBytes(bufferWidths[level], levelHeight, format, swizzled);
+            totalPixels += levelWidth * levelHeight;
+            usable++;
+        }
+
+        (uint Address, int Format, int Width, int Height, int BufferWidth, bool Swizzled, ulong Clut) key = (addresses[0], format | (usable << 8), width, height, bufferWidths[0], swizzled, hash);
         if (!_textures.TryGetValue(key, out CachedTexture? cached))
         {
             if (_textures.Count >= TextureCacheLimit)
@@ -593,27 +621,43 @@ public sealed partial class GeEngine
                 _textures.Clear();
             }
 
-            cached = new CachedTexture { Pixels = new uint[width * height] };
+            cached = new CachedTexture { Pixels = new uint[totalPixels] };
             _textures[key] = cached;
         }
 
         if (cached.CheckedEpoch != _executionEpoch)
         {
-            Span<byte> source = _memory.Span(address, bytes);
-            if (source.Length != bytes)
+            ulong contentHash = 0;
+            for (int level = 0; level < usable; level++)
             {
-                return false;
-            }
-
-            ulong hash = System.IO.Hashing.XxHash3.HashToUInt64(source);
-            if (hash != cached.Hash || cached.Id == 0)
-            {
-                if (!GeTextureDecoder.Decode(_memory, address, bufferWidth, width, height, format, swizzled, _clut, Command(GeCommand.ClutFormat), cached.Pixels))
+                SynchronizeMemory(addresses[level], sizes[level]);
+                Span<byte> source = _memory.Span(addresses[level], sizes[level]);
+                if (source.Length != sizes[level])
                 {
                     return false;
                 }
 
-                cached.Hash = hash;
+                contentHash = contentHash * 31 + System.IO.Hashing.XxHash3.HashToUInt64(source);
+            }
+
+            changed = contentHash != cached.Hash || cached.Id == 0;
+            if (changed)
+            {
+                int offset = 0;
+                for (int level = 0; level < usable; level++)
+                {
+                    int levelWidth = Math.Max(width >> level, 1);
+                    int levelHeight = Math.Max(height >> level, 1);
+                    Span<uint> target = cached.Pixels.AsSpan(offset, levelWidth * levelHeight);
+                    if (!GeTextureDecoder.Decode(_memory, addresses[level], bufferWidths[level], levelWidth, levelHeight, format, swizzled, _clut, Command(GeCommand.ClutFormat), target))
+                    {
+                        return false;
+                    }
+
+                    offset += levelWidth * levelHeight;
+                }
+
+                cached.Hash = contentHash;
                 cached.Id = _nextTextureId++;
             }
 
@@ -623,6 +667,7 @@ public sealed partial class GeEngine
         _state.TexturePixels = cached.Pixels;
         _state.TextureWidth = width;
         _state.TextureHeight = height;
+        _state.TextureLevels = usable;
         _state.TextureId = cached.Id;
         return true;
     }

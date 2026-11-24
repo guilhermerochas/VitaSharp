@@ -321,6 +321,56 @@ public sealed class GeVulkanRasterizerTests : IDisposable
         Assert.Equal(0xFFFF00u, Pixel(4, 4) & 0xFFFFFF);
     }
 
+    /// <summary>A 4x4 texture with a red level 0 and a green 2x2 level 1 (TEXMODE bits 16..18 = 1) on a 2x2 sprite:
+    /// with a mipmap filter the minified draw samples level 1; without one, or with TEXLEVEL's constant level 0,
+    /// level 0.</summary>
+    [SoftwareVulkanTheory]
+    [InlineData(4u, 0u, 0x00FF00u)] // nearest, mipmap nearest: level 1
+    [InlineData(0u, 0u, 0x0000FFu)] // no mipmaps: level 0
+    [InlineData(4u, 1u, 0x0000FFu)] // a constant level 0
+    public void MipmapLevelsFollowTheFilterAndTheLevelMode(uint minFilter, uint levelMode, uint expected)
+    {
+        const uint Level1 = Texture + 0x1000;
+        for (int i = 0; i < 16; i++)
+        {
+            _memory.Write32(Texture + (uint)(i * 4), 0xFF0000FF);
+        }
+
+        for (int i = 0; i < 4; i++)
+        {
+            _memory.Write32(Level1 + (uint)(i * 4), 0xFF00FF00);
+        }
+
+        uint first = Vertices;
+        _memory.Write16(first, 0);
+        _memory.Write16(first + 2, 0);
+        _memory.Write32(first + 4, 0xFFFFFFFF);
+        _memory.Write16(first + 8, 10);
+        _memory.Write16(first + 10, 10);
+        uint second = Vertices + 16;
+        _memory.Write16(second, 4);
+        _memory.Write16(second + 2, 4);
+        _memory.Write32(second + 4, 0xFFFFFFFF);
+        _memory.Write16(second + 8, 12);
+        _memory.Write16(second + 10, 12);
+        GeRegisters.Run(_engine, Setup()
+            .Command(GeCommand.TextureMapEnable, 1)
+            .Command(GeCommand.TextureAddress0, Texture & 0xFFFFFF)
+            .Command(GeCommand.TextureBufferWidth0, 4 | ((Texture >> 8) & 0x0F0000))
+            .Command(GeCommand.TextureSize0, 2 | (2 << 8))
+            .Command(GeCommand.TextureAddress0 + 1, Level1 & 0xFFFFFF)
+            .Command(GeCommand.TextureBufferWidth0 + 1, 2 | ((Level1 >> 8) & 0x0F0000))
+            .Command(GeCommand.TextureSize0 + 1, 1 | (1 << 8))
+            .Command(GeCommand.TextureMode, 1u << 16)
+            .Command(GeCommand.TextureFormat, GePixels.Format8888)
+            .Command(GeCommand.TextureFilter, minFilter)
+            .Command(GeCommand.TextureLevel, levelMode)
+            .Command(GeCommand.TextureFunction, 3 | 0x100)
+            .Command(GeCommand.VertexAddress, Vertices & 0xFFFFFF).Command(GeCommand.VertexType, ThroughTextureColorS16)
+            .Command(GeCommand.Primitive, (6u << 16) | 2).End().Start);
+        Assert.Equal(expected, Pixel(10, 10) & 0xFFFFFF);
+    }
+
     /// <summary>A 16x16 target and a screen-covering pair of triangles with the given vertex fields, for the
     /// rasterizer's own inputs (the secondary colour, fog, Q), drawn without the GE side.</summary>
     private uint DrawQuad(GeRenderState state, Func<GeVertex, GeVertex> fill)
