@@ -152,7 +152,7 @@ public readonly record struct DisplayPlacement(int X, int Y, int Width, int Heig
         return horizontal && vertical;
     }
 
-    static bool ClipAxis(int start, int length, int screen, uint sourceLength, out int source0, out int source1,
+    private static bool ClipAxis(int start, int length, int screen, uint sourceLength, out int source0, out int source1,
         out int destination0, out int destination1)
     {
         long end = (long)start + length;

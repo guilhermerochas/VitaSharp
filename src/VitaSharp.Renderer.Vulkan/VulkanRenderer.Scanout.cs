@@ -73,6 +73,7 @@ public sealed unsafe partial class VulkanRenderer
         if (_presentCmd != null && !ReferenceEquals(_presentCmd, _scanoutCommand))
         {
             _lastShellOverlay = _presentCmd.Overlay;
+            _lastPlacement = _presentCmd.Placement;
             _lastPresentFlip = _presentCmd.Flip;
         }
     }
@@ -90,8 +91,11 @@ public sealed unsafe partial class VulkanRenderer
         long vblank = VBlank.Count;
         if (_scanout.Due(vblank))
         {
+            // the framebuffer watched: the frame shown is the screen-sized composite when it was placed
+            frame = _scanout.Frame;
             _scanoutCommand.Frame = frame;
             _scanoutCommand.Overlay = _lastShellOverlay;
+            _scanoutCommand.Placement = _lastPlacement;
             _scanoutCommand.Flip = _lastPresentFlip;
             _scanoutCommand.VBlank = vblank;
             _scanoutCommand.GuestUs = GuestClock.Microseconds;
@@ -128,11 +132,12 @@ public sealed unsafe partial class VulkanRenderer
         Interlocked.Increment(ref _idleRepresents);
     }
 
-    /// <summary><paramref name="src"/>, a frame shown last, still exists: the CPU framebuffer, a render target, the
-    /// memory-order copy of one or the shell overlay's composite.</summary>
+    /// <summary><paramref name="src"/>, a frame shown last, still exists: a CPU framebuffer, a render target, the
+    /// memory-order copy of one, the shell overlay's composite or the placed plane's.</summary>
     private bool IsLiveSurface(RenderTarget src)
     {
-        if (src == _cpuFramebuffer || src == _overlayComposite || _renderTargets.ContainsValue(src))
+        if (src == _cpuFramebuffer || src == _cpuFramebuffer16 || src == _overlayComposite || src == _compatComposite
+            || _renderTargets.ContainsValue(src))
         {
             return true;
         }
