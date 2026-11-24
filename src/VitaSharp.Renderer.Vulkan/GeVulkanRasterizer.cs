@@ -35,7 +35,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
     private static readonly uint s_color1Offset = (uint)Marshal.OffsetOf<GeVertex>(nameof(GeVertex.Color1));
     private static readonly uint s_fogOffset = (uint)Marshal.OffsetOf<GeVertex>(nameof(GeVertex.Fog));
     private static readonly uint s_qOffset = (uint)Marshal.OffsetOf<GeVertex>(nameof(GeVertex.Q));
-    private const int PushConstantSize = 64;
+    private const int PushConstantSize = 96;
 
     private const string VertexShader = """
         #version 450
@@ -45,7 +45,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         layout(location = 3) in vec4 inColor1;
         layout(location = 4) in float inFog;
         layout(location = 5) in float inQ;
-        layout(push_constant) uniform Constants { vec2 size; int flags; int textureFunction; vec4 environment; ivec4 alpha; vec4 fog; } pc;
+        layout(push_constant) uniform Constants { vec2 size; int flags; int textureFunction; vec4 environment; ivec4 alpha; vec4 fog; ivec4 colorTest; ivec4 dither; } pc;
         layout(location = 0) out vec4 vColor;
         layout(location = 1) out vec3 vUvq;
         layout(location = 2) out vec4 vColor1;
@@ -70,7 +70,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         layout(location = 2) in vec4 vColor1;
         layout(location = 3) in float vFog;
         layout(set = 0, binding = 0) uniform sampler2D textureSampler;
-        layout(push_constant) uniform Constants { vec2 size; int flags; int textureFunction; vec4 environment; ivec4 alpha; vec4 fog; } pc;
+        layout(push_constant) uniform Constants { vec2 size; int flags; int textureFunction; vec4 environment; ivec4 alpha; vec4 fog; ivec4 colorTest; ivec4 dither; } pc;
         layout(location = 0) out vec4 outColor;
         bool Compare(int function, int value, int reference)
         {
@@ -141,6 +141,26 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
                 {
                     discard;
                 }
+            }
+
+            if ((pc.flags & 64) != 0)
+            {
+                ivec3 channels = ivec3(color.rgb * 255.0 + 0.5);
+                int packed = (channels.r | (channels.g << 8) | (channels.b << 16)) & pc.colorTest.z;
+                int reference = pc.colorTest.y & pc.colorTest.z;
+                bool pass = pc.colorTest.x == 1 || (pc.colorTest.x == 2 && packed == reference) || (pc.colorTest.x == 3 && packed != reference);
+                if (!pass)
+                {
+                    discard;
+                }
+            }
+
+            if ((pc.flags & 128) != 0)
+            {
+                ivec2 cell = ivec2(gl_FragCoord.xy) & 3;
+                int offset = (pc.dither[cell.y] >> (cell.x * 4)) & 15;
+                offset = offset >= 8 ? offset - 16 : offset;
+                color.rgb = clamp(color.rgb + float(offset) / 255.0, 0.0, 1.0);
             }
 
             outColor = color;
@@ -271,6 +291,9 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         EnsureVertexBuffer(1UL << 20); // before anything is recorded: growing it later submits the batch first
         _dummyTexture = CreateTexture(1, 1);
     }
+
+    /// <summary>The device takes the GE's logic ops (VkCore.LogicOp).</summary>
+    public bool SupportsLogicOp => _core.LogicOp;
 
     /// <summary>The batches given (each PRIM).</summary>
     public long Draws { get; private set; }
@@ -919,6 +942,16 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             flags |= 32; // the secondary (specular) colour: 0 when the vertices have none
         }
 
+        if (state.ColorTest && !state.ClearMode)
+        {
+            flags |= 64;
+        }
+
+        if (state.Dither && !state.ClearMode)
+        {
+            flags |= 128;
+        }
+
         ints[2] = flags;
         ints[3] = state.TextureFunction;
         floats[4] = (state.TextureEnvironment & 0xFF) / 255f;
@@ -933,6 +966,14 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         floats[13] = ((state.FogColor >> 8) & 0xFF) / 255f;
         floats[14] = ((state.FogColor >> 16) & 0xFF) / 255f;
         floats[15] = 1;
+        ints[16] = state.ColorTestFunction;
+        ints[17] = (int)state.ColorReference;
+        ints[18] = (int)state.ColorTestMask;
+        ints[19] = 0;
+        for (int row = 0; row < 4; row++)
+        {
+            ints[20 + row] = state.DitherRows[row];
+        }
     }
 
     private DescriptorSetLayout CreateSetLayout()
@@ -1160,6 +1201,12 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
     private Pipeline PipelineFor(GeTopology topology, GeRenderState state, bool usesDepth)
     {
         bool clear = state.ClearMode;
+        if (state.LogicOp && !_core.LogicOp)
+        {
+            Log.WarnOnce("ge-logic-op", "GE: the device has no logic ops: drawn without the logic op");
+        }
+
+        int logicOp = state.LogicOp && _core.LogicOp ? state.LogicOpCode : -1;
         bool blend = state.Blend && !clear;
         BlendFactor source = blend ? SourceFactor(state.BlendSource, state.BlendFixedA) : BlendFactor.One;
         BlendFactor destination = blend ? DestinationFactor(state.BlendDestination, state.BlendFixedB) : BlendFactor.Zero;
@@ -1177,19 +1224,20 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             | (depthTest ? 1UL << 17 : 0)
             | ((ulong)compare << 18)
             | (depthWrite ? 1UL << 21 : 0)
-            | ((ulong)mask << 22);
+            | ((ulong)mask << 22)
+            | ((ulong)(logicOp + 1) << 26);
         if (_pipelines.TryGetValue(key, out Pipeline existing))
         {
             return existing;
         }
 
-        Pipeline created = CreatePipeline(topology, blend, source, destination, operation, depthTest, compare, depthWrite, mask);
+        Pipeline created = CreatePipeline(topology, blend, source, destination, operation, depthTest, compare, depthWrite, mask, logicOp);
         _pipelines[key] = created;
         return created;
     }
 
     private Pipeline CreatePipeline(GeTopology topology, bool blend, BlendFactor source, BlendFactor destination, BlendOp operation,
-        bool depthTest, CompareOp compare, bool depthWrite, ColorComponentFlags mask)
+        bool depthTest, CompareOp compare, bool depthWrite, ColorComponentFlags mask, int logicOp)
     {
         byte* entry = (byte*)SilkMarshal.StringToPtr("main");
         try
@@ -1257,6 +1305,8 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
                 SType = StructureType.PipelineColorBlendStateCreateInfo,
                 AttachmentCount = 1,
                 PAttachments = &attachment,
+                LogicOpEnable = logicOp >= 0,
+                LogicOp = logicOp >= 0 ? (LogicOp)logicOp : LogicOp.Copy,
             };
             DynamicState* dynamics = stackalloc DynamicState[] { DynamicState.Viewport, DynamicState.Scissor, DynamicState.BlendConstants };
             PipelineDynamicStateCreateInfo dynamic = new() { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = 3, PDynamicStates = dynamics };

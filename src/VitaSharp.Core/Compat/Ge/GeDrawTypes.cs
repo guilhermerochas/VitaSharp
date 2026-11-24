@@ -134,6 +134,22 @@ public sealed class GeRenderState
     /// vertices' <see cref="GeVertex.Fog"/> factor.</summary>
     public bool Fog;
     public uint FogColor;
+
+    /// <summary>COLORTESTENABLE: the fragment passes when (colour & COLORTESTMASK) compares to (COLORREF & mask) by
+    /// COLORTEST's function (0 never, 1 always, 2 equal, 3 not equal).</summary>
+    public bool ColorTest;
+    public int ColorTestFunction;
+    public uint ColorReference;
+    public uint ColorTestMask;
+
+    /// <summary>DITHERENABLE into a 16-bit framebuffer: DITH0..3's 4x4 matrix of signed 4-bit values added to the
+    /// colour (in 1/255) by the pixel's position; row r packed in <see cref="DitherRows"/>[r], column c at bits 4c.</summary>
+    public bool Dither;
+    public readonly int[] DitherRows = new int[4];
+
+    /// <summary>LOGICOPENABLE: LOGICOP's operation (the 16 logic ops in Vulkan's order) replaces blending.</summary>
+    public bool LogicOp;
+    public int LogicOpCode;
 }
 
 /// <summary>

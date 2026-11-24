@@ -271,6 +271,56 @@ public sealed class GeVulkanRasterizerTests : IDisposable
         Assert.InRange((int)((mixed >> 8) & 0xFF), 0x78, 0x88);
     }
 
+    /// <summary>The colour test keeps the fragments whose masked colour compares to the reference: EQUAL draws a red
+    /// rectangle against a red reference, NOT EQUAL drops it.</summary>
+    [SoftwareVulkanFact]
+    public void TheColourTestKeepsOrDropsByTheReference()
+    {
+        GeListBuilder list = Setup().Command(GeCommand.ColorTestEnable, 1).Command(GeCommand.ColorTest, 2)
+            .Command(GeCommand.ColorReference, 0x0000FF).Command(GeCommand.ColorTestMask, 0xFFFFFF);
+        Rectangle(list, Vertices, 0, 0, 8, 8, 0, 0xFF0000FF).Command(GeCommand.ColorTest, 3);
+        Rectangle(list, Vertices + 0x100, 20, 0, 28, 8, 0, 0xFF0000FF).End();
+        GeRegisters.Run(_engine, list.Start);
+        Assert.Equal(0x0000FFu, Pixel(4, 4) & 0xFFFFFF);
+        Assert.Equal(0u, Pixel(24, 4));
+    }
+
+    /// <summary>Dithering into a 16-bit framebuffer adds the matrix's offset before the pixel is narrowed: red 0xF5 is
+    /// 30 in 5 bits, with +7 it becomes 31.</summary>
+    [SoftwareVulkanFact]
+    public void DitheringAddsTheMatrixBeforeTheFramebufferIsNarrowed()
+    {
+        GeListBuilder list = Setup(GePixels.Format565);
+        Rectangle(list, Vertices, 0, 0, 4, 4, 0, 0xFF0000F5);
+        list.Command(GeCommand.DitherEnable, 1);
+        for (int row = 0; row < 4; row++)
+        {
+            list.Command(GeCommand.Dither0 + row, 0x7777);
+        }
+
+        Rectangle(list, Vertices + 0x100, 8, 0, 12, 4, 0, 0xFF0000F5).End();
+        GeRegisters.Run(_engine, list.Start);
+        Assert.Equal(30, _memory.Read16(GeTestMemory.VramBase + (uint)((1 * Stride + 1) * 2)) & 0x1F);
+        Assert.Equal(31, _memory.Read16(GeTestMemory.VramBase + (uint)((1 * Stride + 9) * 2)) & 0x1F);
+    }
+
+    /// <summary>A logic op replaces blending: XOR of the drawn colour with the framebuffer's.</summary>
+    [SoftwareVulkanFact]
+    public void ALogicOpCombinesWithTheFramebuffer()
+    {
+        if (!_rasterizer!.SupportsLogicOp)
+        {
+            return; // the device has no logic ops (the draw goes without, logged)
+        }
+
+        GeListBuilder list = Setup().Command(GeCommand.ClearMode, 1 | 0x100);
+        Rectangle(list, Vertices, 0, 0, 8, 8, 0, 0xFFFF00FF).Command(GeCommand.ClearMode, 0)
+            .Command(GeCommand.LogicOpEnable, 1).Command(GeCommand.LogicOp, 6); // XOR
+        Rectangle(list, Vertices + 0x100, 0, 0, 8, 8, 0, 0xFF00FFFF).End();
+        GeRegisters.Run(_engine, list.Start);
+        Assert.Equal(0xFFFF00u, Pixel(4, 4) & 0xFFFFFF);
+    }
+
     /// <summary>A 16x16 target and a screen-covering pair of triangles with the given vertex fields, for the
     /// rasterizer's own inputs (the secondary colour, fog, Q), drawn without the GE side.</summary>
     private uint DrawQuad(GeRenderState state, Func<GeVertex, GeVertex> fill)

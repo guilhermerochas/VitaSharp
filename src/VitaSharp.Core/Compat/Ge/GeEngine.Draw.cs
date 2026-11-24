@@ -9,8 +9,8 @@ namespace VitaSharp.Core.Compat.Ge;
 /// from the command registers, the texture and CLUT decoded (once while their memory stays the same), and the batch
 /// handed to the rasterizer with its framebuffer and depth surfaces, which it may keep until the list stops. LOADCLUT
 /// and the block transfer (TRANSFERSTART) work on memory
-/// here. Not drawn yet: lighting, skinning, fog, the stencil test, logic ops, colour test, patches, texture
-/// mipmaps (level 0 only), DXT textures; each logs once when a list uses it.
+/// here. Not drawn yet: lighting, skinning, the stencil test, patches, texture
+/// mipmaps (level 0 only); each logs once when a list uses it.
 /// </summary>
 public sealed partial class GeEngine
 {
@@ -470,6 +470,18 @@ public sealed partial class GeEngine
 
         state.Fog = Enabled(GeCommand.FogEnable) && !format.Through && !state.ClearMode;
         state.FogColor = Command(GeCommand.FogColor) & 0xFFFFFF;
+        state.ColorTest = Enabled(GeCommand.ColorTestEnable) && !state.ClearMode;
+        state.ColorTestFunction = (int)(Command(GeCommand.ColorTest) & 3);
+        state.ColorReference = Command(GeCommand.ColorReference) & 0xFFFFFF;
+        state.ColorTestMask = Command(GeCommand.ColorTestMask) & 0xFFFFFF;
+        state.Dither = Enabled(GeCommand.DitherEnable) && !state.ClearMode && (Command(GeCommand.FrameBufferPixelFormat) & 3) != GePixels.Format8888;
+        for (int row = 0; row < 4; row++)
+        {
+            state.DitherRows[row] = (int)(Command(GeCommand.Dither0 + row) & 0xFFFF);
+        }
+
+        state.LogicOp = Enabled(GeCommand.LogicOpEnable) && !state.ClearMode;
+        state.LogicOpCode = (int)(Command(GeCommand.LogicOp) & 0xF);
     }
 
     private bool Enabled(int command)
@@ -564,15 +576,15 @@ public sealed partial class GeEngine
         int bufferWidth = Math.Max((int)(Command(GeCommand.TextureBufferWidth0) & 0x7FF), 1);
         int format = (int)(Command(GeCommand.TextureFormat) & 0xF);
         bool swizzled = (Command(GeCommand.TextureMode) & 1) != 0;
-        if (format >= 8)
+        if (format > GeTextureDecoder.FormatDxt5)
         {
-            Log.WarnOnce("ge-dxt", "GE: DXT textures are not decoded yet");
+            Log.WarnOnce("ge-texture-format", $"GE: texture format {format} does not exist");
             return false;
         }
 
         int bytes = GeTextureDecoder.SourceBytes(bufferWidth, height, format, swizzled);
         SynchronizeMemory(address, bytes);
-        ulong clutHash = format >= 4 ? ClutHash() : 0;
+        ulong clutHash = format is >= 4 and <= 7 ? ClutHash() : 0;
         (uint Address, int Format, int Width, int Height, int BufferWidth, bool Swizzled, ulong Clut) key = (address, format, width, height, bufferWidth, swizzled, clutHash);
         if (!_textures.TryGetValue(key, out CachedTexture? cached))
         {
