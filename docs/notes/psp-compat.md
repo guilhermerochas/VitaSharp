@@ -1,10 +1,11 @@
-<!-- pair: psp-compat.pt-BR.md sha256=364e2a0ea03a74bdd5cbd65074a2ebf9d587331432a382bdab5c7045d43d33ea -->
+<!-- pair: psp-compat.pt-BR.md sha256=f2098b019b060724e6cf2ef921b5e71f6b64e8e446e9a3465ade1dbd23a945d9 -->
 # PSP compatibility core (SceCompat, ScePspemu, Allegrex)
 
 *Português: [psp-compat.pt-BR.md](psp-compat.pt-BR.md).*
 
 Study and design note for running PSP and PSone titles through the Vita's own PSP emulator (`vs0:app/NPXS10028`,
-ScePspemu) on top of the real compatibility core, as a real Vita does. No product code yet. Sources: the FW 3.74
+ScePspemu) on top of the real compatibility core, as a real Vita does.
+Product code so far: the Allegrex interpreter (below). Sources: the FW 3.74
 `SceCompat` (bootimage), `NPXS10028/eboot.bin`, `pcbc.skprx` and `pcff.skprx` decompiled or dumped with the local RE
 tools (`%LOCALAPPDATA%\VitaSharpTools\fw374`, study only, nothing copied), the Adrenaline source (GPL-3), the VitaMips
 notes (Hykem) and the existing HLE (`src/VitaSharp.Core/Hle/Modules/Compat.cs`). psdevwiki pages refuse automated
@@ -144,6 +145,24 @@ then `sceCompatWaitSpecialRequest(1)`, and starts its request threads.
   Adrenaline, its own patches (running as third-party code, unchanged) swap in the 6.61 flash0 that its installer
   extracted from `661.PBP` (on the PSP side, with `libpsardumper`) into `ux0:app/PSPEMUCFW/flash0`, and add
   `systemctrl`/`inferno`/`popcorn`.
+
+### The Allegrex interpreter in VitaSharp
+
+`src/VitaSharp.Core/Compat/Allegrex` (`AllegrexCore` on an `IAllegrexBus` that receives PSP physical addresses,
+`address & 0x1FFFFFFF`): the whole integer ISA with the Allegrex additions, delay slots and branch-likely, the
+exceptions through EBase (`0xBFC00200` while Status.BEV is set), COP0 (Status, Cause, EPC, ErrorEPC, EBase, BadVAddr,
+Count, the syscall code, the CPU id, the cfc0/ctc0 control registers), interrupt lines Cause.IP0..IP7 (the PSP's
+interrupt controller is IP2) taken with Status.IE or `mtic`, halt, syscall/break offered to the host first. The
+results MIPS32 leaves unpredictable follow PPSSPP's hardware-checked notes (pspautotests): division by zero,
+`0x80000000 / -1`, the partial decode of rotr/rotrv and of the seb/seh/wsbh/wsbw/bitrev group, `ins` with msb < pos,
+the reset state. Tests: `tests/VitaSharp.Tests/Allegrex*Tests.cs`.
+
+Three points have no hardware test we know of; VitaSharp follows the MIPS32 architecture, which the Allegrex
+implements:
+
+- `add`, `addi` and `sub` raise the overflow exception (PPSSPP and Jpcsp treat them as `addu`/`subu`).
+- `di`/`ei` (`mfmc0`) work as in MIPS32 release 2: rt = Status, then Status.IE = the instruction's sc bit.
+- An interrupt can be taken with a delay slot next: EPC = the branch, Cause.BD set (PPSSPP only checks outside a slot).
 
 ### What needs keys and what does not
 

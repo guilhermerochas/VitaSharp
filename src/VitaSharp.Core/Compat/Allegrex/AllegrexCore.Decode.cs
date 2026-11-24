@@ -89,25 +89,45 @@ public sealed partial class AllegrexCore
                 ExecuteCop0(instruction);
                 break;
             case 0x11:
+                ExecuteCop1(instruction);
+                break;
             case 0x31:
+                LoadWordToFpu(instruction);
+                break;
             case 0x39:
-                Unimplemented(instruction, "FPU (COP1)");
+                StoreWordFromFpu(instruction);
                 break;
             case 0x12:
-            case 0x18:
-            case 0x19:
-            case 0x1B:
+                ExecuteCop2(instruction);
+                break;
             case 0x32:
-            case 0x34:
             case 0x35:
             case 0x36:
-            case 0x37:
             case 0x3A:
-            case 0x3C:
             case 0x3D:
             case 0x3E:
+                ExecuteVfpuMemory(instruction);
+                break;
+            case 0x37:
+                ExecuteVfpu5(instruction);
+                break;
             case 0x3F:
-                Unimplemented(instruction, "VFPU (COP2)");
+                ExecuteVfpuFlush(instruction);
+                break;
+            case 0x18:
+                ExecuteVfpu0(instruction);
+                break;
+            case 0x19:
+                ExecuteVfpu1(instruction);
+                break;
+            case 0x1B:
+                ExecuteVfpu3(instruction);
+                break;
+            case 0x34:
+                ExecuteVfpu4Jump(instruction);
+                break;
+            case 0x3C:
+                ExecuteVfpu6(instruction);
                 break;
             case 0x14:
                 BranchLikelyIf(_gpr[Rs(instruction)] == _gpr[Rt(instruction)], instruction);
