@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.md sha256=1bac139d10725cfd73178d7d19ca9db77e0e1f9c64911a47081133b937c2b000 -->
+<!-- pair: psp-compat.md sha256=0d56a6e8bc94fbc8e9ddf75f17d5482f98c0d141f305219318600cdb55599f7a -->
 # Núcleo de compatibilidade PSP (SceCompat, ScePspemu, Allegrex)
 
 *English: [psp-compat.md](psp-compat.md).*
@@ -169,6 +169,30 @@ Três pontos não têm teste de hardware conhecido; o VitaSharp segue a arquitet
 - `di`/`ei` (`mfmc0`) funcionam como no MIPS32 release 2: rt = Status, depois Status.IE = o bit sc da instrução.
 - Uma interrupção pode ser tomada com um delay slot a seguir: EPC = o branch, Cause.BD ligado (o PPSSPP só confere
   fora do slot).
+
+### O hardware do lado PSP no VitaSharp
+
+`src/VitaSharp.Core/Compat/Psp` (`PspHardware`, um `IPspMmioDevice` por bloco de registradores, no `PspBus` para todo
+endereço que não é RAM, a SRAM compartilhada ou a mailbox; testes: `tests/VitaSharp.Tests/Psp*Tests.cs`, programas
+MIPS sintéticos no interpretador). No Vita o lado PSP mantém os blocos centrais do Tachyon que o próprio kernel do PSP
+controla; o que os drivers kermit substituem (Memory Stick, flash, áudio, ME, Wi-Fi, USB, energia) vai para o ARM
+como pedidos e não tem bloco do lado PSP aqui. Quais dos blocos abaixo o núcleo de compatibilidade tem de fato, o
+trace do boot confirma.
+
+| Bloco (endereço PSP) | O que faz | Fontes |
+|---|---|---|
+| Controlador de interrupções (`0xBC300000`, `0x00`-`0x2C`) | 64 linhas (números do `IntrManager` do Jpcsp) em três grupos de {pendentes mascarados, pendentes brutos, habilitação}: `0x00`/`0x04`/`0x08` linhas 0-31; `0x10`/`0x14`/`0x18` linhas 32-63 sem 38, 39, 46, 47 (bits 6, 7, 14, 15 leem 0); `0x20`/`0x24`/`0x28` essas quatro nos bits 0-3. Os dispositivos seguram a linha até a confirmação no próprio dispositivo; as fontes travadas (vblank 30, codec do ME 31) se confirmam gravando o bit em `0x00`. Saída: IP2. As campainhas da mailbox (`0x40`-`0x5F`, acima) também seguram o IP2 até o número de interrupção delas ser conhecido | uOFW `interruptman/start.S`, Jpcsp `MMIOHandlerInterruptMan` |
+| Timers de hardware (`0xBC500000`, 4 x `0x10`, visões em `+0x100`) | status: ciclo (bits 0-21), habilitação da interrupção (22), contando (23), bit 31 zera os estouros junto com a partida; períodos completos desde a última leitura nos bits 24-31, a leitura do status é a confirmação; `+4` o que falta do período; `+8`/`+C` o prescaler sobre 48 MHz; interrupções 15-18 | uOFW `systimer.c`, Jpcsp `MMIOHandlerTimer` |
+| Tempo do sistema (`0xBC600000`) | a contagem de 1 MHz (`+0`), o alarme (`+4`): interrupção 19 quando a contagem chega nele, mantida até a próxima gravação do alarme | Jpcsp `MMIOHandlerSystemTime` |
+| Controladores de DMA (`0xBC900000` canais 0-7, interrupção 22; `0xBCA00000` 8-15, interrupção 23) | o banco de registradores do PL080 da ARM: status/limpeza das interrupções (`0x00`-`0x18`), canais habilitados, configuração (`0x30` bit 0), canais em `0x100 + n*0x20` {origem, destino, item da lista, controle, configuração}; itens e listas memória-memória rodam na hora, a interrupção de fim por item (bit 31 do controle) passa pela máscara do canal (bit 15 da configuração); fluxo por periférico espera (ainda não há periférico do lado PSP) | ARM DDI 0196 (TRM do PL080), uOFW `dmacman.c` (`0xC001` = Enable/IE/ITC), Jpcsp `DmacProcessor`/`DmacThread` |
+| Controle do sistema (`0xBC100000`, `0x104` bytes) | bits de reset, clock de barramento, clock e IO de cada bloco, seleções de clock, tamanho da RAM e versão do chip (`0x40`), PLL (`0x68`, bit 7), estado USB/MS (`0x80`, nada conectado), fuse id (`0x90`-`0x98`); a borda 0→1 do bit SC de reset pede um reset da CPU. Versão do chip e fuses do núcleo: desconhecidos, 0 | Jpcsp `MMIOHandlerSystemControl` |
+| Razões de clock CPU/barramento (`0xBC200000`) | duas razões de 9/9 bits, guardadas | Jpcsp `MMIOHandlerCpuBusFrequency` |
+| Controlador DDR (`0xBD000000`) | o flush que o driver kermit espera antes de tocar o ARM: `+4` = buffers termina na hora (lê 0), `+0` lê o último terminado (inferido do `sceKermitWait` do Adrenaline) | Jpcsp `MMIOHandlerDdr`, Adrenaline `cef/binary/main.c` |
+
+Tempo: os blocos andam no tempo do próprio núcleo (`CompatCoreRunner.CoreTimeNs`: ciclos no clock de compatibilidade
+mais o tempo em halt), nunca no relógio do host; o runner os avança a cada fatia e acorda um núcleo em halt no próximo
+evento deles. Ainda não: o timer Count/Compare do COP0 (IP7, interrupção 67, parte do interpretador), o controlador
+do LCD, o KIRK e o GE.
 
 ### O que exige chaves e o que não exige
 
