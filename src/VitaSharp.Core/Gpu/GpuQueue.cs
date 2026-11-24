@@ -23,13 +23,29 @@ public sealed class GpuQueue : IDisposable
     private volatile bool _stopping;
 
     private IGpuBackend? _backend;
+
+    /// <summary>The backend the worker executes on. Setting it waits until the worker is out of the old backend
+    /// (it runs <see cref="IGpuBackend.Idle"/> whenever the queue is empty, under <see cref="_backendLock"/>), so the
+    /// caller can dispose the old one right after: disposing a Vulkan renderer under the worker's Idle killed the test
+    /// host natively on a loaded machine.</summary>
     public IGpuBackend? Backend
     {
-        get => _backend; set
+        get => _backend;
+        set
         {
-            _backend = value;
-            value?.Attach(this);
+            lock (_backendLock)
+            {
+                InstallBackend(value);
+            }
         }
+    }
+
+    /// <summary>Installs <paramref name="value"/>; the caller holds <see cref="_backendLock"/> (a swap on the
+    /// <see cref="ReplaceOn"/> thread runs while the requesting thread holds it, so it must not take it again).</summary>
+    private void InstallBackend(IGpuBackend? value)
+    {
+        _backend = value;
+        value?.Attach(this);
     }
 
     /// <summary>Drains the queue, disposes the current backend and installs a new one (process exec).</summary>
@@ -63,11 +79,11 @@ public sealed class GpuQueue : IDisposable
         {
             IGpuBackend? old = Backend;
             string? title = sameTitle ? old?.TitleId : null;
-            Backend = null;
+            InstallBackend(null);
             old?.Dispose();
             if (factory != null)
             {
-                Backend = factory();
+                InstallBackend(factory());
             }
 
             if (title != null && Backend is { } b)
