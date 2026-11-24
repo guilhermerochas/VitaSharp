@@ -49,6 +49,8 @@ public sealed class PspHardware
         PspHardware hardware = new();
         hardware.Add(new PspHardwareTimers(hardware.Clock, hardware.Interrupts));
         hardware.Add(new PspSystemTime(hardware.Clock, hardware.Interrupts));
+        hardware.Add(new PspDmac(PspDmac.Base0, PspInterrupt.Dma0, hardware.Interrupts, memory));
+        hardware.Add(new PspDmac(PspDmac.Base1, PspInterrupt.Dma1, hardware.Interrupts, memory));
         return hardware;
     }
 
