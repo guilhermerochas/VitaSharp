@@ -3284,8 +3284,11 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `GxmFlowTests.IsInitializationInternalFollowsInitializeAndTerminate`. Testar: abrir o Adrenaline pelo Sistema do
   Vita. Só um "Process NPXS10028 ... started" fica vivo e vai para primeiro plano, e o log mostra "destroyed: ... is
   the application PSPEMUCFW now". O diálogo de erro do ScePspemu aparece na tela, sem o "Shell event 16" logo depois
-  de "Starting Init(), type 16". Falta: o lançamento do próprio shell por nome (o NPXS10079 de fundo) ainda sai
-  direto, sem o evento 6 que o shell 3.74 recebe e reconhece como seu (shell +0x114).
+  de "Starting Init(), type 16". Feito também: o LaunchAppByName do próprio shell (o NPXS10079 de fundo) é um
+  pedido como qualquer outro, como no appmgr 3.74 (0x8100D89C): devolve 0, manda o evento 6, e o shell o inicia pelo
+  2ndStage (flags 0x400000); antes o VitaSharp iniciava direto um processo de fundo que o shell nunca pedira ao kernel
+  (`AppNameTests.TheShellsOwnLaunchByNameIsARequestItAnswersWithTheSecondStage`). Testar: no log do Sistema do Vita,
+  "sceAppMgrLaunchAppByName(0x20000, NPXS10079) from shell" seguido de "2ndStage(..., flags 0x400000): NPXS10079".
 
 - [ ] (24/11/2026, falta testar) [P1][M] Tela de CPU framebuffer preta e 0 fps (Adrenaline, fix/disp1): no Vita o
   `sceDisplaySetFrameBuf` só entrega ao display o endereço do framebuffer, e o display lê essa memória a cada vblank;
