@@ -97,6 +97,37 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
         return GuestMemory.R32(bases);
     }
 
+    /// <summary>The PSP's VRAM (physical 0x04000000, 2 MB and its mirrors) is bank 3's PSP 0x8BE00000 (window +
+    /// 0x3E00000), the scratchpad (physical 0x00010000, 16 KB) bank 3's 0x8BD00000, from every segment.</summary>
+    [Fact]
+    public void TheVramAndTheScratchpadAreBankThreesTopOfRam()
+    {
+        uint memory = _harness.Alloc(0x100);
+        PspBus bus = new(new CompatSharedSram(), new CompatMailbox());
+        bus.SetBank(3, (memory - 0xE00000) | 1); // bank 3 + 0xE00000 (PSP 0x8BE00000) = memory
+        bus.Write32(0x44000010, 0x11223344);
+        Assert.Equal(0x11223344u, GuestMemory.R32(memory + 0x10));
+        Assert.Equal(0x11223344u, bus.Read32(0x8BE00010));
+        Assert.Equal(0x11223344u, bus.Read32(0x04200010)); // the first mirror
+        Assert.Equal(0x11223344u, bus.Read32(0xA4600010)); // the last one, uncached
+        bus.Write8(0x04000020, 0x55);
+        Assert.Equal((byte)0x55, GuestMemory.Read<byte>(memory + 0x20));
+        Assert.Equal(0u, bus.Read32(0x04800000)); // past the mirrors
+        Assert.Equal(1, bus.UnknownAccesses);
+
+        bus.SetBank(3, (memory - 0xD00000) | 1); // bank 3 + 0xD00000 (PSP 0x8BD00000) = memory
+        bus.Write16(0x00010040, 0xBEEF);
+        Assert.Equal((ushort)0xBEEF, GuestMemory.Read<ushort>(memory + 0x40));
+        Assert.Equal((ushort)0xBEEF, bus.Read16(0x80010040));
+        Assert.Equal(0xBEEFu, bus.Read32(0x8BD00040) & 0xFFFF);
+        Assert.Equal(0u, bus.Read32(0x00014000)); // past the 16 KB
+        Assert.Equal(2, bus.UnknownAccesses);
+
+        bus.SetBank(3, 0); // bank 3 unmapped: neither is memory
+        Assert.Equal(0u, bus.Read32(0x04000010));
+        Assert.Equal(3, bus.UnknownAccesses);
+    }
+
     [Fact]
     public void TheBankMapReachesTheWindowFromEverySegmentAndTheHoleMirrorsBankOne()
     {

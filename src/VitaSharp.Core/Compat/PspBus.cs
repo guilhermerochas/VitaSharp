@@ -12,12 +12,15 @@ namespace VitaSharp.Core.Compat;
 /// each pointed by <c>SceGrabForDriver_E9C25A28(bank, paddr | 1)</c> at Vita memory. SceCompat points bank 0 at the
 /// window, banks 1 and 2 at window + 0x1000000 (bank 2, the "hole" PSP 0x8A000000, is a mirror of bank 1 unless
 /// someone points it elsewhere) and bank 3 at window + 0x3000000 (pcff, the handshake word, the top of RAM).</item>
+/// <item>The PSP's VRAM, physical 0x04000000 (2 MB, mirrored up to 0x04800000), and its scratchpad, physical
+/// 0x00010000 (16 KB): on the Vita both are main RAM of bank 3, VRAM at PSP 0x8BE00000 (window + 0x3E00000,
+/// Adrenaline's <c>SCE_PSPEMU_VRAM</c>) and the scratchpad at 0x8BD00000 (window + 0x3D00000).</item>
 /// <item>The shared SRAM, PSP 0xBFC00000 (<see cref="CompatSharedSram"/>).</item>
 /// <item>The mailbox's core side (<see cref="CompatMailbox"/>, address inferred).</item>
 /// </list>
 /// Then the PSP-side register blocks of <see cref="Hardware"/> (interrupt controller, timers, DMA...). Anything else
-/// (GE, KIRK, the rest of phase 3): reads give 0, writes are dropped, and the first accesses of each address are logged ("unknown MMIO"), which is how the boot trace finds
-/// what the firmware touches.
+/// (GE, KIRK, the rest of phase 3): reads give 0, writes are dropped, and the first accesses of each address are
+/// logged ("unknown MMIO"), which is how the boot trace finds what the firmware touches.
 /// </summary>
 public sealed class PspBus(CompatSharedSram sram, CompatMailbox mailbox) : IAllegrexBus
 {
@@ -27,6 +30,23 @@ public sealed class PspBus(CompatSharedSram sram, CompatMailbox mailbox) : IAlle
     public const uint RamBase = 0x08000000;
 
     public const uint BankSize = 0x1000000;
+
+    /// <summary>The PSP's VRAM (physical), its size and the end of its mirrors.</summary>
+    public const uint VramBase = 0x04000000;
+
+    public const uint VramSize = 0x200000;
+
+    public const uint VramMirrorsEnd = 0x04800000;
+
+    /// <summary>The main RAM address (physical) that holds the VRAM: PSP 0x8BE00000.</summary>
+    public const uint VramInRam = 0x0BE00000;
+
+    /// <summary>The PSP's scratchpad (physical), its size and the main RAM address that holds it (PSP 0x8BD00000).</summary>
+    public const uint ScratchpadBase = 0x00010000;
+
+    public const uint ScratchpadSize = 0x4000;
+
+    public const uint ScratchpadInRam = 0x0BD00000;
 
     /// <summary>The different unknown addresses logged before the log goes quiet.</summary>
     public const int UnknownLogLimit = 64;
@@ -70,10 +90,20 @@ public sealed class PspBus(CompatSharedSram sram, CompatMailbox mailbox) : IAlle
         }
     }
 
-    /// <summary>The Vita address of a PSP address in main RAM (any segment), or 0 when it is not mapped RAM.</summary>
+    /// <summary>The Vita address of a PSP address in main RAM, the VRAM or the scratchpad (any segment), or 0 when it
+    /// is not mapped memory.</summary>
     public uint ToVita(uint pspAddress)
     {
         uint physical = pspAddress & AllegrexCore.PhysicalMask;
+        if (physical - VramBase < VramMirrorsEnd - VramBase)
+        {
+            physical = VramInRam + ((physical - VramBase) % VramSize);
+        }
+        else if (physical - ScratchpadBase < ScratchpadSize)
+        {
+            physical = ScratchpadInRam + (physical - ScratchpadBase);
+        }
+
         uint offset = physical - RamBase;
         if (offset >= Banks * BankSize)
         {
