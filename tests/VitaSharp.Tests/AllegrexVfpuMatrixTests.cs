@@ -193,7 +193,7 @@ public sealed class AllegrexVfpuMatrixTests
         AllegrexRig same = new(0xF3A00000u | (5u << 16) | (4u << 8) | 0u | SizeBits(4));
         same.Core.WriteVfpuRegister(4, B(0.5f));
         same.Step();
-        uint diagonal = B(MathF.Sqrt(0.5f));
+        uint diagonal = 0x3F3504F0; // the PSP's sin and cos of an eighth turn (pspautotests cpu/vfpu/exact)
         Assert.Equal(diagonal, same.Core.ReadVfpuRegister(0));
         Assert.Equal(diagonal, same.Core.ReadVfpuRegister(0x20));
     }

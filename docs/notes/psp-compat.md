@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.pt-BR.md sha256=f2098b019b060724e6cf2ef921b5e71f6b64e8e446e9a3465ade1dbd23a945d9 -->
+<!-- pair: psp-compat.pt-BR.md sha256=8f9bfdc0277b75618f96ba19db4fe138c46b2313a5547da2d399cff823a78943 -->
 # PSP compatibility core (SceCompat, ScePspemu, Allegrex)
 
 *Português: [psp-compat.pt-BR.md](psp-compat.pt-BR.md).*
@@ -156,6 +156,15 @@ interrupt controller is IP2) taken with Status.IE or `mtic`, halt, syscall/break
 results MIPS32 leaves unpredictable follow PPSSPP's hardware-checked notes (pspautotests): division by zero,
 `0x80000000 / -1`, the partial decode of rotr/rotrv and of the seb/seh/wsbh/wsbw/bitrev group, `ins` with msb < pos,
 the reset state. Tests: `tests/VitaSharp.Tests/Allegrex*Tests.cs`.
+
+The FPU (COP1) computes every result exactly in software for the four FCR31 rounding modes, so it does not depend on
+the host's FPU mode, with the five IEEE causes, flags and enables (an enabled one takes ExcCode 15), the PSP's
+`0x7FC00000` for generated NaNs and its flush-to-zero rule (FS flushes results, tininess before rounding, never
+inputs). The VFPU (COP2) is complete: the S/C/R/M/E register views, the prefixes with each instruction's own reach,
+every opcode, its arithmetic (round to nearest, denormals as zeros, payload-free NaNs `0x7F800001`), the exact dot
+product, and `vrcp`/`vrsq`/`vsqrt`/`vsin`/`vcos`/`vasin`/`vexp2`/`vlog2` through the hardware's interpolator tables
+([third_party/ppsspp](../../third_party/ppsspp/README.md)); they and the random generator match outputs recorded on a
+PSP (pspautotests `cpu/vfpu/exact`, `cpu/vfpu/vrnd`) bit for bit. COP0 Count reaching Compare raises Cause.IP7.
 
 Three points have no hardware test we know of; VitaSharp follows the MIPS32 architecture, which the Allegrex
 implements:
