@@ -4072,6 +4072,18 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   ExitToLiveboard 31 ms depois): achar por que o libcdlg dá o diálogo por terminado sem mostrar; depois de voltar ao
   LiveArea, "Iniciar" retoma o ScePspemu, cuja main fica no laço de espera do erro, e a tela fica em 0 fps (é o
   fluxo do firmware, mas no Vita o usuário veria o erro antes e fecharia o app).
+  Feito (adr3, 24/11/2026, Adrenaline 8.0.2 do isage, que conhece o 3.71-3.74): o hook por offset numa função interna
+  de um módulo do firmware em HLE (SceCompat 3.74 +0x2AE8, a configuração do acesso à RAM segura) instala; o hook por
+  offset em Thumb com CBZ/CBNZ ou B<cond> nos primeiros 10 bytes (ScePspemu 3.74 +0x6364) reloca o desvio; os NIDs
+  das famílias de sistema do SceCommonDialog (0x10, 0x16, 0x1A, 0x1B) seguem o libcdlg 3.74 (Init e GetResult estavam
+  trocados); os *ForPid do modulemgr recusam pid 0 (0x8002D017) como o 3.74. Testar: abrir o Adrenaline pelo
+  Sistema do Vita com o 8.0.2: no log os hooks 8 (SceCompat) e 32 (ScePspemu +0x6364) aparecem instalados, sem
+  "refused (0x90010006)". Falta: (5) o ScePspemuMain chega ao sceCompatInitEx e para ("the PSP compat core is not
+  emulated"): o núcleo de compatibilidade (pcbc) é o bloqueio até o menu do Adrenaline; (6) o diálogo de erro (libcdlg
+  família 0x10, LLE) termina no mesmo instante do Init, sem a thread SceCommonDialogPafMain; (7) o NPXS10028 foi
+  lançado duas vezes (pelo AdrenalineVsh dentro do shell e pelo shell 3 s depois): o SceAppMgr 3.74 não recusa um
+  segundo lançamento por caminho (FUN_8100ce78 não procura o título), então a decisão é do shell; conferir por que o
+  shell não vê o primeiro como o app da bolha.
 - [ ] [P2][M] Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
   capturas de 21/11/2026, e um engasgo de 132 ms por leitura de arquivo (fileIo 134 ms; quadro 302 do dump da
   `_232150_tudo`). Achado (perf/ac3pace): fora das gravações o jogo fica em 30 fps (linhas `FPS frame` da sessão) e
