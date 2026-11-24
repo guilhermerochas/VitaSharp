@@ -2324,7 +2324,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
     - Com ele: (a) o InitEx do HLE carrega o pcbc.bin em CDRAM+0x600000 e o pcff (já decifrável pelo self2elf, é
       dado) em CDRAM+0x3000000; (b) emular esse núcleo MIPS (bare-metal, CDRAM, o bloco compartilhado dos
       pedidos/interrupções do SceCompat descrito acima) e o lado PSP (Allegrex) que o pcff traz. Os dois jogos de teste param nesse ponto (o de PSP chama antes também `sceCompatFrameBufferInit`).
-- [ ] [P3][G] Núcleo de compatibilidade PSP (Allegrex) sob o `SceCompat`, para o ScePspemu real rodar PSP/PSone
+- [ ] [P0][G] Núcleo de compatibilidade PSP (Allegrex) sob o `SceCompat`, para o ScePspemu real rodar PSP/PSone (prioridade do usuário: o trabalho inteiro de 24/11/2026, começando pela fase 1)
   (estudo e desenho: `docs/notes/psp-compat.md`). O núcleo é MIPS (Allegrex), não ARM: o `pcbc` (boot, PSP
   `0x88600000`) e o `pcff` (flash0 6.6x com os drivers `kermit_*`, PSP `0x8B000000`) rodam nele; o ScePspemu atende os
   pedidos kermit (msfs, flashfs, áudio, ME, rede, USB) no lado ARM. Fases:
