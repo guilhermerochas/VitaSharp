@@ -22,6 +22,7 @@ public sealed partial class Gxm : HleModule
         ERR_INVALID_ALIGNMENT = unchecked((int)0x805B0005), ERR_NOT_WITHIN_SCENE = unchecked((int)0x805B0006),
         ERR_WITHIN_SCENE = unchecked((int)0x805B0007), ERR_NULL_PROGRAM = unchecked((int)0x805B0008),
         ERR_UNSUPPORTED = unchecked((int)0x805B0009), ERR_RESERVE_FAILED = unchecked((int)0x805B000B),
+        ERR_DRIVER = unchecked((int)0x805B0017),
         // Vita3K gxm/types.h only (absent from vita-headers)
         ERR_WITHIN_COMMAND_LIST = unchecked((int)0x805B002C), ERR_NOT_WITHIN_COMMAND_LIST = unchecked((int)0x805B002D);
 
@@ -667,9 +668,13 @@ public sealed partial class Gxm : HleModule
         c.PublishGuestState();
     }
 
+    /// <summary>Scene flags libgxm 3.74's sceGxmBeginScene and sceGxmBeginSceneEx take (bits 0-3); any other bit is
+    /// SCE_GXM_ERROR_INVALID_VALUE. The old _sceGxmBeginScene does not check them.</summary>
+    const uint SceneFlagsMask = 0xF;
+
     [Hle]
     int sceGxmBeginScene(uint ctx, uint flags, uint renderTarget, uint validRegion, uint vertexSync, uint fragmentSync, uint colorSurface, uint depthStencil)
-        => BeginScene(ctx, renderTarget, validRegion, fragmentSync, colorSurface, ReadDepthSurface(depthStencil), depthValid: true);
+        => BeginScene(ctx, flags & ~SceneFlagsMask, renderTarget, validRegion, vertexSync, fragmentSync, colorSurface, ReadDepthSurface(depthStencil), depthValid: true);
 
     /// <summary>A scene that loads its depth/stencil from one surface and stores it to another (libgxm, FW 3.74): the
     /// force-load bit and the background of the load surface, the force-store bit of the store surface
@@ -679,15 +684,41 @@ public sealed partial class Gxm : HleModule
         uint loadDepthStencil, uint storeDepthStencil)
     {
         DepthSurfaceInfo? depth = ReadDepthSurfacePair(loadDepthStencil, storeDepthStencil, out bool depthValid);
-        return BeginScene(ctx, renderTarget, validRegion, fragmentSync, colorSurface, depth, depthValid);
+        return BeginScene(ctx, flags & ~SceneFlagsMask, renderTarget, validRegion, vertexSync, fragmentSync, colorSurface, depth, depthValid);
     }
 
-    int BeginScene(uint ctx, uint renderTarget, uint validRegion, uint fragmentSync, uint colorSurface, DepthSurfaceInfo? depth, bool depthValid)
+    /// <summary>
+    /// The scene start of sceGxmBeginScene, sceGxmBeginSceneEx and the old _sceGxmBeginScene, with libgxm 3.74's checks
+    /// in its order: a NULL (here also an unknown) context is SCE_GXM_ERROR_INVALID_POINTER; a deferred context or
+    /// <paramref name="badFlags"/> (scene flags outside bits 0-3) SCE_GXM_ERROR_INVALID_VALUE; a NULL render target or
+    /// any vertex sync object (the hardware has none) SCE_GXM_ERROR_INVALID_POINTER; a context already in a scene
+    /// SCE_GXM_ERROR_WITHIN_SCENE; then the surfaces (SCE_GXM_ERROR_INVALID_VALUE), and last the render target the GPU
+    /// driver does not know (SCE_GXM_ERROR_DRIVER).
+    /// </summary>
+    int BeginScene(uint ctx, uint badFlags, uint renderTarget, uint validRegion, uint vertexSync, uint fragmentSync, uint colorSurface,
+        DepthSurfaceInfo? depth, bool depthValid)
     {
-        var c = Ctx(ctx);
-        if (c == null || !_renderTargets.TryGetValue(renderTarget, out var rt)) return ERR_INVALID_POINTER;
-        if (c.Deferred) return ERR_INVALID_VALUE;
-        if (c.InScene) return ERR_WITHIN_SCENE;
+        GxmContext? c = Ctx(ctx);
+        if (c == null)
+        {
+            return ERR_INVALID_POINTER;
+        }
+
+        if (c.Deferred || badFlags != 0)
+        {
+            return ERR_INVALID_VALUE;
+        }
+
+        if (renderTarget == 0 || vertexSync != 0)
+        {
+            return ERR_INVALID_POINTER;
+        }
+
+        if (c.InScene)
+        {
+            return ERR_WITHIN_SCENE;
+        }
+
         if (!depthValid)
         {
             return ERR_INVALID_VALUE;
@@ -699,6 +730,12 @@ public sealed partial class Gxm : HleModule
         if (color == null && depth == null)
         {
             return ERR_INVALID_VALUE;
+        }
+
+        // the render target is a GPU driver object: libgxm asks the driver for it only after the surfaces
+        if (!_renderTargets.TryGetValue(renderTarget, out GxmRenderTarget? rt))
+        {
+            return ERR_DRIVER;
         }
 
         c.InScene = true;

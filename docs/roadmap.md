@@ -3260,6 +3260,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   mandar nada à GPU; só cor ou só profundidade continua valendo. Testes:
   `GxmFlowTests.BeginSceneRefusesASceneWithoutColourAndDepth`. Testar: os jogos que o usuário já abre continuam
   abrindo e mostrando imagem (nenhum `sceGxmBeginScene: 0x805B0003` novo no log).
+- [ ] (23/11/2026, falta testar) [P3][P] sceGxmBeginScene, sceGxmBeginSceneEx e o `_sceGxmBeginScene` antigo
+  conferem os argumentos na ordem do libgxm 3.74 (fix/gxmex3): contexto NULL → INVALID_POINTER; contexto diferido ou
+  flags de cena acima do bit 3 → INVALID_VALUE (o `_sceGxmBeginScene` não confere as flags); render target NULL ou
+  qualquer objeto de sync de vértices → INVALID_POINTER (antes o sync era ignorado); já dentro de cena →
+  WITHIN_SCENE; depois as superfícies (INVALID_VALUE); e só no fim um render target que o driver não conhece →
+  SCE_GXM_ERROR_DRIVER (0x805B0017; antes INVALID_POINTER). Testes:
+  `GxmFlowTests.BeginSceneChecksItsArgumentsInLibgxmOrder`, `GxmFlowTests.SceneLifecycleAndNotifications`. Testar:
+  os jogos que o usuário já abre continuam abrindo e mostrando imagem (nenhum `sceGxmBeginScene: 0x805B0004` ou
+  `0x805B0017` novo no log).
 
 - [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo analisável e reexecutável sem o jogo (feat/capself1,
   `docs/captures.md`): (1) nenhum arquivo da gravação leva dado pessoal: uma última etapa troca, em todo texto e no

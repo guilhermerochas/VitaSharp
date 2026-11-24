@@ -20,7 +20,7 @@ public sealed class GxmFlowTests : IDisposable
     private const int UNINITIALIZED = unchecked((int)0x805B0000), ALREADY_INITIALIZED = unchecked((int)0x805B0001),
         INVALID_VALUE = unchecked((int)0x805B0003), INVALID_POINTER = unchecked((int)0x805B0004), INVALID_ALIGNMENT = unchecked((int)0x805B0005),
         NOT_WITHIN_SCENE = unchecked((int)0x805B0006), WITHIN_SCENE = unchecked((int)0x805B0007), NULL_PROGRAM = unchecked((int)0x805B0008),
-        UNSUPPORTED = unchecked((int)0x805B0009), WITHIN_COMMAND_LIST = unchecked((int)0x805B002C), NOT_WITHIN_COMMAND_LIST = unchecked((int)0x805B002D);
+        UNSUPPORTED = unchecked((int)0x805B0009), DRIVER = unchecked((int)0x805B0017), WITHIN_COMMAND_LIST = unchecked((int)0x805B002C), NOT_WITHIN_COMMAND_LIST = unchecked((int)0x805B002D);
 
     private sealed class Recorder : IGpuBackend
     {
@@ -406,7 +406,8 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(NOT_WITHIN_SCENE, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
         Assert.Equal(NOT_WITHIN_SCENE, Call(Gxm, "sceGxmVertexFence", ctx));
         Assert.False((bool)Invoke(Gxm, "sceGxmRenderingContextIsWithinSceneInternal")!);
-        Assert.Equal(INVALID_POINTER, Call(Gxm, "sceGxmBeginScene", ctx, 0u, 0x1234u, 0u, 0u, 0u, color, depth));
+        // a render target the GPU driver does not know (libgxm 3.74): SCE_GXM_ERROR_DRIVER
+        Assert.Equal(DRIVER, Call(Gxm, "sceGxmBeginScene", ctx, 0u, 0x1234u, 0u, 0u, 0u, color, depth));
         Assert.Equal(INVALID_POINTER, Call(Gxm, "sceGxmBeginScene", 0x1234u, 0u, rt, 0u, 0u, 0u, color, depth));
         Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, 0u, color, depth));
         Assert.True((bool)Invoke(Gxm, "sceGxmRenderingContextIsWithinSceneInternal")!);
@@ -490,6 +491,58 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Null(_rec.LastBegin!.Color);
         Assert.NotNull(_rec.LastBegin!.Depth);
         Assert.Equal(2, _rec.Kinds.Count(kind => kind == "BeginSceneCommand"));
+    }
+
+    /// <summary>
+    /// sceGxmBeginScene, sceGxmBeginSceneEx and the old _sceGxmBeginScene (libgxm, FW 3.74) check their arguments in
+    /// this order: NULL context INVALID_POINTER; deferred context or scene flags above bit 3 INVALID_VALUE (the old entry
+    /// does not check flags); NULL render target or a vertex sync object INVALID_POINTER; already in a scene
+    /// WITHIN_SCENE; surfaces INVALID_VALUE; and only then a render target the GPU driver does not know,
+    /// SCE_GXM_ERROR_DRIVER. No refused call opens a scene or reaches the GPU.
+    /// </summary>
+    [Fact]
+    public void BeginSceneChecksItsArgumentsInLibgxmOrder()
+    {
+        Init();
+        uint ctx = Context(), rt = RenderTarget(64, 64), color = SceneColor(64, 64);
+        uint vertexSync = _harness.Alloc(16), unknownTarget = _harness.Alloc(0x40);
+        string[] entries = ["sceGxmBeginScene", "_sceGxmBeginScene", "sceGxmBeginSceneEx"];
+
+        int Begin(string entry, uint flags, uint target, uint sync, uint colorSurface)
+            => entry == "sceGxmBeginSceneEx"
+                ? Call(Gxm, entry, ctx, flags, target, 0u, sync, 0u, colorSurface, 0u, 0u)
+                : Call(Gxm, entry, ctx, flags, target, 0u, sync, 0u, colorSurface, 0u);
+
+        foreach (string entry in entries)
+        {
+            Assert.Equal(INVALID_POINTER, Begin(entry, 0u, 0u, 0u, color));
+            Assert.Equal(INVALID_POINTER, Begin(entry, 0u, rt, vertexSync, color));
+            Assert.Equal(DRIVER, Begin(entry, 0u, unknownTarget, 0u, color));
+            // the surfaces are checked before the driver looks the render target up
+            Assert.Equal(INVALID_VALUE, Begin(entry, 0u, unknownTarget, 0u, 0u));
+            Assert.Equal(entry == "_sceGxmBeginScene" ? 0 : INVALID_VALUE, Begin(entry, 0x10u, rt, 0u, color));
+            if (entry == "_sceGxmBeginScene")
+            {
+                // inside a scene: WITHIN_SCENE comes after the render target and sync checks, before the surfaces
+                Assert.Equal(INVALID_POINTER, Begin(entry, 0u, rt, vertexSync, color));
+                Assert.Equal(WITHIN_SCENE, Begin(entry, 0u, rt, 0u, 0u));
+                Assert.Equal(WITHIN_SCENE, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, 0u, color, 0u));
+                // the scene flags are checked before it
+                Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmBeginScene", ctx, 0x10u, rt, 0u, 0u, 0u, color, 0u));
+                Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+            }
+        }
+
+        Finish();
+        Assert.Equal(1, _rec.Kinds.Count(kind => kind == "BeginSceneCommand"));
+        foreach (string entry in entries)
+        {
+            Assert.Equal(0, Begin(entry, 0xFu, rt, 0u, color));
+            Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+        }
+
+        Finish();
+        Assert.Equal(4, _rec.Kinds.Count(kind => kind == "BeginSceneCommand"));
     }
 
     /// <summary>
