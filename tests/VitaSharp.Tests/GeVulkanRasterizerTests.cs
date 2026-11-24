@@ -371,6 +371,56 @@ public sealed class GeVulkanRasterizerTests : IDisposable
         Assert.Equal(expected, Pixel(10, 10) & 0xFFFFFF);
     }
 
+    /// <summary>Clear mode with alpha writes the framebuffer's alpha, which is the stencil: memory gets it, and a later
+    /// stencil test sees it (EQUAL 1 draws only where the clear left 1).</summary>
+    [SoftwareVulkanFact]
+    public void ClearModeWritesTheStencilAndTheStencilTestReadsIt()
+    {
+        GeListBuilder list = Setup().Command(GeCommand.ClearMode, 1 | 0x100 | 0x200);
+        Rectangle(list, Vertices, 0, 0, 8, 8, 0, 0x01000000);
+        Rectangle(list, Vertices + 0x100, 8, 0, 16, 8, 0, 0x00000000).Command(GeCommand.ClearMode, 0)
+            .Command(GeCommand.StencilTestEnable, 1).Command(GeCommand.StencilTest, 2 | (1 << 8) | (0xFF << 16))
+            .Command(GeCommand.StencilOperation, 0);
+        Rectangle(list, Vertices + 0x200, 0, 0, 16, 8, 0, 0xFF0000FF).End();
+        GeRegisters.Run(_engine, list.Start);
+        Assert.Equal(0x010000FFu, Pixel(4, 4));  // red where the stencil is 1, alpha (stencil) kept
+        Assert.Equal(0x00000000u, Pixel(12, 4)); // nothing where it is 0
+    }
+
+    /// <summary>A stencil operation writes the alpha: REPLACE by the reference where the draw passes (ALWAYS); the
+    /// colour is drawn too; MASKALPHA keeps the bits it masks.</summary>
+    [SoftwareVulkanFact]
+    public void AStencilReplaceWritesTheAlphaThroughTheMask()
+    {
+        GeListBuilder list = Setup().Command(GeCommand.StencilTestEnable, 1).Command(GeCommand.StencilTest, 1 | (0x42 << 8) | (0xFF << 16))
+            .Command(GeCommand.StencilOperation, 2 << 16);
+        Rectangle(list, Vertices, 0, 0, 8, 8, 0, 0xFF00FF00).Command(GeCommand.MaskAlpha, 0x0F)
+            .Command(GeCommand.StencilTest, 1 | (0xFF << 8) | (0xFF << 16));
+        Rectangle(list, Vertices + 0x100, 8, 0, 16, 8, 0, 0xFF00FF00).End();
+        GeRegisters.Run(_engine, list.Start);
+        Assert.Equal(0x4200FF00u, Pixel(4, 4));
+        Assert.Equal(0xF000FF00u, Pixel(12, 4)); // the low four bits masked: 0x00 kept there, 0xF0 written
+    }
+
+    /// <summary>The stencil comes from the alpha the PSP's CPU wrote, and INCREMENT on a 4444 framebuffer works on its
+    /// four alpha bits.</summary>
+    [SoftwareVulkanFact]
+    public void TheStencilStartsFromMemoryAndIncrementsFourBits()
+    {
+        for (int x = 0; x < 8; x++)
+        {
+            _memory.Write16(GeTestMemory.VramBase + (uint)((2 * Stride + x) * 2), 0x3000); // alpha nibble 3
+        }
+
+        GeListBuilder list = Setup(GePixels.Format4444).Command(GeCommand.StencilTestEnable, 1)
+            .Command(GeCommand.StencilTest, 2 | (0x30 << 8) | (0xFF << 16)) // equal to 3 (0x30 >> 4)
+            .Command(GeCommand.StencilOperation, 4 << 16);
+        Rectangle(list, Vertices, 0, 0, 16, 8, 0, 0xFFFFFFFF).End();
+        GeRegisters.Run(_engine, list.Start);
+        Assert.Equal(0x4FFF, _memory.Read16(GeTestMemory.VramBase + (uint)((2 * Stride + 3) * 2))); // drawn, stencil 4
+        Assert.Equal(0x0000, _memory.Read16(GeTestMemory.VramBase + (uint)((3 * Stride + 3) * 2))); // stencil 0: not drawn
+    }
+
     /// <summary>A 16x16 target and a screen-covering pair of triangles with the given vertex fields, for the
     /// rasterizer's own inputs (the secondary colour, fog, Q), drawn without the GE side.</summary>
     private uint DrawQuad(GeRenderState state, Func<GeVertex, GeVertex> fill)

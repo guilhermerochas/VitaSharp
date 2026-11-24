@@ -9,8 +9,7 @@ namespace VitaSharp.Core.Compat.Ge;
 /// from the command registers, the texture and CLUT decoded (once while their memory stays the same), and the batch
 /// handed to the rasterizer with its framebuffer and depth surfaces, which it may keep until the list stops. LOADCLUT
 /// and the block transfer (TRANSFERSTART) work on memory
-/// here. Not drawn yet: lighting, skinning, the stencil test, patches, texture
-/// mipmaps (level 0 only); each logs once when a list uses it.
+/// here. Not drawn yet (each logs once when a list uses it): lighting, skinning, patches.
 /// </summary>
 public sealed partial class GeEngine
 {
@@ -470,10 +469,16 @@ public sealed partial class GeEngine
         state.ClampU = (wrap & 1) != 0;
         state.ClampV = (wrap & 0x100) != 0;
         state.Texture = Enabled(GeCommand.TextureMapEnable) && !state.ClearMode && format.TextureOffset >= 0 && DecodeTexture();
-        if (Enabled(GeCommand.StencilTestEnable) && !state.ClearMode)
-        {
-            Log.WarnOnce("ge-stencil", "GE: the stencil test is not applied yet");
-        }
+        state.StencilTest = Enabled(GeCommand.StencilTestEnable) && !state.ClearMode;
+        uint stencil = Command(GeCommand.StencilTest);
+        state.StencilFunction = (int)(stencil & 7);
+        state.StencilReference = (int)((stencil >> 8) & 0xFF);
+        state.StencilMask = (int)((stencil >> 16) & 0xFF);
+        uint operations = Command(GeCommand.StencilOperation);
+        state.StencilFailOperation = (int)(operations & 7);
+        state.StencilDepthFailOperation = (int)((operations >> 8) & 7);
+        state.StencilPassOperation = (int)((operations >> 16) & 7);
+        state.StencilWriteMask = (int)(~state.WriteMaskAlpha & 0xFF);
 
         state.Fog = Enabled(GeCommand.FogEnable) && !format.Through && !state.ClearMode;
         state.FogColor = Command(GeCommand.FogColor) & 0xFFFFFF;

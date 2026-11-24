@@ -164,6 +164,19 @@ public sealed class GeRenderState
     /// <summary>LOGICOPENABLE: LOGICOP's operation (the 16 logic ops in Vulkan's order) replaces blending.</summary>
     public bool LogicOp;
     public int LogicOpCode;
+
+    /// <summary>STENCILTESTENABLE: the framebuffer's alpha is the stencil (8 bits in 8888, 4 in 4444, 1 in 5551, none
+    /// in 565). STENCILTEST: the function (as the depth's) comparing (reference & mask) with (stencil & mask);
+    /// STENCILOP: the operations on a stencil failure, a depth failure and a pass (0 keep, 1 zero, 2 replace by the
+    /// reference, 3 invert, 4 increment, 5 decrement); the stencil bits written are those MASKALPHA does not mask.</summary>
+    public bool StencilTest;
+    public int StencilFunction;
+    public int StencilReference;
+    public int StencilMask;
+    public int StencilFailOperation;
+    public int StencilDepthFailOperation;
+    public int StencilPassOperation;
+    public int StencilWriteMask = 0xFF;
 }
 
 /// <summary>

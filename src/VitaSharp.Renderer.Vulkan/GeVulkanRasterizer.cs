@@ -26,7 +26,6 @@ namespace VitaSharp.Renderer.Vulkan;
 public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
 {
     private const Format ColorFormat = Format.R8G8B8A8Unorm;
-    private const Format DepthFormat = Format.D16Unorm;
     /// <summary>The vertex buffer is the GeVertex array as it is: its size and field offsets give the layout.</summary>
     private static readonly int s_vertexStride = Marshal.SizeOf<GeVertex>();
     private static readonly uint s_positionOffset = (uint)Marshal.OffsetOf<GeVertex>(nameof(GeVertex.X));
@@ -184,6 +183,16 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         public Buffer Staging;       // the upload and read-back buffer (the surface's pixels as the image holds them)
         public DeviceMemory StagingMemory;
         public nint StagingMapped;
+
+        // depth-stencil images: the stencil aspect holds the alpha of one colour surface (the PSP's stencil)
+        public Surface? StencilOwner;
+        public bool StencilValid;
+        public Buffer StencilStaging;
+        public DeviceMemory StencilStagingMemory;
+        public nint StencilStagingMapped;
+
+        // colour surfaces: the depth-stencil image whose stencil has newer alpha than this image (stencil draws)
+        public Surface? AlphaInStencil;
     }
 
     private sealed class CachedTexture
@@ -208,7 +217,15 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         public uint BlendConstant;
         public uint FirstVertex;
         public uint VertexCount;
+        public uint StencilReference;
+        public uint StencilCompareMask;
+        public uint StencilWriteMask;
     }
+
+    private const ImageAspectFlags DepthStencilAspect = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
+
+    private readonly Format _depthStencilFormat;
+    private readonly int _depthTexelBytes;   // a depth texel in a buffer copy of the depth aspect
 
     private const int TextureCacheLimit = 128;
     private const uint DescriptorSetsPerBatch = 256;
@@ -278,6 +295,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         FenceCreateInfo fenceInfo = new() { SType = StructureType.FenceCreateInfo };
         _vk.CreateFence(_device, in fenceInfo, null, out _fence).Ok("GE fence");
 
+        (_depthStencilFormat, _depthTexelBytes) = ChooseDepthStencilFormat();
         _renderPass = CreateRenderPass();
         _setLayout = CreateSetLayout();
         _descriptorPool = CreateDescriptorPool();
@@ -325,6 +343,10 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         Surface depthSurface = depth is { } depthKey ? SurfaceFor(depthKey, memory) : ScratchDepth(color.Stride, color.Height);
         bool textured = state.Texture && !state.ClearMode && state.TexturePixels.Length >= state.TextureWidth * state.TextureHeight;
         CachedTexture texture = textured ? TextureFor(state) : _dummyTexture;
+        int stencilBits = StencilBits(color.Format);
+        bool stencilTest = state.StencilTest && !state.ClearMode && stencilBits > 0;
+        bool stencilClear = state.ClearMode && state.ClearAlpha && stencilBits > 0;
+
         BeginRecording();
         EnsureLoaded(colorSurface, memory);
         if (depth != null)
@@ -333,10 +355,20 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         }
         else
         {
-            EnsureAttachment(depthSurface, ImageAspectFlags.DepthBit, ImageLayout.DepthStencilAttachmentOptimal);
+            EnsureAttachment(depthSurface, DepthStencilAspect, ImageLayout.DepthStencilAttachmentOptimal);
         }
 
-        Pipeline pipeline = PipelineFor(topology, state, depth != null);
+        if (stencilTest || stencilClear)
+        {
+            SyncStencil(colorSurface, depthSurface, memory);
+        }
+
+        Pipeline pipeline = PipelineFor(topology, state, depth != null, stencilTest, stencilClear);
+        int stencilShift = 8 - stencilBits;
+        uint stencilLimit = stencilBits > 0 ? (1u << stencilBits) - 1 : 0;
+        uint stencilReference = stencilClear ? (vertices[^1].Color >> 24) >> stencilShift : (uint)state.StencilReference >> stencilShift;
+        uint stencilCompare = ((uint)state.StencilMask >> stencilShift) & stencilLimit;
+        uint stencilWrite = ((uint)state.StencilWriteMask >> stencilShift) & stencilLimit;
         DescriptorSet set = SetFor(texture, state, textured);
         int left = Math.Clamp(state.ScissorLeft, 0, color.Stride);
         int top = Math.Clamp(state.ScissorTop, 0, color.Height);
@@ -355,7 +387,8 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             && _pending.Scissor.Offset.X == scissor.Offset.X && _pending.Scissor.Offset.Y == scissor.Offset.Y
             && _pending.Scissor.Extent.Width == scissor.Extent.Width && _pending.Scissor.Extent.Height == scissor.Extent.Height
             && _pending.BlendConstant == blendConstant && _pending.FirstVertex + _pending.VertexCount == first
-            && _pendingConstants.AsSpan().SequenceEqual(_pushConstants);
+            && _pending.StencilReference == stencilReference && _pending.StencilCompareMask == stencilCompare
+            && _pending.StencilWriteMask == stencilWrite && _pendingConstants.AsSpan().SequenceEqual(_pushConstants);
         if (merges)
         {
             _pending.VertexCount += (uint)vertices.Length;
@@ -372,6 +405,9 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
                 BlendConstant = blendConstant,
                 FirstVertex = first,
                 VertexCount = (uint)vertices.Length,
+                StencilReference = stencilReference,
+                StencilCompareMask = stencilCompare,
+                StencilWriteMask = stencilWrite,
             };
             _pushConstants.CopyTo(_pendingConstants, 0);
         }
@@ -384,6 +420,13 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         if (depth != null && (state.ClearMode ? state.ClearDepth : state.DepthWrite))
         {
             depthSurface.GpuDirty = true;
+        }
+
+        if ((stencilTest && StencilWrites(state)) || stencilClear)
+        {
+            // the stencil now has newer alpha than the colour image: merged into it at the write-back
+            colorSurface.AlphaInStencil = depthSurface;
+            colorSurface.GpuDirty = true;
         }
     }
 
@@ -455,18 +498,35 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         }
 
         bool depth = key.Format == GeSurface.DepthFormat;
-        Surface surface = new() { Key = key };
-        (surface.Image, surface.Memory, surface.View) = CreateImage(key.Stride, key.Height, depth ? DepthFormat : ColorFormat,
-            (depth ? ImageUsageFlags.DepthStencilAttachmentBit : ImageUsageFlags.ColorAttachmentBit) | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit,
-            depth ? ImageAspectFlags.DepthBit : ImageAspectFlags.ColorBit);
-        ulong stagingBytes = (ulong)key.Stride * (ulong)key.Height * (depth ? 2UL : 4UL);
-        (surface.Staging, surface.StagingMemory, surface.StagingMapped) = _core.CreateHostBuffer(stagingBytes,
-            BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit, MemCat.Readback);
+        Surface surface = depth ? CreateDepthStencil(key) : new Surface { Key = key };
+        if (!depth)
+        {
+            (surface.Image, surface.Memory, surface.View) = CreateImage(key.Stride, key.Height, ColorFormat,
+                ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
+            (surface.Staging, surface.StagingMemory, surface.StagingMapped) = _core.CreateHostBuffer((ulong)key.Stride * (ulong)key.Height * 4,
+                BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit, MemCat.Readback);
+        }
+
         _surfaces[id] = surface;
         return surface;
     }
 
-    /// <summary>A depth image for draws without a depth buffer (the render pass has one): never loaded nor read back.</summary>
+    /// <summary>A depth-stencil image (the depth buffer's, or a scratch one) with its depth and stencil staging buffers.</summary>
+    private Surface CreateDepthStencil(GeSurface key)
+    {
+        Surface surface = new() { Key = key };
+        (surface.Image, surface.Memory, surface.View) = CreateImage(key.Stride, key.Height, _depthStencilFormat,
+            ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit, DepthStencilAspect);
+        ulong pixels = (ulong)key.Stride * (ulong)key.Height;
+        (surface.Staging, surface.StagingMemory, surface.StagingMapped) = _core.CreateHostBuffer(pixels * (ulong)_depthTexelBytes,
+            BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit, MemCat.Readback);
+        (surface.StencilStaging, surface.StencilStagingMemory, surface.StencilStagingMapped) = _core.CreateHostBuffer(pixels,
+            BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit, MemCat.Readback);
+        return surface;
+    }
+
+    /// <summary>A depth-stencil image for draws without a depth buffer (the render pass has one): its depth is never
+    /// loaded nor read back; its stencil serves the stencil draws like a depth buffer's.</summary>
     private Surface ScratchDepth(int width, int height)
     {
         if (_scratchDepth.TryGetValue((width, height), out Surface? existing))
@@ -474,10 +534,189 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             return existing;
         }
 
-        Surface surface = new() { Key = new GeSurface(0, width, height, GeSurface.DepthFormat) };
-        (surface.Image, surface.Memory, surface.View) = CreateImage(width, height, DepthFormat, ImageUsageFlags.DepthStencilAttachmentBit, ImageAspectFlags.DepthBit);
+        Surface surface = CreateDepthStencil(new GeSurface(0, width, height, GeSurface.DepthFormat));
         _scratchDepth[(width, height)] = surface;
         return surface;
+    }
+
+    /// <summary>The stencil bits of a framebuffer format: its alpha (8888 8, 4444 4, 5551 1, 565 none).</summary>
+    private static int StencilBits(int format)
+    {
+        return format switch
+        {
+            GePixels.Format8888 => 8,
+            GePixels.Format4444 => 4,
+            GePixels.Format5551 => 1,
+            _ => 0,
+        };
+    }
+
+    /// <summary>Whether a stencil draw can change the stencil (an operation other than keep, and bits not masked).</summary>
+    private static bool StencilWrites(GeRenderState state)
+    {
+        bool changes = state.StencilFailOperation != 0 || state.StencilDepthFailOperation != 0 || state.StencilPassOperation != 0;
+        return changes && state.StencilWriteMask != 0;
+    }
+
+    /// <summary>
+    /// Makes the depth-stencil image's stencil hold the colour surface's alpha, before a draw that tests or writes the
+    /// stencil: nothing when it already does; otherwise every change is written back to memory first (also another
+    /// surface's alpha kept in this stencil), then the stencil is loaded from the alpha in memory.
+    /// </summary>
+    private void SyncStencil(Surface color, Surface depthStencil, IGeMemory memory)
+    {
+        if (depthStencil.StencilOwner == color && depthStencil.StencilValid)
+        {
+            return;
+        }
+
+        SubmitAndWait(readBack: true, memory);
+        int width = Math.Min(color.Key.Stride, depthStencil.Key.Stride);
+        int height = Math.Min(color.Key.Height, depthStencil.Key.Height);
+        Span<byte> stencil = new((void*)depthStencil.StencilStagingMapped, depthStencil.Key.Stride * depthStencil.Key.Height);
+        stencil.Clear();
+        Span<byte> pixels = memory.Span(color.Key.Address, color.Key.Bytes);
+        if (pixels.Length == color.Key.Bytes)
+        {
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    stencil[y * depthStencil.Key.Stride + x] = StencilOf(pixels, y * color.Key.Stride + x, color.Key.Format);
+                }
+            }
+        }
+
+        BeginRecording();
+        EndPass();
+        Transition(_commandBuffer, depthStencil.Image, DepthStencilAspect, depthStencil.Layout, ImageLayout.TransferDstOptimal);
+        CopyBuffer(depthStencil.StencilStaging, 0, depthStencil.Image, ImageAspectFlags.StencilBit, (uint)depthStencil.Key.Stride,
+            (uint)depthStencil.Key.Height, toImage: true);
+        Transition(_commandBuffer, depthStencil.Image, DepthStencilAspect, ImageLayout.TransferDstOptimal, ImageLayout.DepthStencilAttachmentOptimal);
+        depthStencil.Layout = ImageLayout.DepthStencilAttachmentOptimal;
+        depthStencil.StencilOwner = color;
+        depthStencil.StencilValid = true;
+    }
+
+    /// <summary>A pixel's stencil: its alpha bits as a number.</summary>
+    private static byte StencilOf(ReadOnlySpan<byte> pixels, int index, int format)
+    {
+        switch (format)
+        {
+            case GePixels.Format8888:
+                return pixels[index * 4 + 3];
+            case GePixels.Format4444:
+                return (byte)(pixels[index * 2 + 1] >> 4);
+            case GePixels.Format5551:
+                return (byte)(pixels[index * 2 + 1] >> 7);
+            default:
+                return 0;
+        }
+    }
+
+    /// <summary>Writes a stencil value into a pixel's alpha bits.</summary>
+    private static void SetStencil(Span<byte> pixels, int index, int format, byte stencil)
+    {
+        switch (format)
+        {
+            case GePixels.Format8888:
+                pixels[index * 4 + 3] = stencil;
+                break;
+            case GePixels.Format4444:
+                pixels[index * 2 + 1] = (byte)((pixels[index * 2 + 1] & 0x0F) | ((stencil & 0xF) << 4));
+                break;
+            case GePixels.Format5551:
+                pixels[index * 2 + 1] = (byte)((pixels[index * 2 + 1] & 0x7F) | ((stencil & 1) << 7));
+                break;
+        }
+    }
+
+    /// <summary>The PSP's 16-bit depth as the depth-stencil format's depth texels in a buffer copy, and back.</summary>
+    private void DepthToStaging(ReadOnlySpan<byte> source, Surface surface)
+    {
+        int pixels = surface.Key.Stride * surface.Key.Height;
+        switch (_depthStencilFormat)
+        {
+            case Format.D16UnormS8Uint:
+                source.CopyTo(new Span<byte>((void*)surface.StagingMapped, pixels * 2));
+                break;
+            case Format.D24UnormS8Uint:
+            {
+                Span<uint> texels = new((void*)surface.StagingMapped, pixels);
+                for (int i = 0; i < pixels; i++)
+                {
+                    uint depth = (uint)(source[i * 2] | (source[i * 2 + 1] << 8));
+                    texels[i] = (uint)((depth * 0xFFFFFFUL + 0x7FFF) / 0xFFFF);
+                }
+
+                break;
+            }
+
+            default:
+            {
+                Span<float> texels = new((void*)surface.StagingMapped, pixels);
+                for (int i = 0; i < pixels; i++)
+                {
+                    texels[i] = (source[i * 2] | (source[i * 2 + 1] << 8)) / 65535f;
+                }
+
+                break;
+            }
+        }
+    }
+
+    private void DepthFromStaging(Surface surface, Span<byte> destination)
+    {
+        int pixels = surface.Key.Stride * surface.Key.Height;
+        switch (_depthStencilFormat)
+        {
+            case Format.D16UnormS8Uint:
+                new Span<byte>((void*)surface.StagingMapped, pixels * 2).CopyTo(destination);
+                break;
+            case Format.D24UnormS8Uint:
+            {
+                Span<uint> texels = new((void*)surface.StagingMapped, pixels);
+                for (int i = 0; i < pixels; i++)
+                {
+                    uint depth = (uint)(((texels[i] & 0xFFFFFFUL) * 0xFFFF + 0x7FFFFF) / 0xFFFFFF);
+                    destination[i * 2] = (byte)depth;
+                    destination[i * 2 + 1] = (byte)(depth >> 8);
+                }
+
+                break;
+            }
+
+            default:
+            {
+                Span<float> texels = new((void*)surface.StagingMapped, pixels);
+                for (int i = 0; i < pixels; i++)
+                {
+                    uint depth = (uint)Math.Clamp(MathF.Round(texels[i] * 65535f), 0, 65535);
+                    destination[i * 2] = (byte)depth;
+                    destination[i * 2 + 1] = (byte)(depth >> 8);
+                }
+
+                break;
+            }
+        }
+    }
+
+    /// <summary>The first depth-stencil format the device draws into and copies (D24S8, D32S8, D16S8), with the size of
+    /// a depth texel in a buffer copy.</summary>
+    private (Format, int) ChooseDepthStencilFormat()
+    {
+        (Format Format, int Bytes)[] candidates = [(Format.D24UnormS8Uint, 4), (Format.D32SfloatS8Uint, 4), (Format.D16UnormS8Uint, 2)];
+        FormatFeatureFlags needed = FormatFeatureFlags.DepthStencilAttachmentBit | FormatFeatureFlags.TransferSrcBit | FormatFeatureFlags.TransferDstBit;
+        foreach ((Format format, int bytes) in candidates)
+        {
+            _vk.GetPhysicalDeviceFormatProperties(_core.Physical, format, out FormatProperties properties);
+            if ((properties.OptimalTilingFeatures & needed) == needed)
+            {
+                return (format, bytes);
+            }
+        }
+
+        throw new InvalidOperationException("GE: the device has no depth-stencil format it draws into and copies");
     }
 
     /// <summary>Loads a surface from memory when the GPU does not have its current pixels: first use, or memory changed
@@ -486,7 +725,8 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
     {
         bool depth = surface.Key.Format == GeSurface.DepthFormat;
         ImageLayout attachment = depth ? ImageLayout.DepthStencilAttachmentOptimal : ImageLayout.ColorAttachmentOptimal;
-        ImageAspectFlags aspect = depth ? ImageAspectFlags.DepthBit : ImageAspectFlags.ColorBit;
+        ImageAspectFlags aspect = depth ? DepthStencilAspect : ImageAspectFlags.ColorBit;
+        ImageAspectFlags copied = depth ? ImageAspectFlags.DepthBit : ImageAspectFlags.ColorBit;
         if (surface.Checked || surface.GpuDirty)
         {
             EnsureAttachment(surface, aspect, attachment);
@@ -507,7 +747,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         {
             if (depth)
             {
-                source.CopyTo(new Span<byte>((void*)surface.StagingMapped, pixels * 2));
+                DepthToStaging(source, surface);
             }
             else
             {
@@ -515,9 +755,23 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             }
         }
 
+        if (!depth)
+        {
+            // the colour's alpha came from memory: a stencil holding its old alpha is stale
+            foreach (Surface other in _surfaces.Values.Concat(_scratchDepth.Values))
+            {
+                if (other.StencilOwner == surface)
+                {
+                    other.StencilValid = false;
+                }
+            }
+
+            surface.AlphaInStencil = null;
+        }
+
         EndPass();
         Transition(_commandBuffer, surface.Image, aspect, surface.Layout, ImageLayout.TransferDstOptimal);
-        CopyBuffer(surface.Staging, 0, surface.Image, aspect, (uint)surface.Key.Stride, (uint)surface.Key.Height, toImage: true);
+        CopyBuffer(surface.Staging, 0, surface.Image, copied, (uint)surface.Key.Stride, (uint)surface.Key.Height, toImage: true);
         Transition(_commandBuffer, surface.Image, aspect, ImageLayout.TransferDstOptimal, attachment);
         surface.Layout = attachment;
         surface.Loaded = true;
@@ -553,6 +807,26 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         {
             _core.DestroyBuffer(surface.Staging, surface.StagingMemory);
             surface.Staging = default;
+        }
+
+        if (surface.StencilStaging.Handle != 0)
+        {
+            _core.DestroyBuffer(surface.StencilStaging, surface.StencilStagingMemory);
+            surface.StencilStaging = default;
+        }
+
+        foreach (Surface other in _surfaces.Values.Concat(_scratchDepth.Values))
+        {
+            if (other.StencilOwner == surface)
+            {
+                other.StencilOwner = null;
+                other.StencilValid = false;
+            }
+
+            if (other.AlphaInStencil == surface)
+            {
+                other.AlphaInStencil = null;
+            }
         }
     }
 
@@ -755,6 +1029,9 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         constants[2] = ((_pending.BlendConstant >> 16) & 0xFF) / 255f;
         constants[3] = 1;
         _vk.CmdSetBlendConstants(cb, constants);
+        _vk.CmdSetStencilReference(cb, StencilFaceFlags.FaceFrontAndBack, _pending.StencilReference);
+        _vk.CmdSetStencilCompareMask(cb, StencilFaceFlags.FaceFrontAndBack, _pending.StencilCompareMask);
+        _vk.CmdSetStencilWriteMask(cb, StencilFaceFlags.FaceFrontAndBack, _pending.StencilWriteMask);
         _vk.CmdBindPipeline(cb, PipelineBindPoint.Graphics, _pending.Pipeline);
         DescriptorSet set = _pending.Set;
         _vk.CmdBindDescriptorSets(cb, PipelineBindPoint.Graphics, _pipelineLayout, 0, 1, in set, 0, null);
@@ -820,12 +1097,27 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         foreach (Surface surface in written)
         {
             bool depth = surface.Key.Format == GeSurface.DepthFormat;
-            ImageAspectFlags aspect = depth ? ImageAspectFlags.DepthBit : ImageAspectFlags.ColorBit;
+            ImageAspectFlags aspect = depth ? DepthStencilAspect : ImageAspectFlags.ColorBit;
+            ImageAspectFlags copied = depth ? ImageAspectFlags.DepthBit : ImageAspectFlags.ColorBit;
             ImageLayout attachment = depth ? ImageLayout.DepthStencilAttachmentOptimal : ImageLayout.ColorAttachmentOptimal;
             Transition(_commandBuffer, surface.Image, aspect, surface.Layout, ImageLayout.TransferSrcOptimal);
-            CopyBuffer(surface.Staging, 0, surface.Image, aspect, (uint)surface.Key.Stride, (uint)surface.Key.Height, toImage: false);
+            CopyBuffer(surface.Staging, 0, surface.Image, copied, (uint)surface.Key.Stride, (uint)surface.Key.Height, toImage: false);
             Transition(_commandBuffer, surface.Image, aspect, ImageLayout.TransferSrcOptimal, attachment);
             surface.Layout = attachment;
+        }
+
+        foreach (Surface surface in written)
+        {
+            if (surface.AlphaInStencil is not { } depthStencil)
+            {
+                continue;
+            }
+
+            Transition(_commandBuffer, depthStencil.Image, DepthStencilAspect, depthStencil.Layout, ImageLayout.TransferSrcOptimal);
+            CopyBuffer(depthStencil.StencilStaging, 0, depthStencil.Image, ImageAspectFlags.StencilBit, (uint)depthStencil.Key.Stride,
+                (uint)depthStencil.Key.Height, toImage: false);
+            Transition(_commandBuffer, depthStencil.Image, DepthStencilAspect, ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal);
+            depthStencil.Layout = ImageLayout.DepthStencilAttachmentOptimal;
         }
 
         MemoryBarrier hostRead = new()
@@ -873,11 +1165,25 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         {
             if (surface.Key.Format == GeSurface.DepthFormat)
             {
-                new Span<byte>((void*)surface.StagingMapped, pixels * 2).CopyTo(destination);
+                DepthFromStaging(surface, destination);
             }
             else
             {
                 GePixels.FromRgba(new Span<uint>((void*)surface.StagingMapped, pixels), surface.Key.Format, destination);
+                if (surface.AlphaInStencil is { } depthStencil)
+                {
+                    // the stencil draws' alpha: the stencil into the alpha bits
+                    ReadOnlySpan<byte> stencil = new((void*)depthStencil.StencilStagingMapped, depthStencil.Key.Stride * depthStencil.Key.Height);
+                    int width = Math.Min(surface.Key.Stride, depthStencil.Key.Stride);
+                    int height = Math.Min(surface.Key.Height, depthStencil.Key.Height);
+                    for (int y = 0; y < height; y++)
+                    {
+                        for (int x = 0; x < width; x++)
+                        {
+                            SetStencil(destination, y * surface.Key.Stride + x, surface.Key.Format, stencil[y * depthStencil.Key.Stride + x]);
+                        }
+                    }
+                }
             }
 
             surface.MemoryHash = System.IO.Hashing.XxHash3.HashToUInt64(destination);
@@ -885,6 +1191,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
 
         surface.GpuDirty = false;
         surface.Loaded = true;
+        surface.AlphaInStencil = null; // memory has it now; the stencil keeps the same values (still valid)
         SurfaceReadbacks++;
     }
 
@@ -1171,6 +1478,20 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         }
     }
 
+    /// <summary>STENCILOP's operations: 0 keep, 1 zero, 2 replace, 3 invert, 4 increment, 5 decrement (clamped).</summary>
+    private static StencilOp StencilOperation(int operation)
+    {
+        return operation switch
+        {
+            1 => StencilOp.Zero,
+            2 => StencilOp.Replace,
+            3 => StencilOp.Invert,
+            4 => StencilOp.IncrementAndClamp,
+            5 => StencilOp.DecrementAndClamp,
+            _ => StencilOp.Keep,
+        };
+    }
+
     private static CompareOp DepthCompare(int function)
     {
         return function switch
@@ -1221,7 +1542,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         return mask;
     }
 
-    private Pipeline PipelineFor(GeTopology topology, GeRenderState state, bool usesDepth)
+    private Pipeline PipelineFor(GeTopology topology, GeRenderState state, bool usesDepth, bool stencilTest, bool stencilClear)
     {
         bool clear = state.ClearMode;
         if (state.LogicOp && !_core.LogicOp)
@@ -1238,6 +1559,11 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         CompareOp compare = clear ? CompareOp.Always : DepthCompare(state.DepthFunction);
         bool depthWrite = usesDepth && (clear ? state.ClearDepth : state.DepthWrite);
         ColorComponentFlags mask = ColorMask(state);
+        bool stencil = stencilTest || stencilClear;
+        CompareOp stencilCompare = stencilClear ? CompareOp.Always : DepthCompare(state.StencilFunction);
+        StencilOp stencilFail = stencilClear ? StencilOp.Keep : StencilOperation(state.StencilFailOperation);
+        StencilOp stencilDepthFail = stencilClear ? StencilOp.Keep : StencilOperation(state.StencilDepthFailOperation);
+        StencilOp stencilPass = stencilClear ? StencilOp.Replace : StencilOperation(state.StencilPassOperation);
 
         ulong key = (ulong)topology
             | (blend ? 1UL << 2 : 0)
@@ -1248,19 +1574,23 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             | ((ulong)compare << 18)
             | (depthWrite ? 1UL << 21 : 0)
             | ((ulong)mask << 22)
-            | ((ulong)(logicOp + 1) << 26);
+            | ((ulong)(logicOp + 1) << 26)
+            | (stencil ? 1UL << 31 : 0)
+            | (stencil ? ((ulong)stencilCompare << 32) | ((ulong)stencilFail << 35) | ((ulong)stencilDepthFail << 38) | ((ulong)stencilPass << 41) : 0);
         if (_pipelines.TryGetValue(key, out Pipeline existing))
         {
             return existing;
         }
 
-        Pipeline created = CreatePipeline(topology, blend, source, destination, operation, depthTest, compare, depthWrite, mask, logicOp);
+        Pipeline created = CreatePipeline(topology, blend, source, destination, operation, depthTest, compare, depthWrite, mask, logicOp,
+            stencil, stencilCompare, stencilFail, stencilDepthFail, stencilPass);
         _pipelines[key] = created;
         return created;
     }
 
     private Pipeline CreatePipeline(GeTopology topology, bool blend, BlendFactor source, BlendFactor destination, BlendOp operation,
-        bool depthTest, CompareOp compare, bool depthWrite, ColorComponentFlags mask, int logicOp)
+        bool depthTest, CompareOp compare, bool depthWrite, ColorComponentFlags mask, int logicOp,
+        bool stencil, CompareOp stencilCompare, StencilOp stencilFail, StencilOp stencilDepthFail, StencilOp stencilPass)
     {
         byte* entry = (byte*)SilkMarshal.StringToPtr("main");
         try
@@ -1311,6 +1641,9 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
                 DepthTestEnable = depthTest,
                 DepthWriteEnable = depthWrite,
                 DepthCompareOp = depthTest ? compare : CompareOp.Always,
+                StencilTestEnable = stencil,
+                Front = new StencilOpState(stencilFail, stencilPass, stencilDepthFail, stencilCompare, 0xFF, 0xFF, 0),
+                Back = new StencilOpState(stencilFail, stencilPass, stencilDepthFail, stencilCompare, 0xFF, 0xFF, 0),
             };
             PipelineColorBlendAttachmentState attachment = new()
             {
@@ -1331,8 +1664,12 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
                 LogicOpEnable = logicOp >= 0,
                 LogicOp = logicOp >= 0 ? (LogicOp)logicOp : LogicOp.Copy,
             };
-            DynamicState* dynamics = stackalloc DynamicState[] { DynamicState.Viewport, DynamicState.Scissor, DynamicState.BlendConstants };
-            PipelineDynamicStateCreateInfo dynamic = new() { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = 3, PDynamicStates = dynamics };
+            DynamicState* dynamics = stackalloc DynamicState[]
+            {
+                DynamicState.Viewport, DynamicState.Scissor, DynamicState.BlendConstants,
+                DynamicState.StencilCompareMask, DynamicState.StencilWriteMask, DynamicState.StencilReference,
+            };
+            PipelineDynamicStateCreateInfo dynamic = new() { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = 6, PDynamicStates = dynamics };
             GraphicsPipelineCreateInfo info = new()
             {
                 SType = StructureType.GraphicsPipelineCreateInfo,
@@ -1375,12 +1712,12 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         };
         attachments[1] = new AttachmentDescription
         {
-            Format = DepthFormat,
+            Format = _depthStencilFormat,
             Samples = SampleCountFlags.Count1Bit,
             LoadOp = AttachmentLoadOp.Load,
             StoreOp = AttachmentStoreOp.Store,
-            StencilLoadOp = AttachmentLoadOp.DontCare,
-            StencilStoreOp = AttachmentStoreOp.DontCare,
+            StencilLoadOp = AttachmentLoadOp.Load,
+            StencilStoreOp = AttachmentStoreOp.Store,
             InitialLayout = ImageLayout.DepthStencilAttachmentOptimal,
             FinalLayout = ImageLayout.DepthStencilAttachmentOptimal,
         };
