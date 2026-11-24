@@ -2425,10 +2425,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   CELP e G.729 (quadros zerados), o decodificador JPEG dividido. Estudo (24/11/2026): os codecs rodam no Venezia
   (MeP), então não há código ARM do firmware para rodar em LLE; o formato é o MPEG-4 CELP narrowband (ISO/IEC
   14496-3 subparte 3, excitação MPE, 8 kHz, 10 taxas de 3850 a 12200 bps). Não há implementação aberta (o FFmpeg
-  não tem MPEG-4 CELP, só QCELP, outro codec); a síntese precisa das tabelas da norma (quantização vetorial dos LSP,
-  codebooks de ganho) do software de referência ISO/IEC 14496-5. Próximo passo: obter essas tabelas e escrever o
-  decodificador (LSP → LPC, excitação adaptativa + MPE, filtro de síntese), testado com quadros sintéticos cujos
-  parâmetros dão uma saída calculável; depois o codificador (análise LPC, busca MPE) com ida e volta.
+  não tem MPEG-4 CELP, só QCELP, outro codec); a síntese precisa das tabelas da norma (quantização vetorial
+  dos LSP, codebooks de ganho). **Bloqueio de licença (decisão do usuário):** o software de referência ISO/IEC
+  14496-5 traz o aviso "MPEG-2 NBC/MPEG-4 Audio" (licença só para produtos que declaram conformidade com a norma;
+  "Copyright is not released for non MPEG-2 NBC/MPEG-4 Audio conforming products"; o autor pode impedir terceiros),
+  restrição de uso incompatível com a GPLv3 (seções 7 e 10), então as tabelas não vêm dele. Caminhos: (1) transcrever
+  as tabelas do texto da norma ISO/IEC 14496-3 (subparte 3; texto pago, com copyright da ISO; se tabelas numéricas
+  podem ser copiadas é questão jurídica); (2) pedir aos detentores uma licença compatível. Com um deles decidido:
+  decodificador (LSP → LPC, excitação adaptativa + MPE, filtro de síntese, pós-filtro se o Vita aplicar) testado com
+  quadros sintéticos de saída calculável, depois o codificador (análise LPC, busca MPE) com ida e volta.
 - [ ] [P3][G] Cartão de memória e eMMC como dispositivos de bloco (`docs/notes/hardware-coverage.md`): hoje o acesso a
   setores falha (`0x803D0000`, `0x8032001A`). Primeira entrega: log de todo acesso a setor por chamador (formatação,
   atualização pelos Ajustes, homebrew) e um arquivo de imagem como base de um dispositivo do `sdstor`, com setor
