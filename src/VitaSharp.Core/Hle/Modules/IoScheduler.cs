@@ -19,7 +19,7 @@ internal sealed class IoScheduler : IGuestTimed
 {
     /// <summary>Runs a request's work as <see cref="Execute(Func{long}, long, out long)"/> does, somewhere else (a kernel
     /// thread of the I/O manager, <see cref="IoAsyncOp.Runner"/>).</summary>
-    internal delegate long RequestRunner(Func<long> work, long from, out long deviceDone);
+    internal delegate long RequestRunner(IoAsyncOp op, Func<long> work, long from, out long deviceDone);
 
     private readonly object _gate = new();
 
@@ -246,7 +246,7 @@ internal sealed class IoScheduler : IGuestTimed
             long deviceDone;
             using (AddressSpace.Use(op.Space))
             {
-                result = op.Runner != null ? op.Runner(work, op.SubmitTicks, out deviceDone) : Execute(work, op.SubmitTicks, out deviceDone);
+                result = op.Runner != null ? op.Runner(op, work, op.SubmitTicks, out deviceDone) : Execute(work, op.SubmitTicks, out deviceDone);
             }
 
             bool current;

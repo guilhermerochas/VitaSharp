@@ -3183,6 +3183,20 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (23/11/2026, falta testar) [P1][M] Os pedidos assíncronos de E/S com hook rodam nas threads fixas do escalonador
+  (fix/hookfn3): no iofilemgr 3.74 (descompilado, só estudo) o escalonador de E/S tem cinco threads de kernel fixas,
+  "SceIoSchedWorker0" a "SceIoSchedWorker4", uma por fila (0 armazenamento interno, 1 cartão de jogo e SD, 2 cartão de
+  memória, 3 host0, 4 as demais; a fila vem do tipo de armazenamento do mount), feitas uma vez com prioridade 100, pilha
+  0x2000 e afinidade 0x80000; o pedido roda na thread da fila do seu dispositivo. Aqui cada pedido com hook no
+  ksceVopLookup criava uma thread de kernel nova ("SceIoScheduler", o nome de um mutex do firmware). Agora o pedido vai
+  para a thread fixa da sua fila, feita no primeiro pedido com hook e mantida, no contexto do processo que o enviou (os
+  dispositivos, vnodes e memória dele); sem hook nada muda (o pedido fica na thread do host, nenhuma thread é criada).
+  Save state: a thread é de serviço (IServiceThreadOwner), volta com o UID salvo. Testes: `IoVopLookupHookTests`
+  (`AsynchronousRequestsRunOnTheFixedWorkerOfTheirQueue`, que falha sem a correção; os pedidos assíncronos e o "sem hook
+  não cria thread"), 50x sob carga. Testar: com "Ativar Plugins do Kernel" e o fd_fix (hook do ksceVopLookup), abrir um
+  jogo que carrega arquivos de forma assíncrona e conferir que carrega igual; o `last.log` mostra `Created thread
+  'SceIoSchedWorker2'` uma vez só, não uma thread por arquivo.
+
 - [ ] (23/11/2026, falta testar) [P1][M] Os mounts PFS (ScePfsMgrForKernel) com os argumentos do pfsmgr 3.74
   (fix/hookfn3): no pfsmgr 3.74 (descompilado e desmontado, só estudo) o kscePfsMount é (origem, ponto de montagem, ID
   de autoridade de 64 bits na 3ª e 4ª palavras, chave, modo): o modo 0x28 responde o modo de um mount em que esse ID

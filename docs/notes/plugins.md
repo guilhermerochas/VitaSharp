@@ -295,9 +295,11 @@ made): the hook gets each
 element, and what it answers counts (an error fails the call, another vnode sends it to that vnode's path, an open that
 creates still creates). Without such a hook nothing is walked and nothing is allocated (`IoVopLookupHookTests`).
 The asynchronous forms (sceIoOpenAsync, sceIoDopenAsync, sceIoGetstatAsync and the other path requests) run on
-iofilemgr's own kernel thread on the Vita (SceIoScheduler), which walks the path the same way: with such a hook the
-I/O scheduler runs a path request on a kernel thread of that name, in the submitting process's context, so the hook is
-called for it and its answer is the request's result; without one the request stays on the scheduler's host thread.
+one of iofilemgr's fixed kernel threads on the Vita (3.74: SceIoSchedWorker0 to SceIoSchedWorker4, one per scheduler
+queue: internal storage, game card and SD, memory card, host0, the rest; made once, priority 100), which walks the path
+the same way: with such a hook the I/O scheduler runs a path request on the worker of its device's queue, made with the
+first such request and kept, in the submitting process's context, so the hook is called for it and its answer is the
+request's result; without one the request stays on the scheduler's host thread and no worker is made.
 
 ### The launch's process creation
 

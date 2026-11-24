@@ -304,10 +304,12 @@ rename cria é procurado, não é achado, e é criado): o hook recebe cada eleme
 a chamada, outro vnode a
 leva ao caminho dele, uma abertura que cria continua criando). Sem esse hook nada é percorrido nem alocado
 (`IoVopLookupHookTests`). As formas assíncronas (sceIoOpenAsync, sceIoDopenAsync, sceIoGetstatAsync e os outros pedidos
-com caminho) rodam no Vita na thread de kernel do próprio iofilemgr (SceIoScheduler), que percorre o caminho do mesmo
-jeito: com esse hook o escalonador de E/S roda o pedido com caminho numa thread de kernel com esse nome, no contexto do
-processo que o enviou, então o hook é chamado para ele e a resposta dele é o resultado do pedido; sem hook o pedido
-continua na thread do host do escalonador.
+com caminho) rodam no Vita numa das threads de kernel fixas do iofilemgr (3.74: SceIoSchedWorker0 a SceIoSchedWorker4,
+uma por fila do escalonador: armazenamento interno, cartão de jogo e SD, cartão de memória, host0, o resto; feitas uma
+vez, prioridade 100), que percorre o caminho do mesmo jeito: com esse hook o escalonador de E/S roda o pedido com
+caminho na thread da fila do dispositivo dele, feita no primeiro pedido assim e mantida, no contexto do processo que o
+enviou, então o hook é chamado para ele e a resposta dele é o resultado do pedido; sem hook o pedido continua na thread
+do host do escalonador e nenhuma thread é feita.
 
 ### A criação do processo no lançamento
 
