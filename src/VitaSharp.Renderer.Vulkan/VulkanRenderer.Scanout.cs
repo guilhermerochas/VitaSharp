@@ -136,7 +136,7 @@ public sealed unsafe partial class VulkanRenderer
     /// memory-order copy of one, the shell overlay's composite or the placed plane's.</summary>
     private bool IsLiveSurface(RenderTarget src)
     {
-        if (src == _cpuFramebuffer || src == _cpuFramebuffer16 || src == _overlayComposite || src == _compatComposite
+        if (src == _cpuFramebuffer || src == _cpuFramebuffer16 || src == _blankScreen || src == _overlayComposite || src == _compatComposite
             || _renderTargets.ContainsValue(src))
         {
             return true;

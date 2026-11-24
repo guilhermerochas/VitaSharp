@@ -1982,7 +1982,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         BeginFrameIfNeeded();
         EndRendering();
         ProfMark(ProfPhase.PresBegin);
-        RenderTarget? src = FindRenderTargetByAddress(frame.Address);
+        RenderTarget? src = frame.Address == 0 ? BlankScreen() : FindRenderTargetByAddress(frame.Address);
+        if (frame.Address == 0)
+        {
+            // plane 0 without a framebuffer: a black screen (VulkanRenderer.CompatPlane.cs)
+            frame = ScreenFrame(frame);
+        }
+
         Log.WarnOnce($"present{frame.Address:X}", $"[gpu] present 0x{frame.Address:X8} {frame.Width}x{frame.Height} pitch {frame.Pitch} fmt {frame.Format}: {(src != null ? "rendered surface" : "CPU framebuffer")}");
         if (src == null && frame.Format == DisplayPixelFormat.A1B5G5R5)
         {
