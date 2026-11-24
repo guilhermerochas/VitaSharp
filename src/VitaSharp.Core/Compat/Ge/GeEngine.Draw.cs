@@ -399,7 +399,7 @@ public sealed partial class GeEngine
         state.ScissorBottom = (int)((scissor2 >> 10) & 0x3FF);
         state.DepthTest = Enabled(GeCommand.DepthTestEnable);
         state.DepthFunction = (int)(Command(GeCommand.DepthTest) & 7);
-        state.DepthWrite = (Command(GeCommand.DepthWriteDisable) & 1) == 0;
+        state.DepthWrite = state.DepthTest && (Command(GeCommand.DepthWriteDisable) & 1) == 0; // no depth test: no depth writes either
         state.AlphaTest = Enabled(GeCommand.AlphaTestEnable);
         uint alpha = Command(GeCommand.AlphaTest);
         state.AlphaFunction = (int)(alpha & 7);
