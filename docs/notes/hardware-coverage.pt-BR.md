@@ -180,7 +180,9 @@ compatibilidade PSP". Impacto: todo título de PSP e PSone, homebrew de PSP, Adr
 
 ### (b) Teclado e mouse Bluetooth
 
-- **Hoje:** o `SceHid` não enumera nenhum dispositivo.
+- **Hoje:** com a opção (`--bt-keyboard-mouse=on`, Configurações > Emulação; Android: Ajustes) o teclado e o mouse
+  do host são os dispositivos pareados: `sceHid{Keyboard,Mouse}Enumerate/Read/Peek` como o 3.74 (`Hle/Modules/Hid.cs`,
+  `Host/Hid.cs`). Falta: notificar os callbacks de dica, as configurações de Bluetooth do shell listarem os dispositivos.
 - **Impacto:** digitar no navegador, no IME e em apps que leem o teclado direto; mouse no navegador.
 - **Tamanho:** [M]. **Primeira entrega testável:** o teclado do host oferecido como um teclado pareado (uma opção):
   `sceHidKeyboardEnumerate` devolve um handle e `sceHidKeyboardRead` informa teclas roteirizadas.

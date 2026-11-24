@@ -3129,6 +3129,15 @@
   <data name="ConsoleModelPsTv" xml:space="preserve">
     <value>PlayStation TV</value>
   </data>
+  <data name="BluetoothKeyboardMouse" xml:space="preserve">
+    <value>Teclado e mouse Bluetooth</value>
+  </data>
+  <data name="BluetoothKeyboardMouseDetail" xml:space="preserve">
+    <value>O teclado e o mouse do PC ficam pareados com o Vita, para jogos e apps que leem teclado ou mouse (o navegador, chat). As teclas continuam funcionando como controle. Desligado por padrão. Vale ao iniciar um jogo</value>
+  </data>
+  <data name="MBluetoothKeyboardMouseDetail" xml:space="preserve">
+    <value>Um teclado e um mouse conectados ao celular ficam pareados com o Vita, para jogos e apps que leem teclado ou mouse (o navegador, chat). Desligado por padrão. Vale ao iniciar um jogo</value>
+  </data>
   <data name="MOn" xml:space="preserve">
     <value>Ligado</value>
   </data>

@@ -3260,7 +3260,10 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   e o mouse do host como dispositivos pareados (`HostServices.HidKeyboard/HidMouse`, filas de relatórios com uso USB
   HID, modificadores, botões, deslocamento e roda), `Enumerate`, `Read`, `Peek`, `Clear`, `Set/GetIntercept` e o
   registro dos callbacks de dica como o 3.74; sem a opção nada é pareado, como antes. Testes: `HidDeviceTests`.
-  Opção no PC e no Android: ver os itens seguintes deste mesmo commit/branch.
+  Opção (desligada por padrão; as teclas continuam valendo como controle): PC, Configurações > Emulação > Teclado e
+  mouse Bluetooth (`--bt-keyboard-mouse=on`); Android, Ajustes > Teclado e mouse Bluetooth (teclado e mouse físicos
+  do celular). Testar: ligar a opção e abrir o navegador do Vita (ou um app que lê teclado): digitar no teclado físico
+  escreve no campo; o mouse move e clica.
 - [ ] (24/11/2026, falta testar) [P2][M] Fim de processo com thread rodando sobre memória liberada (fix/adr4): no Vita
   o kill encerra todas as threads do processo e nenhuma roda depois. Causa: uma thread do processo iniciada depois do
   fim (a tarefa de início do processo, que cria a main e roda os module_start, chegava depois do EndProcess/destroy,

@@ -372,6 +372,22 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMu
             // keyboard profile binds the button to a Vita control ("key:MouseLeft"...: then it presses that control, also
             // with the cursor captured); with the cursor captured (mouse as a stick) the pointer has no position on the
             // screen, so the buttons do not touch, and a left click with the cursor released captures it again
+            m.MouseDown += (_, b) => HidMouse?.Button(HidButton(b), true, VitaSharp.Core.Hle.Modules.Hid.NowUs);
+            m.MouseUp += (_, b) => HidMouse?.Button(HidButton(b), false, VitaSharp.Core.Hle.Modules.Hid.NowUs);
+            m.Scroll += (_, wheel) => HidMouse?.Move(0, 0, (int)MathF.Round(wheel.Y), VitaSharp.Core.Hle.Modules.Hid.NowUs);
+            m.MouseMove += (_, pos) =>
+            {
+                // the paired mouse moves by the pointer's travel (with the cursor captured, the raw deltas)
+                if (HidMouse is { } hidMouse)
+                {
+                    if (_hidMouseLast is { } last)
+                    {
+                        hidMouse.Move((int)MathF.Round(pos.X - last.X), (int)MathF.Round(pos.Y - last.Y), 0, VitaSharp.Core.Hle.Modules.Hid.NowUs);
+                    }
+
+                    _hidMouseLast = pos;
+                }
+            };
             m.MouseDown += (mouse, b) =>
             {
                 // a dialog over the game takes the left clicks (its buttons) and nothing touches the game; a mouse button
@@ -843,7 +859,30 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMu
         }
         // the mapping (input.json keyboard profile, else the historic default) uses Silk.NET key names
         _hostInput.KeyChanged(key.ToString(), down);
+        // the paired Bluetooth keyboard (the option): the key also goes to it as a USB HID usage
+        if (HidKeyboard is { } hidKeyboard)
+        {
+            hidKeyboard.Key(HidUsages.FromKeyName(key.ToString()), down, VitaSharp.Core.Hle.Modules.Hid.NowUs);
+        }
     }
+
+    /// <summary>The PC keyboard as the Vita's paired keyboard (SceHid; the emulator option), null = not paired.</summary>
+    public HidKeyboard? HidKeyboard { get; set; }
+
+    /// <summary>The PC mouse as the Vita's paired mouse (SceHid; the emulator option), null = not paired.</summary>
+    public HidMouse? HidMouse { get; set; }
+
+    /// <summary>The last pointer position the paired mouse moved from.</summary>
+    System.Numerics.Vector2? _hidMouseLast;
+
+    /// <summary>The paired mouse's button of a host button: 0 left, 1 right, 2 middle (-1: none).</summary>
+    static int HidButton(MouseButton button) => button switch
+    {
+        MouseButton.Left => 0,
+        MouseButton.Right => 1,
+        MouseButton.Middle => 2,
+        _ => -1,
+    };
 
     /// <summary>A controller's pause binding or combination: toggles when it becomes held.</summary>
     void PollPadHotkeys()

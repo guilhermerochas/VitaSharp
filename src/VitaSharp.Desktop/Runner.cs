@@ -517,6 +517,14 @@ public static class Runner
             : CreateMicrophone(Opt(options, "--microphone"));
         // SceLibLocation: --location= (off by default; "latitude,longitude[,altitude[,accuracy]]" a fixed position)
         emu.Host.Location = CreateLocation(Opt(options, "--location"));
+        // SceHid: --bt-keyboard-mouse=on pairs the PC keyboard and mouse with the Vita as Bluetooth devices (off by
+        // default: the keyboard is the controller; with it the keys go to both)
+        if (OnOff(options, "--bt-keyboard-mouse") == true)
+        {
+            emu.Host.HidKeyboard = window.HidKeyboard = new HidKeyboard();
+            emu.Host.HidMouse = window.HidMouse = new HidMouse();
+            Log.Info("SceHid: the PC keyboard and mouse are paired with the Vita");
+        }
         VulkanRenderer? renderer = null;
         var clock = Stopwatch.StartNew();
         long lastFrames = 0, titleTicks = 0;

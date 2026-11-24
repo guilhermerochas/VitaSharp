@@ -3129,6 +3129,15 @@
   <data name="ConsoleModelPsTv" xml:space="preserve">
     <value>PlayStation TV</value>
   </data>
+  <data name="BluetoothKeyboardMouse" xml:space="preserve">
+    <value>Bluetooth keyboard and mouse</value>
+  </data>
+  <data name="BluetoothKeyboardMouseDetail" xml:space="preserve">
+    <value>The PC keyboard and mouse are paired with the Vita, for games and apps that read a keyboard or mouse (the browser, chat). The keys still work as the controller. Off by default. Takes effect when a game starts</value>
+  </data>
+  <data name="MBluetoothKeyboardMouseDetail" xml:space="preserve">
+    <value>A keyboard and mouse connected to the phone are paired with the Vita, for games and apps that read a keyboard or mouse (the browser, chat). Off by default. Takes effect when a game starts</value>
+  </data>
   <data name="MOn" xml:space="preserve">
     <value>On</value>
   </data>

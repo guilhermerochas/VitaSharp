@@ -196,6 +196,10 @@ controles suportados), cada controle conectado é um jogador nas portas 1-4 (o t
 controle) e a vibração chega aos controles. O software de sistema próprio do PS TV, os ajustes de HDMI e o USB host
 ainda não são emulados.
 
+**Teclado e mouse Bluetooth.** **Configurações > Emulação > Teclado e mouse Bluetooth** (ou `--bt-keyboard-mouse=on`)
+pareia o teclado e o mouse do PC com o Vita, para jogos e apps que leem teclado ou mouse (SceHid: o navegador, chat).
+Desligado por padrão; as teclas continuam valendo como controle com ele ligado.
+
 Os dados ficam em `%APPDATA%\VitaSharp` no Windows (`~/.local/share/VitaSharp` no Linux,
 `~/Library/Application Support/VitaSharp` no macOS; `--data=<pasta>` ou `VITASHARP_DATA` trocam a pasta): jogos em
 `fs/ux0/app`, firmware em `fs/os0`... , `logs/`, `savestates/`, `captures/` (Gravar tudo), `gpudumps/`,
