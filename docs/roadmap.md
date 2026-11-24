@@ -3251,6 +3251,19 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (24/11/2026, falta testar) [P2][M] Fim de processo com thread rodando sobre memória liberada (fix/adr4): no Vita
+  o kill encerra todas as threads do processo e nenhuma roda depois. Causa: uma thread do processo iniciada depois do
+  fim (a tarefa de início do processo, que cria a main e roda os module_start, chegava depois do EndProcess/destroy,
+  e o Start zerava o pedido de parada) rodava livre; o fim esperava 10 s, liberava a memória e a thread caía
+  ("Prefetch abort: jump to unmapped address 0x81000200/0x8100025C", visto na `AppNameTests`). Feito: um processo em
+  fim não inicia thread nenhuma (`GuestThread.Start` recusa com 0x80020001; a tarefa de início para sem anunciar o
+  lançamento ao shell); o pedido de parada é gravado também sob o `WaitLock`, e um Start concorrente não o desfaz; a
+  memória só volta depois que as threads saem (rodadas de 10 s, até 60 s, com novo pedido de parada a cada rodada).
+  Esperas do host revistas: vblank, delay/semáforos (`Sync`), IO assíncrono, filas do GXM, fila de trabalho,
+  interrupções e suspensão checam o pedido de parada ou são limitadas (áudio, câmera, microfone: até um grão/quadro).
+  Testes: `ProcessEndThreadTests` (thread recusada num processo em fim; a thread do laço para antes da memória
+  voltar; aplicativos encerrados e destruídos logo após o lançamento, 8 vezes, sem crash). Testar: no Sistema do
+  Vita, abrir e fechar (ou trocar) aplicativos rapidamente: nenhum "Prefetch abort" nem "did not stop in time" no log.
 - [ ] (24/11/2026, falta testar) [P3][G] Modelo PS TV, 1ª entrega (fix/adr4; `docs/notes/hardware-coverage.md`): no
   3.74 um PS TV se distingue pela identidade (bit 0x200 do sub code de produto, que o SceSblAIMgr testa:
   `ksceSblAimgrIsDolce`/`IsGenuineDolce` = 1, `IsGenuineVITA` = 0); o SceCtrl pergunta ao SceSysroot se o modelo
@@ -4138,25 +4151,6 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
 
 ## Bugs em aberto
 - [x] [P1][M] Testes de hooks: interferência de memória compartilhada (23/11/2026, hookfix1/cifix17/hookmem1):
-- [ ] [P2][M] Fim de processo com thread presa num bloqueio do host: um processo encerrado de fora (EndProcess ou
-  destroy) cuja thread está em `sceDisplayWaitVblankStart` ("blocked in the host") não para em 10 s; a memória é
-  liberada e a thread volta a rodar e cai ("Prefetch abort: jump to unmapped address"). Visto em
-  `AppNameTests.AnApplicationEndingByItselfGetsNoDestroyEvent`; em
-  `DestroyingAnApplicationByNameTellsTheShellAtOnceWithItsName` a thread main começa depois do destroy (lr=0x40001000,
-  pc=entrada). No Vita o kill acorda toda espera e nenhuma thread roda depois do processo sair. Corrigir o
-  StopAllThreads/WaitAllThreadsExit para as esperas do host e o início de um processo já destruído, com teste.
-  `PluginHookChainFuzzTests` e `PluginHookMatrixProcessTests` (e, raramente, HleCost, Piglet, NpCommerce2,
-  KernelThreadmgrControl) falhavam na suíte completa por dois defeitos do fim do sistema, ambos corrigidos com teste
-  (`SystemEndProcessTasksTests`), e as duas classes saíram da quarentena (Category=Slow):
-  1. (cifix17) o fim do sistema não esperava as tarefas dos processos (fim de processo terminado, LoadExec e início
-     de filho em `Task.Run`): o fim tardio fazia `FreeOwnedBy(pid)` — pid único só dentro de um sistema — e liberava
-     blocos do sistema seguinte na mesma memória (`kernel:trap` → "Undefined instruction 0xE7F000F0").
-  2. (hookmem1) o início de um filho deixado na sua tarefa, vindo depois do `Stop()`, punha o filho rodando de novo
-     e criava a thread `main`, que nenhuma parada alcançava: ela seguia executando código guest depois do fim e
-     gravava zeros nos blocos de kernel dos testes seguintes (registros do framework lidos como 0; achado com
-     `VITASHARP_WATCH`). Agora o sistema marca o fim (`VitaSystem.Ending`: `Emulator.Start` não inicia mais), para de
-     novo depois das tarefas e espera as threads de todos os processos.
-  Nada a testar em jogo (fim de sessão / suíte).
 - [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053) em 2x: textura da parede piscando e imagem embaçada (relato do
   usuário, 23/11/2026; captura `PCSE00053_20261123_134501_tudo`, build 793a9e96, resolução interna 2x por atalho no
   quadro 1587, dump da GPU de 34 quadros): o relatório marca 20 [flash] alternando quadro sim, quadro não (presents

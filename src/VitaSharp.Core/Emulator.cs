@@ -564,8 +564,20 @@ public sealed partial class Emulator : IDisposable
         {
             try
             {
+                // ended before its start task ran (destroyed or replaced at once): nothing of it runs
+                if (child.EndingThreads)
+                {
+                    Log.Info($"Process {child.Describe()} ended before it started");
+                    return;
+                }
+
                 Log.Info($"Process {child.Describe()} started by {Describe()}");
                 child.Start(args);
+                if (child.EndingThreads)
+                {
+                    return; // ended while it started: no launch for the shell to activate
+                }
+
                 // the launch finished: event 0xA {application id}; the shell then activates it
                 if (Vita.Shell != null && !background)
                 {
@@ -578,6 +590,11 @@ public sealed partial class Emulator : IDisposable
                 }
 
                 started?.Invoke(child);
+            }
+            catch (Exception e) when (e is not OutOfMemoryException && child.EndingThreads)
+            {
+                // ended while it started: its start ran into the end (its threads refused, its memory going)
+                Log.Info($"Process {child.Describe()} ended while it started ({e.GetType().Name})");
             }
             catch (Exception e) when (e is not OutOfMemoryException)
             {
@@ -698,6 +715,16 @@ public sealed partial class Emulator : IDisposable
 
     private readonly List<Emulator> _children = new();
     private int _terminated, _exitStatus;
+
+    /// <summary>The process is being ended (<see cref="Terminate"/>): <see cref="GuestThread.Start"/> refuses its
+    /// threads.</summary>
+    internal bool EndingThreads => _endingThreads;
+
+    private volatile bool _endingThreads;
+
+    /// <summary>How long one round of the end's wait for the threads lasts, and how many rounds it waits before it gives
+    /// the memory back anyway (a thread stuck in a host call that never returns).</summary>
+    private const int ThreadExitWaitMs = 10_000, ThreadExitWaitRounds = 6;
     private bool _background, _endedInFront;
 
     /// <summary>The process ends by itself (sceKernelExitProcess): the handlers hear exit, not kill.</summary>
@@ -925,6 +952,9 @@ public sealed partial class Emulator : IDisposable
         }
 
         Log.Info($"Process {Describe()} {why}");
+        // from now on no thread of the process starts (GuestThread.Start), also not the main thread or a module_start
+        // its start task has not reached yet: the stop below reaches every thread that can run
+        _endingThreads = true;
         // an application destroyed (not exiting by itself): SceAppMgr tells the shell at once, event 3
         if (!_exiting && Vita.Shell is { } shellProcess && shellProcess != this && !_background && _announced)
         {
@@ -949,10 +979,11 @@ public sealed partial class Emulator : IDisposable
             c.Terminate("ended with its parent");
         }
 
-        // the system's end waits for this (VitaSystem.WaitForProcessTasks)
+        // the system's end waits for this (VitaSystem.WaitForProcessTasks). The memory goes back only once every thread
+        // has left: one that ran on after it would execute freed memory (a prefetch abort in a process already gone)
         Vita.TrackProcessTask(Task.Run(() =>
         {
-            if (!Kernel.WaitAllThreadsExit(10_000))
+            for (int round = 1; !Kernel.WaitAllThreadsExit(ThreadExitWaitMs); round++)
             {
                 Log.Warn($"{Describe()}: some threads did not stop in time");
                 using (AddressSpace.Use(Space))
@@ -962,10 +993,18 @@ public sealed partial class Emulator : IDisposable
                         if (!t.WaitForExit(0))
                         {
                             Log.Warn($"  still running: {t.Describe()}");
+                            t.RequestStop();
                         }
                     }
                 }
+
+                if (round >= ThreadExitWaitRounds)
+                {
+                    Log.Error($"{Describe()}: a thread still runs after {round * ThreadExitWaitMs / 1000} s; its memory goes back anyway");
+                    break;
+                }
             }
+
             Release();
         }));
     }
@@ -973,6 +1012,7 @@ public sealed partial class Emulator : IDisposable
     /// <summary>Gives everything the process holds back to the system.</summary>
     private void Release()
     {
+        ReleaseStarting?.Invoke();
         // SceAppMgr tells the shell the application is gone: event 4 {+4 pid, +0x14 application id}. Not for a background
         // service: NPXS10079 (daily checker) exits at once here, where on the Vita it stays resident, and the shell would
         // start it again on every end
@@ -1005,6 +1045,10 @@ public sealed partial class Emulator : IDisposable
 
     /// <summary>The process is gone (its memory and kernel objects released).</summary>
     public event Action? Released;
+
+    /// <summary>Raised when the release starts, before the process's objects and memory go (its threads are listed
+    /// still; tests check none of them runs then).</summary>
+    internal event Action? ReleaseStarting;
 
     /// <summary>The process is suspended: its threads stop at their next safe point (see <see cref="GuestThread"/>).</summary>
     public volatile bool Suspended;
