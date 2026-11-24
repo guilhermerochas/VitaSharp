@@ -3189,6 +3189,24 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (24/11/2026, falta testar) [P1][M] Adrenaline, diálogo de erro do emulador de PSP e NPXS10028 em dobro
+  (fix/adr4, pontos 6 e 7 do item do Adrenaline em "Bugs em aberto"). (6) O `sceGxmIsInitializationInternal`
+  respondia sempre 0; no libgxm 3.74 ele devolve a marca que o sceGxmInitialize/sceGxmVshInitialize liga e o
+  sceGxmTerminate desliga. O libcdlg 3.74 recusa todo diálogo de um programa do SDK 2.50+ com 0x80020436 quando a
+  marca está em 0, e o ScePspemu então saía para a LiveArea (sceAppMgrExitToLiveboardForGameApp(0x80020436), evento
+  16) sem mostrar o erro. Agora a thread SceCommonDialogPafMain sobe e carrega o libcdlg_main/libpaf/libcdlg_compat.
+  (7) O SceAppMgr conhece a aplicação pelo título que o lançamento deu (status +0xC, chamadas por nome, eventos 3/4),
+  e não pela pasta do executável. Ao criar o processo de um nome, o kernel apaga o nome da entrada mais antiga com
+  esse nome e a destrói com motivo 4 antes de anunciar a nova (appmgr 0x81002504). Destruir uma aplicação manda o
+  evento 3 na hora (0x810014F4). Um LaunchAppByName de um título que já roda, vindo de código no shell, vira pedido
+  ao shell (evento 6). Com isso o shell lança o emulador de PSP da bolha pelo 2ndStage, o primeiro (do
+  AdrenalineVsh) sai, e fica um só NPXS10028, em primeiro plano. Testes: `AppNameTests`,
+  `GxmFlowTests.IsInitializationInternalFollowsInitializeAndTerminate`. Testar: abrir o Adrenaline pelo Sistema do
+  Vita. Só um "Process NPXS10028 ... started" fica vivo e vai para primeiro plano, e o log mostra "destroyed: ... is
+  the application PSPEMUCFW now". O diálogo de erro do ScePspemu aparece na tela, sem o "Shell event 16" logo depois
+  de "Starting Init(), type 16". Falta: o lançamento do próprio shell por nome (o NPXS10079 de fundo) ainda sai
+  direto, sem o evento 6 que o shell 3.74 recebe e reconhece como seu (shell +0x114).
+
 - [ ] (24/11/2026, falta testar) [P1][M] Tela de CPU framebuffer preta e 0 fps (Adrenaline, fix/disp1): no Vita o
   `sceDisplaySetFrameBuf` só entrega ao display o endereço do framebuffer, e o display lê essa memória a cada vblank;
   um programa que define o framebuffer uma vez e depois escreve o texto com a CPU (a tela de instalação do Adrenaline,
@@ -4091,11 +4109,8 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   trocados); os *ForPid do modulemgr recusam pid 0 (0x8002D017) como o 3.74. Testar: abrir o Adrenaline pelo
   Sistema do Vita com o 8.0.2: no log os hooks 8 (SceCompat) e 32 (ScePspemu +0x6364) aparecem instalados, sem
   "refused (0x90010006)". Falta: (5) o ScePspemuMain chega ao sceCompatInitEx e para ("the PSP compat core is not
-  emulated"): o núcleo de compatibilidade (pcbc) é o bloqueio até o menu do Adrenaline; (6) o diálogo de erro (libcdlg
-  família 0x10, LLE) termina no mesmo instante do Init, sem a thread SceCommonDialogPafMain; (7) o NPXS10028 foi
-  lançado duas vezes (pelo AdrenalineVsh dentro do shell e pelo shell 3 s depois): o SceAppMgr 3.74 não recusa um
-  segundo lançamento por caminho (FUN_8100ce78 não procura o título), então a decisão é do shell; conferir por que o
-  shell não vê o primeiro como o app da bolha.
+  emulated"): o núcleo de compatibilidade (pcbc) é o bloqueio até o menu do Adrenaline; (6) e (7) feitos (fix/adr4,
+  ver "Corrigido, falta o usuário testar": diálogo de erro e NPXS10028 em dobro).
 - [ ] [P2][M] Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
   capturas de 21/11/2026, e um engasgo de 132 ms por leitura de arquivo (fileIo 134 ms; quadro 302 do dump da
   `_232150_tudo`). Achado (perf/ac3pace): fora das gravações o jogo fica em 30 fps (linhas `FPS frame` da sessão) e

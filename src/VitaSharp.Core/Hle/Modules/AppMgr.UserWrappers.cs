@@ -254,7 +254,7 @@ public sealed partial class AppMgrShell
             return ERR_NULL;
         }
 
-        var p = tid == null ? Emu : Emu.Vita.Processes.FirstOrDefault(e => string.Equals(e.TitleId, tid, StringComparison.OrdinalIgnoreCase));
+        var p = tid == null ? Emu : Emu.Vita.ByAppName(tid);
         if (p == null)
         {
             GuestMemory.Fill(info, 0, 0x80);
@@ -462,7 +462,7 @@ public sealed partial class AppMgrShell
             return ERR_TOO_LONG;
         }
 
-        var p = tid == null ? null : Emu.Vita.Processes.FirstOrDefault(e => string.Equals(e.TitleId, tid, StringComparison.OrdinalIgnoreCase));
+        var p = tid == null ? null : Emu.Vita.ByAppName(tid);
         if (p == null)
         {
             return ERR_NOT_FOUND;
@@ -496,7 +496,7 @@ public sealed partial class AppMgrShell
             return ERR_TOO_LONG;
         }
 
-        var p = Emu.Vita.Processes.FirstOrDefault(e => string.Equals(e.TitleId, tid, StringComparison.OrdinalIgnoreCase));
+        var p = Emu.Vita.ByAppName(tid);
         if (p?.Hle.Modules.OfType<AppMgr>().FirstOrDefault() is not { } mgr)
         {
             return ERR_NOT_FOUND;
