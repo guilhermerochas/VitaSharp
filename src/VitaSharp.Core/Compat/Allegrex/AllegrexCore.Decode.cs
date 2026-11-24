@@ -64,8 +64,38 @@ public sealed partial class AllegrexCore
             case 0x0F:
                 _gpr[Rt(instruction)] = instruction << 16;
                 break;
+            case 0x10:
+                ExecuteCop0(instruction);
+                break;
+            case 0x11:
+            case 0x31:
+            case 0x39:
+                Unimplemented(instruction, "FPU (COP1)");
+                break;
+            case 0x12:
+            case 0x18:
+            case 0x19:
+            case 0x1B:
+            case 0x32:
+            case 0x34:
+            case 0x35:
+            case 0x36:
+            case 0x37:
+            case 0x3A:
+            case 0x3C:
+            case 0x3D:
+            case 0x3E:
+            case 0x3F:
+                Unimplemented(instruction, "VFPU (COP2)");
+                break;
+            case 0x1C:
+                ExecuteSpecial2(instruction);
+                break;
             case 0x1F:
                 ExecuteSpecial3(instruction);
+                break;
+            case 0x2F:
+                // cache: caches are not modelled
                 break;
             case 0x20:
             case 0x21:
@@ -86,7 +116,7 @@ public sealed partial class AllegrexCore
                 ExecuteStore(instruction);
                 break;
             default:
-                Unimplemented(instruction, "integer");
+                RaiseException(AllegrexExceptionCode.ReservedInstruction);
                 break;
         }
     }
@@ -121,6 +151,15 @@ public sealed partial class AllegrexCore
                 break;
             case 0x0B:
                 MoveIfNotZero(instruction);
+                break;
+            case 0x0C:
+                SystemCall(instruction, AllegrexTrapKind.Syscall);
+                break;
+            case 0x0D:
+                SystemCall(instruction, AllegrexTrapKind.Break);
+                break;
+            case 0x0F:
+                // sync: accesses are already in order
                 break;
             case 0x16:
                 CountLeadingZeros(instruction);
@@ -194,6 +233,14 @@ public sealed partial class AllegrexCore
             case 0x2D:
                 Minimum(instruction);
                 break;
+            case 0x30:
+            case 0x31:
+            case 0x32:
+            case 0x33:
+            case 0x34:
+            case 0x36:
+                ExecuteTrap(instruction);
+                break;
             case 0x2E:
                 MultiplySubtract(instruction);
                 break;
@@ -201,7 +248,7 @@ public sealed partial class AllegrexCore
                 MultiplySubtractUnsigned(instruction);
                 break;
             default:
-                Unimplemented(instruction, "integer");
+                RaiseException(AllegrexExceptionCode.ReservedInstruction);
                 break;
         }
     }
