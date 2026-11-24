@@ -2347,8 +2347,9 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   usuário, fora do repositório); as chaves do KIRK (publicadas no PPSSPP/Jpcsp) pedem decisão do lead antes da fase 3;
   o GE de compatibilidade do Vita não é documentado (modelo: GE do PSP).
   Lado SceCompat da fase 1 (feat/alg2, em andamento): barramento do núcleo (`src/VitaSharp.Core/Compat`: 4 bancos de
-  16 MB, buraco espelhando o banco 1, SRAM compartilhada, mailbox nos dois sentidos com o endereço do lado PSP
-  inferido em `0xBC500000` até o trace da fase 3), thread `SceCompatCore` só entre Start e Stop, InitEx/Start/Stop/
+  16 MB, buraco espelhando o banco 1, SRAM compartilhada, mailbox nos dois sentidos com o lado PSP em
+  `0xBC300040`-`0x5F` no bloco do controlador de interrupções: campainha = pulso do bit n de `0xBC300050`, como o
+  kermit do lado PSP faz; pendentes/confirmação em `0x40`/`0x44` inferidos até o trace da fase 3), thread `SceCompatCore` só entre Start e Stop, InitEx/Start/Stop/
   WaitSpecialRequest/WaitAndGetRequest/ReturnValueEx/Interrupt/WaitIntr/Read/WriteShared32/WriteSharedCtrl como o
   3.74 e o SceSblFwLoader carregando o `pcff` (segmento do SELF) e o `pcbc` (só pelo `os0:kd/pcbc.bin` do usuário);
   testado com um núcleo roteirizado no teste. Falta o teste com código MIPS sintético quando o interpretador inteiro

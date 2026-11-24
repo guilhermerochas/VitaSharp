@@ -148,12 +148,42 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
         mailbox.ArmRing(0x19);
         Assert.Equal([true], levels);
         Assert.Equal((1u << 7) | (1u << 0x19), mailbox.PspRead32(CompatMailbox.PspPendingRegister));
-        mailbox.PspWrite32(CompatMailbox.AcknowledgeRegisters + 7 * 4, 1);
+        mailbox.PspWrite32(CompatMailbox.PspAcknowledgeRegister, 1u << 7);
         Assert.Equal([true], levels);
-        mailbox.PspWrite32(CompatMailbox.AcknowledgeRegisters + 0x19 * 4, 1);
+        mailbox.PspWrite32(CompatMailbox.PspAcknowledgeRegister, 1u << 0x19);
         Assert.Equal([true, false], levels);
-        mailbox.PspWrite32(8 * 4, 1);
+
+        // the core rings by pulsing a bit of 0xBC300050: only a bit going from 0 to 1 rings its line
+        mailbox.PspWrite32(CompatMailbox.RingRegister, 1u << 8);
         Assert.Equal([4, 4, 8], armInterrupts);
+        mailbox.ArmAcknowledge(8);
+        mailbox.PspWrite32(CompatMailbox.RingRegister, 1u << 8);
+        Assert.Equal([4, 4, 8], armInterrupts);
+        mailbox.PspWrite32(CompatMailbox.RingRegister, 0);
+        mailbox.PspWrite32(CompatMailbox.RingRegister, (1u << 8) | (1u << 5));
+        Assert.Equal([4, 4, 8, 5, 8], armInterrupts);
+        Assert.Equal((1u << 8) | (1u << 5) | (1u << 4), mailbox.ArmPending); // line 4 still waits for the ARM
+    }
+
+    /// <summary>The mailbox sits in the PSP interrupt controller's block at 0xBC300040..0x5F: the core's ring there
+    /// reaches the ARM; the controller's own registers and the PSP systimers (0xBC500000) are not the mailbox.</summary>
+    [Fact]
+    public void TheCoreReachesTheMailboxAtTheInterruptControllersBlock()
+    {
+        CompatMailbox mailbox = new();
+        List<int> armInterrupts = [];
+        mailbox.ArmInterrupt = armInterrupts.Add;
+        PspBus bus = new(new CompatSharedSram(), mailbox);
+        bus.Write32(0xBC500010, 1u << 4);
+        bus.Write32(0xBC300000, 1u << 4);
+        Assert.Empty(armInterrupts);
+        bus.Write32(0xBC300050, 1u << 4);
+        Assert.Equal([4], armInterrupts);
+        mailbox.ArmRing(9);
+        Assert.Equal(1u << 9, bus.Read32(0xBC300040));
+        bus.Write32(0xBC300044, 1u << 9);
+        Assert.Equal(0u, bus.Read32(0xBC300040));
+        Assert.Equal(1u << 4, bus.Read32(0xBC300048));
     }
 
     /// <summary>Without the user's decrypted boot code InitEx gets the loader's "not supported" (the secure processor's
@@ -305,10 +335,10 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
 
     /// <summary>
     /// A synthetic boot code (our own MIPS, assembled here), at PSP 0x88600000 with its interrupt handler at
-    /// 0x88601000: s0 = the handshake word 0x8BD78000, s1 = the shared SRAM 0xBFC00000, s2 = the mailbox 0xBC500000,
+    /// 0x88601000: s0 = the handshake word 0x8BD78000, s1 = the shared SRAM 0xBFC00000, s2 = the mailbox 0xBC300040,
     /// s3 = its request 0x88100000, s4 = its results 0x88200000. It sets EBase and Status (IE, IM2: the reset Status
     /// has ERL and BEV), writes handshake state 1, spins until 2, writes 3, posts command 0x1234 on channel 3 in slot 0
-    /// and rings line 4, then halts in a loop. The handler reads the pending lines: line 4 (the slot taken) is
+    /// and rings line 4 (a pulse of bit 4 at 0xBC300050), then halts in a loop. The handler reads the pending lines: line 4 (the slot taken) is
     /// acknowledged; line 7 (the answer) is acknowledged, its six words copied to the results and line 7 rung back to
     /// the ARM; line 0x19 (virtual interrupt 9) is acknowledged, its slot's word saved and cleared, the controller
     /// words (0x140, 0x120..0x128) saved, and 9 written as the "done" mark; then eret.
@@ -320,7 +350,8 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
             AllegrexAsm.Lui(S0, 0x8BD7),
             AllegrexAsm.Ori(S0, S0, 0x8000),
             AllegrexAsm.Lui(S1, 0xBFC0),
-            AllegrexAsm.Lui(S2, 0xBC50),
+            AllegrexAsm.Lui(S2, 0xBC30),
+            AllegrexAsm.Ori(S2, S2, 0x0040),
             AllegrexAsm.Lui(S3, 0x8810),
             AllegrexAsm.Lui(S4, 0x8820),
             AllegrexAsm.Lui(AllegrexAsm.T0, 0x8860),
@@ -331,7 +362,7 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
             AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, 1),
             AllegrexAsm.Sw(AllegrexAsm.T0, S0, 0), // state 1
             AllegrexAsm.Addiu(AllegrexAsm.T2, AllegrexAsm.Zero, 2),
-            AllegrexAsm.Lw(AllegrexAsm.T1, S0, 0), // 14: wait for 2
+            AllegrexAsm.Lw(AllegrexAsm.T1, S0, 0), // 15: wait for 2
             AllegrexAsm.Bne(AllegrexAsm.T1, AllegrexAsm.T2, -2),
             AllegrexAsm.Nop,
             AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, 3),
@@ -341,25 +372,26 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
             AllegrexAsm.Lui(AllegrexAsm.T0, 3),
             AllegrexAsm.Sw(AllegrexAsm.T0, S1, 0x800), // slot 0: channel 3
             AllegrexAsm.Sw(S3, S1, 0x804), // slot 0: the request's address
-            AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, 1),
-            AllegrexAsm.Sw(AllegrexAsm.T0, S2, 4 * 4), // ring line 4
-            AllegrexAsm.Halt, // 26
+            AllegrexAsm.Sw(AllegrexAsm.Zero, S2, 0x10), // ring line 4: bit 4 of 0xBC300050 cleared, then set
+            AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, 1 << 4),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S2, 0x10),
+            AllegrexAsm.Halt, // 28
             AllegrexAsm.Beq(AllegrexAsm.Zero, AllegrexAsm.Zero, -2),
             AllegrexAsm.Nop,
         ];
         uint[] handler =
         [
-            AllegrexAsm.Lw(AllegrexAsm.K0, S2, 0x100), // the lines pending for the core
+            AllegrexAsm.Lw(AllegrexAsm.K0, S2, 0), // the lines pending for the core
             Andi(AllegrexAsm.K1, AllegrexAsm.K0, 1 << 4),
             AllegrexAsm.Beq(AllegrexAsm.K1, AllegrexAsm.Zero, 3),
             AllegrexAsm.Nop,
-            AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, 1),
-            AllegrexAsm.Sw(AllegrexAsm.T0, S2, 0x80 + 4 * 4), // acknowledge line 4
+            AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, 1 << 4),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S2, 4), // acknowledge line 4
             Andi(AllegrexAsm.K1, AllegrexAsm.K0, 1 << 7), // 6
-            AllegrexAsm.Beq(AllegrexAsm.K1, AllegrexAsm.Zero, 16),
+            AllegrexAsm.Beq(AllegrexAsm.K1, AllegrexAsm.Zero, 18),
             AllegrexAsm.Nop,
-            AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, 1),
-            AllegrexAsm.Sw(AllegrexAsm.T0, S2, 0x80 + 7 * 4), // acknowledge line 7
+            AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, 1 << 7),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S2, 4), // acknowledge line 7
             AllegrexAsm.Lw(AllegrexAsm.T1, S1, 0x840),
             AllegrexAsm.Sw(AllegrexAsm.T1, S4, 0),
             AllegrexAsm.Lw(AllegrexAsm.T1, S1, 0x844),
@@ -372,13 +404,14 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
             AllegrexAsm.Sw(AllegrexAsm.T1, S4, 0x10),
             AllegrexAsm.Lw(AllegrexAsm.T1, S1, 0x854),
             AllegrexAsm.Sw(AllegrexAsm.T1, S4, 0x14),
-            AllegrexAsm.Sw(AllegrexAsm.T0, S2, 7 * 4), // ring line 7 to the ARM: the answer interrupt
-            AllegrexAsm.Lui(AllegrexAsm.K1, 0x0200), // 24
+            AllegrexAsm.Sw(AllegrexAsm.Zero, S2, 0x10), // ring line 7 to the ARM: the answer interrupt
+            AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, 1 << 7),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S2, 0x10),
+            AllegrexAsm.Lui(AllegrexAsm.K1, 0x0200), // 26
             And(AllegrexAsm.K1, AllegrexAsm.K0, AllegrexAsm.K1),
-            AllegrexAsm.Beq(AllegrexAsm.K1, AllegrexAsm.Zero, 16),
+            AllegrexAsm.Beq(AllegrexAsm.K1, AllegrexAsm.Zero, 15),
             AllegrexAsm.Nop,
-            AllegrexAsm.Addiu(AllegrexAsm.T0, AllegrexAsm.Zero, 1),
-            AllegrexAsm.Sw(AllegrexAsm.T0, S2, 0x80 + 0x19 * 4), // acknowledge line 0x19
+            AllegrexAsm.Sw(AllegrexAsm.K1, S2, 4), // acknowledge line 0x19
             AllegrexAsm.Lw(AllegrexAsm.T1, S1, 0x8C0 + 9 * 8),
             AllegrexAsm.Sw(AllegrexAsm.T1, S4, 0x18), // virtual interrupt 9's slot
             AllegrexAsm.Sw(AllegrexAsm.Zero, S1, 0x8C0 + 9 * 8),
@@ -392,7 +425,7 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
             AllegrexAsm.Sw(AllegrexAsm.T1, S4, 0x28),
             AllegrexAsm.Addiu(AllegrexAsm.T1, AllegrexAsm.Zero, 9),
             AllegrexAsm.Sw(AllegrexAsm.T1, S4, 0x2C), // done
-            AllegrexAsm.Eret, // 43
+            AllegrexAsm.Eret, // 44
         ];
         byte[] image = new byte[0x2000];
         for (int i = 0; i < main.Length; i++)
@@ -518,7 +551,7 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
     private sealed class ScriptedBootCore : ICompatCore
     {
         public const uint RequestAddress = 0x88100000, RequestCommand = 0x1234;
-        private const uint Handshake = 0x8BD78000, Mailbox = 0xBC500000, Sram = 0xBFC00000;
+        private const uint Handshake = 0x8BD78000, Mailbox = 0xBC300040, Sram = 0xBFC00000;
 
         private int _state;
         private bool _lineHigh;
@@ -591,7 +624,8 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
                     Bus.Write32(RequestAddress, RequestCommand);
                     Bus.Write32(Sram + 0x800, 3u << 16);
                     Bus.Write32(Sram + 0x804, RequestAddress);
-                    Bus.Write32(Mailbox + 4 * 4, 1);
+                    Bus.Write32(Mailbox + 0x10, 0);
+                    Bus.Write32(Mailbox + 0x10, 1u << 4);
                     _state = 3;
                     return 100;
                 default:
@@ -601,12 +635,12 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
 
         private int Serve()
         {
-            uint pending = _lineHigh ? Bus.Read32(Mailbox + 0x100) : 0;
+            uint pending = _lineHigh ? Bus.Read32(Mailbox) : 0;
             for (int line = 0; line < 32; line++)
             {
                 if ((pending & (1u << line)) != 0)
                 {
-                    Bus.Write32(Mailbox + 0x80 + (uint)line * 4, 1);
+                    Bus.Write32(Mailbox + 4, 1u << line);
                     Take(line);
                 }
             }
@@ -631,7 +665,8 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
                 }
 
                 Answer = answer;
-                Bus.Write32(Mailbox + 7 * 4, 1);
+                Bus.Write32(Mailbox + 0x10, 0);
+                Bus.Write32(Mailbox + 0x10, 1u << 7);
                 _state = 4;
             }
             else if (line == 0x19 && _state == 5 && Bus.Read32(Sram + 0x8C0 + 9 * 8) == 1)
