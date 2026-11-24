@@ -189,22 +189,7 @@ public sealed partial class AppMgr
             return ERR_PARAM;
         }
 
-        string guestPath = GuestMemory.ReadCString(path, 0x400);
-        string? host = Emu.Vfs.Resolve(guestPath);
-        if (host == null || !File.Exists(host) || Path.GetDirectoryName(host) is not { } directory)
-        {
-            return unchecked((int)0x80800006);
-        }
-
-        try
-        {
-            Emulator app = Emu.SpawnProcess(directory, Path.GetFileName(host), [], background: true);
-            return app.AppId;
-        }
-        catch (ProcessLoadException e)
-        {
-            return e.Error;
-        }
+        return LaunchAtPath(GuestMemory.ReadCString(path, 0x400), []);
     }
 }
 

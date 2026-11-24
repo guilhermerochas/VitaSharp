@@ -330,11 +330,102 @@ public sealed partial class AppMgr
     /// <summary>The kernel's program authority (SceSysmem's system root data).</summary>
     const ulong KernelAuthorityId = 0x2808000000000001UL;
 
-    /// <summary>NID_504023C8(...): the PSP emulator's launch: only from the shell (0x8080201C).</summary>
-    [Hle(Nid = 0x504023C8, Library = "SceAppMgrForDriver", Default = true)]
-    int ksceAppMgr_504023C8(uint path, uint first, uint second, uint third)
+    /// <summary>
+    /// NID_504023C8(path, title ID, args, ?, flags, ?, argument list, launch parameters): the kernel's general launch
+    /// of an application at a path (SceAppMgr 3.74 0x8100d25c), with no caller check of its own:
+    /// <list type="bullet">
+    /// <item>the argument list (NULL-terminated pointers to strings) is copied, each string with its terminator, into
+    /// one 0x400-byte block: a string that fills the rest of it 0x8001005B; a list that runs past it
+    /// stops the system in the firmware (here 0x8001005B too);</item>
+    /// <item>a path in "app0:" is the calling application's: without one 0x8080201C; it is read in that application's
+    /// own app0;</item>
+    /// <item>then the launch of the rest of the module (<see cref="LaunchAtPath"/>): a path that names no program
+    /// 0x80800006; the new application's id, the program getting the argument block.</item>
+    /// </list>
+    /// </summary>
+    [Hle(Nid = 0x504023C8, Library = "SceAppMgrForDriver", Cost = HleCost.SchedulerWait)]
+    int ksceAppMgr_504023C8(uint path, uint titleId, uint args, uint fourth, uint flags, uint sixth, uint argumentList, uint launchParam)
     {
-        return Emu.IsShell ? unchecked((int)0x80800007) : unchecked((int)0x8080201C);
+        if (path == 0)
+        {
+            return ERR_NULL_POINTER;
+        }
+
+        int copied = ReadArgumentList(argumentList, out string[] arguments);
+        if (copied < 0)
+        {
+            return copied;
+        }
+
+        string guestPath = GuestMemory.ReadCString(path, 0x400);
+        if (guestPath.StartsWith("app0:", StringComparison.Ordinal)
+            && (GuestThread.Current is not { KernelMode: false } thread || KernelSpace.ProcessOf(Emu, thread.Pid) == null))
+        {
+            return unchecked((int)0x8080201C);
+        }
+
+        return LaunchAtPath(guestPath, arguments);
+    }
+
+    /// <summary>The size of the block an argument list is copied into (NID_504023C8).</summary>
+    internal const int ArgumentBlockSize = 0x400;
+
+    /// <summary>
+    /// The argument list of NID_504023C8 (NULL-terminated pointers to strings; 0: none): the strings in order, or
+    /// 0x8001005B when they do not fit one <see cref="ArgumentBlockSize"/>-byte block with their terminators (a string
+    /// that fills the rest of the block). The bytes used.
+    /// </summary>
+    internal static int ReadArgumentList(uint list, out string[] arguments)
+    {
+        var strings = new List<string>();
+        int used = 0;
+        for (uint entry = list; list != 0; entry += 4)
+        {
+            uint text = GuestMemory.R32(entry);
+            if (text == 0)
+            {
+                break;
+            }
+
+            int room = ArgumentBlockSize - used;
+            string value = GuestMemory.ReadCString(text, room);
+            if (value.Length >= room)
+            {
+                arguments = [];
+                return ArgumentsTooLong;
+            }
+
+            strings.Add(value);
+            used += value.Length + 1;
+        }
+
+        arguments = [.. strings];
+        return used;
+    }
+
+    /// <summary>The kernel's copy of a user string that fills its whole buffer (0x8001005B).</summary>
+    const int ArgumentsTooLong = unchecked((int)0x8001005B);
+
+    /// <summary>Starts the program at <paramref name="guestPath"/> (read in this process's file system) as a process
+    /// of its own with <paramref name="arguments"/>: a path that names no program 0x80800006; the new application's
+    /// id.</summary>
+    int LaunchAtPath(string guestPath, string[] arguments)
+    {
+        string? host = Emu.Vfs.Resolve(guestPath);
+        if (host == null || !File.Exists(host) || Path.GetDirectoryName(host) is not { } directory)
+        {
+            return unchecked((int)0x80800006);
+        }
+
+        try
+        {
+            Emulator app = Emu.SpawnProcess(directory, Path.GetFileName(host), arguments, background: true);
+            return app.AppId;
+        }
+        catch (ProcessLoadException e)
+        {
+            return e.Error;
+        }
     }
 
     /// <summary>NID_3B4F305B(?, out): the module's lock state: none held, 0.</summary>

@@ -131,6 +131,57 @@ public sealed class AppMgrKernelTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(unchecked((int)0x80802012), Call(Manager, "sceAppMgrUmount", mountPoint));
     }
 
+    /// <summary>NID_504023C8 is the kernel's general launch at a path (SceAppMgr 3.74 0x8100d25c), with no caller
+    /// check of its own: a path that names no program 0x80800006 from any caller (the shell, an application, the
+    /// kernel); an "app0:" path needs a calling application (0x8080201C from a kernel thread); an argument list that
+    /// does not fit its 0x400-byte block 0x8001005B. It answered 0x8080201C to every caller but the shell, and 0x80800007
+    /// to the shell.</summary>
+    [Fact]
+    public void TheGeneralLaunchTakesAPathAnArgumentListAndTheCallersApp0()
+    {
+        uint missing = _harness.Str("ux0:app/NONE00000/eboot.bin");
+        uint inApp0 = _harness.Str("app0:sce_module/none.self");
+        uint list = _harness.Alloc(16);
+        GuestMemory.W32(list, _harness.Str("-a"));
+        GuestMemory.W32(list + 4, _harness.Str("second"));
+        GuestMemory.W32(list + 8, 0);
+        Assert.Equal(unchecked((int)0x80802016), Call(Manager, "ksceAppMgr_504023C8", 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u));
+        Assert.Equal(unchecked((int)0x80800006), Call(Manager, "ksceAppMgr_504023C8", missing, 0u, 0u, 0u, 0u, 0u, list, 0u));
+        _harness.OnGuest(t =>
+        {
+            Assert.Equal(unchecked((int)0x80800006), Call(Manager, "ksceAppMgr_504023C8", inApp0, 0u, 0u, 0u, 0u, 0u, 0u, 0u));
+            t.KernelMode = true;
+            try
+            {
+                Assert.Equal(unchecked((int)0x8080201C), Call(Manager, "ksceAppMgr_504023C8", inApp0, 0u, 0u, 0u, 0u, 0u, 0u, 0u));
+                Assert.Equal(unchecked((int)0x80800006), Call(Manager, "ksceAppMgr_504023C8", missing, 0u, 0u, 0u, 0u, 0u, 0u, 0u));
+            }
+            finally
+            {
+                t.KernelMode = false;
+            }
+        });
+
+        // the argument list: the strings in order, each with its terminator, in one 0x400-byte block
+        Assert.Equal(10, AppMgr.ReadArgumentList(list, out string[] arguments));
+        Assert.Equal(["-a", "second"], arguments);
+        Assert.Equal(0, AppMgr.ReadArgumentList(0, out string[] none));
+        Assert.Empty(none);
+        uint full = _harness.Alloc(16);
+        GuestMemory.W32(full, _harness.Str(new string('x', 0x3FF)));
+        GuestMemory.W32(full + 4, 0);
+        Assert.Equal(0x400, AppMgr.ReadArgumentList(full, out _));
+        GuestMemory.W32(full + 4, _harness.Str("y"));
+        GuestMemory.W32(full + 8, 0);
+        Assert.Equal(unchecked((int)0x8001005B), AppMgr.ReadArgumentList(full, out _));
+        uint tooLong = _harness.Str(new string('x', 0x400));
+        GuestMemory.W32(full, tooLong);
+        Assert.Equal(unchecked((int)0x8001005B), AppMgr.ReadArgumentList(full, out _));
+        GuestMemory.W32(list + 8, tooLong);
+        GuestMemory.W32(list + 12, 0);
+        Assert.Equal(unchecked((int)0x8001005B), Call(Manager, "ksceAppMgr_504023C8", missing, 0u, 0u, 0u, 0u, 0u, list, 0u));
+    }
+
     [Fact]
     public void ProcessCallsNeedARunningApplication()
     {

@@ -2193,10 +2193,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   +0x40 & máscara e +0x44 == 0, envia o aviso e marca +0x44: precisa desses campos no objeto de arquivo);
   SceCoredumpForDriver NID_A7D214A7 / NID_D064F6DC / NID_EF20949F (validação do pedido e a fila do thread de dump,
   escrever o .psp2dmp do processo); SceAppMgrForDriver 6 (1B6C2FED/C4924946 caminho de lançamento de debug atrás de
-  ksceSblACMgrIsDevelopmentMode; 1574E1A4 montagem por id 0x6A/0x6B/0xCD/600/900; 504023C8: no SceAppMgr 3.74 é o
-  lançamento geral de um aplicativo pelo kernel (8 argumentos: caminho, parâmetros de lançamento, montagens, o
-  processo pai), não só o do emulador de PSP; o HLE só devolve 0x80800007/0x8080201C; 324DD34E e E8DB7942 feitos em
-  23/11/2026, fix/quick3, em "Corrigido, falta o usuário testar");
+  ksceSblACMgrIsDevelopmentMode; 1574E1A4 montagem por id 0x6A/0x6B/0xCD/600/900; 324DD34E, E8DB7942 e 504023C8
+  feitos em 23/11/2026, fix/quick3, em "Corrigido, falta o usuário testar");
   SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver 14
   (layout dos objetos da libult na memória do processo).
   Entrega movida para "Corrigido, falta o usuário testar" (reboot do sistema, kernN, 22/11/2026); o resto segue aberto aqui.
@@ -3190,6 +3188,19 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (23/11/2026, falta testar) [P3][P] SceAppMgrForDriver NID_504023C8, o lançamento geral de um aplicativo pelo
+  kernel (fix/quick3): no SceAppMgr 3.74 (0x8100d25c, estudo) ele não confere quem chama; copia a lista de argumentos
+  (ponteiros para strings terminada em NULL) para um bloco de 0x400 bytes, cada string com o terminador (uma que
+  enche o resto do bloco: 0x8001005B); um caminho em "app0:" é o do aplicativo que chama (sem ele, 0x8080201C) e vira
+  "<pasta do aplicativo>/<resto>"; depois segue o lançamento do resto do módulo. O HLE dava 0x8080201C a todos menos o
+  shell e 0x80800007 ao shell. Agora: os mesmos passos, e o lançamento é o mesmo do `ksceAppMgrLaunchAppByPath`
+  (`LaunchAtPath`: caminho sem programa 0x80800006; o processo novo recebe os argumentos), sem nenhuma verificação de
+  licença própria. O que não entra: o tipo 2 de aplicativo que chama (0x8080201E) e os campos do bloco de parâmetros
+  de lançamento que o motor do appmgr lê, que o modelo de processos do VitaSharp não tem. Teste:
+  `AppMgrKernelTests.TheGeneralLaunchTakesAPathAnArgumentListAndTheCallersApp0` (falha sem a correção). Testar: nada a
+  ver na tela sem um módulo de kernel que chame; um que lance um aplicativo por caminho com argumentos abre o
+  aplicativo.
 
 - [ ] (23/11/2026, falta testar) [P3][P] O objeto de processo do kernel sem a autoridade do kernel (fix/quick3): o
   processmgr 3.74 monta o objeto do processo do kernel (0x10005) no início com o tipo 0x5000000, o SceSelfAuthInfo
