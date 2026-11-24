@@ -49,8 +49,11 @@ public sealed class CompatLcdDma(IAllegrexBus source, PspLcdc lcdc)
     /// <summary>A frame was copied: the ARM's IRQ 0x4A. On the thread that moves the PSP hardware.</summary>
     public Action? FrameDone { get; set; }
 
-    /// <summary>The picture's memory is about to be read (address, bytes): the GE writes back what it drew there first.
-    /// On the thread that moves the PSP hardware (the GE's).</summary>
+    /// <summary>
+    /// Called right before the engine reads the PSP picture, with its PSP physical address and its size in bytes (the
+    /// stride times the lines): whoever keeps PSP memory elsewhere (the GE's render target on the host GPU) writes it
+    /// back to PSP memory here. On the thread that moves the PSP hardware.
+    /// </summary>
     public Action<uint, int>? BeforeRead { get; set; }
 
     /// <summary>sceCompatStart's destination side: the block (Vita address), its size and pitch.</summary>
@@ -85,7 +88,7 @@ public sealed class CompatLcdDma(IAllegrexBus source, PspLcdc lcdc)
         int bytesPerPixel = lcdc.PixelFormat == 3 ? 4 : 2;
         int stride = (int)(lcdc.Stride != 0 ? lcdc.Stride : lcdc.Width);
         int width = _width;
-        BeforeRead?.Invoke(lcdc.FramebufferAddress, (_height - 1) * stride * bytesPerPixel + width * bytesPerPixel);
+        BeforeRead?.Invoke(lcdc.FramebufferAddress, stride * bytesPerPixel * _height);
         var spans = source as IGeMemory;
         for (int row = 0; row < _height; row++)
         {
