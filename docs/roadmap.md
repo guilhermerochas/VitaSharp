@@ -3183,6 +3183,18 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (23/11/2026, falta testar) [P1][M] Pedidos assíncronos de E/S com caminho chamam o hook do ksceVopLookup
+  (fix/hookfn2): no Vita o sceIoOpenAsync (e Dopen/Getstat/Remove/Rename/Mkdir/Rmdir/Chstat Async) roda na thread de
+  kernel do iofilemgr (SceIoScheduler), que percorre o caminho pelo vfs como a chamada síncrona; aqui o escalonador de
+  E/S rodava o pedido numa thread do host, fora de uma thread do guest, e o hook nunca era chamado. Agora, quando um hook
+  pegou o ksceVopLookup (conferido na hora em que o pedido roda), o pedido com caminho roda numa thread de kernel
+  "SceIoScheduler" do processo de kernel, no contexto do processo que o enviou (dispositivos, memória), e a resposta do
+  hook é o resultado do pedido; sem hook nada muda. Teste: `IoVopLookupHookTests`
+  (`AnAsynchronousRequestWalksItsPathThroughTheHookOnAKernelThread`, `AnErrorTheHookAnswersIsTheAsynchronousRequestsResult`,
+  `WithoutAHookAnAsynchronousOpenWalksNothing`). Testar: com "Ativar Plugins do Kernel" e o fd_fix ligados, abrir um jogo
+  que carrega com E/S assíncrona (ex.: um título PSM ou o shell); o resumo do fim do `last.log` para o hook
+  `ksceVopLookup` conta também as chamadas da thread `SceIoScheduler`, e o jogo roda igual.
+
 - [ ] (23/11/2026, falta testar) [P1][M] Hook de kernel no ksceVopLookup vê toda abertura nos dispositivos do emulador
   (fix/hookfn1): no Vita o iofilemgr 3.74 percorre cada caminho elemento por elemento com o ksceVopLookup (0x81004bb8)
   em toda abertura, e um hook nele (fd_fix) vê tudo; aqui só os mounts de drivers do guest eram percorridos e as

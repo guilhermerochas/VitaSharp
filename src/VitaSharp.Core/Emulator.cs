@@ -757,8 +757,9 @@ public sealed partial class Emulator : IDisposable
 
     /// <summary>Runs <paramref name="body"/> on a new kernel thread <paramref name="threadName"/> of the kernel process
     /// <paramref name="kernel"/> (where processmgr runs its calls into other kernel modules) and waits for it; the
-    /// thread goes once it returned. <paramref name="what"/> names the call in the warning when it does not return.</summary>
-    private void RunOnKernelThread(Emulator kernel, string threadName, Action<GuestThread> body, string what)
+    /// thread goes once it returned. <paramref name="what"/> names the call in the warning when it does not return.
+    /// Returns whether it returned.</summary>
+    internal bool RunOnKernelThread(Emulator kernel, string threadName, Action<GuestThread> body, string what)
     {
         using (ProcessScope.Enter(kernel))
         {
@@ -780,6 +781,8 @@ public sealed partial class Emulator : IDisposable
             {
                 Log.Warn($"{Describe()}: {what} did not return in time");
             }
+
+            return finished;
         }
     }
 

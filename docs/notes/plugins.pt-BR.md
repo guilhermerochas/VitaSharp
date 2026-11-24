@@ -290,7 +290,11 @@ ux0:, app0: e os outros dispositivos são pastas do host; quando um hook pegou o
 usuário e o ksceIoOpen), sceIoDopen e sceIoGetstat percorrem o caminho pela entrada da função sobre os vnodes do host
 (`IoFileMgr.VfsHost.cs`): o hook recebe cada elemento e o que ele responde vale (um erro falha a chamada, outro vnode a
 leva ao caminho dele, uma abertura que cria continua criando). Sem esse hook nada é percorrido nem alocado
-(`IoVopLookupHookTests`).
+(`IoVopLookupHookTests`). As formas assíncronas (sceIoOpenAsync, sceIoDopenAsync, sceIoGetstatAsync e os outros pedidos
+com caminho) rodam no Vita na thread de kernel do próprio iofilemgr (SceIoScheduler), que percorre o caminho do mesmo
+jeito: com esse hook o escalonador de E/S roda o pedido com caminho numa thread de kernel com esse nome, no contexto do
+processo que o enviou, então o hook é chamado para ele e a resposta dele é o resultado do pedido; sem hook o pedido
+continua na thread do host do escalonador.
 
 ### A criação do processo no lançamento
 

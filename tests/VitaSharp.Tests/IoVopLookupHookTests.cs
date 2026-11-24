@@ -1,5 +1,6 @@
 using System.Text;
 using VitaSharp.Core.Hle.Modules;
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Loader;
 using VitaSharp.Core.Memory;
 using Xunit;
@@ -25,6 +26,9 @@ public sealed class IoVopLookupHookTests(GuestMemoryFixture fixture) : IDisposab
 
     private readonly HleHarness _h = new(fixture, "vop-lookup-hook");
     private readonly List<string> _elements = [];
+
+    /// <summary>The thread each hook call ran on: its name and whether it is a kernel thread.</summary>
+    private readonly List<(string Name, bool Kernel)> _threads = [];
     private Func<uint, uint, uint, uint, int?>? _answer;
 
     public void Dispose()
@@ -67,6 +71,8 @@ public sealed class IoVopLookupHookTests(GuestMemoryFixture fixture) : IDisposab
             uint path = context.Gpr(2);
             uint flags = context.Gpr(3);
             _elements.Add(Element(path));
+            GuestThread? caller = GuestThread.Current;
+            _threads.Add((caller?.Name ?? "host", caller?.KernelMode ?? false));
             int? answer = _answer?.Invoke(vnode, vpp, path, flags);
             context.Return(answer ?? Call(Io, "ksceVopLookup", vnode, vpp, path, flags));
         }), 0);
@@ -179,5 +185,96 @@ public sealed class IoVopLookupHookTests(GuestMemoryFixture fixture) : IDisposab
             _answer = null;
         });
         Assert.Equal(Encoding.ASCII.GetBytes("file a"), File.ReadAllBytes(Data(Path.Combine("sub", "a.txt"))));
+    }
+
+    /// <summary>
+    /// An asynchronous open, directory open and stat walk the path too: on the Vita the request runs on iofilemgr's
+    /// kernel thread (SceIoScheduler), which walks the vfs as the synchronous call does. Before, the I/O scheduler ran
+    /// them on a host thread and the hook was never called. The hook runs on a kernel thread named as the firmware's,
+    /// not on the submitting thread, and the request's result is what the walk and the call answer.
+    /// </summary>
+    [Fact]
+    public void AnAsynchronousRequestWalksItsPathThroughTheHookOnAKernelThread()
+    {
+        Files();
+        Hook(LoadFirmwareIofilemgr());
+        uint param = _h.Alloc(0x18);
+        uint stat = _h.Alloc(0x58);
+        int open = 0;
+        int dopen = 0;
+        int getstat = 0;
+        _h.OnGuest(_ =>
+        {
+            open = Call(Io, "sceIoOpenAsync", "ux0:data/hfn/sub/a.txt", ORdOnly, 0, param);
+            dopen = Call(Io, "sceIoDopenAsync", "ux0:data/hfn/sub", 0u);
+            getstat = Call(Io, "sceIoGetstatAsync", "ux0:data/hfn/sub/b.txt", stat, 0u);
+        }, "io-async-submitter");
+        Assert.True(open > 0 && dopen > 0 && getstat > 0, $"submit 0x{open:X8} 0x{dopen:X8} 0x{getstat:X8}");
+        Io.WaitForAsyncHostWork();
+
+        Assert.Equal(["data", "hfn", "sub", "a.txt", "data", "hfn", "sub", "data", "hfn", "sub", "b.txt"], _elements);
+        Assert.All(_threads, thread => Assert.Equal(("SceIoScheduler", true), thread));
+        int fd = 0;
+        int dir = 0;
+        int statResult = -1;
+        _h.OnGuest(_ =>
+        {
+            fd = Call(Io, "sceIoComplete", open);
+            dir = Call(Io, "sceIoComplete", dopen);
+            statResult = Call(Io, "sceIoComplete", getstat);
+        });
+        Assert.True(fd > 0, $"async open 0x{fd:X8}");
+        Assert.Equal(fd, (int)GuestMemory.Read<long>(param));
+        Assert.True(dir > 0, $"async dopen 0x{dir:X8}");
+        Assert.Equal(0, statResult);
+        Assert.Equal(6L, GuestMemory.Read<long>(stat + 8));
+        _h.OnGuest(_ =>
+        {
+            Assert.Equal("file a", ReadAll(fd));
+            Assert.Equal(0, Io.sceIoClose(fd));
+            Assert.Equal(0, Io.sceIoDclose(dir));
+        });
+    }
+
+    /// <summary>What the hook answers on the request's kernel thread is the request's result: an error fails the
+    /// asynchronous open with it (sceIoComplete and the SceIoAsyncParam), as it fails the synchronous one.</summary>
+    [Fact]
+    public void AnErrorTheHookAnswersIsTheAsynchronousRequestsResult()
+    {
+        Files();
+        Hook(LoadFirmwareIofilemgr());
+        _answer = (_, _, path, _) => Element(path) == "a.txt" ? Access : null;
+        uint param = _h.Alloc(0x18);
+        int open = 0;
+        _h.OnGuest(_ => open = Call(Io, "sceIoOpenAsync", "ux0:data/hfn/sub/a.txt", ORdOnly, 0, param));
+        Assert.True(open > 0, $"submit 0x{open:X8}");
+        Io.WaitForAsyncHostWork();
+
+        int result = 0;
+        _h.OnGuest(_ => result = Call(Io, "sceIoComplete", open));
+        Assert.Equal(Access, result);
+        Assert.Equal(Access, (int)GuestMemory.Read<long>(param));
+        Assert.Equal(["data", "hfn", "sub", "a.txt"], _elements);
+        _answer = null;
+    }
+
+    /// <summary>Without a hook an asynchronous request walks nothing and no kernel thread is made for it.</summary>
+    [Fact]
+    public void WithoutAHookAnAsynchronousOpenWalksNothing()
+    {
+        Files();
+        LoadFirmwareIofilemgr();
+        uint param = _h.Alloc(0x18);
+        int open = 0;
+        _h.OnGuest(_ => open = Call(Io, "sceIoOpenAsync", "ux0:data/hfn/sub/a.txt", ORdOnly, 0, param));
+        Io.WaitForAsyncHostWork();
+        int fd = 0;
+        _h.OnGuest(_ =>
+        {
+            fd = Call(Io, "sceIoComplete", open);
+            Assert.Equal(0, Io.sceIoClose(fd));
+        });
+        Assert.True(fd > 0, $"async open 0x{fd:X8}");
+        Assert.Empty(_elements);
     }
 }

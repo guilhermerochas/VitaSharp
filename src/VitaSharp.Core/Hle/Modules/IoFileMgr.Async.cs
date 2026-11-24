@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
+using VitaSharp.Core.SaveState;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Hle.Modules;
@@ -42,6 +43,9 @@ public sealed class IoAsyncOp : EventObject
 
     /// <summary>The request's work (the synchronous call), run by the I/O scheduler; null once it ran.</summary>
     internal Func<long>? Request;
+
+    /// <summary>Where the I/O scheduler runs <see cref="Request"/> (null: on its own host thread).</summary>
+    internal IoScheduler.RequestRunner? Runner;
 
     /// <summary>The SceIoAsyncParam the result goes to on completion (0: none).</summary>
     internal uint Param;
@@ -161,8 +165,49 @@ public sealed partial class IoFileMgr
         }
 
         request.Request = op;
+        if (path != null || otherPath != null)
+        {
+            request.Runner = _runPathRequest ??= RunPathRequest;
+        }
+
         AsyncScheduler.Enqueue(request);
         return uid;
+    }
+
+    /// <summary>The cached <see cref="RunPathRequest"/> delegate (no allocation per request).</summary>
+    [SnapshotIgnore]
+    IoScheduler.RequestRunner? _runPathRequest;
+
+    /// <summary>
+    /// A request that names a path, as the I/O scheduler runs it. On the Vita the request runs on iofilemgr's own
+    /// kernel thread (the "SceIoScheduler" of 3.74, study only), which walks the path through the vfs as the
+    /// synchronous call does, one ksceVopLookup per element, for the process that submitted it. The emulator's devices
+    /// answer without the walk, so the request runs on the scheduler's host thread; only when a hook took ksceVopLookup
+    /// (<see cref="HostWalk"/>), checked when the request runs, it runs on a kernel thread named as the firmware's, in
+    /// the submitting process's context (its devices, its host vnodes and their ops, its address space; VitaSharp runs
+    /// kernel code on the threads of every process), so the hook is called for it as for a synchronous call and its
+    /// answer is the request's. The device time is the request's either way.
+    /// </summary>
+    long RunPathRequest(Func<long> work, long from, out long deviceDone)
+    {
+        if (!HleEntryCalls.IsHooked(this, s_hleEntry_ksceVopLookup) || Emu is not { } emu)
+        {
+            return IoScheduler.Execute(work, from, out deviceDone);
+        }
+
+        AddressSpace? space = AddressSpace.Current;
+        long result = SceError.IO_EINVAL;
+        long done = from;
+        // a kernel thread in the submitting process's context: its devices, its host vnodes and their ops, its memory
+        emu.RunOnKernelThread(emu, "SceIoScheduler", _ =>
+        {
+            using (AddressSpace.Use(space))
+            {
+                result = IoScheduler.Execute(work, from, out done);
+            }
+        }, "an asynchronous I/O request");
+        deviceDone = done;
+        return result;
     }
 
     /// <summary>Tests: waits until the I/O scheduler has done the host work of every queued request (their completion

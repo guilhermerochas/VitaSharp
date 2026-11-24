@@ -281,6 +281,10 @@ devices are host folders; when a hook took ksceVopLookup, sceIoOpen (the user's 
 sceIoGetstat walk the path through the function's entry over the host vnodes (`IoFileMgr.VfsHost.cs`): the hook gets each
 element, and what it answers counts (an error fails the call, another vnode sends it to that vnode's path, an open that
 creates still creates). Without such a hook nothing is walked and nothing is allocated (`IoVopLookupHookTests`).
+The asynchronous forms (sceIoOpenAsync, sceIoDopenAsync, sceIoGetstatAsync and the other path requests) run on
+iofilemgr's own kernel thread on the Vita (SceIoScheduler), which walks the path the same way: with such a hook the
+I/O scheduler runs a path request on a kernel thread of that name, in the submitting process's context, so the hook is
+called for it and its answer is the request's result; without one the request stays on the scheduler's host thread.
 
 ### The launch's process creation
 
