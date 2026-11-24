@@ -22,7 +22,7 @@ public sealed partial class GeEngine
     /// <summary>The PSP's physical space: a load drops the rasterizer's copies of all of it.</summary>
     private const int PhysicalSpaceBytes = 0x20000000;
 
-    void SaveExtra(SnapshotWriter w)
+    private void SaveExtra(SnapshotWriter w)
     {
         Rasterizer?.Flush(_memory);
         (float u, float v, Vector3 normal) = _transformer?.Carry ?? default;
@@ -33,7 +33,7 @@ public sealed partial class GeEngine
         w.Write(normal.Z);
     }
 
-    void LoadExtra(SnapshotReader r)
+    private void LoadExtra(SnapshotReader r)
     {
         float u = r.ReadSingle();
         float v = r.ReadSingle();

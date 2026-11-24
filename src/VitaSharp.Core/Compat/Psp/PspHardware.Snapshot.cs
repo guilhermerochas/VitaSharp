@@ -11,7 +11,7 @@ namespace VitaSharp.Core.Compat.Psp;
 [GenerateSnapshot, SnapshotIgnoreFields("_devices", "_timed", "Interrupts", "Ge", "Display", "Lcdc")]
 public sealed partial class PspHardware
 {
-    void SaveExtra(SnapshotWriter w)
+    private void SaveExtra(SnapshotWriter w)
     {
         IPspMmioDevice[] devices = _devices;
         int count = 0;
@@ -36,7 +36,7 @@ public sealed partial class PspHardware
         w.Write(Ge);
     }
 
-    void LoadExtra(SnapshotReader r)
+    private void LoadExtra(SnapshotReader r)
     {
         int count = r.ReadInt32();
         for (int i = 0; i < count; i++)
