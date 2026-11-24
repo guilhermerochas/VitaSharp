@@ -1,10 +1,11 @@
-<!-- pair: psp-compat.md sha256=0d401fd8082e55c72183eb6e0bd860cb496dfc7bc80f7343251e3045add5b7e2 -->
+<!-- pair: psp-compat.md sha256=1bac139d10725cfd73178d7d19ca9db77e0e1f9c64911a47081133b937c2b000 -->
 # Núcleo de compatibilidade PSP (SceCompat, ScePspemu, Allegrex)
 
 *English: [psp-compat.md](psp-compat.md).*
 
 Nota de estudo e desenho para rodar títulos de PSP e PSone pelo emulador de PSP do próprio Vita (`vs0:app/NPXS10028`,
-ScePspemu) em cima do núcleo de compatibilidade de verdade, como num Vita real. Ainda sem código de produto. Fontes: o
+ScePspemu) em cima do núcleo de compatibilidade de verdade, como num Vita real.
+Código de produto até agora: o interpretador do Allegrex (abaixo). Fontes: o
 `SceCompat` do FW 3.74 (bootimage), o `NPXS10028/eboot.bin`, o `pcbc.skprx` e o `pcff.skprx` descompilados ou
 inspecionados com as ferramentas locais de RE (`%LOCALAPPDATA%\VitaSharpTools\fw374`, só estudo, nada copiado), o
 código do Adrenaline (GPL-3), as notas do VitaMips (Hykem) e o HLE atual (`src/VitaSharp.Core/Hle/Modules/Compat.cs`).
@@ -150,6 +151,24 @@ depois `sceCompatWaitSpecialRequest(1)`, e inicia as threads de pedidos.
   `loadexec`). Com o Adrenaline, os patches dele (rodando como código de terceiro, sem mudança) trocam pelo flash0
   6.61 que o instalador dele extraiu do `661.PBP` (do lado PSP, com o `libpsardumper`) em `ux0:app/PSPEMUCFW/flash0`,
   e acrescentam `systemctrl`/`inferno`/`popcorn`.
+
+### O interpretador do Allegrex no VitaSharp
+
+`src/VitaSharp.Core/Compat/Allegrex` (`AllegrexCore` sobre um `IAllegrexBus` que recebe endereços físicos do PSP,
+`endereço & 0x1FFFFFFF`): a ISA inteira com os acréscimos do Allegrex, delay slots e branch-likely, as exceções por
+EBase (`0xBFC00200` com Status.BEV ligado), o COP0 (Status, Cause, EPC, ErrorEPC, EBase, BadVAddr, Count, o código do
+syscall, o id da CPU, os registradores de controle de cfc0/ctc0), as linhas de interrupção Cause.IP0..IP7 (o
+controlador de interrupções do PSP é a IP2) tomadas com Status.IE ou `mtic`, o halt, e syscall/break oferecidos
+primeiro ao host. Os resultados que o MIPS32 deixa imprevisíveis seguem as notas do PPSSPP conferidas no hardware
+(pspautotests): divisão por zero, `0x80000000 / -1`, a decodificação parcial de rotr/rotrv e do grupo
+seb/seh/wsbh/wsbw/bitrev, `ins` com msb < pos, o estado de reset. Testes: `tests/VitaSharp.Tests/Allegrex*Tests.cs`.
+
+Três pontos não têm teste de hardware conhecido; o VitaSharp segue a arquitetura MIPS32, que o Allegrex implementa:
+
+- `add`, `addi` e `sub` disparam a exceção de overflow (o PPSSPP e o Jpcsp tratam como `addu`/`subu`).
+- `di`/`ei` (`mfmc0`) funcionam como no MIPS32 release 2: rt = Status, depois Status.IE = o bit sc da instrução.
+- Uma interrupção pode ser tomada com um delay slot a seguir: EPC = o branch, Cause.BD ligado (o PPSSPP só confere
+  fora do slot).
 
 ### O que exige chaves e o que não exige
 
