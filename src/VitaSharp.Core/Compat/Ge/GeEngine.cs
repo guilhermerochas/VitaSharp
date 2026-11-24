@@ -452,11 +452,14 @@ public sealed partial class GeEngine
                 DrawPrimitive((int)((argument >> 16) & 7), (int)(argument & 0xFFFF));
                 return true;
             case GeCommand.Bezier:
+                DrawPatch(argument, false);
+                return true;
             case GeCommand.Spline:
-                Log.WarnOnce("ge-patches", "GE: Bezier/spline patches are not drawn yet");
+                DrawPatch(argument, true);
                 return true;
             case GeCommand.BoundingBox:
-                _branchFalse = false; // every box is taken as visible: BJUMP never branches
+                // BJUMP branches when the box is not visible
+                _branchFalse = !TestBoundingBox((int)(argument & 0xFFFF));
                 return true;
             case GeCommand.Jump:
                 lock (_lock)
@@ -632,6 +635,40 @@ public sealed partial class GeEngine
             _vertexAddress = (_vertexAddress + (uint)(count * format.Size)) & AddressMask;
         }
     }
+
+    /// <summary>BEZIER / SPLINE: a patch of control points (GeEngine.Patches.cs), then the address moves past them.</summary>
+    private void DrawPatch(uint argument, bool spline)
+    {
+        GeVertexFormat format = new(_commands[GeCommand.VertexType]);
+        int count = (int)(argument & 0xFF) * (int)((argument >> 8) & 0xFF);
+        DrawPatchBatch(argument, spline, format);
+        AdvanceAddress(count, format);
+    }
+
+    private void AdvanceAddress(int count, GeVertexFormat format)
+    {
+        if (format.IndexSize != 0)
+        {
+            _indexAddress = (_indexAddress + (uint)(count * format.IndexSize)) & AddressMask;
+        }
+        else
+        {
+            _vertexAddress = (_vertexAddress + (uint)(count * format.Size)) & AddressMask;
+        }
+    }
+
+    /// <summary>BOUNDINGBOX: whether the box of the next <paramref name="count"/> vertices may be visible (GeEngine.Patches.cs); the address moves past them.</summary>
+    private bool TestBoundingBox(int count)
+    {
+        GeVertexFormat format = new(_commands[GeCommand.VertexType]);
+        bool visible = BoundingBoxVisible(count, format);
+        AdvanceAddress(count, format);
+        return visible;
+    }
+
+    private partial void DrawPatchBatch(uint argument, bool spline, GeVertexFormat format);
+
+    private partial bool BoundingBoxVisible(int count, GeVertexFormat format);
 
     /// <summary>Draws one batch (the rasterizer's part, next to the state).</summary>
     partial void DrawBatch(int primitive, int count, GeVertexFormat format);

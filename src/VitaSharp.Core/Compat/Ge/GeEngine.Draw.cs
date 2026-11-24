@@ -51,6 +51,12 @@ public sealed partial class GeEngine
         }
 
         DecodeVertices(count, format);
+        DrawTransformed(primitive, count, format);
+    }
+
+    /// <summary>Assembles the first <paramref name="count"/> transformed vertices and hands them to the rasterizer.</summary>
+    private void DrawTransformed(int primitive, int count, GeVertexFormat format)
+    {
         (GeTopology topology, int assembled) = Assemble(primitive, count, format);
         if (assembled == 0)
         {

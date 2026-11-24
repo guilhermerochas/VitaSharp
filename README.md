@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=5d14101e7d8f160cc2af3739ff7fec41bacdb98c52b9719dfd8383777ef1344f -->
+<!-- pair: README.pt-BR.md sha256=552c5e3c17530c3044868c06653746fe0839ac6b189215fc4c1578b238a571ed -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -512,7 +512,8 @@ NIDs, USSE register model), [VitaSDK](https://vitasdk.org/) and vita-headers, th
 (ATRAC9 decoder, MIT), [RPCN](https://github.com/RipleyTom/rpcn), [Silk.NET](https://github.com/dotnet/Silk.NET),
 [Avalonia](https://avaloniaui.net/), [FFmpeg](https://ffmpeg.org/) (LGPL, downloaded at build time) and
 [SQLite](https://sqlite.org/) (public domain) through [SQLitePCLRaw](https://github.com/ericsink/SQLitePCL.raw) (Apache-2.0),
-[PPSSPP](https://www.ppsspp.org/) (behaviour reference for the PSP CPU; its VFPU interpolator tables, GPL-2.0-or-later,
+[PPSSPP](https://www.ppsspp.org/) (behaviour reference for the PSP CPU; its VFPU interpolator tables
+and the GE's reciprocal table, GPL-2.0-or-later,
 [third_party/ppsspp](third_party/ppsspp/README.md)) and [pspautotests](https://github.com/hrydgard/pspautotests)
 (PSP hardware results used by the tests).
 
