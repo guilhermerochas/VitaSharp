@@ -16,7 +16,7 @@ public sealed partial class Gxm
 
     [Hle(Cost = HleCost.KernelEntry)]
     int _sceGxmBeginScene(uint ctx, uint flags, uint renderTarget, uint validRegion, uint vertexSync, uint fragmentSync, uint colorSurface, uint depthStencil)
-        => BeginScene(ctx, renderTarget, validRegion != 0 ? validRegion + 8 : 0, fragmentSync, colorSurface, ReadDepthSurface(depthStencil), depthValid: true);
+        => BeginScene(ctx, 0, renderTarget, validRegion != 0 ? validRegion + 8 : 0, vertexSync, fragmentSync, colorSurface, ReadDepthSurface(depthStencil), depthValid: true);
 
     [Hle] int sceGxmInitializedInternal() => _initialized ? 0 : ERR_UNINITIALIZED;
 

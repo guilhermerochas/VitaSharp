@@ -22,6 +22,7 @@ public sealed partial class Gxm : HleModule
         ERR_INVALID_ALIGNMENT = unchecked((int)0x805B0005), ERR_NOT_WITHIN_SCENE = unchecked((int)0x805B0006),
         ERR_WITHIN_SCENE = unchecked((int)0x805B0007), ERR_NULL_PROGRAM = unchecked((int)0x805B0008),
         ERR_UNSUPPORTED = unchecked((int)0x805B0009), ERR_RESERVE_FAILED = unchecked((int)0x805B000B),
+        ERR_DRIVER = unchecked((int)0x805B0017),
         // Vita3K gxm/types.h only (absent from vita-headers)
         ERR_WITHIN_COMMAND_LIST = unchecked((int)0x805B002C), ERR_NOT_WITHIN_COMMAND_LIST = unchecked((int)0x805B002D);
 
@@ -395,7 +396,8 @@ public sealed partial class Gxm : HleModule
     {
         // data may be NULL: a surface can be described first and get its memory later (sceGxmColorSurfaceSetData).
         // Zero Time Dilemma (vita_game+4294) passes a literal NULL for the surface of a strided texture and asserts
-        // (BKPT) on any error, so the firmware accepts it. Only the surface pointer itself is required.
+        // (BKPT) on any error, so the firmware accepts it. Only the surface pointer itself is required. A scene takes
+        // such a surface only once it has memory (or, before SDK 3.10, as no colour): see ColorSurfaceEnabled.
         if (surface == 0) return ERR_INVALID_POINTER;
         if (width == 0 || width > 4096 || height == 0 || height > 4096) return ERR_INVALID_VALUE;
         if ((strideInPixels & 1) != 0) return ERR_INVALID_ALIGNMENT;
@@ -475,12 +477,72 @@ public sealed partial class Gxm : HleModule
 
     [Hle] uint sceGxmColorSurfaceGetGammaMode(uint surface) => ((GuestMemory.R32(surface) >> 2) & 3) << 12;
     [Hle] uint sceGxmColorSurfaceGetData(uint surface) => GuestMemory.R32(surface + 16);
-    [Hle] int sceGxmColorSurfaceSetData(uint surface, uint data) { GuestMemory.W32(surface + 16, data); GuestMemory.W32(surface + 40, data); return 0; }
+
+    /// <summary>sceGxmColorSurfaceSetData (libgxm, FW 3.74): NULL surface SCE_GXM_ERROR_INVALID_POINTER, a disabled
+    /// one (<see cref="ColorSurfaceEnabled"/>) SCE_GXM_ERROR_UNSUPPORTED, data not 4-byte aligned
+    /// SCE_GXM_ERROR_INVALID_VALUE.</summary>
+    [Hle]
+    int sceGxmColorSurfaceSetData(uint surface, uint data)
+    {
+        if (surface == 0)
+        {
+            return ERR_INVALID_POINTER;
+        }
+
+        if (!ColorSurfaceEnabled(surface))
+        {
+            return ERR_UNSUPPORTED;
+        }
+
+        if ((data & 3) != 0)
+        {
+            return ERR_INVALID_VALUE;
+        }
+
+        GuestMemory.W32(surface + 16, data);
+        GuestMemory.W32(surface + 40, data);
+        return 0;
+    }
+
     [Hle(ReturnsValue = true)] uint sceGxmColorSurfaceGetFormat(uint surface) => GuestMemory.R32(surface + 20);
     [Hle] int sceGxmColorSurfaceSetFormat(uint surface, uint f) { GuestMemory.W32(surface + 20, f); return 0; }
     [Hle(ReturnsValue = true)] uint sceGxmColorSurfaceGetType(uint surface) => GuestMemory.R32(surface + 24);
     [Hle] uint sceGxmColorSurfaceGetStrideInPixels(uint surface) => GuestMemory.R32(surface + 12);
-    [Hle] bool sceGxmColorSurfaceIsEnabled(uint surface) => (GuestMemory.R32(surface) & 1) == 0;
+    [Hle] bool sceGxmColorSurfaceIsEnabled(uint surface) => ColorSurfaceEnabled(surface);
+
+    /// <summary>libgxm 3.74 sets bit 15 of its compatibility word for programs built with an SDK before 3.10
+    /// (sceKernelGetMainModuleSdkVersion below 0x03100000): for them a colour surface is enabled by its data address
+    /// (NULL data = disabled), and a scene takes such a surface as no colour; from 3.10 on a surface is enabled once
+    /// sceGxmColorSurfaceInit described it, and a scene refuses one with NULL data.</summary>
+    const uint ColorSurfaceEnabledByDataSdkLimit = 0x03100000;
+
+    /// <summary>Whether the colour surface is enabled for this program (<see cref="ColorSurfaceEnabledByDataSdkLimit"/>):
+    /// before SDK 3.10 its data address is not NULL; from 3.10 on sceGxmColorSurfaceInit described it (not
+    /// sceGxmColorSurfaceInitDisabled, not zeroed memory, which has no size).</summary>
+    bool ColorSurfaceEnabled(uint surface)
+    {
+        if (ColorSurfaceEnabledByData)
+        {
+            return GuestMemory.R32(surface + 16) != 0;
+        }
+
+        return (GuestMemory.R32(surface) & 1) == 0 && GuestMemory.R32(surface + 4) != 0;
+    }
+
+    bool ColorSurfaceEnabledByData => MainModuleSdkVersion() < ColorSurfaceEnabledByDataSdkLimit;
+
+    /// <summary>The SDK version the main module was built with (SceProcessParam +0xC, as
+    /// sceKernelGetMainModuleSdkVersion); the system software version (3.74) without one.</summary>
+    uint MainModuleSdkVersion()
+    {
+        uint processParam = Emu?.Linker.ProcessParam ?? 0;
+        if (processParam == 0 || GuestMemory.R32(processParam + 4) != 0x32505350)
+        {
+            return SystemMisc.SystemSwVersion;
+        }
+
+        return GuestMemory.R32(processParam + 0xC);
+    }
     [Hle] uint sceGxmColorSurfaceGetScaleMode(uint surface) => (GuestMemory.R32(surface) >> 1) & 1;
     [Hle] void sceGxmColorSurfaceSetScaleMode(uint surface, uint mode) { uint w = GuestMemory.R32(surface) & ~2u; GuestMemory.W32(surface, w | (mode != 0 ? 2u : 0)); }
     /// <summary>Dither mode (SCE_GXM_COLOR_SURFACE_DITHER_ENABLED = 8) kept in w0 bit 4 (bits 2-3 are the gamma mode).
@@ -667,9 +729,13 @@ public sealed partial class Gxm : HleModule
         c.PublishGuestState();
     }
 
+    /// <summary>Scene flags libgxm 3.74's sceGxmBeginScene and sceGxmBeginSceneEx take (bits 0-3); any other bit is
+    /// SCE_GXM_ERROR_INVALID_VALUE. The old _sceGxmBeginScene does not check them.</summary>
+    const uint SceneFlagsMask = 0xF;
+
     [Hle]
     int sceGxmBeginScene(uint ctx, uint flags, uint renderTarget, uint validRegion, uint vertexSync, uint fragmentSync, uint colorSurface, uint depthStencil)
-        => BeginScene(ctx, renderTarget, validRegion, fragmentSync, colorSurface, ReadDepthSurface(depthStencil), depthValid: true);
+        => BeginScene(ctx, flags & ~SceneFlagsMask, renderTarget, validRegion, vertexSync, fragmentSync, colorSurface, ReadDepthSurface(depthStencil), depthValid: true);
 
     /// <summary>A scene that loads its depth/stencil from one surface and stores it to another (libgxm, FW 3.74): the
     /// force-load bit and the background of the load surface, the force-store bit of the store surface
@@ -679,15 +745,49 @@ public sealed partial class Gxm : HleModule
         uint loadDepthStencil, uint storeDepthStencil)
     {
         DepthSurfaceInfo? depth = ReadDepthSurfacePair(loadDepthStencil, storeDepthStencil, out bool depthValid);
-        return BeginScene(ctx, renderTarget, validRegion, fragmentSync, colorSurface, depth, depthValid);
+        return BeginScene(ctx, flags & ~SceneFlagsMask, renderTarget, validRegion, vertexSync, fragmentSync, colorSurface, depth, depthValid);
     }
 
-    int BeginScene(uint ctx, uint renderTarget, uint validRegion, uint fragmentSync, uint colorSurface, DepthSurfaceInfo? depth, bool depthValid)
+    /// <summary>
+    /// The scene start of sceGxmBeginScene, sceGxmBeginSceneEx and the old _sceGxmBeginScene, with libgxm 3.74's checks
+    /// in its order: a NULL (here also an unknown) context is SCE_GXM_ERROR_INVALID_POINTER; a deferred context or
+    /// <paramref name="badFlags"/> (scene flags outside bits 0-3) SCE_GXM_ERROR_INVALID_VALUE; a NULL render target or
+    /// any vertex sync object (the hardware has none) SCE_GXM_ERROR_INVALID_POINTER; a context already in a scene
+    /// SCE_GXM_ERROR_WITHIN_SCENE; then the surfaces (SCE_GXM_ERROR_INVALID_VALUE), and last the render target the GPU
+    /// driver does not know (SCE_GXM_ERROR_DRIVER).
+    /// </summary>
+    int BeginScene(uint ctx, uint badFlags, uint renderTarget, uint validRegion, uint vertexSync, uint fragmentSync, uint colorSurface,
+        DepthSurfaceInfo? depth, bool depthValid)
     {
-        var c = Ctx(ctx);
-        if (c == null || !_renderTargets.TryGetValue(renderTarget, out var rt)) return ERR_INVALID_POINTER;
-        if (c.Deferred) return ERR_INVALID_VALUE;
-        if (c.InScene) return ERR_WITHIN_SCENE;
+        GxmContext? c = Ctx(ctx);
+        if (c == null)
+        {
+            return ERR_INVALID_POINTER;
+        }
+
+        if (c.Deferred || badFlags != 0)
+        {
+            return ERR_INVALID_VALUE;
+        }
+
+        if (renderTarget == 0 || vertexSync != 0)
+        {
+            return ERR_INVALID_POINTER;
+        }
+
+        if (c.InScene)
+        {
+            return ERR_WITHIN_SCENE;
+        }
+
+        // an enabled colour surface without memory: refused from SDK 3.10 on; before it, NULL data is a disabled
+        // surface (ColorSurfaceEnabledByDataSdkLimit). Checked before the depth/stencil surface, as in libgxm.
+        bool colorEnabled = colorSurface != 0 && ColorSurfaceEnabled(colorSurface);
+        if (colorEnabled && GuestMemory.R32(colorSurface + 16) == 0)
+        {
+            return ERR_INVALID_VALUE;
+        }
+
         if (!depthValid)
         {
             return ERR_INVALID_VALUE;
@@ -695,10 +795,16 @@ public sealed partial class Gxm : HleModule
 
         // libgxm (FW 3.74: sceGxmBeginScene, sceGxmBeginSceneEx and the old _sceGxmBeginScene) refuses a scene with
         // nothing to render to: a disabled (or NULL) colour surface and a disabled (or NULL) depth/stencil surface
-        ColorSurfaceInfo? color = ReadColorSurface(colorSurface);
+        ColorSurfaceInfo? color = colorEnabled ? ReadColorSurface(colorSurface) : null;
         if (color == null && depth == null)
         {
             return ERR_INVALID_VALUE;
+        }
+
+        // the render target is a GPU driver object: libgxm asks the driver for it only after the surfaces
+        if (!_renderTargets.TryGetValue(renderTarget, out GxmRenderTarget? rt))
+        {
+            return ERR_DRIVER;
         }
 
         c.InScene = true;
