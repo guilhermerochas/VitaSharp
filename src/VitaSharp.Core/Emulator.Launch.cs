@@ -187,17 +187,93 @@ public sealed partial class Emulator
         string dataRoot = Path.GetDirectoryName(fsRoot) ?? fsRoot;
         byte[] folderHash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(AppPath.ToUpperInvariant()));
         string view = Path.Combine(dataRoot, "cache", "pfs", $"{TitleId}-{Convert.ToHexString(folderHash, 0, 8)}");
-        try
+        Package.Pfs.PfsKeyMismatchException? mismatch = null;
+        int mounted = MountApp0ThroughPfsMgr(key, () =>
         {
-            Vfs.AddApp0BaseLayer(Package.Pfs.PfsApp0View.Open(AppPath, key, view, Log.Info));
+            try
+            {
+                Vfs.AddApp0BaseLayer(Package.Pfs.PfsApp0View.Open(AppPath, key, view, Log.Info));
+                return 0;
+            }
+            catch (Package.Pfs.PfsKeyMismatchException e)
+            {
+                mismatch = e;
+                return LicenseTitleKey.BadLicense;
+            }
+        });
+        if (mismatch != null)
+        {
+            LogApp0MountFailure(3, LicenseTitleKey.BadLicense, mismatch.Message);
+            throw new TitleKeyException(TitleId, LicenseTitleKey.BadLicense, mismatch);
         }
-        catch (Package.Pfs.PfsKeyMismatchException e)
+
+        if (mounted < 0)
         {
-            LogApp0MountFailure(3, LicenseTitleKey.BadLicense, e.Message);
-            throw new TitleKeyException(TitleId, LicenseTitleKey.BadLicense, e);
+            LogApp0MountFailure(3, mounted, $"kscePfsMount returned 0x{mounted:X8}");
+            throw new ProcessLoadException(mounted, new InvalidOperationException($"kscePfsMount returned 0x{mounted:X8}"));
         }
 
         Klicensee = key;
+    }
+
+    /// <summary>ScePfsMgrForKernel's library NID and its kscePfsMount (fixed by the firmware's export table).</summary>
+    private const uint PfsMgrForKernelLibNid = 0xA067B56F, PfsMountNid = 0xA772209C;
+
+    /// <summary>The mode appmgr 3.74 mounts an application's image with when it has the title's key (its last
+    /// argument; 4 and 6 are other kinds of content).</summary>
+    private const uint PfsMountModeWithKey = 5;
+
+    /// <summary>The sizes of appmgr's kscePfsMount arguments: the path buffer (0x124), the mount point (0x10) and the
+    /// title key (0x10).</summary>
+    private const uint PfsMountPathSize = 0x124, PfsMountPointSize = 0x10, PfsMountKeySize = 0x10;
+
+    /// <summary>
+    /// app0's PFS mount as appmgr 3.74 makes it at a launch (decompiled SceAppMgr, study only): kscePfsMount(the
+    /// application's path, a mount point named "ts" and twelve hex digits of the secure processor's random number and
+    /// "d", the process's program authority ID as two words, the 16-byte title key, mode 5) of ScePfsMgrForKernel, by
+    /// the function's address, on appmgr's thread; a failure stops the launch. VitaSharp opens the image itself
+    /// (<paramref name="mount"/>), so the call is made through the entry only when kernel code hooked it: the hook runs on
+    /// a kernel thread with those arguments, and the original it continues to answers with <paramref name="mount"/>
+    /// (<see cref="IoFileMgr.MountLaunchedApp0"/>). The title key is the one the launch already has; nothing of the
+    /// licence's checks changes. The authority ID is what the process has then: VitaSharp reads it from the executable,
+    /// which is inside the image, after the mount, so it is 0 for a first launch. Without a hook the mount runs directly.
+    /// Returns 0 or the error.
+    /// </summary>
+    private int MountApp0ThroughPfsMgr(byte[] key, Func<int> mount)
+    {
+        if (IsKernelProcess || Vita.KernelProcess is not { } kernel || !kernel.FirmwareKernel.IsPatched(PfsMgrForKernelLibNid, PfsMountNid))
+        {
+            return mount();
+        }
+
+        FirmwareKernelModules firmware = kernel.FirmwareKernel;
+        IoFileMgr io = kernel.Hle.Modules.OfType<IoFileMgr>().First();
+        string source = FirmwareLayout.HostToGuest(Options.FsRoot, AppPath) ?? AppPath;
+        Span<byte> random = stackalloc byte[6];
+        System.Security.Cryptography.RandomNumberGenerator.Fill(random);
+        string mountPoint = "ts" + Convert.ToHexString(random).ToLowerInvariant() + "d";
+        uint block;
+        using (ProcessScope.Enter(KernelSpace.KernelPid))
+        {
+            block = Memory.Alloc(PfsMountPathSize + PfsMountPointSize + PfsMountKeySize, "appmgr:pfs mount", MemoryRegion.Kernel, 16);
+        }
+
+        uint path = block;
+        uint point = block + PfsMountPathSize;
+        uint keyAddress = point + PfsMountPointSize;
+        GuestMemory.Fill(block, 0, PfsMountPathSize + PfsMountPointSize + PfsMountKeySize);
+        GuestMemory.WriteCString(path, source, (int)PfsMountPathSize - 1);
+        GuestMemory.WriteCString(point, mountPoint, (int)PfsMountPointSize - 1);
+        key.AsSpan(0, Math.Min(key.Length, (int)PfsMountKeySize)).CopyTo(GuestMemory.Span(keyAddress, (int)PfsMountKeySize));
+        ulong authority = ProgramAuthorityId;
+        int result = 0;
+        RunOnKernelThread(kernel, "SceAppMgrLaunch", _ =>
+        {
+            result = io.MountLaunchedApp0(mount, () => (int)firmware.Call(PfsMgrForKernelLibNid, PfsMountNid, () => (uint)mount(),
+                path, point, (uint)authority, (uint)(authority >> 32), keyAddress, PfsMountModeWithKey));
+        }, "the launch's kscePfsMount");
+        Memory.Free(block);
+        return result;
     }
 
     /// <summary>The log line of a launch whose app0 mount failed: which step of the launch, and its error.</summary>

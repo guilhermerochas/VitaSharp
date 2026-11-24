@@ -271,16 +271,29 @@ kernel code hooked one of those three I/O functions, the licence read runs throu
 the hook sees the launch's read (and its continuation reaches the HLE); without a hook the file is read directly. The
 title key step is the secure processor's and answers 0x80020004 on the emulated unit, hooked or not. A failure names its
 step: `<title>: the launch stopped at app0's mount, step N of 4 (<step>): ... (0x........)` (1 licence, 2 licence read,
-3 title key, 4 PFS mount); the message to the user is unchanged.
+3 title key, 4 PFS mount); the message to the user is unchanged. The mount itself is appmgr's call of kscePfsMount
+(ScePfsMgrForKernel 0xA067B56F / 0xA772209C) with the application's path, a mount point named "ts", twelve hex digits
+and "d", the process's program authority ID, the 16-byte title key and mode 5: when kernel code hooked that function,
+the launch makes the call through the entry on a kernel thread, the original the hook continues to mounts the image as
+the launch does without a hook, and an error the hook answers fails the launch at step 4. The title key is the one the
+launch already has (no check of the licence changes); the authority ID is 0 for a first launch, since VitaSharp reads it
+from the executable inside the image after the mount.
 
 ### Path walks on the emulator's devices
 
 On the Vita iofilemgr walks every path element by element with ksceVopLookup from the device's root vnode (3.74,
 0x81004bb8, study only), so a kernel hook on it (fd_fix's) sees every open. In VitaSharp ux0:, app0: and the other
-devices are host folders; when a hook took ksceVopLookup, sceIoOpen (the user's syscall and ksceIoOpen), sceIoDopen and
-sceIoGetstat walk the path through the function's entry over the host vnodes (`IoFileMgr.VfsHost.cs`): the hook gets each
+devices are host folders; when a hook took ksceVopLookup, sceIoOpen (the user's syscall and ksceIoOpen), sceIoDopen,
+sceIoGetstat, sceIoRemove, sceIoMkdir, sceIoRmdir, sceIoChstat and sceIoRename (the old path, then the new one), with
+their ksceIo* forms, walk the path through the function's entry over the host vnodes, as iofilemgr 3.74 walks it for
+each of them (`IoFileMgr.VfsHost.cs`; the element a mkdir or a rename's new path makes is looked up, not found, and
+made): the hook gets each
 element, and what it answers counts (an error fails the call, another vnode sends it to that vnode's path, an open that
 creates still creates). Without such a hook nothing is walked and nothing is allocated (`IoVopLookupHookTests`).
+The asynchronous forms (sceIoOpenAsync, sceIoDopenAsync, sceIoGetstatAsync and the other path requests) run on
+iofilemgr's own kernel thread on the Vita (SceIoScheduler), which walks the path the same way: with such a hook the
+I/O scheduler runs a path request on a kernel thread of that name, in the submitting process's context, so the hook is
+called for it and its answer is the request's result; without one the request stays on the scheduler's host thread.
 
 ### The launch's process creation
 

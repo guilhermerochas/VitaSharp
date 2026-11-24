@@ -17,6 +17,10 @@ namespace VitaSharp.Core.Hle.Modules;
 /// </summary>
 internal sealed class IoScheduler : IGuestTimed
 {
+    /// <summary>Runs a request's work as <see cref="Execute(Func{long}, long, out long)"/> does, somewhere else (a kernel
+    /// thread of the I/O manager, <see cref="IoAsyncOp.Runner"/>).</summary>
+    internal delegate long RequestRunner(Func<long> work, long from, out long deviceDone);
+
     private readonly object _gate = new();
 
     /// <summary>Serialises completions, so the requests end in their order (the worker and the timer both complete).</summary>
@@ -242,7 +246,7 @@ internal sealed class IoScheduler : IGuestTimed
             long deviceDone;
             using (AddressSpace.Use(op.Space))
             {
-                result = Execute(work, op.SubmitTicks, out deviceDone);
+                result = op.Runner != null ? op.Runner(work, op.SubmitTicks, out deviceDone) : Execute(work, op.SubmitTicks, out deviceDone);
             }
 
             bool current;

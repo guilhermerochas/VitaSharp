@@ -109,7 +109,15 @@ public static class HleEntryCalls
     /// leave out when nothing would see it (the I/O manager's path walk over the emulator's own devices).</summary>
     public static bool IsTaken(HleModule module, HleExportRef export)
     {
-        return AnyHook() && GuestThread.Current != null && HookTargetOf(module, export) != 0;
+        return GuestThread.Current != null && IsHooked(module, export);
+    }
+
+    /// <summary>Whether a hook took <paramref name="export"/> for calls of <paramref name="module"/>, whatever the calling
+    /// thread: for work the firmware does on a kernel thread of its own around such calls (the I/O scheduler's
+    /// requests), which the HLE makes on one only then.</summary>
+    public static bool IsHooked(HleModule module, HleExportRef export)
+    {
+        return AnyHook() && HookTargetOf(module, export) != 0;
     }
 
     /// <summary>Where a call of <paramref name="export"/> goes when a hook took it, else 0: a user plugin's hook in the
