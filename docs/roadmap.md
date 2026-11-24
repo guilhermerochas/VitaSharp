@@ -4058,6 +4058,20 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   3.72-3.74). Falta: (1) testar com um Adrenaline que suporte o 3.74; (2) depois disso o pspemu chega ao
   sceCompatInitEx, que precisa do núcleo de compatibilidade (pcbc, ver o item de jogos de PSP: o grande bloqueio até o
   menu do Adrenaline); (3) taiReloadConfig, taiReloadConfigForKernel e taiLoadPluginsForTitleForKernel.
+  Conferido (adr3, logs de 23/11/2026, build 1d30867d): o Adrenaline instalado é o 7.0 (`adrenaline_compat.h`) e só
+  conhece o ScePspemu 0x2714F07D/0x3F75D4D3 e o SceCompat do 3.60-3.70 (constantes lidas no módulo); no FW 3.74 eles são
+  0x5459B715 e 0x0ED0A986, então nenhum patch por offset entra (kernel nem user) e o ScePspemu roda puro: a thread
+  main recusa o parâmetro, a ScePspemuErrDlg abre o diálogo de erro (libcdlg tipo 0x10) e chama
+  sceAppMgrExitToLiveboardForGameApp. O hook 13 recusado (NID_432DCC7A da biblioteca 0xC445FA63) é o do 3.60: o
+  modulemgr 3.74 só exporta a 0x92C9FFC2, e o próprio Adrenaline cai no hook 14 (instalado). Corrigido (fix/adr3):
+  abrir o PSPEMUCFW direto (sem o shell) não deixa mais a janela muda em 0 fps: o vsh encerra o próprio app
+  (sceAppMgrDestroyAppByName) e o fim do primeiro processo por kill termina a sessão como uma saída (ou retoma o
+  programa suspenso). Testar: abrir o Adrenaline direto pelo launcher: a janela fecha logo e o log diz "ended itself
+  (sceAppMgrDestroyAppByName): it was the last process, the session ends"; o caminho certo é pelo Sistema do Vita.
+  Falta: (4) pelo shell, o diálogo de erro do ScePspemu termina em ~30 ms sem aparecer (Init do tipo 0x10 e
+  ExitToLiveboard 31 ms depois): achar por que o libcdlg dá o diálogo por terminado sem mostrar; depois de voltar ao
+  LiveArea, "Iniciar" retoma o ScePspemu, cuja main fica no laço de espera do erro, e a tela fica em 0 fps (é o
+  fluxo do firmware, mas no Vita o usuário veria o erro antes e fecharia o app).
 - [ ] [P2][M] Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
   capturas de 21/11/2026, e um engasgo de 132 ms por leitura de arquivo (fileIo 134 ms; quadro 302 do dump da
   `_232150_tudo`). Achado (perf/ac3pace): fora das gravações o jogo fica em 30 fps (linhas `FPS frame` da sessão) e

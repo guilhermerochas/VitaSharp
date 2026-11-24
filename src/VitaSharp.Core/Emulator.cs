@@ -408,10 +408,25 @@ public sealed partial class Emulator : IDisposable
             Terminate($"exited (0x{status:X})");
             return;
         }
+        EndFirstProcess(status, $"exited (0x{status:X})", ProcessEvents.Exit);
+    }
+
+    /// <summary>The exit status <see cref="ProcessExited"/> reports for a first process that was ended (killed) rather
+    /// than exiting by itself: the kill gives no status of its own.</summary>
+    public const int KilledProcessStatus = 0;
+
+    /// <summary>
+    /// The first process (started directly, no shell to take the screen back) is gone, by its own exit or ended by a
+    /// call (sceAppMgrDestroyAppByName on itself, as a plugin that relaunches its title through the shell does): a
+    /// suspended program resumes, or the session is over and <see cref="ProcessExited"/> tells the host. Before, a kill
+    /// only stopped the threads and the window stayed open at 0 fps with nothing in the log.
+    /// </summary>
+    private void EndFirstProcess(int status, string why, int processEvent)
+    {
         if (SuspendedPrograms.Count > 0)
         {
             (string? dir, string? self) = SuspendedPrograms.Pop();
-            Log.Info($"Process exited (0x{status:X}): resuming {dir} ({self})");
+            Log.Info($"Process {why}: resuming {dir} ({self})");
             QueueExec("app0:" + self, [], dir);
             return;
         }
@@ -421,8 +436,8 @@ public sealed partial class Emulator : IDisposable
         }
 
         LastProcessExitStatus = status;
-        Log.Info($"Process exited (0x{status:X}): it was the last process, the session ends");
-        TellProcessEnd(ProcessEvents.Exit);
+        Log.Info($"Process {why}: it was the last process, the session ends");
+        TellProcessEnd(processEvent);
         Stop();
         ProcessExited?.Invoke(status);
     }
@@ -841,7 +856,7 @@ public sealed partial class Emulator : IDisposable
 
         if (Parent == null)
         {
-            Stop();
+            EndFirstProcess(_exiting ? _exitStatus : KilledProcessStatus, why, _exiting ? ProcessEvents.Exit : ProcessEvents.Kill);
             return;
         }
         if (Interlocked.Exchange(ref _terminated, 1) != 0)

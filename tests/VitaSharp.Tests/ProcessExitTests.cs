@@ -106,6 +106,60 @@ public sealed class ProcessExitTests(GuestMemoryFixture fixture) : IDisposable
     }
 
     [Fact]
+    public void TheFirstProcessEndingItselfByNameEndsTheSession()
+    {
+        // a plugin that hands its title over to the shell ends its own application with sceAppMgrDestroyAppByName (the
+        // Adrenaline bubble opened directly, 23/11/2026): with no shell the session is over, as for an exit. Before,
+        // only the threads stopped: the window stayed open at 0 fps and nothing reached the log or the host.
+        Emulator emu = _harness.Emu;
+        emu.Running = true;
+        var statuses = new List<int>();
+        emu.ProcessExited += s => statuses.Add(s);
+
+        Assert.Equal(0, HleHarness.Call(_harness.Module<AppMgrShell>(), "sceAppMgrDestroyAppByName", 0u));
+
+        Assert.Equal([Emulator.KilledProcessStatus], statuses);
+        Assert.Equal(Emulator.KilledProcessStatus, emu.LastProcessExitStatus);
+        Assert.False(emu.Running);
+    }
+
+    [Fact]
+    public void TheFirstProcessEndedByItsTitleIdEndsTheSessionOnce()
+    {
+        // named by its own title id (what the plugin passes), and a second end changes nothing
+        Emulator emu = _harness.Emu;
+        emu.TitleId = "TEST00002";
+        emu.Running = true;
+        int raised = 0;
+        emu.ProcessExited += _ => raised++;
+        AppMgrShell appMgr = _harness.Module<AppMgrShell>();
+        uint name = _harness.Str(emu.TitleId);
+
+        Assert.Equal(0, HleHarness.Call(appMgr, "sceAppMgrDestroyAppByName", name));
+        HleHarness.Call(appMgr, "sceAppMgrDestroyAppByName", name);
+
+        Assert.Equal(1, raised);
+        Assert.False(emu.Running);
+    }
+
+    [Fact]
+    public void AnEndedFirstProcessResumesASuspendedProgram()
+    {
+        // the program that launched it over itself comes back, as when it exits
+        Emulator emu = _harness.Emu;
+        emu.Running = true;
+        string appDir = Path.Combine(_harness.Root, "ux0", "app", "TEST00001");
+        emu.SuspendedPrograms.Push((appDir, "eboot.bin"));
+        int raised = 0;
+        emu.ProcessExited += _ => raised++;
+
+        Assert.Equal(0, HleHarness.Call(_harness.Module<AppMgrShell>(), "sceAppMgrDestroyAppByName", 0u));
+
+        Assert.Equal(0, raised);
+        Assert.Equal(("app0:eboot.bin", appDir), (emu.ExecRequest?.Path, emu.ExecRequest?.AppDir));
+    }
+
+    [Fact]
     public void StoppingTheEmulatorIsNotAProcessExit()
     {
         // the host closing the window (X, the launcher's Stop) stops the emulator: that is not the game ending
