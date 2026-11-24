@@ -3269,6 +3269,19 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `GxmFlowTests.BeginSceneChecksItsArgumentsInLibgxmOrder`, `GxmFlowTests.SceneLifecycleAndNotifications`. Testar:
   os jogos que o usuário já abre continuam abrindo e mostrando imagem (nenhum `sceGxmBeginScene: 0x805B0004` ou
   `0x805B0017` novo no log).
+- [ ] (23/11/2026, falta testar) [P3][P] Superfície de cor com dados NULL como no libgxm 3.74 (fix/gxmex3): o
+  `sceGxmColorSurfaceInit` continua aceitando dados NULL; a partir do SDK 3.10 (`sceKernelGetMainModuleSdkVersion` ≥
+  0x03100000; o Zero Time Dilemma é 3.57) a superfície fica ligada e uma cena com ela é SCE_GXM_ERROR_INVALID_VALUE
+  (antes da profundidade, mesmo com profundidade válida) até o `sceGxmColorSurfaceSetData` dar memória; antes do SDK
+  3.10 (bit 0x8000 da palavra de compatibilidade) a superfície é ligada pelos dados: dados NULL = desligada, a cena
+  sai sem cor e o SetData nela é UNSUPPORTED. `sceGxmColorSurfaceIsEnabled` segue a mesma regra (memória zerada,
+  nunca iniciada, é desligada) e o `sceGxmColorSurfaceSetData` recusa superfície NULL (INVALID_POINTER), desligada
+  (UNSUPPORTED) e dados desalinhados (INVALID_VALUE). O Zero Time Dilemma, que para (BKPT) em qualquer erro, só
+  funciona no console porque nunca abre cena com essa superfície sem dados. Testes:
+  `GxmFlowTests.SceneColourSurfaceWithoutDataFollowsTheSdkVersion` (SDK 0/1.50/3.0F/3.10/3.57),
+  `GxmHleTests.ColorSurfaceInitAcceptsNullData`. Testar: Zero Time Dilemma (PCSE00781) passa do boot, logos, menu e
+  cenas como antes (nenhum `sceGxmBeginScene: 0x805B0003` ou `sceGxmColorSurfaceSetData: 0x805B0009` no log);
+  Croixleur Sigma (framebuffers com dados NULL e SetData depois) abre e mostra imagem.
 
 - [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo analisável e reexecutável sem o jogo (feat/capself1,
   `docs/captures.md`): (1) nenhum arquivo da gravação leva dado pessoal: uma última etapa troca, em todo texto e no

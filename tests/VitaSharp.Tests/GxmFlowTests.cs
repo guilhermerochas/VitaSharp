@@ -545,6 +545,83 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(4, _rec.Kinds.Count(kind => kind == "BeginSceneCommand"));
     }
 
+    /// <summary>Points the main module's SceProcessParam at an SDK version (+0xC, magic "PSP2" at +4).</summary>
+    private void SetMainModuleSdkVersion(uint sdkVersion)
+    {
+        uint processParam = _harness.Alloc(0x34);
+        GuestMemory.W32(processParam, 0x34);
+        GuestMemory.W32(processParam + 4, 0x32505350);
+        GuestMemory.W32(processParam + 8, 6);
+        GuestMemory.W32(processParam + 0xC, sdkVersion);
+        typeof(VitaSharp.Core.Loader.Linker).GetProperty("ProcessParam")!.SetValue(_harness.Emu.Linker, processParam);
+    }
+
+    /// <summary>
+    /// A colour surface described with NULL data (libgxm, FW 3.74). sceGxmColorSurfaceInit takes it (Zero Time Dilemma
+    /// does this); from SDK 3.10 on (Zero Time Dilemma is 3.57) the surface is enabled, a scene with it is
+    /// INVALID_VALUE (before the depth/stencil checks, also with a valid depth surface) until sceGxmColorSurfaceSetData
+    /// gives it memory. Before SDK 3.10 (compatibility bit 0x8000) a surface is enabled by its data: NULL data is a
+    /// disabled surface, the scene renders without colour (and with no depth either it is INVALID_VALUE), and SetData on
+    /// it is UNSUPPORTED. SetData also refuses a NULL surface (INVALID_POINTER) and unaligned data (INVALID_VALUE).
+    /// </summary>
+    [Theory]
+    [InlineData(0u)]
+    [InlineData(0x03100000u)]
+    [InlineData(0x03570011u)]
+    [InlineData(0x030FFFFFu)]
+    [InlineData(0x01500000u)]
+    public void SceneColourSurfaceWithoutDataFollowsTheSdkVersion(uint sdkVersion)
+    {
+        if (sdkVersion != 0)
+        {
+            SetMainModuleSdkVersion(sdkVersion);
+        }
+
+        bool enabledByData = sdkVersion != 0 && sdkVersion < 0x03100000;
+        Init();
+        uint ctx = Context(), rt = RenderTarget(64, 64);
+        uint color = _harness.Alloc(0x40), depth = _harness.Alloc(0x20), data = _harness.Alloc(64 * 64 * 4);
+        uint offColor = _harness.Alloc(0x40), zeroColor = _harness.Alloc(0x40);
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceInit", color, 0u, 0u, 0u, 0u, 64u, 64u, 64u, 0u));
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceInitDisabled", offColor));
+        Assert.Equal(0, Call(Gxm, "sceGxmDepthStencilSurfaceInit", depth, 0x00044000u, 0u, 64u, _harness.Alloc(64 * 64 * 4), 0u));
+        Assert.Equal(!enabledByData, (bool)Invoke(Gxm, "sceGxmColorSurfaceIsEnabled", color)!);
+        Assert.False((bool)Invoke(Gxm, "sceGxmColorSurfaceIsEnabled", offColor)!);
+        Assert.False((bool)Invoke(Gxm, "sceGxmColorSurfaceIsEnabled", zeroColor)!);
+
+        if (enabledByData)
+        {
+            Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, 0u, color, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, 0u, color, depth));
+            Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+            Finish();
+            Assert.Null(_rec.LastBegin!.Color);
+            Assert.NotNull(_rec.LastBegin!.Depth);
+            Assert.Equal(UNSUPPORTED, Call(Gxm, "sceGxmColorSurfaceSetData", color, data));
+            Assert.Equal(0u, GuestMemory.R32(color + 16));
+            return;
+        }
+
+        foreach (uint depthSurface in new[] { 0u, depth })
+        {
+            Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, 0u, color, depthSurface));
+            Assert.Equal(INVALID_VALUE, Call(Gxm, "_sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, 0u, color, depthSurface));
+            Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmBeginSceneEx", ctx, 0u, rt, 0u, 0u, 0u, color, depthSurface, depthSurface));
+        }
+
+        Finish();
+        Assert.DoesNotContain("BeginSceneCommand", _rec.Kinds);
+
+        Assert.Equal(INVALID_POINTER, Call(Gxm, "sceGxmColorSurfaceSetData", 0u, data));
+        Assert.Equal(UNSUPPORTED, Call(Gxm, "sceGxmColorSurfaceSetData", offColor, data));
+        Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmColorSurfaceSetData", color, data + 2));
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceSetData", color, data));
+        Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, 0u, color, 0u));
+        Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+        Finish();
+        Assert.Equal(data, _rec.LastBegin!.Color!.Data);
+    }
+
     /// <summary>
     /// sceGxmMidSceneFlush (libgxm, FW 3.74) only inside a scene of the immediate context: a NULL or unknown context and
     /// a vertex sync object are SCE_GXM_ERROR_INVALID_POINTER, flags other than PRESERVE_DEFAULT_UNIFORM_BUFFERS (1) are
