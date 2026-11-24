@@ -79,6 +79,22 @@ public static class GeCommand
     public const int AmbientColor = 0x5C;
     public const int AmbientAlpha = 0x5D;
     public const int LightMode = 0x5E;
+
+    /// <summary>LIGHTTYPE0..3: bits 0-1 the computation (0 diffuse, 1 diffuse and specular, 2 powered diffuse), 8-9 the
+    /// type (0 directional, 1 point, 2 and 3 spot).</summary>
+    public const int LightType0 = 0x5F;
+
+    /// <summary>LX0..: three commands (x, y, z) per light from here.</summary>
+    public const int LightPosition0 = 0x63;
+    public const int LightDirection0 = 0x6F;
+
+    /// <summary>LKA0..: the constant, linear and quadratic attenuation, three per light.</summary>
+    public const int LightAttenuation0 = 0x7B;
+    public const int LightSpotExponent0 = 0x87;
+    public const int LightSpotCutoff0 = 0x8B;
+
+    /// <summary>LAC0..: the ambient, diffuse and specular colour, three per light.</summary>
+    public const int LightColor0 = 0x8F;
     public const int Cull = 0x9B;
     public const int FrameBufferPointer = 0x9C;
     public const int FrameBufferWidth = 0x9D;
