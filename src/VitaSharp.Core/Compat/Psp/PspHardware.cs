@@ -47,6 +47,8 @@ public sealed class PspHardware
     {
         ArgumentNullException.ThrowIfNull(memory);
         PspHardware hardware = new();
+        hardware.Add(new PspSystemControl());
+        hardware.Add(new PspClockFrequency());
         hardware.Add(new PspHardwareTimers(hardware.Clock, hardware.Interrupts));
         hardware.Add(new PspSystemTime(hardware.Clock, hardware.Interrupts));
         hardware.Add(new PspDmac(PspDmac.Base0, PspInterrupt.Dma0, hardware.Interrupts, memory));
