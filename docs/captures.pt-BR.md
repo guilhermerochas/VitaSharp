@@ -1,4 +1,4 @@
-<!-- pair: captures.md sha256=e524d01580430e8442f786942aa601049c7ceec16319432a287a213c22facb35 -->
+<!-- pair: captures.md sha256=755ec992845e8b4c3961f6552170416a944bfd8140877cdc7e3c5638a68e767b -->
 # Analisar uma gravação do Gravar tudo sem o jogo
 
 [English](captures.md) | **Português**

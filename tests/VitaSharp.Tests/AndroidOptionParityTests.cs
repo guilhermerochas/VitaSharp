@@ -147,6 +147,8 @@ public sealed class AndroidOptionParityTests : IDisposable
         [nameof(LauncherSettings.RpcnPassword)] = "the Android Keystore (AppServices.RpcnPasswordAsync)",
         [nameof(LauncherSettings.CapturePreRoll)] = "the pause menu's Pre-gravacao (EmulationSession.PreRollSeconds)",
         [nameof(LauncherSettings.Games)] = "GameSettings, one file per game (EveryDesktopGameOptionIsOnAndroidOrExplained)",
+        [nameof(LauncherSettings.Microphone)] = "MicrophoneSettings (Ajustes > Microfone)",
+        [nameof(LauncherSettings.Location)] = "LocationSettings (Ajustes > Localizacao)",
     };
 
     private static readonly Dictionary<string, string> s_desktopOnly = new()
@@ -171,6 +173,7 @@ public sealed class AndroidOptionParityTests : IDisposable
         [nameof(LauncherSettings.UpdateChannel)] = "the launcher's updater",
         [nameof(LauncherSettings.SkippedUpdate)] = "the launcher's updater",
         [nameof(LauncherSettings.AudioDevice)] = "an OpenAL output of a PC (the phone routes audio itself)",
+        [nameof(LauncherSettings.Model)] = "the PlayStation TV model option; its Android side (controllers on the phone) is the roadmap's PS TV item",
     };
 
     /// <summary>Per-game options: the same property on <see cref="GameSettings"/> or desktop-only.</summary>
