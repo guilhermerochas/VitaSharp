@@ -314,7 +314,7 @@ public sealed partial class SystemServicesVsh
     /// <summary>ksceNpDrmReadActData (SceNpDrmActivationData *data 0x1038): the activation data after its checks;
     /// NULL 0x80870001, none 0x80870006 (the buffer cleared on every failure).</summary>
     [Hle("ksceNpDrmReadActData", Nid = 0xD91C3BCE, Library = "SceNpDrmForDriver")]
-    int ksceNpDrmReadActData(uint data)
+    internal int ksceNpDrmReadActData(uint data)
     {
         if (data == 0)
         {

@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=9060e4bb21aa47ae1c67527a6751e8a8c39b695cac5019e27854ab6a9810a764 -->
+<!-- pair: README.pt-BR.md sha256=a126ff9dfb65af4dfecceef72c60dd4eeceda86918be4dee616296b88450afdf -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -155,6 +155,12 @@ Vita3K's firmware** (copies `os0`/`vs0`/`sa0`/`pd0` from a Vita3K installation).
 `install-firmware <PSVUPDAT.PUP>`. **Uninstall firmware** (same page; `uninstall-firmware [--yes]`) removes only what the
 install created (`os0`/`vs0`/`sa0`/`pd0` and the index files `firmware.json`, `firmware-libraries.txt`): games, saves and
 `ux0`/`ur0` stay, and a partition linked to another folder loses only the link.
+
+**PSP compat core (in progress).** The PSP emulator of the firmware boots a MIPS core from `os0:kd/pcbc.skprx`, whose
+content only the console's secure processor decrypts. To run it, dump the decrypted boot code from your own console
+(the 0x5CE0 bytes SceCompat loads at its window + 0x600000) and place it at `os0:kd/pcbc.bin` in the data folder
+(`%APPDATA%\VitaSharp\fs\os0\kd\pcbc.bin` on Windows, the same `fs/os0/kd` under the data folder on Linux and macOS).
+VitaSharp never ships it. Status and limits: `docs/roadmap.md` (the PSP compat core item).
 
 **Vita System.** With the firmware installed, the launcher's **Open Vita System** button (Ctrl+H, or `boot-shell`)
 runs the firmware's `shell.self`: initial setup the first time, lock screen, home screen with the installed games and
