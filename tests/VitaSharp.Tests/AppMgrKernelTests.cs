@@ -1,5 +1,6 @@
 using VitaSharp.Core.Hle;
 using VitaSharp.Core.Hle.Modules;
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 using Xunit;
 using static VitaSharp.Tests.HleHarness;
@@ -73,6 +74,61 @@ public sealed class AppMgrKernelTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(NoProcess, Call(Manager, "ksceAppMgrLaunchAppByPath", _harness.Str("ux0:app/NONE00000/eboot.bin"), 0u, 0u, 0u, block, 0u));
         GuestMemory.W32(block + 4, 0);
         Assert.Equal(unchecked((int)0x80800006), Call(Manager, "ksceAppMgrLaunchAppByPath", _harness.Str("ux0:app/NONE00000/eboot.bin"), 0u, 0u, 0u, block, 0u));
+    }
+
+    /// <summary>NID_324DD34E launches a process through the process manager (SceAppMgr 3.74 0x81002794): the option
+    /// copied by its size word (none: a valid one of 0x40 bytes), the creation's errors come back. It answered
+    /// 0x80800009 to every caller.</summary>
+    [Fact]
+    public void TheProcessLaunchGoesThroughTheProcessManager()
+    {
+        uint title = _harness.Str("PCSX00000");
+        uint path = _harness.Str("ux0:app/PCSX00000/eboot.bin");
+        uint option = _harness.Alloc(0x80);
+        GuestMemory.Fill(option, 0, 0x80);
+        Assert.Equal(SceError.MODULEMGR_NOENT, Call(Manager, "ksceAppMgr_324DD34E", title, 0x1000000u, path, 0u, 0u, 0u));
+        Assert.Equal(SceError.MODULEMGR_NOENT, Call(Manager, "ksceAppMgr_324DD34E", title, 0x4000000u, path, 0u, 0u, 0u));
+        Assert.Equal(unchecked((int)0x80020005), Call(Manager, "ksceAppMgr_324DD34E", 0u, 0x1000000u, path, 0u, 0u, 0u));
+        Assert.Equal(unchecked((int)0x80029002), Call(Manager, "ksceAppMgr_324DD34E", title, 0x3000000u, path, 0u, 0u, 0u));
+        GuestMemory.W32(option, 0x20);
+        Assert.Equal(unchecked((int)0x80020009), Call(Manager, "ksceAppMgr_324DD34E", title, 0x1000000u, path, 0u, 0u, option));
+        // a larger size is copied as 0x40 bytes and keeps its word: not a valid option
+        GuestMemory.W32(option, 0x80);
+        Assert.Equal(unchecked((int)0x80020009), Call(Manager, "ksceAppMgr_324DD34E", title, 0x1000000u, path, 0u, 0u, option));
+        GuestMemory.W32(option, 0x40);
+        Assert.Equal(SceError.MODULEMGR_NOENT, Call(Manager, "ksceAppMgr_324DD34E", title, 0x1000000u, path, 0u, 0u, option));
+    }
+
+    /// <summary>NID_E8DB7942 takes away a mount by its mount point (SceAppMgr 3.74 0x81018864): only for a caller
+    /// with the kernel's program authority (an application's thread 0x80800009), NULL 0x80800001, a mount point no
+    /// mount has 0x80800002, else the mount goes (unmounted, out of the list). It refused every caller.</summary>
+    [Fact]
+    public void AMountIsTakenAwayByItsMountPointFromTheKernel()
+    {
+        Directory.CreateDirectory(Path.Combine(_harness.Root, "ux0", "app", "QUICK0001"));
+        uint mountPoint = _harness.Alloc(16);
+        Assert.Equal(0, Call(Manager, "sceAppMgrGameDataMount", _harness.Str("ux0:app/QUICK0001"), 0u, 0u, mountPoint));
+        string device = GuestMemory.ReadCString(mountPoint, 16);
+        Assert.NotNull(_harness.Emu.Vfs.Resolve(device));
+        uint unknown = _harness.Str("gd999:");
+        _harness.OnGuest(t =>
+        {
+            Assert.Equal(Caller, Call(Manager, "ksceAppMgr_E8DB7942", mountPoint));
+            t.KernelMode = true;
+            try
+            {
+                Assert.Equal(Argument, Call(Manager, "ksceAppMgr_E8DB7942", 0u));
+                Assert.Equal(unchecked((int)0x80800002), Call(Manager, "ksceAppMgr_E8DB7942", unknown));
+                Assert.Equal(0, Call(Manager, "ksceAppMgr_E8DB7942", mountPoint));
+                Assert.Equal(unchecked((int)0x80800002), Call(Manager, "ksceAppMgr_E8DB7942", mountPoint));
+            }
+            finally
+            {
+                t.KernelMode = false;
+            }
+        });
+        Assert.Null(_harness.Emu.Vfs.Resolve(device));
+        Assert.Equal(unchecked((int)0x80802012), Call(Manager, "sceAppMgrUmount", mountPoint));
     }
 
     [Fact]

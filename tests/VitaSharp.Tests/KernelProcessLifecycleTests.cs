@@ -41,6 +41,29 @@ public sealed class KernelProcessLifecycleTests(GuestMemoryFixture fixture) : ID
         Assert.Equal(SceError.MODULEMGR_NOENT, Call(Processmgr, "ksceKernelCreateProcess", title, 0x1000000u, path, 0u));
     }
 
+    /// <summary>NID_1E5B38E5 / NID_5A57766C launch a process (processmgr 3.74 0x81004b48): the creation's checks
+    /// with the type's low 31 bits (bit 31 is the start's), so a title ID of 0, a kernel type, a short option and a
+    /// missing executable give the creation's errors. They were taken for an exit by process ID (a title ID pointer
+    /// as a process: 0x80020005 or a process error for every call).</summary>
+    [Theory]
+    [InlineData("NID_1E5B38E5")]
+    [InlineData("NID_5A57766C")]
+    public void TheLaunchCreatesAndStartsWithTheCreationsChecks(string entry)
+    {
+        uint title = _harness.Str("PCSX00000");
+        uint path = _harness.Str("ux0:app/PCSX00000/eboot.bin");
+        uint option = _harness.Alloc(0x40);
+        GuestMemory.W32(option, 0x20);
+        Assert.Equal(InvalidArgument, Call(Processmgr, entry, 0u, 0x1000000u, path, 0u, 0u, 0u, 0u));
+        Assert.Equal(KernelProcess, Call(Processmgr, entry, title, 0x3000000u, path, 0u, 0u, 0u, 0u));
+        Assert.Equal(IllegalOptionSize, Call(Processmgr, entry, title, 0x1000000u, path, 0u, 0u, option, 0u));
+        Assert.Equal(SceError.MODULEMGR_NOENT, Call(Processmgr, entry, title, 0x1000000u, path, 0u, 0u, 0u, 0u));
+        // bit 31 of the type goes to the start, not to the creation's type check
+        Assert.Equal(SceError.MODULEMGR_NOENT, Call(Processmgr, entry, title, 0x81000000u, path, 0u, 0u, 0u, 0u));
+        GuestMemory.W32(option, 0x40);
+        Assert.Equal(SceError.MODULEMGR_NOENT, Call(Processmgr, entry, title, 0x1000000u, path, 0u, 0u, option, 0u));
+    }
+
     [Fact]
     public void ARunningProcessIsNotStartedAgainAndTheKernelsIsNotEnded()
     {

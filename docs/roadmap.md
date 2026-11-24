@@ -2193,7 +2193,10 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   +0x40 & máscara e +0x44 == 0, envia o aviso e marca +0x44: precisa desses campos no objeto de arquivo);
   SceCoredumpForDriver NID_A7D214A7 / NID_D064F6DC / NID_EF20949F (validação do pedido e a fila do thread de dump,
   escrever o .psp2dmp do processo); SceAppMgrForDriver 6 (1B6C2FED/C4924946 caminho de lançamento de debug atrás de
-  ksceSblACMgrIsDevelopmentMode; 1574E1A4 montagem por id 0x6A/0x6B/0xCD/600/900; 324DD34E; E8DB7942; 504023C8);
+  ksceSblACMgrIsDevelopmentMode; 1574E1A4 montagem por id 0x6A/0x6B/0xCD/600/900; 504023C8: no SceAppMgr 3.74 é o
+  lançamento geral de um aplicativo pelo kernel (8 argumentos: caminho, parâmetros de lançamento, montagens, o
+  processo pai), não só o do emulador de PSP; o HLE só devolve 0x80800007/0x8080201C; 324DD34E e E8DB7942 feitos em
+  23/11/2026, fix/quick3, em "Corrigido, falta o usuário testar");
   SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver 14
   (layout dos objetos da libult na memória do processo).
   Entrega movida para "Corrigido, falta o usuário testar" (reboot do sistema, kernN, 22/11/2026); o resto segue aberto aqui.
@@ -3187,6 +3190,22 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (23/11/2026, falta testar) [P3][P] SceAppMgrForDriver NID_324DD34E e NID_E8DB7942 e o lançamento de processo
+  do SceProcessmgrForKernel (fix/quick3, do item "Kernel de software ainda em resposta padrão"). Pelo SceAppMgr e
+  pelo processmgr 3.74 (estudo): o NID_324DD34E(título, tipo, caminho, tamanho e argumentos, opção) copia a opção
+  pela palavra de tamanho (no máximo 0x40; sem opção, uma de 0x40 zerada), põe as flags 0x180000 e as palavras
+  0x2E/0xD num tipo 0x4000000 e lança o processo pelo NID_5A57766C; o NID_E8DB7942(ponto de montagem) só aceita quem
+  tem a autoridade do kernel (0x2808000000000001), procura a montagem pelo ponto de montagem e a desmonta (sem ela,
+  0x80800002). O HLE respondia 0x80800009 a todos. Revalidando a área: o SceProcessmgrForKernel NID_1E5B38E5 e
+  NID_5A57766C não terminam um processo pelo ID (o HLE tratava assim): os dois rodam o 0x81004b48 do processmgr,
+  que cria o processo (ksceKernelCreateProcess com os 31 bits baixos do tipo e a opção) e o inicia (NID_026F3E87 com
+  o bit 31, os argumentos e as flags), terminando o criado se o início falhar. Testes:
+  `KernelProcessLifecycleTests.TheLaunchCreatesAndStartsWithTheCreationsChecks`,
+  `AppMgrKernelTests.TheProcessLaunchGoesThroughTheProcessManager`,
+  `AppMgrKernelTests.AMountIsTakenAwayByItsMountPointFromTheKernel` (falham sem a correção). Testar: nada a ver na
+  tela sem um módulo de kernel que chame essas funções; um plugin de kernel ou módulo do sistema que lança um
+  processo pelo kernel abre o processo em vez de receber erro.
 
 - [ ] (23/11/2026, falta testar) [P3][P] Texturas YUV com a matriz do conversor de cor da cena (fix/quick3): na libgxm
   3.74 o `sceGxmBeginScene` copia para a cena os dois perfis do contexto (`sceGxmSetYuvProfile`; padrão do

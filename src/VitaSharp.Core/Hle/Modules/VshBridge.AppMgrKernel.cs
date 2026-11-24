@@ -1,3 +1,4 @@
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 
 namespace VitaSharp.Core.Hle.Modules;
@@ -247,21 +248,87 @@ public sealed partial class AppMgr
         return buffer == 0 || result == 0 ? unchecked((int)0x80800001) : unchecked((int)0x80800007);
     }
 
-    /// <summary>NID_324DD34E(..., size): a system program's mount by type: NULL size 0x80800001; refused for a
-    /// caller that is not the system program it is for (0x80800009).</summary>
-    [Hle(Nid = 0x324DD34E, Library = "SceAppMgrForDriver", Default = true)]
-    int ksceAppMgr_324DD34E(uint first, uint type, uint third, uint fourth, uint fifth, uint size)
+    /// <summary>
+    /// NID_324DD34E(titleid, type, path, arg size, args, option): launches a process through the process manager
+    /// (SceAppMgr 3.74 0x81002794): the option is copied onto the stack (its size word says how many bytes, at most
+    /// 0x40; none: a zeroed one of size 0x40), a type of 0x4000000 adds flags 0x180000 and the words 0x2E and 0xD at
+    /// +0x2C / +0x30, and SceProcessmgrForKernel NID_5A57766C creates and starts it with the GXM debugging setting of
+    /// the registry as the last argument (/DEVENV/TOOL vsh_uses_gxmdbg or game_uses_gxmdbg, absent on a retail
+    /// unit: 0). Its result: the new process's ID or the process manager's error.
+    /// </summary>
+    [Hle(Nid = 0x324DD34E, Library = "SceAppMgrForDriver", Cost = HleCost.SchedulerWait)]
+    int ksceAppMgr_324DD34E(uint titleId, uint type, uint path, uint argSize, uint args, uint option)
     {
-        return size == 0 ? unchecked((int)0x80800001) : unchecked((int)0x80800009);
+        Span<byte> options = stackalloc byte[ProcessmgrKernel.ProcessOptionSize];
+        options.Clear();
+        if (option == 0)
+        {
+            BitConverter.TryWriteBytes(options, ProcessmgrKernel.ProcessOptionSize);
+        }
+        else
+        {
+            uint size = GuestMemory.R32(option);
+            int copied = size > 0x3F ? ProcessmgrKernel.ProcessOptionSize : (int)size;
+            GuestMemory.Span(option, copied).CopyTo(options);
+            // the creation takes only a size of 0x40, which the copy keeps
+            BitConverter.TryWriteBytes(options, size);
+        }
+
+        if (type == 0x4000000)
+        {
+            BitConverter.TryWriteBytes(options[0x2C..], 0x2Eu);
+            BitConverter.TryWriteBytes(options[0x30..], 0xDu);
+            BitConverter.TryWriteBytes(options[4..], BitConverter.ToUInt32(options[4..]) | 0x180000);
+        }
+
+        ProcessmgrKernel processmgr = Emu.Hle.Modules.OfType<ProcessmgrKernel>().First();
+        return processmgr.LaunchProcess(titleId, type, path, argSize, args, options, 0);
     }
 
-    /// <summary>NID_E8DB7942(param): only the system program it is for (authority 0x28080000) may call it; others
-    /// 0x80800009.</summary>
-    [Hle(Nid = 0xE8DB7942, Library = "SceAppMgrForDriver", Default = true)]
-    int ksceAppMgr_E8DB7942(uint param)
+    /// <summary>
+    /// NID_E8DB7942(mount point): takes away an application mount by its 16-byte mount point (SceAppMgr 3.74
+    /// 0x81018864): only a caller with the kernel's program authority (0x2808000000000001; others 0x80800009); NULL
+    /// 0x80800001; a mount point no mount has 0x80800002; else the mount is unmounted and dropped from the list, 0.
+    /// </summary>
+    [Hle(Nid = 0xE8DB7942, Library = "SceAppMgrForDriver")]
+    int ksceAppMgr_E8DB7942(uint mountPoint)
     {
-        return unchecked((int)0x80800009);
+        if (CallerAuthorityId() != KernelAuthorityId)
+        {
+            return unchecked((int)0x80800009);
+        }
+
+        if (mountPoint == 0)
+        {
+            return unchecked((int)0x80800001);
+        }
+
+        string device = GuestMemory.ReadCString(mountPoint, 16).TrimEnd(':');
+        lock (_mounts)
+        {
+            if (device.Length == 0 || !_mounts.Contains(device))
+            {
+                return unchecked((int)0x80800002);
+            }
+        }
+
+        return Umount(device) == 0 ? 0 : unchecked((int)0x80800002);
     }
+
+    /// <summary>The program authority of the calling thread's process (the kernel's for a kernel thread), as
+    /// ksceKernelGetProcessSelfAuthInfo(0) gives it.</summary>
+    ulong CallerAuthorityId()
+    {
+        if (GuestThread.Current is not { KernelMode: false } thread)
+        {
+            return KernelAuthorityId;
+        }
+
+        return KernelSpace.ProcessOf(Emu, thread.Pid)?.Access.AuthorityId ?? 0;
+    }
+
+    /// <summary>The kernel's program authority (SceSysmem's system root data).</summary>
+    const ulong KernelAuthorityId = 0x2808000000000001UL;
 
     /// <summary>NID_504023C8(...): the PSP emulator's launch: only from the shell (0x8080201C).</summary>
     [Hle(Nid = 0x504023C8, Library = "SceAppMgrForDriver", Default = true)]
