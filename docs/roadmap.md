@@ -4139,7 +4139,8 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   `ux0:tai`/`ur0:tai` (cópia de um Vita), que na primeira vez vai para `ur0:kernel_plugins` com o `.bak`. A pasta
   das versões anteriores vai uma vez para `ur0:kernel_plugins` (cada item que ainda não está lá; a pasta antiga vazia é
   apagada), e os `.skprx` continuam em `ur0:tai`. Testes: `KernelPluginOptionTests.TheFolderIsUr0KernelPlugins`,
-  `TheFolderOfEarlierVersionsMovesIntoUr0`, `AnOldEntryNeverOverwritesTheNewFolder` (falham sem a mudança).- [ ] [P2][M] Falha intermitente 0xC0000005 (vista 2 vezes, 15/11/2026: uma em `VulkanRenderer.UniformSet`, na thread da
+  `TheFolderOfEarlierVersionsMovesIntoUr0`, `AnOldEntryNeverOverwritesTheNewFolder` (falham sem a mudança).
+- [ ] [P2][M] Falha intermitente 0xC0000005 (vista 2 vezes, 15/11/2026: uma em `VulkanRenderer.UniformSet`, na thread da
   GPU, durante a suíte; uma dentro do coreclr no Dead Space). Não reproduziu (bugA2, timebox): 4 corridas das classes
   Renderer/Vulkan/RetireWake/UniformSet (30 testes cada, SwiftShader, com a máquina carregada), 0 falhas. Pistas para
   quem pegar: dentro do `UniformSet` o único código nativo é o `vkUpdateDescriptorSets` sobre um set recém-alocado,
@@ -4147,6 +4148,14 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   (o `Dispose` do renderer não para a thread que chama o `Draw`, e um teste que solta o renderer com a thread da
   GPU ainda desenhando cairia assim) ou para um device compartilhado entre testes. Próximo passo: guardar o log do
   testhost / `--blame-crash` (curto, apagando o dump) na próxima vez que acontecer e ver qual teste estava rodando.
+  Achado (23/11/2026, crash2): a suíte `Category!=Slow` caiu 2 vezes sem exceção gerenciada, com a máquina
+  sobrecarregada, perto do `PigletHleTests.Draw_TriangleAndTexturedQuad_ReadBack`. Causa confirmada de uma corrida
+  desse tipo: o `GpuQueue.Backend = null` não esperava o worker, que roda `Idle()` no renderer sempre que a fila
+  esvazia (submit, espera de fences); todos os testes de Vulkan fazem `WaitIdle(); Backend = null; renderer.Dispose()`
+  e destruíam o device sob o worker. Corrigido: o setter toma o `_backendLock` (a troca pelo `ReplaceOn` usa
+  `InstallBackend` sem tomar de novo); teste `GpuQueueDetachTests` (falha sem a correção). Falta: pegar um dump de uma
+  queda real para confirmar que era essa a pilha (o laço de Piglet/Renderer sob carga não reproduziu no timebox) e o
+  `Prefetch` do `Submit`, que ainda chama o backend fora do lock na thread que envia.
 - [x] Minecraft (PCSE00491) no Android fica mais lento com o tempo: duplicado (15/11/2026), junto no item "Minecraft
   (PCSE00491) fica lento jogando no celular" da seção Android. Nota que só estava aqui: no desktop o UC passou 18 s em
   sceAvcdecDeleteDecoder na tela de título com o main num PC só (f1567), a conferir
