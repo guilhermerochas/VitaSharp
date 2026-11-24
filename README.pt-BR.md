@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=f18c2dbab0b07c3df6d1339e9ef1d1216a1eb5c0ca259568d0eeba158fb97234 -->
+<!-- pair: README.md sha256=c346594745209948aa5b46fe544278cdeba1c5ae3aa0ce84f66d3683434ac4c0 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -521,7 +521,10 @@ comportamento, NIDs, modelo de registradores USSE), [VitaSDK](https://vitasdk.or
 [wiki de desenvolvimento do PS Vita](https://wiki.henkaku.xyz/), [VGAudio](https://github.com/Thealexbarney/VGAudio)
 (decodificador ATRAC9, MIT), [RPCN](https://github.com/RipleyTom/rpcn), [Silk.NET](https://github.com/dotnet/Silk.NET),
 [Avalonia](https://avaloniaui.net/), [FFmpeg](https://ffmpeg.org/) (LGPL, baixado no build) e
-[SQLite](https://sqlite.org/) (domínio público) pelo [SQLitePCLRaw](https://github.com/ericsink/SQLitePCL.raw) (Apache-2.0).
+[SQLite](https://sqlite.org/) (domínio público) pelo [SQLitePCLRaw](https://github.com/ericsink/SQLitePCL.raw) (Apache-2.0),
+[PPSSPP](https://www.ppsspp.org/) (referência de comportamento da CPU do PSP; as tabelas do interpolador da VFPU,
+GPL-2.0-or-later, [third_party/ppsspp](third_party/ppsspp/README.md)) e [pspautotests](https://github.com/hrydgard/pspautotests)
+(resultados do hardware do PSP usados pelos testes).
 
 Licença **GPL v3** ([LICENSE](LICENSE)); componentes de terceiros mantêm as suas. PlayStation e PS Vita são marcas da
 Sony Interactive Entertainment; o VitaSharp não tem ligação com a Sony.

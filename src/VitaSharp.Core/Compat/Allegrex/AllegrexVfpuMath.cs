@@ -256,105 +256,388 @@ public static class AllegrexVfpuMath
 
     /// <summary>
     /// The unary group by the VFPU4 operation number: 16 vrcp, 17 vrsq, 18 vsin, 19 vcos, 20 vexp2, 21 vlog2, 22 vsqrt,
-    /// 23 vasin, 24 vnrcp, 26 vnsin, 28 vrexp2. Angles are in quarter turns (vsin(1) = 1). Computed from the definition in
-    /// double and rounded once (the hardware's interpolator tables come in a second step); NaN signs follow the hardware:
-    /// the input's for vrcp, vrsq, vsin and vasin, positive for the others.
+    /// 23 vasin, 24 vnrcp, 26 vnsin, 28 vrexp2. The hardware evaluates all of them with one quadratic interpolator over
+    /// 128 segments (the coefficients in <see cref="AllegrexVfpuTables"/>): the top seven bits of a 23-bit index choose
+    /// the segment, the low 16 bits (x2) enter the linear term in full and the squared term as the distance of their top
+    /// ten bits from the segment's middle, squared and rounded up to a multiple of 256; results keep 22 bits. Angles are
+    /// in quarter turns. Matches the outputs recorded on a PSP (pspautotests cpu/vfpu/exact) bit for bit.
     /// </summary>
     public static uint Transcendental(int operation, uint bits)
     {
-        uint input = FlushDenormal(bits);
-        double value = Single(input);
-        uint inputSign = input & 0x80000000;
-        double result;
-        uint nanSign = 0;
         switch (operation)
         {
             case 16:
+                return Reciprocal(bits);
             case 24:
-                result = 1.0 / value;
-                nanSign = inputSign;
-                break;
+                return Reciprocal(bits) ^ 0x80000000;
             case 17:
-                result = value < 0 ? double.NaN : 1.0 / Math.Sqrt(value);
-                nanSign = inputSign;
-                break;
+                return ReciprocalSquareRoot(bits);
             case 18:
+                return Sine(bits);
             case 26:
-                result = SineQuarterTurns(value);
-                nanSign = inputSign;
-                break;
+                return Sine(bits) ^ 0x80000000;
             case 19:
-                result = CosineQuarterTurns(value);
-                break;
+                return Cosine(bits);
             case 20:
-                result = Math.Pow(2, value);
-                break;
+                return Exp2(bits);
+            case 28:
+                return Exp2(bits ^ 0x80000000);
             case 21:
-                result = value < 0 ? double.NaN : Math.Log2(value);
-                break;
+                return Log2(bits);
             case 22:
-                result = value < 0 ? double.NaN : Math.Sqrt(value);
-                break;
-            case 23:
-                result = Math.Abs(value) > 1 ? double.NaN : Math.Asin(value) * 2 / Math.PI;
-                nanSign = inputSign;
-                break;
+                return SquareRoot(bits);
             default:
-                result = Math.Pow(2, -value);
-                break;
+                return ArcSine(bits);
         }
-
-        uint finished = Finish((float)result, result, nanSign);
-        if (operation == 24 || operation == 26)
-        {
-            finished ^= 0x80000000;
-        }
-
-        return finished;
     }
 
-    /// <summary>sin(x * pi / 2), reduced in quarter turns so that whole turns give exact 0 and 1.</summary>
-    private static double SineQuarterTurns(double x)
+    /// <summary>The squared term's input: |top ten bits of x2 - 512|, squared, divided by 256 rounding up.</summary>
+    private static int SquaredDistance(uint x2)
     {
-        if (!double.IsFinite(x))
-        {
-            return double.NaN;
-        }
-
-        if (x == 0)
-        {
-            return x;
-        }
-
-        double reduced = x - (4 * Math.Floor(x / 4));
-        int quadrant = (int)Math.Floor(reduced);
-        double fraction = (reduced - quadrant) * Math.PI / 2;
-        return quadrant switch
-        {
-            0 => Math.Sin(fraction),
-            1 => Math.Cos(fraction),
-            2 => -Math.Sin(fraction),
-            _ => -Math.Cos(fraction),
-        };
+        int distance = Math.Abs((int)(x2 >> 6) - 512);
+        return ((distance * distance) + 255) >> 8;
     }
 
-    private static double CosineQuarterTurns(double x)
+    /// <summary>c0 + m * x2 / 2^17 + n * square / 2^9 of a segment, in ulps of its binade (before truncation).</summary>
+    private static int Interpolate(int[] table, int segment, uint x2)
     {
-        if (!double.IsFinite(x))
+        int index = segment * AllegrexVfpuTables.SegmentStride;
+        int start = table[index];
+        int slope = table[index + 1];
+        int curvature = table[index + 2];
+        return start + (int)(((long)slope * x2) >> 17) + ((curvature * SquaredDistance(x2)) >> 9);
+    }
+
+    private static int Binade(int[] table, int segment)
+    {
+        return table[(segment * AllegrexVfpuTables.SegmentStride) + 3];
+    }
+
+    /// <summary>
+    /// A float-bits result from <paramref name="index"/> (7 segment bits, 16 position bits) with the segment's binade
+    /// as the exponent, truncated to 22 bits; <paramref name="exponentAdjust"/> is added to the exponent field.
+    /// </summary>
+    private static uint InterpolatedBits(int[] table, uint index, uint exponentAdjust)
+    {
+        int segment = (int)((index >> 16) & 0x7F);
+        uint exponent = (uint)(Binade(table, segment) - 1) << 23;
+        return (exponent + exponentAdjust + (uint)Interpolate(table, segment, index & 0xFFFF)) & ~3u;
+    }
+
+    /// <summary>vrcp: |x| in [2^-126, 2^126] interpolates; zero and denormals give inf, NaN NaN, larger values 0, all signed like x.</summary>
+    private static uint Reciprocal(uint bits)
+    {
+        uint magnitude = bits & 0x7FFFFFFF;
+        uint sign = bits & 0x80000000;
+        if ((bits << 1) - 0x01000000u <= 0xFC000000u)
         {
-            return double.NaN;
+            // the table's exponent is for 1/x with x in [1, 2): subtract x's exponent (and its sign bit, which flips back)
+            return InterpolatedBits(AllegrexVfpuTables.Reciprocal, bits, (127u << 23) - (bits & 0xFF800000));
         }
 
-        double reduced = x - (4 * Math.Floor(x / 4));
-        int quadrant = (int)Math.Floor(reduced);
-        double fraction = (reduced - quadrant) * Math.PI / 2;
-        return quadrant switch
+        if (magnitude < 0x00800000)
         {
-            0 => Math.Cos(fraction),
-            1 => -Math.Sin(fraction),
-            2 => -Math.Cos(fraction),
-            _ => Math.Sin(fraction),
-        };
+            return sign | 0x7F800000;
+        }
+
+        return magnitude > 0x7F800000 ? sign | PositiveNaN : sign;
+    }
+
+    private static bool PositiveNormalFinite(uint bits)
+    {
+        return bits - 0x00800000u < 0x7F000000u;
+    }
+
+    /// <summary>vrsq: positive normal x interpolates on (bits + 2^23) / 2; zero/denormal give a signed inf, negatives -NaN, +inf 0.</summary>
+    private static uint ReciprocalSquareRoot(uint bits)
+    {
+        if (PositiveNormalFinite(bits))
+        {
+            uint halved = (bits + 0x00800000u) >> 1;
+            return InterpolatedBits(AllegrexVfpuTables.ReciprocalSquareRoot, halved, (64u << 23) - (halved & 0x7F800000));
+        }
+
+        if ((bits & 0x7FFFFFFF) < 0x00800000)
+        {
+            return (bits & 0x80000000) | 0x7F800000;
+        }
+
+        if ((bits >> 31) != 0)
+        {
+            return NegativeNaN;
+        }
+
+        return bits > 0x7F800000 ? PositiveNaN : 0u;
+    }
+
+    /// <summary>vsqrt: like vrsq's index; zero and denormals give +0, negatives and NaN +NaN, inf inf.</summary>
+    private static uint SquareRoot(uint bits)
+    {
+        if (PositiveNormalFinite(bits))
+        {
+            uint halved = (bits + 0x00800000u) >> 1;
+            return InterpolatedBits(AllegrexVfpuTables.SquareRoot, halved, (halved & 0x7F800000) - (64u << 23));
+        }
+
+        if ((bits & 0x7FFFFFFF) < 0x00800000)
+        {
+            return 0;
+        }
+
+        return bits == 0x7F800000 ? 0x7F800000u : PositiveNaN;
+    }
+
+    /// <summary>
+    /// The angle in quarter turns as a 24-bit fraction of a half turn (bit 24 tells an odd half turn, where the sine
+    /// changes sign). Exponents from 25 to 31 above the bias, and those with the bits of 0x9F set, lose every bit, as on
+    /// the hardware. False for inf and NaN.
+    /// </summary>
+    private static bool ReduceAngle(uint bits, out uint angle, out bool oddHalfTurn)
+    {
+        uint exponent = (bits >> 23) & 0xFF;
+        uint significand = (bits & 0x007FFFFF) | 0x00800000;
+        angle = 0;
+        oddHalfTurn = false;
+        if (exponent == 0xFF)
+        {
+            return false;
+        }
+
+        if (exponent < 0x7F)
+        {
+            significand = exponent < 0x7F - 23 ? 0 : significand >> (int)(0x7F - exponent);
+        }
+        else if (exponent > 0x7F)
+        {
+            uint shift = exponent - 0x7F;
+            if ((shift >= 25 && shift < 32) || (exponent & 0x9F) == 0x9F)
+            {
+                significand = 0;
+            }
+            else
+            {
+                significand <<= (int)(shift & 31);
+            }
+        }
+
+        oddHalfTurn = ((significand >> 24) & 1) != 0;
+        angle = significand & 0x00FFFFFF;
+        return true;
+    }
+
+    /// <summary>sin of a quarter-wave angle in [0, 2^23] as fixed point with 28 fraction bits (the table runs from the top down).</summary>
+    private static uint SineFixed(uint angle)
+    {
+        if (angle == 0)
+        {
+            return 0;
+        }
+
+        if (angle == 0x00800000)
+        {
+            return 0x10000000;
+        }
+
+        uint fromTop = 0x00800000 - angle;
+        int segment = (int)(fromTop >> 16);
+        uint value = (uint)Interpolate(AllegrexVfpuTables.Sine, segment, fromTop & 0xFFFF) & ~3u;
+        int binade = Binade(AllegrexVfpuTables.Sine, segment);
+        return binade >= 122 ? value << (binade - 122) : value >> (122 - binade);
+    }
+
+    /// <summary>Float bits of value * 2^-fractionBits with the given sign (also for zero); value fits a float significand.</summary>
+    private static uint FixedToBits(ulong value, int fractionBits, bool negative)
+    {
+        uint sign = negative ? 0x80000000u : 0u;
+        if (value == 0)
+        {
+            return sign;
+        }
+
+        int top = 63 - BitOperations.LeadingZeroCount(value);
+        ulong significand = top <= 23 ? value << (23 - top) : value >> (top - 23);
+        return sign + ((uint)(top - fractionBits + 127) << 23) + ((uint)significand & 0x007FFFFF);
+    }
+
+    private static uint SineOfHalfTurnAngle(uint angle, bool negative)
+    {
+        if (angle > 0x00800000)
+        {
+            angle = 0x01000000 - angle;
+        }
+
+        return FixedToBits(SineFixed(angle), 28, negative);
+    }
+
+    private static uint Sine(uint bits)
+    {
+        if (!ReduceAngle(bits, out uint angle, out bool odd))
+        {
+            return (bits & 0x80000000) ^ PositiveNaN;
+        }
+
+        return SineOfHalfTurnAngle(angle, ((bits >> 31) != 0) != odd);
+    }
+
+    private static uint Cosine(uint bits)
+    {
+        if (!ReduceAngle(bits, out uint angle, out bool odd))
+        {
+            return PositiveNaN;
+        }
+
+        bool negative = odd;
+        if (angle >= 0x00800000)
+        {
+            angle = 0x01000000 - angle;
+            negative = !negative;
+        }
+
+        return FixedToBits(SineFixed(0x00800000 - angle), 28, negative);
+    }
+
+    /// <summary>vasin: |x| above 1 is NaN with x's sign; below 2^-23 (denormals too) 0; the result in quarter turns.</summary>
+    private static uint ArcSine(uint bits)
+    {
+        uint sign = bits & 0x80000000;
+        uint magnitude = bits & 0x7FFFFFFF;
+        if (magnitude > 0x3F800000)
+        {
+            return PositiveNaN ^ sign;
+        }
+
+        int exponent = (int)(magnitude >> 23);
+        uint significand = (magnitude & 0x007FFFFF) | 0x00800000;
+        uint fixedInput = exponent < 104 ? 0 : significand >> (127 - exponent);
+        uint fixedOutput;
+        if (fixedInput == 0)
+        {
+            fixedOutput = 0;
+        }
+        else if (fixedInput == 1u << 23)
+        {
+            fixedOutput = 1u << 30;
+        }
+        else
+        {
+            int segment = (int)(fixedInput >> 16);
+            // the first segment is linear and keeps the 2^-30 step of the output
+            uint mask = segment == 0 ? ~1u : ~3u;
+            uint value = (uint)Interpolate(AllegrexVfpuTables.ArcSine, segment, fixedInput & 0xFFFF) & mask;
+            int binade = Binade(AllegrexVfpuTables.ArcSine, segment);
+            fixedOutput = binade >= 120 ? value << (binade - 120) : value >> (120 - binade);
+        }
+
+        return FixedToBits(fixedOutput, 30, sign != 0);
+    }
+
+    /// <summary>
+    /// vexp2 (vrexp2 is vexp2 of -x): x * 2^23 truncated towards zero, one less when negative; its integer part is the
+    /// exponent, the fraction indexes the table. Denormals count as 0 (result 1), -126 and below give +0, 128 and up inf.
+    /// </summary>
+    private static uint Exp2(uint bits)
+    {
+        uint magnitude = bits & 0x7FFFFFFF;
+        bool negative = (bits >> 31) != 0;
+        if (magnitude <= 0x007FFFFF)
+        {
+            return 0x3F800000;
+        }
+
+        if (magnitude > 0x7F800000)
+        {
+            return PositiveNaN;
+        }
+
+        if (negative && magnitude >= 0x42FC0000)
+        {
+            return 0;
+        }
+
+        if (!negative && magnitude >= 0x43000000)
+        {
+            return 0x7F800000;
+        }
+
+        int exponent = (int)(magnitude >> 23);
+        uint significand = (magnitude & 0x007FFFFF) | 0x00800000;
+        int fixedValue;
+        if (exponent >= 127)
+        {
+            fixedValue = (int)(significand << (exponent - 127));
+        }
+        else
+        {
+            fixedValue = exponent < 104 ? 0 : (int)(significand >> (127 - exponent));
+        }
+
+        if (negative)
+        {
+            fixedValue = -fixedValue - 1;
+        }
+
+        uint fraction = (uint)fixedValue & 0x007FFFFF;
+        uint fractionBits = fraction == 0 ? 0 : InterpolatedBits(AllegrexVfpuTables.Exp2, fraction, 0) - 0x3F800000;
+        return 0x3F800000 + ((uint)fixedValue & 0xFF800000) + fractionBits;
+    }
+
+    /// <summary>
+    /// vlog2: exponent + log2(1.mantissa), truncated towards zero to 22 significant bits. Where the step is coarser than
+    /// 2^-22 (exponents from 2 up, and every negative exponent) the datapath drops coefficient bits too: the slope to the
+    /// step, the curvature to 2^d, and the start value takes the dropped part of the squared term. Zero and denormals
+    /// give -inf, negatives NaN, +inf inf.
+    /// </summary>
+    private static uint Log2(uint bits)
+    {
+        if ((bits & 0x7FFFFFFF) <= 0x007FFFFF)
+        {
+            return 0xFF800000;
+        }
+
+        if ((bits & 0x80000000) != 0)
+        {
+            return PositiveNaN;
+        }
+
+        if ((bits >> 23) == 255)
+        {
+            return 0x7F800000u + ((bits & 0x007FFFFF) != 0 ? 1u : 0u);
+        }
+
+        int exponent = (int)(bits >> 23) - 127;
+        uint index = bits & 0x007FFFFF;
+        int level;
+        if (exponent < 0)
+        {
+            level = 7;
+        }
+        else if (exponent < 2)
+        {
+            level = 0;
+        }
+        else
+        {
+            level = 31 - BitOperations.LeadingZeroCount((uint)exponent);
+        }
+
+        int granule = 1 << level;
+        long step = (long)(4 << level) << 17;
+        int segment = (int)(index >> 16);
+        int tableIndex = segment * AllegrexVfpuTables.SegmentStride;
+        int start = AllegrexVfpuTables.Log2[tableIndex];
+        int slope = AllegrexVfpuTables.Log2[tableIndex + 1];
+        int curvature = AllegrexVfpuTables.Log2[tableIndex + 2];
+        uint x2 = index & 0xFFFF;
+        int keptCurvature = curvature < 0 ? -(-curvature & ~(granule - 1)) : curvature & ~(granule - 1);
+        int keptStart = (start + (2 * (curvature - keptCurvature))) & ~(granule - 1);
+        int square = ((keptCurvature * SquaredDistance(x2)) >> 9) & ~(granule - 1);
+        long keptSlope = slope & ~((4 << level) - 1);
+
+        // in units of 2^-41
+        long value = ((long)(keptStart + square) << 17) + (keptSlope * x2);
+        long fraction = exponent >= 0 ? value & ~(step - 1) : -(-value & ~(step - 1));
+        long sum = ((long)exponent << 41) + fraction;
+        return FixedToBits((ulong)(sum < 0 ? -sum : sum), 41, exponent < 0);
     }
 
     /// <summary>vrnds: each of the eight state words keeps 1.0's top bits, a half of the seed and one of its nibbles.</summary>

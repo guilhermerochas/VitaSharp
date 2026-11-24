@@ -23,6 +23,24 @@ public struct GeVertex
     public float U;
     public float V;
     public uint Color;
+
+    /// <summary>The secondary colour (RGB, alpha unused): the separate specular light, added after the texture
+    /// stage when LIGHTMODE bit 0 is set; 0 otherwise.</summary>
+    public uint Color1;
+
+    /// <summary>The fog factor, 0..1: the fragment is mixed as factor * colour + (1 - factor) * FOGCOLOR when
+    /// FOGENABLE; 1 is no fog.</summary>
+    public float Fog = 1f;
+
+    /// <summary>The texture's q: with the texture matrix projection (TMAP mode 1) the rasterizer samples at
+    /// (U / Q, V / Q), interpolated perspective-correctly; 1 otherwise.</summary>
+    public float Q = 1f;
+
+    /// <summary>A vertex with the neutral Color1, Fog and Q (note: <c>default(GeVertex)</c> has Fog = Q = 0; the
+    /// transform always sets them).</summary>
+    public GeVertex()
+    {
+    }
 }
 
 /// <summary>A blend factor or equation as the GE's BLEND command encodes it (bits 0..3, 4..7, 8..11).</summary>

@@ -244,34 +244,6 @@ public sealed class AllegrexVfpuVectorTests
         Assert.Equal(new[] { 0u, One, 0u, 0u }, new[] { rig.Core.ReadVfpuRegister(0x01), rig.Core.ReadVfpuRegister(0x21), rig.Core.ReadVfpuRegister(0x41), rig.Core.ReadVfpuRegister(0x61) });
     }
 
-    [Theory]
-    [InlineData(16u, 0x40000000u, 0x3F000000u)]  // vrcp 2
-    [InlineData(16u, 0x00000000u, 0x7F800000u)]  // vrcp 0 = inf
-    [InlineData(17u, 0x40800000u, 0x3F000000u)]  // vrsq 4
-    [InlineData(18u, 0x3F800000u, 0x3F800000u)]  // vsin 1 (a quarter turn) = 1
-    [InlineData(18u, 0xBF800000u, 0xBF800000u)]  // vsin -1
-    [InlineData(18u, 0x3F000000u, 0x3F3504F3u)]  // vsin 0.5 = sin(pi/4)
-    [InlineData(19u, 0x00000000u, 0x3F800000u)]  // vcos 0
-    [InlineData(19u, 0x40000000u, 0xBF800000u)]  // vcos 2 = -1
-    [InlineData(20u, 0x40400000u, 0x41000000u)]  // vexp2 3 = 8
-    [InlineData(21u, 0x41000000u, 0x40400000u)]  // vlog2 8 = 3
-    [InlineData(21u, 0x00000000u, 0xFF800000u)]  // vlog2 0 = -inf
-    [InlineData(22u, 0x41100000u, 0x40400000u)]  // vsqrt 9 = 3
-    [InlineData(22u, 0xBF800000u, 0x7F800001u)]  // vsqrt -1: the positive VFPU NaN
-    [InlineData(23u, 0x3F800000u, 0x3F800000u)]  // vasin 1 = 1 (quarter turns)
-    [InlineData(23u, 0xC0000000u, 0xFF800001u)]  // vasin -2: NaN with the input's sign
-    [InlineData(24u, 0x40000000u, 0xBF000000u)]  // vnrcp 2
-    [InlineData(26u, 0x3F800000u, 0xBF800000u)]  // vnsin 1
-    [InlineData(28u, 0x3F800000u, 0x3F000000u)]  // vrexp2 1
-    [InlineData(16u, 0x00000001u, 0x7F800000u)]  // a denormal input is zero
-    public void Transcendentals(uint operation, uint input, uint expected)
-    {
-        AllegrexRig rig = new(Op34(0, operation, 1));
-        rig.Core.WriteVfpuRegister(Vs, input);
-        rig.Step();
-        Assert.Equal(expected, rig.Core.ReadVfpuRegister(Vd));
-    }
-
     [Fact]
     public void TranscendentalPrefixesReachTheLastLaneOnly()
     {

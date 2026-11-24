@@ -25,7 +25,9 @@ public readonly struct GeVertexFormat
         TextureOffset = Place(ref offset, ref alignment, s_componentSizes[TextureFormat], 2);
         ColorOffset = Place(ref offset, ref alignment, s_colorSizes[ColorFormat], 1);
         NormalOffset = Place(ref offset, ref alignment, s_componentSizes[NormalFormat], 3);
-        PositionOffset = Place(ref offset, ref alignment, s_componentSizes[PositionFormat], 3);
+        // a position of format 0 still takes 3 bytes, as an 8-bit one would, and its vertices are not drawn (PPSSPP's
+        // vertex decoder, possize[0] = 3)
+        PositionOffset = Place(ref offset, ref alignment, PositionFormat == 0 ? 1 : s_componentSizes[PositionFormat], 3);
         Alignment = alignment;
         Stride = (offset + alignment - 1) & ~(alignment - 1);
         MorphCount = (int)((Raw >> 18) & 7) + 1;
@@ -51,6 +53,9 @@ public readonly struct GeVertexFormat
     public int IndexSize => s_componentSizes[IndexFormat];
 
     public bool Through => (Raw & (1u << 23)) != 0;
+
+    /// <summary>Position format 0: the vertices take room but are never drawn.</summary>
+    public bool PositionInvalid => PositionFormat == 0;
 
     public int WeightCount { get; }
 
