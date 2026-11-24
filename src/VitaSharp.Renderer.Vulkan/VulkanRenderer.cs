@@ -247,6 +247,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         }
         options._handoff = null;
         _vk = _core.Vk;
+        // the PSP compat core's GE draws on a device of its own, made at its first batch (GeVulkanRasterizerDevice)
+        VitaSharp.Core.Compat.Ge.GeEngine.DefaultRasterizerFactory ??= GeVulkanRasterizerDevice.Create;
         _dev = _core.Device;
         _cmd = new VkCmd(_vk, _dev);
         _imagePool = new ImageMemoryPool(_core);

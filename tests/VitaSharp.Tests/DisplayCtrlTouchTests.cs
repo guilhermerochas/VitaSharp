@@ -59,7 +59,7 @@ public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fixture) : IDisposa
         Assert.Equal(0x00100000u, GuestMemory.R32(get + 0x18)); // SceDisplayFrameBufExt flags
         Assert.Equal(DISP_INVALID_ADDR, Call(d, "sceDisplayGetFrameBuf", 0u, 1u));
         Assert.Equal(DISP_INVALID_VALUE, Call(d, "sceDisplayGetFrameBuf", FrameBuf(0x20, 0, 0, 0, 0, 0), 1u));
-        Assert.Equal(0, Call(d, "sceDisplaySetFrameBufForCompat", FrameBuf(0x18, fbMem, 960, 0, 960, 544), 0u));
+        Assert.Equal(unchecked((int)0x80010058), Call(d, "sceDisplaySetFrameBufForCompat", 0, 0, 960, 544, FrameBuf(0x1C, fbMem, 960, 0, 960, 544), 0u)); // system programs only (DisplayCompatPlaneTests)
         Assert.Equal(0, Call(d, "sceDisplaySetFrameBuf", 0u, 1u)); // NULL: blank
 
         uint rate = _harness.Alloc(4), w = _harness.Alloc(4), hgt = _harness.Alloc(4);

@@ -334,6 +334,7 @@ public sealed partial class Emulator : IDisposable
     {
         using ProcessScope.Scope scope = ProcessScope.Enter(this);
         Kernel = new Kernel.Kernel(this);
+        Hle?.DisposeModules(); // a re-execution: the old modules' host resources go
         Hle = new HleRegistry(this);
         Linker = new Linker(Hle) { InvalidateCode = InvalidateCode, Log = Log.Warn };
         if (!IsKernelProcess)
@@ -1034,6 +1035,7 @@ public sealed partial class Emulator : IDisposable
             Log.Warn($"{Describe()}: the GPU did not finish its work in time");
         }
 
+        Hle.DisposeModules(); // the host resources this process's modules hold (SceCompat's core and GE), before its memory goes
         long bytes = Memory.FreeOwnedBy(Pid);
         _codeCacheTimer?.Dispose();
         SaveCodeCache(stop: true);
@@ -2597,6 +2599,7 @@ public sealed partial class Emulator : IDisposable
 
         SaveCodeCache();
         _codeCacheTimer?.Dispose();
+        Hle.DisposeModules(); // the host resources this process's modules hold (every process, children too)
         if (Parent != null)
         {
             return; // the GPU and host devices are the first process's

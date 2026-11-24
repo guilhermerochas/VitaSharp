@@ -1,10 +1,11 @@
-<!-- pair: psp-compat.pt-BR.md sha256=364e2a0ea03a74bdd5cbd65074a2ebf9d587331432a382bdab5c7045d43d33ea -->
+<!-- pair: psp-compat.pt-BR.md sha256=2f473cf8db43b75f43b028f4bca7f344803d963900e162f1f76031b8e230dd2d -->
 # PSP compatibility core (SceCompat, ScePspemu, Allegrex)
 
 *Português: [psp-compat.pt-BR.md](psp-compat.pt-BR.md).*
 
 Study and design note for running PSP and PSone titles through the Vita's own PSP emulator (`vs0:app/NPXS10028`,
-ScePspemu) on top of the real compatibility core, as a real Vita does. No product code yet. Sources: the FW 3.74
+ScePspemu) on top of the real compatibility core, as a real Vita does.
+Product code so far: the Allegrex interpreter (below). Sources: the FW 3.74
 `SceCompat` (bootimage), `NPXS10028/eboot.bin`, `pcbc.skprx` and `pcff.skprx` decompiled or dumped with the local RE
 tools (`%LOCALAPPDATA%\VitaSharpTools\fw374`, study only, nothing copied), the Adrenaline source (GPL-3), the VitaMips
 notes (Hykem) and the existing HLE (`src/VitaSharp.Core/Hle/Modules/Compat.cs`). psdevwiki pages refuse automated
@@ -132,9 +133,9 @@ then `sceCompatWaitSpecialRequest(1)`, and starts its request threads.
   instructions; bit-exact results matter for games). Little endian, 32-bit physical addressing through fixed segments
   (`0x0`/`0x4`/`0x8`/`0xA` mirrors), no TLB.
 - **Media Engine:** not needed. The kermit firmware sends ME work (`kermit_me_wrapper`) to ScePspemu on the ARM side.
-- **GE (graphics):** the pcff has the real `ge.prx`/`ge_2.prx` and ScePspemu has no GE thread, so the GE display lists
-  are executed by compat hardware in the SoC (inferred; to confirm). VitaSharp needs a GE implementation (display
-  lists, vertex decode, rasterisation to Vulkan, VRAM at the top of window 3). This is the biggest piece.
+- **GE (graphics):** compat hardware of the SoC, programmed by the PSP's own `ge.prx`; see "The GE" below. VitaSharp
+  needs a GE implementation (display lists, vertex decode, rasterisation to Vulkan, VRAM at window + `0x3E00000`).
+  This is the biggest piece.
 - **Other PSP-side hardware the kermit kernel touches:** interrupt controller, system timer, DMA controller
   (`dmacman`), the mailbox and shared SRAM above, the LCD controller, cache control; and the KIRK crypto service
   (memlmd decrypts every `~PSP` module of flash0 and of the games). The exact register set must be traced from the
@@ -144,6 +145,104 @@ then `sceCompatWaitSpecialRequest(1)`, and starts its request threads.
   Adrenaline, its own patches (running as third-party code, unchanged) swap in the 6.61 flash0 that its installer
   extracted from `661.PBP` (on the PSP side, with `libpsardumper`) into `ux0:app/PSPEMUCFW/flash0`, and add
   `systemctrl`/`inferno`/`popcorn`.
+
+### The Allegrex interpreter in VitaSharp
+
+`src/VitaSharp.Core/Compat/Allegrex` (`AllegrexCore` on an `IAllegrexBus` that receives PSP physical addresses,
+`address & 0x1FFFFFFF`): the whole integer ISA with the Allegrex additions, delay slots and branch-likely, the
+exceptions through EBase (`0xBFC00200` while Status.BEV is set), COP0 (Status, Cause, EPC, ErrorEPC, EBase, BadVAddr,
+Count, the syscall code, the CPU id, the cfc0/ctc0 control registers), interrupt lines Cause.IP0..IP7 (the PSP's
+interrupt controller is IP2) taken with Status.IE or `mtic`, halt, syscall/break offered to the host first. The
+results MIPS32 leaves unpredictable follow PPSSPP's hardware-checked notes (pspautotests): division by zero,
+`0x80000000 / -1`, the partial decode of rotr/rotrv and of the seb/seh/wsbh/wsbw/bitrev group, `ins` with msb < pos,
+the reset state. Tests: `tests/VitaSharp.Tests/Allegrex*Tests.cs`.
+
+The FPU (COP1) computes every result exactly in software for the four FCR31 rounding modes, so it does not depend on
+the host's FPU mode, with the five IEEE causes, flags and enables (an enabled one takes ExcCode 15), the PSP's
+`0x7FC00000` for generated NaNs and its flush-to-zero rule (FS flushes results, tininess before rounding, never
+inputs). The VFPU (COP2) is complete: the S/C/R/M/E register views, the prefixes with each instruction's own reach,
+every opcode, its arithmetic (round to nearest, denormals as zeros, payload-free NaNs `0x7F800001`), the exact dot
+product, and `vrcp`/`vrsq`/`vsqrt`/`vsin`/`vcos`/`vasin`/`vexp2`/`vlog2` through the hardware's interpolator tables
+([third_party/ppsspp](../../third_party/ppsspp/README.md)); they and the random generator match outputs recorded on a
+PSP (pspautotests `cpu/vfpu/exact`, `cpu/vfpu/vrnd`) bit for bit. COP0 Count reaching Compare raises Cause.IP7.
+
+Three points have no hardware test we know of; VitaSharp follows the MIPS32 architecture, which the Allegrex
+implements:
+
+- `add`, `addi` and `sub` raise the overflow exception (PPSSPP and Jpcsp treat them as `addu`/`subu`).
+- `di`/`ei` (`mfmc0`) work as in MIPS32 release 2: rt = Status, then Status.IE = the instruction's sc bit.
+- An interrupt can be taken with a delay slot next: EPC = the branch, Cause.BD set (PPSSPP only checks outside a slot).
+
+### The PSP-side hardware in VitaSharp
+
+`src/VitaSharp.Core/Compat/Psp` (`PspHardware`, one `IPspMmioDevice` per register block, on `PspBus` for every
+address that is not RAM, the shared SRAM or the mailbox; tests: `tests/VitaSharp.Tests/Psp*Tests.cs`, synthetic MIPS
+programs on the interpreter). On the Vita the PSP side keeps the Tachyon's core blocks the PSP kernel itself drives;
+what the kermit drivers replace (Memory Stick, flash, audio, ME, Wi-Fi, USB, power) goes to the ARM as requests and
+has no PSP-side block here. Which of the blocks below the compat core really has is fixed by the boot trace.
+
+| Block (PSP address) | What it does | Sources |
+|---|---|---|
+| Interrupt controller (`0xBC300000`, `0x00`-`0x2C`) | 64 lines (numbers from Jpcsp's `IntrManager`) in three groups of {masked pending, raw pending, enable}: `0x00`/`0x04`/`0x08` lines 0-31; `0x10`/`0x14`/`0x18` lines 32-63 without 38, 39, 46, 47 (bits 6, 7, 14, 15 read 0); `0x20`/`0x24`/`0x28` those four in bits 0-3. Devices hold their line until acknowledged on the device; latched sources (vblank 30, ME codec 31) are acknowledged by writing their bit to `0x00`. Output: IP2. The mailbox doorbells (`0x40`-`0x5F`, see above) also hold IP2 until their interrupt number is known | uOFW `interruptman/start.S`, Jpcsp `MMIOHandlerInterruptMan` |
+| Hardware timers (`0xBC500000`, 4 x `0x10`, views at `+0x100`) | status: cycle (bits 0-21), interrupt enable (22), counting (23), bit 31 the overflow reset with the start; periods completed since the last read in bits 24-31, the status read is the acknowledge; `+4` what is left of the period; `+8`/`+C` the prescaler on 48 MHz; interrupts 15-18 | uOFW `systimer.c`, Jpcsp `MMIOHandlerTimer` |
+| System time (`0xBC600000`) | the 1 MHz count (`+0`), the alarm (`+4`): interrupt 19 when the count reaches it, held until the next alarm write | Jpcsp `MMIOHandlerSystemTime` |
+| DMA controllers (`0xBC900000` channels 0-7, interrupt 22; `0xBCA00000` 8-15, interrupt 23) | the ARM PL080 register file: interrupt status/clear (`0x00`-`0x18`), enabled channels, configuration (`0x30` bit 0), channels at `0x100 + n*0x20` {source, destination, list item, control, configuration}; memory-to-memory items and lists run at once, the terminal count interrupt per item (control bit 31) passes the channel's mask (configuration bit 15); peripheral flow waits (no PSP-side peripheral yet) | ARM DDI 0196 (PL080 TRM), uOFW `dmacman.c` (`0xC001` = Enable/IE/ITC), Jpcsp `DmacProcessor`/`DmacThread` |
+| System control (`0xBC100000`, `0x104` bytes) | reset, bus clock, clock and IO enable bits, clock selections, RAM size and chip version (`0x40`), PLL (`0x68`, bit 7), USB/MS state (`0x80`, nothing connected), fuse id (`0x90`-`0x98`); the 0→1 edge of the SC reset bit asks for a CPU reset. Chip version and fuses of the compat core: unknown, 0 | Jpcsp `MMIOHandlerSystemControl` |
+| GE (`0xBD400000`, EDRAM controller `0xBD500000`) | the `GeEngine` of the GE section below behind both regions (`PspGeDevice`), its line on interrupt 25; reset: the GE's reset bit and no interrupt accepted. Only when the bus is also the GE's memory (`PspBus` gives it contiguous views of RAM, VRAM and scratchpad) | uofw `hardware.h` |
+| CPU/bus clock ratios (`0xBC200000`) | two 9/9-bit ratios, stored | Jpcsp `MMIOHandlerCpuBusFrequency` |
+| DDR controller (`0xBD000000`) | the flush the kermit driver waits on before ringing the ARM: `+4` = buffers completes at once (reads 0), `+0` reads the last completed (inferred from Adrenaline's `sceKermitWait`) | Jpcsp `MMIOHandlerDdr`, Adrenaline `cef/binary/main.c` |
+| Display controller (`0xBE740000`) | the scan timing: 9 MHz pixel clock, 525 pixels x 286 lines (59.94 Hz), the vertical blank from line 272 on the latched interrupt 30; `+4` the line (a write restarts the timing), `+8` the blanks; running from the reset | Jpcsp `MMIOHandlerDisplayController`/`MMIOHandlerLcdc`, PSP IPL SDK `display.c` |
+| DMACplus scan-out channel (`0xBC800100`) | the picture the LCD reads: address, pixel format (565/5551/4444/8888), width, stride, scan-out enable | PSP IPL SDK `dmacplus.c` |
+
+Time: the blocks run on the core's own time (`CompatCoreRunner.CoreTimeNs`: cycles at the compat clock plus the
+time halted), never the host clock; the runner moves them after every slice and wakes a halted core at their next
+event (the COP0 Count/Compare timer, IP7, is the interpreter's own). Not here yet: KIRK.
+
+### The GE (graphics engine)
+
+How FW 3.74 serves it (sources: the strings and imports of `NPXS10028/eboot.bin` and the `SceCompat` decompilation,
+study only; uofw's `include/common/hardware.h` for the PSP's GE registers; Adrenaline's `adrenaline_compat.h`):
+
+- **Nobody on the ARM side runs display lists.** ScePspemu has no GE thread and no GE request server: its "Remote"
+  servers are audio out/in, ME (codecs, Atrac, Sas2), Msfs, Flashfs, Net, Usb, Osk, Peripheral, Pocs, Pspcm, AVC
+  input and Dmacplus. The pcff carries the PSP's own `ge.prx`/`ge_2.prx`, which program the GE registers at
+  `0xBD400000` directly (no kermit driver for the GE), so the display lists are executed by GE hardware in the SoC's
+  compat block, as on a PSP.
+- **Registers** (uofw): `0xBD400000` reset, `+0x008` the EDRAM size (in KB, low 16 bits), `+0x100` EXEC (bit 0 runs
+  the list and reads 1 while it runs; bit 1 the branch condition; bits 8/9 the CALL depth), `+0x108` the list address,
+  `+0x10C` the stall address (0: none; the GE waits while the list address equals it), `+0x110`/`+0x114` the CALL
+  return addresses, `+0x118`/`+0x11C` the vertex/index addresses, `+0x120`..`+0x128` the origin and its two saved
+  copies, `+0x200` the geometry clock, `+0x304` the interrupt status (1 SIGNAL, 2 END, 4 FINISH, 8 error), `+0x308` the
+  accepted interrupts, `+0x30C`/`+0x310` their set/acknowledge, `+0x400` the EDRAM size in use, `+0x800 + cmd * 4` the
+  last value of each command, `+0xC00`.. the bone, world, view, projection and texgen matrices; the EDRAM controller at
+  `0xBD500000`. `ge.prx` waits for EXEC bit 0 to clear after SIGNAL+END and FINISH+END, then reads the two words before
+  the list address to know which command stopped it.
+- **Memory it draws into:** the PSP's VRAM (physical `0x04000000`, 2 MB), which on the Vita is the top of window 3:
+  window + `0x3E00000` (PSP `0x8BE00000`, Adrenaline's `SCE_PSPEMU_VRAM`); the scratchpad is window + `0x3D00000`.
+- **Where the image goes:** the PSP's display driver points the LCD controller at a framebuffer in VRAM; the
+  `SceCompatLCDDMA` (ARM `0xE5071000`, programmed by `sceCompatStart`: 480x272, destination pitch `0x800`, the
+  `0x88000`-byte framebuffer block of `sceCompatFrameBufferInit`) copies it into `ScePspemuFrameBuffer`, and ScePspemu
+  shows that block with `sceCompatSetDisplayConfig` / `sceDisplaySetFrameBufForCompat`. ScePspemu uses GXM only for
+  its own drawing (dialogs, PocketStation, scaling), not for the PSP's.
+
+In VitaSharp the GE is ours: `src/VitaSharp.Core/Compat/Ge` executes the lists (the register block above, the
+commands' state, vertex decode) and hands each primitive batch to a rasterizer; the Vulkan one renders into the PSP
+framebuffer in PSP memory and writes the pixels back, apart from the GXM renderer.
+
+### The image path to the Vita screen
+
+- **PSP side:** the PSP's display driver draws (or the GE renders) into the VRAM and sets the scan-out channel at
+  `0xBC800100`; the display controller raises the vertical blank (interrupt 30) every 16.68 ms of the core's time.
+- **ARM side:** `sceCompatStart` programs `SceCompatLCDDMA` (`0xE5071000`) with the destination only (`+0x34` 480,
+  `+0x3C` 272, `+0x4C` the framebuffer block's address, `+0x50` the pitch `0x800`, `+0x94` 2, `+0x98` 1, `+0xC0`
+  `0x1000000`, `+4` 1 to start); the suspend path ends the frame (`+0xBC`) and stops it (`+0` 1, `+8` back to 0). Its
+  frame interrupt is IRQ `0x4A`. VitaSharp's `CompatLcdDma` copies the scan-out picture into the block at every PSP
+  blank and converts it to A8B8G8R8; that the source is the scan-out channel is inferred (SceCompat never programs a
+  source), to confirm with the boot trace.
+- **On screen:** ScePspemu shows the block with `sceCompatSetDisplayConfig` (`ksceDisplaySetFrameBuf`, 480x272 pitch
+  512). `sceDisplaySetFrameBufForCompat(x, y, width, height, pParam, opt)` (syscall `0x45BCB941`: x, y, width and a
+  block {height, pParam, opt, sizes}) is a second plane ScePspemu places over it (checks in `Display.Compat.cs`); the
+  presenter keeps it but does not composite it yet.
 
 ### What needs keys and what does not
 

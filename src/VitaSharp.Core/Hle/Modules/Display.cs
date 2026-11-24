@@ -261,9 +261,6 @@ public sealed partial class Display : HleModule
     public static readonly long[] PresentTimes = new long[8192];
     public static int FrameSleepMs;
 
-    [Hle("sceDisplaySetFrameBufForCompat")]
-    [Hle("_sceDisplaySetFrameBufForCompat")] // syscall: (pParam, sync, opt)
-    int SetFrameBufForCompat(uint pParam, uint sync) => SetFrameBufThroughEntry(pParam, sync);
 
     [Hle("_sceDisplayGetFrameBuf")] // syscall: (pParam, sync, opt {pParam->size})
     [Hle("sceDisplayGetFrameBuf")]

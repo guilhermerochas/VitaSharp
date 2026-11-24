@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=aad627827f0a2521020217da5bfd14cab6dd8156533cec0c2331ddcf281898c5 -->
+<!-- pair: README.md sha256=548f2b995d98d88972654817d7d120fad9879ecf35abbeb489b04ccb78b6709d -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -158,6 +158,13 @@ seguinte.
 de comando: `install-firmware <PSVUPDAT.PUP>`. **Desinstalar firmware** (na mesma página; `uninstall-firmware [--yes]`)
 remove só o que a instalação criou (`os0`/`vs0`/`sa0`/`pd0` e os arquivos de índice `firmware.json`,
 `firmware-libraries.txt`): os jogos, os saves e o `ux0`/`ur0` ficam, e uma partição ligada a outra pasta perde só o link.
+
+**Núcleo de compatibilidade PSP (em andamento).** O emulador de PSP do firmware dá boot num núcleo MIPS a partir do
+`os0:kd/pcbc.skprx`, cujo conteúdo só o processador seguro do console decifra. Para rodá-lo, tire do seu próprio
+console o código de boot decifrado (os 0x5CE0 bytes que o SceCompat carrega na janela + 0x600000) e coloque em
+`os0:kd/pcbc.bin` na pasta de dados (`%APPDATA%\VitaSharp\fs\os0\kd\pcbc.bin` no Windows, o mesmo `fs/os0/kd` dentro
+da pasta de dados no Linux e no macOS). O VitaSharp nunca o distribui. Situação e limites: `docs/roadmap.md` (item do
+núcleo de compatibilidade PSP).
 
 **Sistema do Vita.** Com o firmware instalado, o botão **Abrir Sistema do Vita** do launcher (Ctrl+H, ou `boot-shell`) roda o
 `shell.self` do firmware: configuração inicial na primeira vez, tela de bloqueio, tela inicial com os jogos
@@ -547,7 +554,11 @@ comportamento, NIDs, modelo de registradores USSE), [VitaSDK](https://vitasdk.or
 [wiki de desenvolvimento do PS Vita](https://wiki.henkaku.xyz/), [VGAudio](https://github.com/Thealexbarney/VGAudio)
 (decodificador ATRAC9, MIT), [RPCN](https://github.com/RipleyTom/rpcn), [Silk.NET](https://github.com/dotnet/Silk.NET),
 [Avalonia](https://avaloniaui.net/), [FFmpeg](https://ffmpeg.org/) (LGPL, baixado no build) e
-[SQLite](https://sqlite.org/) (domínio público) pelo [SQLitePCLRaw](https://github.com/ericsink/SQLitePCL.raw) (Apache-2.0).
+[SQLite](https://sqlite.org/) (domínio público) pelo [SQLitePCLRaw](https://github.com/ericsink/SQLitePCL.raw) (Apache-2.0),
+[PPSSPP](https://www.ppsspp.org/) (referência de comportamento da CPU do PSP; as tabelas do interpolador da VFPU
+e a do recíproco do GE,
+GPL-2.0-or-later, [third_party/ppsspp](third_party/ppsspp/README.md)) e [pspautotests](https://github.com/hrydgard/pspautotests)
+(resultados do hardware do PSP usados pelos testes).
 
 Licença **GPL v3** ([LICENSE](LICENSE)); componentes de terceiros mantêm as suas. PlayStation e PS Vita são marcas da
 Sony Interactive Entertainment; o VitaSharp não tem ligação com a Sony.

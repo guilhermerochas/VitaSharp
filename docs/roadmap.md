@@ -2339,6 +2339,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   3. [G] Hardware do lado PSP: boot do `pcbc` real (depende do `pcbc.bin` do usuário) + `pcff` com log de MMIO
      desconhecido; controlador de interrupções, timer, DMAC, DMA do LCD para o framebuffer do ScePspemu, KIRK, GE em
      Vulkan. Meta: estado 1 do aperto de mão e os primeiros pedidos msfs/flashfs atendidos pelo ScePspemu real.
+     Feito (feat/alg3, `src/VitaSharp.Core/Compat/Psp`, testes `Psp*Tests` com programas MIPS sintéticos):
+     controlador de interrupções `0xBC300000` (saída no IP2, a linha da mailbox junto), os 4 timers `0xBC500000`,
+     o tempo do sistema `0xBC600000` (alarme → interrupção 19), os dois DMAC `0xBC900000`/`0xBCA00000` (PL080,
+     interrupções 22/23), o sysreg `0xBC100000`, os clocks `0xBC200000` e o flush DDR `0xBD000000` do kermit o GE
+     (`0xBD400000`/`0xBD500000`, interrupção 25, do feat/alg4), o controlador de display `0xBE740000` (vblank →
+     interrupção 30), o canal de scan-out `0xBC800100` e o LCD DMA para o bloco do framebuffer do ScePspemu, no
+     tempo do próprio núcleo pelo runner; VRAM e scratchpad do PSP no topo do banco 3. Falta: número de IRQ PSP das
+     campainhas da mailbox, versão do chip/fuses do núcleo, o compor do segundo plano do `sceDisplaySetFrameBufForCompat`, KIRK (confirmar tudo pelo trace
+     do boot real).
   4. [G] ScePspemu de ponta a ponta: lacunas de HLE pelos logs, homebrew de PSP, jogo de PSP e de PSone,
      suspensão/retomada e save state do núcleo.
   5. [M] Adrenaline 6.61 pelos hooks dele (sem código específico), flash0 de `ux0:app/PSPEMUCFW/flash0`.
@@ -2346,6 +2355,32 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Bloqueios: a camada interna do `pcbc` só o processador seguro decifra (sem chaves; caminho = `pcbc.bin` tirado pelo
   usuário, fora do repositório); as chaves do KIRK (publicadas no PPSSPP/Jpcsp) pedem decisão do lead antes da fase 3;
   o GE de compatibilidade do Vita não é documentado (modelo: GE do PSP).
+  Lado SceCompat da fase 1 (feat/alg2, em andamento): barramento do núcleo (`src/VitaSharp.Core/Compat`: 4 bancos de
+  16 MB, buraco espelhando o banco 1, SRAM compartilhada, mailbox nos dois sentidos com o lado PSP em
+  `0xBC300040`-`0x5F` no bloco do controlador de interrupções: campainha = pulso do bit n de `0xBC300050`, como o
+  kermit do lado PSP faz; pendentes/confirmação em `0x40`/`0x44` inferidos até o trace da fase 3), thread `SceCompatCore` só entre Start e Stop, InitEx/Start/Stop/
+  WaitSpecialRequest/WaitAndGetRequest/ReturnValueEx/Interrupt/WaitIntr/Read/WriteShared32/WriteSharedCtrl como o
+  3.74 e o SceSblFwLoader carregando o `pcff` (segmento do SELF) e o `pcbc` (só pelo `os0:kd/pcbc.bin` do usuário);
+  testado com um núcleo roteirizado no teste. Falta o teste com código MIPS sintético quando o interpretador inteiro
+  do Allegrex entrar.
+  GE (feat/alg4, em andamento; como o 3.74 o atende: `docs/notes/psp-compat.md`, "The GE"): registradores
+  `0xBD400000`/`0xBD500000` e processador de listas (`src/VitaSharp.Core/Compat/Ge/GeEngine.cs`), estado dos comandos,
+  texturas/CLUT, framebuffer e rasterizador Vulkan num dispositivo próprio (`GeVulkanRasterizer`), testados com listas
+  sintéticas no Vulkan por software. Feito também: alvo e profundidade na GPU entre PRIMs e listas (descarregados no
+  fim/stall da lista, antes de transferência/textura/CLUT na área e no LCD DMA; 2000 sprites: 1140 → 117 ms por lista no
+  SwiftShader), color test, dither, logic op, DXT1/3/5, mipmaps, stencil (o alpha do framebuffer numa imagem de
+  profundidade+stencil, sincronizada do alpha só em draws com stencil e de volta no descarregamento; clear mode grava),
+  máscaras de bits parciais (MASKRGB por bit num passe de merge só quando parcial; MASKALPHA como máscara do stencil),
+  patches Bezier/spline e bounding box (vértices/patches na feat/alg5, mesclada), ciclo de vida do dispositivo Vulkan
+  do GE (Stop e fim do processo).
+  Bloqueio do Start real (licença): o `sceCompatStart` do 3.74, antes de soltar o núcleo, (1) lê
+  `tm0:npdrm/act.dat` (0x1038 bytes, `ksceNpDrmReadActData`: conta atual e, da versão 2 em diante, o OpenPSID) para o
+  bloco "dat" que o lado PSP lê por `sceCompatDatRead` — erro devolvido, exceto num DEX; (2) lê o rif
+  `ux0:pspemu/PSP/LICENSE/<content id passado ao sceCompatSetRif>.rif` (1 a 0x200 bytes) e o passa ao
+  `ksceNpDrmGetRifPspKey` numa pilha de kernel; qualquer resposta diferente de 0 é `0x8001000D`, exceto num DEX. No
+  VitaSharp o `ksceNpDrmGetRifPspKey` devolve `0x80020004` depois das checagens (a chave do título é do processador
+  seguro), então num console retail o Start real sempre falha com `0x8001000D` (com a linha "SceCompat: Start: the
+  title's license ... does not pass" no log) e o ScePspemu real não passa daí. Decisão do usuário/lead.
 - [ ] [P3][G] Emular tudo o que for possível do Vita (diretriz do usuário, 10/11/2026): além dos jogos e do sistema, listar
   os recursos do aparelho ainda não emulados (ex.: PSP, PS Mobile/PSM, Remote Play/PS TV, Near, Party, Content
   Manager, câmera/AR, apps de vídeo/música/browser) e abrir um item por recurso com o caminho (LLE do módulo real +

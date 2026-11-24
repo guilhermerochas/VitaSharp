@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=cab272fdf75150e52dddb694ed1ea49c484bb13d8ba3cd59e255f2f34c6cfdc5 -->
+<!-- pair: README.pt-BR.md sha256=88f6e6d724cc1dca05129d558246b103817a46cf033c3bccd1565d7e5f3403d9 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -155,6 +155,12 @@ Vita3K's firmware** (copies `os0`/`vs0`/`sa0`/`pd0` from a Vita3K installation).
 `install-firmware <PSVUPDAT.PUP>`. **Uninstall firmware** (same page; `uninstall-firmware [--yes]`) removes only what the
 install created (`os0`/`vs0`/`sa0`/`pd0` and the index files `firmware.json`, `firmware-libraries.txt`): games, saves and
 `ux0`/`ur0` stay, and a partition linked to another folder loses only the link.
+
+**PSP compat core (in progress).** The PSP emulator of the firmware boots a MIPS core from `os0:kd/pcbc.skprx`, whose
+content only the console's secure processor decrypts. To run it, dump the decrypted boot code from your own console
+(the 0x5CE0 bytes SceCompat loads at its window + 0x600000) and place it at `os0:kd/pcbc.bin` in the data folder
+(`%APPDATA%\VitaSharp\fs\os0\kd\pcbc.bin` on Windows, the same `fs/os0/kd` under the data folder on Linux and macOS).
+VitaSharp never ships it. Status and limits: `docs/roadmap.md` (the PSP compat core item).
 
 **Vita System.** With the firmware installed, the launcher's **Open Vita System** button (Ctrl+H, or `boot-shell`)
 runs the firmware's `shell.self`: initial setup the first time, lock screen, home screen with the installed games and
@@ -538,7 +544,11 @@ NIDs, USSE register model), [VitaSDK](https://vitasdk.org/) and vita-headers, th
 [PS Vita development wiki](https://wiki.henkaku.xyz/), [VGAudio](https://github.com/Thealexbarney/VGAudio)
 (ATRAC9 decoder, MIT), [RPCN](https://github.com/RipleyTom/rpcn), [Silk.NET](https://github.com/dotnet/Silk.NET),
 [Avalonia](https://avaloniaui.net/), [FFmpeg](https://ffmpeg.org/) (LGPL, downloaded at build time) and
-[SQLite](https://sqlite.org/) (public domain) through [SQLitePCLRaw](https://github.com/ericsink/SQLitePCL.raw) (Apache-2.0).
+[SQLite](https://sqlite.org/) (public domain) through [SQLitePCLRaw](https://github.com/ericsink/SQLitePCL.raw) (Apache-2.0),
+[PPSSPP](https://www.ppsspp.org/) (behaviour reference for the PSP CPU; its VFPU interpolator tables
+and the GE's reciprocal table, GPL-2.0-or-later,
+[third_party/ppsspp](third_party/ppsspp/README.md)) and [pspautotests](https://github.com/hrydgard/pspautotests)
+(PSP hardware results used by the tests).
 
 License **GPL v3** ([LICENSE](LICENSE)); third-party components keep their own. PlayStation and PS Vita are trademarks
 of Sony Interactive Entertainment; VitaSharp is not affiliated with Sony.
