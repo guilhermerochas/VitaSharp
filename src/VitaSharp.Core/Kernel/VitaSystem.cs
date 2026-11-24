@@ -69,6 +69,9 @@ public static class ShellEvents
     /// <summary>An application process ended (<see cref="VitaSystem.PostAppEnded"/>): +4 pid, +8 state, +0x14 application
     /// id, +0xC/+0x18 -1, +0x20 the title id.</summary>
     public const int AppEnded = 4;
+    /// <summary>An application is being destroyed (<see cref="VitaSystem.PostAppTerminating"/>): the layout of
+    /// <see cref="AppEnded"/>, posted when the destruction starts, before the process is gone.</summary>
+    public const int AppTerminating = 3;
     /// <summary>An application asked for another one to start (sceAppMgrLaunchAppByName): +4 and +8 its application
     /// id (kernel appmgr 0x8101410C); the shell answers with sceAppMgrLaunchAppByName2ndStage or LaunchAppCancel.</summary>
     public const int LaunchRequest = 6;
@@ -371,6 +374,11 @@ public sealed class VitaSystem
     }
 
     public Emulator? ByAppId(int appId) => Objects.Get<AppObject>(appId)?.Process;
+
+    /// <summary>The process of the application named <paramref name="name"/> (<see cref="Emulator.AppName"/>, the title
+    /// id its launch named), as SceAppMgr's calls by name look it up.</summary>
+    public Emulator? ByAppName(string name) =>
+        Processes.FirstOrDefault(p => string.Equals(p.AppName, name, StringComparison.OrdinalIgnoreCase));
 
     private readonly Dictionary<int, PendingLaunch> _pendingLaunches = new();
 
@@ -806,6 +814,30 @@ public sealed class VitaSystem
     /// </summary>
     public void PostAppEnded(int pid, int appId, int state, string titleId)
     {
+        PostAppEndEvent(ShellEvents.AppEnded, pid, appId, state, titleId);
+    }
+
+    /// <summary>The destroy reason the FW 3.74 kernel appmgr gives an application another one ends
+    /// (sceAppMgrDestroyAppByName, the shell closing it: 0x8100FDD0 and 0x8100FE64 pass 2).</summary>
+    public const int DestroyReason = 2;
+
+    /// <summary>
+    /// An application is being destroyed: shell event 3 as the FW 3.74 kernel appmgr posts it from its destroy path
+    /// (0x810014F4 → 0x81013EB0), at once, before the destroy call returns and long before the process is gone (event
+    /// 4): the layout of event 4 with +8 the destroy reason. The shell's handler is the one of event 4 (shell.self
+    /// 0x8127DBD2 with its "ended" flag clear): it drops the application's window. A plugin in the shell that destroys
+    /// a running application and starts another one for the same title at once (sceAppMgrDestroyAppByName, then
+    /// LaunchAppByPath4 and LaunchAppByName) relies on that order: with only event 4, which comes once the process is
+    /// released, the shell still had the destroyed application's window when the launch request (event 6) came and
+    /// switched to it, and the new process never came to the front.
+    /// </summary>
+    public void PostAppTerminating(int pid, int appId, int reason, string titleId)
+    {
+        PostAppEndEvent(ShellEvents.AppTerminating, pid, appId, reason, titleId);
+    }
+
+    private void PostAppEndEvent(int type, int pid, int appId, int state, string titleId)
+    {
         Span<int> w = stackalloc int[15];
         w[0] = pid;
         w[1] = state;
@@ -819,7 +851,7 @@ public sealed class VitaSystem
         nb.Clear(); // locals are not zeroed in this assembly
         name.AsSpan(0, Math.Min(name.Length, 0x1F)).CopyTo(nb);
         System.Runtime.InteropServices.MemoryMarshal.Cast<byte, int>(nb).CopyTo(w[7..]);
-        PostShellEvent(ShellEvents.AppEnded, w);
+        PostShellEvent(type, w);
     }
 
     public int ShellEventCount

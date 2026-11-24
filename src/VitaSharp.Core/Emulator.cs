@@ -539,6 +539,16 @@ public sealed partial class Emulator : IDisposable
             throw new ProcessLoadException(error, loadError);
         }
 
+        // one application per name: an older process of the same name is destroyed before the new one is announced
+        // (SceAppMgr's entries; a process ksceKernelCreateProcess makes by itself has none)
+        if (!createdByProcessmgr)
+        {
+            child.ReplaceApplicationsOfTheSameName();
+        }
+        else
+        {
+            child._withoutAppMgrEntry = true;
+        }
         // SceAppMgr tells the shell about the new application process: event 2 {pid, application id}
         child._announced = true;
         if (Vita.Shell != null)
@@ -578,6 +588,53 @@ public sealed partial class Emulator : IDisposable
         }));
         return child;
     }
+
+    /// <summary>
+    /// SceAppMgr keeps one application per name. Once the FW 3.74 kernel appmgr has created the process of an
+    /// application (0x81002504), it looks for another entry with the same name (0x8100397C, the new entry left out). If
+    /// it finds one, it clears that entry's name and destroys it with reason 4 (0x810014F4), and only then announces the
+    /// new process (event 2). The shell asked to start a title that a process already runs under that name (a plugin
+    /// in the shell starts the PSP emulator for a bubble by LaunchAppByPath4 and then asks for the bubble's title with
+    /// LaunchAppByName). The shell then started a second process of that name, and it ran next to the first.
+    /// </summary>
+    private void ReplaceApplicationsOfTheSameName()
+    {
+        string name = AppName;
+        if (name.Length == 0)
+        {
+            return;
+        }
+
+        foreach (Emulator other in Vita.Processes)
+        {
+            if (ReferenceEquals(other, this) || other.IsShell || other.IsKernelProcess || other.Parent == null || !other.Running || other._withoutAppMgrEntry)
+            {
+                continue;
+            }
+
+            if (!string.Equals(other.AppName, name, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            other._nameCleared = true;
+            other._destroyReason = ReplacedDestroyReason;
+            other.Terminate($"destroyed: {Describe()} is the application {name} now");
+        }
+    }
+
+    /// <summary>The destroy reason the FW 3.74 kernel appmgr gives an application another process of its name replaces
+    /// (0x81002504 → 0x810014F4 with 4).</summary>
+    public const int ReplacedDestroyReason = 4;
+
+    /// <summary>The reason SceAppMgr gives the shell (event 3, +8) when this process is destroyed.</summary>
+    private int _destroyReason = VitaSystem.DestroyReason;
+
+    /// <summary>SceAppMgr cleared the application's name: a newer process of the name replaced it.</summary>
+    private bool _nameCleared;
+
+    /// <summary>The process is one a kernel caller made with ksceKernelCreateProcess, without an SceAppMgr entry.</summary>
+    private bool _withoutAppMgrEntry;
 
     /// <summary>
     /// The module manager's error for an executable or module that could not be loaded: a missing file
@@ -865,6 +922,12 @@ public sealed partial class Emulator : IDisposable
         }
 
         Log.Info($"Process {Describe()} {why}");
+        // an application destroyed (not exiting by itself): SceAppMgr tells the shell at once, event 3
+        if (!_exiting && Vita.Shell is { } shellProcess && shellProcess != this && !_background && _announced)
+        {
+            Vita.PostAppTerminating(Pid, AppId, _destroyReason, AppName);
+        }
+
         // processmgr tells the kernel's process event handlers before the process's threads go
         TellProcessEnd(_exiting ? ProcessEvents.Exit : ProcessEvents.Kill);
         Running = false;
@@ -912,7 +975,7 @@ public sealed partial class Emulator : IDisposable
         // start it again on every end
         if (Vita.Shell is { } shell && shell != this && !_background && _announced)
         {
-            Vita.PostAppEnded(Pid, AppId, _endedInFront ? 2 : 4, TitleId);
+            Vita.PostAppEnded(Pid, AppId, _endedInFront ? 2 : 4, AppName);
         }
 
         Vita.Unregister(this);
@@ -1395,6 +1458,16 @@ public sealed partial class Emulator : IDisposable
     /// sections): <see cref="ShellProcessTitleId"/> for the shell, the title the launch named when it named one
     /// (<see cref="LaunchedTitleId"/>), the application's own otherwise.</summary>
     public string ProcessTitleId => RunsOnSystemCore ? ShellProcessTitleId : LaunchedTitleId ?? TitleId;
+
+    /// <summary>The name of the process's application in SceAppMgr: the title the launch named (FW 3.74 kernel appmgr
+    /// 0x8100B748 and 0x8100BF4C copy the launch's title id to the entry's name), the application's own title ID
+    /// otherwise. The status calls report it (+0xC, 0x81002A6C), the calls by name (sceAppMgrGetStatusByName,
+    /// sceAppMgrDestroyAppByName, 0x8100397C) look applications up by it and the shell's end events carry it. The
+    /// PSP emulator started for a bubble (vs0:app/NPXS10028 with the bubble's title) is the bubble's application to the
+    /// shell this way: with NPXS10028 there, the shell did not see a PSP emulator a plugin started for the bubble as
+    /// that bubble's application and started another one. Empty once a newer process of the name replaced it
+    /// (<see cref="ReplaceApplicationsOfTheSameName"/>).</summary>
+    public string AppName => _nameCleared ? "" : LaunchedTitleId ?? TitleId;
 
     /// <summary>The title ID the launch gave the process when it differs from the executable's application: the shell
     /// starts the firmware's PSP emulator (vs0:app/NPXS10028/eboot.bin) by sceAppMgrLaunchAppByPath4 with the title of
