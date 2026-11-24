@@ -7,11 +7,13 @@ namespace VitaSharp.Core.Hle.Modules;
 public sealed partial class CommonDialog
 {
     /// <summary>
-    /// The family entries libcdlg 3.74 builds on its family table: Init (FUN_81001C46 with the block: the family's
-    /// OnInit, a NULL block SCE_COMMON_DIALOG_ERROR_NULL), the argument-less requests (FUN_81001C46 without a block:
-    /// the family's abort and, for 0x10 and 0x1B, a second request to the running dialog), GetStatus (FUN_81001A48),
-    /// GetResult (FUN_81001772) and Term (FUN_81001802). As the HLE's other families the dialog is not drawn: Init
-    /// takes the common dialog slot and finishes as the user's cancel.
+    /// The family entries libcdlg 3.74 builds on its family table: Init (FUN_81001772: the request the worker thread
+    /// runs, "Starting Init()", the family's OnInit with the parameter), GetResult (FUN_81001C46 with the result
+    /// block: refused unless the dialog finished), the argument-less requests (FUN_81001C46 without a block: the
+    /// family's abort and, for 0x10 and 0x1B, a second request to the running dialog), GetStatus (FUN_81001A48) and
+    /// Term (FUN_81001802). The PSP emulator's error dialog (family 0x10) calls them in that order: NID_9FA21E09 with
+    /// its parameter, NID_FA26EB30 until finished, NID_64F65B8D with the result, NID_C2D6F7F2. As the HLE's other
+    /// families the dialog is not drawn: Init takes the common dialog slot and finishes as the user's cancel.
     /// </summary>
     int FamilyInit(DialogType type, uint param) => SimpleInit(type, param, ResultUserCanceled);
 
@@ -20,7 +22,7 @@ public sealed partial class CommonDialog
 
     // ---- family 0x10
 
-    [Hle("NID_64F65B8D", Nid = 0x64F65B8D, Library = "SceCommonDialog")]
+    [Hle("NID_9FA21E09", Nid = 0x9FA21E09, Library = "SceCommonDialog")]
     int CommonDialogFamily10Init(uint param) => FamilyInit(DialogType.Libcdlg10, param);
 
     [Hle("NID_A68A44EA", Nid = 0xA68A44EA, Library = "SceCommonDialog")]
@@ -33,7 +35,7 @@ public sealed partial class CommonDialog
     [Hle("NID_FA26EB30", Nid = 0xFA26EB30, Library = "SceCommonDialog")]
     int CommonDialogFamily10GetStatus() => State.StatusOf(DialogType.Libcdlg10);
 
-    [Hle("NID_9FA21E09", Nid = 0x9FA21E09, Library = "SceCommonDialog")]
+    [Hle("NID_64F65B8D", Nid = 0x64F65B8D, Library = "SceCommonDialog")]
     int CommonDialogFamily10GetResult(uint result) => SimpleResult(DialogType.Libcdlg10, result);
 
     [Hle("NID_C2D6F7F2", Nid = 0xC2D6F7F2, Library = "SceCommonDialog")]
@@ -41,7 +43,7 @@ public sealed partial class CommonDialog
 
     // ---- family 0x16 (the Near dialog util)
 
-    [Hle("NID_47E7AD8E", Nid = 0x47E7AD8E, Library = "SceCommonDialog")]
+    [Hle("NID_089FB01E", Nid = 0x089FB01E, Library = "SceCommonDialog")]
     int CommonDialogNearInit(uint param) => FamilyInit(DialogType.Near, param);
 
     [Hle("NID_F2F0049E", Nid = 0xF2F0049E, Library = "SceCommonDialog")]
@@ -50,7 +52,7 @@ public sealed partial class CommonDialog
     [Hle("NID_C36C7DD1", Nid = 0xC36C7DD1, Library = "SceCommonDialog")]
     int CommonDialogNearGetStatus() => State.StatusOf(DialogType.Near);
 
-    [Hle("NID_089FB01E", Nid = 0x089FB01E, Library = "SceCommonDialog")]
+    [Hle("NID_47E7AD8E", Nid = 0x47E7AD8E, Library = "SceCommonDialog")]
     int CommonDialogNearGetResult(uint result) => SimpleResult(DialogType.Near, result);
 
     [Hle("NID_35387E0C", Nid = 0x35387E0C, Library = "SceCommonDialog")]
@@ -58,7 +60,7 @@ public sealed partial class CommonDialog
 
     // ---- family 0x1A
 
-    [Hle("NID_A785D111", Nid = 0xA785D111, Library = "SceCommonDialog")]
+    [Hle("NID_76A52CDE", Nid = 0x76A52CDE, Library = "SceCommonDialog")]
     int CommonDialogFamily1AInit(uint param) => FamilyInit(DialogType.Libcdlg1A, param);
 
     [Hle("NID_460FDFF7", Nid = 0x460FDFF7, Library = "SceCommonDialog")]
@@ -67,7 +69,7 @@ public sealed partial class CommonDialog
     [Hle("NID_E7F645AE", Nid = 0xE7F645AE, Library = "SceCommonDialog")]
     int CommonDialogFamily1AGetStatus() => State.StatusOf(DialogType.Libcdlg1A);
 
-    [Hle("NID_76A52CDE", Nid = 0x76A52CDE, Library = "SceCommonDialog")]
+    [Hle("NID_A785D111", Nid = 0xA785D111, Library = "SceCommonDialog")]
     int CommonDialogFamily1AGetResult(uint result) => SimpleResult(DialogType.Libcdlg1A, result);
 
     [Hle("NID_EFABDD6F", Nid = 0xEFABDD6F, Library = "SceCommonDialog")]
@@ -75,20 +77,20 @@ public sealed partial class CommonDialog
 
     // ---- family 0x1B
 
-    [Hle("NID_396D7B68", Nid = 0x396D7B68, Library = "SceCommonDialog")]
+    [Hle("NID_631DC45C", Nid = 0x631DC45C, Library = "SceCommonDialog")]
     int CommonDialogFamily1BInit(uint param) => FamilyInit(DialogType.Libcdlg1B, param);
 
-    [Hle("NID_63B08CA3", Nid = 0x63B08CA3, Library = "SceCommonDialog")]
+    [Hle("NID_7030E4A6", Nid = 0x7030E4A6, Library = "SceCommonDialog")]
     int CommonDialogFamily1BAbort() => State.Abort(DialogType.Libcdlg1B);
 
-    /// <summary>NID_7030E4A6: the family's second argument-less request.</summary>
-    [Hle("NID_7030E4A6", Nid = 0x7030E4A6, Library = "SceCommonDialog")]
+    /// <summary>NID_63B08CA3: the family's second argument-less request.</summary>
+    [Hle("NID_63B08CA3", Nid = 0x63B08CA3, Library = "SceCommonDialog")]
     int CommonDialogFamily1BRequest() => FamilyRequest(DialogType.Libcdlg1B);
 
     [Hle("NID_500229F0", Nid = 0x500229F0, Library = "SceCommonDialog")]
     int CommonDialogFamily1BGetStatus() => State.StatusOf(DialogType.Libcdlg1B);
 
-    [Hle("NID_631DC45C", Nid = 0x631DC45C, Library = "SceCommonDialog")]
+    [Hle("NID_396D7B68", Nid = 0x396D7B68, Library = "SceCommonDialog")]
     int CommonDialogFamily1BGetResult(uint result) => SimpleResult(DialogType.Libcdlg1B, result);
 
     [Hle("NID_675248CA", Nid = 0x675248CA, Library = "SceCommonDialog")]

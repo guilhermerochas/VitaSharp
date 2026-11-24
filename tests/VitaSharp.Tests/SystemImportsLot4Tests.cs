@@ -154,6 +154,37 @@ public sealed class SystemImportsLot4Tests(GuestMemoryFixture fixture) : IDispos
         Assert.Equal(NpSnsFacebook.FB_NOT_INITIALIZED, Call(f, "NpSnsFacebookSystemWait", 0u));
     }
 
+    /// <summary>
+    /// The NIDs of each system dialog family as libcdlg 3.74 exports them (FUN_81001772 is the Init the worker runs,
+    /// FUN_81001C46 with a block the GetResult): the PSP emulator's error dialog calls NID_9FA21E09 with its parameter,
+    /// polls NID_FA26EB30, reads NID_64F65B8D and ends with NID_C2D6F7F2. Init and GetResult were swapped in all four
+    /// families (and the 0x1B family's abort with its second request), so an Init by NID read a result instead.
+    /// </summary>
+    [Theory]
+    [InlineData("NID_9FA21E09", "NID_FA26EB30", "NID_64F65B8D", "NID_A68A44EA", "NID_C2D6F7F2")] // 0x10
+    [InlineData("NID_089FB01E", "NID_C36C7DD1", "NID_47E7AD8E", "NID_F2F0049E", "NID_35387E0C")] // 0x16, Near
+    [InlineData("NID_76A52CDE", "NID_E7F645AE", "NID_A785D111", "NID_460FDFF7", "NID_EFABDD6F")] // 0x1A
+    [InlineData("NID_631DC45C", "NID_500229F0", "NID_396D7B68", "NID_7030E4A6", "NID_675248CA")] // 0x1B
+    public void EachFamilyRunsByItsFirmwareNids(string init, string getStatus, string getResult, string abort, string term)
+    {
+        CommonDialog d = _harness.Module<CommonDialog>();
+        uint param = _harness.Alloc(0x200), result = _harness.Alloc(0x40);
+        const int Null = unchecked((int)0x80020402);
+
+        Assert.Equal(0, Call(d, getStatus));
+        Assert.Equal(0, Call(d, init, param));
+        Assert.Equal(2, Call(d, getStatus)); // finished (the HLE's dialogs end as the user's cancel)
+        Assert.Equal(Null, Call(d, getResult, 0u));
+        Assert.Equal(0, Call(d, getResult, result));
+        Assert.Equal(1u, GuestMemory.R32(result));
+        Assert.Equal(0, Call(d, term));
+        Assert.Equal(0, Call(d, getStatus));
+        Assert.True(Call(d, getResult, result) < 0); // nothing finished to read
+        Assert.Equal(0, Call(d, init, param));
+        Assert.Equal(0, Call(d, abort));
+        Assert.Equal(0, Call(d, term));
+    }
+
     [Fact]
     public void TheSystemDialogFamiliesShareTheCommonDialogSlot()
     {
