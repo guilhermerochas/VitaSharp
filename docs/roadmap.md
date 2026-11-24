@@ -3205,8 +3205,9 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   "<pasta do aplicativo>/<resto>"; depois segue o lançamento do resto do módulo. O HLE dava 0x8080201C a todos menos o
   shell e 0x80800007 ao shell. Agora: os mesmos passos, e o lançamento é o mesmo do `ksceAppMgrLaunchAppByPath`
   (`LaunchAtPath`: caminho sem programa 0x80800006; o processo novo recebe os argumentos), sem nenhuma verificação de
-  licença própria. O que não entra: o tipo 2 de aplicativo que chama (0x8080201E) e os campos do bloco de parâmetros
-  de lançamento que o motor do appmgr lê, que o modelo de processos do VitaSharp não tem. Teste:
+  licença própria; um caminho em "app0:" vindo do shell (a entrada dele na lista de aplicativos é do tipo 2) dá
+  0x8080201E. O que não entra: os campos do bloco de parâmetros de lançamento que o motor do appmgr lê, que o modelo
+  de processos do VitaSharp não tem. Teste:
   `AppMgrKernelTests.TheGeneralLaunchTakesAPathAnArgumentListAndTheCallersApp0` (falha sem a correção). Testar: nada a
   ver na tela sem um módulo de kernel que chame; um que lance um aplicativo por caminho com argumentos abre o
   aplicativo.

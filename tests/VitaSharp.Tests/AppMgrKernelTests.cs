@@ -154,7 +154,8 @@ public sealed class AppMgrKernelTests(GuestMemoryFixture fixture) : IDisposable
 
     /// <summary>NID_504023C8 is the kernel's general launch at a path (SceAppMgr 3.74 0x8100d25c), with no caller
     /// check of its own: a path that names no program 0x80800006 from any caller (the shell, an application, the
-    /// kernel); an "app0:" path needs a calling application (0x8080201C from a kernel thread); an argument list that
+    /// kernel); an "app0:" path needs a calling application (0x8080201C from a kernel thread, 0x8080201E from the
+    /// shell, whose entry in the application list is of type 2); an argument list that
     /// does not fit its 0x400-byte block 0x8001005B. It answered 0x8080201C to every caller but the shell, and 0x80800007
     /// to the shell.</summary>
     [Fact]
@@ -180,6 +181,18 @@ public sealed class AppMgrKernelTests(GuestMemoryFixture fixture) : IDisposable
             finally
             {
                 t.KernelMode = false;
+            }
+
+            // the shell's entry is of type 2: no app0 to read the path in
+            _harness.Emu.IsShell = true;
+            try
+            {
+                Assert.Equal(unchecked((int)0x8080201E), Call(Manager, "ksceAppMgr_504023C8", inApp0, 0u, 0u, 0u, 0u, 0u, 0u, 0u));
+                Assert.Equal(unchecked((int)0x80800006), Call(Manager, "ksceAppMgr_504023C8", missing, 0u, 0u, 0u, 0u, 0u, 0u, 0u));
+            }
+            finally
+            {
+                _harness.Emu.IsShell = false;
             }
         });
 

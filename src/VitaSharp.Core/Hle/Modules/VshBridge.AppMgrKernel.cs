@@ -337,8 +337,8 @@ public sealed partial class AppMgr
     /// <item>the argument list (NULL-terminated pointers to strings) is copied, each string with its terminator, into
     /// one 0x400-byte block: a string that fills the rest of it 0x8001005B; a list that runs past it
     /// stops the system in the firmware (here 0x8001005B too);</item>
-    /// <item>a path in "app0:" is the calling application's: without one 0x8080201C; it is read in that application's
-    /// own app0;</item>
+    /// <item>a path in "app0:" is the calling application's: without one 0x8080201C, from the shell (its entry in the
+    /// application list is of type 2) 0x8080201E; it is read in that application's own app0;</item>
     /// <item>then the launch of the rest of the module (<see cref="LaunchAtPath"/>): a path that names no program
     /// 0x80800006; the new application's id, the program getting the argument block.</item>
     /// </list>
@@ -358,10 +358,19 @@ public sealed partial class AppMgr
         }
 
         string guestPath = GuestMemory.ReadCString(path, 0x400);
-        if (guestPath.StartsWith("app0:", StringComparison.Ordinal)
-            && (GuestThread.Current is not { KernelMode: false } thread || KernelSpace.ProcessOf(Emu, thread.Pid) == null))
+        if (guestPath.StartsWith("app0:", StringComparison.Ordinal))
         {
-            return unchecked((int)0x8080201C);
+            if (GuestThread.Current is not { KernelMode: false } thread || KernelSpace.ProcessOf(Emu, thread.Pid) is not { } caller)
+            {
+                return unchecked((int)0x8080201C);
+            }
+
+            // the shell's entry in the application list is of type 2 (+0x138, set where SceAppMgr registers the
+            // shell): it has no app0 of an application to read the path in
+            if (caller.IsShell)
+            {
+                return unchecked((int)0x8080201E);
+            }
         }
 
         return LaunchAtPath(guestPath, arguments);
