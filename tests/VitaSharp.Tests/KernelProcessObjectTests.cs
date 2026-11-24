@@ -50,6 +50,37 @@ public sealed class KernelProcessObjectTests(GuestMemoryFixture fixture) : IDisp
         Assert.Equal(InvalidPid, Call(Processmgr, "ksceKernelGetProcessSelfAuthInfo", 0x7FFF0001, info));
     }
 
+    /// <summary>The kernel's process object carries the kernel's SELF auth info (processmgr 3.74 copies its 0x90
+    /// bytes at the start: program authority 0x2808000000000001, the kernel's capability) and the access level 0x80:
+    /// ksceKernelGetProcessSelfAuthInfo for the kernel, and for pid 0 from a kernel thread, gives them. It gave zeros
+    /// (no authority).</summary>
+    [Fact]
+    public void TheKernelsProcessObjectHasTheKernelsAuthInfo()
+    {
+        uint block = (uint)Invoke(Processmgr, "ksceKernelGetProcessKernelBuf", KernelPid)!;
+        Assert.Equal(0x5000000u, GuestMemory.R32(block + 0x40));
+        Assert.Equal(0x80u, GuestMemory.R32(block + 0xA0));
+        uint info = _harness.Alloc(0x90);
+        Assert.Equal(0, Call(Processmgr, "ksceKernelGetProcessSelfAuthInfo", KernelPid, info));
+        Assert.Equal(SysmemKernel.KernelSelfAuthInfo.ToArray(), GuestMemory.Span(info, 0x90).ToArray());
+        Assert.Equal(0x2808000000000001UL, GuestMemory.Read<ulong>(info));
+        _harness.OnGuest(t =>
+        {
+            GuestMemory.Fill(info, 0, 0x90);
+            t.KernelMode = true;
+            try
+            {
+                Assert.Equal(0, Call(Processmgr, "ksceKernelGetProcessSelfAuthInfo", 0, info));
+            }
+            finally
+            {
+                t.KernelMode = false;
+            }
+
+            Assert.Equal(0x2808000000000001UL, GuestMemory.Read<ulong>(info));
+        });
+    }
+
     [Fact]
     public void TheStateByteIsSetOnlyWithBit4AndBit20ReadsApart()
     {

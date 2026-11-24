@@ -3191,6 +3191,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (23/11/2026, falta testar) [P3][P] O objeto de processo do kernel sem a autoridade do kernel (fix/quick3): o
+  processmgr 3.74 monta o objeto do processo do kernel (0x10005) no início com o tipo 0x5000000, o SceSelfAuthInfo
+  do próprio kernel (os 0x90 bytes do módulo: autoridade 0x2808000000000001, a capacidade do kernel; os mesmos que o
+  `ksceSysrootGetSelfAuthInfo` dá sem tabela) e o nível de acesso 0x80 em +0xA0. O HLE deixava o SELF auth info do
+  kernel zerado, então `ksceKernelGetProcessSelfAuthInfo` do kernel (ou do pid 0 numa thread de kernel) dava
+  autoridade 0. Teste: `KernelProcessObjectTests.TheKernelsProcessObjectHasTheKernelsAuthInfo` (falha sem a
+  correção). Testar: nada a ver na tela; módulos de kernel que conferem a autoridade de quem chama pelo processmgr
+  aceitam o kernel.
+
 - [ ] (23/11/2026, falta testar) [P3][P] SceAppMgrForDriver NID_324DD34E e NID_E8DB7942 e o lançamento de processo
   do SceProcessmgrForKernel (fix/quick3, do item "Kernel de software ainda em resposta padrão"). Pelo SceAppMgr e
   pelo processmgr 3.74 (estudo): o NID_324DD34E(título, tipo, caminho, tamanho e argumentos, opção) copia a opção

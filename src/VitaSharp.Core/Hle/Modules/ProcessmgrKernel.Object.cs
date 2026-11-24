@@ -106,7 +106,12 @@ public sealed partial class ProcessmgrKernel
             GuestMemory.W32(block + 0x288, block + 0x498);
             if (uid == KernelSpace.KernelPid)
             {
+                // processmgr 3.74 makes the kernel's object at its start: type 0x5000000, the kernel's own SELF auth
+                // info (the module's 0x90 bytes, the same as the system root's fallback: program authority
+                // 0x2808000000000001) and the access level 0x80 at +0xA0
                 GuestMemory.W32(block + 0x40, KernelProcessType);
+                SysmemKernel.KernelSelfAuthInfo.CopyTo(GuestMemory.Span(block + AuthInfoOffset, (int)AuthInfoSize));
+                GuestMemory.W32(block + 0xA0, 0x80);
             }
             if (uid != KernelSpace.KernelPid && ProcessOf(uid) is { } process)
             {
