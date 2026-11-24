@@ -171,6 +171,44 @@ public sealed partial class PluginFramework
         return 2;
     }
 
+    /// <summary>The target of the 16-bit Thumb CBZ/CBNZ or B&lt;cond&gt; at <paramref name="address"/>, or null for
+    /// any other instruction.</summary>
+    static uint? ThumbShortBranchTarget(uint address)
+    {
+        ushort instruction = GuestMemory.Read<ushort>(address);
+        if ((instruction & 0xF500) == 0xB100)
+        {
+            uint offset = (uint)((((instruction >> 9) & 1) << 6) | (((instruction >> 3) & 0x1F) << 1));
+            return address + 4 + offset;
+        }
+
+        if ((instruction & 0xF000) == 0xD000 && (instruction & 0x0F00) < 0x0E00)
+        {
+            int offset = (sbyte)(instruction & 0xFF) * 2;
+            return (uint)(address + 4 + offset);
+        }
+
+        return null;
+    }
+
+    /// <summary>Points the CBZ/CBNZ or B&lt;cond&gt; at <paramref name="address"/> at <paramref name="target"/>, a
+    /// little after it (the trampoline's long jump to the branch's original target).</summary>
+    static void RetargetThumbShortBranch(uint address, uint target)
+    {
+        ushort instruction = GuestMemory.Read<ushort>(address);
+        uint offset = target - (address + 4);
+        if ((instruction & 0xF500) == 0xB100)
+        {
+            instruction = (ushort)((instruction & 0xFD07u) | (((offset >> 6) & 1) << 9) | (((offset >> 1) & 0x1F) << 3));
+        }
+        else
+        {
+            instruction = (ushort)((instruction & 0xFF00u) | ((offset >> 1) & 0xFF));
+        }
+
+        GuestMemory.Write(address, instruction);
+    }
+
     /// <summary>An ARM instruction that can run from another address unchanged: no branch and no PC operand.</summary>
     static bool ArmMovable(uint instruction)
     {
@@ -196,22 +234,56 @@ public sealed partial class PluginFramework
             return stub;
         }
 
+        int jumpSize = thumb ? ThumbJumpSize : ArmJumpSize;
+        if (Emu.FirmwareKernel.IsTrapFill(address, (uint)jumpSize))
+        {
+            // a function of a firmware module whose code VitaSharp runs in HLE (an internal one, reached by offset):
+            // its segment holds trap fill, not code to move; the trampoline is trap fill that stands for the call
+            // at the function's start, so the hook's continue still reaches the function's HLE
+            replaced = jumpSize;
+            return Emu.FirmwareKernel.MoveTrap(thumb ? address | 1 : address, KernelAllocation(4, "plugin hook trampoline"));
+        }
+
         if (thumb)
         {
+            // the short branches (CBZ/CBNZ, B<cond>) the jump covers are relocated, as the framework's relocator
+            // does: in the trampoline they branch to a long jump to their original target, placed after the jump back
+            var branches = new List<(int At, uint Target)>();
             while (replaced < ThumbJumpSize)
             {
-                ThumbInstruction(address + (uint)replaced, out bool movable);
+                uint at = address + (uint)replaced;
+                int length = ThumbInstruction(at, out bool movable);
                 if (!movable)
                 {
-                    return 0;
+                    if (ThumbShortBranchTarget(at) is not { } branchTarget)
+                    {
+                        return 0;
+                    }
+
+                    branches.Add((replaced, branchTarget));
                 }
 
-                replaced += ThumbInstruction(address + (uint)replaced, out _);
+                replaced += length;
             }
 
-            uint trampoline = KernelAllocation((uint)replaced + ThumbJumpSize + 2, "plugin hook trampoline");
+            foreach ((_, uint branchTarget) in branches)
+            {
+                if (branchTarget >= address && branchTarget < address + (uint)replaced)
+                {
+                    return 0; // a branch into the instructions the jump replaces
+                }
+            }
+
+            uint trampoline = KernelAllocation((uint)replaced + ThumbJumpSize * (uint)(1 + branches.Count) + 2, "plugin hook trampoline");
             GuestMemory.Copy(trampoline, address, (uint)replaced);
             WriteThumbJump(trampoline + (uint)replaced, (address + (uint)replaced) | 1);
+            for (int i = 0; i < branches.Count; i++)
+            {
+                uint farJump = trampoline + (uint)replaced + ThumbJumpSize * (uint)(1 + i);
+                WriteThumbJump(farJump, branches[i].Target | 1);
+                RetargetThumbShortBranch(trampoline + (uint)branches[i].At, farJump);
+            }
+
             return trampoline | 1;
         }
 

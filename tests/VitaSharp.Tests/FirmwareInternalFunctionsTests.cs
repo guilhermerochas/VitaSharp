@@ -171,4 +171,34 @@ public sealed class FirmwareInternalFunctionsTests : IDisposable
 
         Assert.Equal(2u, CallKernel(blockBase + 0x1000));
     }
+
+    /// <summary>
+    /// A hook by offset on an internal function of a firmware module VitaSharp runs in HLE (Adrenaline 8 hooks the FW
+    /// 3.74 SceCompat at +0x2AE8, its secure-RAM access setup, 24/11/2026): the code segment holds trap fill, not
+    /// code to move, and the framework refused it with TAI_ERROR_HOOK_ERROR. The hook now installs: a call at the
+    /// offset runs the hook, the hook's continue runs the function's HLE, and the release puts the function back. Thumb
+    /// and ARM entries.
+    /// </summary>
+    [Theory]
+    [InlineData(0x200u, 1)]
+    [InlineData(0x300u, 0)]
+    public void AnOffsetHookOnAnHleFirmwareFunctionRunsTheHookAndItsContinue(uint offset, int thumb)
+    {
+        uint entry = offset | (uint)thumb;
+        _harness.Emu.FirmwareKernel.RegisterInternal(Sysmem374ModuleNid, entry, (_, arguments) => arguments[0] + 0x100);
+        (_, uint blockBase) = CodeBlock(0x55);
+        uint hookFunction = blockBase + 0x1000;
+        LoadedModule shell = _harness.Emu.FirmwareKernel.Modules.Single(m => m.Name == "SceSysmem");
+        uint hookRef = _harness.Word(0);
+        PluginFramework framework = _harness.Module<PluginFramework>();
+        Assert.Equal(0x105u, CallKernel(Internal(entry), 5));
+
+        int uid = Call(framework, "HookFunctionOffsetForKernel", KernelSpace.KernelPid, hookRef, shell.Uid, 0, offset, thumb, hookFunction);
+
+        Assert.True(uid > 0, $"offset hook returned 0x{uid:X8}");
+        Assert.Equal(0x55u, CallKernel(Internal(entry), 5));
+        Assert.Equal(0x106u, CallKernel(GuestMemory.R32(GuestMemory.R32(hookRef) + 8), 6)); // the hook's continue
+        Assert.Equal(0, Call(framework, "HookReleaseForKernel", uid, GuestMemory.R32(hookRef)));
+        Assert.Equal(0x107u, CallKernel(Internal(entry), 7));
+    }
 }

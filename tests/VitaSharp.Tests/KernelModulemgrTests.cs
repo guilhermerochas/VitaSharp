@@ -170,13 +170,15 @@ public sealed class KernelModulemgrTests(GuestMemoryFixture fixture) : IDisposab
 
             Assert.Equal(SceError.MODULEMGR_NO_MOD, Call(Modmgr, "ksceKernelUnloadModuleForPid", _harness.Emu.Pid, uid, 0, 0u));
 
-            int uid2 = Call(Modmgr, "ksceKernelLoadStartModuleForPid", 0, path, 0u, 0u, 0, 0u, 0u);
+            Assert.Equal(SceError.MODULEMGR_INVALID_PROCESS_UID, Call(Modmgr, "ksceKernelLoadStartModuleForPid", 0, path, 0u, 0u, 0, 0u, 0u)); // pid 0 names no process (FW 3.74)
 
-            Assert.Equal(0, Call(Modmgr, "ksceKernelStopUnloadModuleForPid", 0, uid2, 0u, 0u, 0, 0u, status));
+            int uid2 = Call(Modmgr, "ksceKernelLoadStartModuleForPid", _harness.Emu.Pid, path, 0u, 0u, 0, 0u, 0u);
+
+            Assert.Equal(0, Call(Modmgr, "ksceKernelStopUnloadModuleForPid", _harness.Emu.Pid, uid2, 0u, 0u, 0, 0u, status));
 
             Assert.Equal(SceError.MODULEMGR_INVALID_PROCESS_UID, Call(Modmgr, "ksceKernelLoadStartModuleForPid", 0x7FFFFF01, path, 0u, 0u, 0, 0u, 0u));
 
-            Assert.Equal(SceError.MODULEMGR_NOENT, Call(Modmgr, "ksceKernelLoadStartModuleForPid", 0, "ur0:tai/none.suprx", 0u, 0u, 0, 0u, 0u));
+            Assert.Equal(SceError.MODULEMGR_NOENT, Call(Modmgr, "ksceKernelLoadStartModuleForPid", _harness.Emu.Pid, "ur0:tai/none.suprx", 0u, 0u, 0, 0u, 0u));
 
             // the kernel pid loads a kernel module
 

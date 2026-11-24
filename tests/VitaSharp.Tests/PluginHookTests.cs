@@ -153,6 +153,42 @@ public sealed class PluginHookTests(GuestMemoryFixture fixture) : IDisposable
         });
     }
 
+    /// <summary>
+    /// An offset hook on a Thumb function whose first instructions hold a short branch (CBZ, as the FW 3.74 ScePspemu
+    /// at +0x6364 that Adrenaline 8 hooks, 24/11/2026; or B&lt;cond&gt;): the branch is relocated into the trampoline,
+    /// as the framework's relocator does, instead of refusing the hook with TAI_ERROR_HOOK_ERROR. The function runs the
+    /// hook, and the hook's continue takes both ways of the branch as the original does.
+    /// </summary>
+    [Theory]
+    [InlineData((ushort)0x4615, (ushort)0xB112)] // mov r5, r2; cbz r2, +4
+    [InlineData((ushort)0x2A00, (ushort)0xD002)] // cmp r2, #0; beq +4
+    public void AnOffsetHookRelocatesTheShortBranchItCovers(ushort second, ushort branch)
+    {
+        // push {r4-r6, lr}; <second>; <branch> to zero; orr.w r0, r2, r0; pop {r4-r6, pc}; zero: movs r0, #2; pop
+        var builder = new SceModuleBuilder("BranchTarget");
+        int function = builder.Thumb(0xB570, second, branch, 0xEA42, 0x0000, 0xBD70, 0x2002, 0xBD70);
+        LoadedModule module = Load("branch.skprx", builder);
+        uint target = SceModuleBuilder.FunctionAddress(module.Segments[0].Address, function);
+        uint[] hooks = LoadHooks(42);
+        uint hookRef = _harness.Word(0);
+        _harness.OnGuest(t =>
+        {
+            Assert.Equal(0x15u, t.CallGuest(target, 0x10, 0, 5));
+            Assert.Equal(2u, t.CallGuest(target, 0x10, 0, 0));
+            uint offset = (target & ~1u) - module.Segments[0].Address;
+
+            int uid = Call(Framework, "HookFunctionOffsetForKernel", KernelSpace.KernelPid, hookRef, module.Uid, 0, offset, 1, hooks[0]);
+
+            Assert.True(uid > 0, $"offset hook returned 0x{uid:X8}");
+            Assert.Equal(42u, t.CallGuest(target, 0x10, 0, 5));
+            uint original = GuestMemory.R32(GuestMemory.R32(hookRef) + 8);
+            Assert.Equal(0x15u, t.CallGuest(original, 0x10, 0, 5));
+            Assert.Equal(2u, t.CallGuest(original, 0x10, 0, 0));
+            Assert.Equal(0, Call(Framework, "HookReleaseForKernel", uid, GuestMemory.R32(hookRef)));
+            Assert.Equal(2u, t.CallGuest(target, 0x10, 0, 0));
+        });
+    }
+
     [Fact]
     public void CodeThatCannotMoveIsNotHooked()
     {

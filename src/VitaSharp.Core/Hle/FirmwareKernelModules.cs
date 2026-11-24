@@ -71,6 +71,10 @@ public sealed class FirmwareKernelModules(Emulator emu)
     /// has there without exporting it.</summary>
     private readonly Dictionary<(uint ModuleNid, uint Offset), InternalFunction> _internalFunctions = new();
 
+    /// <summary>Trap fill moved out of a code segment (the start of a function a hook jumps over, run from its
+    /// trampoline) -> the address in the segment it stands for.</summary>
+    private readonly Dictionary<uint, uint> _movedTraps = new();
+
     /// <summary>The internal functions a caller reached that have no HLE (each one logged once).</summary>
     private readonly HashSet<(string Module, uint Offset)> _reportedTraps = new();
 
@@ -105,6 +109,49 @@ public sealed class FirmwareKernelModules(Emulator emu)
         }
     }
 
+    /// <summary>Whether <paramref name="address"/> to <paramref name="address"/> + <paramref name="size"/> is trap fill
+    /// of a firmware module's code segment (code VitaSharp does not run there: its functions are HLE).</summary>
+    public bool IsTrapFill(uint address, uint size)
+    {
+        (uint Start, uint End, string Module, uint ModuleNid)[] segments = Volatile.Read(ref _codeSegments);
+        uint first = address & ~3u, last = (address + size - 1) & ~3u;
+        foreach ((uint start, uint end, _, _) in segments)
+        {
+            if (first >= start && last < end)
+            {
+                for (uint word = first; word <= last; word += 4)
+                {
+                    if (GuestMemory.R32(word) != TrapFillWord)
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Trap fill for the start of the function at <paramref name="address"/> (bit 0: Thumb) of a firmware code
+    /// segment, to run from a hook's trampoline: a word of trap fill whose trap is taken as the call at
+    /// <paramref name="address"/>, so the function's HLE (or its "not emulated" report) still answers the hook's
+    /// continue once the hook's jump is written over the segment. Returns the word's address (with the Thumb bit of
+    /// <paramref name="address"/>).
+    /// </summary>
+    public uint MoveTrap(uint address, uint word)
+    {
+        GuestMemory.W32(word, TrapFillWord);
+        lock (_lock)
+        {
+            _movedTraps[word] = address & ~1u;
+        }
+
+        return word | (address & 1);
+    }
+
     /// <summary>
     /// The CPU stopped on the trap fill of a firmware module's code segment at <paramref name="pc"/>: code called a
     /// function of the module that VitaSharp has no code for there (an internal one, found by offset). Runs its HLE
@@ -115,30 +162,43 @@ public sealed class FirmwareKernelModules(Emulator emu)
     internal unsafe bool HandleTrap(GuestThread thread, CpuState* state, uint pc)
     {
         (uint Start, uint End, string Module, uint ModuleNid)[] segments = Volatile.Read(ref _codeSegments);
+        if (GuestMemory.R32(pc & ~3u) != TrapFillWord)
+        {
+            return false;
+        }
+
+        uint moved = 0;
+        lock (_lock)
+        {
+            _movedTraps.TryGetValue(pc & ~3u, out moved);
+        }
+
+        uint target = moved != 0 ? moved : pc;
         int found = -1;
         for (int i = 0; i < segments.Length; i++)
         {
-            if (pc >= segments[i].Start && pc < segments[i].End)
+            if (target >= segments[i].Start && target < segments[i].End)
             {
                 found = i;
                 break;
             }
         }
 
-        if (found < 0 || GuestMemory.R32(pc & ~3u) != TrapFillWord)
+        if (found < 0)
         {
             return false;
         }
 
         (uint start, _, string module, uint moduleNid) = segments[found];
-        uint word = (pc & ~3u) - start;
+        uint word = (target & ~3u) - start;
         bool thumb = state->Thumb != 0;
-        // a Thumb entry at the word's high half branches to the UDF in its low half
-        uint offset = thumb ? word | 1 : word;
+        // a Thumb entry at the word's high half branches to the UDF in its low half; moved trap fill names its
+        // function's exact start
+        uint offset = moved != 0 ? (target - start) | (thumb ? 1u : 0u) : thumb ? word | 1 : word;
         InternalFunction? function;
         lock (_lock)
         {
-            if (!_internalFunctions.TryGetValue((moduleNid, offset), out function) && thumb)
+            if (!_internalFunctions.TryGetValue((moduleNid, offset), out function) && thumb && moved == 0)
             {
                 _internalFunctions.TryGetValue((moduleNid, (word + 2) | 1), out function);
             }

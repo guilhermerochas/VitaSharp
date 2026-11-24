@@ -176,11 +176,22 @@ public sealed partial class ModulemgrKernel : HleModule
     /// <summary>
     /// ksceKernelLoadStartModuleForPid(pid, path, args, argp, flags, opt, int *status): a user module loaded into
     /// process <paramref name="pid"/> and started on a thread of that process (the caller's own thread when it is the
-    /// caller's process). A start that does not report success unloads it again.
+    /// caller's process). A start that does not report success unloads it again. As in the FW 3.74 export: pid 0 is
+    /// 0x8002D017 (it names no process here, not the caller's), flags outside the load flags 0x8002000A.
     /// </summary>
     [Hle]
     internal int ksceKernelLoadStartModuleForPid(int pid, string path, uint args, uint argp, int flags, uint opt, uint status)
     {
+        if (pid == 0)
+        {
+            return SceError.MODULEMGR_INVALID_PROCESS_UID;
+        }
+
+        if (((uint)flags & ~LoadForPidFlags) != 0)
+        {
+            return SceError.INVALID_FLAGS;
+        }
+
         if (pid == KernelSpace.KernelPid)
         {
             return ksceKernelLoadStartModule(path, args, argp, flags, opt, status);
@@ -234,10 +245,21 @@ public sealed partial class ModulemgrKernel : HleModule
         return m.Uid;
     }
 
-    /// <summary>ksceKernelStopModuleForPid(pid, modid, args, argp, flags, opt, int *status).</summary>
+    /// <summary>ksceKernelStopModuleForPid(pid, modid, args, argp, flags, opt, int *status): pid 0 is 0x8002D017,
+    /// flags other than 0 0x8002000A (FW 3.74).</summary>
     [Hle]
     internal int ksceKernelStopModuleForPid(int pid, int modid, uint args, uint argp, int flags, uint opt, uint status)
     {
+        if (pid == 0)
+        {
+            return SceError.MODULEMGR_INVALID_PROCESS_UID;
+        }
+
+        if (flags != 0)
+        {
+            return SceError.INVALID_FLAGS;
+        }
+
         if (pid == KernelSpace.KernelPid)
         {
             return ksceKernelStopModuleThroughEntry(modid, args, argp, flags, opt, status);
@@ -257,10 +279,21 @@ public sealed partial class ModulemgrKernel : HleModule
         return 0;
     }
 
-    /// <summary>ksceKernelUnloadModuleForPid(pid, modid, flags, opt).</summary>
+    /// <summary>ksceKernelUnloadModuleForPid(pid, modid, flags, opt): pid 0 is 0x8002D017, flags other than
+    /// <see cref="UnloadForPidFlags"/> 0x8002000A (FW 3.74).</summary>
     [Hle]
     internal int ksceKernelUnloadModuleForPid(int pid, int modid, int flags, uint opt)
     {
+        if (pid == 0)
+        {
+            return SceError.MODULEMGR_INVALID_PROCESS_UID;
+        }
+
+        if (((uint)flags & ~UnloadForPidFlags) != 0)
+        {
+            return SceError.INVALID_FLAGS;
+        }
+
         if (pid == KernelSpace.KernelPid)
         {
             return ksceKernelUnloadModuleThroughEntry(modid, flags, opt);
@@ -275,11 +308,25 @@ public sealed partial class ModulemgrKernel : HleModule
         return 0;
     }
 
-    /// <summary>ksceKernelStopUnloadModuleForPid(pid, modid, args, argp, flags, opt, int *status).</summary>
+    /// <summary>The flags the *UnloadModuleForPid exports accept (FW 3.74 checks flags &amp; 0xBFFFFFFF).</summary>
+    const uint UnloadForPidFlags = 0x40000000;
+
+    /// <summary>ksceKernelStopUnloadModuleForPid(pid, modid, args, argp, flags, opt, int *status): pid 0 is
+    /// 0x8002D017, flags other than <see cref="UnloadForPidFlags"/> 0x8002000A (FW 3.74); the flags go to the unload.</summary>
     [Hle]
     internal int ksceKernelStopUnloadModuleForPid(int pid, int modid, uint args, uint argp, int flags, uint opt, uint status)
     {
-        int r = ksceKernelStopModuleForPidThroughEntry(pid, modid, args, argp, flags, opt, status);
+        if (pid == 0)
+        {
+            return SceError.MODULEMGR_INVALID_PROCESS_UID;
+        }
+
+        if (((uint)flags & ~UnloadForPidFlags) != 0)
+        {
+            return SceError.INVALID_FLAGS;
+        }
+
+        int r = ksceKernelStopModuleForPidThroughEntry(pid, modid, args, argp, 0, opt, status);
         return r < 0 ? r : ksceKernelUnloadModuleForPidThroughEntry(pid, modid, flags, opt);
     }
 
