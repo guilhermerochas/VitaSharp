@@ -8,8 +8,8 @@ namespace VitaSharp.Core.Compat.Allegrex;
 /// <c>address &amp; 0x1FFFFFFF</c> (the 0x0/0x4/0x8/0xA segments are mirrors). Caches are not modelled (the cache
 /// instruction does nothing). COP0 holds what the PSP kernel uses: Status, Cause, EPC, ErrorEPC, EBase, BadVAddr,
 /// Count, the syscall code, the CPU id and the 32 control registers of cfc0/ctc0; every exception and interrupt goes to
-/// EBase (0xBFC00200 while Status.BEV is set) as on the PSP. The FPU (COP1) and VFPU (COP2) are phase 2: their
-/// instructions reach <see cref="TrapHandler"/> as <see cref="AllegrexTrapKind.Unimplemented"/>.
+/// EBase (0xBFC00200 while Status.BEV is set) as on the PSP; Count reaching Compare raises IP7. The FPU (COP1) and the
+/// VFPU (COP2) are in their own files (AllegrexCore.Fpu.cs, AllegrexCore.Vfpu*.cs).
 /// Not thread-safe: one thread calls <see cref="Run"/>, <see cref="RaiseInterrupt"/> and the accessors.
 /// Sources: MIPS32 architecture manual (exceptions, delay slots), PPSSPP's interpreter and its hardware-checked notes
 /// (pspautotests cpu_alu: division by zero, the Allegrex encodings, the ME reset state and interrupt gating) and Jpcsp's
@@ -131,7 +131,7 @@ public sealed partial class AllegrexCore
     /// <summary>The LL bit of ll/sc.</summary>
     public bool LinkBit => _linkBit;
 
-    /// <summary>Offered syscall, break and not-yet-emulated instructions first (see <see cref="AllegrexTrapHandler"/>).</summary>
+    /// <summary>Offered syscall and break first (see <see cref="AllegrexTrapHandler"/>).</summary>
     public AllegrexTrapHandler? TrapHandler { get; set; }
 
     public uint Status
@@ -367,16 +367,5 @@ public sealed partial class AllegrexCore
     {
         _cop0[Cop0BadVAddr] = address;
         RaiseException(code);
-    }
-
-    private void Unimplemented(uint instruction, string unit)
-    {
-        AllegrexTrapHandler? handler = TrapHandler;
-        if (handler != null && handler(this, AllegrexTrapKind.Unimplemented, instruction, _currentPc))
-        {
-            return;
-        }
-
-        throw new AllegrexUnimplementedException(_currentPc, instruction, unit);
     }
 }

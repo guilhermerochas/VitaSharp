@@ -127,7 +127,7 @@ public sealed partial class AllegrexCore
                 ExecuteVfpu4Jump(instruction);
                 break;
             case 0x3C:
-                Unimplemented(instruction, "VFPU (COP2)");
+                ExecuteVfpu6(instruction);
                 break;
             case 0x14:
                 BranchLikelyIf(_gpr[Rs(instruction)] == _gpr[Rt(instruction)], instruction);

@@ -5,7 +5,7 @@ namespace VitaSharp.Tests;
 
 /// <summary>
 /// Allegrex system side: syscall/break (host handler and exception), traps, COP0 moves, eret, interrupts (Status.IE or
-/// mtic, masks, EXL), halt, reserved and not-yet-emulated instructions.
+/// mtic, masks, EXL), halt, reserved instructions, the COP0 timer.
 /// </summary>
 public sealed class AllegrexSystemTests
 {
@@ -279,22 +279,6 @@ public sealed class AllegrexSystemTests
         rig.Step();
         Assert.Equal((uint)AllegrexExceptionCode.ReservedInstruction, ExceptionCode(rig.Core));
         Assert.Equal(AllegrexRig.ExceptionBase, rig.Core.Pc);
-    }
-
-    [Theory]
-    [InlineData(0xF0000000u, "VFPU")] // vmmul
-    public void VfpuIsReportedAsNotEmulated(uint instruction, string unit)
-    {
-        AllegrexRig rig = new(instruction);
-        AllegrexUnimplementedException error = Assert.Throws<AllegrexUnimplementedException>(() => rig.Core.Run(1));
-        Assert.Equal(instruction, error.Instruction);
-        Assert.Equal(AllegrexRig.CodeBase, error.Address);
-        Assert.StartsWith(unit, error.Unit);
-
-        AllegrexRig handled = new(instruction, Addiu(T0, Zero, 1));
-        handled.Core.TrapHandler = (core, kind, code, address) => kind == AllegrexTrapKind.Unimplemented && code == instruction;
-        handled.Step(2);
-        Assert.Equal(1u, handled[T0]);
     }
 
     [Fact]
