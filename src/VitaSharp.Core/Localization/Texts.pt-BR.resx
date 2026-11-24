@@ -3078,6 +3078,24 @@
   <data name="AudioOutputDefault" xml:space="preserve">
     <value>Padrão do sistema</value>
   </data>
+  <data name="Microphone" xml:space="preserve">
+    <value>Microfone</value>
+  </data>
+  <data name="MicrophoneDetail" xml:space="preserve">
+    <value>O que o microfone do Vita ouve (chat de voz, apps que gravam). O dispositivo só liga enquanto um jogo ou app está com o microfone aberto; nada do que ele capta é gravado, e as capturas de diagnóstico guardam só o formato e o ritmo. Vale ao iniciar um jogo</value>
+  </data>
+  <data name="MMicrophoneDetail" xml:space="preserve">
+    <value>O que o microfone do Vita ouve (chat de voz, apps que gravam). O Android pede a permissão do microfone na primeira vez que um jogo o abre; nada do que ele capta é gravado. Vale ao iniciar um jogo</value>
+  </data>
+  <data name="MicrophoneDefault" xml:space="preserve">
+    <value>Padrão do sistema</value>
+  </data>
+  <data name="MicrophoneNone" xml:space="preserve">
+    <value>Desligado (silêncio)</value>
+  </data>
+  <data name="MicrophoneTone" xml:space="preserve">
+    <value>Tom de teste (440 Hz)</value>
+  </data>
   <data name="MOn" xml:space="preserve">
     <value>Ligado</value>
   </data>

@@ -17,6 +17,53 @@ public static class AudioDump
     /// <summary>Also write each NGS source voice to its own WAV (the session capture; VITASHARP_NGS_TRACE does it too).</summary>
     public static bool VoiceDumps;
 
+    /// <summary>
+    /// Also write what the microphone port captured (microphone_RATE.wav). Off by default, also in "Gravar tudo": a
+    /// capture is shared in bug reports and the microphone is what the player and the people near them say, so only the
+    /// port's format and pace go into a capture (audio.txt) unless this is asked for (VITASHARP_CAPTURE_MIC_AUDIO=1,
+    /// --capture-mic-audio).
+    /// </summary>
+    public static volatile bool MicrophoneDumps;
+
+    private static readonly object s_micLock = new();
+    private static Writer? s_micWriter;
+    private static int s_micGeneration = -1;
+    private static int s_micRate;
+
+    /// <summary>One grain of the microphone port (mono), into the dump when <see cref="MicrophoneDumps"/> is on.</summary>
+    public static void WriteMicrophone(ReadOnlySpan<short> mono, int rate)
+    {
+        if (!MicrophoneDumps || s_dir == null || mono.Length > 4096)
+        {
+            return;
+        }
+
+        lock (s_micLock)
+        {
+            if (s_micGeneration != Generation || s_micRate != rate)
+            {
+                s_micWriter?.Dispose();
+                s_micWriter = Open("microphone", rate);
+                s_micGeneration = Generation;
+                s_micRate = rate;
+            }
+
+            if (s_micWriter == null)
+            {
+                return;
+            }
+
+            Span<short> stereo = stackalloc short[mono.Length * 2];
+            for (int i = 0; i < mono.Length; i++)
+            {
+                stereo[2 * i] = mono[i];
+                stereo[2 * i + 1] = mono[i];
+            }
+
+            s_micWriter.Write(stereo);
+        }
+    }
+
     /// <summary>Changes when dumping starts or stops: open ports compare it at every grain and reopen their writer.</summary>
     public static volatile int Generation;
 

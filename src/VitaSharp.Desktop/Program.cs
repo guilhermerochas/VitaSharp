@@ -165,6 +165,8 @@ public static class Program
                 return Input.PadTest.Run(args.Skip(1).ToArray());
             case "camera-test":
                 return CameraTest.Run(args.Skip(1).ToArray());
+            case "mic-test":
+                return MicrophoneTest.Run(args.Skip(1).ToArray());
             case "audio-devices":
             {
                 // audio-devices [--audio-device=<name>]: the outputs OpenAL lists, the system default and the one a game
@@ -1003,6 +1005,7 @@ public static class Program
         Console.WriteLine("  run options: --gpu-dump-at=F1:F2[:file]  record frames F1..F2 as a GPU dump (Ctrl+F8 in the window starts/stops one)");
         Console.WriteLine("  run options: --capture-preroll[=S] --capture-at=A:B  Gravar tudo (F8): keep the last S s / record guest frames A..B");
         Console.WriteLine("  run options: --capture-files-mb=MB --capture-savedata  Gravar tudo: keep up to MB of the bytes the game read (default 0: hashes only) / keep the save data's bytes too");
+        Console.WriteLine("  run options: --capture-mic-audio     Gravar tudo: also keep what the microphone captured (default: only its format and pace)");
         Console.WriteLine("  rerun <capture folder> [--from=preroll|start] [--window] [--rerun-gpu-dump] [--boot=title]  replay a Gravar tudo capture's input from its save state (the game and plugins are not needed)");
         Console.WriteLine("  run options: --nav=<file> [--nav-live] [--nav-out=<dir>]  screen-driven input script (NavScript: tap/press/stable/shot/quit)");
         Console.WriteLine("  hle-implemented [--vitasdk=<tsv>]   list every NID the HLE implements (docs/hle/data/vitasharp-implemented.tsv)");
@@ -1015,6 +1018,7 @@ public static class Program
         Console.WriteLine("  self2elf <in> <out> [license]        decrypt a SELF");
         Console.WriteLine("  rco-dump <file.rco> [--extract=<dir>]  print a system RCO resource tree; write out its textures, sounds and other files");
         Console.WriteLine("  camera-test [device] [out-prefix]    grab one webcam frame (SceCamera host path) as PNG");
+        Console.WriteLine("  mic-test [--microphone=<name|index|tone[:HZ]>] [--seconds=N]  list the capture devices and show the level the microphone port would get");
         Console.WriteLine("  pad-test [--seconds=N] [--virtual]   list controllers (SDL2) and print their mapped Vita input");
         Console.WriteLine("  version                              print the version and commit of this build");
         Console.WriteLine("  update [--channel=builds|releases] [--feed=URL|folder] [--apply]  check the GitHub releases for a newer emulator; --apply installs it");
@@ -1026,6 +1030,7 @@ public static class Program
         Console.WriteLine("  run options: --camera=<name|index|none|picture.png/.jpg> source of both Vita cameras");
         Console.WriteLine("               --camera-front=<...> / --camera-back=<...> one camera (default: front = first webcam,");
         Console.WriteLine("               back = the next other webcam, else the same one)");
+        Console.WriteLine("               --microphone=<name|index|none|tone[:HZ]>  source of the Vita microphone (default: the system's default capture device)");
         Console.WriteLine("               --ime-text=<text>  answer every IME dialog / in-game keyboard with this text and Enter, no UI");
         Console.WriteLine("               --dialogs=auto     answer message / save data dialogs at once (no panel over the game)");
         Console.WriteLine("               --overlay-dump=<dir>  also write every panel drawn over the game (dialogs, save state picker) as PNG");

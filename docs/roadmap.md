@@ -2351,11 +2351,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Manager, câmera/AR, apps de vídeo/música/browser) e abrir um item por recurso com o caminho (LLE do módulo real +
   HLE do que falta); os grupos que o plano do VitaSDK marcou como "não se aplica" (Mono do PSM, Piglet, ShaccCg)
   entram aqui como recursos a emular, não como ignorados
-- [ ] [P3][M] Microfone com captura do host (inventário: `docs/notes/hardware-coverage.md`): o `SceAudioin` hoje tem
-  protocolo, ritmo, mudo e adoção certos, mas devolve só silêncio. Interface de captura no `Host/` ao lado da câmera,
-  uma implementação por sistema (WASAPI, PulseAudio/PipeWire, Core Audio, `AudioRecord` do Android) e a fonte
-  "nenhuma"; requisitos no README. Primeira entrega: fonte roteirizada (senoide) no teste, `sceAudioInInput` devolve
-  as amostras no ritmo do grain, mudo e sem fonte dão zeros. Usa: chat de voz, Party, Skype/Near, gravação de voz.
 - [ ] [P3][G] Modelo PS TV (VTE-1000) como opção do console (`docs/notes/hardware-coverage.md`): identidade do KBL
   (bit `0x200` do product sub code, tipo de placa no hardware info) a partir de uma opção num lugar só
   (`ConsoleIdentity`, variável no `EnvVars.cs`), o `vs0` do target 2 do pacote, até quatro controles do host nas
@@ -3253,6 +3248,27 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (24/11/2026, falta testar) [P3][M] Microfone com captura do host (feat/mic1; `docs/notes/hardware-coverage.md`):
+  no Vita o `SceAudioin` abre uma porta por processo (VOICE 256/512 amostras a 16 kHz, RAW 256 a 16 kHz ou 768 a
+  48 kHz, 0x1F 768 a 48 kHz; S16 mono) e o `sceAudioInInput` bloqueia até a captura ter o grain seguinte, um a cada
+  grain/taxa segundos. O microfone do Vita agora ouve o do host: OpenAL Soft (captura) no PC (WASAPI, PipeWire/PulseAudio,
+  Core Audio) e `AudioRecord` no Android (permissão RECORD_AUDIO pedida só quando um jogo abre a porta; VOICE a 16 kHz
+  com o cancelamento de eco do celular), reamostrado para a taxa da porta (`MicrophoneFeed`), no ritmo do relógio do
+  guest (o modo turbo avança o relógio em vez de pular a espera); com mudo, sem dispositivo, sem permissão ou num
+  processo para o qual o microfone não está adotado, silêncio no mesmo ritmo. O dispositivo do host só liga enquanto a
+  porta está aberta (fecha no release, num LoadExec e num save state sem porta). Opção **Microfone** em Configurações >
+  Áudio (PC: padrão, desligado, tom de teste, cada dispositivo; `--microphone=`) e em Ajustes (Android: celular,
+  desligado, tom de teste); `mic-test` mostra o nível. Privacidade: nada gravado em disco; a captura F8 leva só formato,
+  fonte e ritmo (`audio.txt`), o som só com `--capture-mic-audio`/`VITASHARP_CAPTURE_MIC_AUDIO=1`. Revalidado contra o
+  módulo: a abertura confere tipo, taxa e grain antes do parâmetro (antes o parâmetro vinha primeiro) e aceita os tipos
+  0x10..0x3F0, 0x12 e 0x1F que o firmware aceita. Testes: `MicrophoneTests` (amostras e ritmo por tipo/taxa, reamostragem
+  48 kHz e 44,1 kHz, mudo, sem microfone, dispositivo que não abre, adoção, host adiantado/atrasado, ciclo de vida do
+  dispositivo, ordem das checagens, privacidade da captura, 0 bytes por grain, opções do PC e do celular).
+  Testar: no PC, Configurações > Áudio > Microfone = "Tom de teste (440 Hz)" e abrir um jogo ou app que grava ou usa
+  chat de voz (ou rodar `VitaSharp.Desktop mic-test --microphone=tone`): ouve-se/vê-se o tom; com "Padrão do sistema",
+  `mic-test` mostra o nível subindo ao falar, e no jogo a voz chega; no Android, abrir esse jogo: o pedido de permissão
+  do microfone aparece só quando o jogo abre o microfone, e recusado o jogo segue (silêncio).
 
 - [ ] (24/11/2026, falta testar) [P1][M] Tela de CPU framebuffer preta e 0 fps (Adrenaline, fix/disp1): no Vita o
   `sceDisplaySetFrameBuf` só entrega ao display o endereço do framebuffer, e o display lê essa memória a cada vblank;

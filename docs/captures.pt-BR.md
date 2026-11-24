@@ -28,6 +28,9 @@ feita com `--capture-files-mb=<MB>` (ou `VITASHARP_CAPTURE_FILES_MB=<MB>`), cada
 tamanho, e o `report.txt` então avisa que a gravação leva dados do jogo, para ela ser compartilhada só onde isso pode
 ir. Os dados salvos (savedata0) são do jogador: deles ficam só os hashes, a não ser que a gravação seja feita com
 `--capture-savedata` (ou `VITASHARP_CAPTURE_SAVEDATA=1`); a reexecução lê o save da própria pasta de dados.
+O microfone é o que o jogador e quem está perto dele dizem: o `audio.txt` traz só o formato, a fonte e o ritmo da porta
+do microfone, e o som dele só entra (`audio/NN_microphone_RATE.wav`) com `--capture-mic-audio` (ou
+`VITASHARP_CAPTURE_MIC_AUDIO=1`).
 
 ## O que a gravação diz sobre o ambiente
 

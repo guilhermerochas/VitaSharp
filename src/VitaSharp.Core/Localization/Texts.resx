@@ -3078,6 +3078,24 @@
   <data name="AudioOutputDefault" xml:space="preserve">
     <value>System default</value>
   </data>
+  <data name="Microphone" xml:space="preserve">
+    <value>Microphone</value>
+  </data>
+  <data name="MicrophoneDetail" xml:space="preserve">
+    <value>What the Vita microphone hears (voice chat, apps that record). The device only turns on while a game or app has its microphone open; nothing it captures is saved, and diagnostic captures keep only its format and pace. Takes effect when a game starts</value>
+  </data>
+  <data name="MMicrophoneDetail" xml:space="preserve">
+    <value>What the Vita microphone hears (voice chat, apps that record). Android asks for the microphone permission the first time a game opens it; nothing it captures is saved. Takes effect when a game starts</value>
+  </data>
+  <data name="MicrophoneDefault" xml:space="preserve">
+    <value>System default</value>
+  </data>
+  <data name="MicrophoneNone" xml:space="preserve">
+    <value>Off (silence)</value>
+  </data>
+  <data name="MicrophoneTone" xml:space="preserve">
+    <value>Test tone (440 Hz)</value>
+  </data>
   <data name="MOn" xml:space="preserve">
     <value>On</value>
   </data>

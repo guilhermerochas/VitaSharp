@@ -20,6 +20,11 @@ public static class Runner
 
         options.FirstOrDefault(o => o.StartsWith(name + "="))?[(name.Length + 1)..];
 
+    /// <summary>The Vita microphone for a --microphone= value ("" or null = the default capture device, "none", "tone[:HZ]",
+    /// a device name or index): OpenAL Soft's capture, null for "none".</summary>
+    internal static IMicrophoneSource? CreateMicrophone(string? value) =>
+        MicrophoneSpec.Parse(value).CreateSource(spec => OpenAlMicrophone.TryCreate(spec));
+
     /// <summary>A trace filter: --name=value, or --name value as the HLE docs write it (without this the filter was
     /// silently ignored).</summary>
     internal static string? TraceOpt(string[] options, string name)
@@ -483,6 +488,11 @@ public static class Runner
         // index, "none" = grey, or a .png/.jpg picture); unset = front first webcam, back the next other webcam
         var (camFront, camBack) = CameraSpec.FromOptions(Opt(options, "--camera"), Opt(options, "--camera-front"), Opt(options, "--camera-back"));
         emu.Host.Camera = FlashCapCamera.CreateForVita(camFront, camBack);
+        // SceAudioIn: --microphone= (capture device name or index, "none", or "tone[:HZ]"); unset = the default capture
+        // device, except in hidden test windows (VITASHARP_HIDDEN_WINDOW=1), which stay off the PC's microphone
+        emu.Host.Microphone = Environment.GetEnvironmentVariable(EnvVars.HiddenWindow) == "1" && Opt(options, "--microphone") == null
+            ? null
+            : CreateMicrophone(Opt(options, "--microphone"));
         VulkanRenderer? renderer = null;
         var clock = Stopwatch.StartNew();
         long lastFrames = 0, titleTicks = 0;
@@ -1508,6 +1518,12 @@ public static class Runner
         if (CameraSpec.FromOptions(Opt(options, "--camera"), Opt(options, "--camera-front"), Opt(options, "--camera-back")) is var (hf, hb) && (hf != null || hb != null))
         {
             emu.Host.Camera = FlashCapCamera.CreateForVita(hf ?? "none", hb ?? "none");
+        }
+
+        // headless: the microphone only on request (unset: no microphone, silence)
+        if (Opt(options, "--microphone") is { } microphone)
+        {
+            emu.Host.Microphone = CreateMicrophone(microphone);
         }
 
         emu.BacktraceHle = Opt(options, "--bt");

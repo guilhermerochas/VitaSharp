@@ -233,6 +233,27 @@ public sealed class SettingsPage : UserControl
         return (values, labels);
     }
 
+    /// <summary>Values and labels of the "Microfone" dropdown: the system default, off, the test tone, then each capture
+    /// device; the current value is kept, marked disconnected, while its device is unplugged.</summary>
+    public static (List<string> Values, List<string> Labels) MicrophoneChoices(IReadOnlyList<string> devices, string current)
+    {
+        var values = new List<string> { "", "none", "tone" };
+        var labels = new List<string> { S.MicrophoneDefault, S.MicrophoneNone, S.MicrophoneTone };
+        foreach (string device in devices)
+        {
+            values.Add(device);
+            labels.Add(device);
+        }
+
+        if (current.Length > 0 && !values.Contains(current, StringComparer.OrdinalIgnoreCase))
+        {
+            values.Add(current);
+            labels.Add(S.CameraDisconnected(current));
+        }
+
+        return (values, labels);
+    }
+
     /// <summary>Values and labels of the "Saida de audio" dropdown: the system default, then each output (friendly
     /// names); the current value is kept, marked disconnected, while its output is unplugged.</summary>
     public static (List<string> Values, List<string> Labels) AudioOutputChoices(IReadOnlyList<string> outputs, string current)
@@ -327,10 +348,14 @@ public sealed class SettingsPage : UserControl
         // ---------------------------------------------------------- Audio
         s.Children.Add(Anchor(SectionAudio, S.SectionAudio));
         var (audioValues, audioLabels) = AudioOutputChoices(VitaSharp.Desktop.Host.OpenAlAudio.ListOutputs().Outputs, _settings.AudioDevice);
+        var (microphoneValues, microphoneLabels) = MicrophoneChoices(VitaSharp.Desktop.Host.OpenAlMicrophone.TryCreate(VitaSharp.Core.Host.MicrophoneSpec.Default)?.DeviceNames ?? [], _settings.Microphone);
         s.Children.Add(_k.Group(
             _k.Row("volume", S.AudioOutput, S.AudioOutputDetail, _k.Dropdown(audioLabels,
                 Math.Max(0, audioValues.FindIndex(v => v.Equals(_settings.AudioDevice, StringComparison.OrdinalIgnoreCase))),
-                i => Set(() => _settings.AudioDevice = audioValues[i]), 300))));
+                i => Set(() => _settings.AudioDevice = audioValues[i]), 300)),
+            _k.Row("mic", S.Microphone, S.MicrophoneDetail, _k.Dropdown(microphoneLabels,
+                Math.Max(0, microphoneValues.FindIndex(v => v.Equals(_settings.Microphone, StringComparison.OrdinalIgnoreCase))),
+                i => Set(() => _settings.Microphone = microphoneValues[i]), 300))));
 
         // ---------------------------------------------------------- Graficos
         s.Children.Add(Anchor(SectionGraphics, S.SectionGraphics));

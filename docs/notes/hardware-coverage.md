@@ -67,7 +67,7 @@ recorded, not to be emulated); **ok** covered.
 | Memory card, internal eMMC | `msif.skprx`, `sdif` host 0, `sdstor.skprx` | partitions served at the file level; raw sector reads/writes fail (`0x803D0000`, `0x8032001A`) | **(b)** |
 | Syscon, power, battery, RTC, buttons | `syscon.skprx`, `ScePower`, `rtc.skprx` | HLE with battery, AC, events, idle timers, power button, alarms | ok |
 | Audio out, codec chip, headset jack | `SceAudio`, `SceCodec` (I2C 0x34), `SceHpremote` | host audio device; codec settings accepted; nothing in the jack | ok |
-| Microphone | `SceAudioin`, `SceCodec` | port protocol and pacing right, samples always silent (no host capture) | **(b)** |
+| Microphone | `SceAudioin`, `SceCodec` | host capture (OpenAL Soft on the desktop, `AudioRecord` on Android) resampled to the port's rate at the guest's grain pace; silent without a device | done (was **(b)**) |
 | Controllers beyond the built-in pad, vibration, light bar | `SceCtrl`, `SceDs3`, `SceHid`, `SceBt` | only port 0 (the built-in pad); `sceCtrlSetActuator`/`SetLightBar` ignored; `sceCtrlIsMultiControllerSupported` = 0 | **(b)**, part of the PS TV model |
 | Interrupts, timers, GPIO, I2C, clock generator, pervasive registers | `intrmgr`, `systimer`, `lowio`, `SceClockgen` | HLE models; system timers raise interrupts in guest time; GPIO/I2C have no devices behind them | ok |
 | Console model (PCH-1000 / PCH-1100 / PCH-2000 / VTE-1000 PS TV) | SceSblAIMgr, syscon hardware info, per-model `vs0` | fixed PCH-1000 CEX (`Hle/ConsoleIdentity.cs`) | **(b)** (PS TV; PCH-2000's internal card) |
@@ -129,8 +129,11 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
 
 - **What the firmware does:** `SceAudioin` reads the codec chip's ADC through Venezia's audio path; ports of 16-bit
   mono at 16 or 48 kHz, one per process, adopted by AppMgr.
-- **Today:** the port protocol, the grain pacing, the mute and the adoption are right; the samples are always zero
-  (`Hle/Modules/Audio.cs`, "virtual microphone (no host capture)").
+- **Today (done):** the port delivers the host's microphone (`Host/Microphone.cs`, `Host/MicrophoneFeed.cs`,
+  `Hle/Modules/Audio.In.cs`; OpenAL Soft capture on the desktop, `AudioRecord` on Android), resampled to the port's
+  rate, one grain per grain/rate seconds of guest time; muted, without a device or permission, or for a process the
+  microphone is not adopted for, silence. Before: the samples were always zero
+  ("virtual microphone (no host capture)").
 - **Impact:** voice chat in online games and Party, Skype/Near voice, voice recording in apps, game mechanics that
   react to sound (titles to confirm).
 - **Size:** [M]: a host capture interface next to the camera's (`Host/`), one implementation per system (WASAPI /

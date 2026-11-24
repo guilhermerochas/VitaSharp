@@ -62,6 +62,10 @@ public sealed class SessionCaptureOptions
     /// <summary>Keeps the bytes read from the title's save data too (by default only their hashes: a save is the
     /// player's); VITASHARP_CAPTURE_SAVEDATA=1 / --capture-savedata.</summary>
     public bool KeepSaveData;
+    /// <summary>Also records what the microphone port captured (audio/NN_microphone_RATE.wav). Off by default: the
+    /// microphone is what the player and the people near them say, and a capture goes to public reports, so only the
+    /// port's format and pace go in (audio.txt); VITASHARP_CAPTURE_MIC_AUDIO=1 / --capture-mic-audio.</summary>
+    public bool KeepMicrophoneAudio;
     /// <summary>Records the title's file reads (files/; a re-run's own recording does not).</summary>
     public bool Files = true;
     /// <summary>A re-run: the HLE call trace was started when its state was put back and goes on.</summary>
@@ -190,6 +194,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         if (Environment.GetEnvironmentVariable(EnvVars.CaptureSaveData) == "1")
         {
             options.KeepSaveData = true;
+        }
+
+        if (Environment.GetEnvironmentVariable(EnvVars.CaptureMicrophoneAudio) == "1")
+        {
+            options.KeepMicrophoneAudio = true;
         }
         _privacy = options.Privacy ?? CapturePrivacy.ForThisComputer(Path.GetDirectoryName(Path.GetFullPath(options.Root)), emu.Options.Psn);
         // the last button and touch changes are always kept (a compare per poll): the report says what the player did
@@ -866,6 +875,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         {
             AudioDump.Enable(Path.Combine(dir, "audio"));
             AudioDump.VoiceDumps = true;
+            AudioDump.MicrophoneDumps = _options.KeepMicrophoneAudio;
             r.OwnsAudio = true;
         }
         else
@@ -1011,6 +1021,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             {
                 wavs = AudioDump.Disable();
                 AudioDump.VoiceDumps = false;
+                AudioDump.MicrophoneDumps = false;
             }
         });
         DebugMode.CollectHleErrors = false;

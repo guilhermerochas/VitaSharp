@@ -85,6 +85,12 @@ public sealed class SettingsView : Screen<SettingsState>
                     Row(Loc.Get("CameraBack"), CameraSettings.Label(p.CameraBack), () => PickCamera(CameraFacing.Back),
                         detail: Loc.Get("MCameraBackDetail"))
                 ),
+                SectionTitle(Loc.Get("Microphone")),
+                Card(
+                    Row(Loc.Get("Microphone"), MicrophoneSettings.Label(p.Microphone),
+                        () => Pick(Loc.Get("Microphone"), MicrophoneSettings.Choices, v => p.Microphone = v),
+                        detail: Loc.Get("MMicrophoneDetail"))
+                ),
                 SectionTitle(Loc.Get("MPerformance")),
                 Card(
                     Row("CPU", SettingsChoices.LabelOf(CpuChoices.Available(), p.CpuBackend),

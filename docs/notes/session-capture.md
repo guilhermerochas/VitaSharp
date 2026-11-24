@@ -89,7 +89,7 @@ Folder `<data>/captures/<TITLEID>_<yyyyMMdd_HHmmss>_tudo/` and its zip:
 | `state_start.vss` | save state taken at the start of the recording |
 | `state_preroll.vss` | save state at the start of the pre-roll (when armed) |
 | `gpu.vsgd` | GPU dump from the start (the Ctrl+F8 format; `replay-gpu`); up to 5400 frames on the desktop, 1800 on Android |
-| `audio/*.wav`, `audio/files.txt`, `audio_mix.wav` | every guest audio port and every NGS source voice as a WAV (`AudioDump`), the time each opened, and their mix at 48 kHz as the device would play it |
+| `audio/*.wav`, `audio/files.txt`, `audio_mix.wav` | every guest audio port and every NGS source voice as a WAV (`AudioDump`), the time each opened, and their mix at 48 kHz as the device would play it; the microphone port only with `--capture-mic-audio` / `VITASHARP_CAPTURE_MIC_AUDIO=1` (by default `audio.txt` has only its format, source and pace) |
 | `threads_start.txt`, `threads_stop.txt` | guest threads (wait state, backtrace, recent HLE calls in debug mode), held mutexes, GPU queue |
 | `hle_errors.txt` | HLE error returns and unimplemented calls by count (counted while recording, as debug mode does), and the calls of `hle_calls.tsv` by function |
 | `hle_calls.tsv` | every HLE call of the recording: guest µs, thread, function, library, r0-r3, result (`-`: still inside it at the stop), return address (`HleCallTrace`: per-thread chunks of 4096 calls, nothing allocated per call, at most 1,000,000 calls kept); `#state` lines say how many calls each thread had made when a save state was taken (the re-run, whose trace starts when its state is put back, is compared from there; a thread blocked in a call at the state makes it again in the re-run) |

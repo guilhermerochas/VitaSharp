@@ -76,6 +76,10 @@ public sealed class AppPreferences
     public string CameraFront { get; set; } = "";
     /// <summary>"Camera traseira": the same for the Vita's back camera (--camera-back=; "" = the phone's back camera).</summary>
     public string CameraBack { get; set; } = "";
+    /// <summary>"Microfone": what the Vita microphone hears, as the desktop launcher's option of the same name
+    /// (--microphone=, Core.Host.MicrophoneSpec): "" = the phone's microphone, "none" = off (silence), "tone" = a test
+    /// tone (<see cref="MicrophoneSettings"/>).</summary>
+    public string Microphone { get; set; } = "";
     /// <summary>"Ao abrir o emulador": "library" (the default) or "system" (the shell boots when the app opens), the
     /// desktop launcher's option (<see cref="StartupViews"/>).</summary>
     public string StartupView { get; set; } = StartupViews.Library;

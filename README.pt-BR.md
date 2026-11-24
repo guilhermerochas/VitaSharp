@@ -172,6 +172,16 @@ O idioma que um jogo vê é o idioma do sistema do Vita; para um jogo sem o seu 
 japonês e inglês, que cai no japonês), o ajuste **Idioma do sistema** dele (na página do jogo no launcher, nos detalhes
 do jogo no Android; `--system-language=<0-19>` na linha de comando) faz só esse jogo ver outro.
 
+**Microfone.** O microfone do Vita (chat de voz, apps que gravam) ouve o dispositivo de captura do PC pelo OpenAL Soft,
+a mesma biblioteca que toca o som (WASAPI no Windows, PipeWire/PulseAudio/ALSA no Linux, Core Audio no macOS; nada a
+instalar). **Configurações > Áudio > Microfone** escolhe o padrão do sistema (o padrão), um dispositivo de captura, desligado
+(silêncio) ou um tom de teste de 440 Hz; na linha de comando `--microphone=<nome|índice|none|tone[:HZ]>`, e `mic-test`
+lista os dispositivos e mostra o nível que um jogo receberia. O dispositivo só liga enquanto um jogo ou app está com a
+porta do microfone aberta; sem dispositivo (ou, no macOS, sem a permissão de microfone para o terminal ou app que roda o
+VitaSharp: **Ajustes do Sistema > Privacidade e Segurança > Microfone**) o jogo ouve silêncio, como numa sala quieta.
+Nada do que o microfone capta é gravado; uma captura **Gravar tudo** guarda só o formato e o ritmo dele, a não ser que
+`--capture-mic-audio` (ou `VITASHARP_CAPTURE_MIC_AUDIO=1`) peça o som também.
+
 Os dados ficam em `%APPDATA%\VitaSharp` no Windows (`~/.local/share/VitaSharp` no Linux,
 `~/Library/Application Support/VitaSharp` no macOS; `--data=<pasta>` ou `VITASHARP_DATA` trocam a pasta): jogos em
 `fs/ux0/app`, firmware em `fs/os0`... , `logs/`, `savestates/`, `captures/` (Gravar tudo), `gpudumps/`,
@@ -293,6 +303,9 @@ vibração (a cada toque, também com o outro dedo no analógico; fraca, média 
 **Ajustes > Sistema > Ao abrir o emulador** pode dar boot no Sistema do Vita (o shell do firmware) ao abrir o app,
 como no desktop. **Ajustes > Câmeras** escolhe o que cada câmera do Vita mostra, como as opções de câmera do desktop: a câmera do
 celular daquele lado (o padrão), uma imagem PNG/JPEG ou nenhuma (quadros cinza).
+**Ajustes > Microfone** escolhe o que o microfone do Vita ouve: o microfone do celular (o padrão; o do fone conectado,
+quando houver), desligado (silêncio) ou o tom de teste. O Android pede a permissão do microfone na primeira vez que um
+jogo abre o microfone, nunca antes; recusada, o jogo ouve silêncio.
 
 **Menu de pausa, save states e Gravar tudo.** O botão PS (na tela ou no controle) pausa um jogo iniciado sozinho:
 **Continuar**, **Salvar estado** / **Carregar estado** (6 slots com imagem), **Ajustes** (toque traseiro, controles na
@@ -470,6 +483,8 @@ O que o `dotnet test tests/VitaSharp.Tests` precisa em cada sistema; um teste se
 - Firmware: sem ele os testes dos módulos reais do firmware (`libSceJson`, `libSceXml`, `libpaf`, a instalação do
   arquivo de atualização) são pulados. `VITASHARP_FIRMWARE_PUP` aponta um `PSVUPDAT.PUP`, `VITASHARP_FIRMWARE_DIR` uma
   pasta `vs0` ou de dados do Vita3K; os testes do compilador do Piglet precisam do `libshacccg.suprx` em `ur0:data`.
+- Os testes do microfone (`MicrophoneTests`) usam um tom roteirizado num relógio que o próprio teste avança: nenhum
+  dispositivo de captura, permissão ou placa de som é preciso em nenhum sistema.
 - Os testes nunca usam a sua pasta de dados: cada um cria uma pasta temporária (`VITASHARP_DATA` nos processos filhos);
   os testes de jogo rodando iniciam um executável pequeno que os próprios testes escrevem.
 - Opcional: as camadas de validação do Vulkan SDK da LunarG rodam as cargas do renderizador sob validação com

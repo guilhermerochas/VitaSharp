@@ -9,6 +9,7 @@
     allow-dyld-environment-variables  VitaSharp restarts itself with DYLD_FALLBACK_LIBRARY_PATH to find a Homebrew or
                                       Vulkan SDK libvulkan (Host/MacVulkanLoader.cs)
     device.camera                     SceCamera through AVFoundation
+    device.audio-input                SceAudioIn (the microphone) through OpenAL Soft / Core Audio
 -->
 <plist version="1.0">
 <dict>
@@ -19,6 +20,8 @@
   <key>com.apple.security.cs.disable-library-validation</key>
   <true/>
   <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+  <key>com.apple.security.device.audio-input</key>
   <true/>
   <key>com.apple.security.device.camera</key>
   <true/>

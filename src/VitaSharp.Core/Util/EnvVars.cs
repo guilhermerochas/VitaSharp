@@ -330,6 +330,9 @@ public static class EnvVars
     /// <summary>=1: "Gravar tudo" keeps the bytes the game read from its save data too (by default only their paths,
     /// positions and hashes: a save is the player's data; --capture-savedata).</summary>
     public const string CaptureSaveData = "VITASHARP_CAPTURE_SAVEDATA";
+    /// <summary>=1: "Gravar tudo" also records what the microphone port captured (by default only its format and pace:
+    /// the microphone is what the player and the people near them say; --capture-mic-audio).</summary>
+    public const string CaptureMicrophoneAudio = "VITASHARP_CAPTURE_MIC_AUDIO";
 
 
 

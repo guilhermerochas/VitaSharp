@@ -28,6 +28,9 @@ the recording, by path, position, length and hash only. The bytes go with it onl
 `report.txt` then says the capture holds data of the game, so it is shared only where that may go. The save data
 (savedata0) is the player's: only its hashes, unless the recording is made with `--capture-savedata` (or
 `VITASHARP_CAPTURE_SAVEDATA=1`); the re-run reads the save of its own data folder.
+The microphone is what the player and the people near them say: `audio.txt` gives only the microphone port's
+format, source and pace, and its sound goes in (`audio/NN_microphone_RATE.wav`) only with `--capture-mic-audio` (or
+`VITASHARP_CAPTURE_MIC_AUDIO=1`).
 
 ## What the capture says about the setup
 

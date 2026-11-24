@@ -276,9 +276,9 @@ public sealed partial class EmulationSession : IDisposable
     }
 
     /// <summary>The phone's (or a controller's) motion sensors for SceMotion and, for SceCamera, what Ajustes chose for
-    /// each Vita camera (the phone's camera of that side, a picture, nothing), as the desktop's camera options
+    /// each Vita camera (the phone's camera of that side, a picture, nothing) and the microphone, as the desktop's options
     /// (GameSensors). The motion source set before (the keyboard's tilt keys) becomes the fallback.</summary>
-    public void SetSensors(AndroidMotion motion, VitaSharp.Core.Host.ICameraSource camera)
+    public void SetSensors(AndroidMotion motion, VitaSharp.Core.Host.ICameraSource camera, VitaSharp.Core.Host.IMicrophoneSource microphone)
     {
         if (!ReferenceEquals(_emu.Host.Motion, motion))
         {
@@ -288,6 +288,8 @@ public sealed partial class EmulationSession : IDisposable
         _emu.Host.Motion = motion;
         var prefs = AppServices.Prefs;
         _emu.Host.Camera = VitaSharp.Core.Host.FacingCameras.FromSettings(prefs.CameraFront, prefs.CameraBack, (_, _) => camera, AppServices.Data.Root);
+        // SceAudioIn: the "Microfone" setting (the phone's microphone, off, or the test tone)
+        _emu.Host.Microphone = VitaSharp.Core.Host.MicrophoneSpec.Parse(prefs.Microphone).CreateSource(_ => microphone);
     }
 
     /// <summary>surfaceCreated: the first one boots the game, later ones re-attach the renderer.</summary>

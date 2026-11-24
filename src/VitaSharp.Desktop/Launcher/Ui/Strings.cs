@@ -373,6 +373,11 @@ public static class Strings
     public static string AudioOutput => T();
     public static string AudioOutputDetail => T();
     public static string AudioOutputDefault => T();
+    public static string Microphone => T();
+    public static string MicrophoneDetail => T();
+    public static string MicrophoneDefault => T();
+    public static string MicrophoneNone => T();
+    public static string MicrophoneTone => T();
     public static string SectionAdvanced => T();
     public static string StartSection => T();
     public static string StartupView => T();

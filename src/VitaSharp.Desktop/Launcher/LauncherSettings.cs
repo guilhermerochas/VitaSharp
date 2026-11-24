@@ -19,6 +19,9 @@ public sealed class LauncherSettings
     /// <summary>"Camera traseira" (--camera-back=): "" = the next webcam other than the front one, else the same one;
     /// otherwise as <see cref="CameraFront"/>.</summary>
     public string CameraBack { get; set; } = "";
+    /// <summary>"Microfone" (--microphone=): "" = the system's default capture device, "none" = off (silence), "tone" = a
+    /// 440 Hz test tone, or a capture device name (<see cref="Core.Host.MicrophoneSpec"/>).</summary>
+    public string Microphone { get; set; } = "";
     /// <summary>CPU backend: "" = best supported on this PC, or "native", "il", "interp" (--cpu=).</summary>
     public string CpuBackend { get; set; } = "";
     /// <summary>Emulated ARM clock in MHz (--cpu-mhz=): 0 = the Vita's default for applications (333), 444 = the
@@ -321,6 +324,11 @@ public sealed class LauncherSettings
         if (!string.IsNullOrWhiteSpace(CameraBack))
         {
             yield return $"--camera-back={CameraBack}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(Microphone))
+        {
+            yield return $"--microphone={Microphone}";
         }
 
         if (!string.IsNullOrWhiteSpace(AudioDevice))

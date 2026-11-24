@@ -69,7 +69,7 @@ registrado, não é para emular); **ok** coberto.
 | Cartão de memória, eMMC interno | `msif.skprx`, `sdif` host 0, `sdstor.skprx` | partições servidas por arquivos; leitura/escrita de setores falha (`0x803D0000`, `0x8032001A`) | **(b)** |
 | Syscon, energia, bateria, RTC, botões | `syscon.skprx`, `ScePower`, `rtc.skprx` | HLE com bateria, carregador, eventos, timers de ociosidade, botão de energia, alarmes | ok |
 | Saída de áudio, chip de codec, conector de fone | `SceAudio`, `SceCodec` (I2C 0x34), `SceHpremote` | dispositivo de áudio do host; ajustes do codec aceitos; nada no conector | ok |
-| Microfone | `SceAudioin`, `SceCodec` | protocolo da porta e ritmo certos, amostras sempre em silêncio (sem captura do host) | **(b)** |
+| Microfone | `SceAudioin`, `SceCodec` | captura do host (OpenAL Soft no desktop, `AudioRecord` no Android) reamostrada para a taxa da porta no ritmo de grain do guest; silêncio sem dispositivo | feito (era **(b)**) |
 | Controles além do embutido, vibração, light bar | `SceCtrl`, `SceDs3`, `SceHid`, `SceBt` | só a porta 0 (o controle embutido); `sceCtrlSetActuator`/`SetLightBar` ignorados; `sceCtrlIsMultiControllerSupported` = 0 | **(b)**, parte do modelo PS TV |
 | Interrupções, timers, GPIO, I2C, gerador de clock, registradores pervasive | `intrmgr`, `systimer`, `lowio`, `SceClockgen` | modelos em HLE; os timers do sistema geram interrupções em tempo de guest; GPIO/I2C sem dispositivos atrás | ok |
 | Modelo do console (PCH-1000 / PCH-1100 / PCH-2000 / VTE-1000 PS TV) | SceSblAIMgr, hardware info do syscon, `vs0` por modelo | PCH-1000 CEX fixo (`Hle/ConsoleIdentity.cs`) | **(b)** (PS TV; cartão interno do PCH-2000) |
@@ -133,8 +133,11 @@ compatibilidade PSP". Impacto: todo título de PSP e PSone, homebrew de PSP, Adr
 
 - **O que o firmware faz:** o `SceAudioin` lê o ADC do chip de codec pelo caminho de áudio do Venezia; portas de 16
   bits mono a 16 ou 48 kHz, uma por processo, adotadas pelo AppMgr.
-- **Hoje:** o protocolo da porta, o ritmo por grain, o mudo e a adoção estão certos; as amostras são sempre zero
-  (`Hle/Modules/Audio.cs`, "virtual microphone (no host capture)").
+- **Hoje (feito):** a porta entrega o microfone do host (`Host/Microphone.cs`, `Host/MicrophoneFeed.cs`,
+  `Hle/Modules/Audio.In.cs`; captura do OpenAL Soft no desktop, `AudioRecord` no Android), reamostrado para a taxa da
+  porta, um grain a cada grain/taxa segundos de tempo do guest; com mudo, sem dispositivo ou permissão, ou num processo
+  para o qual o microfone não está adotado, silêncio. Antes: as amostras eram sempre zero
+  ("virtual microphone (no host capture)").
 - **Impacto:** chat de voz em jogos online e no Party, voz no Skype/Near, gravação de voz em apps, mecânicas de jogo
   que reagem a som (títulos a confirmar).
 - **Tamanho:** [M]: uma interface de captura do host ao lado da da câmera (`Host/`), uma implementação por sistema

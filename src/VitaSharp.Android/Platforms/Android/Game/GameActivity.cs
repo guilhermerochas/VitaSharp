@@ -352,7 +352,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         _sensors?.Resume();
     }
 
-    // the CAMERA permission, asked when a game first starts a camera (AndroidCamera)
+    // the CAMERA and RECORD_AUDIO permissions, asked when a game first starts a camera (AndroidCamera) or opens its
+    // microphone port (AndroidMicrophone)
     public override void OnRequestPermissionsResult(int requestCode, string[] permissions, Permission[] grantResults)
     {
         if (_sensors?.OnRequestPermissionsResult(requestCode, permissions, grantResults) != true)

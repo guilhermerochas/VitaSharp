@@ -167,8 +167,61 @@ public sealed class HostServices : IDisposable
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006", Justification = "used by Hle/Modules/Camera.cs, which is still in build/format-pending.txt: renamed to _cameraStreams with the Hle conversion")]
     internal readonly List<ICameraStream> CameraStreams = new();
 
+    /// <summary>Host microphone backing SceAudioIn (capture device, Android AudioRecord, scripted tone); null = no
+    /// microphone, the port delivers silence at its pace.</summary>
+    public IMicrophoneSource? Microphone { get; set; }
+
+    /// <summary>The host capture of each process's microphone port; survives a process exec so the new process image
+    /// closes what the old one left open (the host device must not stay on without a port).</summary>
+    private readonly Dictionary<object, MicrophoneFeed> _microphoneFeeds = new();
+
+    /// <summary>Makes <paramref name="feed"/> the capture of <paramref name="process"/>'s port (null = none), closing the
+    /// one it replaces.</summary>
+    public void ReplaceMicrophoneFeed(object process, MicrophoneFeed? feed)
+    {
+        MicrophoneFeed? previous;
+        lock (_microphoneFeeds)
+        {
+            _microphoneFeeds.Remove(process, out previous);
+            if (feed != null)
+            {
+                _microphoneFeeds[process] = feed;
+            }
+        }
+
+        if (previous != null && !ReferenceEquals(previous, feed))
+        {
+            previous.Dispose();
+        }
+    }
+
+    /// <summary>Microphone captures open now (tests; the host device is on while this is above 0).</summary>
+    public int OpenMicrophoneFeeds
+    {
+        get
+        {
+            lock (_microphoneFeeds)
+            {
+                return _microphoneFeeds.Count;
+            }
+        }
+    }
+
     public void Dispose()
     {
+        List<MicrophoneFeed> feeds;
+        lock (_microphoneFeeds)
+        {
+            feeds = _microphoneFeeds.Values.ToList();
+            _microphoneFeeds.Clear();
+        }
+
+        foreach (MicrophoneFeed feed in feeds)
+        {
+            feed.Dispose();
+        }
+
+        Microphone?.Dispose();
         lock (CameraStreams)
         {
             foreach (ICameraStream cameraStream in CameraStreams)
