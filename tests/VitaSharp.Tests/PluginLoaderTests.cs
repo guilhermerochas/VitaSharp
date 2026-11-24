@@ -1,14 +1,13 @@
 using VitaSharp.Core;
 using VitaSharp.Core.Loader;
-using VitaSharp.Core.Util;
 
 namespace VitaSharp.Tests;
 
 /// <summary>
 /// The plugin configuration (ur0:tai/config.txt): kernel modules (*KERNEL) and user modules (*ALL, *TITLEID) load
 /// through the same module loader path, kernel ones first, and a module whose imports name a library nothing provides
-/// is not started (<see cref="Emulator.LoadPlugins"/>). The real-module test uses the plugins of the installed data
-/// folder (read only: copied into the test's own folder) and is skipped without them; none is in the repository.
+/// is not started (<see cref="Emulator.LoadPlugins"/>). Only synthetic modules in the test's own folder: a test never
+/// reads the user's data folder or installed plugins.
 /// </summary>
 [Collection("guest")]
 public sealed class PluginLoaderTests(GuestMemoryFixture fx, Xunit.Abstractions.ITestOutputHelper output) : IDisposable
@@ -28,9 +27,6 @@ public sealed class PluginLoaderTests(GuestMemoryFixture fx, Xunit.Abstractions.
         {
         }
     }
-
-    private static string InstalledTai => Path.Combine(Environment.GetEnvironmentVariable(EnvVars.Data) is { Length: > 0 } d ? d
-        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VitaSharp"), "fs", "ur0", "tai");
 
     private Emulator NewEmulator(string config)
     {
@@ -57,60 +53,36 @@ public sealed class PluginLoaderTests(GuestMemoryFixture fx, Xunit.Abstractions.
         Assert.Empty(emu.LoadPlugins());
     }
 
-    private void CopyInstalledPlugins(params string[] only)
+    /// <summary>
+    /// Kernel plugins, all listed in *KERNEL, each read by the loader: a module that exports the plugin framework
+    /// libraries (a user's copy of the framework) is not loaded, since the emulator provides them; one whose imports
+    /// resolve (here a framework function the emulator implements) loads and starts; one importing a library nothing
+    /// provides is not started. Synthetic modules in the test's own folder, never the user's installed plugins.
+    /// </summary>
+    [Fact]
+    public void KernelPluginsGoThroughTheGenericLoader()
     {
+        const uint FrameworkFunction = 0x87E73973; // a module lookup the emulator's plugin framework implements
         string tai = Path.Combine(_root, "ur0", "tai");
         Directory.CreateDirectory(tai);
-        foreach (string file in Directory.GetFiles(InstalledTai, "*.skprx"))
-        {
-            if (only.Length == 0 || only.Contains(Path.GetFileName(file)))
-            {
-                File.Copy(file, Path.Combine(tai, Path.GetFileName(file)));
-            }
-        }
-    }
-
-    /// <summary>
-    /// The kernel plugins of the installed data folder (copied into the test's own folder), all listed in *KERNEL: each
-    /// one is read by the loader. The module that exports the plugin framework libraries (the user's copy of the
-    /// framework) is not loaded, since the emulator provides them; the others either load and start or, while a
-    /// framework function they import is not there yet, are not started.
-    /// </summary>
-    [RealPluginsFact]
-    public void RealKernelPluginsGoThroughTheGenericLoader()
-    {
-        CopyInstalledPlugins();
-        string tai = Path.Combine(_root, "ur0", "tai");
-        var listed = Directory.GetFiles(tai, "*.skprx").Select(f => "ur0:tai/" + Path.GetFileName(f))
-            .OrderBy(p => p, StringComparer.Ordinal).ToList();
+        SceModuleBuilder framework = new("VsPluginFramework");
+        framework.Export("VsFrameworkForKernel", 0x11110001, 0x0001, (FrameworkFunction, framework.ReturnConstant(0)));
+        File.WriteAllBytes(Path.Combine(tai, "a_framework.skprx"), framework.Start(0).Build());
+        File.WriteAllBytes(Path.Combine(tai, "b_plugin.skprx"),
+            new SceModuleBuilder("VsKernelPlugin").Import("VsFrameworkForKernel", 0x11110001, FrameworkFunction).Start(0).Build());
+        File.WriteAllBytes(Path.Combine(tai, "c_missing.skprx"),
+            new SceModuleBuilder("VsMissingImport").Import("VsNothingForKernel", 0x22220002, 0x12345678).Start(0).Build());
+        List<string> listed = ["ur0:tai/a_framework.skprx", "ur0:tai/b_plugin.skprx", "ur0:tai/c_missing.skprx"];
         using Emulator emu = NewEmulator("*KERNEL\n" + string.Join("\n", listed) + "\n");
         List<string> results = emu.LoadPlugins();
         output.WriteLine(string.Join("\n", results));
         Assert.Equal(listed.Count, results.Count);
-        foreach (string r in results)
-        {
-            bool frameworkCopy = r.EndsWith("not loaded (the emulator provides its libraries)", StringComparison.Ordinal);
-            Assert.True(frameworkCopy || r.Contains("loaded and started", StringComparison.Ordinal)
-                || r.Contains("not started: no module provides", StringComparison.Ordinal), r);
-        }
-
-        foreach (LoadedModule module in HleHarness.KernelModules(emu).Values.Where(m => m.IsKernel))
-        {
-            Assert.True(module.Started, module.Name);
-        }
-    }
-}
-
-/// <summary>[Fact] skipped when the installed data folder has no kernel plugins (ur0:tai/*.skprx).</summary>
-public sealed class RealPluginsFactAttribute : FactAttribute
-{
-    public RealPluginsFactAttribute()
-    {
-        string dir = Path.Combine(Environment.GetEnvironmentVariable(EnvVars.Data) is { Length: > 0 } d ? d
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VitaSharp"), "fs", "ur0", "tai");
-        if (!Directory.Exists(dir) || Directory.GetFiles(dir, "*.skprx").Length == 0)
-        {
-            Skip = "no kernel plugins (ur0:tai/*.skprx) in the installed data folder";
-        }
+        Assert.EndsWith("not loaded (the emulator provides its libraries)", results[0]);
+        Assert.Contains("loaded and started", results[1], StringComparison.Ordinal);
+        Assert.Contains("not started: no module provides VsNothingForKernel", results[2], StringComparison.Ordinal);
+        var plugins = HleHarness.KernelModules(emu).Values.Where(m => m.IsKernel && m.Name.StartsWith("Vs", StringComparison.Ordinal)).ToList();
+        LoadedModule started = Assert.Single(plugins);
+        Assert.Equal("VsKernelPlugin", started.Name);
+        Assert.True(started.Started);
     }
 }

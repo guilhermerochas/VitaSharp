@@ -155,7 +155,9 @@ public sealed class GeDrawTests
         LoadIdentity(list, GeCommand.WorldMatrixNumber, GeCommand.WorldMatrixData, 12);
         LoadIdentity(list, GeCommand.ViewMatrixNumber, GeCommand.ViewMatrixData, 12);
         LoadIdentity(list, GeCommand.ProjectionMatrixNumber, GeCommand.ProjectionMatrixData, 16);
+        // centred in the GE's 4096-pixel screen space: a vertex left of or above it is out of range and drops the triangle
         list.Float(GeCommand.ViewportXScale, 100).Float(GeCommand.ViewportYScale, 100).Float(GeCommand.ViewportZScale, 1)
+            .Float(GeCommand.ViewportXCenter, 2048).Float(GeCommand.ViewportYCenter, 2048)
             .Command(GeCommand.Primitive, (3u << 16) | 3).End();
         GeRegisters.Run(_engine, list.Start);
         int drawn = _rasterizer.Draws.Count == 0 ? 0 : _rasterizer.Draws[0].Vertices.Length;

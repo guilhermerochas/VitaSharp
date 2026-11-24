@@ -8,8 +8,8 @@ namespace VitaSharp.Core.Compat.Ge;
 /// triangles (strips, fans and rectangles become lists; flat shading takes the last vertex's colour), the state read
 /// from the command registers, the texture and CLUT decoded (once while their memory stays the same), and the batch
 /// handed to the rasterizer with its framebuffer and depth surfaces, which it may keep until the list stops. LOADCLUT
-/// and the block transfer (TRANSFERSTART) work on memory
-/// here. Not drawn yet (each logs once when a list uses it): lighting, skinning, patches.
+/// and the block transfer (TRANSFERSTART) work on memory here. The vertex stage is GeVertexTransformer; patches are
+/// GeEngine.Patches.
 /// </summary>
 public sealed partial class GeEngine
 {
@@ -18,7 +18,8 @@ public sealed partial class GeEngine
 
     private readonly uint[] _clut = new uint[256 * 4 / 4]; // 1 KB of CLUT entries (as 32-bit words)
     private readonly GeRenderState _state = new();
-    private GeVertex[] _vertices = new GeVertex[256];
+    private GeClipVertex[] _clipVertices = new GeClipVertex[256];
+    private GeVertexTransformer? _transformer;
     private GeVertex[] _assembled = new GeVertex[768];
 
     /// <summary>The rasterizer the batches go to (none: the batches are decoded and dropped). Unset, the first batch
@@ -81,17 +82,13 @@ public sealed partial class GeEngine
             return;
         }
 
-        if (Enabled(GeCommand.LightingEnable) && !format.Through)
-        {
-            Log.WarnOnce("ge-lighting", "GE: lighting is not applied yet");
-        }
-
-        if (format.WeightCount > 0 && !format.Through)
-        {
-            Log.WarnOnce("ge-skinning", "GE: skinning is not applied yet");
-        }
-
         DecodeVertices(count, format);
+        DrawTransformed(primitive, count, format);
+    }
+
+    /// <summary>Assembles the first <paramref name="count"/> transformed vertices and hands them to the rasterizer.</summary>
+    private void DrawTransformed(int primitive, int count, GeVertexFormat format)
+    {
         (GeTopology topology, int assembled) = Assemble(primitive, count, format);
         if (assembled == 0)
         {
@@ -110,210 +107,66 @@ public sealed partial class GeEngine
         Batches++;
     }
 
-    // ---- vertices
+    // ---- vertices (GeVertexTransformer)
 
     private void DecodeVertices(int count, GeVertexFormat format)
     {
-        if (_vertices.Length < count)
+        if (_clipVertices.Length < count)
         {
-            _vertices = new GeVertex[Math.Max(count, _vertices.Length * 2)];
+            _clipVertices = new GeClipVertex[Math.Max(count, _clipVertices.Length * 2)];
         }
 
-        Span<float> morphWeights = stackalloc float[8];
-        for (int m = 0; m < format.MorphCount; m++)
-        {
-            morphWeights[m] = format.MorphCount == 1 ? 1 : Fixed24(Command(GeCommand.MorphWeight0 + m));
-        }
-
-        for (int i = 0; i < count; i++)
-        {
-            int index = format.IndexSize switch
-            {
-                1 => ReadByte(_indexAddress + (uint)i),
-                2 => ReadHalf(_indexAddress + (uint)(i * 2)),
-                4 => (int)_memory.Read32(_indexAddress + (uint)(i * 4)),
-                _ => i,
-            };
-            uint vertex = format.IndexSize != 0 ? _vertexAddress + (uint)(index * format.Size) : _vertexAddress + (uint)(i * format.Size);
-            _vertices[i] = DecodeVertex(vertex, format, morphWeights);
-        }
-    }
-
-    private GeVertex DecodeVertex(uint address, GeVertexFormat format, ReadOnlySpan<float> morphWeights)
-    {
-        float x = 0;
-        float y = 0;
-        float z = 0;
-        float u = 0;
-        float v = 0;
-        for (int m = 0; m < format.MorphCount; m++)
-        {
-            uint target = address + (uint)(m * format.Stride);
-            float weight = morphWeights[m];
-            (float px, float py, float pz) = ReadComponent3(target + (uint)format.PositionOffset, format.PositionFormat, format.Through);
-            x += px * weight;
-            y += py * weight;
-            z += pz * weight;
-            if (format.TextureOffset >= 0)
-            {
-                (float tu, float tv) = ReadTexture(target + (uint)format.TextureOffset, format.TextureFormat, format.Through);
-                u += tu * weight;
-                v += tv * weight;
-            }
-        }
-
-        uint color = format.ColorOffset >= 0 ? ReadColor(address + (uint)format.ColorOffset, format.ColorFormat) : MaterialColor();
-        GeVertex result = new() { Color = color };
-        if (format.Through)
-        {
-            result.X = x;
-            result.Y = y;
-            result.Z = Math.Clamp(z / 65535f, 0, 1);
-            result.W = 1;
-            int width = Math.Max(1, TextureWidth());
-            int height = Math.Max(1, TextureHeight());
-            result.U = u / width;
-            result.V = v / height;
-            return result;
-        }
-
-        Transform(x, y, z, ref result);
-        result.U = u * Fixed24(Command(GeCommand.TexScaleU)) + Fixed24(Command(GeCommand.TexOffsetU));
-        result.V = v * Fixed24(Command(GeCommand.TexScaleV)) + Fixed24(Command(GeCommand.TexOffsetV));
-        return result;
-    }
-
-    /// <summary>World, view and projection, then the viewport and the screen offset (OFFSETX/Y in 1/16 pixel).</summary>
-    private void Transform(float x, float y, float z, ref GeVertex result)
-    {
-        ReadOnlySpan<float> world = _world;
-        ReadOnlySpan<float> view = _view;
-        ReadOnlySpan<float> projection = _projection;
-        float wx = x * world[0] + y * world[3] + z * world[6] + world[9];
-        float wy = x * world[1] + y * world[4] + z * world[7] + world[10];
-        float wz = x * world[2] + y * world[5] + z * world[8] + world[11];
-        float vx = wx * view[0] + wy * view[3] + wz * view[6] + view[9];
-        float vy = wx * view[1] + wy * view[4] + wz * view[7] + view[10];
-        float vz = wx * view[2] + wy * view[5] + wz * view[8] + view[11];
-        float cx = vx * projection[0] + vy * projection[4] + vz * projection[8] + projection[12];
-        float cy = vx * projection[1] + vy * projection[5] + vz * projection[9] + projection[13];
-        float cz = vx * projection[2] + vy * projection[6] + vz * projection[10] + projection[14];
-        float cw = vx * projection[3] + vy * projection[7] + vz * projection[11] + projection[15];
-        if (cw == 0)
-        {
-            cw = 1e-6f;
-        }
-
-        float offsetX = (Command(GeCommand.OffsetX) & 0xFFFF) / 16f;
-        float offsetY = (Command(GeCommand.OffsetY) & 0xFFFF) / 16f;
-        result.X = Fixed24(Command(GeCommand.ViewportXScale)) * (cx / cw) + Fixed24(Command(GeCommand.ViewportXCenter)) - offsetX;
-        result.Y = Fixed24(Command(GeCommand.ViewportYScale)) * (cy / cw) + Fixed24(Command(GeCommand.ViewportYCenter)) - offsetY;
-        float depth = Fixed24(Command(GeCommand.ViewportZScale)) * (cz / cw) + Fixed24(Command(GeCommand.ViewportZCenter));
-        result.Z = Math.Clamp(depth / 65535f, 0, 1);
-        result.W = cw;
-    }
-
-    private (float, float, float) ReadComponent3(uint address, int componentFormat, bool through)
-    {
-        switch (componentFormat)
-        {
-            case 1:
-            {
-                float scale = through ? 1 : 1 / 128f;
-                return ((sbyte)ReadByte(address) * scale, (sbyte)ReadByte(address + 1) * scale, (sbyte)ReadByte(address + 2) * scale);
-            }
-
-            case 2:
-            {
-                float scale = through ? 1 : 1 / 32768f;
-                float zValue = through ? (ushort)ReadHalf(address + 4) : (short)ReadHalf(address + 4) * scale;
-                return ((short)ReadHalf(address) * scale, (short)ReadHalf(address + 2) * scale, zValue);
-            }
-
-            case 3:
-                return (ReadFloat(address), ReadFloat(address + 4), ReadFloat(address + 8));
-            default:
-                return (0, 0, 0);
-        }
-    }
-
-    private (float, float) ReadTexture(uint address, int componentFormat, bool through)
-    {
-        switch (componentFormat)
-        {
-            case 1:
-            {
-                float scale = through ? 1 : 1 / 128f;
-                return (ReadByte(address) * scale, ReadByte(address + 1) * scale);
-            }
-
-            case 2:
-            {
-                float scale = through ? 1 : 1 / 32768f;
-                return ((ushort)ReadHalf(address) * scale, (ushort)ReadHalf(address + 2) * scale);
-            }
-
-            case 3:
-                return (ReadFloat(address), ReadFloat(address + 4));
-            default:
-                return (0, 0);
-        }
-    }
-
-    private uint ReadColor(uint address, int colorFormat)
-    {
-        switch (colorFormat)
-        {
-            case 4:
-                return GePixels.From565((ushort)ReadHalf(address));
-            case 5:
-                return GePixels.From5551((ushort)ReadHalf(address));
-            case 6:
-                return GePixels.From4444((ushort)ReadHalf(address));
-            case 7:
-                return _memory.Read32(address);
-            default:
-                return MaterialColor();
-        }
-    }
-
-    /// <summary>The colour of vertices without one: the material's ambient colour and alpha.</summary>
-    private uint MaterialColor()
-    {
-        return (Command(GeCommand.MaterialAmbient) & 0xFFFFFF) | ((Command(GeCommand.MaterialAlpha) & 0xFF) << 24);
+        _transformer ??= new GeVertexTransformer(this);
+        _transformer.Transform(count, format, _clipVertices.AsSpan(0, count));
     }
 
     // ---- primitives
 
+    /// <summary>
+    /// Expands the primitive into points, lines or triangles. Transformed primitives follow the GE's clipper
+    /// (PPSSPP's Clipper.cpp and its probes): one with a vertex outside the screen range is dropped, as is one whose
+    /// vertices are all outside the same clip plane (|c| &gt; w); with DEPTHCLAMP the near plane (z &lt; -w) clips
+    /// lines and triangles, the triangle split from the vertex before the clipped one; without it a vertex behind the
+    /// camera (w &lt;= 0) drops the primitive; rectangles are never clipped. Flat shading takes the provoking (last)
+    /// vertex's colours; culling (transformed triangles) keeps CULL's winding.
+    /// </summary>
     private (GeTopology, int) Assemble(int primitive, int count, GeVertexFormat format)
     {
         bool flat = (Command(GeCommand.ShadeMode) & 1) == 0;
-        EnsureAssembled(count * 3 + 6);
-        ReadOnlySpan<GeVertex> input = _vertices.AsSpan(0, count);
+        bool through = format.Through;
+        EnsureAssembled((count * 6) + 12);
+        Span<GeClipVertex> input = _clipVertices.AsSpan(0, count);
         int written = 0;
         switch (primitive)
         {
             case GeCommand.PrimitivePoints:
-                input.CopyTo(_assembled);
-                return (GeTopology.Points, count);
+                for (int i = 0; i < count; i++)
+                {
+                    if (through ? !input[i].OutsideRange : !input[i].OutsideRange && OutsideMask(input[i]) == 0)
+                    {
+                        _assembled[written++] = input[i].Vertex;
+                    }
+                }
+
+                return (GeTopology.Points, written);
             case GeCommand.PrimitiveLines:
                 for (int i = 0; i + 1 < count; i += 2)
                 {
-                    AddLine(input[i], input[i + 1], flat, ref written);
+                    AddLine(input[i], input[i + 1], flat, through, ref written);
                 }
 
                 return (GeTopology.Lines, written);
             case GeCommand.PrimitiveLineStrip:
                 for (int i = 0; i + 1 < count; i++)
                 {
-                    AddLine(input[i], input[i + 1], flat, ref written);
+                    AddLine(input[i], input[i + 1], flat, through, ref written);
                 }
 
                 return (GeTopology.Lines, written);
             case GeCommand.PrimitiveTriangles:
                 for (int i = 0; i + 2 < count; i += 3)
                 {
-                    AddTriangle(input[i], input[i + 1], input[i + 2], flat, format.Through, ref written);
+                    AddTriangle(input[i], input[i + 1], input[i + 2], false, flat, through, ref written);
                 }
 
                 return (GeTopology.Triangles, written);
@@ -322,11 +175,11 @@ public sealed partial class GeEngine
                 {
                     if ((i & 1) == 0)
                     {
-                        AddTriangle(input[i], input[i + 1], input[i + 2], flat, format.Through, ref written);
+                        AddTriangle(input[i], input[i + 1], input[i + 2], false, flat, through, ref written);
                     }
                     else
                     {
-                        AddTriangle(input[i + 1], input[i], input[i + 2], flat, format.Through, ref written);
+                        AddTriangle(input[i + 1], input[i], input[i + 2], true, flat, through, ref written);
                     }
                 }
 
@@ -334,14 +187,17 @@ public sealed partial class GeEngine
             case GeCommand.PrimitiveTriangleFan:
                 for (int i = 1; i + 1 < count; i++)
                 {
-                    AddTriangle(input[0], input[i], input[i + 1], flat, format.Through, ref written);
+                    AddTriangle(input[0], input[i], input[i + 1], false, flat, through, ref written);
                 }
 
                 return (GeTopology.Triangles, written);
             case GeCommand.PrimitiveRectangles:
                 for (int i = 0; i + 1 < count; i += 2)
                 {
-                    AddRectangle(input[i], input[i + 1], ref written);
+                    if (through || RectangleVisible(input[i], input[i + 1]))
+                    {
+                        AddRectangle(input[i].Vertex, input[i + 1].Vertex, ref written);
+                    }
                 }
 
                 return (GeTopology.Triangles, written);
@@ -358,24 +214,280 @@ public sealed partial class GeEngine
         }
     }
 
-    private void AddLine(GeVertex first, GeVertex second, bool flat, ref int written)
+    /// <summary>Which clip planes a vertex is beyond: x (1, 2), y (4, 8), z (16 far, 32 near), as |c| &gt; w.</summary>
+    private static int OutsideMask(in GeClipVertex vertex)
     {
-        if (flat)
+        int mask = 0;
+        if (vertex.ClipX > vertex.ClipW)
         {
-            first.Color = second.Color;
+            mask |= 1;
         }
 
-        _assembled[written++] = first;
-        _assembled[written++] = second;
+        if (-vertex.ClipX > vertex.ClipW)
+        {
+            mask |= 2;
+        }
+
+        if (vertex.ClipY > vertex.ClipW)
+        {
+            mask |= 4;
+        }
+
+        if (-vertex.ClipY > vertex.ClipW)
+        {
+            mask |= 8;
+        }
+
+        if (vertex.ClipZ > vertex.ClipW)
+        {
+            mask |= 16;
+        }
+
+        if (-vertex.ClipZ > vertex.ClipW)
+        {
+            mask |= 32;
+        }
+
+        return mask;
+    }
+
+    private static bool BeyondNearPlane(in GeClipVertex vertex)
+    {
+        return vertex.ClipZ < -vertex.ClipW;
+    }
+
+    private bool DepthClip()
+    {
+        return (Command(GeCommand.DepthClampEnable) & 1) != 0;
+    }
+
+    /// <summary>Out of range before clipping: with the near-plane clip, a vertex it removes does not count.</summary>
+    private bool OutsideBeforeClip(in GeClipVertex vertex, bool depthClip)
+    {
+        return vertex.OutsideRange && !(depthClip && BeyondNearPlane(vertex));
+    }
+
+    private bool RectangleVisible(in GeClipVertex first, in GeClipVertex second)
+    {
+        if (first.OutsideRange || second.OutsideRange)
+        {
+            return false;
+        }
+
+        if ((OutsideMask(first) & OutsideMask(second)) != 0)
+        {
+            return false;
+        }
+
+        return first.ClipW > 0 && second.ClipW > 0;
+    }
+
+    /// <summary>The point where the edge from the inside vertex to the outside one meets the near plane (z + w = 0).</summary>
+    private GeClipVertex NearPoint(in GeClipVertex inside, in GeClipVertex outside)
+    {
+        float insideDistance = inside.ClipZ + inside.ClipW;
+        float outsideDistance = outside.ClipZ + outside.ClipW;
+        float t = insideDistance / (insideDistance - outsideDistance);
+        GeClipVertex result = inside;
+        result.ClipX = Lerp(inside.ClipX, outside.ClipX, t);
+        result.ClipY = Lerp(inside.ClipY, outside.ClipY, t);
+        result.ClipZ = Lerp(inside.ClipZ, outside.ClipZ, t);
+        result.ClipW = Lerp(inside.ClipW, outside.ClipW, t);
+        result.Vertex.U = Lerp(inside.Vertex.U, outside.Vertex.U, t);
+        result.Vertex.V = Lerp(inside.Vertex.V, outside.Vertex.V, t);
+        result.Vertex.Q = Lerp(inside.Vertex.Q, outside.Vertex.Q, t);
+        result.Vertex.Fog = Lerp(inside.Vertex.Fog, outside.Vertex.Fog, t);
+        result.Vertex.Color = LerpColor(inside.Vertex.Color, outside.Vertex.Color, t);
+        result.Vertex.Color1 = LerpColor(inside.Vertex.Color1, outside.Vertex.Color1, t);
+        _transformer!.Reproject(ref result);
+        return result;
+    }
+
+    private static float Lerp(float from, float to, float t)
+    {
+        return from + ((to - from) * t);
+    }
+
+    private static uint LerpColor(uint from, uint to, float t)
+    {
+        uint result = 0;
+        for (int c = 0; c < 4; c++)
+        {
+            float a = (from >> (c * 8)) & 0xFF;
+            float b = (to >> (c * 8)) & 0xFF;
+            result |= (uint)Math.Clamp((int)(Lerp(a, b, t) + 0.5f), 0, 255) << (c * 8);
+        }
+
+        return result;
+    }
+
+    private void AddLine(GeClipVertex first, GeClipVertex second, bool flat, bool through, ref int written)
+    {
+        if (!through)
+        {
+            bool depthClip = DepthClip();
+            if (OutsideBeforeClip(first, depthClip) || OutsideBeforeClip(second, depthClip))
+            {
+                return;
+            }
+
+            if ((OutsideMask(first) & OutsideMask(second)) != 0)
+            {
+                return;
+            }
+
+            if (!depthClip)
+            {
+                if (!(first.ClipW > 0 && second.ClipW > 0))
+                {
+                    return;
+                }
+            }
+            else
+            {
+                bool firstBeyond = BeyondNearPlane(first);
+                bool secondBeyond = BeyondNearPlane(second);
+                if (firstBeyond && secondBeyond)
+                {
+                    return;
+                }
+
+                if (firstBeyond)
+                {
+                    first = NearPoint(second, first);
+                }
+                else if (secondBeyond)
+                {
+                    second = NearPoint(first, second);
+                }
+
+                if (first.OutsideRange || second.OutsideRange)
+                {
+                    return;
+                }
+            }
+        }
+
+        if (flat)
+        {
+            first.Vertex.Color = second.Vertex.Color;
+            first.Vertex.Color1 = second.Vertex.Color1;
+        }
+
+        _assembled[written++] = first.Vertex;
+        _assembled[written++] = second.Vertex;
+    }
+
+    private void AddTriangle(in GeClipVertex first, in GeClipVertex second, in GeClipVertex third, bool reversed, bool flat, bool through, ref int written)
+    {
+        GeVertex provoking = third.Vertex;
+        if (through)
+        {
+            EmitTriangle(first.Vertex, second.Vertex, third.Vertex, provoking, flat, through, ref written);
+            return;
+        }
+
+        bool depthClip = DepthClip();
+        if (OutsideBeforeClip(first, depthClip) || OutsideBeforeClip(second, depthClip) || OutsideBeforeClip(third, depthClip))
+        {
+            return;
+        }
+
+        if (first.ClipW < 0 && second.ClipW < 0 && third.ClipW < 0)
+        {
+            return;
+        }
+
+        if ((OutsideMask(first) & OutsideMask(second) & OutsideMask(third)) != 0)
+        {
+            return;
+        }
+
+        if (!depthClip)
+        {
+            if (!(first.ClipW > 0 && second.ClipW > 0 && third.ClipW > 0))
+            {
+                return;
+            }
+
+            EmitTriangle(first.Vertex, second.Vertex, third.Vertex, provoking, flat, through, ref written);
+            return;
+        }
+
+        Span<GeClipVertex> source = stackalloc GeClipVertex[3];
+        source[0] = first;
+        source[1] = second;
+        source[2] = third;
+        int outsideCount = 0;
+        int outsideIndex = -1;
+        int insideIndex = -1;
+        for (int i = 0; i < 3; i++)
+        {
+            if (BeyondNearPlane(source[i]))
+            {
+                outsideCount++;
+                outsideIndex = i;
+            }
+            else
+            {
+                insideIndex = i;
+            }
+        }
+
+        if (outsideCount == 0)
+        {
+            EmitTriangle(first.Vertex, second.Vertex, third.Vertex, provoking, flat, through, ref written);
+            return;
+        }
+
+        if (outsideCount == 1)
+        {
+            // the quad left is split from the vertex before the clipped one, in the order the triangle was given
+            int previous = reversed ? (outsideIndex + 1) % 3 : (outsideIndex + 2) % 3;
+            int next = reversed ? (outsideIndex + 2) % 3 : (outsideIndex + 1) % 3;
+            GeClipVertex towardsPrevious = NearPoint(source[previous], source[outsideIndex]);
+            GeClipVertex towardsNext = NearPoint(source[next], source[outsideIndex]);
+            if (reversed)
+            {
+                EmitClipped(source[previous], towardsNext, towardsPrevious, provoking, flat, ref written);
+                EmitClipped(source[previous], source[next], towardsNext, provoking, flat, ref written);
+            }
+            else
+            {
+                EmitClipped(source[previous], towardsPrevious, towardsNext, provoking, flat, ref written);
+                EmitClipped(source[previous], towardsNext, source[next], provoking, flat, ref written);
+            }
+
+            return;
+        }
+
+        if (outsideCount == 2)
+        {
+            int next = (insideIndex + 1) % 3;
+            int previous = (insideIndex + 2) % 3;
+            GeClipVertex towardsNext = NearPoint(source[insideIndex], source[next]);
+            GeClipVertex towardsPrevious = NearPoint(source[insideIndex], source[previous]);
+            EmitClipped(source[insideIndex], towardsNext, towardsPrevious, provoking, flat, ref written);
+        }
+    }
+
+    private void EmitClipped(in GeClipVertex first, in GeClipVertex second, in GeClipVertex third, in GeVertex provoking, bool flat, ref int written)
+    {
+        if (first.OutsideRange || second.OutsideRange || third.OutsideRange)
+        {
+            return;
+        }
+
+        EmitTriangle(first.Vertex, second.Vertex, third.Vertex, provoking, flat, false, ref written);
     }
 
     /// <summary>A triangle, unless culled: with CULLFACEENABLE (transformed vertices only), CULL bit 0 is the front
     /// face that is kept (0 clockwise, 1 counter-clockwise, as seen on the screen).</summary>
-    private void AddTriangle(GeVertex first, GeVertex second, GeVertex third, bool flat, bool through, ref int written)
+    private void EmitTriangle(GeVertex first, GeVertex second, GeVertex third, in GeVertex provoking, bool flat, bool through, ref int written)
     {
         if (!through && (Command(GeCommand.CullFaceEnable) & 1) != 0)
         {
-            float area = (second.X - first.X) * (third.Y - first.Y) - (third.X - first.X) * (second.Y - first.Y);
+            float area = ((second.X - first.X) * (third.Y - first.Y)) - ((third.X - first.X) * (second.Y - first.Y));
             bool counterClockwise = area < 0; // y grows downwards on screen
             bool keepCounterClockwise = (Command(GeCommand.Cull) & 1) != 0;
             if (area == 0 || counterClockwise != keepCounterClockwise)
@@ -386,8 +498,12 @@ public sealed partial class GeEngine
 
         if (flat)
         {
-            first.Color = third.Color;
-            second.Color = third.Color;
+            first.Color = provoking.Color;
+            second.Color = provoking.Color;
+            third.Color = provoking.Color;
+            first.Color1 = provoking.Color1;
+            second.Color1 = provoking.Color1;
+            third.Color1 = provoking.Color1;
         }
 
         _assembled[written++] = first;
@@ -734,28 +850,5 @@ public sealed partial class GeEngine
         }
 
         Rasterizer?.Invalidate(destinationStart, destinationSpan);
-    }
-
-    // ---- memory
-
-    private int ReadByte(uint address)
-    {
-        return (int)((_memory.Read32(address & ~3u) >> (int)((address & 3) * 8)) & 0xFF);
-    }
-
-    private int ReadHalf(uint address)
-    {
-        return (int)((_memory.Read32(address & ~3u) >> (int)((address & 2) * 8)) & 0xFFFF);
-    }
-
-    private float ReadFloat(uint address)
-    {
-        return BitConverter.UInt32BitsToSingle(_memory.Read32(address));
-    }
-
-    /// <summary>A command's 24-bit float argument (the float's top 24 bits).</summary>
-    private static float Fixed24(uint word)
-    {
-        return BitConverter.UInt32BitsToSingle((word & 0xFFFFFF) << 8);
     }
 }
