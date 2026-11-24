@@ -127,12 +127,13 @@ public sealed class KernelPluginBootOrderTests : IDisposable
     }
 
     /// <summary>A PSM title whose own runtime is still a PFS image, with a free licence where the promote stores it.</summary>
-    private string InstallPfsTitle()
+    private string InstallPfsTitle(byte[]? selfEboot = null)
     {
         string title = Path.Combine(_harness.Root, "ux0", "psm", PsmTitle);
         PfsImageBuilder.Write(Path.Combine(title, "runtime"), s_imageKey,
         [
-            new("eboot.bin", SyntheticTitle.Elf(), Encrypted: true),
+            // a SELF is stored as it is (NENC), as PFS stores the files that are SELFs themselves
+            selfEboot != null ? new("eboot.bin", selfEboot, Encrypted: false) : new("eboot.bin", SyntheticTitle.Elf(), Encrypted: true),
             new("sce_sys/param.sfo", SyntheticTitle.ParamSfo(RuntimeId), Encrypted: false),
         ]);
         string licenses = Path.Combine(_harness.Root, "ux0", "license", "app", PsmTitle);
@@ -371,6 +372,40 @@ public sealed class KernelPluginBootOrderTests : IDisposable
         // the call's registers: r0 the path and r1 the mount point are kernel strings; the result is the mount's
         string trace = _sink.Messages().First(m => m.Contains("plugin hook 1 call 1: ", StringComparison.Ordinal));
         Assert.Contains("returned 0x00000000", trace);
+    }
+
+    /// <summary>
+    /// The launch's kscePfsMount gets the process's program authority ID, as appmgr 3.74's does: processmgr's
+    /// ksceKernelCreateProcess loads the executable's SELF and fills the process's self auth info, and appmgr reads the
+    /// ID from it (ksceKernelGetProcessSelfAuthInfo) before the mount. The SELF is in the image as it is (PFS does not
+    /// encrypt SELFs), so its header is there before the mount. Before, the ID was read only after the mount and the
+    /// call got 0 on a first launch.
+    /// </summary>
+    [Fact]
+    public void TheLaunchsPfsMountGetsTheAuthorityIdOfTheProcess()
+    {
+        Boot();
+        byte[] eboot = TitleLicenseTests.AppSelf(encrypted: true);
+        BinaryPrimitives.WriteUInt64LittleEndian(eboot.AsSpan(0x80), 0x2F00000000000001UL);
+        string title = InstallPfsTitle(eboot);
+        uint hookRef = KernelWord();
+        SceModuleBuilder hooks = new SceModuleBuilder("VsBootHook").Start(0);
+        int refusing = hooks.Arm(
+        [
+            0xE3000082, // movw r0, #0x0082
+            0xE3480001, // movt r0, #0x8001
+            0xE12FFF1E, // bx lr
+        ]);
+        BootWithPfsMountHook(hooks, refusing, hookRef);
+
+        Assert.Throws<ProcessLoadException>(() => _emu.LoadTitle(title));
+
+        string log = string.Join("\n", _sink.Messages());
+        string trace = _sink.Messages().First(m => m.Contains("plugin hook 1 call 1: ", StringComparison.Ordinal));
+        // r2 and r3: the authority ID's low and high words
+        Assert.Contains("r2=0x00000001 r3=0x2F000000", trace);
+        Assert.Equal(0x2F00000000000001UL, _emu.ProgramAuthorityId);
+        Assert.True(_sink.IndexOf("plugin hook 1 called: kscePfsMount") >= 0, log);
     }
 
     /// <summary>A hook on kscePfsMount that answers an error itself fails the launch with that error at the PFS mount

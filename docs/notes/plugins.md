@@ -276,8 +276,9 @@ step: `<title>: the launch stopped at app0's mount, step N of 4 (<step>): ... (0
 and "d", the process's program authority ID, the 16-byte title key and mode 5: when kernel code hooked that function,
 the launch makes the call through the entry on a kernel thread, the original the hook continues to mounts the image as
 the launch does without a hook, and an error the hook answers fails the launch at step 4. The title key is the one the
-launch already has (no check of the licence changes); the authority ID is 0 for a first launch, since VitaSharp reads it
-from the executable inside the image after the mount. pfsmgr 3.74's kscePfsMount takes (source, mount point, the
+launch already has (no check of the licence changes); the authority ID is the process's from its creation, as
+processmgr 3.74's ksceKernelCreateProcess loads the executable's SELF and fills the process's self auth info (PFS does
+not encrypt SELFs, so the header is read from app0 before the PFS layer). pfsmgr 3.74's kscePfsMount takes (source, mount point, the
 authority ID as a 64-bit argument in the third and fourth words, key, mode): mode 0x28 answers the mode of a mount the ID
 is approved on, any other mode is Mount2(source, mount point, key, mode) then Approve(mount point, ID). Mount2 takes the
 firmware's modes only (0, 2 to 10, 12, 13, 20 to 23; others 0x80142109) and serves the image on the device

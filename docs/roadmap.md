@@ -3183,6 +3183,18 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (23/11/2026, falta testar) [P1][P] O ID de autoridade do processo existe antes do mount do app0 (fix/hookfn3): no
+  processmgr 3.74 (descompilado, só estudo) o ksceKernelCreateProcess carrega o executável pelo modulemgr
+  (SceModulemgrForKernel 0xA85A44D7), que preenche o self auth info do processo, e o appmgr lê o ID com
+  ksceKernelGetProcessSelfAuthInfo (0x324F2B20) antes de chamar o kscePfsMount; o cabeçalho do SELF dá para ler porque o
+  PFS não cifra os arquivos que já são SELF (atributo NENC no files.db). Aqui o ID só era lido do executável depois do
+  mount, então o kscePfsMount do lançamento recebia 0 num primeiro lançamento. Agora o lançamento lê o ID do executável
+  do app0 antes da camada PFS (a pasta do aplicativo, ou a atualização que a cobre) na criação do processo; depois do
+  mount a leitura de sempre continua. Teste: `KernelPluginBootOrderTests.TheLaunchsPfsMountGetsTheAuthorityIdOfTheProcess`
+  (falha sem a correção: r2/r3 iam 0). Testar: com "Ativar Plugins do Kernel" e um plugin de kernel que engancha o
+  kscePfsMount, abrir um título cujo app0 é imagem PFS; no `last.log` a linha `plugin hook N call 1:` mostra r2/r3 com o
+  ID do título (r3=0x2F000000 num jogo), não 0.
+
 - [ ] (23/11/2026, falta testar) [P1][M] Os pedidos assíncronos de E/S com hook rodam nas threads fixas do escalonador
   (fix/hookfn3): no iofilemgr 3.74 (descompilado, só estudo) o escalonador de E/S tem cinco threads de kernel fixas,
   "SceIoSchedWorker0" a "SceIoSchedWorker4", uma por fila (0 armazenamento interno, 1 cartão de jogo e SD, 2 cartão de
@@ -3220,8 +3232,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   a imagem era aberta direto e um hook nessa função nunca era chamado. Agora, quando código de kernel enganchou o
   kscePfsMount, o lançamento faz a chamada pela entrada numa thread de kernel; o original monta a imagem igual a antes e
   um erro do hook falha o lançamento no passo 4 (mount PFS). A chave continua vindo do caminho atual (sem processador
-  seguro o lançamento para antes, em 0x80020004); nenhuma função de licença mudou. Diferença conhecida: o ID de
-  autoridade vai 0 num primeiro lançamento (o executável está dentro da imagem e é lido depois do mount). Teste:
+  seguro o lançamento para antes, em 0x80020004); nenhuma função de licença mudou. O ID de autoridade
+  é o do processo desde a criação dele (fix/hookfn3, item abaixo). Teste:
   `KernelPluginBootOrderTests` (`TheLaunchMountsApp0ThroughAHookedPfsMountEntry`,
   `AnErrorThePfsMountHookAnswersFailsTheLaunch`). Testar: com "Ativar Plugins do Kernel" e um plugin de kernel que
   engancha o kscePfsMount, abrir um título cujo app0 é imagem PFS e que já abria; o `last.log` mostra

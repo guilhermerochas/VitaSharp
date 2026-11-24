@@ -1160,7 +1160,9 @@ public sealed partial class Emulator : IDisposable
         Vfs.MountSaveData("savedata0", saveDir);
         Vfs.Mount("addcont0", Io.FirmwareLayout.AddCont.Host(Options.FsRoot, TitleId));
 
-        // appmgr creates the process (ksceKernelCreateProcess) before it mounts app0 for it
+        // appmgr creates the process (ksceKernelCreateProcess) before it mounts app0 for it; the creation loads the
+        // executable's SELF header, so the process has its authority ID from then on
+        ProgramAuthorityId = ExecutableAuthorityId(self);
         CreateProcessThroughProcessmgr(self);
         Klicensee = FindKlicensee();
         OpenApp0Image();
@@ -1390,6 +1392,28 @@ public sealed partial class Emulator : IDisposable
 
     /// <summary>Program authority ID of the main executable's SELF (0 for a plain ELF).</summary>
     public ulong ProgramAuthorityId { get; private set; }
+
+    /// <summary>
+    /// The authority ID the process has from its creation, as processmgr 3.74 gives it (decompiled, study only): its
+    /// ksceKernelCreateProcess loads the executable named by the launch through modulemgr (SceModulemgrForKernel
+    /// 0xA85A44D7), which fills the process's self auth info, so appmgr reads the ID with
+    /// ksceKernelGetProcessSelfAuthInfo (0x324F2B20) before it mounts app0 with kscePfsMount. The SELF's header is
+    /// readable then because a PFS image does not encrypt the files that are SELFs themselves (their files.db entries
+    /// carry the NENC attribute): the executable at app0 before the PFS layer (the application's folder, or the
+    /// update's that overlays it). 0 when it is not a SELF there (a plain ELF, or a file the image encrypts).
+    /// </summary>
+    private ulong ExecutableAuthorityId(string self)
+    {
+        if (Vfs.Resolve("app0:" + self) is not { } host || !File.Exists(host))
+        {
+            return 0;
+        }
+
+        using FileStream stream = File.OpenRead(host);
+        byte[] head = new byte[Math.Min(stream.Length, 0x1000)];
+        stream.ReadExactly(head);
+        return SelfDecryptor.ProgramAuthorityId(head);
+    }
 
     /// <summary>SceSblACMgr's "game program" class: games (authority 0x2F...) and plain/homebrew executables; the
     /// system software (shell, NPXS apps) is not.</summary>

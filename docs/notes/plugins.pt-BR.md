@@ -285,8 +285,9 @@ kscePfsMount (ScePfsMgrForKernel 0xA067B56F / 0xA772209C) com o caminho do aplic
 dígitos hexadecimais + "d", o ID de autoridade do programa do processo, a chave do título de 16 bytes e o modo 5: quando
 código de kernel enganchou essa função, o lançamento faz a chamada pela entrada numa thread de kernel, o original para o
 qual o hook continua monta a imagem como o lançamento monta sem hook, e um erro respondido pelo hook falha o lançamento
-no passo 4. A chave do título é a que o lançamento já tem (nenhuma conferência da licença muda); o ID de autoridade é 0
-num primeiro lançamento, porque o VitaSharp o lê do executável dentro da imagem, depois do mount. O kscePfsMount do
+no passo 4. A chave do título é a que o lançamento já tem (nenhuma conferência da licença muda); o ID de autoridade é o do
+processo desde a criação dele, como o ksceKernelCreateProcess do processmgr 3.74 carrega o SELF do executável e preenche
+o self auth info do processo (o PFS não cifra SELFs, então o cabeçalho é lido do app0 antes da camada PFS). O kscePfsMount do
 pfsmgr 3.74 recebe (origem, ponto de montagem, o ID de autoridade como argumento de 64 bits na 3ª e 4ª palavras, chave,
 modo): o modo 0x28 responde o modo de um mount em que o ID está aprovado; qualquer outro é Mount2(origem, ponto, chave,
 modo) e depois Approve(ponto, ID). O Mount2 aceita só os modos do firmware (0, 2 a 10, 12, 13, 20 a 23; outros
