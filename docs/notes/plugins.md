@@ -271,7 +271,13 @@ kernel code hooked one of those three I/O functions, the licence read runs throu
 the hook sees the launch's read (and its continuation reaches the HLE); without a hook the file is read directly. The
 title key step is the secure processor's and answers 0x80020004 on the emulated unit, hooked or not. A failure names its
 step: `<title>: the launch stopped at app0's mount, step N of 4 (<step>): ... (0x........)` (1 licence, 2 licence read,
-3 title key, 4 PFS mount); the message to the user is unchanged.
+3 title key, 4 PFS mount); the message to the user is unchanged. The mount itself is appmgr's call of kscePfsMount
+(ScePfsMgrForKernel 0xA067B56F / 0xA772209C) with the application's path, a mount point named "ts", twelve hex digits
+and "d", the process's program authority ID, the 16-byte title key and mode 5: when kernel code hooked that function,
+the launch makes the call through the entry on a kernel thread, the original the hook continues to mounts the image as
+the launch does without a hook, and an error the hook answers fails the launch at step 4. The title key is the one the
+launch already has (no check of the licence changes); the authority ID is 0 for a first launch, since VitaSharp reads it
+from the executable inside the image after the mount.
 
 ### Path walks on the emulator's devices
 

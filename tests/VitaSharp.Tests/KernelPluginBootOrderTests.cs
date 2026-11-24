@@ -29,6 +29,7 @@ public sealed class KernelPluginBootOrderTests : IDisposable
     private const string PsmTitle = "PFSB00001", RuntimeId = "PFSQ00001";
     private const uint IofilemgrForDriver = 0x40FD29C7, KernelIoOpen = 0x75192972, KernelIoRead = 0xE17EFC03, KernelIoClose = 0xF99DD8A3;
     private const uint ProcessmgrForKernel = 0xEB1F8EF7, KernelCreateProcess = 0x68068618;
+    private const uint PfsMgrForKernel = 0xA067B56F, PfsMount = 0xA772209C;
     private static readonly byte[] s_imageKey = Encoding.ASCII.GetBytes("boot-order-key!!");
     private readonly GuestMemoryFixture _fixture;
     private HleHarness _harness = null!;
@@ -315,6 +316,87 @@ public sealed class KernelPluginBootOrderTests : IDisposable
         Assert.Equal(unchecked((int)0x80010082), Emulator.ModuleLoadError(e));
         Assert.Null(_emu.MainModule);
         Assert.True(_sink.IndexOf("plugin hook 1 called: ksceKernelCreateProcess") >= 0, string.Join("\n", _sink.Messages()));
+    }
+
+    /// <summary>A synthetic ScePfsMgr in os0:kd exporting kscePfsMount under ScePfsMgrForKernel's NIDs, the plugins with
+    /// <paramref name="hooks"/> as the third kernel module, booted, and the hook on the function; the test's secure
+    /// processor gives the PFS title's key.</summary>
+    private void BootWithPfsMountHook(SceModuleBuilder hooks, int function, uint hookRef)
+    {
+        var pfsmgr = new SceModuleBuilder("ScePfsMgr");
+        int body = pfsmgr.ReturnConstant(0);
+        pfsmgr.Export("ScePfsMgrForKernel", PfsMgrForKernel, 0x0001, (PfsMount, body));
+        string kd = Path.Combine(_harness.Root, "os0", "kd");
+        Directory.CreateDirectory(kd);
+        File.WriteAllBytes(Path.Combine(kd, "pfsmgr.skprx"), pfsmgr.Build());
+        FirmwareKernelImage.Forget(_harness.Root);
+        InstallPlugins(hooks);
+        Assert.Equal(3, _emu.BootKernelPlugins().Count);
+        Emulator kernel = KernelSpace.ProcessOf(_emu, KernelSpace.KernelPid)!;
+        uint hookFunction = hooks.AddressOf(KernelModules(_emu).Values.Single(m => m.Name == "VsBootHook").Segments[0].Address, function);
+        int uid = Call(kernel.Hle.Modules.OfType<PluginFramework>().Single(), "HookFunctionExportForKernel", KernelSpace.KernelPid, hookRef,
+            KernelString("ScePfsMgr"), PfsMgrForKernel, PfsMount, hookFunction);
+        Assert.True(uid > 0, $"hook returned 0x{uid:X8}");
+        Assert.True(kernel.FirmwareKernel.IsPatched(PfsMgrForKernel, PfsMount));
+        _emu.SecureProcessorRifKey = license => Encoding.ASCII.GetString(license, 0x10, 9) == "IP9100-PF" ? s_imageKey : null;
+    }
+
+    /// <summary>
+    /// The launch mounts app0 through kscePfsMount's entry, as appmgr 3.74 does: a kernel hook on it is called on a
+    /// kernel thread with appmgr's arguments (the application's path, the mount point "ts" + 12 hex digits + "d", the
+    /// authority ID's two words, the title key, mode 5), continues to the original, which mounts the image as the launch
+    /// does without a hook, and the title loads from it. Before, the launch opened the image on the host and the hook
+    /// was never called.
+    /// </summary>
+    [Fact]
+    public void TheLaunchMountsApp0ThroughAHookedPfsMountEntry()
+    {
+        Boot();
+        string title = InstallPfsTitle();
+        uint hookRef = KernelWord();
+        SceModuleBuilder hooks = new SceModuleBuilder("VsBootHook").Start(0);
+        int continuing = hooks.Arm(PluginHookContinuation(hookRef));
+        BootWithPfsMountHook(hooks, continuing, hookRef);
+
+        _emu.LoadTitle(title);
+
+        string log = string.Join("\n", _sink.Messages());
+        Assert.NotNull(_emu.MainModule);
+        Assert.Equal(s_imageKey, _emu.Klicensee);
+        Assert.Equal(SyntheticTitle.ParamSfo(RuntimeId), File.ReadAllBytes(_emu.Vfs.Resolve("app0:sce_sys/param.sfo")!));
+        int called = _sink.IndexOf("plugin hook 1 called: kscePfsMount");
+        Assert.True(called >= 0, log);
+        Assert.True(_sink.IndexOf("plugin hook 1 continued to the original: kscePfsMount") > called, log);
+        Assert.True(called < _sink.IndexOf("Loaded module "), log);
+        // the call's registers: r0 the path and r1 the mount point are kernel strings; the result is the mount's
+        string trace = _sink.Messages().First(m => m.Contains("plugin hook 1 call 1: ", StringComparison.Ordinal));
+        Assert.Contains("returned 0x00000000", trace);
+    }
+
+    /// <summary>A hook on kscePfsMount that answers an error itself fails the launch with that error at the PFS mount
+    /// step, as appmgr's launch fails: no executable is loaded.</summary>
+    [Fact]
+    public void AnErrorThePfsMountHookAnswersFailsTheLaunch()
+    {
+        Boot();
+        string title = InstallPfsTitle();
+        uint hookRef = KernelWord();
+        SceModuleBuilder hooks = new SceModuleBuilder("VsBootHook").Start(0);
+        int refusing = hooks.Arm(
+        [
+            0xE3000082, // movw r0, #0x0082
+            0xE3480001, // movt r0, #0x8001
+            0xE12FFF1E, // bx lr
+        ]);
+        BootWithPfsMountHook(hooks, refusing, hookRef);
+
+        ProcessLoadException e = Assert.Throws<ProcessLoadException>(() => _emu.LoadTitle(title));
+
+        Assert.Equal(unchecked((int)0x80010082), e.Error);
+        Assert.Null(_emu.MainModule);
+        string log = string.Join("\n", _sink.Messages());
+        Assert.True(_sink.IndexOf("plugin hook 1 called: kscePfsMount") >= 0, log);
+        Assert.True(_sink.IndexOf($"{RuntimeId}: the launch stopped at app0's mount, step 4 of 4 (PFS mount") >= 0, log);
     }
 
     /// <summary>With the option off, the pure firmware: no plugin at all, and the launch fails the same way.</summary>

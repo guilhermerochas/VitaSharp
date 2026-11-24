@@ -280,7 +280,13 @@ enganchou uma dessas três funções de E/S, a leitura da licença passa pelas e
 vê a leitura do lançamento (a continuação chega ao HLE); sem hook o arquivo é lido direto. O passo da chave é do
 processador seguro e responde 0x80020004 na unidade emulada, com ou sem hook. Uma falha diz o passo:
 `<título>: the launch stopped at app0's mount, step N of 4 (<passo>): ... (0x........)` (1 licença, 2 leitura da
-licença, 3 chave do título, 4 mount PFS); a mensagem ao usuário não muda.
+licença, 3 chave do título, 4 mount PFS); a mensagem ao usuário não muda. O mount em si é a chamada do appmgr ao
+kscePfsMount (ScePfsMgrForKernel 0xA067B56F / 0xA772209C) com o caminho do aplicativo, um ponto de montagem "ts" + doze
+dígitos hexadecimais + "d", o ID de autoridade do programa do processo, a chave do título de 16 bytes e o modo 5: quando
+código de kernel enganchou essa função, o lançamento faz a chamada pela entrada numa thread de kernel, o original para o
+qual o hook continua monta a imagem como o lançamento monta sem hook, e um erro respondido pelo hook falha o lançamento
+no passo 4. A chave do título é a que o lançamento já tem (nenhuma conferência da licença muda); o ID de autoridade é 0
+num primeiro lançamento, porque o VitaSharp o lê do executável dentro da imagem, depois do mount.
 
 ### Caminhadas de caminho nos dispositivos do emulador
 

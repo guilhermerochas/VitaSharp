@@ -3183,6 +3183,19 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (23/11/2026, falta testar) [P1][M] O mount do app0 no lançamento passa pela entrada kscePfsMount (fix/hookfn2): no
+  SceAppMgr 3.74 (descompilado, só estudo) o lançamento chama o kscePfsMount exportado do pfsmgr (caminho do app, ponto
+  de montagem "ts" + 12 dígitos hex + "d", ID de autoridade do processo em duas palavras, chave do título, modo 5); aqui
+  a imagem era aberta direto e um hook nessa função nunca era chamado. Agora, quando código de kernel enganchou o
+  kscePfsMount, o lançamento faz a chamada pela entrada numa thread de kernel; o original monta a imagem igual a antes e
+  um erro do hook falha o lançamento no passo 4 (mount PFS). A chave continua vindo do caminho atual (sem processador
+  seguro o lançamento para antes, em 0x80020004); nenhuma função de licença mudou. Diferença conhecida: o ID de
+  autoridade vai 0 num primeiro lançamento (o executável está dentro da imagem e é lido depois do mount). Teste:
+  `KernelPluginBootOrderTests` (`TheLaunchMountsApp0ThroughAHookedPfsMountEntry`,
+  `AnErrorThePfsMountHookAnswersFailsTheLaunch`). Testar: com "Ativar Plugins do Kernel" e um plugin de kernel que
+  engancha o kscePfsMount, abrir um título cujo app0 é imagem PFS e que já abria; o `last.log` mostra
+  `plugin hook N called: kscePfsMount` antes de `Loaded module`, e o título abre igual.
+
 - [ ] (23/11/2026, falta testar) [P1][M] Remove, Rename, Mkdir, Rmdir e Chstat percorrem o caminho pelo hook do
   ksceVopLookup (fix/hookfn2): no iofilemgr 3.74 (descompilado, só estudo) essas operações percorrem o caminho com o
   ksceVopLookup como a abertura (remove 0x81007f14, mkdir 0x810090b4, rmdir 0x810066cc, chstat 0x8100694c, rename
