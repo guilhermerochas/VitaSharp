@@ -157,21 +157,23 @@ public sealed class RunnerProcessTests : IDisposable
         Assert.NotEmpty(Directory.GetFiles(outDir, "frame_*.png"));
     }
 
-    /// <summary>A start that fails outside the title's load (here the window's Vulkan device: the loader is pointed at a
-    /// driver list with no driver, as on a PC without a Vulkan driver) ends like a load failure: the failure code, the
-    /// reason with the log's place as the last error line (what the launcher's loading window shows), no "ready" step and
-    /// no crash (RunnerStartFailureTests has the contract without a window).</summary>
+    /// <summary>A start that fails outside the title's load (here the window's Vulkan device: the Vulkan loader is forced to a
+    /// library that does not exist, as on a PC without one) ends like a load failure: the failure code, the reason with the
+    /// log's place as the last error line (what the launcher's loading window shows), no "ready" step and no crash
+    /// (RunnerStartFailureTests has the contract without a window). The loader is replaced, not its driver list: the
+    /// Vulkan loader ignores VK_DRIVER_FILES in an elevated process (GitHub's Windows runners) and found the registered
+    /// software driver there, so the GPU step did not fail and the game ran until the test's timeout. The software driver
+    /// stays reachable through the system loader here (as there, on every machine), so only the missing loader can fail
+    /// the step. A run that does not fail still ends: the window closes on frame 30 (--frames is the headless runs' limit).</summary>
     [HiddenWindowVulkanFact]
     public void AStartThatFailsAtTheGpuStepEndsWithTheFailureCodeAndItsReason()
     {
-        string noDrivers = Path.Combine(_root, "no-vulkan-driver.json");
         var env = new Dictionary<string, string>
         {
-            ["VK_DRIVER_FILES"] = noDrivers,
-            ["VK_ICD_FILENAMES"] = noDrivers,
+            [VitaSharp.Core.Util.EnvVars.VulkanLib] = Path.Combine(_root, "no-vulkan-loader", OperatingSystem.IsWindows() ? "vulkan-1.dll" : "libvulkan.so.1"),
         };
-        DesktopProcess.Result r = DesktopProcess.Run(_root, ["run", _app, "--no-vsync", "--frames=30", "--cpu=interp", "--loading-screen=launcher"],
-            env: env, softwareVulkan: false);
+        DesktopProcess.Result r = DesktopProcess.Run(_root, ["run", _app, "--no-vsync", "--cpu=interp", "--loading-screen=launcher", "--input=key@f30:Close"],
+            env: env, systemLoader: true);
         Assert.True(r.ExitCode == VitaSharp.Core.TitleLaunchFailure.ExitCode, $"exit code {r.ExitCode}:\n{Tail(r.Output)}");
         List<VitaSharp.Core.Boot.BootStep> steps = BootSteps(r.Output);
         Assert.Contains(VitaSharp.Core.Boot.BootStep.Gpu, steps);

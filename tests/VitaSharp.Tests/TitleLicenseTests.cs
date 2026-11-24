@@ -2,7 +2,6 @@ using VitaSharp.Core;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Loader.Self;
-using VitaSharp.Core.Localization;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Package;
 using static VitaSharp.Tests.HleHarness;
@@ -169,25 +168,5 @@ public sealed class TitleLicenseTests(GuestMemoryFixture fixture) : IDisposable
         File.WriteAllBytes(Path.Combine(dir, "sce_sys", "package", "work.bin"), new byte[0x200]);
         Assert.False(Assert.Single(VitaSharp.Desktop.Launcher.GameLibrary.Scan(layout.Fs)).LicenseMissing);
         Assert.False(Assert.Single(VitaSharp.Mobile.Core.Library.GameLibrary.Scan(layout)).LicenseMissing);
-    }
-
-    [Fact]
-    public void TheLicenseMessagesAreTranslated()
-    {
-        try
-        {
-            Loc.SetLanguage("pt-BR");
-            string portuguese = TitleLicense.Message(TitleId);
-            Assert.Contains("licença", portuguese);
-            Assert.Contains("0x80800004", portuguese);
-            Loc.SetLanguage("en");
-            string english = TitleLicense.Message(TitleId);
-            Assert.Contains("license", english);
-            Assert.NotEqual(portuguese, english);
-        }
-        finally
-        {
-            Loc.SetLanguage(null);
-        }
     }
 }

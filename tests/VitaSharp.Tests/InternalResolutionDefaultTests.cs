@@ -12,6 +12,7 @@ namespace VitaSharp.Tests;
 /// at its own, old settings files keep meaning what they meant, and the loading screen and the session log say the
 /// resolution the game starts with.
 /// </summary>
+[Collection("language")]
 public sealed class InternalResolutionDefaultTests
 {
     private const string Game = "PCSB00001";
