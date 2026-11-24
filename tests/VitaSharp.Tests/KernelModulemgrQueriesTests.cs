@@ -117,6 +117,39 @@ public sealed class KernelModulemgrQueriesTests(GuestMemoryFixture fixture) : ID
         });
     }
 
+    /// <summary>
+    /// The other *ForPid exports refuse pid 0 as the FW 3.74 modulemgr does (0x8002D017: it names no process, not the
+    /// caller's) and check their flags first. A kernel module that passes the shell's pid while no shell runs (0) got
+    /// its user module loaded into the calling application instead (the Adrenaline bubble opened directly, 23/11/2026).
+    /// </summary>
+    [Fact]
+    public void TheOtherForPidExportsRefusePidZeroAndForeignFlags()
+    {
+        string path = Write("z.suprx", Module("PidZero"));
+        int pid = _harness.Emu.Pid;
+        _harness.OnGuest(_ =>
+        {
+            int modules = _harness.Emu.Kernel.Modules.Count;
+            Assert.Equal(InvalidProcessUid, Call(Modmgr, "ksceKernelLoadStartModuleForPid", 0, path, 0u, 0u, 0, 0u, 0u));
+            Assert.Equal(modules, _harness.Emu.Kernel.Modules.Count); // nothing loaded into the caller
+            Assert.Equal(InvalidFlags, Call(Modmgr, "ksceKernelLoadStartModuleForPid", pid, path, 0u, 0u, 0x1, 0u, 0u));
+            int uid = Call(Modmgr, "ksceKernelLoadStartModuleForPid", pid, path, 0u, 0u, 0, 0u, 0u);
+            Assert.True(uid > 0);
+
+            Assert.Equal(InvalidProcessUid, Call(Modmgr, "ksceKernelStopModuleForPid", 0, uid, 0u, 0u, 0, 0u, 0u));
+            Assert.Equal(InvalidFlags, Call(Modmgr, "ksceKernelStopModuleForPid", pid, uid, 0u, 0u, 1, 0u, 0u));
+            Assert.Equal(InvalidProcessUid, Call(Modmgr, "ksceKernelUnloadModuleForPid", 0, uid, 0, 0u));
+            Assert.Equal(InvalidFlags, Call(Modmgr, "ksceKernelUnloadModuleForPid", pid, uid, 1, 0u));
+            Assert.Equal(InvalidProcessUid, Call(Modmgr, "ksceKernelStopUnloadModuleForPid", 0, uid, 0u, 0u, 0, 0u, 0u));
+            Assert.Equal(InvalidFlags, Call(Modmgr, "ksceKernelStopUnloadModuleForPid", pid, uid, 0u, 0u, 1, 0u, 0u));
+            Assert.True(_harness.Emu.Kernel.Modules.ContainsKey(uid));
+
+            // the force flag is the one the unloads accept
+            Assert.Equal(0, Call(Modmgr, "ksceKernelStopUnloadModuleForPid", pid, uid, 0u, 0u, 0x40000000, 0u, 0u));
+            Assert.False(_harness.Emu.Kernel.Modules.ContainsKey(uid));
+        });
+    }
+
     [Fact]
     public void TheSyscallTableAndTheOwnerAndHookWordsAreKept()
     {
