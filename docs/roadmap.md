@@ -2231,14 +2231,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
     pspemu (NPXS10028) pede uma janela de memória (`sceCompatAllocCdramWithHole`: 64 MB com um buraco em +32 MB, vista
     cached e uncached, mais um bloco de CDRAM do kernel); `sceCompatInitEx` carrega `vs0:app/NPXS10028/pcff.skprx` em
     CDRAM+0x3000000 e `os0:kd/pcbc.skprx` em CDRAM+0x600000 (SceSblFwLoader), sobe o clock (ScePower 0x14D) e reserva um
-    núcleo ARM para eles (SceGrab); `sceCompatStart` liga esse núcleo. Daí em diante o PSP do lado do núcleo e o pspemu
+    núcleo de compatibilidade (SceGrab); `sceCompatStart` liga esse núcleo. Daí em diante o PSP do lado do núcleo e o pspemu
     conversam por um bloco compartilhado: 16 canais de pedidos (`sceCompatWaitAndGetRequest`, fila de 16 por canal),
     interrupções nos dois sentidos (`sceCompatInterrupt` 1..15, `sceCompatWaitIntr` 0..2), registradores de 32 bits
     (`Read/WriteShared32`, `WriteSharedCtrl` com o controle), valores de retorno (`ReturnValueEx`), o bloco "dat" de
     0x1038 bytes e um aperto de mão em CDRAM+0x3D78000 (estados 1/2/3) para boot, suspensão e retomada. No HLE de hoje
     (`Compat.cs`) tudo o que não depende do núcleo segue o módulo; InitEx/Start estão marcados default (0x80027205) e
-    NÃO contam como feitos. Para emular: rodar o pcff.skprx/pcbc.skprx num segundo núcleo ARM emulado (bare-metal, com
-    o hardware que ele toca), ligado ao bloco compartilhado acima. Obs.: o `ScePsp2Compat` não é do pspemu: é a camada
+    NÃO contam como feitos. Para emular: rodar o pcbc/pcff no núcleo MIPS (Allegrex) de compatibilidade, com o
+    hardware que ele toca, ligado ao bloco compartilhado acima (correção de 24/11/2026: o núcleo não é ARM; ver
+    `docs/notes/psp-compat.md` e o item do núcleo de compatibilidade PSP abaixo). Obs.: o `ScePsp2Compat` não é do pspemu: é a camada
     POSIX do WebKit (vs0:data/external/webcore).
   - Instalação de `.pkg` de PSP e PS1 sem licença (feat/pkg-psp-psx, 10/11/2026, pedido do usuário). `PkgReader` lê
     os pacotes de PSP/PSone da PS Store (formato PS3, tipo de chave 1: a tabela de itens e o conteúdo PSP, itens com
@@ -2309,7 +2310,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
        para em `sceCompatInitEx(1)`, que o HLE recusa (0x80027205): o núcleo de compatibilidade não é emulado. O
        pspemu então mostra o erro e volta à LiveArea (que fica com "Continuar" e a tela de aviso do PSone).
     Onde para e o que falta: InitEx carrega `vs0:app/NPXS10028/pcff.skprx` e `os0:kd/pcbc.skprx` no CDRAM e liga um
-    núcleo ARM. Decifrados com o self2elf: o pcff é o flash0 do PSP 6.61 (fontes, `kd/*.prx` com os módulos `kermit_*`
+    núcleo de compatibilidade (MIPS). Decifrados com o self2elf: o pcff é o flash0 do PSP 6.61 (fontes, `kd/*.prx` com os módulos `kermit_*`
     que falam com o Vita), dados; o pcbc (SceSblPcbcBin, 0x5CE0 bytes) é o código do núcleo, ainda cifrado (entropia
     7,7 bits/byte; os 0x60 primeiros bytes cifrados, cabeçalho em 0x60, o resto cifrado até 0x5400): o
     SceSblFwLoader o decifra no processador seguro, com chaves que o projeto não tem e não vai procurar nem derivar
@@ -2321,8 +2322,30 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
     - Onde pôr: `%APPDATA%\VitaSharp\fs\os0\kd\pcbc.bin` (o binário puro, como fica na memória do núcleo), ao lado do
       pcbc.skprx do firmware instalado. Nada disso vai para o repositório.
     - Com ele: (a) o InitEx do HLE carrega o pcbc.bin em CDRAM+0x600000 e o pcff (já decifrável pelo self2elf, é
-      dado) em CDRAM+0x3000000; (b) emular esse núcleo ARM (bare-metal, CDRAM, o bloco compartilhado dos
+      dado) em CDRAM+0x3000000; (b) emular esse núcleo MIPS (bare-metal, CDRAM, o bloco compartilhado dos
       pedidos/interrupções do SceCompat descrito acima) e o lado PSP (Allegrex) que o pcff traz. Os dois jogos de teste param nesse ponto (o de PSP chama antes também `sceCompatFrameBufferInit`).
+- [ ] [P3][G] Núcleo de compatibilidade PSP (Allegrex) sob o `SceCompat`, para o ScePspemu real rodar PSP/PSone
+  (estudo e desenho: `docs/notes/psp-compat.md`). O núcleo é MIPS (Allegrex), não ARM: o `pcbc` (boot, PSP
+  `0x88600000`) e o `pcff` (flash0 6.6x com os drivers `kermit_*`, PSP `0x8B000000`) rodam nele; o ScePspemu atende os
+  pedidos kermit (msfs, flashfs, áudio, ME, rede, USB) no lado ARM. Fases:
+  1. [G] Entrega mínima: interpretador inteiro do Allegrex numa thread de guest, visão do PSP sobre a janela do
+     SceCompat (4 janelas do Grab, buraco), SRAM compartilhada (`0xBFC00000`), campainhas da mailbox e IRQ
+     `0x44`-`0x4A` como no módulo; InitEx carrega o boot pelo HLE do SceSblFwLoader, Start o executa. Teste com código
+     de boot MIPS sintético (bytes do teste): aperto de mão 1-2-3 em `0x8BD78000`, pedido no canal 3 ↔
+     `sceCompatWaitAndGetRequest`/`ReturnValueEx`, `WriteSharedCtrl` lido pelo núcleo, `sceCompatInterrupt` no
+     tratador, `sceCompatStop`. Falha hoje (InitEx `0x80027205`).
+  2. [G] Allegrex completo: FPU, VFPU, COP0 (exceções, interrupções, cache), ciclos no clock de 333 MHz; testes por
+     grupo de instruções.
+  3. [G] Hardware do lado PSP: boot do `pcbc` real (depende do `pcbc.bin` do usuário) + `pcff` com log de MMIO
+     desconhecido; controlador de interrupções, timer, DMAC, DMA do LCD para o framebuffer do ScePspemu, KIRK, GE em
+     Vulkan. Meta: estado 1 do aperto de mão e os primeiros pedidos msfs/flashfs atendidos pelo ScePspemu real.
+  4. [G] ScePspemu de ponta a ponta: lacunas de HLE pelos logs, homebrew de PSP, jogo de PSP e de PSone,
+     suspensão/retomada e save state do núcleo.
+  5. [M] Adrenaline 6.61 pelos hooks dele (sem código específico), flash0 de `ux0:app/PSPEMUCFW/flash0`.
+  6. [G] JIT do Allegrex e lotes do GE, medidos em gameplay.
+  Bloqueios: a camada interna do `pcbc` só o processador seguro decifra (sem chaves; caminho = `pcbc.bin` tirado pelo
+  usuário, fora do repositório); as chaves do KIRK (publicadas no PPSSPP/Jpcsp) pedem decisão do lead antes da fase 3;
+  o GE de compatibilidade do Vita não é documentado (modelo: GE do PSP).
 - [ ] [P3][G] Emular tudo o que for possível do Vita (diretriz do usuário, 10/11/2026): além dos jogos e do sistema, listar
   os recursos do aparelho ainda não emulados (ex.: PSP, PS Mobile/PSM, Remote Play/PS TV, Near, Party, Content
   Manager, câmera/AR, apps de vídeo/música/browser) e abrir um item por recurso com o caminho (LLE do módulo real +
