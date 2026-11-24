@@ -3183,6 +3183,18 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (23/11/2026, falta testar) [P1][M] Remove, Rename, Mkdir, Rmdir e Chstat percorrem o caminho pelo hook do
+  ksceVopLookup (fix/hookfn2): no iofilemgr 3.74 (descompilado, só estudo) essas operações percorrem o caminho com o
+  ksceVopLookup como a abertura (remove 0x81007f14, mkdir 0x810090b4, rmdir 0x810066cc, chstat 0x8100694c, rename
+  0x81009278 com o caminho antigo e depois o novo; devctl e sync só olham o dispositivo, sem elemento); aqui elas iam
+  direto aos arquivos do host. Agora, com um hook no ksceVopLookup, sceIoRemove/Mkdir/Rmdir/Chstat/Rename (syscalls do
+  usuário, formas ksceIo* e Async) fazem a caminhada pela entrada; erro do hook falha a chamada sem mudar nada, outro
+  vnode leva a chamada a ele, e o elemento que o mkdir/rename cria continua sendo criado. Teste: `IoVopLookupHookTests`
+  (`RemoveMkdirRmdirRenameAndChstatWalkTheirPathsThroughTheHook`, `WhatTheHookAnswersIsWhatAPathCallGets`,
+  `AnAsynchronousRemoveWalksItsPathOnTheSchedulersKernelThread`). Testar: com "Ativar Plugins do Kernel" e o fd_fix
+  ligados, num jogo que grava save (criar, sobrescrever e apagar um save); o save funciona igual e o resumo do
+  `last.log` do hook `ksceVopLookup` conta essas chamadas.
+
 - [ ] (23/11/2026, falta testar) [P1][M] Pedidos assíncronos de E/S com caminho chamam o hook do ksceVopLookup
   (fix/hookfn2): no Vita o sceIoOpenAsync (e Dopen/Getstat/Remove/Rename/Mkdir/Rmdir/Chstat Async) roda na thread de
   kernel do iofilemgr (SceIoScheduler), que percorre o caminho pelo vfs como a chamada síncrona; aqui o escalonador de

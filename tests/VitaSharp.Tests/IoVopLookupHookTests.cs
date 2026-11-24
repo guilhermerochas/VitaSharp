@@ -277,4 +277,100 @@ public sealed class IoVopLookupHookTests(GuestMemoryFixture fixture) : IDisposab
         Assert.True(fd > 0, $"async open 0x{fd:X8}");
         Assert.Empty(_elements);
     }
+
+    /// <summary>
+    /// The other calls that name a path walk it too, as iofilemgr 3.74 walks it for each of them (study only: the
+    /// remove 0x81007f14, mkdir 0x810090b4, rmdir 0x810066cc, chstat 0x8100694c and rename 0x81009278, which walks the
+    /// old path then the new one; each ends with the lookup of the last element): the user's syscalls (and the kernel's
+    /// ksceIo* forms, which share their bodies). The element a mkdir or a rename's new path makes is looked up and not
+    /// found, and the call still makes it. Before, these went straight to the host files and the hook was never called.
+    /// </summary>
+    [Fact]
+    public void RemoveMkdirRmdirRenameAndChstatWalkTheirPathsThroughTheHook()
+    {
+        Files();
+        Hook(LoadFirmwareIofilemgr());
+        uint stat = _h.Alloc(0x58);
+        _h.OnGuest(_ =>
+        {
+            Assert.Equal(0, Call(Io, "_sceIoMkdir", "ux0:data/hfn/made", 0x1FF, 0u));
+            Assert.Equal(["data", "hfn", "made"], _elements);
+            Assert.True(Directory.Exists(Data("made")));
+
+            _elements.Clear();
+            Assert.Equal(0, Call(Io, "_sceIoRename", "ux0:data/hfn/sub/b.txt", "ux0:data/hfn/made/c.txt", 0u));
+            Assert.Equal(["data", "hfn", "sub", "b.txt", "data", "hfn", "made", "c.txt"], _elements);
+            Assert.Equal("file b", File.ReadAllText(Data(Path.Combine("made", "c.txt"))));
+
+            _elements.Clear();
+            GuestMemory.Fill(stat, 0, 0x58);
+            Assert.Equal(0, Call(Io, "_sceIoChstat", "ux0:data/hfn/made/c.txt", stat, 0, 0u));
+            Assert.Equal(["data", "hfn", "made", "c.txt"], _elements);
+
+            _elements.Clear();
+            Assert.Equal(0, Call(Io, "_sceIoRemove", "ux0:data/hfn/made/c.txt", 0u));
+            Assert.Equal(["data", "hfn", "made", "c.txt"], _elements);
+            Assert.False(File.Exists(Data(Path.Combine("made", "c.txt"))));
+
+            _elements.Clear();
+            Assert.Equal(0, Call(Io, "_sceIoRmdir", "ux0:data/hfn/made", 0u));
+            Assert.Equal(["data", "hfn", "made"], _elements);
+            Assert.False(Directory.Exists(Data("made")));
+
+            // a missing file: the walk stops where the path ends on the device, the call answers itself
+            _elements.Clear();
+            Assert.Equal(NoEnt, Call(Io, "_sceIoRemove", "ux0:data/hfn/none/x.txt", 0u));
+            Assert.Equal(["data", "hfn", "none"], _elements);
+        });
+    }
+
+    /// <summary>What the hook answers is what these calls get: an error fails a remove, a rename (on either path), a
+    /// mkdir and a chstat with it and changes nothing; a remove the hook sends to another file removes that one.</summary>
+    [Fact]
+    public void WhatTheHookAnswersIsWhatAPathCallGets()
+    {
+        Files();
+        Hook(LoadFirmwareIofilemgr());
+        _h.OnGuest(_ =>
+        {
+            _answer = (_, _, path, _) => Element(path) is "a.txt" or "made" ? Access : null;
+            Assert.Equal(Access, Io.sceIoRemove("ux0:data/hfn/sub/a.txt"));
+            Assert.Equal(Access, Io.sceIoRename("ux0:data/hfn/sub/a.txt", "ux0:data/hfn/sub/d.txt"));
+            Assert.Equal(Access, Io.sceIoRename("ux0:data/hfn/sub/b.txt", "ux0:data/hfn/made"));
+            Assert.Equal(Access, Io.sceIoMkdir("ux0:data/hfn/made", 0x1FF));
+            Assert.Equal(Access, Io.sceIoChstat("ux0:data/hfn/sub/a.txt", _h.Alloc(0x58), 0));
+            Assert.True(File.Exists(Data(Path.Combine("sub", "a.txt"))));
+            Assert.True(File.Exists(Data(Path.Combine("sub", "b.txt"))));
+            Assert.False(Directory.Exists(Data("made")));
+
+            // the remove's last lookup answered with b.txt's vnode removes b.txt
+            uint other = _h.Str("b.txt");
+            uint otherPath = _h.Alloc(12);
+            GuestMemory.W32(otherPath, other);
+            GuestMemory.W32(otherPath + 4, 5);
+            GuestMemory.W32(otherPath + 8, other);
+            _answer = (vnode, vpp, path, flags) => Element(path) == "a.txt" ? Call(Io, "ksceVopLookup", vnode, vpp, otherPath, flags) : null;
+            Assert.Equal(0, Io.sceIoRemove("ux0:data/hfn/sub/a.txt"));
+            Assert.True(File.Exists(Data(Path.Combine("sub", "a.txt"))));
+            Assert.False(File.Exists(Data(Path.Combine("sub", "b.txt"))));
+            _answer = null;
+        });
+    }
+
+    /// <summary>The asynchronous forms run the same walk on the I/O scheduler's kernel thread.</summary>
+    [Fact]
+    public void AnAsynchronousRemoveWalksItsPathOnTheSchedulersKernelThread()
+    {
+        Files();
+        Hook(LoadFirmwareIofilemgr());
+        int remove = 0;
+        _h.OnGuest(_ => remove = Call(Io, "sceIoRemoveAsync", "ux0:data/hfn/sub/a.txt", 0u));
+        Io.WaitForAsyncHostWork();
+        int result = -1;
+        _h.OnGuest(_ => result = Call(Io, "sceIoComplete", remove));
+        Assert.Equal(0, result);
+        Assert.Equal(["data", "hfn", "sub", "a.txt"], _elements);
+        Assert.All(_threads, thread => Assert.Equal(("SceIoScheduler", true), thread));
+        Assert.False(File.Exists(Data(Path.Combine("sub", "a.txt"))));
+    }
 }

@@ -290,6 +290,12 @@ int fd, long offset, int whence)
             return GuestRemove(guestMount, guestPath, directoryToo: false);
         }
 
+        int walk = HostWalk(ref path);
+        if (walk < 0)
+        {
+            return walk;
+        }
+
         var host = HostPath(path, true);
         if (host == null || !File.Exists(host)) return SceError.IO_ENOENT;
         File.Delete(host);
@@ -302,6 +308,12 @@ int fd, long offset, int whence)
         if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
         {
             return GuestMkdir(guestMount, guestPath, mode);
+        }
+
+        int walk = HostWalk(ref path);
+        if (walk < 0)
+        {
+            return walk;
         }
 
         var host = HostPath(path, true);
@@ -319,6 +331,12 @@ int fd, long offset, int whence)
             return GuestRemove(guestMount, guestPath, directoryToo: true);
         }
 
+        int walk = HostWalk(ref path);
+        if (walk < 0)
+        {
+            return walk;
+        }
+
         var host = HostPath(path, true);
         if (host == null || !Directory.Exists(host)) return SceError.IO_ENOENT;
         try { Directory.Delete(host); return 0; }
@@ -328,6 +346,19 @@ int fd, long offset, int whence)
     [Hle]
     internal int sceIoRename(string oldPath, string newPath)
     {
+        // iofilemgr walks the old path, then the new one
+        int walk = HostWalk(ref oldPath);
+        if (walk < 0)
+        {
+            return walk;
+        }
+
+        walk = HostWalk(ref newPath);
+        if (walk < 0)
+        {
+            return walk;
+        }
+
         var a = HostPath(oldPath, true);
         var b = HostPath(newPath, true);
         if (a == null || b == null) return SceError.IO_ENOENT;
@@ -498,6 +529,12 @@ int fd, long offset, int whence)
     {
         if (stat == 0) return SceError.IO_EINVAL;
         if (IsReadOnlyDevice(path)) return IO_EROFS;
+        int walk = HostWalk(ref path);
+        if (walk < 0)
+        {
+            return walk;
+        }
+
         var host = HostPath(path, true);
         if (host == null) return SceError.IO_ENOENT;
         return ApplyChstat(host, stat, bits, null);

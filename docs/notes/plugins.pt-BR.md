@@ -287,8 +287,11 @@ licença, 3 chave do título, 4 mount PFS); a mensagem ao usuário não muda.
 No Vita o iofilemgr percorre cada caminho elemento por elemento com o ksceVopLookup a partir do vnode raiz do
 dispositivo (3.74, 0x81004bb8, só estudo), então um hook de kernel nele (o do fd_fix) vê toda abertura. No VitaSharp
 ux0:, app0: e os outros dispositivos são pastas do host; quando um hook pegou o ksceVopLookup, sceIoOpen (a syscall do
-usuário e o ksceIoOpen), sceIoDopen e sceIoGetstat percorrem o caminho pela entrada da função sobre os vnodes do host
-(`IoFileMgr.VfsHost.cs`): o hook recebe cada elemento e o que ele responde vale (um erro falha a chamada, outro vnode a
+usuário e o ksceIoOpen), sceIoDopen, sceIoGetstat, sceIoRemove, sceIoMkdir, sceIoRmdir, sceIoChstat e sceIoRename (o
+caminho antigo, depois o novo), com as formas ksceIo*, percorrem o caminho pela entrada da função sobre os vnodes do host,
+como o iofilemgr 3.74 percorre em cada uma delas (`IoFileMgr.VfsHost.cs`; o elemento que um mkdir ou o caminho novo de um
+rename cria é procurado, não é achado, e é criado): o hook recebe cada elemento e o que ele responde vale (um erro falha
+a chamada, outro vnode a
 leva ao caminho dele, uma abertura que cria continua criando). Sem esse hook nada é percorrido nem alocado
 (`IoVopLookupHookTests`). As formas assíncronas (sceIoOpenAsync, sceIoDopenAsync, sceIoGetstatAsync e os outros pedidos
 com caminho) rodam no Vita na thread de kernel do próprio iofilemgr (SceIoScheduler), que percorre o caminho do mesmo

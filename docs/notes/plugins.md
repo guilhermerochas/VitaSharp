@@ -277,8 +277,11 @@ step: `<title>: the launch stopped at app0's mount, step N of 4 (<step>): ... (0
 
 On the Vita iofilemgr walks every path element by element with ksceVopLookup from the device's root vnode (3.74,
 0x81004bb8, study only), so a kernel hook on it (fd_fix's) sees every open. In VitaSharp ux0:, app0: and the other
-devices are host folders; when a hook took ksceVopLookup, sceIoOpen (the user's syscall and ksceIoOpen), sceIoDopen and
-sceIoGetstat walk the path through the function's entry over the host vnodes (`IoFileMgr.VfsHost.cs`): the hook gets each
+devices are host folders; when a hook took ksceVopLookup, sceIoOpen (the user's syscall and ksceIoOpen), sceIoDopen,
+sceIoGetstat, sceIoRemove, sceIoMkdir, sceIoRmdir, sceIoChstat and sceIoRename (the old path, then the new one), with
+their ksceIo* forms, walk the path through the function's entry over the host vnodes, as iofilemgr 3.74 walks it for
+each of them (`IoFileMgr.VfsHost.cs`; the element a mkdir or a rename's new path makes is looked up, not found, and
+made): the hook gets each
 element, and what it answers counts (an error fails the call, another vnode sends it to that vnode's path, an open that
 creates still creates). Without such a hook nothing is walked and nothing is allocated (`IoVopLookupHookTests`).
 The asynchronous forms (sceIoOpenAsync, sceIoDopenAsync, sceIoGetstatAsync and the other path requests) run on
