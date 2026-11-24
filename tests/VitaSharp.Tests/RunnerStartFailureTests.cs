@@ -12,6 +12,7 @@ namespace VitaSharp.Tests;
 /// loading window shows it for <see cref="TitleLaunchFailure.ExitCode"/>), never a crash with only a stack in the log.
 /// Once the game runs, an exception is a crash as before (<see cref="Runner.ReportStartFailure"/>).
 /// </summary>
+[Collection("language")]
 public sealed class RunnerStartFailureTests
 {
     private const string AppPath = "ux0:app/PCSB00123";
