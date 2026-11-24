@@ -15,11 +15,12 @@ namespace VitaSharp.Tests;
 /// <summary>
 /// Save states with the PSP compat core running (docs/notes/save-states.md, SceCompat): a synthetic MIPS boot on the
 /// Allegrex counts hardware timer interrupts in a busy loop, starts a GE list that calls a sub-list and stops at a
-/// stall address inside it, moves the stall later and finally reads back the GE's, the system time's and its own
-/// registers into its results. The run is a function of the core's cycles only (no halt before the end), so a run that
-/// is saved in the middle, and the state loaded into another emulator, must end with the same results as a run that
-/// was never saved: the core (registers, PC, interrupt state), its time, the timer, the interrupt controller, the GE's
-/// list in progress (stalled in the sub-list, its return address) and SceCompat's side come back exactly. Before, the
+/// stall address inside it, reads the system time, then spins at a fixed point until the test lets it go; then it
+/// moves the stall past the list's end and reads back the GE's and its own registers into its results. Up to the fixed
+/// point the run is a function of the core's cycles only (no halt), and after it nothing depends on time, so the
+/// moment of the save does not matter: a run saved at the fixed point and the state loaded into another emulator must
+/// end with the same results as a run never saved: the core (registers, PC, interrupt state), its time, the GE's list
+/// in progress (stalled in the sub-list, its return address) and SceCompat's side come back exactly. Before, the
 /// compat core was not in the state at all.
 /// </summary>
 [Collection("guest")]
@@ -29,7 +30,8 @@ public sealed class CompatSaveStateTests
     private const uint ListOffset = 0x100000;       // the GE's main list (PSP 0x08100000)
     private const uint SubListOffset = 0x100100;    // the sub-list it calls (PSP 0x08100100)
     private const uint StallAddress = 0x08100108;   // inside the sub-list, before its last state command
-    private const int KickCount = 5, ReleaseCount = 400, DoneCount = 500;
+    private const int KickCount = 5, DoneCount = 300;
+    private const int SpinningWord = 10, GoWord = 11; // the core spins at its fixed point until the test sets GoWord
     private const uint DoneMarker = 0xD0E;
     private const int ResultWords = 10;
     private const int S0 = 16, S1 = 17, S2 = 18, S3 = 19, S4 = 20;
@@ -83,6 +85,21 @@ public sealed class CompatSaveStateTests
             using (AddressSpace.Use(Emu.Space))
             {
                 return GuestMemory.R32(Results + (uint)(index * 4));
+            }
+        }
+
+        /// <summary>Waits for the core to reach its fixed point (the time-dependent part done, the GE list stalled).</summary>
+        public void WaitUntilSpinning()
+        {
+            Until(() => Word(SpinningWord) == 1, "the PSP boot to reach its fixed point");
+        }
+
+        /// <summary>Lets the core go on from its fixed point.</summary>
+        public void Go()
+        {
+            using (AddressSpace.Use(Emu.Space))
+            {
+                GuestMemory.W32(Results + (uint)(GoWord * 4), 1);
             }
         }
 
@@ -150,17 +167,7 @@ public sealed class CompatSaveStateTests
             AllegrexAsm.Sw(AllegrexAsm.T0, S1, 0x100), // EXEC: runs to the stall
             AllegrexAsm.Sw(S3, S4, 28),
 
-            // until ReleaseCount: move the stall past the list's end
-            AllegrexAsm.Ori(S2, AllegrexAsm.Zero, ReleaseCount),
-            AllegrexAsm.Lw(AllegrexAsm.T0, S4, 0),
-            AllegrexAsm.Bne(AllegrexAsm.T0, S2, -2),
-            AllegrexAsm.Addiu(S3, S3, 1),
-            AllegrexAsm.Lui(AllegrexAsm.T0, 0x0810),
-            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.T0, 0x0200),
-            AllegrexAsm.Sw(AllegrexAsm.T0, S1, 0x10C),
-            AllegrexAsm.Sw(S3, S4, 32),
-
-            // until DoneCount: interrupts and the timer off, the registers into the results, halt
+            // until DoneCount: interrupts and the timer off, what depends on the core's time into the results
             AllegrexAsm.Ori(S2, AllegrexAsm.Zero, DoneCount),
             AllegrexAsm.Lw(AllegrexAsm.T0, S4, 0),
             AllegrexAsm.Bne(AllegrexAsm.T0, S2, -2),
@@ -168,13 +175,27 @@ public sealed class CompatSaveStateTests
             AllegrexAsm.Mtc0(AllegrexAsm.Zero, AllegrexCore.Cop0Status),
             AllegrexAsm.Sw(AllegrexAsm.Zero, S0, 0),
             AllegrexAsm.Sw(S3, S4, 4),
+            AllegrexAsm.Lui(AllegrexAsm.T1, 0xBC60),
+            AllegrexAsm.Lw(AllegrexAsm.T0, AllegrexAsm.T1, 0), // the system time
+            AllegrexAsm.Sw(AllegrexAsm.T0, S4, 16),
+            AllegrexAsm.Lw(AllegrexAsm.T0, S1, 0x10C), // STALL, still inside the sub-list
+            AllegrexAsm.Sw(AllegrexAsm.T0, S4, 32),
+
+            // spin until the test's go word: the state is taken here, with the list stalled in the sub-list
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.Zero, 1),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S4, SpinningWord * 4),
+            AllegrexAsm.Lw(AllegrexAsm.T0, S4, GoWord * 4),
+            AllegrexAsm.Beq(AllegrexAsm.T0, AllegrexAsm.Zero, -2),
+            AllegrexAsm.Nop,
+
+            // move the stall past the list's end: the list goes on in the sub-list, returns and finishes
+            AllegrexAsm.Lui(AllegrexAsm.T0, 0x0810),
+            AllegrexAsm.Ori(AllegrexAsm.T0, AllegrexAsm.T0, 0x0200),
+            AllegrexAsm.Sw(AllegrexAsm.T0, S1, 0x10C),
             AllegrexAsm.Lw(AllegrexAsm.T0, S1, 0x304), // the GE's interrupt status
             AllegrexAsm.Sw(AllegrexAsm.T0, S4, 8),
             AllegrexAsm.Lw(AllegrexAsm.T0, S1, 0x100), // EXEC
             AllegrexAsm.Sw(AllegrexAsm.T0, S4, 12),
-            AllegrexAsm.Lui(AllegrexAsm.T1, 0xBC60),
-            AllegrexAsm.Lw(AllegrexAsm.T0, AllegrexAsm.T1, 0), // the system time
-            AllegrexAsm.Sw(AllegrexAsm.T0, S4, 16),
             AllegrexAsm.Lw(AllegrexAsm.T0, S1, framebufferFormat), // set after the stall moved
             AllegrexAsm.Sw(AllegrexAsm.T0, S4, 20),
             AllegrexAsm.Lw(AllegrexAsm.T0, S1, framebufferWidth), // set before the call
@@ -278,10 +299,13 @@ public sealed class CompatSaveStateTests
             using (Session baseline = new(_fixture, "compatss-base"))
             {
                 StartCore(baseline);
+                baseline.WaitUntilSpinning();
+                baseline.Go();
                 neverSaved = baseline.WaitForResults();
             }
 
             Assert.Equal((uint)DoneCount, neverSaved[0]);
+            Assert.Equal(StallAddress, neverSaved[8]);
             Assert.Equal(Command(GeCommand.FrameBufferPixelFormat, 3), neverSaved[5]); // the sub-list's command after the stall ran
             Assert.Equal(Command(GeCommand.FrameBufferWidth, 512), neverSaved[9]);
 
@@ -290,12 +314,10 @@ public sealed class CompatSaveStateTests
             using (Session saved = new(_fixture, "compatss-save"))
             {
                 StartCore(saved);
-                Until(() => saved.Word(0) > KickCount, "the GE list to start");
+                saved.WaitUntilSpinning();
                 savedThread = Assert.Single(CoreThreads(saved.Emu)).Uid;
                 SaveStates.Save(saved.Emu, statePath, timeoutMs: 60_000);
-
-                // taken while the list was stalled in the sub-list
-                Assert.True(saved.Word(0) < ReleaseCount, $"the state was taken after the stall moved ({saved.Word(0)} interrupts)");
+                saved.Go();
                 savedAndGoneOn = saved.WaitForResults();
             }
 
@@ -307,6 +329,12 @@ public sealed class CompatSaveStateTests
             GuestThread core = Assert.Single(CoreThreads(loaded.Emu));
             Assert.Equal(savedThread, core.Uid);
             Assert.NotNull(loaded.Compat.Runner);
+
+            // the GE's list came back in progress: running, stalled in the called sub-list
+            GeEngine ge = loaded.Compat.Hardware.Ge!;
+            Assert.Equal(GeEngine.ExecRunning | GeEngine.ExecDepth1, ge.Read32(GeEngine.PhysicalBase + 0x100) & (GeEngine.ExecRunning | GeEngine.ExecDepth1));
+            Assert.Equal(StallAddress, ge.Read32(GeEngine.PhysicalBase + 0x108));
+            loaded.Go();
             uint[] afterLoad = loaded.WaitForResults();
             Assert.Equal(neverSaved, afterLoad);
         }
