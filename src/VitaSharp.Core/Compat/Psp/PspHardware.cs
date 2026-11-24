@@ -18,7 +18,7 @@ namespace VitaSharp.Core.Compat.Psp;
 /// uses 32-bit accesses there; the "unknown MMIO" log of the boot trace shows any other).
 /// </para>
 /// </summary>
-public sealed class PspHardware
+public sealed partial class PspHardware
 {
     private IPspMmioDevice[] _devices = [];
     private IPspTimedDevice[] _timed = [];

@@ -110,6 +110,21 @@ saved position, a few pictures of drift), MP4 demuxers and AvPlayer media (reope
 Saved data, trophies and
 registry values the game wrote are the user's (on disk) and are not rolled back.
 
+### The PSP compat core (pspemu)
+
+While SceCompat runs the PSP compat core, the state holds the whole PSP side in SceCompat's section
+(`Compat.Snapshot.cs`): SceCompat's own state, the shared SRAM, the mailbox, the core's bus banks, the PSP hardware
+(clock, interrupt controller, system control, timers, system time, both DMA controllers with their transfers, DDR,
+the scan-out channel, the display controller) with the GE (command registers, matrices, the list in progress with
+its stall address and call stack, the CLUT, the carried texture coordinates and normal), the LCD DMA, the Allegrex
+(general registers, HI/LO, PC and pending branch, COP0, LL bit, halt, FPU, VFPU with its prefixes) and its runner
+(the core's time and interrupt line). The core's thread (`SceCompatCore`) parks between two slices
+(`GuestThread.ParksAtSafePoints`): a save holds it there like a guest thread, and a pause stops the core there too.
+Before the save, what the GE's rasterizer holds on the GPU goes to memory; after a load its copies are dropped. A
+load into a session without a running core gives the saved core thread its body again; a running core the state
+does not have stops. Covered by `CompatSaveStateTests` (a synthetic MIPS boot with timer interrupts and a stalled GE
+list, saved in the middle and loaded into another emulator, ends as a run never saved).
+
 ## Tested (desktop, 04/11/2026)
 
 Save, load ~10 s later, play on (headless runs with the scenario inputs). "Pass" = saved, loaded, no crash, the

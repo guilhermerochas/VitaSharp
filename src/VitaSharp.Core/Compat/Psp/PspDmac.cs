@@ -38,7 +38,7 @@ namespace VitaSharp.Core.Compat.Psp;
 /// above a word is an error: the channel stops with its error interrupt.
 /// </para>
 /// </summary>
-public sealed class PspDmac : IPspMmioDevice, IPspTimedDevice
+public sealed partial class PspDmac : IPspMmioDevice, IPspTimedDevice
 {
     /// <summary>PSP physical 0xBC900000.</summary>
     public const uint Base0 = 0x1C900000;

@@ -67,6 +67,19 @@ public sealed class GeVertexTransformer
         _memory = engine.Memory;
     }
 
+    /// <summary>Save states: the texture coordinates and normal a vertex without them takes from the one before (the
+    /// rest of the transformer's state is read from the GE's registers at every draw).</summary>
+    internal (float U, float V, Vector3 Normal) Carry
+    {
+        get => (_carryU, _carryV, _carryNormal);
+        set
+        {
+            _carryU = value.U;
+            _carryV = value.V;
+            _carryNormal = value.Normal;
+        }
+    }
+
     private struct GeLight
     {
         public bool Enabled;

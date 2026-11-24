@@ -25,7 +25,7 @@ namespace VitaSharp.Core.Compat;
 /// widened, alpha opaque for 565).
 /// </para>
 /// </summary>
-public sealed class CompatLcdDma(IAllegrexBus source, PspLcdc lcdc)
+public sealed partial class CompatLcdDma(IAllegrexBus source, PspLcdc lcdc)
 {
     /// <summary>The ARM physical address SceCompat maps the block from.</summary>
     public const uint ArmPhysicalBase = 0xE5071000;

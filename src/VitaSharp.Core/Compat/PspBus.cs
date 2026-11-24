@@ -23,7 +23,7 @@ namespace VitaSharp.Core.Compat;
 /// (GE, KIRK, the rest of phase 3): reads give 0, writes are dropped, and the first accesses of each address are
 /// logged ("unknown MMIO"), which is how the boot trace finds what the firmware touches.
 /// </summary>
-public sealed class PspBus(CompatSharedSram sram, CompatMailbox mailbox) : IAllegrexBus, IGeMemory
+public sealed partial class PspBus(CompatSharedSram sram, CompatMailbox mailbox) : IAllegrexBus, IGeMemory
 {
     /// <summary>The main RAM banks: PSP physical <see cref="RamBase"/> + bank * <see cref="BankSize"/>.</summary>
     public const int Banks = 4;

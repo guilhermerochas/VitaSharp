@@ -25,7 +25,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// configuration and LCDC sync, rif name, title list, ID storage, secure tick, update state, peripheral state).
 /// Every entry is for the PSP emulator or a system program (0x80010058 otherwise).
 /// </summary>
-public sealed class Compat : HleModule, IDisposable
+public sealed partial class Compat : HleModule, IDisposable
 {
     const int ERR_PERM = unchecked((int)0x80010058), ERR_NOT_STARTED = unchecked((int)0x80027205),
         ERR_NOT_OWNER = unchecked((int)0x8002F001), ERR_ARG = unchecked((int)0x80020005), ERR_INVAL = unchecked((int)0x80010016),
@@ -125,7 +125,7 @@ public sealed class Compat : HleModule, IDisposable
 
     /// <summary>One channel's ring of request addresses (16 entries; full: the overflow flag, the core's entry left in
     /// the shared SRAM until a request is taken).</summary>
-    sealed class RequestRing
+    sealed partial class RequestRing
     {
         public readonly uint[] Entries = new uint[RingEntries];
         public int Read;
