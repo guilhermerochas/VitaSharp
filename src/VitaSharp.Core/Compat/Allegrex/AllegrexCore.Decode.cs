@@ -40,6 +40,27 @@ public sealed partial class AllegrexCore
             case 0x00:
                 ExecuteSpecial(instruction);
                 break;
+            case 0x01:
+                ExecuteRegImm(instruction);
+                break;
+            case 0x02:
+                Jump(instruction);
+                break;
+            case 0x03:
+                JumpAndLink(instruction);
+                break;
+            case 0x04:
+                BranchIf(_gpr[Rs(instruction)] == _gpr[Rt(instruction)], instruction);
+                break;
+            case 0x05:
+                BranchIf(_gpr[Rs(instruction)] != _gpr[Rt(instruction)], instruction);
+                break;
+            case 0x06:
+                BranchIf((int)_gpr[Rs(instruction)] <= 0, instruction);
+                break;
+            case 0x07:
+                BranchIf((int)_gpr[Rs(instruction)] > 0, instruction);
+                break;
             case 0x08:
                 AddImmediate(instruction);
                 break;
@@ -87,6 +108,18 @@ public sealed partial class AllegrexCore
             case 0x3E:
             case 0x3F:
                 Unimplemented(instruction, "VFPU (COP2)");
+                break;
+            case 0x14:
+                BranchLikelyIf(_gpr[Rs(instruction)] == _gpr[Rt(instruction)], instruction);
+                break;
+            case 0x15:
+                BranchLikelyIf(_gpr[Rs(instruction)] != _gpr[Rt(instruction)], instruction);
+                break;
+            case 0x16:
+                BranchLikelyIf((int)_gpr[Rs(instruction)] <= 0, instruction);
+                break;
+            case 0x17:
+                BranchLikelyIf((int)_gpr[Rs(instruction)] > 0, instruction);
                 break;
             case 0x1C:
                 ExecuteSpecial2(instruction);
@@ -145,6 +178,12 @@ public sealed partial class AllegrexCore
                 break;
             case 0x07:
                 _gpr[rd] = (uint)((int)_gpr[rt] >> (int)(_gpr[rs] & 31));
+                break;
+            case 0x08:
+                JumpRegister(instruction);
+                break;
+            case 0x09:
+                JumpAndLinkRegister(instruction);
                 break;
             case 0x0A:
                 MoveIfZero(instruction);
