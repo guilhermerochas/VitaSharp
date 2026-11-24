@@ -2346,6 +2346,22 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Bloqueios: a camada interna do `pcbc` só o processador seguro decifra (sem chaves; caminho = `pcbc.bin` tirado pelo
   usuário, fora do repositório); as chaves do KIRK (publicadas no PPSSPP/Jpcsp) pedem decisão do lead antes da fase 3;
   o GE de compatibilidade do Vita não é documentado (modelo: GE do PSP).
+  Lado SceCompat da fase 1 (feat/alg2, em andamento): barramento do núcleo (`src/VitaSharp.Core/Compat`: 4 bancos de
+  16 MB, buraco espelhando o banco 1, SRAM compartilhada, mailbox nos dois sentidos com o lado PSP em
+  `0xBC300040`-`0x5F` no bloco do controlador de interrupções: campainha = pulso do bit n de `0xBC300050`, como o
+  kermit do lado PSP faz; pendentes/confirmação em `0x40`/`0x44` inferidos até o trace da fase 3), thread `SceCompatCore` só entre Start e Stop, InitEx/Start/Stop/
+  WaitSpecialRequest/WaitAndGetRequest/ReturnValueEx/Interrupt/WaitIntr/Read/WriteShared32/WriteSharedCtrl como o
+  3.74 e o SceSblFwLoader carregando o `pcff` (segmento do SELF) e o `pcbc` (só pelo `os0:kd/pcbc.bin` do usuário);
+  testado com um núcleo roteirizado no teste. Falta o teste com código MIPS sintético quando o interpretador inteiro
+  do Allegrex entrar.
+  Bloqueio do Start real (licença): o `sceCompatStart` do 3.74, antes de soltar o núcleo, (1) lê
+  `tm0:npdrm/act.dat` (0x1038 bytes, `ksceNpDrmReadActData`: conta atual e, da versão 2 em diante, o OpenPSID) para o
+  bloco "dat" que o lado PSP lê por `sceCompatDatRead` — erro devolvido, exceto num DEX; (2) lê o rif
+  `ux0:pspemu/PSP/LICENSE/<content id passado ao sceCompatSetRif>.rif` (1 a 0x200 bytes) e o passa ao
+  `ksceNpDrmGetRifPspKey` numa pilha de kernel; qualquer resposta diferente de 0 é `0x8001000D`, exceto num DEX. No
+  VitaSharp o `ksceNpDrmGetRifPspKey` devolve `0x80020004` depois das checagens (a chave do título é do processador
+  seguro), então num console retail o Start real sempre falha com `0x8001000D` (com a linha "SceCompat: Start: the
+  title's license ... does not pass" no log) e o ScePspemu real não passa daí. Decisão do usuário/lead.
 - [ ] [P3][G] Emular tudo o que for possível do Vita (diretriz do usuário, 10/11/2026): além dos jogos e do sistema, listar
   os recursos do aparelho ainda não emulados (ex.: PSP, PS Mobile/PSM, Remote Play/PS TV, Near, Party, Content
   Manager, câmera/AR, apps de vídeo/música/browser) e abrir um item por recurso com o caminho (LLE do módulo real +

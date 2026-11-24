@@ -62,7 +62,7 @@ public sealed partial class SystemServicesVsh
 
     /// <summary>ksceSblAimgrIsDEX (0xF4B98F66)(): a testing kit (product 0x102).</summary>
     [Hle(Nid = 0xF4B98F66, Library = "SceSblAIMgrForDriver")]
-    int ksceSblAimgrIsDEX()
+    internal int ksceSblAimgrIsDEX()
     {
         return ConsoleIdentity.ProductCode == ProductDex ? 1 : 0;
     }

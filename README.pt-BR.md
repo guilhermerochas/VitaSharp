@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=eee456e4ebe1dc532dffc0122130a14d061246528e1e95aa7690a315259870a9 -->
+<!-- pair: README.md sha256=c346594745209948aa5b46fe544278cdeba1c5ae3aa0ce84f66d3683434ac4c0 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -158,6 +158,13 @@ seguinte.
 de comando: `install-firmware <PSVUPDAT.PUP>`. **Desinstalar firmware** (na mesma página; `uninstall-firmware [--yes]`)
 remove só o que a instalação criou (`os0`/`vs0`/`sa0`/`pd0` e os arquivos de índice `firmware.json`,
 `firmware-libraries.txt`): os jogos, os saves e o `ux0`/`ur0` ficam, e uma partição ligada a outra pasta perde só o link.
+
+**Núcleo de compatibilidade PSP (em andamento).** O emulador de PSP do firmware dá boot num núcleo MIPS a partir do
+`os0:kd/pcbc.skprx`, cujo conteúdo só o processador seguro do console decifra. Para rodá-lo, tire do seu próprio
+console o código de boot decifrado (os 0x5CE0 bytes que o SceCompat carrega na janela + 0x600000) e coloque em
+`os0:kd/pcbc.bin` na pasta de dados (`%APPDATA%\VitaSharp\fs\os0\kd\pcbc.bin` no Windows, o mesmo `fs/os0/kd` dentro
+da pasta de dados no Linux e no macOS). O VitaSharp nunca o distribui. Situação e limites: `docs/roadmap.md` (item do
+núcleo de compatibilidade PSP).
 
 **Sistema do Vita.** Com o firmware instalado, o botão **Abrir Sistema do Vita** do launcher (Ctrl+H, ou `boot-shell`) roda o
 `shell.self` do firmware: configuração inicial na primeira vez, tela de bloqueio, tela inicial com os jogos

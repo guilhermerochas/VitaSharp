@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.pt-BR.md sha256=8f9bfdc0277b75618f96ba19db4fe138c46b2313a5547da2d399cff823a78943 -->
+<!-- pair: psp-compat.pt-BR.md sha256=42c3f7fd4489266474080aad7e9dea8939cbec7050010403b144bca8215ee43d -->
 # PSP compatibility core (SceCompat, ScePspemu, Allegrex)
 
 *Português: [psp-compat.pt-BR.md](psp-compat.pt-BR.md).*
@@ -133,9 +133,9 @@ then `sceCompatWaitSpecialRequest(1)`, and starts its request threads.
   instructions; bit-exact results matter for games). Little endian, 32-bit physical addressing through fixed segments
   (`0x0`/`0x4`/`0x8`/`0xA` mirrors), no TLB.
 - **Media Engine:** not needed. The kermit firmware sends ME work (`kermit_me_wrapper`) to ScePspemu on the ARM side.
-- **GE (graphics):** the pcff has the real `ge.prx`/`ge_2.prx` and ScePspemu has no GE thread, so the GE display lists
-  are executed by compat hardware in the SoC (inferred; to confirm). VitaSharp needs a GE implementation (display
-  lists, vertex decode, rasterisation to Vulkan, VRAM at the top of window 3). This is the biggest piece.
+- **GE (graphics):** compat hardware of the SoC, programmed by the PSP's own `ge.prx`; see "The GE" below. VitaSharp
+  needs a GE implementation (display lists, vertex decode, rasterisation to Vulkan, VRAM at window + `0x3E00000`).
+  This is the biggest piece.
 - **Other PSP-side hardware the kermit kernel touches:** interrupt controller, system timer, DMA controller
   (`dmacman`), the mailbox and shared SRAM above, the LCD controller, cache control; and the KIRK crypto service
   (memlmd decrypts every `~PSP` module of flash0 and of the games). The exact register set must be traced from the
@@ -172,6 +172,37 @@ implements:
 - `add`, `addi` and `sub` raise the overflow exception (PPSSPP and Jpcsp treat them as `addu`/`subu`).
 - `di`/`ei` (`mfmc0`) work as in MIPS32 release 2: rt = Status, then Status.IE = the instruction's sc bit.
 - An interrupt can be taken with a delay slot next: EPC = the branch, Cause.BD set (PPSSPP only checks outside a slot).
+
+### The GE (graphics engine)
+
+How FW 3.74 serves it (sources: the strings and imports of `NPXS10028/eboot.bin` and the `SceCompat` decompilation,
+study only; uofw's `include/common/hardware.h` for the PSP's GE registers; Adrenaline's `adrenaline_compat.h`):
+
+- **Nobody on the ARM side runs display lists.** ScePspemu has no GE thread and no GE request server: its "Remote"
+  servers are audio out/in, ME (codecs, Atrac, Sas2), Msfs, Flashfs, Net, Usb, Osk, Peripheral, Pocs, Pspcm, AVC
+  input and Dmacplus. The pcff carries the PSP's own `ge.prx`/`ge_2.prx`, which program the GE registers at
+  `0xBD400000` directly (no kermit driver for the GE), so the display lists are executed by GE hardware in the SoC's
+  compat block, as on a PSP.
+- **Registers** (uofw): `0xBD400000` reset, `+0x008` the EDRAM size (in KB, low 16 bits), `+0x100` EXEC (bit 0 runs
+  the list and reads 1 while it runs; bit 1 the branch condition; bits 8/9 the CALL depth), `+0x108` the list address,
+  `+0x10C` the stall address (0: none; the GE waits while the list address equals it), `+0x110`/`+0x114` the CALL
+  return addresses, `+0x118`/`+0x11C` the vertex/index addresses, `+0x120`..`+0x128` the origin and its two saved
+  copies, `+0x200` the geometry clock, `+0x304` the interrupt status (1 SIGNAL, 2 END, 4 FINISH, 8 error), `+0x308` the
+  accepted interrupts, `+0x30C`/`+0x310` their set/acknowledge, `+0x400` the EDRAM size in use, `+0x800 + cmd * 4` the
+  last value of each command, `+0xC00`.. the bone, world, view, projection and texgen matrices; the EDRAM controller at
+  `0xBD500000`. `ge.prx` waits for EXEC bit 0 to clear after SIGNAL+END and FINISH+END, then reads the two words before
+  the list address to know which command stopped it.
+- **Memory it draws into:** the PSP's VRAM (physical `0x04000000`, 2 MB), which on the Vita is the top of window 3:
+  window + `0x3E00000` (PSP `0x8BE00000`, Adrenaline's `SCE_PSPEMU_VRAM`); the scratchpad is window + `0x3D00000`.
+- **Where the image goes:** the PSP's display driver points the LCD controller at a framebuffer in VRAM; the
+  `SceCompatLCDDMA` (ARM `0xE5071000`, programmed by `sceCompatStart`: 480x272, destination pitch `0x800`, the
+  `0x88000`-byte framebuffer block of `sceCompatFrameBufferInit`) copies it into `ScePspemuFrameBuffer`, and ScePspemu
+  shows that block with `sceCompatSetDisplayConfig` / `sceDisplaySetFrameBufForCompat`. ScePspemu uses GXM only for
+  its own drawing (dialogs, PocketStation, scaling), not for the PSP's.
+
+In VitaSharp the GE is ours: `src/VitaSharp.Core/Compat/Ge` executes the lists (the register block above, the
+commands' state, vertex decode) and hands each primitive batch to a rasterizer; the Vulkan one renders into the PSP
+framebuffer in PSP memory and writes the pixels back, apart from the GXM renderer.
 
 ### What needs keys and what does not
 
