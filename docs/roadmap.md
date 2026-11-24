@@ -2366,9 +2366,13 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   GE (feat/alg4, em andamento; como o 3.74 o atende: `docs/notes/psp-compat.md`, "The GE"): registradores
   `0xBD400000`/`0xBD500000` e processador de listas (`src/VitaSharp.Core/Compat/Ge/GeEngine.cs`), estado dos comandos,
   texturas/CLUT, framebuffer e rasterizador Vulkan num dispositivo próprio (`GeVulkanRasterizer`), testados com listas
-  sintéticas no Vulkan por software. Falta: stencil (o alpha do framebuffer), color test, logic op, máscaras parciais,
-  dither, mipmaps, DXT, patches (Bezier/spline), bounding box; manter o alvo na GPU entre lotes (hoje sobe/desce a
-  região a cada PRIM); o DMA do LCD levando a VRAM ao `ScePspemuFrameBuffer`.
+  sintéticas no Vulkan por software. Feito também: alvo e profundidade na GPU entre PRIMs e listas (descarregados no
+  fim/stall da lista, antes de transferência/textura/CLUT na área e no LCD DMA; 2000 sprites: 1140 → 117 ms por lista no
+  SwiftShader), color test, dither, logic op, DXT1/3/5, mipmaps, ciclo de vida do dispositivo Vulkan do GE (Stop e fim
+  do processo). Falta: stencil (o alpha do framebuffer; o Vulkan exige profundidade e stencil na mesma imagem, então
+  o desenho é uma imagem de profundidade+stencil por par framebuffer/profundidade, com o stencil sincronizado do alpha
+  ao entrar num draw com stencil e de volta no descarregamento), máscaras de bits parciais (MASKRGB/MASKALPHA só
+  por canal inteiro hoje), patches (Bezier/spline), bounding box.
   Bloqueio do Start real (licença): o `sceCompatStart` do 3.74, antes de soltar o núcleo, (1) lê
   `tm0:npdrm/act.dat` (0x1038 bytes, `ksceNpDrmReadActData`: conta atual e, da versão 2 em diante, o OpenPSID) para o
   bloco "dat" que o lado PSP lê por `sceCompatDatRead` — erro devolvido, exceto num DEX; (2) lê o rif
