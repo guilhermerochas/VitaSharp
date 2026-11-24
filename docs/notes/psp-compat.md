@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.pt-BR.md sha256=3c048a613dba47f4e66731ca627b6332f2237b284168f87c97b6eef4c2572c8f -->
+<!-- pair: psp-compat.pt-BR.md sha256=2f473cf8db43b75f43b028f4bca7f344803d963900e162f1f76031b8e230dd2d -->
 # PSP compatibility core (SceCompat, ScePspemu, Allegrex)
 
 *Português: [psp-compat.pt-BR.md](psp-compat.pt-BR.md).*
@@ -191,10 +191,12 @@ has no PSP-side block here. Which of the blocks below the compat core really has
 | GE (`0xBD400000`, EDRAM controller `0xBD500000`) | the `GeEngine` of the GE section below behind both regions (`PspGeDevice`), its line on interrupt 25; reset: the GE's reset bit and no interrupt accepted. Only when the bus is also the GE's memory (`PspBus` gives it contiguous views of RAM, VRAM and scratchpad) | uofw `hardware.h` |
 | CPU/bus clock ratios (`0xBC200000`) | two 9/9-bit ratios, stored | Jpcsp `MMIOHandlerCpuBusFrequency` |
 | DDR controller (`0xBD000000`) | the flush the kermit driver waits on before ringing the ARM: `+4` = buffers completes at once (reads 0), `+0` reads the last completed (inferred from Adrenaline's `sceKermitWait`) | Jpcsp `MMIOHandlerDdr`, Adrenaline `cef/binary/main.c` |
+| Display controller (`0xBE740000`) | the scan timing: 9 MHz pixel clock, 525 pixels x 286 lines (59.94 Hz), the vertical blank from line 272 on the latched interrupt 30; `+4` the line (a write restarts the timing), `+8` the blanks; running from the reset | Jpcsp `MMIOHandlerDisplayController`/`MMIOHandlerLcdc`, PSP IPL SDK `display.c` |
+| DMACplus scan-out channel (`0xBC800100`) | the picture the LCD reads: address, pixel format (565/5551/4444/8888), width, stride, scan-out enable | PSP IPL SDK `dmacplus.c` |
 
 Time: the blocks run on the core's own time (`CompatCoreRunner.CoreTimeNs`: cycles at the compat clock plus the
 time halted), never the host clock; the runner moves them after every slice and wakes a halted core at their next
-event (the COP0 Count/Compare timer, IP7, is the interpreter's own). Not here yet: the LCD controller and KIRK.
+event (the COP0 Count/Compare timer, IP7, is the interpreter's own). Not here yet: KIRK.
 
 ### The GE (graphics engine)
 
@@ -226,6 +228,21 @@ study only; uofw's `include/common/hardware.h` for the PSP's GE registers; Adren
 In VitaSharp the GE is ours: `src/VitaSharp.Core/Compat/Ge` executes the lists (the register block above, the
 commands' state, vertex decode) and hands each primitive batch to a rasterizer; the Vulkan one renders into the PSP
 framebuffer in PSP memory and writes the pixels back, apart from the GXM renderer.
+
+### The image path to the Vita screen
+
+- **PSP side:** the PSP's display driver draws (or the GE renders) into the VRAM and sets the scan-out channel at
+  `0xBC800100`; the display controller raises the vertical blank (interrupt 30) every 16.68 ms of the core's time.
+- **ARM side:** `sceCompatStart` programs `SceCompatLCDDMA` (`0xE5071000`) with the destination only (`+0x34` 480,
+  `+0x3C` 272, `+0x4C` the framebuffer block's address, `+0x50` the pitch `0x800`, `+0x94` 2, `+0x98` 1, `+0xC0`
+  `0x1000000`, `+4` 1 to start); the suspend path ends the frame (`+0xBC`) and stops it (`+0` 1, `+8` back to 0). Its
+  frame interrupt is IRQ `0x4A`. VitaSharp's `CompatLcdDma` copies the scan-out picture into the block at every PSP
+  blank and converts it to A8B8G8R8; that the source is the scan-out channel is inferred (SceCompat never programs a
+  source), to confirm with the boot trace.
+- **On screen:** ScePspemu shows the block with `sceCompatSetDisplayConfig` (`ksceDisplaySetFrameBuf`, 480x272 pitch
+  512). `sceDisplaySetFrameBufForCompat(x, y, width, height, pParam, opt)` (syscall `0x45BCB941`: x, y, width and a
+  block {height, pParam, opt, sizes}) is a second plane ScePspemu places over it (checks in `Display.Compat.cs`); the
+  presenter keeps it but does not composite it yet.
 
 ### What needs keys and what does not
 
