@@ -2372,8 +2372,9 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   do magnetômetro para a calibração do shell (`sceMotionDevReadForMagnCalib`, `GetCurrentMagnCalibData`) e o
   `dataInfo`; (2) a fusão do campo no `deviceQuat` como o driver_us faz (hoje só a matriz NED e a estabilidade usam o
   campo); (3) o magnetômetro de um controle no PC (o SDL não expõe um).
-- [ ] [P3][M] Teclado e mouse Bluetooth (`SceHid`) a partir do host, como opção (`docs/notes/hardware-coverage.md`):
-  primeira entrega: `sceHidKeyboardEnumerate` devolve um handle e `sceHidKeyboardRead` informa teclas roteirizadas.
+- [ ] [P3][M] Teclado e mouse Bluetooth, o que falta (o feito está em "Corrigido, falta o usuário testar"): os
+  callbacks de dica (enumeração e leitura) ainda não são notificados; as configurações de Bluetooth do shell não
+  listam o dispositivo (o `SceBt` do kernel não conhece os pareados); o `ConsumerControl` e o `Controller` do SceHid.
 - [ ] [P3][G] Processador de mídia Venezia (núcleos MeP + IVC2) para código MeP que não é do firmware (plugin
   VVNZRunner e o homebrew sobre ele; `docs/notes/hardware-coverage.md`): o `vnzimg.skprx` sai do `self2elf` em claro,
   sem chave. Primeira entrega: interpretador do núcleo MeP-c5 numa thread de guest com programa sintético no teste
@@ -3251,6 +3252,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (24/11/2026, falta testar) [P3][M] Teclado e mouse Bluetooth (fix/adr4; `docs/notes/hardware-coverage.md`): no
+  3.74 o SceHid guarda até 8 teclados e 8 mouses; `sceHid{Keyboard,Mouse}Enumerate` copia os handles dos conectados
+  (lista NULL 0x803B0001, no máximo 8), `Read`/`Peek` conferem o handle (< 1: 0x803B0002; lista NULL ou contagem
+  negativa: 0x803B0001; handle que não é do tipo: 0x803B0003), tiram no máximo 16 relatórios (teclado 0x18 bytes,
+  mouse 0x10) e voltam na hora com quantos copiaram, da fila do dispositivo com posição por leitor. Feito: o teclado
+  e o mouse do host como dispositivos pareados (`HostServices.HidKeyboard/HidMouse`, filas de relatórios com uso USB
+  HID, modificadores, botões, deslocamento e roda), `Enumerate`, `Read`, `Peek`, `Clear`, `Set/GetIntercept` e o
+  registro dos callbacks de dica como o 3.74; sem a opção nada é pareado, como antes. Testes: `HidDeviceTests`.
+  Opção no PC e no Android: ver os itens seguintes deste mesmo commit/branch.
 - [ ] (24/11/2026, falta testar) [P2][M] Fim de processo com thread rodando sobre memória liberada (fix/adr4): no Vita
   o kill encerra todas as threads do processo e nenhuma roda depois. Causa: uma thread do processo iniciada depois do
   fim (a tarefa de início do processo, que cria a main e roda os module_start, chegava depois do EndProcess/destroy,

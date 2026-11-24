@@ -199,6 +199,13 @@ public sealed class HostServices : IDisposable
     /// <summary>Where the controllers' vibration goes (the host's gamepads); null = dropped.</summary>
     public IControllerVibration? Vibration { get; set; }
 
+    /// <summary>The host keyboard as a paired Bluetooth keyboard of the Vita (SceHid; the emulator option, off by
+    /// default); null = no keyboard paired.</summary>
+    public HidKeyboard? HidKeyboard { get; set; }
+
+    /// <summary>The host mouse as a paired Bluetooth mouse of the Vita (SceHid); null = no mouse paired.</summary>
+    public HidMouse? HidMouse { get; set; }
+
     /// <summary>"Gravar tudo" is armed or recording without --capture-location: the position is withheld (the service
     /// answers "undetermined"), so a capture, which may go to a public report, never holds where the player is.</summary>
     public bool LocationWithheld { get; set; }
