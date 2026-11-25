@@ -2210,8 +2210,9 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   deflatePrime (encoder deflate próprio em nível de bit), ScePervasiveForDriver (palavras de identificação), ScePower
   SoftReset/0x3951AF53 e SceSyscon SetPowerMode e entradas (reboot do sistema emulado: SystemPower.Rebooted, o host
   boota de novo), SceIofilemgrForDriver vfsRmdev e NID_A39A9CA7 (vnodes de dispositivo de bloco dos mounts tipo 3 em
-  dev/tty/md). Falta: o event flag do aviso de troca de mídia em +0xC do bloco extra da montagem
-  do guest, que o vfsMount do 3.74 cria (os NIDs 5B7E5AB8/DD46CD63 estão em "Corrigido, falta o usuário testar");
+  dev/tty/md). Falta: a espera das chamadas de E/S numa montagem que espera a mídia (bit 0x20000) enquanto a
+  palavra de presença não é 1 (FUN_81004bb8; o flag e as palavras já existem, ver "Corrigido, falta o usuário
+  testar");
   SceCoredumpForDriver NID_A7D214A7 / NID_D064F6DC / NID_EF20949F (a validação, a fila de duas vagas e o arquivo
   de core estão em "Corrigido, falta o usuário testar"; falta a suspensão do processo durante o dump e as notas da
   Sony no .psp2dmp: PROCESS_INFO, THREAD_INFO, THREAD_REG_INFO, MODULE_INFO, MEM_BLK_INFO e as outras que o módulo
@@ -3351,7 +3352,11 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   máscara ainda não avisado { montagem, info +4, 0, 0, info +0x10, 0, 0 }, liga o event flag com a máscara e marca o
   evento até o `ksceIoClearErrorEvent` (0x40B933C7); `ksceIoDeleteErrorEvent` (0xC6158F8D) o apaga. O NID_5B7E5AB8
   (id) marca a mídia da montagem do guest na raiz do id como trocada (+8 do bloco extra, e o event flag do aviso em
-  +0xC); as montagens por id do VitaSharp são pastas do host, sem montagem do guest: 0x80010016. Antes o create
+  +0xC); as montagens por id do VitaSharp são pastas do host, sem montagem do guest: 0x80010016. O vfsMount cria,
+  como o 3.74 (FUN_81009fb4 e FUN_8100b740), as palavras de presença e o flag de espera da classe do dispositivo
+  (0x201 "SceIofileDevWaitForVC", 0x202 "...ForMC", 0x203 "...ForSD", uma vez) numa montagem com o bit 0x20000, e
+  guarda a palavra inteira do tipo de sistema de arquivos (antes só o byte baixo, sem a classe em +0x4E). Teste
+  `IoVfsMountTests.AMountThatWaitsForItsMediaGetsTheDeviceClassFlag` (falha sem a mudança). Antes o create
   recebia um callback, o aviso dava 0x8001000C e nada era escrito. Teste: `IoErrorEventTests` (falha sem a
   mudança). Testar: tirar o cartão de memória não se emula; nada muda na tela, os jogos de sempre continuam abrindo.
 - [ ] (25/11/2026, falta testar) [P2][G] Pedidos de dump do SceCoredump conferidos como no 3.74 (fix/small2):

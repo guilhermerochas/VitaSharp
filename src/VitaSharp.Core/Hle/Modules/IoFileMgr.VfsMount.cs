@@ -206,7 +206,8 @@ public sealed partial class IoFileMgr
 
         uint rootPathAddress = GuestMemory.R32(param);
         uint device = GuestMemory.R32(param + 4);
-        uint fsType = GuestMemory.R32(param + 8) & 0xFF;
+        uint fsTypeWord = GuestMemory.R32(param + 8); // the low byte the type, +0x4E of the mount the device class
+        uint fsType = fsTypeWord & 0xFF;
         uint flags = GuestMemory.R32(param + 0xC);
         uint nameAddress = GuestMemory.R32(param + 0x10);
         uint data = GuestMemory.R32(param + 0x14);
@@ -299,10 +300,11 @@ public sealed partial class IoFileMgr
         GuestMemory.W32(mount + 0x7C, misc);
         GuestMemory.WriteCString(mount + 0x80, rootPath, 0x3F);
         GuestMemory.W32(mount + 0xC4, data);
-        GuestMemory.W32(mount + 0x4C, fsType);
+        GuestMemory.W32(mount + 0x4C, fsTypeWord); // the whole word, as 3.74 keeps it
         GuestMemory.W32(mount + 0x50, flags & 0xFFFFF);
         GuestMemory.W32(mount + 0x48, 0x100 | 1);
         GuestMemory.W32(mount + 0xCC, extra);
+        InitMediaWait(mount, extra);
 
         uint vpp = Emu.Memory.Alloc(0x10, "vfs mount root", MemoryRegion.Kernel, 16);
         int result = vfsGetNewVnodeThroughEntry(mount, vops != 0 ? vops : GuestMemory.R32(driver + 0x14), 0, vpp);

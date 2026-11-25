@@ -15,8 +15,8 @@ namespace VitaSharp.Core.Hle.Modules;
 // gets a 0x1C-byte record in its process ({ mount id, info +4, 0, 0, info +0x10, 0, 0 }), its flag set with the mask,
 // and is marked notified until ksceIoClearErrorEvent (0x40B933C7) clears the mark; ksceIoDeleteErrorEvent (0xC6158F8D)
 // deletes it. NID_5B7E5AB8 (mount id) marks the mount's media as changed: the mount found at the id's root path (a
-// guest file system mounted there: vfsMount) gets +8 of its extra block (+0xCC) set and its notice flag (the extra
-// block's +0xC) set with bit 1. The emulator's own mount points are host folders without a guest mount: there is no
+// guest file system mounted there: vfsMount) gets its presence word (the extra block's +8 points at it) set to 1 and
+// its wait flag (the extra block's +0xC points at its UID) set with bit 1. The emulator's own mount points are host folders without a guest mount: there is no
 // mount to mark (0x80010016, as the module answers a path that is no mount root).
 public sealed partial class IoFileMgr
 {
@@ -183,13 +183,103 @@ public sealed partial class IoFileMgr
             return VFS_ERR_INVAL;
         }
 
-        GuestMemory.W32(extra + 8, 1);
-        uint noticeFlag = GuestMemory.R32(extra + 0xC);
-        if (noticeFlag != 0)
+        // the media is there again: the mount's presence word (+8 points at it) is 1, and its wait flag (+0xC points at
+        // its UID) wakes the I/O calls waiting for the media
+        uint present = GuestMemory.R32(extra + 8);
+        if (present != 0)
         {
-            K.Objects.Get<EventFlag>((int)GuestMemory.R32(noticeFlag))?.Set(1);
+            GuestMemory.W32(present, 1);
+        }
+
+        uint holder = GuestMemory.R32(extra + 0xC);
+        if (holder != 0)
+        {
+            K.Objects.Get<EventFlag>((int)GuestMemory.R32(holder))?.Set(1);
         }
 
         return 0;
+    }
+
+    // ------------------------------------------------------------------ waiting for the media of a mount
+    // FW 3.74 iofilemgr keeps, in its data, a default presence word (1) and wait-flag holder (-1) and one pair per
+    // removable device class: the game card (0x201, "SceIofileDevWaitForVC"), the memory card (0x202, "...ForMC") and
+    // the SD card (0x203, "...ForSD"), all present (1) and without a flag (-1) at the start. Every mount's extra block
+    // (+0xCC) points at the defaults (+8 the presence word, +0xC the holder; FUN_81009fb4). A mount asking to wait for
+    // its media (flags bit 17, 0x20000) whose file system type's device class (+0x4E) is one of those gets the class's
+    // pair and, the first time, the class's event flag (attribute 0x1000) in its holder (FUN_8100b740, from vfsMount);
+    // for another class the bit is cleared. The I/O calls on such a mount wait on that flag while the presence word is
+    // not 1; NID_5B7E5AB8 sets the word and the flag.
+
+    /// <summary>The module's media words (the data the 3.74 module has at 0x8102101C..0x81021040), in kernel memory.</summary>
+    [SnapshotMissing] // states of builds before it: made again on the next mount
+    uint _mediaWords;
+
+    const uint MediaDefaultHolder = 0x0, MediaDefaultPresent = 0x18;
+
+    /// <summary>The removable device classes: class, holder offset, presence offset, flag name.</summary>
+    static readonly (uint Class, uint Holder, uint Present, string Name)[] s_mediaClasses =
+    [
+        (0x201, 0x04, 0x1C, "SceIofileDevWaitForVC"),
+        (0x202, 0x14, 0x20, "SceIofileDevWaitForMC"),
+        (0x203, 0x0C, 0x10, "SceIofileDevWaitForSD"),
+    ];
+
+    uint MediaWords()
+    {
+        if (_mediaWords != 0)
+        {
+            return _mediaWords;
+        }
+
+        uint words = Emu.Memory.Alloc(0x28, "iofilemgr media words", MemoryRegion.Kernel, 4);
+        GuestMemory.Fill(words, 0, 0x28);
+        GuestMemory.W32(words + MediaDefaultHolder, 0xFFFFFFFF);
+        GuestMemory.W32(words + MediaDefaultPresent, 1);
+        foreach ((uint _, uint holder, uint present, string _) in s_mediaClasses)
+        {
+            GuestMemory.W32(words + holder, 0xFFFFFFFF);
+            GuestMemory.W32(words + present, 1);
+        }
+
+        _mediaWords = words;
+        return words;
+    }
+
+    /// <summary>The media words of a new mount (see above).</summary>
+    void InitMediaWait(uint mount, uint extra)
+    {
+        uint words = MediaWords();
+        GuestMemory.W32(extra, 0);
+        GuestMemory.W32(extra + 4, 0);
+        GuestMemory.W32(extra + 8, words + MediaDefaultPresent);
+        GuestMemory.W32(extra + 0xC, words + MediaDefaultHolder);
+        uint flags = GuestMemory.R32(mount + 0x50);
+        if ((flags & 0x20000) == 0)
+        {
+            return;
+        }
+
+        uint deviceClass = GuestMemory.R32(mount + 0x4C) >> 16;
+        int index = Array.FindIndex(s_mediaClasses, c => c.Class == deviceClass);
+        if ((deviceClass & 0xF00) != 0x200)
+        {
+            GuestMemory.W32(mount + 0x50, flags & ~0x20000u);
+            return;
+        }
+
+        if (index < 0)
+        {
+            return; // another 0x2xx class: no flag of its own (the defaults stay)
+        }
+
+        (uint _, uint holderOffset, uint presentOffset, string name) = s_mediaClasses[index];
+        uint holder = words + holderOffset;
+        if (GuestMemory.R32(holder) == 0xFFFFFFFF)
+        {
+            GuestMemory.W32(holder, (uint)K.Objects.Register(new EventFlag { Name = name, Attr = EventFlag.AttrMulti }));
+        }
+
+        GuestMemory.W32(extra + 8, words + presentOffset);
+        GuestMemory.W32(extra + 0xC, holder);
     }
 }
