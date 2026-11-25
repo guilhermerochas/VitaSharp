@@ -778,8 +778,14 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
     Feito no desktop (07/11/2026): todas as chamadas já passavam contexto gerado ou `JsonTypeInfo`; o
     `VitaSharp.Desktop.csproj` desliga o serializador por reflexão (`runtimeconfig.json` com a chave). Conferido: o
     jogo abre e lê o `input.json` de perfis (teclado personalizado + 1 controle; `perf11_out/json_win`). No app Android falta pôr a mesma propriedade e testar no celular (Android parado)
-  - [ ] Inicialização: medir o tempo de início (desktop JIT/AOT e app Android) e o que roda nos construtores estáticos
+  - [x] Inicialização: medir o tempo de início (desktop JIT/AOT e app Android) e o que roda nos construtores estáticos
     (tabelas de HLE, NIDs, formatos) — gerar na compilação o que hoje é montado ao iniciar
+    Feito no desktop (24/11/2026, feat/alg4-small; item em "Corrigido, falta o usuário testar"): medidos os 517
+    construtores estáticos do Core num processo novo (`StartupCostBenchmarkTests`, Category=Slow): 156-186 ms e 15,5 MB
+    alocados, o maior de longe o parse das 15.183 linhas do nids.txt (44-46 ms, 10,4 MB, a cada início). O banco de
+    NIDs agora é uma tabela feita na compilação (`NidTableGenerator`: spans de dados do assembly e buscas binárias, o
+    `NidInfo` criado quando pedido); depois: 118 ms e 6,4 MB no total, o construtor que usava o banco 9 ms e 1 MB. O
+    resto passa de 1 ms a 6 ms cada (tabelas do ATRAC9, ASTC, HleBindings). Falta medir o app Android (celular)
   - [ ] Caminhos quentes sem custos escondidos: boxing, `params object[]`, interpolação de string em logs desligados
     (usar `[InterpolatedStringHandler]`/checar o nível antes), LINQ e lambdas que alocam por quadro, `ToString()` de
     enums em logs; medir com o contador de alocações (`PERF allocated`) e zerar o que for por quadro
@@ -3291,6 +3297,13 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (24/11/2026, falta testar) [P3][M] Início sem o parse do banco de NIDs (feat/alg4-small; item "Reflexão o mínimo
+  possível" de Desempenho): o nids.txt (15.183 NIDs) era lido e separado a cada início, o construtor estático mais caro
+  do Core (44-46 ms, 10,4 MB). Feito: a tabela é feita na compilação (`NidTableGenerator`) e lida por buscas binárias;
+  os construtores estáticos do Core passam de 156-186 ms e 15,5 MB para 118 ms e 6,4 MB. Testes: `NidDatabaseTests`
+  (o recurso não existe mais e a tabela responde linha a linha como o texto). Testar: abrir um jogo e o sistema; os
+  nomes das funções no log (importações, HLE que falta) saem como antes.
 
 - [ ] (24/11/2026, falta testar) [P3][M] Teclado e mouse Bluetooth (fix/adr4; `docs/notes/hardware-coverage.md`): no
   3.74 o SceHid guarda até 8 teclados e 8 mouses; `sceHid{Keyboard,Mouse}Enumerate` copia os handles dos conectados
