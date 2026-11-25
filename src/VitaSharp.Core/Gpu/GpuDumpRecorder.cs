@@ -17,6 +17,9 @@ public sealed class GpuDumpOptions
     /// <summary>Chooses <see cref="Path"/> when the recording starts (null: <see cref="Path"/> as given): a default file
     /// name carries the title id, known only once the title is loaded.</summary>
     public Func<string>? PathAtStart;
+    /// <summary>The queue to record: the emulator's (<see cref="Emulator.Gpu"/>). Null: the first queue to present once
+    /// armed, which another emulator in the same process could be.</summary>
+    public GpuQueue? Queue;
     /// <summary>Start right after the present that makes the backend's present count reach this value (-1: the next present).</summary>
     public long StartAfterPresent = -1;
     /// <summary>Stop after this many frames (presents); 0 = until <see cref="GpuDumpRecorder.Stop"/>.</summary>
@@ -96,6 +99,12 @@ public sealed unsafe class GpuDumpRecorder
     private bool _cmdPending, _ranSinceIdle;
     private volatile bool _stopRequested, _stopNow;
     private int _state; // 0 armed, 1 recording, 2 finished
+    /// <summary>The queue recorded: <see cref="GpuDumpOptions.Queue"/>, or the first to present after the recorder was
+    /// armed. The recorder is one per process and every queue calls its hooks: the commands of another queue running at
+    /// the same time (another emulator in the process, as the test suite runs them in parallel) are not this dump's, and
+    /// written from their worker at the same time as this one's they can break its records (the likely cause of a CI
+    /// run that read "unknown GPU dump record kind 0x00").</summary>
+    private volatile GpuQueue? _queue;
     private readonly GpuDumpResult _result = new();
     private long _startTicks, _workerTicks, _waitTicks, _tapTicks;
     /// <summary>Chunks being compressed (in file order): up to <see cref="Compressors"/> at once on the thread pool,
@@ -193,9 +202,9 @@ public sealed unsafe class GpuDumpRecorder
 
     // =========================================================== GPU worker hooks (GpuQueue)
 
-    internal void BeforeExecute(GpuCommand cmd)
+    internal void BeforeExecute(GpuQueue queue, GpuCommand cmd)
     {
-        if (_state != 1)
+        if (_state != 1 || queue != _queue)
         {
             return;
         }
@@ -220,23 +229,24 @@ public sealed unsafe class GpuDumpRecorder
         _workerTicks += Stopwatch.GetTimestamp() - t0;
     }
 
-    internal void AfterExecute(GpuCommand cmd, IGpuBackend? backend)
+    internal void AfterExecute(GpuQueue queue, GpuCommand cmd, IGpuBackend? backend)
     {
         if (_state == 0)
         {
-            if (_stopNow)
+            if (_stopNow || (_options.Queue != null && queue != _options.Queue))
             {
                 return;
             }
 
             if (cmd is PresentCommand && (_options.StartAfterPresent < 0 || PresentCount(backend) >= _options.StartAfterPresent))
             {
+                _queue = queue;
                 Activate(backend);
             }
 
             return;
         }
-        if (_state != 1)
+        if (_state != 1 || queue != _queue)
         {
             return;
         }
@@ -288,9 +298,9 @@ public sealed unsafe class GpuDumpRecorder
     }
 
     /// <summary>The worker ran the backend's Idle (the queue was empty).</summary>
-    internal void AfterIdle()
+    internal void AfterIdle(GpuQueue queue)
     {
-        if (_state != 1)
+        if (_state != 1 || queue != _queue)
         {
             return;
         }

@@ -97,7 +97,7 @@ static class GpuDumpControl
 
     static GpuDumpRecorder? Start(Emulator emu, VulkanRenderer? renderer, string[] options, string path, long startAfter, long frames,
         Action<string>? status, string? hostInfo) =>
-        Start(new GpuDumpOptions { Path = path, Header = BuildHeader(emu, renderer, options, hostInfo) }, startAfter, frames, status);
+        Start(new GpuDumpOptions { Path = path, Queue = emu.Gpu, Header = BuildHeader(emu, renderer, options, hostInfo) }, startAfter, frames, status);
 
     static GpuDumpRecorder? Start(GpuDumpOptions opt, long startAfter, long frames, Action<string>? status)
     {
@@ -138,6 +138,7 @@ static class GpuDumpControl
         string? file = parts.Length > 2 && parts[2].Length > 0 ? parts[2] : null;
         var opt = new GpuDumpOptions
         {
+            Queue = emu.Gpu,
             Path = file != null ? Path.GetFullPath(file) : "",
             PathAtStart = file != null ? null : () => NewPath(emu),
             HeaderAtStart = () => BuildHeader(emu, renderer(), options, null),

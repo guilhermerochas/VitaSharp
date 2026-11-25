@@ -349,7 +349,7 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
             // a first frame before the recording: the recorder starts at the next present
             w.Run(w.Textures.Count);
             var done = new ManualResetEventSlim();
-            var rec = GpuDumpRecorder.Start(new GpuDumpOptions { Path = dump, MaxFrames = 0, Header = new GpuDumpHeader { ["title-id"] = "PCSA00000" }, Finished = _ => done.Set() });
+            var rec = GpuDumpRecorder.Start(new GpuDumpOptions { Path = dump, Queue = h.Emu.Gpu, MaxFrames = 0, Header = new GpuDumpHeader { ["title-id"] = "PCSA00000" }, Finished = _ => done.Set() });
             Assert.NotNull(rec);
             // the recording starts at this present: every scene after it is in the dump
             h.Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(w.Data, W, W, H, DisplayPixelFormat.A8B8G8R8) });

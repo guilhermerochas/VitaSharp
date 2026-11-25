@@ -99,7 +99,7 @@ internal sealed class FlashScene
             before?.Invoke(scene);
             scene.Frame(); // a frame before the recording: the recorder starts at the next present
             var done = new ManualResetEventSlim();
-            var rec = GpuDumpRecorder.Start(new GpuDumpOptions { Path = dump, MaxFrames = 0, Header = new GpuDumpHeader { ["title-id"] = "PCSA00000" }, Finished = _ => done.Set() });
+            var rec = GpuDumpRecorder.Start(new GpuDumpOptions { Path = dump, Queue = h.Emu.Gpu, MaxFrames = 0, Header = new GpuDumpHeader { ["title-id"] = "PCSA00000" }, Finished = _ => done.Set() });
             Assert.NotNull(rec);
             h.Emu.Gpu.Submit(scene.Present());
             foreach (Hud hud in frames)
