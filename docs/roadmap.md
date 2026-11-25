@@ -2192,9 +2192,18 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   quem preenche a tabela) e NID_DD46CD63 (para cada objeto de arquivo da classe do módulo com +0x38 == mount, flags
   +0x40 & máscara e +0x44 == 0, envia o aviso e marca +0x44: precisa desses campos no objeto de arquivo);
   SceCoredumpForDriver NID_A7D214A7 / NID_D064F6DC / NID_EF20949F (validação do pedido e a fila do thread de dump,
-  escrever o .psp2dmp do processo); SceAppMgrForDriver 6 (1B6C2FED/C4924946 caminho de lançamento de debug atrás de
-  ksceSblACMgrIsDevelopmentMode; 1574E1A4 montagem por id 0x6A/0x6B/0xCD/600/900; 324DD34E, E8DB7942 e 504023C8
-  feitos em 23/11/2026, fix/quick3, em "Corrigido, falta o usuário testar");
+  escrever o .psp2dmp do processo); SceAppMgrForDriver: 324DD34E, E8DB7942 e 504023C8 feitos em 23/11/2026
+  (fix/quick3, em "Corrigido, falta o usuário testar"); C4924946 feito em 24/11/2026 (feat/alg4-g: num kit de
+  desenvolvimento o ProcessmgrKernel NID_5A57766C com os 6 argumentos e a configuração de depuração GXM do registro,
+  `AppMgr.GxmDebugging`, que o 324DD34E agora também passa; num retail 0x80020012). Faltam dois, [G] cada:
+  1B6C2FED (SceAppMgr 3.74 0x8100da9c; num retail 0x80020012, que já é a resposta): num kit de desenvolvimento,
+  só do processo do kernel (senão 0x8080201F), cria o semáforo "SceAppMgr:semafordbg" (0 de 1) e o callback
+  "SceAppMgr:cbkfordbg" com ele, e, se a thread não é a que já está nesse lançamento, confere o caminho (NULL
+  0x80802016, vazio 0x8080201A) e lança pelo caminho geral do módulo (0x8100b748) com a flag 0x20000 e o semáforo;
+  depois espera o semáforo, que o callback sinaliza quando o app termina, e devolve o erro do lançamento ou 0;
+  1574E1A4 (0x810232ec): montagem por id, cada faixa com a sua checagem de permissão (0x6A/0x6B
+  SceSblACMgrForDriver C98D82EE/8612B243, 0xCD 456DA7AC, 600 4DB7F512, 500-505 e 0x6E-0x70/0x12E-0x130 outro caminho,
+  900/901 o caminho pelo SceFios2KernelForDriver 0F456345 num bloco de 0x124 bytes);
   SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver 14
   (layout dos objetos da libult na memória do processo).
   Entrega movida para "Corrigido, falta o usuário testar" (reboot do sistema, kernN, 22/11/2026); o resto segue aberto aqui.

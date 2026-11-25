@@ -293,12 +293,25 @@ public sealed partial class AppMgr
         {
             options.CopyTo(GuestMemory.Span(block, OptionSize));
             ProcessmgrKernel processmgr = Emu.Hle.Modules.OfType<ProcessmgrKernel>().First();
-            return processmgr.NID_5A57766CThroughEntry(titleId, type, path, argSize, args, block, 0);
+            return processmgr.NID_5A57766CThroughEntry(titleId, type, path, argSize, args, block, GxmDebugging(Emu, KernelSpace.KernelPid));
         }
         finally
         {
             Mem.Free(block);
         }
+    }
+
+    /// <summary>
+    /// The GXM debugging setting the module's launches give the process manager (SceAppMgr 3.74 0x81011454, for a
+    /// process ID): a game program's is /DEVENV/TOOL game_uses_gxmdbg, the others' vsh_uses_gxmdbg (NID_324DD34E and
+    /// NID_C4924946 ask for the kernel's process, so vsh_uses_gxmdbg); 1 when the key is in the registry and not 0,
+    /// else 0 (a retail unit's registry has neither).
+    /// </summary>
+    internal static uint GxmDebugging(Emulator emu, int pid)
+    {
+        bool game = emu.Hle.Modules.OfType<SystemServicesVsh>().First().ksceSblACMgrIsGameProgramThroughEntry(pid) != 0;
+        string name = game ? "game_uses_gxmdbg" : "vsh_uses_gxmdbg";
+        return Firmware.Registry.For(emu.Options.FsRoot).TryGetInt("/DEVENV/TOOL", name, out int value) && value != 0 ? 1u : 0u;
     }
 
     /// <summary>

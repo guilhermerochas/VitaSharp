@@ -265,7 +265,7 @@ public sealed partial class SystemServicesVsh
     /// <summary>ksceSblACMgrIsGameProgram (pid): an application authority (0x210...) or the default fake SELF one.</summary>
     [Hle("ksceSblACMgrIsGameProgram2", Nid = 0x05FDC646, Library = "SceSblACMgrForKernel", ReturnsValue = true)]
     [Hle("ksceSblACMgrIsGameProgram", Nid = 0x1298C647, Library = "SceSblACMgrForDriver", ReturnsValue = true)]
-    int ksceSblACMgrIsGameProgram(int pid) => AcAuthority(pid, IsGameAuthority) ? 1 : 0;
+    internal int ksceSblACMgrIsGameProgram(int pid) => AcAuthority(pid, IsGameAuthority) ? 1 : 0;
 
     /// <summary>ksceSblACMgrIsFself (pid): a fake SELF authority (0x2F0...).</summary>
     [Hle("ksceSblACMgrIsFself2", Nid = 0x5AC59172, Library = "SceSblACMgrForKernel", ReturnsValue = true)]

@@ -97,6 +97,52 @@ public sealed class AppMgrKernelTests(GuestMemoryFixture fixture) : IDisposable
         }
     }
 
+    /// <summary>NID_C4924946 is a development kit's process launch (SceAppMgr 3.74 0x8100282c): a retail unit answers
+    /// 0x80020012 to every call; with the development kit's dip switch (0x9F) the process manager creates the process
+    /// with the arguments as given (the option is not copied: its size word reaches the creation as it is) and its
+    /// errors come back. It answered 0x80020012 on a development kit too.</summary>
+    [Fact]
+    public void TheDevelopmentProcessLaunchGoesThroughTheProcessManager()
+    {
+        uint title = _harness.Str("PCSX00000");
+        uint path = _harness.Str("ux0:app/PCSX00000/eboot.bin");
+        uint option = _harness.Alloc(0x80);
+        GuestMemory.Fill(option, 0, 0x80);
+        GuestMemory.W32(option, 0x40);
+        Assert.Equal(unchecked((int)0x80020012), Call(Shell, "ksceAppMgr_C4924946", title, 0x1000000u, path, 0u, 0u, option));
+        SystemServicesVsh services = _harness.Module<SystemServicesVsh>();
+        Invoke(services, "ksceKernelSetDipsw", 0x9Fu);
+        try
+        {
+            Assert.Equal(SceError.MODULEMGR_NOENT, Call(Shell, "ksceAppMgr_C4924946", title, 0x1000000u, path, 0u, 0u, option));
+            Assert.Equal(unchecked((int)0x80020005), Call(Shell, "ksceAppMgr_C4924946", 0u, 0x1000000u, path, 0u, 0u, option));
+            Assert.Equal(unchecked((int)0x80029002), Call(Shell, "ksceAppMgr_C4924946", title, 0x3000000u, path, 0u, 0u, option));
+            GuestMemory.W32(option, 0x80);
+            Assert.Equal(unchecked((int)0x80020009), Call(Shell, "ksceAppMgr_C4924946", title, 0x1000000u, path, 0u, 0u, option));
+        }
+        finally
+        {
+            Invoke(services, "ksceKernelClearDipsw", 0x9Fu);
+        }
+    }
+
+    /// <summary>The module's launches give the process manager the GXM debugging setting of the registry for the
+    /// kernel's process (SceAppMgr 3.74 0x81011454): /DEVENV/TOOL vsh_uses_gxmdbg, not the game programs'
+    /// game_uses_gxmdbg; 0 without the key (a retail unit's registry). NID_324DD34E passed 0 whatever the
+    /// registry said.</summary>
+    [Fact]
+    public void TheLaunchesTakeTheKernelsGxmDebuggingSetting()
+    {
+        Assert.Equal(0u, AppMgr.GxmDebugging(_harness.Emu, KernelSpace.KernelPid));
+        var registry = Core.Firmware.Registry.For(_harness.Emu.Options.FsRoot);
+        registry.Define("/DEVENV/TOOL/vsh_uses_gxmdbg", Core.Firmware.Registry.KeyType.Int, 4);
+        registry.Define("/DEVENV/TOOL/game_uses_gxmdbg", Core.Firmware.Registry.KeyType.Int, 4);
+        Assert.True(registry.SetInt("/DEVENV/TOOL", "game_uses_gxmdbg", 1));
+        Assert.Equal(0u, AppMgr.GxmDebugging(_harness.Emu, KernelSpace.KernelPid));
+        Assert.True(registry.SetInt("/DEVENV/TOOL", "vsh_uses_gxmdbg", 1));
+        Assert.Equal(1u, AppMgr.GxmDebugging(_harness.Emu, KernelSpace.KernelPid));
+    }
+
     /// <summary>NID_324DD34E launches a process through the process manager (SceAppMgr 3.74 0x81002794): the option
     /// copied by its size word (none: a valid one of 0x40 bytes), the creation's errors come back. It answered
     /// 0x80800009 to every caller.</summary>
