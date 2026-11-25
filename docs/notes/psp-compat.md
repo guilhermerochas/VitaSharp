@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.pt-BR.md sha256=2f473cf8db43b75f43b028f4bca7f344803d963900e162f1f76031b8e230dd2d -->
+<!-- pair: psp-compat.pt-BR.md sha256=925e4665ae756b0fc4be7b037337140e0b2516954a1f4d392fece59b8db217c4 -->
 # PSP compatibility core (SceCompat, ScePspemu, Allegrex)
 
 *Português: [psp-compat.pt-BR.md](psp-compat.pt-BR.md).*
@@ -243,6 +243,50 @@ framebuffer in PSP memory and writes the pixels back, apart from the GXM rendere
   512). `sceDisplaySetFrameBufForCompat(x, y, width, height, pParam, opt)` (syscall `0x45BCB941`: x, y, width and a
   block {height, pParam, opt, sizes}) is a second plane ScePspemu places over it (checks in `Display.Compat.cs`); the
   presenter keeps it but does not composite it yet.
+
+### Allegrex speed: the block cache and the planned IL tier
+
+The PSP core runs at 333 MHz, so the interpreter has to sustain hundreds of millions of instructions per second
+for games to run at their native rate. Measure with `build/bench.sh --filter '*AllegrexBenchmarks*'`
+(tests/VitaSharp.Benchmarks/AllegrexBenchmarks.cs: integer, FPU, VFPU and call/memory loops, the time per
+instruction).
+
+**Block cache (done).** `AllegrexCore.Blocks.cs` decodes straight-line runs once (to a branch and its delay slot, a
+system instruction or a page end) into an array of small records: an operation code with the register numbers and the
+extended immediate already extracted. A jump table runs the common integer instructions inline (ALU, beq/bne, j/jal,
+jr/jalr, lw/sw); everything else goes through the full decoder. The inline instructions skip the per-instruction PC
+and Count bookkeeping, which is brought up to date before any other instruction, before an exception and at the end of
+a run, so whatever can observe it sees the values of the one-at-a-time core. A block remembers the block it last
+continued to, and a branch whose delay slot is plain goes straight into it without a lookup. Interrupts are checked
+between runs; whatever can make one pending ends the run (RaiseInterrupt/ClearInterrupt, COP0 and interrupt-control
+instructions, eret, exceptions, halt, Stop, a store a device answers with an interrupt), and a run stops at the
+instruction where Count reaches Compare, so events keep the per-instruction order. Blocks are keyed by physical
+address in 4 KB pages; the core's own stores drop the written page's blocks, the cache instruction drops a page
+(I-cache hit operations) or everything (index operations), the DMA controllers report what they write
+(`PspDmac.CodeWritten`), and other writers outside the core call `AllegrexCore.InvalidateCode` on the core's thread.
+That is stricter than the PSP, whose I-cache does not see stores at all. `sync` stays a no-op: it orders memory
+accesses and does not touch the I-cache.
+
+**IL tier (plan, not implemented).** The same tiering as the ARM CPU (`src/VitaSharp.Core/Cpu`: `Jit`, `Block`,
+`Backends/IlJitCompiler.cs`):
+
+1. Hotness: each block counts executed instructions; past a threshold (the ARM IL backend uses 400 000) it is queued
+   for the background compile workers, and keeps running in the interpreter until the compiled code is published.
+2. Code: one `DynamicMethod` per block, "call-threaded" like the ARM backend: a call to the handler of each
+   instruction with its word as a constant, so RyuJIT inlines the handlers and folds the field decoding. The handlers
+   move from `AllegrexCore` fields to a state struct (GPRs, HI/LO, the PC pair, the delay-slot flag) passed by
+   pointer, which also lets the JIT keep registers in locals within a block.
+3. Exits: a block returns the next PC; a direct branch whose target block is compiled can jump to it (exit linking,
+   as `Block.LinkSlots` does for the ARM native backend); an indirect jump goes through the dispatcher.
+4. Exactness: the cycle budget, the Count/Compare cap and the interrupt checks stay at block boundaries as in the
+   block cache; an instruction that may raise an exception (address errors, overflow, FPU traps) keeps its precise PC
+   and delay-slot flag by storing them before the instruction, as the interpreter does.
+5. Invalidation: dropping a page's blocks also drops their compiled code and unlinks the exits into them (the ARM
+   `BlockCache.Invalidate` does the same).
+6. Native AOT (Android) has no Reflection.Emit: the IL tier is off there, as for the ARM CPU, and the block cache is
+   the fast path; a native ARM64 tier (the ARM CPU's `NativeArm64Compiler` pattern) is the step after.
+7. Tests: the whole Allegrex suite runs again with the tier forced on (threshold 0), as the ARM JIT's tests do, so
+   every instruction test also covers the compiled path.
 
 ### What needs keys and what does not
 
