@@ -80,7 +80,15 @@ public sealed class GpuQueue : IDisposable
             IGpuBackend? old = Backend;
             string? title = sameTitle ? old?.TitleId : null;
             InstallBackend(null);
-            old?.Dispose();
+            if (factory != null)
+            {
+                old?.DisposeForReplacement();
+            }
+            else
+            {
+                old?.Dispose();
+            }
+
             if (factory != null)
             {
                 InstallBackend(factory());

@@ -105,6 +105,111 @@ public sealed class RendererDeviceHandoffTests(GuestMemoryFixture fixture)
         }
     }
 
+    /// <summary>
+    /// Headless (no surface: --headless, the test runs): a state load replaces the renderer through the GPU queue on
+    /// the load's transient thread. Before, the old renderer destroyed its Vulkan instance there and the new one created
+    /// another; with the Intel driver installed (its compiler igc64 is loaded with every driver), the thread's exit then
+    /// corrupted the native heap (0xC0000374 in RtlFreeHeap from the driver's per-thread storage callback, 25/11/2026).
+    /// Every replacement keeps the first device, from any thread, and the frames go on; a plain Dispose (the session
+    /// ends, no renderer follows) still destroys the device and leaves nothing kept in the options.
+    /// </summary>
+    [SoftwareVulkanFact]
+    public void HeadlessReplacementsKeepTheDeviceAndAPlainDisposeReleasesIt()
+    {
+        using IDisposable driver = SoftwareVulkan.Use();
+        using var harness = new HleHarness(fixture, "vkhandoffheadless");
+        var options = new VulkanRendererOptions();
+        GpuQueue gpu = harness.Emu.Gpu;
+        try
+        {
+            var workload = new RendererTextureTests.Workload(harness, multisample: 0);
+            var first = new VulkanRenderer(options);
+            Assert.False(first.DeviceKept);
+            string device = first.DeviceName;
+            gpu.Backend = first;
+            Assert.True(workload.Run(64) > 0);
+            foreach (string step in new[] { "state load", "second state load", "LoadExec" })
+            {
+                // the state load's own thread, which ends right after (SaveStateControl's "save-state steps")
+                var swap = new Thread(() => gpu.ReplaceBackend(() => new VulkanRenderer(options), sameTitle: step != "LoadExec"))
+                {
+                    Name = "replacement " + step,
+                };
+                swap.Start();
+                swap.Join();
+                VulkanRenderer renderer = Assert.IsType<VulkanRenderer>(gpu.Backend);
+                Assert.True(renderer.DeviceKept, $"the {step} made a new Vulkan instance and device without a window");
+                Assert.Equal(device, renderer.DeviceName);
+                Assert.Null(options._handoff);
+                long presents = renderer.PresentCount;
+                Assert.True(workload.Run(64) > 0);
+                gpu.WaitIdle();
+                Assert.True(renderer.PresentCount > presents, $"no frame presented after the {step}");
+            }
+
+            // the session ends without a next renderer: the device goes with the last one
+            gpu.WaitIdle();
+            IGpuBackend last = gpu.Backend!;
+            gpu.Backend = null;
+            last.Dispose();
+            Assert.Null(options._handoff);
+            var fresh = new VulkanRenderer(options);
+            try
+            {
+                Assert.False(fresh.DeviceKept);
+            }
+            finally
+            {
+                fresh.Dispose();
+            }
+
+            Assert.Null(options._handoff);
+        }
+        finally
+        {
+            gpu.WaitIdle();
+            gpu.Backend?.Dispose();
+            gpu.Backend = null;
+            options.ReleaseKeptDevice();
+        }
+    }
+
+    /// <summary>The queue tells a backend whether another one follows it: a swap with a factory disposes the old one
+    /// for its replacement, a swap to none (the session ends) disposes it plainly.</summary>
+    [Fact]
+    public void TheQueueDisposesForReplacementOnlyWhenABackendFollows()
+    {
+        using var gpu = new GpuQueue();
+        var first = new RecordingBackend();
+        gpu.Backend = first;
+        var second = new RecordingBackend();
+        gpu.ReplaceBackend(() => second);
+        Assert.Equal(["replacement"], first.Disposals);
+        Assert.Same(second, gpu.Backend);
+        gpu.ReplaceBackend(null);
+        Assert.Equal(["plain"], second.Disposals);
+        Assert.Null(gpu.Backend);
+    }
+
+    private sealed class RecordingBackend : IGpuBackend
+    {
+        public readonly List<string> Disposals = [];
+
+        public void Execute(GpuCommand command)
+        {
+        }
+
+        public void DisposeForReplacement()
+        {
+            Disposals.Add("replacement");
+        }
+
+        public void Dispose()
+        {
+            Disposals.Add("plain");
+        }
+    }
+
     [Fact]
     public void RendererOptionsKeepTheDeviceByDefault()
     {
