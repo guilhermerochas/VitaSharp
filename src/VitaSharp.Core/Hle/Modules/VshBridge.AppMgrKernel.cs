@@ -1,3 +1,4 @@
+using VitaSharp.Core.Io;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 
@@ -245,7 +246,7 @@ public sealed partial class AppMgr
 
     /// <summary>The source folders NID_1574E1A4 mounts: id 900 an application or its patch, 901 a save data folder (as
     /// the overlay resolves them).</summary>
-    static readonly string[] AppMountSources = ["ux0:/app/", "ux0:/patch/", "gro0:/app/", "grw0:/patch/"];
+    static readonly string[] AppMountSources = [.. new[] { FirmwareLayout.Applications, FirmwareLayout.Patches, FirmwareLayout.GameCardApplications, FirmwareLayout.GameCardPatches }.Select(folder => $"{folder.Device}:/{folder.Folder}/")];
 
     /// <summary>
     /// The caller's right to NID_1574E1A4's <paramref name="id"/> (SceAppMgr 3.74 0x810232ec): 0x6A/0x6B a PSM program
