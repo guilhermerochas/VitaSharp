@@ -141,12 +141,13 @@ public sealed class GxmFlowTests : IDisposable
         return GuestMemory.R32(o);
     }
 
-    private uint RenderTarget(ushort w, ushort h)
+    private uint RenderTarget(ushort w, ushort h, ushort multisampleMode = 0)
     {
         uint p = _harness.Alloc(0x14), o = Out();
         GuestMemory.Write(p + 4, w);
         GuestMemory.Write(p + 6, h);
         GuestMemory.Write(p + 8, (ushort)1);
+        GuestMemory.Write(p + 10, multisampleMode);
         GuestMemory.W32(p + 16, 0x1234);
         Assert.Equal(0, Call(Gxm, "sceGxmCreateRenderTarget", p, new Ptr<uint>(o)));
         return GuestMemory.R32(o);
@@ -558,6 +559,170 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(4, _rec.Kinds.Count(kind => kind == "BeginSceneCommand"));
     }
 
+    /// <summary>
+    /// What sceGxmBeginScene, sceGxmBeginSceneEx and _sceGxmBeginScene (libgxm, FW 3.74) check once the driver gave the
+    /// render target, in this order: a 2X multisample target needs a colour surface with the MSAA downscale mode
+    /// (UNSUPPORTED, before the region); the valid region { xMax, yMax } inside the target; the colour surface covering
+    /// the region in target pixels (a multisampled surface without downscale counts its size over the sample grid, a
+    /// downscaled one without multisampling twice its size); the depth/stencil stride covering the region's width
+    /// rounded up to 32, times the horizontal samples (before SDK 2.00 the width itself). Refused scenes stay closed.
+    /// </summary>
+    [Fact]
+    public void BeginSceneChecksTheSurfacesAgainstTheRenderTarget()
+    {
+        Init();
+        uint ctx = Context();
+        uint region = _harness.Alloc(0x20);
+        string[] entries = ["sceGxmBeginScene", "_sceGxmBeginScene", "sceGxmBeginSceneEx"];
+
+        uint Color(uint width, uint height, uint scaleMode)
+        {
+            uint surface = _harness.Alloc(0x40), stride = (width + 1) & ~1u;
+            Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceInit", surface, 0u, 0u, scaleMode, 0u, width, height, stride, _harness.Alloc(stride * height * 4)));
+            return surface;
+        }
+
+        uint Depth(uint strideInSamples)
+        {
+            uint surface = _harness.Alloc(0x20);
+            Assert.Equal(0, Call(Gxm, "sceGxmDepthStencilSurfaceInit", surface, 0x00044000u, 0u, strideInSamples, _harness.Alloc(strideInSamples * 256 * 4), 0u));
+            return surface;
+        }
+
+        // the old entry's region struct carries { xMax, yMax } at +8
+        int Begin(string entry, uint target, uint xMax, uint yMax, uint colorSurface, uint depthSurface)
+        {
+            GuestMemory.W32(region, xMax);
+            GuestMemory.W32(region + 4, yMax);
+            GuestMemory.W32(region + 8, xMax);
+            GuestMemory.W32(region + 12, yMax);
+            uint regionArgument = xMax == uint.MaxValue ? 0u : region;
+            int result = entry switch
+            {
+                "sceGxmBeginSceneEx" => Call(Gxm, entry, ctx, 0u, target, regionArgument, 0u, 0u, colorSurface, depthSurface, depthSurface),
+                _ => Call(Gxm, entry, ctx, 0u, target, regionArgument, 0u, 0u, colorSurface, depthSurface),
+            };
+            if (result == 0)
+            {
+                Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+            }
+
+            return result;
+        }
+
+        const uint Whole = uint.MaxValue;
+        const uint None = 0, Downscale = 1;
+        uint rt = RenderTarget(96, 64), rt2x = RenderTarget(96, 64, 1), rt4x = RenderTarget(96, 64, 2);
+        foreach (string entry in entries)
+        {
+            // the region lies inside the target
+            Assert.Equal(0, Begin(entry, rt, 95, 63, Color(96, 64, None), 0u));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt, 96, 63, Color(128, 128, None), 0u));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt, 95, 64, Color(128, 128, None), 0u));
+            // the colour surface covers it; with downscale and no multisampling, twice its size does
+            Assert.Equal(0, Begin(entry, rt, 31, 15, Color(32, 16, None), 0u));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt, Whole, 0, Color(95, 64, None), 0u));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt, 32, 15, Color(32, 16, None), 0u));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt, 31, 16, Color(32, 16, None), 0u));
+            Assert.Equal(0, Begin(entry, rt, Whole, 0, Color(48, 32, Downscale), 0u));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt, Whole, 0, Color(47, 32, Downscale), 0u));
+
+            // 2X (one sample across, two down) takes only a downscaled colour surface, before the region is looked at
+            Assert.Equal(UNSUPPORTED, Begin(entry, rt2x, Whole, 0, Color(96, 128, None), 0u));
+            Assert.Equal(UNSUPPORTED, Begin(entry, rt2x, 200, 63, Color(96, 128, None), 0u));
+            Assert.Equal(0, Begin(entry, rt2x, Whole, 0, Color(96, 64, Downscale), 0u));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt2x, Whole, 0, Color(96, 63, Downscale), 0u));
+            // 4X without downscale: a surface at the sample grid (two by two)
+            Assert.Equal(0, Begin(entry, rt4x, Whole, 0, Color(192, 128, None), 0u));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt4x, Whole, 0, Color(190, 128, None), 0u));
+            Assert.Equal(0, Begin(entry, rt4x, Whole, 0, Color(96, 64, Downscale), 0u));
+
+            // the depth/stencil stride covers the region's width rounded up to 32 samples, times the samples across;
+            // with no colour surface the 2X rule does not apply
+            Assert.Equal(0, Begin(entry, rt, Whole, 0, 0u, Depth(96)));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt, Whole, 0, 0u, Depth(64)));
+            Assert.Equal(0, Begin(entry, rt, 64, 63, 0u, Depth(96)));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt, 64, 63, 0u, Depth(64)));
+            Assert.Equal(0, Begin(entry, rt, 63, 63, 0u, Depth(64)));
+            Assert.Equal(0, Begin(entry, rt2x, Whole, 0, 0u, Depth(96)));
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt4x, Whole, 0, 0u, Depth(160)));
+            Assert.Equal(0, Begin(entry, rt4x, Whole, 0, 0u, Depth(192)));
+            // the colour is checked before the depth/stencil
+            Assert.Equal(INVALID_VALUE, Begin(entry, rt, Whole, 0, Color(32, 32, None), Depth(96)));
+        }
+
+        Assert.Equal(NOT_WITHIN_SCENE, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+
+        // before SDK 2.00 the depth/stencil stride only has to cover the region's width (without rounding it up to 32):
+        // with two samples across, 65 pixels need 130 samples instead of 192
+        Assert.Equal(INVALID_VALUE, Begin("sceGxmBeginScene", rt4x, 64, 63, 0u, Depth(160)));
+        Assert.Equal(0, Begin("sceGxmBeginScene", rt4x, 64, 63, 0u, Depth(192)));
+        SetMainModuleSdkVersion(0x01FFFFFF);
+        Assert.Equal(0, Begin("sceGxmBeginScene", rt4x, 64, 63, 0u, Depth(160)));
+        Assert.Equal(INVALID_VALUE, Begin("sceGxmBeginScene", rt4x, 64, 63, 0u, Depth(128)));
+        SetMainModuleSdkVersion(0x02000000);
+        Assert.Equal(INVALID_VALUE, Begin("sceGxmBeginScene", rt4x, 64, 63, 0u, Depth(160)));
+    }
+
+    /// <summary>
+    /// sceGxmColorSurfaceSetFormat (libgxm, FW 3.74): NULL INVALID_POINTER; a disabled surface UNSUPPORTED, which before
+    /// SDK 3.10 (compatibility bit 0x8000) is a surface without data, from 3.10 on one sceGxmColorSurfaceInit did not
+    /// describe (InitDisabled, zeroed memory); an unknown format INVALID_VALUE (0xD0800000 only before SDK 3.10); a
+    /// format of another pixel size UNSUPPORTED (bits per pixel, bytes before SDK 1.60: 0x60000000 is 16 bits in 4
+    /// bytes); a format a downscaled surface cannot take UNSUPPORTED. The format and the surface's texture change only
+    /// when it is taken.
+    /// </summary>
+    [Theory]
+    [InlineData(0x03570011u)]
+    [InlineData(0x03100000u)]
+    [InlineData(0x030FFFFFu)]
+    [InlineData(0x01500011u)]
+    public void ColorSurfaceSetFormatFollowsTheFirmwareRules(uint sdkVersion)
+    {
+        SetMainModuleSdkVersion(sdkVersion);
+        bool enabledByData = sdkVersion < 0x03100000;
+        bool bytesPerPixel = sdkVersion < 0x01600000;
+        uint described = _harness.Alloc(0x40), disabled = _harness.Alloc(0x40), zeroed = _harness.Alloc(0x40);
+        uint data = _harness.Alloc(64 * 64 * 4);
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceInit", described, 0x00000000u, 0u, 0u, 0u, 64u, 64u, 64u, 0u));
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceInitDisabled", disabled));
+
+        Assert.Equal(INVALID_POINTER, Call(Gxm, "sceGxmColorSurfaceSetFormat", 0u, 0u));
+        Assert.Equal(UNSUPPORTED, Call(Gxm, "sceGxmColorSurfaceSetFormat", disabled, 0x00100000u));
+        Assert.Equal(UNSUPPORTED, Call(Gxm, "sceGxmColorSurfaceSetFormat", zeroed, 0x00100000u));
+        // described without data: enabled from SDK 3.10 on, disabled before
+        Assert.Equal(enabledByData ? UNSUPPORTED : 0, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x00100000u));
+        // before 3.10 a surface is enabled by its data, and SetData refuses a disabled one: give it data by hand
+        Assert.Equal(enabledByData ? UNSUPPORTED : 0, Call(Gxm, "sceGxmColorSurfaceSetData", described, data));
+        GuestMemory.W32(described + 16, data);
+
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x00100000u));
+        Assert.Equal(0x00100000u, (uint)Invoke(Gxm, "sceGxmColorSurfaceGetFormat", described)!);
+        // the surface's texture follows: U8U8U8U8 with the ARGB swizzle
+        Assert.Equal(0x0C001000u, (uint)Invoke(Gxm, "sceGxmTextureGetFormat", described + 32)!);
+
+        // unknown formats; 0xD0800000 (32 bits) only before SDK 3.10
+        Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x20000000u));
+        Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x01800000u));
+        Assert.Equal(enabledByData ? 0 : INVALID_VALUE, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0xD0800000u));
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x00000000u));
+
+        // another pixel size: 16 or 64 bits on a 32-bit surface; 0x60000000 is 16 bits, but 4 bytes before SDK 1.60
+        Assert.Equal(UNSUPPORTED, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x50000000u));
+        Assert.Equal(UNSUPPORTED, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x01000000u));
+        Assert.Equal(bytesPerPixel ? 0 : UNSUPPORTED, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x60000000u));
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x00000000u));
+        Assert.Equal(0x00000000u, (uint)Invoke(Gxm, "sceGxmColorSurfaceGetFormat", described)!);
+
+        // a downscaled surface takes only the formats that can be downscaled (0x10800000 cannot)
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x10800000u));
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x00000000u));
+        Invoke(Gxm, "sceGxmColorSurfaceSetScaleMode", described, 1u);
+        Assert.Equal(UNSUPPORTED, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x10800000u));
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceSetFormat", described, 0x00800000u));
+        Assert.Equal(0x00800000u, (uint)Invoke(Gxm, "sceGxmColorSurfaceGetFormat", described)!);
+    }
+
     /// <summary>Points the main module's SceProcessParam at an SDK version (+0xC, magic "PSP2" at +4).</summary>
     private void SetMainModuleSdkVersion(uint sdkVersion)
     {
@@ -933,15 +1098,21 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmSetVisibilityBuffer", deferred, buf + 4, 0x18u));
         Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmSetYuvProfile", deferred, 0u, 0u));
 
-        // a profile above 3 is taken only from a program built with an SDK before 2.50 (process param +0x10)
+        // a profile above 3 is taken only from a program built with an SDK before 2.50: libgxm asks
+        // sceKernelGetMainModuleSdkVersion (SceProcessParam +0xC); +0x10 is the main thread's name pointer, NULL for
+        // many programs, and does not make a recent program lenient
         Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmSetYuvProfile", ctx, 0u, 4u));
-        uint processParam = _harness.Alloc(0x20);
-        GuestMemory.W32(processParam, 0x20);
-        GuestMemory.W32(processParam + 0x10, 0x02400011);
-        typeof(VitaSharp.Core.Loader.Linker).GetProperty("ProcessParam")!.SetValue(_harness.Emu.Linker, processParam);
+        SetMainModuleSdkVersion(0x03570011);
+        Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmSetYuvProfile", ctx, 0u, 4u));
+        Assert.Equal(INVALID_VALUE, Call(Gxm, "GxmTestSetMode", ctx, 2u, 0u));
+        SetMainModuleSdkVersion(0x02400011);
+        uint processParam = _harness.Emu.Linker.ProcessParam;
+        GuestMemory.W32(processParam + 0x10, _harness.Alloc(0x10));
+        Assert.Equal(0x02400011, Call(_harness.Module<SystemSoftware>(), "sceKernelGetMainModuleSdkVersion"));
         Assert.Equal(0, Call(Gxm, "sceGxmSetYuvProfile", ctx, 0u, 4u));
         Assert.Equal((byte)4, context.YuvProfile[0]);
-        GuestMemory.W32(processParam + 0x10, 0x02500000);
+        Assert.Equal(0, Call(Gxm, "GxmTestSetMode", ctx, 2u, 0u));
+        SetMainModuleSdkVersion(0x02500000);
         Assert.Equal(INVALID_VALUE, Call(Gxm, "sceGxmSetYuvProfile", ctx, 0u, 5u));
     }
 
@@ -1149,7 +1320,9 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(1u, (uint)Invoke(Gxm, "sceGxmColorSurfaceGetScaleMode", cs)!);
         Invoke(Gxm, "sceGxmColorSurfaceSetScaleMode", cs, 0u);
         Assert.Equal(0u, (uint)Invoke(Gxm, "sceGxmColorSurfaceGetScaleMode", cs)!);
-        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceSetFormat", cs, 0x0u));
+        // a 24-bit format takes another 24-bit one (here another swizzle), not a 32-bit one
+        Assert.Equal(UNSUPPORTED, Call(Gxm, "sceGxmColorSurfaceSetFormat", cs, 0x0u));
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceSetFormat", cs, 0x10100000u));
         Assert.Equal(INVALID_POINTER, Call(Gxm, "sceGxmColorSurfaceSetDitherMode", 0u, 8u));
 
         // textures: power-of-two sizes for swizzled and cube, limits on size and mips

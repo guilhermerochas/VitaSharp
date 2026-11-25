@@ -509,7 +509,93 @@ public sealed partial class Gxm : HleModule
     }
 
     [Hle(ReturnsValue = true)] uint sceGxmColorSurfaceGetFormat(uint surface) => GuestMemory.R32(surface + 20);
-    [Hle] int sceGxmColorSurfaceSetFormat(uint surface, uint f) { GuestMemory.W32(surface + 20, f); return 0; }
+    /// <summary>
+    /// sceGxmColorSurfaceSetFormat (libgxm, FW 3.74): NULL surface SCE_GXM_ERROR_INVALID_POINTER; a disabled surface
+    /// (<see cref="ColorSurfaceEnabled"/>: before SDK 3.10, compatibility bit 0x8000, one without data; from 3.10 on, one
+    /// sceGxmColorSurfaceInit did not describe) SCE_GXM_ERROR_UNSUPPORTED; a format libgxm does not know (or 0xD0800000
+    /// from SDK 3.10 on) SCE_GXM_ERROR_INVALID_VALUE; a format of another pixel size (bits, or bytes before SDK 1.60),
+    /// or one a downscaled surface cannot take, SCE_GXM_ERROR_UNSUPPORTED. The surface's texture takes the format too.
+    /// </summary>
+    [Hle]
+    int sceGxmColorSurfaceSetFormat(uint surface, uint format)
+    {
+        if (surface == 0)
+        {
+            return ERR_INVALID_POINTER;
+        }
+
+        if (!ColorSurfaceEnabled(surface))
+        {
+            return ERR_UNSUPPORTED;
+        }
+
+        if (!ColorFormatKnown(format, out GxmColorFormatInfo info))
+        {
+            return ERR_INVALID_VALUE;
+        }
+
+        ColorFormatKnown(GuestMemory.R32(surface + 20), out GxmColorFormatInfo current);
+        bool samePixelSize = MainModuleSdkVersion() < ColorFormatBytesSdkLimit
+            ? current.BytesPerPixel == info.BytesPerPixel
+            : current.BitsPerPixel == info.BitsPerPixel;
+        if (!samePixelSize)
+        {
+            return ERR_UNSUPPORTED;
+        }
+
+        if (sceGxmColorSurfaceGetScaleMode(surface) != 0 && !info.Downscalable)
+        {
+            return ERR_UNSUPPORTED;
+        }
+
+        GuestMemory.W32(surface + 20, format);
+        sceGxmTextureSetFormat(surface + 32, ColorToTextureFormat(format));
+        return 0;
+    }
+
+    /// <summary>libgxm 3.74 sets bit 2 of its compatibility word for programs built with an SDK before 1.60: they
+    /// compare colour formats by bytes per pixel (its format table keeps both sizes; one format differs).</summary>
+    const uint ColorFormatBytesSdkLimit = 0x01600000;
+
+    /// <summary>A colour format of libgxm 3.74's table: its pixel size in bits and the byte size the pre-1.60 rules
+    /// use, whether a downscaled (MSAA) surface takes it, and whether only programs before SDK 3.10 may use it.</summary>
+    readonly record struct GxmColorFormatInfo(byte BitsPerPixel, byte BytesPerPixel, bool Downscalable, bool BeforeSdk310Only);
+
+    /// <summary>Whether libgxm 3.74 takes <paramref name="format"/> as a colour format (its base: bits 28-31 and
+    /// 23-24); the rest of the word is the swizzle.</summary>
+    bool ColorFormatKnown(uint format, out GxmColorFormatInfo info)
+    {
+        info = ColorFormatTable(format & 0xF1800000);
+        if (info.BitsPerPixel == 0)
+        {
+            return false;
+        }
+
+        return !info.BeforeSdk310Only || MainModuleSdkVersion() < ColorSurfaceEnabledByDataSdkLimit;
+    }
+
+    static GxmColorFormatInfo ColorFormatTable(uint formatBase) => formatBase switch
+    {
+        0x00000000 => new(32, 4, true, false),
+        0x10000000 => new(24, 3, true, false),
+        0x30000000 or 0x40000000 or 0x50000000 => new(16, 2, true, false),
+        0x60000000 => new(16, 4, true, false),
+        0xF0000000 => new(16, 2, true, false),
+        0x00800000 => new(32, 4, true, false),
+        0x10800000 => new(32, 4, false, false),
+        0x20800000 => new(16, 2, true, false),
+        0x30800000 => new(32, 4, true, false),
+        0x40800000 => new(16, 2, true, false),
+        0x50800000 or 0x60800000 => new(32, 4, true, false),
+        0x80800000 or 0x90800000 => new(8, 1, true, false),
+        0xA0800000 or 0xB0800000 or 0xC0800000 => new(16, 2, true, false),
+        0xD0800000 => new(32, 4, true, true),
+        0xE0800000 => new(32, 4, true, false),
+        0x01000000 => new(64, 8, true, false),
+        0x11000000 => new(64, 8, false, false),
+        0x21000000 or 0x31000000 or 0x41000000 => new(32, 4, true, false),
+        _ => default,
+    };
     [Hle(ReturnsValue = true)] uint sceGxmColorSurfaceGetType(uint surface) => GuestMemory.R32(surface + 24);
     [Hle] uint sceGxmColorSurfaceGetStrideInPixels(uint surface) => GuestMemory.R32(surface + 12);
     [Hle] bool sceGxmColorSurfaceIsEnabled(uint surface) => ColorSurfaceEnabled(surface);
@@ -757,8 +843,8 @@ public sealed partial class Gxm : HleModule
     /// in its order: a NULL (here also an unknown) context is SCE_GXM_ERROR_INVALID_POINTER; a deferred context or
     /// <paramref name="badFlags"/> (scene flags outside bits 0-3) SCE_GXM_ERROR_INVALID_VALUE; a NULL render target or
     /// any vertex sync object (the hardware has none) SCE_GXM_ERROR_INVALID_POINTER; a context already in a scene
-    /// SCE_GXM_ERROR_WITHIN_SCENE; then the surfaces (SCE_GXM_ERROR_INVALID_VALUE), and last the render target the GPU
-    /// driver does not know (SCE_GXM_ERROR_DRIVER).
+    /// SCE_GXM_ERROR_WITHIN_SCENE; then the surfaces (SCE_GXM_ERROR_INVALID_VALUE), the render target the GPU driver
+    /// does not know (SCE_GXM_ERROR_DRIVER), and last the surfaces against the target (<see cref="CheckSceneSurfaces"/>).
     /// </summary>
     int BeginScene(uint ctx, uint badFlags, uint renderTarget, uint validRegion, uint vertexSync, uint fragmentSync, uint colorSurface,
         DepthSurfaceInfo? depth, bool depthValid)
@@ -811,11 +897,15 @@ public sealed partial class Gxm : HleModule
             return ERR_DRIVER;
         }
 
+        int surfacesError = CheckSceneSurfaces(rt, validRegion, colorEnabled ? colorSurface : 0, depth, out uint xMax, out uint yMax);
+        if (surfacesError != 0)
+        {
+            return surfacesError;
+        }
+
         c.InScene = true;
         c.RenderTarget = rt;
         c.FragmentSyncObject = fragmentSync;
-        uint xMax = validRegion != 0 ? GuestMemory.R32(validRegion) : rt.Width - 1u;
-        uint yMax = validRegion != 0 ? GuestMemory.R32(validRegion + 4) : rt.Height - 1u;
         SetDefaultRegionClipAndViewport(c, xMax, yMax);
         DisplayHold? hold = WaitForDisplayRelease(fragmentSync);
         if (hold != null)
@@ -836,6 +926,77 @@ public sealed partial class Gxm : HleModule
             Depth = depth,
             YuvProfiles = new GxmYuvProfiles(c.YuvProfile[0], c.YuvProfile[1]),
         });
+        return 0;
+    }
+
+    /// <summary>libgxm 3.74 sets bit 10 of its compatibility word for programs built with an SDK before 2.00: their
+    /// depth/stencil stride only has to cover the valid region's width, not that width rounded up to 32 samples.</summary>
+    const uint UnalignedDepthStrideSdkLimit = 0x02000000;
+
+    /// <summary>
+    /// The checks sceGxmBeginScene, sceGxmBeginSceneEx and _sceGxmBeginScene make once the GPU driver gave the render
+    /// target (libgxm, FW 3.74), in its order: a 2X multisample target takes only a colour surface with the MSAA
+    /// downscale mode (SCE_GXM_ERROR_UNSUPPORTED); the valid region { xMax, yMax } lies inside the target; the enabled
+    /// colour surface covers it (its size in target pixels: twice its size with downscale and no multisampling, its
+    /// size over the sample counts for a multisampled surface without downscale); the enabled depth/stencil surface's
+    /// stride in samples covers the region's width (rounded up to 32, before SDK 2.00 not) times the horizontal sample
+    /// count. Each other failure is SCE_GXM_ERROR_INVALID_VALUE. <paramref name="colorSurface"/> is 0 when the scene
+    /// has no enabled colour surface.
+    /// </summary>
+    int CheckSceneSurfaces(GxmRenderTarget rt, uint validRegion, uint colorSurface, DepthSurfaceInfo? depth, out uint xMax, out uint yMax)
+    {
+        // the driver's sample grid: 2X is one sample across and two down, 4X two by two, anything else one
+        uint samplesX = rt.MultisampleMode == 2 ? 2u : 1u;
+        uint samplesY = rt.MultisampleMode is 1 or 2 ? 2u : 1u;
+        bool downscale = colorSurface != 0 && sceGxmColorSurfaceGetScaleMode(colorSurface) == 1;
+        if (colorSurface != 0 && samplesX == 1 && samplesY == 2 && !downscale)
+        {
+            xMax = yMax = 0;
+            return ERR_UNSUPPORTED;
+        }
+
+        xMax = rt.Width - 1u;
+        yMax = rt.Height - 1u;
+        if (validRegion != 0)
+        {
+            xMax = GuestMemory.R32(validRegion);
+            yMax = GuestMemory.R32(validRegion + 4);
+            if (xMax >= rt.Width || yMax >= rt.Height)
+            {
+                return ERR_INVALID_VALUE;
+            }
+        }
+
+        if (colorSurface != 0)
+        {
+            uint width = GuestMemory.R32(colorSurface + 4);
+            uint height = GuestMemory.R32(colorSurface + 8);
+            if ((samplesX >= 2 || samplesY >= 2) && !downscale)
+            {
+                width /= samplesX;
+                height /= samplesY;
+            }
+            else if (samplesX == 1 && samplesY == 1 && downscale)
+            {
+                width <<= 1;
+                height <<= 1;
+            }
+
+            if (width < xMax + 1 || height < yMax + 1)
+            {
+                return ERR_INVALID_VALUE;
+            }
+        }
+
+        if (depth != null)
+        {
+            uint rowSamples = MainModuleSdkVersion() < UnalignedDepthStrideSdkLimit ? xMax + 1 : (xMax + 0x20) & ~0x1Fu;
+            if (depth.StrideInSamples < samplesX * rowSamples)
+            {
+                return ERR_INVALID_VALUE;
+            }
+        }
+
         return 0;
     }
 

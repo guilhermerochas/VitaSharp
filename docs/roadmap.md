@@ -4117,6 +4117,34 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Teste: `KernelPluginBootOrderTests`. Testar: com "Ativar Plugins do Kernel" ligado, abrir um título; o `last.log`
   mostra cada `kernel plugin ...: loaded and started (...) (at system boot)` e `kernel plugins: N of M loaded and started
   at system boot` antes da linha do título (`PSM title ...`/`Loading ...`), também quando o título falha.
+- [ ] (23/11/2026, falta testar) [P3][P] SDK do programa lido no lugar certo para as regras antigas do libgxm
+  (fix/gxmex4): o libgxm 3.74 pede o SDK ao `sceKernelGetMainModuleSdkVersion` (SceProcessParam +0xC); o VitaSharp
+  lia +0x10, que é o ponteiro do nome da thread principal: com nome NULL todo programa ganhava as regras dos SDKs
+  antes do 2.50 (perfil YUV acima de 3 no `sceGxmSetYuvProfile`, modo 2 no NID_D352F90A), e com nome nenhum programa
+  antigo as ganhava. Agora as duas funções seguem o SDK do programa. Testes:
+  `GxmFlowTests.YuvProfileAndVisibilityBufferFollowTheFirmwareChecks` (falha sem a correção). Testar: os filmes e as
+  texturas YUV dos jogos continuam com as cores de antes (nenhum `sceGxmSetYuvProfile: 0x805B0003` novo no log).
+- [ ] (23/11/2026, falta testar) [P3][P] `sceGxmBeginScene` confere as superfícies contra o render target como o
+  libgxm 3.74 (fix/gxmex4; também `sceGxmBeginSceneEx` e `_sceGxmBeginScene`), depois do driver achar o render
+  target e nesta ordem: render target 2X com cor que não seja MSAA downscale → SCE_GXM_ERROR_UNSUPPORTED
+  (0x805B0009); região válida fora do render target → INVALID_VALUE; superfície de cor menor que a região (em pixels
+  do alvo: com MSAA sem downscale o tamanho dividido pela grade de amostras, com downscale sem MSAA o dobro) →
+  INVALID_VALUE; stride da profundidade menor que a largura da região arredondada para 32 vezes as amostras na
+  horizontal (antes do SDK 2.00, bit 0x400, sem arredondar) → INVALID_VALUE. A largura/altura da cor vem do que o
+  `sceGxmColorSurfaceInit` recebeu (o libgxm lê da textura embutida, igual para superfícies lineares e tiled).
+  Falta: a quarta palavra que o driver devolve do render target, que quando não é zero exige a região inteira (ver o
+  que é no SceGpuEs4). Testes: `GxmFlowTests.BeginSceneChecksTheSurfacesAgainstTheRenderTarget` (falha sem a
+  correção). Testar: os jogos que o usuário já abre continuam abrindo e mostrando imagem, em especial os com MSAA
+  (nenhum `sceGxmBeginScene: 0x805B0003` ou `0x805B0009` novo no log).
+- [ ] (23/11/2026, falta testar) [P3][P] `sceGxmColorSurfaceSetFormat` como o libgxm 3.74 (fix/gxmex4): superfície
+  NULL → INVALID_POINTER; desligada → UNSUPPORTED (antes do SDK 3.10, bit 0x8000, é a sem dados; do 3.10 em diante a
+  que o `sceGxmColorSurfaceInit` não descreveu); formato que a tabela do libgxm não conhece → INVALID_VALUE
+  (0xD0800000 só antes do SDK 3.10); formato de outro tamanho de pixel (bits; bytes antes do SDK 1.60) ou que uma
+  superfície com downscale não aceita → UNSUPPORTED; ao aceitar, a textura da superfície também troca de formato
+  (antes só gravava o formato, sem conferir nada). Falta: as mesmas checagens de formato no
+  `sceGxmColorSurfaceInit` (formato desconhecido, downscale, tipos tiled/swizzled). Testes:
+  `GxmFlowTests.ColorSurfaceSetFormatFollowsTheFirmwareRules` (SDK 1.50/3.0F/3.10/3.57). Testar: os jogos que o
+  usuário já abre continuam com as cores de antes (nenhum `sceGxmColorSurfaceSetFormat: 0x805B000x` no log).
 
 - [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo analisável e reexecutável sem o jogo (feat/capself1,
   `docs/captures.md`): (1) nenhum arquivo da gravação leva dado pessoal: uma última etapa troca, em todo texto e no
