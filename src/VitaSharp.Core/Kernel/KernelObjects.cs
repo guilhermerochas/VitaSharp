@@ -284,6 +284,9 @@ public static class SceError
     public const int INVALID_PID = unchecked((int)0x80029001);
     public const int NO_PROCESS_DATA = unchecked((int)0x8002900B);
     public const int MODULEMGR_NOENT = unchecked((int)0x8002D01C);
+    /// <summary>A module whose export table the module manager refuses (a syscall library outside the kernel, or
+    /// one with variables).</summary>
+    public const int MODULEMGR_ILLEGAL_EXPORT = unchecked((int)0x8002D01E);
     public const int LIBRARYDB_NO_MOD = unchecked((int)0x8002D082);
     public const int ERRNO_ENOSYS = unchecked((int)0x80010058);
 

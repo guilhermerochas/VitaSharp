@@ -1012,6 +1012,28 @@ public static class ModuleLoader
             m.ExtabEnd = infoBase + extabEnd;
         }
 
+        // FW 3.74 modulemgr checks the export table before linking anything: a syscall library (attribute 0x4000) is
+        // the kernel's to export and has no variables; a user module that exports one, or a kernel one with
+        // variables, is refused (0x8002D01E)
+        for (uint p = infoBase + exportTop; p < infoBase + exportEnd;)
+        {
+            Span<byte> ex = GuestMemory.Span(p, 0x20);
+            ushort attr = U16LE(ex, 4);
+            if ((attr & Linker.SyscallExportAttr) != 0 && (!kernel || U16LE(ex, 8) != 0))
+            {
+                throw new ModuleRefusedException(Kernel.SceError.MODULEMGR_ILLEGAL_EXPORT,
+                    $"{m.Path}: {(kernel ? "a syscall library with variables" : "a user module exporting a syscall library")} (library 0x{U32LE(ex, 0x10):X8})");
+            }
+
+            ushort size = U16LE(ex, 0);
+            if (size == 0)
+            {
+                break;
+            }
+
+            p += size;
+        }
+
         // exports first (so a module can resolve against itself), then imports
         for (uint p = infoBase + exportTop; p < infoBase + exportEnd;)
         {

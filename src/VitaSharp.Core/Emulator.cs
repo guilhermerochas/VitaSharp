@@ -680,6 +680,11 @@ public sealed partial class Emulator : IDisposable
             return refused.Error;
         }
 
+        if (e is Loader.ModuleRefusedException tables)
+        {
+            return tables.Error;
+        }
+
         if (e is FileNotFoundException or DirectoryNotFoundException)
         {
             return SceError.MODULEMGR_NOENT;
@@ -697,7 +702,7 @@ public sealed partial class Emulator : IDisposable
     /// encrypted module without its license): the module manager returns <see cref="ModuleLoadError"/> for it.</summary>
     public static bool IsModuleLoadFailure(Exception e) =>
         e is FileNotFoundException or DirectoryNotFoundException or InvalidDataException or SelfLicenseMissingException or TitleLicenseMissingException
-        or TitleKeyException;
+        or TitleKeyException or Loader.ModuleRefusedException;
 
     /// <summary>A process whose executable never ran (its load failed): it goes at once, without the end event a started
     /// application gives the shell (the shell never heard of it).</summary>

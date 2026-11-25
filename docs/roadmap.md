@@ -364,8 +364,9 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   origem, app0 com a atualização por cima); achado e corrigido na revalidação: a listagem de pasta do app0 com
   atualização (`App0UpdateListingTests`, em "Corrigido, falta o usuário testar"). Montagens somente leitura (24/11/2026,
   adr4): achado e corrigido, em "Corrigido, falta o usuário testar" (`ReadOnlyMountTests`). Imports sem quem
-  exporte (24/11/2026, adr4): agora nomeados no log e no F8/report (em "Corrigido, falta o usuário testar"). Falta:
-  permissões de módulos de sistema.
+  exporte (24/11/2026, adr4): agora nomeados no log e no F8/report (em "Corrigido, falta o usuário testar").
+  Permissões (25/11/2026, adr4): biblioteca de syscall só do kernel, em "Corrigido, falta o usuário testar". Falta:
+  NIDs (conferir as outras checagens da tabela de exports e imports do modulemgr 3.74).
 - [ ] [P3][M] (opção futura, decisão do lead: não agora) Import sem quem exporte com o stub do 3.74: no modulemgr 3.74
   (decomp, só estudo) um NID que a biblioteca não exporta ("Library function entry not found ... (ignored)") ou de uma
   biblioteca ainda não carregada fica com o stub "não ligado" `sub r12, pc, #8; mov pc, #0` (0xE24FC008, 0xE3A0F000):
@@ -3312,6 +3313,13 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (25/11/2026, falta testar) [P3][M] Biblioteca de syscall só do kernel, como o modulemgr 3.74 (fix/adr4). O
+  modulemgr 3.74 confere a tabela de exports antes de ligar o módulo: uma biblioteca de syscall (atributo 0x4000, as
+  funções que o código de usuário alcança pelo kernel) só pode ser exportada por um módulo do kernel e sem variáveis;
+  um módulo de usuário que exporte uma, ou um do kernel com variáveis, é recusado com 0x8002D01E sem ligar nada. O
+  VitaSharp carregava o módulo de usuário e servia a biblioteca. Testes: `SyscallExportPermissionTests`. Testar: os
+  plugins de kernel (taiHEN, kubridge) e os homebrews de sempre continuam carregando.
 
 - [ ] (24/11/2026, falta testar) [P3][M] Import sem quem exporte nomeado no log e no F8/report (fix/adr4). No Vita
   3.74 a chamada de um import que nenhum módulo exporta (um NID que o firmware não tem) salta para 0 pelo stub "não
