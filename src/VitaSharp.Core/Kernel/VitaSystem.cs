@@ -266,6 +266,11 @@ public sealed class VitaSystem
     /// <summary>Registers the kernel process's record under <see cref="KernelSpace.KernelPid"/>.</summary>
     internal void RegisterKernelProcess(Emulator kernel)
     {
+        if (DataAbortHandlerRegistered)
+        {
+            kernel.Code.ArmDataAborts();
+        }
+
         Objects.Put(new ProcessObject(kernel) { Uid = KernelSpace.KernelPid, OwnerPid = KernelSpace.KernelPid });
     }
 
@@ -355,8 +360,20 @@ public sealed class VitaSystem
 
     public bool IsForeground(Emulator emulator) => ReferenceEquals(Volatile.Read(ref _foreground), emulator) || _foreground == null;
 
+    /// <summary>A kernel module registered a data abort handler (<see cref="GuestThread.ArmDataAborts"/>): every process,
+    /// also the ones started later, checks its guest accesses (<see cref="BlockCache.DataAbortGuards"/>).</summary>
+    internal bool DataAbortHandlerRegistered { get; set; } = Environment.GetEnvironmentVariable(EnvVars.DataAbortGuards) == "1";
+
+    /// <summary><see cref="EnvVars.DataAbortGuards"/>=0 (measurement): the guards are never switched on.</summary>
+    internal static bool DataAbortGuardsOff { get; } = Environment.GetEnvironmentVariable(EnvVars.DataAbortGuards) == "0";
+
     internal int Register(Emulator emulator)
     {
+        if (DataAbortHandlerRegistered)
+        {
+            emulator.Code.ArmDataAborts();
+        }
+
         int pid = Objects.Register(new ProcessObject(emulator));
         lock (_lock)
         {

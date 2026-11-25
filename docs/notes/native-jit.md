@@ -18,6 +18,24 @@ Branch `feat/native-jit` (from main ff80a08). Not merged, not pushed.
 | Media instructions, VLD2-4/VST2-4, VSHL.reg.64, VMULL, VCLS, VQMOVN inline on both backends; cheaper compilation (branch perf/jit-complete) | done, see "perf/jit-complete" below |
 | ARM64 code quality: pinned block counters, compare + branch fusion, STP/LDP state flushes, SIMD register cache, lazy FPCR (branch perf/arm64-jit) | done in the sandbox, falta medir no aparelho; see "perf/arm64-jit" below |
 
+## Data aborts (feat/exc2, 2026-11-21)
+
+Guest accesses to pages no block maps raise a data abort (Cpu/DataAborts.cs) once a kernel module registered a data
+abort handler in the system (`BlockCache.DataAbortGuards`; arming drops the translated code). Without one the code is
+unchanged. With one, the frontend (`IrBuilder.Guard`) emits before the first and the last access of each instruction
+`PageMapped` (the byte of the page mapping table, `GuestMemory.MappedTableOffset` below guest 0) and a `BranchIf` over
+an exit that stores the guest state of the instruction's start (the cache snapshot of `MarkInstruction`), R15/SvcPc,
+AbortAddr/AbortStatus and `ExitReason.DataAbort`. Both emitters lower `PageMapped` in three instructions
+(x64: mov/shr/movzx from r15; ARM64: lsr/sub/ldrb from the guest base). The interpreter and the IL backend check in
+`Mem.*` and throw a preallocated exception; callouts turn it into the same exit.
+
+Cost with a handler (`DataAbortGuardCostTable`, `CpuDataAbortGuardBenchmarks`): ARM64 host instructions per iteration
++12% (arm sum), +11% (arm max), +20% (thumb bytecopy), +42% (thumb memcpy, LDM/STM), +40% (neon mla), +9.5..17% (vfp),
+0% without memory; x64 BenchmarkDotNet loop of 2 accesses / 6 instructions 14.7 -> 17.9 us (+22%). Dead Space
+(kubridge arms them; headless 60 s, Windows x64): same fps (60, vsync-bound), its busiest guest thread 1.58 -> 1.98 ms
+per frame in generated code (+25%), process CPU 9.3 -> 9.6 ms per frame (+3%). The zero-cost
+design (host fault + host-pc -> guest recipe table) is a roadmap item.
+
 ## perf/android-jit-13 (2026-11-13): worker time, dispatcher returns, single precision in the SIMD cache
 
 Branch `perf/android-jit-13` (from main 5d2597ec). Not merged, not pushed. x64 output unchanged.

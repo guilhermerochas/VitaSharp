@@ -17,6 +17,9 @@ public enum ExitReason : int
     Handled = 7,
     /// <summary>VMSR entered or left VFP short-vector mode (FPSCR LEN/STRIDE); handled inside CpuCore.Run.</summary>
     FpMode = 8,
+    /// <summary>A guest data access hit a page no block maps while a data abort handler exists (<see cref="DataAborts"/>):
+    /// SvcPc and R15 are the faulting instruction, AbortAddr/AbortStatus the fault, every register as before it.</summary>
+    DataAbort = 9,
 }
 
 /// <summary>
@@ -43,8 +46,9 @@ public unsafe struct CpuState
     public uint SvcPc;        // address of the SVC instruction
     public long Budget;       // remaining instruction budget before a reschedule
     public uint ExclusiveGen; // generation of the reserved granule at LDREX (see Arm.StoreExclusive*)
-    public uint Pad1;
-    public ulong Pad2;        // keeps D (and every even D / Q register) 16-byte aligned for generated SSE code
+    public uint AbortGuard;   // nonzero: guest data accesses check the page mapping table (DataAborts, a DABT handler exists)
+    public uint AbortAddr;    // the faulting address of a data abort being raised (DFAR once it is taken)
+    public uint AbortStatus;  // its fault status (DFSR once it is taken); with AbortAddr keeps D 16-byte aligned
     public fixed ulong D[32]; // VFP/NEON register file (D0-D31 == Q0-Q15)
     // Absorbs writes past D31 by UNPREDICTABLE NEON encodings (register lists / Q pairs that run off the end): the
     // handlers index D directly, and without this they would overwrite the fields below (or the heap).

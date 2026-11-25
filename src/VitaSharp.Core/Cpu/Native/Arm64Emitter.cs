@@ -714,7 +714,7 @@ public sealed unsafe partial class Arm64Emitter
         or IrOp.Bswap or IrOp.Rev16 or IrOp.RevSh or IrOp.Rbit or IrOp.SExt8 or IrOp.SExt16 or IrOp.ZExt8 or IrOp.ZExt16
         or IrOp.Bit or IrOp.UDiv or IrOp.SDiv or IrOp.UMulL or IrOp.SMulL or IrOp.Load8 or IrOp.Load8S or IrOp.Load16
         or IrOp.Load16S or IrOp.Load32 or IrOp.Store8 or IrOp.Store16 or IrOp.Store32 or IrOp.LoadD or IrOp.StoreD
-        or IrOp.Fence or IrOp.CondBranch or IrOp.BranchIf;
+        or IrOp.Fence or IrOp.CondBranch or IrOp.BranchIf or IrOp.PageMapped;
 
     private void ForgetHostFlags()
     {
@@ -1061,6 +1061,17 @@ public sealed unsafe partial class Arm64Emitter
             case IrOp.Fence:
                 assembler.DmbIsh();
                 return;
+            case IrOp.PageMapped:
+            {
+                // the mapping-table byte of the page (DataAborts), below the dirty table
+                int ad = UseZ(x.A, X16);
+                int d = Def(x.D, X0);
+                assembler.LsrImm(d, ad, 12);
+                assembler.SubImm(X17, MemBase, (uint)Memory.GuestMemory.MappedTableOffset, true);
+                assembler.LdStReg(LsKind.Ldrb, d, X17, d, xIndex: true);
+                Commit(x.D, d);
+                return;
+            }
             case IrOp.FpOp:
                 FpOp(x);
                 return;

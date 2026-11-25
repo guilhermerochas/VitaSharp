@@ -753,6 +753,11 @@ internal static unsafe class Vfp
         uint words = imm8;
         uint baseVal = state->R[rn];
         uint addr = p ? baseVal - words * 4 : baseVal;
+        if (words != 0)
+        {
+            DataAborts.Check(state, addr, words * 4, !l); // a data abort leaves the base as it was
+        }
+
         if (w)
         {
             state->R[rn] = u ? baseVal + words * 4 : baseVal - words * 4;

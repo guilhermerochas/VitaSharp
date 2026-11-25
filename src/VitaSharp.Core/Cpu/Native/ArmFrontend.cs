@@ -99,6 +99,7 @@ public sealed unsafe partial class ArmFrontend
         }
         _thumb = block.Thumb;
         _builder.DynamicExitOperands = DynamicExitOperands;
+        _builder.AbortGuards = block.Owner?.DataAbortGuards == true;
         IrBlock ir = _builder.Block;
         int segments = chain?.Count ?? 1;
         long cycles = 0;
@@ -135,7 +136,9 @@ public sealed unsafe partial class ArmFrontend
                     _builder.BeginCond(d.Cond, defer: DeferRegions && !d.EndsBlock && !last);
                 }
 
+                _builder.MarkInstruction(d.Address);
                 bool exitNow = Translate(d);
+                _builder.FinishInstruction();
                 bool goOn = more && last && !exitNow && Continues(d);
                 if (d.EndsBlock || last || exitNow)
                 {

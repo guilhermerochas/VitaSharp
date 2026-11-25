@@ -67,6 +67,8 @@ public sealed unsafe class CpuCore : IDisposable
         {
             s->MemBase = _memBase;
         }
+
+        s->AbortGuard = _cache.DataAbortGuards ? 1u : 0u;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -705,6 +707,20 @@ public sealed unsafe class CpuCore : IDisposable
                 resume = false;
                 entry = native!.ResumeEntry;
             }
+            else if (s->ITState != 0)
+            {
+                // resuming inside an IT block (the return from a data abort taken there): the rest of the IT block
+                // runs once in the interpreter with the IT state of the CPSR, then translated code goes on
+                b = BlockBuilder.Build(s->R[15], s->Thumb != 0, s->ITState);
+                s->ITState = 0;
+                Interpret(s, b);
+                BlocksExecuted++;
+                InstructionsExecuted += b.Insts.Length;
+                InterpCycles += b.Cycles;
+                sinceCheck += b.Cycles;
+                BlockCycles += b.Cycles;
+                goto ran;
+            }
             else if ((s->Fpscr & Vfp.FpscrVectorMask) != 0)
             {
                 // VFP short-vector mode (FPSCR LEN/STRIDE): only the interpreter models it; generated code assumes
@@ -803,6 +819,11 @@ public sealed unsafe class CpuCore : IDisposable
                 }
 
                 NativeEntries++;
+                if (s->Exit == ExitReason.DataAbort && s->Thumb != 0)
+                {
+                    s->ITState = ItStateOfCached(s->SvcPc);
+                }
+
                 CountNativeReturn(s);
                 if (s->LastExitSlot == 0 && s->Exit == ExitReason.None)
                 {
@@ -849,6 +870,11 @@ public sealed unsafe class CpuCore : IDisposable
                 else if (fn != null)
                 {
                     fn(s);
+                    if (s->Exit == ExitReason.DataAbort)
+                    {
+                        s->ITState = BlockBuilder.ItStateAt(b, s->SvcPc);
+                    }
+
                     IlCycles += b.Cycles;
                     if (Backends.IlJitCompiler.CountExecutions)
                     {
@@ -940,21 +966,56 @@ public sealed unsafe class CpuCore : IDisposable
     {
         DecodedInst[] insts = b.Insts;
         delegate*<CpuState*, uint, uint, void>[] ptrs = HandlerTable.Pointers;
-        for (int i = 0; i < insts.Length; i++)
+        int i = 0;
+        try
         {
-            ref DecodedInst d = ref insts[i];
-            if (d.EndsBlock || i == insts.Length - 1)
+            for (; i < insts.Length; i++)
             {
-                s->R[15] = d.Address + d.Size;
-            }
+                ref DecodedInst d = ref insts[i];
+                if (d.EndsBlock || i == insts.Length - 1)
+                {
+                    s->R[15] = d.Address + d.Size;
+                }
 
-            if ((d.Flags & InstFlags.Conditional) != 0 && !Arm.CondPassed(s, d.Cond))
-            {
-                continue;
-            }
+                if ((d.Flags & InstFlags.Conditional) != 0 && !Arm.CondPassed(s, d.Cond))
+                {
+                    continue;
+                }
 
-            ptrs[(int)d.Op](s, d.Raw, d.Address);
+                ptrs[(int)d.Op](s, d.Raw, d.Address);
+            }
         }
+        catch (GuestDataAbortException)
+        {
+            RaiseDataAbort(s, b, i);
+        }
+    }
+
+    /// <summary>The IT state of the Thumb instruction at <paramref name="pc"/>, from a translated block holding it (a data
+    /// abort in native code, which may have run several linked blocks).</summary>
+    private uint ItStateOfCached(uint pc)
+    {
+        foreach (Block b in _cache.Blocks)
+        {
+            if (b.Thumb && pc >= b.Start && pc < b.End)
+            {
+                return BlockBuilder.ItStateAt(b, pc);
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>Instruction <paramref name="index"/> of <paramref name="b"/> took a data abort (<see cref="DataAborts"/>):
+    /// the block stops there with <see cref="ExitReason.DataAbort"/>, R15 and SvcPc at the instruction and the IT
+    /// state it ran in.</summary>
+    internal static void RaiseDataAbort(CpuState* s, Block b, int index)
+    {
+        uint pc = b.Insts[index].Address;
+        s->R[15] = pc;
+        s->SvcPc = pc;
+        s->ITState = BlockBuilder.ItStateAt(b, pc);
+        s->Exit = ExitReason.DataAbort;
     }
 
     private static bool s_vectorModeSeen;
@@ -969,27 +1030,35 @@ public sealed unsafe class CpuCore : IDisposable
         }
         DecodedInst[] insts = b.Insts;
         delegate*<CpuState*, uint, uint, void>[] ptrs = HandlerTable.Pointers;
-        for (int i = 0; i < insts.Length; i++)
+        int i = 0;
+        try
         {
-            ref DecodedInst d = ref insts[i];
-            if (d.EndsBlock || i == insts.Length - 1)
+            for (; i < insts.Length; i++)
             {
-                s->R[15] = d.Address + d.Size;
-            }
+                ref DecodedInst d = ref insts[i];
+                if (d.EndsBlock || i == insts.Length - 1)
+                {
+                    s->R[15] = d.Address + d.Size;
+                }
 
-            if ((d.Flags & InstFlags.Conditional) != 0 && !Arm.CondPassed(s, d.Cond))
-            {
-                continue;
-            }
+                if ((d.Flags & InstFlags.Conditional) != 0 && !Arm.CondPassed(s, d.Cond))
+                {
+                    continue;
+                }
 
-            if ((s->Fpscr & Vfp.FpscrVectorMask) != 0 && Vfp.IsVectorCapable(d.Op, d.Raw))
-            {
-                Vfp.VectorOp(s, d.Op, d.Raw, d.Address);
+                if ((s->Fpscr & Vfp.FpscrVectorMask) != 0 && Vfp.IsVectorCapable(d.Op, d.Raw))
+                {
+                    Vfp.VectorOp(s, d.Op, d.Raw, d.Address);
+                }
+                else
+                {
+                    ptrs[(int)d.Op](s, d.Raw, d.Address);
+                }
             }
-            else
-            {
-                ptrs[(int)d.Op](s, d.Raw, d.Address);
-            }
+        }
+        catch (GuestDataAbortException)
+        {
+            RaiseDataAbort(s, b, i);
         }
     }
 
