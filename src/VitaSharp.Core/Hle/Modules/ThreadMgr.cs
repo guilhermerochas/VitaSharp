@@ -166,7 +166,7 @@ public sealed partial class ThreadMgr : HleModule
 
     /// <summary>Class of the threadmgr object behind a UID (thread 1 ... simple event 13; see KernelObject.UidClass).</summary>
     [Hle]
-    int sceKernelGetThreadmgrUIDClass(int uid)
+    internal int sceKernelGetThreadmgrUIDClass(int uid)
     {
         if (K.GetThread(uid) != null) return 1;
         var o = K.Objects.Get<KernelObject>(uid);

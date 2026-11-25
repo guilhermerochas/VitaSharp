@@ -74,6 +74,9 @@ public sealed partial class CodecEngine
 
         /// <summary>+0x788: a work size of at most 0x1000, in 8-byte units (0x54F39D1D).</summary>
         public uint WorkSize;
+
+        /// <summary>+0x5F4: the mode-0 notification callbacks, four words each (pid, callback, 0, flags).</summary>
+        public uint[] Notifications = new uint[NotificationSlots * 4];
     }
 
     static int Pid(int pid)
@@ -189,10 +192,10 @@ public sealed partial class CodecEngine
         return 0;
     }
 
-    /// <summary>The entries that run through the codec instance's ops table (the engine's decoder services): no
-    /// instance runs on an engine here: 0x80620108, the module's answer without one.</summary>
+    /// <summary>The entries of the codec instance's ops table that run on the engine (the open, the decodes and their
+    /// queries are RPCs to the engine's firmware): no engine runs here: 0x80620108, the module's answer without an
+    /// instance.</summary>
     [Hle(Nid = 0x2B74706E, Library = "SceCodecEngineWrapperForDriver", Default = true)]
-    [Hle(Nid = 0x8CD35820, Library = "SceCodecEngineWrapperForDriver", Default = true)]
     [Hle(Nid = 0x9D3B1425, Library = "SceCodecEngineWrapperForDriver", Default = true)]
     [Hle(Nid = 0xB280BA55, Library = "SceCodecEngineWrapperForDriver", Default = true)]
     [Hle(Nid = 0x6A3638A8, Library = "SceCodecEngineWrapperForDriver", Default = true)]
@@ -203,13 +206,206 @@ public sealed partial class CodecEngine
     [Hle(Nid = 0xBB388700, Library = "SceCodecEngineWrapperForDriver", Default = true)]
     [Hle(Nid = 0x972F0D0F, Library = "SceCodecEngineWrapperForDriver", Default = true)]
     [Hle(Nid = 0xB48B02A3, Library = "SceCodecEngineWrapperForDriver", Default = true)]
-    [Hle(Nid = 0x9EB3D63E, Library = "SceCodecEngineWrapperForDriver", Default = true)]
     [Hle(Nid = 0x0D140628, Library = "SceCodecEngineWrapperForDriver", Default = true)]
-    [Hle(Nid = 0x16506603, Library = "SceCodecEngineWrapperForDriver", Default = true)]
     [Hle(Nid = 0x8FE370E6, Library = "SceCodecEngineWrapperForDriver", Default = true)]
     int ksceCodecEngineInstanceOp()
     {
         return CE_ERR_NO_INSTANCE;
+    }
+
+    // ------------------------------------------------------------------ the instance's ops that run in the module
+    //
+    // SceCodecEngineWrapper 3.74 dispatches these exports through the ops table of the instance's mode (+4: 0 the
+    // table at 0x81017d34, 1 the one at 0x81017d74). Some ops run entirely in the module: the decoder's memory size
+    // (op 1), the end-of-stream mark (op 12) and the notification callbacks (op 14). They answer as the module does with
+    // no decoder open: the open (op 0) and the decodes are RPCs to the engine's firmware, which is not emulated.
+
+    const int CE_ERR_INSTANCE_POINTER = unchecked((int)0x80620102);
+    const int CE_ERR_NOT_OPEN = unchecked((int)0x80620105);
+
+    /// <summary>The notification callbacks an instance keeps in mode 0 (+0x5F4, 0x10 bytes each: pid, callback, 0,
+    /// flags).</summary>
+    const int NotificationSlots = 6;
+
+    /// <summary>The notification flags the module accepts (any other bit 0x80620101).</summary>
+    const uint NotificationFlagsRefused = 0xFFFFC4F9;
+
+    /// <summary>
+    /// The decoder's memory (SceCodecEngineWrapper 3.74 0x8100cf70): for <paramref name="parameters"/> {width 64-1920,
+    /// height 64-1088, reference frames at most 16 (0 as 1), streams at most <paramref name="maxStreams"/>} a frame and
+    /// reference tier (0x140000/0x80000 up to 0x1BD800 bytes of frames and 0x4A400 per frame, 0x400000/0x100000 up to
+    /// 0x697800 and 0x151800, 0x700000/0x200000 up to 0xC00000 of frames), plus 0x80000 and the work size's area rounded
+    /// to 256 KiB, each per stream; their sum goes to <paramref name="total"/>. NULL 0x80620102, out of range 0x80620101.
+    /// </summary>
+    static int DecoderMemorySize(uint maxStreams, uint workSize, uint parameters, uint total)
+    {
+        if (parameters == 0 || total == 0)
+        {
+            return CE_ERR_INSTANCE_POINTER;
+        }
+
+        uint width = GuestMemory.R32(parameters);
+        uint height = GuestMemory.R32(parameters + 4);
+        uint references = GuestMemory.R32(parameters + 8);
+        uint streams = GuestMemory.R32(parameters + 0xC);
+        if (width - 0x40 >= 0x741 || height - 0x40 >= 0x401 || references >= 0x11 || streams > maxStreams)
+        {
+            return CE_ERR_INSTANCE_VALUE;
+        }
+
+        if (references == 0)
+        {
+            references = 1;
+        }
+
+        uint frame = height * width * 3;
+        uint half = frame >> 1;
+        uint frames = frame * references >> 1;
+        uint pictures;
+        uint referenceArea;
+        if (frames <= 0x1BD800 && half <= 0x4A400)
+        {
+            pictures = 0x140000;
+            referenceArea = 0x80000;
+        }
+        else if (frames <= 0x697800 && half <= 0x151800)
+        {
+            pictures = 0x400000;
+            referenceArea = 0x100000;
+        }
+        else if (frames <= 0xC00000)
+        {
+            pictures = 0x700000;
+            referenceArea = 0x200000;
+        }
+        else
+        {
+            return CE_ERR_INSTANCE_VALUE;
+        }
+
+        uint work = workSize == 0 ? 0 : ((workSize + 7) & ~7u) * 0x29 + 0x10C0;
+        uint workArea = ((work + 0x3FFFF) & 0xFFFC0000) + 0x80000;
+        GuestMemory.W32(total, streams * workArea + streams * referenceArea + streams * pictures);
+        return 0;
+    }
+
+    /// <summary>NID_8CD35820(parameters, total): the memory a decoder needs (op 1, <see cref="DecoderMemorySize"/>):
+    /// mode 0 one stream and no work area, mode 1 up to four streams with the instance's work size (+0x788). With a
+    /// decoder open 0x80620106 (none can be: the open runs on the engine).</summary>
+    [Hle(Nid = 0x8CD35820, Library = "SceCodecEngineWrapperForDriver")]
+    int ksceCodecEngineDecoderMemorySize(uint parameters, uint total)
+    {
+        uint mode;
+        uint workSize;
+        lock (_kernelLock)
+        {
+            Instance instance = InstanceOf(0);
+            mode = instance.Mode;
+            workSize = instance.WorkSize;
+        }
+
+        return mode == 1 ? DecoderMemorySize(4, workSize, parameters, total) : DecoderMemorySize(1, 0, parameters, total);
+    }
+
+    /// <summary>NID_9EB3D63E(decoder): marks a decoder's stream as ended (op 12): mode 0 only decoder 1 (else
+    /// 0x80620101), not open 0x80620105; mode 1 a decoder not open 0x80620101.</summary>
+    [Hle(Nid = 0x9EB3D63E, Library = "SceCodecEngineWrapperForDriver")]
+    int ksceCodecEngineDecoderEndOfStream(uint decoder)
+    {
+        uint mode;
+        lock (_kernelLock)
+        {
+            mode = InstanceOf(0).Mode;
+        }
+
+        if (mode == 1)
+        {
+            return CE_ERR_INSTANCE_VALUE;
+        }
+
+        return decoder != 1 ? CE_ERR_INSTANCE_VALUE : CE_ERR_NOT_OPEN;
+    }
+
+    /// <summary>
+    /// NID_16506603(decoder, callback, flags): registers a notification callback (op 14). Flags outside 0x3B06
+    /// 0x80620101. Mode 0: only decoder 1; the callback's UID (kscePUIDtoGUID of the caller's handle) must be a
+    /// callback (ksceKernelGetThreadmgrUIDClass 8, else 0x80620101), and goes to the first of six free slots with the
+    /// caller's pid and the flags (all six taken 0x80620106). Mode 1 keeps them per open decoder: none open 0x80620101.
+    /// </summary>
+    [Hle(Nid = 0x16506603, Library = "SceCodecEngineWrapperForDriver")]
+    int ksceCodecEngineDecoderAddNotification(uint decoder, int callback, uint flags)
+    {
+        uint mode;
+        lock (_kernelLock)
+        {
+            mode = InstanceOf(0).Mode;
+        }
+
+        if (mode == 1)
+        {
+            return CE_ERR_INSTANCE_VALUE;
+        }
+
+        if (decoder != 1 || (flags & NotificationFlagsRefused) != 0)
+        {
+            return CE_ERR_INSTANCE_VALUE;
+        }
+
+        int guid = Emu.Hle.Modules.OfType<SysmemKernel>().First().kscePUIDtoGUIDThroughEntry(0, callback);
+        if (guid < 0)
+        {
+            return guid;
+        }
+
+        int uidClass = Emu.Hle.Modules.OfType<ThreadMgr>().First().sceKernelGetThreadmgrUIDClassThroughEntry(guid);
+        if (uidClass < 0)
+        {
+            return uidClass;
+        }
+
+        if (uidClass != new Callback().UidClass)
+        {
+            return CE_ERR_INSTANCE_VALUE;
+        }
+
+        lock (_kernelLock)
+        {
+            Instance instance = InstanceOf(0);
+            for (int slot = 0; slot < NotificationSlots; slot++)
+            {
+                if (instance.Notifications[slot * 4 + 1] != 0)
+                {
+                    continue;
+                }
+
+                instance.Notifications[slot * 4] = (uint)ProcessScope.CurrentPid;
+                instance.Notifications[slot * 4 + 1] = (uint)guid;
+                instance.Notifications[slot * 4 + 2] = 0;
+                instance.Notifications[slot * 4 + 3] = flags;
+                return 0;
+            }
+        }
+
+        return CE_ERR_INSTANCE_BUSY;
+    }
+
+    /// <summary>The notification callbacks of a process's instance in mode 0 (tests, debugger): pid, callback, flags.</summary>
+    public IReadOnlyList<(uint Pid, uint Callback, uint Flags)> Notifications(int pid)
+    {
+        lock (_kernelLock)
+        {
+            Instance instance = InstanceOf(pid);
+            var slots = new List<(uint Pid, uint Callback, uint Flags)>();
+            for (int slot = 0; slot < NotificationSlots; slot++)
+            {
+                if (instance.Notifications[slot * 4 + 1] != 0)
+                {
+                    slots.Add((instance.Notifications[slot * 4], instance.Notifications[slot * 4 + 1], instance.Notifications[slot * 4 + 3]));
+                }
+            }
+
+            return slots;
+        }
     }
 
     // ------------------------------------------------------------------ codec instance settings

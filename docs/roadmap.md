@@ -2319,8 +2319,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   cheias 0x8080001E), kscePfsMount modo 10 (900) ou 9/7 (901, com a chave de FUN_81016ed4 e a keystone:
   ksceSblPostSsMgrVerifyKeystone/WithPasscode com o passcode do 3º argumento), FUN_81016698 e FUN_8101807c, e
   kscePfsApprove para 0x2800000000000001 e 0x2800000000007001; hoje devolve 0x80800007 (default);
-  SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver: feito
-  (feat/kernO, 21/11/2026, ver "Corrigido, falta o usuário testar").
+  SceCodecEngineWrapperForDriver 27 (3 feitos em 25/11/2026, feat/kern9: as operações da instância que rodam no
+  próprio módulo, 8CD35820 memória do decodificador, 9EB3D63E fim de stream e 16506603 callbacks de notificação; o
+  resto precisa do motor de codec: a abertura do decodificador, 2B74706E, e as decodificações são RPCs ao firmware
+  do motor (tabelas em 0x81017cd4/0x81017d34), as janelas e os buffers de bounce só existem com ele no boot, os 8 RPCs
+  e o contador de desempenho idem; emular o motor, ou o protocolo dos seus RPCs, é o trabalho que falta);
+  SceUlobjMgrForDriver: feito (feat/kernO, 21/11/2026, ver "Corrigido, falta o usuário testar"; a versão do
+  kern9, de 8 consultas, não foi trazida). SceCoredumpForDriver 3: as notas do .psp2dmp são cerca de
+  40 (SYSTEM_INFO 0x1001 .. TTY_INFO 0x102A, KERNEL_INFO 0x3000; os construtores estão entre 0x81011774 e as funções
+  das linhas de THREAD_REG_INFO/LIBRARY_INFO/GPU_ACT_INFO do descompilado), cada uma com a sua versão e layout.
   Entrega movida para "Corrigido, falta o usuário testar" (reboot do sistema, kernN, 22/11/2026); o resto segue aberto aqui.
 - [x] (22/11/2026, fix/quick1 529bd5a0: a montagem id 0xCA de ux0:pspemu fica registrada no AppMgr como no SceAppMgr 3.74; sceAppMgrUmount e o par do apputil desmontam; testes falham sem) [P3][G] sceAppMgrPspSaveDataRootMount (HLE) escreve `ux0:pspemu` como ponto de montagem sem registrar uma
   montagem no AppMgr, então um sceAppMgrUmount dele falha: conferir no appmgr 3.74 o que é montado (o SAVEDATA do

@@ -211,4 +211,89 @@ public sealed class CodecEngineKernelTests(GuestMemoryFixture fixture) : IDispos
         Assert.Equal(InvalidValue, Call(Engine, "sceCodecEngineFreeMemoryFromUnmapMemBlock", uid, BlockBase + 0x800));
         Assert.Equal(0, Call(Engine, "sceCodecEngineCloseUnmapMemBlock", uid));
     }
+
+    /// <summary>The decoder memory query (op 1, SceCodecEngineWrapper 3.74 0x8100cf70): the tiers by frame size, the
+    /// work area and the streams; out of range 0x80620101, NULL 0x80620102. Mode 0 takes one stream and no work area,
+    /// mode 1 up to four with the instance's work size.</summary>
+    [Fact]
+    public void TheDecoderMemorySizeFollowsTheModulesTiers()
+    {
+        uint parameters = _harness.Alloc(0x10);
+        uint total = _harness.Alloc(4);
+        int Size(uint width, uint height, uint references, uint streams)
+        {
+            GuestMemory.W32(parameters, width);
+            GuestMemory.W32(parameters + 4, height);
+            GuestMemory.W32(parameters + 8, references);
+            GuestMemory.W32(parameters + 0xC, streams);
+            GuestMemory.W32(total, 0xDEADBEEF);
+            return Call(Engine, "ksceCodecEngineDecoderMemorySize", parameters, total);
+        }
+
+        Assert.Equal(0, Call(Engine, "ksceCodecEngineSetMode", 1u, 1, 0));
+        // 480x272: the small tier, 0x140000 + 0x80000 + the 0x80000 base work area
+        Assert.Equal(0, Size(480, 272, 0, 1));
+        Assert.Equal(0x140000u + 0x80000u + 0x80000u, GuestMemory.R32(total));
+        // 960x544 with 2 references: the middle tier
+        Assert.Equal(0, Size(960, 544, 2, 1));
+        Assert.Equal(0x400000u + 0x100000u + 0x80000u, GuestMemory.R32(total));
+        // 1920x1088: the large tier; with 5 references the frames pass 0xC00000
+        Assert.Equal(0, Size(1920, 1088, 1, 1));
+        Assert.Equal(0x700000u + 0x200000u + 0x80000u, GuestMemory.R32(total));
+        Assert.Equal(InstanceValue, Size(1920, 1088, 5, 1));
+        // no stream: nothing
+        Assert.Equal(0, Size(480, 272, 1, 0));
+        Assert.Equal(0u, GuestMemory.R32(total));
+        Assert.Equal(InstanceValue, Size(480, 272, 1, 2));
+        Assert.Equal(InstanceValue, Size(63, 272, 1, 1));
+        Assert.Equal(InstanceValue, Size(1921, 272, 1, 1));
+        Assert.Equal(InstanceValue, Size(480, 1089, 1, 1));
+        Assert.Equal(InstanceValue, Size(480, 272, 17, 1));
+        Assert.Equal(unchecked((int)0x80620102), Call(Engine, "ksceCodecEngineDecoderMemorySize", 0u, total));
+        Assert.Equal(unchecked((int)0x80620102), Call(Engine, "ksceCodecEngineDecoderMemorySize", parameters, 0u));
+
+        // mode 1: up to four streams, each with the work size's area ((0x1000 * 0x29 + 0x10C0) to 256 KiB, + 0x80000)
+        Assert.Equal(0, Call(Engine, "ksceCodecEngineSetMode", 2u, 1, 0));
+        Assert.Equal(0, Call(Engine, "ksceCodecEngineSetWorkSize", 0x1000u));
+        Assert.Equal(0, Size(480, 272, 1, 4));
+        uint workArea = ((0x1000u * 0x29 + 0x10C0 + 0x3FFFF) & 0xFFFC0000) + 0x80000;
+        Assert.Equal(4 * (0x140000u + 0x80000u + workArea), GuestMemory.R32(total));
+        Assert.Equal(InstanceValue, Size(480, 272, 1, 5));
+        Assert.Equal(0, Call(Engine, "ksceCodecEngineSetMode", 1u, 1, 0));
+    }
+
+    /// <summary>The end-of-stream mark (op 12) and the notification callbacks (op 14) with no decoder open: mode 0
+    /// takes only decoder 1 and keeps up to six callbacks; mode 1 keeps them per open decoder.</summary>
+    [Fact]
+    public void TheNotificationCallbacksTakeSixSlotsInMode0()
+    {
+        Assert.Equal(0, Call(Engine, "ksceCodecEngineSetMode", 1u, 1, 0));
+        Assert.Equal(InstanceValue, Call(Engine, "ksceCodecEngineDecoderEndOfStream", 2u));
+        Assert.Equal(unchecked((int)0x80620105), Call(Engine, "ksceCodecEngineDecoderEndOfStream", 1u));
+        _harness.OnGuest(_ =>
+        {
+            ThreadMgr threads = _harness.Module<ThreadMgr>();
+            int callback = Call(threads, "sceKernelCreateCallback", "codec", 0u, 0x81000001u, 0u);
+            int semaphore = Call(threads, "sceKernelCreateSema", "codec", 0u, 0, 1, 0u);
+            Assert.True(callback > 0 && semaphore > 0);
+            Assert.Equal(InstanceValue, Call(Engine, "ksceCodecEngineDecoderAddNotification", 2u, callback, 0u));
+            Assert.Equal(InstanceValue, Call(Engine, "ksceCodecEngineDecoderAddNotification", 1u, callback, 0x1u));
+            Assert.Equal(InstanceValue, Call(Engine, "ksceCodecEngineDecoderAddNotification", 1u, semaphore, 0u));
+            Assert.True(Call(Engine, "ksceCodecEngineDecoderAddNotification", 1u, 0x7FFF0001, 0u) < 0);
+            for (int i = 0; i < 6; i++)
+            {
+                Assert.Equal(0, Call(Engine, "ksceCodecEngineDecoderAddNotification", 1u, callback, 0x3B06u));
+            }
+
+            Assert.Equal(unchecked((int)0x80620106), Call(Engine, "ksceCodecEngineDecoderAddNotification", 1u, callback, 0u));
+            Assert.Equal(6, Engine.Notifications(0).Count);
+            Assert.All(Engine.Notifications(0), n => Assert.Equal(((uint)_harness.Emu.Pid, (uint)callback, 0x3B06u), n));
+
+            // mode 1: no decoder open
+            Assert.Equal(0, Call(Engine, "ksceCodecEngineSetMode", 2u, 1, 0));
+            Assert.Equal(InstanceValue, Call(Engine, "ksceCodecEngineDecoderAddNotification", 1u, callback, 0u));
+            Assert.Equal(InstanceValue, Call(Engine, "ksceCodecEngineDecoderEndOfStream", 1u));
+            Assert.Equal(0, Call(Engine, "ksceCodecEngineSetMode", 1u, 1, 0));
+        });
+    }
 }
