@@ -510,7 +510,7 @@ public sealed unsafe partial class VulkanRenderer
             if (_asyncShaders && !_prewarmJobs.IsEmpty && EnsureShaderWorkers())
             {
                 shared = true;
-                _workAvailable.Release(_shaderWorkerCount);
+                _workAvailable.Release(TotalShaderWorkers);
             }
             while (RunPrewarmItem())
             {
@@ -529,7 +529,7 @@ public sealed unsafe partial class VulkanRenderer
         failed += _statPrewarmFailed;
         bool stopped = _stopPrewarm || _stopShaderJobs || _deviceLost;
         Log.Info($"{head}; prewarmed {_statPrewarmed} pipelines ({_statPrewarmModules} shader modules) in {sw.ElapsedMilliseconds} ms"
-            + (shared ? $" (with {_shaderWorkerCount} shader workers)" : "")
+            + (shared ? $" (with {TotalShaderWorkers} shader workers)" : "")
             + (failed > 0 ? $", {failed} skipped" : "") + (_statPrewarmStale > 0 ? $", {_statPrewarmStale} stale" : "") + (stopped ? " (stopped early)" : ""));
         if (!stopped && _statPrewarmed > 0)
         {
