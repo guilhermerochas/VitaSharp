@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.pt-BR.md sha256=9545e5353f91db282e420486172ab1023f2ff1425a4b2f9f7a8f5ffd97af9a05 -->
+<!-- pair: psp-compat.pt-BR.md sha256=8841769041baa30bf74649856d4765eb1e913cbb76ef76ae914936c95dd53e35 -->
 # PSP compatibility core (SceCompat, ScePspemu, Allegrex)
 
 *Português: [psp-compat.pt-BR.md](psp-compat.pt-BR.md).*
@@ -278,26 +278,30 @@ address in 4 KB pages; the core's own stores drop the written page's blocks, the
 That is stricter than the PSP, whose I-cache does not see stores at all. `sync` stays a no-op: it orders memory
 accesses and does not touch the I-cache.
 
-**IL tier (plan, not implemented).** The same tiering as the ARM CPU (`src/VitaSharp.Core/Cpu`: `Jit`, `Block`,
-`Backends/IlJitCompiler.cs`):
+**FPU and VFPU in the block (done).** COP1, lwc1/swc1 and opcodes 0x18/0x19 go straight to their handler, past the
+decoder's switches, with only the exception PC set. add.s/sub.s/mul.s decode fully and take a short path when both
+operands are normal or zero, the rounding mode is nearest and the result is normal or zero (the result and the
+inexact cause as `Arithmetic` gives them); vadd/vsub/vmul/vdot decode their lanes once and take a short path while the
+S, T and D prefixes are at rest. Anything else takes the full handler (`AllegrexCore.FastPaths.cs`).
 
-1. Hotness: each block counts executed instructions; past a threshold (the ARM IL backend uses 400 000) it is queued
-   for the background compile workers, and keeps running in the interpreter until the compiled code is published.
-2. Code: one `DynamicMethod` per block, "call-threaded" like the ARM backend: a call to the handler of each
-   instruction with its word as a constant, so RyuJIT inlines the handlers and folds the field decoding. The handlers
-   move from `AllegrexCore` fields to a state struct (GPRs, HI/LO, the PC pair, the delay-slot flag) passed by
-   pointer, which also lets the JIT keep registers in locals within a block.
-3. Exits: a block returns the next PC; a direct branch whose target block is compiled can jump to it (exit linking,
-   as `Block.LinkSlots` does for the ARM native backend); an indirect jump goes through the dispatcher.
-4. Exactness: the cycle budget, the Count/Compare cap and the interrupt checks stay at block boundaries as in the
-   block cache; an instruction that may raise an exception (address errors, overflow, FPU traps) keeps its precise PC
-   and delay-slot flag by storing them before the instruction, as the interpreter does.
-5. Invalidation: dropping a page's blocks also drops their compiled code and unlinks the exits into them (the ARM
-   `BlockCache.Invalidate` does the same).
-6. Native AOT (Android) has no Reflection.Emit: the IL tier is off there, as for the ARM CPU, and the block cache is
-   the fast path; a native ARM64 tier (the ARM CPU's `NativeArm64Compiler` pattern) is the step after.
-7. Tests: the whole Allegrex suite runs again with the tier forced on (threshold 0), as the ARM JIT's tests do, so
-   every instruction test also covers the compiled path.
+**IL tier (done).** `AllegrexCore.Il.cs`, the same pattern as the ARM CPU's `Backends/IlJitCompiler.cs`:
+
+1. Hotness: a block counts its instructions at each entry; past `AllegrexCore.IlHotInstructions` (200 000 by default)
+   it is compiled once, on the core's thread (about a millisecond).
+2. Code: one `DynamicMethod` per block. The guest registers it touches live in locals, loaded at entry and written
+   back at every exit, so RyuJIT keeps them in host registers. It compiles the plain ALU instructions, lw/sw,
+   add.s/sub.s/mul.s and vadd/vsub/vmul/vdot (calls to their handlers with the decoded fields as constants), and a
+   closing branch or jump whose delay slot is one of those. Any other block stays in the block cache.
+3. Exits: the code returns the next PC; the run then goes on into the block it last continued to (the block cache's
+   link), compiled or not.
+4. Exactness: the budget, the Count/Compare cap and the interrupt checks stay at block boundaries; a misaligned lw/sw
+   leaves before the instruction, so the interpreter raises the address error at the exact PC; a store that ends the
+   run, or an FPU/VFPU exception (its PC and delay-slot flag stored before the call), leaves after it.
+5. Invalidation: the code lives in its block, so dropping a page's blocks drops their code too.
+6. Native AOT (Android) has no Reflection.Emit: `IlTierSupported` is false there and the block cache is the fast path;
+   a native ARM64 tier (the ARM CPU's `NativeArm64Compiler` pattern) is the step after.
+7. Tests: `AllegrexIlTierTests` runs every other Allegrex test again with the tier forced on (every compilable block
+   compiled at its first run).
 
 ### What needs keys and what does not
 

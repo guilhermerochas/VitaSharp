@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.md sha256=04c8bb576cdb4bce4563ff9e4ca06bda66162e79b48b87e98411193367c986ef -->
+<!-- pair: psp-compat.md sha256=a06f470fdd6438b60209925b933fe39839509d843044c40abf4d87703671e645 -->
 # Núcleo de compatibilidade PSP (SceCompat, ScePspemu, Allegrex)
 
 *English: [psp-compat.md](psp-compat.md).*
@@ -289,26 +289,32 @@ outros escritores de fora do núcleo chamam `AllegrexCore.InvalidateCode` na thr
 o PSP, cujo I-cache não vê escrita nenhuma. O `sync` continua sem efeito: ele ordena acessos à memória e não mexe no
 I-cache.
 
-**Tier IL (plano, não implementado).** O mesmo esquema de tiers da CPU ARM (`src/VitaSharp.Core/Cpu`: `Jit`, `Block`,
-`Backends/IlJitCompiler.cs`):
+**FPU e VFPU no bloco (feito).** COP1, lwc1/swc1 e os opcodes 0x18/0x19 vão direto ao tratador, sem passar pelos
+switches do decodificador, só com o PC de exceção gravado. add.s/sub.s/mul.s são decodificados por inteiro e tomam um
+caminho curto quando os dois operandos são normais ou zero, o arredondamento é ao mais próximo e o resultado é normal
+ou zero (o resultado e a causa inexact como o `Arithmetic` dá); vadd/vsub/vmul/vdot decodificam as lanes uma vez e
+tomam um caminho curto enquanto os prefixos S, T e D estão em repouso. Todo o resto usa o tratador completo
+(`AllegrexCore.FastPaths.cs`).
 
-1. Calor: cada bloco conta as instruções executadas; passado um limite (o backend IL do ARM usa 400 000) ele vai para
-   os workers de compilação em segundo plano e continua no interpretador até o código compilado ser publicado.
-2. Código: um `DynamicMethod` por bloco, "call-threaded" como no backend do ARM: uma chamada ao tratador de cada
-   instrução com a palavra como constante, para o RyuJIT fazer inline dos tratadores e dobrar a decodificação dos
-   campos. Os tratadores saem dos campos do `AllegrexCore` para uma struct de estado (GPRs, HI/LO, o par de PCs, o
-   flag de delay slot) passada por ponteiro, o que também deixa o JIT manter registradores em locais dentro do bloco.
-3. Saídas: o bloco devolve o próximo PC; um desvio direto cujo bloco de destino está compilado pode pular para ele
-   (ligação de saídas, como o `Block.LinkSlots` do backend nativo do ARM); um salto indireto passa pelo despachante.
-4. Exatidão: o orçamento de ciclos, o limite do Count/Compare e a checagem de interrupções ficam nas fronteiras de
-   bloco como no cache de blocos; uma instrução que pode gerar exceção (erro de endereço, overflow, traps da FPU)
-   mantém o PC exato e o flag de delay slot gravando-os antes da instrução, como o interpretador faz.
-5. Invalidação: descartar os blocos de uma página descarta também o código compilado deles e desliga as saídas que
-   apontam para eles (o `BlockCache.Invalidate` do ARM faz o mesmo).
-6. O Native AOT (Android) não tem Reflection.Emit: lá o tier IL fica desligado, como na CPU ARM, e o cache de blocos é
-   o caminho rápido; um tier nativo ARM64 (o padrão do `NativeArm64Compiler` da CPU ARM) é o passo seguinte.
-7. Testes: a suíte inteira do Allegrex roda de novo com o tier forçado (limite 0), como os testes do JIT do ARM, para
-   cada teste de instrução cobrir também o caminho compilado.
+**Tier IL (feito).** O `AllegrexCore.Il.cs`, no mesmo padrão do `Backends/IlJitCompiler.cs` da CPU ARM:
+
+1. Calor: o bloco conta as instruções a cada entrada; passado o `AllegrexCore.IlHotInstructions` (200 000 por
+   padrão) ele é compilado uma vez, na thread do núcleo (cerca de um milissegundo).
+2. Código: um `DynamicMethod` por bloco. Os registradores do guest que ele usa ficam em locais, carregados na entrada e
+   gravados de volta em toda saída, então o RyuJIT os mantém em registradores do host. Compila as instruções simples
+   da ALU, lw/sw, add.s/sub.s/mul.s e vadd/vsub/vmul/vdot (chamadas aos tratadores com os campos decodificados como
+   constantes), e um desvio ou salto final cujo delay slot é um desses. Qualquer outro bloco fica no cache de blocos.
+3. Saídas: o código devolve o próximo PC; a execução segue para o bloco em que continuou da última vez (a ligação do
+   cache de blocos), compilado ou não.
+4. Exatidão: o orçamento, o limite do Count/Compare e a checagem de interrupções ficam nas fronteiras de bloco; um
+   lw/sw desalinhado sai antes da instrução, e o interpretador gera o erro de endereço no PC exato; uma escrita que
+   encerra a execução, ou uma exceção da FPU/VFPU (com o PC e o flag de delay slot gravados antes da chamada), sai
+   depois dela.
+5. Invalidação: o código mora no bloco, então descartar os blocos de uma página descarta o código junto.
+6. O Native AOT (Android) não tem Reflection.Emit: lá o `IlTierSupported` é falso e o cache de blocos é o caminho
+   rápido; um tier nativo ARM64 (o padrão do `NativeArm64Compiler` da CPU ARM) é o passo seguinte.
+7. Testes: o `AllegrexIlTierTests` roda de novo todos os outros testes do Allegrex com o tier forçado (todo bloco
+   compilável compilado na primeira execução).
 
 ### O que exige chaves e o que não exige
 
