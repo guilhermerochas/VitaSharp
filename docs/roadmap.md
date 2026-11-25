@@ -366,7 +366,14 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   adr4): achado e corrigido, em "Corrigido, falta o usuário testar" (`ReadOnlyMountTests`). Imports sem quem
   exporte (24/11/2026, adr4): agora nomeados no log e no F8/report (em "Corrigido, falta o usuário testar").
   Permissões (25/11/2026, adr4): biblioteca de syscall só do kernel, em "Corrigido, falta o usuário testar". Falta:
-  NIDs (conferir as outras checagens da tabela de exports e imports do modulemgr 3.74).
+  NIDs (conferir as outras checagens da tabela de exports e imports do modulemgr 3.74). Achado (25/11/2026, small4,
+  estudo do 3.74): antes de ligar cada biblioteca importada (FUN_81008aa0 -> FUN_81005100), num módulo de processo
+  de usuário (o processo não é o 0x10005) sem os bits 0x100/0x400 do objeto do módulo (+4; postos na carga quando o
+  bit 0 do pedido e o dipsw 0xD2 dizem, a decidir o que significam), cada stub de função tem que caber inteiro (0x10
+  bytes) num segmento de permissão 5 (R+X) e cada referência de variável não nula (4 bytes) num segmento sem o bit 0x2
+  (escrita); senão a carga falha com 0x8002D01E (FUN_81004570/FUN_810045cc). O VitaSharp não confere. Antes de
+  aplicar: saber o que são 0x100/0x400 (carga de módulo de desenvolvimento/homebrew pelo HENkaku pode pular a
+  checagem) e conferir que os homebrew do vitasdk passam (stubs em `.text`, referências de variável em `.rodata`).
 - [ ] [P3][M] (opção futura, decisão do lead: não agora) Import sem quem exporte com o stub do 3.74: no modulemgr 3.74
   (decomp, só estudo) um NID que a biblioteca não exporta ("Library function entry not found ... (ignored)") ou de uma
   biblioteca ainda não carregada fica com o stub "não ligado" `sub r12, pc, #8; mov pc, #0` (0xE24FC008, 0xE3A0F000):
