@@ -369,10 +369,10 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fixture)
     [Fact]
     public void ModuleTableMatchesReflectionDiscovery()
     {
-        List<Type> reflected = typeof(Emulator).Assembly.GetTypes()
+        var reflected = typeof(Emulator).Assembly.GetTypes()
             .Where(t => t.IsSubclassOf(typeof(HleModule)) && !t.IsAbstract)
             .OrderBy(t => t.FullName).ToList();
-        List<Type> generated = HleBindings.Modules.OrderBy(m => m.Type.FullName).Select(m => m.Type).ToList();
+        var generated = HleBindings.Modules.OrderBy(m => m.Type.FullName).Select(m => m.Type).ToList();
         Assert.Equal(reflected, generated);
         foreach (HleModuleEntry m in HleBindings.Modules)
         {
@@ -389,7 +389,7 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fixture)
         {
             foreach (HleBinding b in HleBindings.For(m.Type)!)
             {
-                List<HleAttribute> attrs = m.Type.GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
+                var attrs = m.Type.GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
                     .Where(x => x.Name == b.Method).SelectMany(x => x.GetCustomAttributes<HleAttribute>())
                     .Where(a => a.Name == b.Name && a.Nid == b.Nid && a.Library == b.Library).ToList();
                 Assert.NotEmpty(attrs);
@@ -410,7 +410,7 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fixture)
         {
             foreach (HleBinding b in HleBindings.For(m.Type)!)
             {
-                List<HleAttribute> attrs = m.Type.GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
+                var attrs = m.Type.GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
                     .Where(x => x.Name == b.Method).SelectMany(x => x.GetCustomAttributes<HleAttribute>())
                     .Where(a => a.Name == b.Name && a.Nid == b.Nid && a.Library == b.Library).ToList();
                 Assert.NotEmpty(attrs);
@@ -432,8 +432,8 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fixture)
         int total = 0;
         foreach (HleModuleEntry m in HleBindings.Modules)
         {
-            List<string> expected = ReflectionBindings(m.Type).Select(b => $"{b.Method}|{b.Name}|{b.Nid:X8}|{b.Library}|{b.Layout}").ToList();
-            List<string> actual = HleBindings.For(m.Type)!.Select(b => $"{b.Method}|{b.Name}|{b.Nid:X8}|{b.Library}|{b.Layout}").ToList();
+            var expected = ReflectionBindings(m.Type).Select(b => $"{b.Method}|{b.Name}|{b.Nid:X8}|{b.Library}|{b.Layout}").ToList();
+            var actual = HleBindings.For(m.Type)!.Select(b => $"{b.Method}|{b.Name}|{b.Nid:X8}|{b.Library}|{b.Layout}").ToList();
             Assert.Equal(expected, actual);
             total += actual.Count;
         }
@@ -501,7 +501,7 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fixture)
         text.CopyTo(GuestMemory.Span(DataBase, (int)DataSize));
 
         HleModuleEntry entry = VitaSharp.Generated.HleLocalBindings.Modules().Single(e => e.Type == typeof(ProbeModule));
-        ProbeModule probe = (ProbeModule)entry.Create();
+        var probe = (ProbeModule)entry.Create();
         HleBinding[] generated = entry.Bindings();
         List<RefBinding> reference = ReflectionBindings(typeof(ProbeModule));
         Assert.Equal(reference.Select(b => b.Method + b.Layout), generated.Select(b => b.Method + b.Layout));
