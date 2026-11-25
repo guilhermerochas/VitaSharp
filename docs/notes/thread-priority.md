@@ -136,6 +136,27 @@ above.
   and it was not added. On hybrid Intel CPUs, Thread Director already prefers P-cores for high-priority foreground
   threads, and the threads raised here are exactly those.
 
+## EcoQoS and the threads' own opt-out (24/11/2026)
+`PowerThrottlingBenchmarkTests` (Category=Slow, Windows, by hand: `dotnet test --filter
+FullyQualifiedName~PowerThrottlingBenchmarkTests`) measures four above-normal CPU-bound threads, as the emulated
+cores are, in four states alternated three times: as the emulator runs, the process forced into EcoQoS (what Windows
+does to a background process on battery, or in Task Manager's efficiency mode), EcoQoS with each thread opted out
+(`SetThreadInformation(ThreadPowerThrottling)`, execution speed never throttled), and the opt-out alone. On this
+machine (not hybrid, on AC, shared with other agents), two runs:
+
+| State | run 1 | run 2 |
+|---|---|---|
+| as today | 100% (3939 M ops/s) | 100% (3893 M ops/s) |
+| process in EcoQoS | 99.1% | 95.2% |
+| EcoQoS, threads opted out | 100.2% | 96.6% |
+| threads opted out | 100.1% | 96.8% |
+
+EcoQoS costs this CPU 1-5% at most, within the noise, and the opt-out neither helps nor costs here. So nothing was
+changed: without E-cores, EcoQoS only biases the frequency, and on AC the processor keeps its clock. The
+cases where it could matter (a hybrid CPU, where EcoQoS sends threads to the E-cores, and battery power) are what this
+machine cannot show. The benchmark stays, to be run there: on battery by unplugging this laptop, and on a 12th gen
+Intel or newer.
+
 ## Next steps
 - Re-measure on a hybrid CPU (12th gen Intel or later) and on battery: E-core pinning and power throttling are the
   settings that could matter there.

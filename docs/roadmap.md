@@ -981,6 +981,11 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 - [ ] [P3][M] Prioridade das threads em CPU híbrida (núcleos E) e na bateria: medir `SetThreadSelectedCpuSets` e o
   power throttling num Intel de 12ª geração ou mais novo (as threads da CPU emulada e da GPU já sobem para acima do
   normal, `--host-prio`; ver `docs/notes/thread-priority.md`)
+  Medido (24/11/2026, feat/alg4-small, `PowerThrottlingBenchmarkTests`): neste PC (i5-11300H, não híbrido, na tomada)
+  o EcoQoS forçado no processo custa 1-5% a threads como as da CPU emulada, dentro do ruído, e a saída por thread
+  (`ThreadPowerThrottling`) não ganha nem custa nada: nada mudado. Falta o que este PC não mostra: rodar o mesmo teste
+  na bateria (tirar da tomada; `dotnet test --filter FullyQualifiedName~PowerThrottlingBenchmarkTests`) e num Intel de
+  12ª geração ou mais novo, onde o EcoQoS manda as threads para os núcleos E
 - [x] (15/11/2026, usuário: concluído) [P2][M] Queda para 50-54 fps no menu do Sonic Mania
   Bloqueado (perf/desktop-23, 12/11/2026): o port não roda desde que o taiHEN em HLE saiu (11/11/2026, decisão do
   usuário: só módulos reais; ver Firmware e sistema), então este item e o das travadas nos carregamentos não podem ser
