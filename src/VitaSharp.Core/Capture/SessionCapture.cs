@@ -339,6 +339,9 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     public string? LastZip { get; private set; }
     /// <summary>Set when the last recording was completely written (tests, scripted runs wait on it).</summary>
     public readonly ManualResetEventSlim Idle = new(true);
+    /// <summary>Set once a started recording records (its HLE call trace and input run), or its start failed; reset by
+    /// <see cref="Start"/>. A recording scheduled on guest frames holds the guest on it (<see cref="WaitUntilRecording"/>).</summary>
+    private readonly ManualResetEventSlim _recordingBegun = new(true);
     /// <summary>Seconds since the running recording started (0 when none runs): the REC badge.</summary>
     public double RecordingSeconds => _rec is { } r ? (CaptureClock.NowNs - r.StartNs) / 1e9 : 0;
     /// <summary>Progress of the save in percent (0-100), -1 when nothing is being saved: the "saving NN%" badge.</summary>
@@ -995,6 +998,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             return false;
         }
         Idle.Reset();
+        _recordingBegun.Reset();
         _starting = true;
         Task.Run(() =>
         {
@@ -1010,6 +1014,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             }
             finally
             {
+                _recordingBegun.Set();
                 _starting = false;
                 Volatile.Write(ref _busy, 0);
                 // a stop pressed while the recording was starting (start save state): done now
@@ -1107,6 +1112,9 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             HleCallTrace.Begin();
         }
         CaptureHooks.Random ??= this;
+        // what follows (the start save state, the GPU dump) waits for the guest: a guest held at the frame the
+        // recording was scheduled for goes on from here
+        _recordingBegun.Set();
         WriteText(dir, "threads_start.txt", _options.Threads);
         WriteText(dir, "context.txt", () => SafeDescribe("start of the recording"));
 
@@ -1141,6 +1149,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             }
         }
     }
+
+    /// <summary>Waits until the recording <see cref="Start"/> began records (or failed to start), at most
+    /// <paramref name="timeoutMs"/>: the start runs in the background, and a guest that goes on meanwhile would run
+    /// frames the recording misses. False when it did not begin in time.</summary>
+    public bool WaitUntilRecording(int timeoutMs) => _recordingBegun.Wait(timeoutMs) && _rec != null;
 
     /// <summary>Stops the recording and writes the folder and its zip in the background.</summary>
     public bool Stop(string reason = "hotkey")
