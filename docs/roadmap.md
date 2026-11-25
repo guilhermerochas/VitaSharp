@@ -4837,6 +4837,17 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   igual garantida, então recalcular a profundidade pelo plano não basta. Falta a referência (Vita3K ou o aparelho no
   mesmo ponto) para saber de que lado o Vita resolve esse empate (conversão float→D24 ao gravar/carregar a superfície,
   precisão do ISP) antes de mudar o renderer.
+  Referência do aparelho (ac3w, 25/11/2026): vídeo de captura direta do Vita (YouTube qwGa8WQxNW4, "Handheld Players",
+  2:59-3:06, "Catch the chicken!"): a mesma parede (treliça, porta, venezianas verdes, tijolo) aparece inteira em todos
+  os quadros (0 flashes na região em 160 quadros únicos), então o Vita resolve o empate a favor da parede. Com a
+  profundidade lida em float (imagens D32F), a parede fica 0 a 2 ulps de float32 (= passos de 2^-24) atrás do pré-passe
+  nos quadros ruins e 1-2 na frente nos bons; simulando as regras de gravação da superfície S8D24 (arredondar, truncar
+  ou teto ao converter float→D24, com a parede em float ou quantizada) nenhuma deixa a parede inteira no quadro ruim
+  (no máximo 33% dos pixels passam, como hoje). Ou seja, não é a conversão ao gravar/carregar: o Vita calcula a
+  profundidade dessas faces coplanares de um jeito que dá o mesmo valor (ou a parede na frente) e o nosso caminho
+  (z/w por vértice e interpolação do driver) dá 1-2 ulps de diferença. Próximo passo possível: descobrir no USSE/ISP
+  como a profundidade sai do vértice (ex.: z e w do mesmo registro, divisão, precisão) a partir do código do shader e
+  de testes; sem isso, qualquer viés de profundidade seria chute.
 - [ ] [P1][G] PSM em Unity não abre (relato do usuário, 22/11/2026; log de 19:33, NPOA00239): o título traz o próprio
   runtime (`ux0:psm/<título>/runtime/eboot.bin`, PCSI00010 "Unity Runtime for PlayStation Mobile", mais mono_prx e
   bridge_prx), que está cifrado com a chave do conteúdo, e o carregador o lê como SELF comum: `InvalidDataException: Not
