@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.pt-BR.md sha256=ab4fca501e6ebaa193b0fcd4253e3a21b1971c47a92ec1784893f8889366af26 -->
+<!-- pair: psp-compat.pt-BR.md sha256=503e99ddf8154775ee78bacc1dae845d3e61e78f7020fdbdb7285839b8dc0f62 -->
 # PSP compatibility core (SceCompat, ScePspemu, Allegrex)
 
 *Português: [psp-compat.pt-BR.md](psp-compat.pt-BR.md).*
@@ -291,21 +291,24 @@ S, T and D prefixes are at rest. Anything else takes the full handler (`Allegrex
 **IL tier (done).** `AllegrexCore.Il.cs`, the same pattern as the ARM CPU's `Backends/IlJitCompiler.cs`:
 
 1. Hotness: a block counts its instructions at each entry; past `AllegrexCore.IlHotInstructions` (200 000 by default)
-   it is compiled once, on the core's thread (about a millisecond).
-2. Code: one `DynamicMethod` per block. The guest registers it touches live in locals, loaded at entry and written
-   back at every exit, so RyuJIT keeps them in host registers. It compiles the plain ALU instructions, lw/sw,
-   add.s/sub.s/mul.s and vadd/vsub/vmul/vdot (calls to their handlers with the decoded fields as constants), and a
-   closing branch or jump whose delay slot is one of those. Any other block stays in the block cache.
-3. Exits: the code returns the next PC; the run then goes on into the block it last continued to (the block cache's
-   link), compiled or not.
-4. Exactness: the budget, the Count/Compare cap and the interrupt checks stay at block boundaries; a misaligned lw/sw
-   leaves before the instruction, so the interpreter raises the address error at the exact PC; a store that ends the
-   run, or an FPU/VFPU exception (its PC and delay-slot flag stored before the call), leaves after it.
-5. Invalidation: the code lives in its block, so dropping a page's blocks drops their code too.
-6. Native AOT (Android) has no Reflection.Emit: `IlTierSupported` is false there and the block cache is the fast path;
-   a native ARM64 tier (the ARM CPU's `NativeArm64Compiler` pattern) is the step after.
-7. Tests: `AllegrexIlTierTests` runs every other Allegrex test again with the tier forced on (every compilable block
-   compiled at its first run).
+   its region is compiled once, on the core's thread.
+2. Regions: the hot block and up to 15 decoded blocks its branches reach (taken and fall-through targets, jumps) go
+   into one `DynamicMethod`. A branch, or a jr, to a block of the region is a jump inside it, so a loop stays in
+   compiled code; each block is entered only when the instruction budget holds all of it.
+3. Code: the general, FPU and VFPU registers and FCR31 it touches live in locals (FPU registers as floats, bit-cast at
+   the boundaries), loaded at entry and written back at every exit. It compiles the plain ALU instructions, lw/sw,
+   add.s/sub.s/mul.s inline (the host's float operation, with the inexact cause and the range checked beside it; the
+   region is entered only in round-to-nearest with no FPU exception enabled), vadd/vsub/vmul on the lane locals and
+   vdot through a scalar `Dot4` (the region is entered only with the prefixes at rest), and the closing branch.
+4. Exactness: a misaligned lw/sw leaves before the instruction, so the interpreter raises the address error at the
+   exact PC; a store that ends the run, or an FPU exception (from the full handler a non-fast case falls to), leaves
+   after it.
+5. Invalidation: every member block lists the region's head; dropping any member drops the region.
+6. Native AOT (Android) has no Reflection.Emit: `IlTierSupported` is false there, blocks never ask to be compiled, and
+   the block cache is the fast path (measured on a PC with a Native AOT build: about 1.6 ns per integer instruction,
+   10 ns per add.s/mul.s, 19 ns per vadd.q/vmul.q).
+7. Tests: `AllegrexIlTierTests` runs every other Allegrex test again with the tier forced on and one-instruction
+   blocks, so even a test that runs a single instruction runs it compiled.
 
 ### What needs keys and what does not
 
