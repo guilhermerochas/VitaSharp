@@ -92,7 +92,13 @@ public sealed class GxmFormatMappingTests
             Same(u4[s], Texture(TexBase.U4U4U4U4, s), $"U4U4U4U4 swizzle {s}");
         }
 
-        Same(M(I, I, I, I), Texture(TexBase.U4U4U4U4, 4), "U4U4U4U4 swizzle 4");
+        // X4U4U4U4_1BGR / _1RGB and U4U4U4X4_RGB1 / _BGR1: the colour nibbles as their ABGR / ARGB / RGBA / BGRA siblings, alpha 1
+        ComponentMapping[] u4x = [M(A, B, G, O), M(G, B, A, O), M(R, G, B, O), M(B, G, R, O)];
+        for (uint s = 0; s < u4x.Length; s++)
+        {
+            Same(u4x[s], Texture(TexBase.U4U4U4U4, s + 4), $"U4U4U4U4 swizzle {s + 4}");
+        }
+
         // U1U5U5U5 is uploaded as A1R5G5B5: ABGR and BGRA swap R and B, the 1-variants have alpha one
         ComponentMapping[] u1 = [M(B, G, R, A), M(R, G, B, A), M(R, G, B, A), M(B, G, R, A), M(B, G, R, O), M(R, G, B, O), M(R, G, B, O), M(B, G, R, O)];
         for (uint s = 0; s < u1.Length; s++)
