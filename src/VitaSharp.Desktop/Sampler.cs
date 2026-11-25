@@ -87,58 +87,6 @@ sealed class Sampler
     VitaSharp.Core.Cpu.CpuCore.SleepStat[] _baseSleep = new VitaSharp.Core.Cpu.CpuCore.SleepStat[2];
     long _baseFrame, _endFrame;
     double _baseTime, _endTime;
-    long _firstPresentTicks;
-
-    /// <summary>How long the start of a session takes to become smooth, for the start-up work (code precompilation,
-    /// shader cache) and for the JIT compiling the code a session reaches first.</summary>
-    public const double StartupSeconds = 60;
-
-    /// <summary>
-    /// The start-up line of the end-of-run profile: when the first frame was presented (seconds after the process
-    /// started) and, over the first <see cref="StartupSeconds"/> after it, the frames presented, the slow ones (above
-    /// 50 and 100 ms, with their time above a 33.3 ms frame) and, of the slow ones, those with more than 5 ms of JIT
-    /// compilation in their frame or the one before (<paramref name="jitMs"/>, per interval; empty when the frame
-    /// ledger is off). <paramref name="intervalsMs"/>: the present intervals from the first frame on.
-    /// </summary>
-    internal static string StartupReport(double firstFrameSeconds, IReadOnlyList<double> intervalsMs, IReadOnlyList<double> jitMs)
-    {
-        double elapsed = 0;
-        int frames = 0;
-        int slow = 0;
-        int verySlow = 0;
-        int slowWithJit = 0;
-        double excess = 0;
-        double jitTotal = 0;
-        for (int i = 0; i < intervalsMs.Count && elapsed < StartupSeconds * 1000; i++)
-        {
-            double interval = intervalsMs[i];
-            elapsed += interval;
-            frames++;
-            double jit = i < jitMs.Count ? jitMs[i] : 0;
-            jitTotal += jit;
-            if (interval <= 50)
-            {
-                continue;
-            }
-
-            slow++;
-            excess += interval - 1000.0 / 30;
-            if (interval > 100)
-            {
-                verySlow++;
-            }
-
-            double jitAround = jit + (i > 0 && i - 1 < jitMs.Count ? jitMs[i - 1] : 0);
-            if (jitAround > 5)
-            {
-                slowWithJit++;
-            }
-        }
-
-        return $"PROFILE startup: first frame {firstFrameSeconds:F1} s after the process started; first {StartupSeconds:F0} s: {frames} frames, "
-            + $"{slow} over 50 ms ({verySlow} over 100 ms, {excess:F0} ms above 33.3 ms), {slowWithJit} of them with JIT compilation over 5 ms, "
-            + $"JIT compiling {jitTotal:F0} ms";
-    }
 
     /// <summary>Samples only once <paramref name="fromFrame"/> frames were presented (skip boot). <paramref name="hostHle"/>
     /// (--profile-hle) also times every HLE call per thread (PROFILE host lines), which costs HLE-heavy games CPU.</summary>
@@ -169,12 +117,6 @@ sealed class Sampler
         while (!_stop)
         {
             Thread.Sleep(1);
-            if (_firstPresentTicks == 0 && VitaSharp.Core.Hle.Modules.Display.FramesPresented > 0)
-            {
-                // frame 0's slot of the ring, read long before 8192 more frames overwrite it
-                _firstPresentTicks = VitaSharp.Core.Hle.Modules.Display.PresentTimes[0];
-            }
-
             if (VitaSharp.Core.Hle.Modules.Display.FramesPresented < _from)
             {
                 lastFpsTime = sw.Elapsed.TotalSeconds;
@@ -335,36 +277,6 @@ sealed class Sampler
         }
     }
 
-    /// <summary>The <see cref="StartupReport"/> line, from the present times of the run's first frames.</summary>
-    void ReportStartup(long[] pt, int mask)
-    {
-        if (_firstPresentTicks == 0 || _endFrame >= pt.Length)
-        {
-            return;
-        }
-
-        double frequency = System.Diagnostics.Stopwatch.Frequency;
-        double sinceStart;
-        using (var process = System.Diagnostics.Process.GetCurrentProcess())
-        {
-            sinceStart = (DateTime.Now - process.StartTime).TotalSeconds;
-        }
-
-        double firstFrame = sinceStart - (System.Diagnostics.Stopwatch.GetTimestamp() - _firstPresentTicks) / frequency;
-        var intervals = new List<double>();
-        var jit = new List<double>();
-        for (long f = 1; f < _endFrame - 1; f++)
-        {
-            intervals.Add((pt[f & mask] - pt[(f - 1) & mask]) * 1000.0 / frequency);
-            if (FrameLedger.Enabled)
-            {
-                jit.Add(FrameLedger.Window(f, f)[(int)FrameLedger.Cat.JitCompile]);
-            }
-        }
-
-        Log.Info(StartupReport(firstFrame, intervals, jit));
-    }
-
     /// <summary>
     /// The frame-interval lines of the end-of-run profile. Safe for any run length: a short run (fewer than 51 frames,
     /// e.g. a scenario slowed down by coverage instrumentation) has no 50-frame window, and a run where every interval
@@ -452,7 +364,6 @@ sealed class Sampler
             }
 
             ReportHitchCauses(pt, mask);
-            ReportStartup(pt, mask);
             var win = new List<double>();
             for (long f = _baseFrame + 1; f + 50 < _endFrame; f += 50)
             {

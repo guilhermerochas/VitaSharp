@@ -155,7 +155,8 @@ public sealed partial class Emulator : IDisposable
 
     public Emulator(EmulatorOptions options)
     {
-
+        // a session starts: how long its first frame and its first minute take (StartupMeter), from the user's click
+        StartupMeter.Current.Begin(EmulationPause.ActiveHostTicks);
         Options = options;
         // the JIT switches are process-wide: Dispose gives them back, so an emulator built with EnableJit = false (the
         // HLE unit tests, the disasm command) does not leave the JIT off for everything that runs after it
@@ -2627,6 +2628,11 @@ public sealed partial class Emulator : IDisposable
         if (Parent != null)
         {
             return; // the GPU and host devices are the first process's
+        }
+
+        if (StartupMeter.Current.Finish() is { } startup)
+        {
+            Log.Info(startup); // the session ended within its first minute
         }
 
         // the processes still starting, re-executing or ending finish first: what they free is this system's

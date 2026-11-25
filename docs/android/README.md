@@ -594,6 +594,13 @@ not logcat. `VITASHARP_SESSION_REPORT_SECONDS` (in `config/env.txt`) changes the
 what phone performance is measured from: `logs/last.log` (or the kept `<time>_<TITLEID>.log`). The short `[perf]`
 lines `GameActivity` logs every 30 s (fps, JIT, audio) stay as they are; this report is the detailed one.
 
+**Start-up line** (`StartupMeter` in the core, desktop and Android alike): one `Startup:` line in the log file once the
+first minute after the game's first frame is over (or when the session ends before it): the seconds from the tap to
+the first frame, then, over that minute, the frames, the slow ones (over 50 and 100 ms, and their time above a 33.3 ms
+frame) and how many of the slow ones had more than 5 ms of JIT compilation around them, with the JIT time of the
+minute. It is how "Precompilar código ARM" and the code cache are measured on the phone; the time is the emulation's,
+so a pause does not count as a slow frame.
+
 ```
 adb logcat -s VitaSharp VitaSharp-Guest
 ```
