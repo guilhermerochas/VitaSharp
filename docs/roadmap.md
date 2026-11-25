@@ -4567,12 +4567,12 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   execução contínua é aplicada no próximo quadro.
   Feito (fix/res1, 22/11/2026): a troca de resolução e de MSAA (F1/F3 no PC, MSAA no menu do Android) não segura mais as threads do guest; o worker da GPU troca o renderer sozinho na próxima fronteira entre cenas e o jogo segue rodando (`GpuQueueLiveReplaceTests`, `GraphicsHotkeysTests.AChangeIsAppliedWhileAGuestThreadRunsGuestCode`). O save state continua exigindo o ponto seguro. Testar: no shell (com a música/SceShellMusicCoreCacheIo ativa) e num jogo, F1 de 1x para 2x/3x/4x e de volta, e F3: a troca aparece no próximo quadro, sem "not applied" no log e sem queda de fps durante a troca.
 
-- [ ] [P2][M] IO assíncrono (`sceIoXxxAsync`) bloqueava quem chama pelo tempo do cartão: a requisição inteira, com a
+- [ ] (22/11/2026, falta testar) [P2][M] IO assíncrono (`sceIoXxxAsync`) bloqueava quem chama pelo tempo do cartão: a requisição inteira, com a
   espera do modelo do cartão (7 MB/s), rodava na thread do guest, e um jogo que lê assíncrono na thread principal
   travava o quadro. Correção (fix/io1, 22/11/2026): como no SceIofilemgr 3.74 (fila "SceIoScheduler"), a chamada volta
   na hora, o trabalho no arquivo roda numa thread do host em ordem de envio e a conclusão (param, bit do evento,
   `sceIoComplete`) chega quando o tempo do dispositivo acaba, no relógio do guest; save state guarda pedido em voo
-  (`IoAsyncSchedulerTests`). Teste: um jogo que usa `sceIoReadAsync` (ex.: o shell copiando o pic0 de um jogo para o
+  (`IoAsyncSchedulerTests`). Nada listado como falta (conferido em 25/11/2026, small5). Testar: um jogo que usa `sceIoReadAsync` (ex.: o shell copiando o pic0 de um jogo para o
   LiveArea, a Câmera salvando foto) continua funcionando, e carregamentos com leitura assíncrona não engasgam o quadro.
 
 - [ ] (22/11/2026, falta testar) [P3][P] `--capture-playback` (rerun): o fim do rerun derrubava o processo quando a pasta da captura não tem
@@ -4582,7 +4582,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   de fechar o processo (`SessionCaptureTests.Compare_skips_when_a_capture_has_no_frames_file`). Teste: rodar o rerun
   de uma captura sem quadros e ver a linha `compare: skipped` e o resumo PERF no fim.
 
-- [ ] [P1][M] The Amazing Spider-Man (PCSE00333), tela de pausa piscando (relato do usuário, 21/11/2026; captura
+- [ ] (22/11/2026, falta testar) [P1][M] The Amazing Spider-Man (PCSE00333), tela de pausa piscando (relato do usuário, 21/11/2026; captura
   `PCSE00333_20261121_232645_tudo`, 4,3 s a 60 fps, dump da GPU de 198 quadros): o menu de pausa ("RESUME" e as
   opções abaixo, sobre o fundo com a aranha) pisca; na folha de contatos as opções abaixo de "RESUME" quase não
   aparecem. Comparar quadros seguidos no replay do dump (texto/opções presentes em um quadro e ausentes no outro).
@@ -4593,6 +4593,10 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   No Vita esses registradores guardam o que uma tarefa anterior deixou (o programa sobrescreve o resultado); o
   gerador agora zera todos os bancos (sa, p e as saídas também no fragmento), GeneratorVersion 34. Replay do dump:
   198/198 quadros idênticos entre execuções (antes 81-147/198). Teste: `ShaderRegisterInitTests`.
+  Conferido de novo no release/20261117 (ff8e4faa, 25/11/2026, small5; inclui o ajuste f883f0e4, saídas do
+  fragmento com o TileWord1): dois replays do dump, 198/198 quadros idênticos (`--compare`), RESUME, RESTART,
+  SETTINGS e QUIT TO MAIN MENU em todos os quadros; o `verify` da captura diz "nada a verificar" (as regras do
+  relatório não marcaram o pisca na gravação: o texto escuro das opções é pequeno demais para o [flash] da célula).
   Testar: The Amazing Spider-Man, abrir a pausa (e a folha de contatos) e ficar alguns segundos: RESUME e as opções
   abaixo sempre visíveis, sem piscar.
 
