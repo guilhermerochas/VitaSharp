@@ -137,4 +137,59 @@ public static class HidUsages
         84 => 0x221,                                           // SEARCH: AC Search
         _ => 0,
     };
+
+    /// <summary>
+    /// The consumer-page usage of a media key the PC's window library (GLFW) reports with no key token, by its
+    /// scancode: on Windows the PS/2 set 1 code with the extended bit (0x100) that the keyboard driver gives each media
+    /// key, on Linux (X11) the X keycode (the evdev code + 8). 0 = no media key or another system (macOS sends media
+    /// keys as system events the window never gets).
+    /// </summary>
+    public static ushort ConsumerFromScancode(int scancode)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return ConsumerFromWindowsScancode(scancode);
+        }
+
+        return OperatingSystem.IsLinux() || OperatingSystem.IsFreeBSD() ? ConsumerFromX11Keycode(scancode) : (ushort)0;
+    }
+
+    /// <summary>Windows: the scancode (set 1, extended bit 0x100) of a media key.</summary>
+    public static ushort ConsumerFromWindowsScancode(int scancode) => scancode switch
+    {
+        0x122 => 0xCD,                                         // Play/Pause
+        0x124 => 0xB7,                                         // Stop
+        0x110 => 0xB6,                                         // Scan Previous Track
+        0x119 => 0xB5,                                         // Scan Next Track
+        0x120 => 0xE2,                                         // Mute
+        0x12E => 0xEA,                                         // Volume Decrement
+        0x130 => 0xE9,                                         // Volume Increment
+        0x16D => 0x183,                                        // Media Select: AL Consumer Control Configuration
+        0x16C => 0x18A,                                        // Mail: AL Email Reader
+        0x121 => 0x192,                                        // Calculator: AL Calculator
+        0x132 => 0x223,                                        // Browser Home: AC Home
+        0x165 => 0x221,                                        // Browser Search: AC Search
+        _ => 0,
+    };
+
+    /// <summary>Linux (X11): the X keycode (evdev KEY_* + 8) of a media key.</summary>
+    public static ushort ConsumerFromX11Keycode(int keycode) => keycode switch
+    {
+        172 => 0xCD,                                           // KEY_PLAYPAUSE: Play/Pause
+        174 => 0xB7,                                           // KEY_STOPCD: Stop
+        173 => 0xB6,                                           // KEY_PREVIOUSSONG: Scan Previous Track
+        171 => 0xB5,                                           // KEY_NEXTSONG: Scan Next Track
+        121 => 0xE2,                                           // KEY_MUTE: Mute
+        122 => 0xEA,                                           // KEY_VOLUMEDOWN: Volume Decrement
+        123 => 0xE9,                                           // KEY_VOLUMEUP: Volume Increment
+        208 => 0xB0,                                           // KEY_PLAYCD: Play
+        209 => 0xB1,                                           // KEY_PAUSECD: Pause
+        176 => 0xB4,                                           // KEY_REWIND: Rewind
+        216 => 0xB3,                                           // KEY_FASTFORWARD: Fast Forward
+        163 => 0x18A,                                          // KEY_MAIL: AL Email Reader
+        148 => 0x192,                                          // KEY_CALC: AL Calculator
+        158 => 0x196,                                          // KEY_WWW: AL Internet Browser
+        225 => 0x221,                                          // KEY_SEARCH: AC Search
+        _ => 0,
+    };
 }

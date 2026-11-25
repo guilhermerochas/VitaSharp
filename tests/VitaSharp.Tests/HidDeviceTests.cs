@@ -275,6 +275,29 @@ public sealed class HidDeviceTests(GuestMemoryFixture fixture) : IDisposable
         }
     }
 
+    /// <summary>The PC's media keys, which GLFW reports with no key token: by the Windows scancode (set 1 with the
+    /// extended bit) and the X11 keycode (evdev + 8); every one maps to a usage SceHid keeps, and the scancodes of
+    /// ordinary keys (A: 0x1E on Windows, 38 on X11) map to none.</summary>
+    [Fact]
+    public void PcMediaKeysHaveTheirConsumerUsages()
+    {
+        Assert.Equal(PlayPause, HidUsages.ConsumerFromWindowsScancode(0x122));
+        Assert.Equal(VolumeUp, HidUsages.ConsumerFromWindowsScancode(0x130));
+        Assert.Equal(NextTrack, HidUsages.ConsumerFromWindowsScancode(0x119));
+        Assert.Equal(0, HidUsages.ConsumerFromWindowsScancode(0x1E));
+        Assert.Equal(0, HidUsages.ConsumerFromWindowsScancode(0x22)); // G: the same code without the extended bit
+        Assert.Equal(PlayPause, HidUsages.ConsumerFromX11Keycode(172));
+        Assert.Equal(Mute, HidUsages.ConsumerFromX11Keycode(121));
+        Assert.Equal(VolumeDown, HidUsages.ConsumerFromX11Keycode(122));
+        Assert.Equal(0, HidUsages.ConsumerFromX11Keycode(38));
+        for (int code = 0; code < 0x200; code++)
+        {
+            ushort windows = HidUsages.ConsumerFromWindowsScancode(code), x11 = HidUsages.ConsumerFromX11Keycode(code);
+            Assert.True(windows == 0 || HidConsumerControl.IsKept(windows), $"Windows scancode 0x{code:X} maps to a usage SceHid drops");
+            Assert.True(x11 == 0 || HidConsumerControl.IsKept(x11), $"X11 keycode {code} maps to a usage SceHid drops");
+        }
+    }
+
     /// <summary>The module's checks: a handle below 1, a NULL report list or a negative count, a handle of no device;
     /// at most 16 reports per call; the intercept switch.</summary>
     [Fact]

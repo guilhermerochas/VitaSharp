@@ -361,8 +361,8 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMu
         _input = _window.CreateInput();
         foreach (var k in _input.Keyboards)
         {
-            k.KeyDown += (_, key, _) => OnKey(key, true);
-            k.KeyUp += (_, key, _) => OnKey(key, false);
+            k.KeyDown += (_, key, scancode) => OnKey(key, scancode, true);
+            k.KeyUp += (_, key, scancode) => OnKey(key, scancode, false);
             k.KeyChar += (_, c) => TextCapture?.OnChar(c);
         }
         foreach (var m in _input.Mice)
@@ -750,6 +750,19 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMu
             return;
         }
         (key == Key.F7 ? LoadStateKey : SaveStateKey)?.Invoke(key == Key.F6 ? -1 : shift ? 1 : 0);
+    }
+
+    /// <summary>A key without a key token (GLFW's Unknown) may be a media key: the paired keyboard's consumer-control
+    /// device gets it by its scancode (<see cref="HidUsages.ConsumerFromScancode"/>); the other keys go on as usual.</summary>
+    void OnKey(Key key, int scancode, bool down)
+    {
+        if (key == Key.Unknown && HidKeyboard is { } mediaKeyboard && HidUsages.ConsumerFromScancode(scancode) is var usage and not 0)
+        {
+            mediaKeyboard.ConsumerControl.Key(usage, down, VitaSharp.Core.Hle.Modules.Hid.NowUs);
+            return;
+        }
+
+        OnKey(key, down);
     }
 
     void OnKey(Key key, bool down)
