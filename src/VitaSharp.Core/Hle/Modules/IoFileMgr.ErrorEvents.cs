@@ -283,6 +283,7 @@ public sealed partial class IoFileMgr
         GuestMemory.W32(extra + 0xC, holder);
     }
 
+    [SnapshotIgnore]
     ThreadMgr? _mediaWaitThreads;
 
     ThreadMgr MediaWaitThreads => _mediaWaitThreads ??= Emu.Hle.Modules.OfType<ThreadMgr>().First();
