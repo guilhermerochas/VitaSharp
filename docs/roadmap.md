@@ -4634,8 +4634,13 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   dump mostra o máximo guardado ("at most N MB of chunks buffered", ~280 MB). Working set no fim gravando 2,15-2,25
   GB (antes 2,06-2,07). Testar: "Gravar tudo" no AC III em gameplay; o relatório da captura deve mostrar o "dump
   recorder" bem abaixo de 19 ms/quadro e o fps da gravação perto de 30. Falta: a compressão (2 threads, ~66-71 ms de
-  CPU por quadro) é o gargalo que sobra: o worker espera 3,6-9,3 ms/quadro por ela; reduzir os bytes crus (~12
-  MB/quadro, deltas dos uniforms ~80% do tamanho) ou mais um compressor quando a CPU deixar.
+  CPU por quadro) é o gargalo que sobra: o worker espera 3,6-9,3 ms/quadro por ela. Os bytes crus não caem com
+  deltas melhores: os blocos de uniforms do AC III são slots de array de 16-33 KB (16384 B x 11562 nos 34 quadros do
+  dump de 23/11) e 58% das palavras de 8 bytes mudam até contra o melhor dos 64 blocos anteriores do mesmo programa
+  (66% contra o anterior, 73% contra o mesmo draw do quadro anterior; 18,5% de palavras zero). Delta contra o mesmo
+  draw do quadro anterior foi medido e descartado: 332 -> 315 MB de uniforms (-5%, -3% dos registros), pago com duas
+  comparações por bloco no GPU worker. Próximo: gravar só os bytes de cada slot que o shader pode ler (ou que o guest
+  escreveu para o draw), ou mais um compressor quando a CPU deixar.
   (2) feito (fix/io1, 22/11/2026), ver "Corrigido, falta o usuário testar".
 - [x] (18/11/2026, usuário: corrigido; reabre se aparecer de novo) [P1][M] PSVitaAlive (PSVAS1178, homebrew vita2d), bug gráfico no teclado de busca (usuário, 17/11/2026; captura
   `captures/PSVAS1178_20261117_215911_tudo`, 41 achados [flash]): em quadros isolados faltam as teclas e parte do

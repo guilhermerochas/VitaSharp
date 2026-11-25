@@ -19,8 +19,9 @@ public class GpuDumpRecorderBenchmarks
     public void Setup()
     {
         _dump = File.ReadAllBytes(Fixtures.RequireDump());
-        (long frames, byte[] chunk) = DumpReencoder.Encode(_dump);
-        Console.WriteLine($"// {frames} frames; first raw chunk {chunk.Length / 1048576.0:F1} MB");
+        (long frames, byte[] chunk) = DumpReencoder.Encode(_dump, out var uniforms, out long recordBytes);
+        Console.WriteLine($"// {frames} frames; first raw chunk {chunk.Length / 1048576.0:F1} MB; records {recordBytes / 1048576.0:F1} MB; " +
+                          $"uniform blocks {uniforms.Inline} inline, {uniforms.Refs} repeated, {uniforms.Deltas} deltas ({uniforms.RawBytes / 1048576.0:F1} MB -> {uniforms.StoredBytes / 1048576.0:F1} MB)");
     }
 
     /// <summary>The reader alone (per dump).</summary>
@@ -70,7 +71,10 @@ internal static class DumpReencoder
 {
     private const int ChunkBytes = 32 << 20;
 
-    public static (long Frames, byte[] FirstChunk) Encode(byte[] dump)
+    public static (long Frames, byte[] FirstChunk) Encode(byte[] dump) => Encode(dump, out _, out _);
+
+    /// <summary>Also the codec's uniform block statistics and the record bytes written.</summary>
+    public static (long Frames, byte[] FirstChunk) Encode(byte[] dump, out (long Inline, long Refs, long Deltas, long RawBytes, long StoredBytes) uniforms, out long recordBytes)
     {
         var codec = new GpuDumpCodec();
         var main = new DumpBuffer(1 << 20);
@@ -78,6 +82,7 @@ internal static class DumpReencoder
         var defs = new DumpBuffer(1 << 12);
         byte[]? first = null;
         long frames = 0;
+        long total = 0;
         using var reader = new GpuDumpReader(new MemoryStream(dump, writable: false));
         while (reader.Next())
         {
@@ -106,9 +111,12 @@ internal static class DumpReencoder
             if (main.Length > ChunkBytes)
             {
                 first ??= main.Span.ToArray();
+                total += main.Length;
                 main.Clear();
             }
         }
+        uniforms = codec.UniformStats;
+        recordBytes = total + main.Length;
         return (frames, first ?? main.Span.ToArray());
     }
 }
