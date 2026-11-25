@@ -160,7 +160,7 @@ public sealed unsafe partial class VulkanRenderer
             }
 
             DrainPresent();
-            _vk.DeviceWaitIdle(_dev);
+            _core.WaitIdle();
             DestroySwapchain();
             _core.ReplaceSurface(null);
             Log.Info("Presentation surface detached");
@@ -179,7 +179,7 @@ public sealed unsafe partial class VulkanRenderer
             }
 
             DrainPresent();
-            _vk.DeviceWaitIdle(_dev);
+            _core.WaitIdle();
             DestroySwapchain();
             _core.ReplaceSurface(surface);
             _options.Surface = surface;
@@ -195,7 +195,7 @@ public sealed unsafe partial class VulkanRenderer
         if (_swapchainDirty)
         {
             DrainPresent();
-            _vk.DeviceWaitIdle(_dev);
+            _core.WaitIdle();
             CreateSwapchain();
             if (_swapchainDirty)
             {

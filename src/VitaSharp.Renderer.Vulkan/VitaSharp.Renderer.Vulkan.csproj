@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\VitaSharp.Core\VitaSharp.Core.csproj" />
+    <InternalsVisibleTo Include="VitaSharp.Tests" />
   </ItemGroup>
 
   <ItemGroup>

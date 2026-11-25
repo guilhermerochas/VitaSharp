@@ -29,7 +29,7 @@ public sealed unsafe partial class VulkanRenderer
             _drawsSinceSubmit = 0;
         }
         DrainPresent();
-        _vk.DeviceWaitIdle(_dev);
+        _core.WaitIdle();
         var targets = _renderTargets.Values.OrderBy(t => t.LastScene).ThenBy(t => t.LastUsedFrame).ToList();
         var w = new DumpBuffer(1 << 20);
         w.U32(DumpStateVersion);

@@ -10,7 +10,7 @@ namespace VitaSharp.Tests;
 /// memory, and the pixels are checked there: a clear, a solid triangle, a textured sprite, alpha blending, the depth
 /// test, the scissor and a 565 framebuffer.
 /// </summary>
-public sealed class GeVulkanRasterizerTests : IDisposable
+public class GeVulkanRasterizerTests : IDisposable
 {
     private const uint ListAddress = 0x08001000, Vertices = 0x08010000, Texture = 0x08020000;
     private const uint ThroughColorS16 = (1u << 23) | (7u << 2) | (2u << 7);
@@ -25,6 +25,13 @@ public sealed class GeVulkanRasterizerTests : IDisposable
     private readonly GeEngine _engine;
 
     public GeVulkanRasterizerTests()
+        : this(null, null)
+    {
+    }
+
+    /// <param name="gpuProfile">A device class whose missing features and quirks the device takes (adreno, mali).</param>
+    /// <param name="gpuQuirks">Quirks forced on or off (+TileBased).</param>
+    protected GeVulkanRasterizerTests(string? gpuProfile, string? gpuQuirks)
     {
         _engine = new GeEngine(_memory);
         if (SoftwareVulkan.SkipReason != null || ShadercAvailability.SkipReason != null)
@@ -33,13 +40,22 @@ public sealed class GeVulkanRasterizerTests : IDisposable
         }
 
         _driver = SoftwareVulkan.Use();
-        _core = new VkCore(null, false);
+        _core = new VkCore(null, false, gpuProfile, gpuQuirks);
         _compiler = new ShaderCompiler(null);
         _rasterizer = new GeVulkanRasterizer(_core, _compiler);
         _engine.Rasterizer = _rasterizer;
     }
 
     public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>The device the rasterizer draws on (null when the software device is missing).</summary>
+    protected VkCore? Core => _core;
+
+    protected virtual void Dispose(bool disposing)
     {
         _rasterizer?.Dispose();
         _compiler?.Dispose();
@@ -304,21 +320,17 @@ public sealed class GeVulkanRasterizerTests : IDisposable
         Assert.Equal(31, _memory.Read16(GeTestMemory.VramBase + (uint)((1 * Stride + 9) * 2)) & 0x1F);
     }
 
-    /// <summary>A logic op replaces blending: XOR of the drawn colour with the framebuffer's.</summary>
+    /// <summary>A logic op replaces blending: XOR of the drawn colour with the framebuffer's; a device without logic
+    /// ops (Adreno's profile) draws the colour as it is (logged once).</summary>
     [SoftwareVulkanFact]
     public void ALogicOpCombinesWithTheFramebuffer()
     {
-        if (!_rasterizer!.SupportsLogicOp)
-        {
-            return; // the device has no logic ops (the draw goes without, logged)
-        }
-
         GeListBuilder list = Setup().Command(GeCommand.ClearMode, 1 | 0x100);
         Rectangle(list, Vertices, 0, 0, 8, 8, 0, 0xFFFF00FF).Command(GeCommand.ClearMode, 0)
             .Command(GeCommand.LogicOpEnable, 1).Command(GeCommand.LogicOp, 6); // XOR
         Rectangle(list, Vertices + 0x100, 0, 0, 8, 8, 0, 0xFF00FFFF).End();
         GeRegisters.Run(_engine, list.Start);
-        Assert.Equal(0xFFFF00u, Pixel(4, 4) & 0xFFFFFF);
+        Assert.Equal(_rasterizer!.SupportsLogicOp ? 0xFFFF00u : 0x00FFFFu, Pixel(4, 4) & 0xFFFFFF);
     }
 
     /// <summary>A 4x4 texture with a red level 0 and a green 2x2 level 1 (TEXMODE bits 16..18 = 1) on a 2x2 sprite:

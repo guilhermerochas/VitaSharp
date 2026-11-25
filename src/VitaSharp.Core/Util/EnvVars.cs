@@ -162,6 +162,9 @@ public static class EnvVars
     /// <summary>Index or part of the name of the Vulkan physical device to render with (default: the discrete GPU).</summary>
     public const string GpuDevice = "VITASHARP_GPU_DEVICE";
     public const string GpuQuirks = "VITASHARP_GPU_QUIRKS";
+    /// <summary>The PSP compat core's GE: =own draws on a Vulkan device of its own; unset or anything else, on the
+    /// renderer's device when it has a second graphics queue (GeVulkanRasterizerDevice).</summary>
+    public const string GeDevice = "VITASHARP_GE_DEVICE";
     /// <summary>Megabytes: lowers the storage-buffer range the CDRAM mirror is bound with (default: the device's
     /// maxStorageBufferRange), to test the windowed binding of drivers below 288 MB (MappedWindow.cs).</summary>
     public const string GpuMaxStorageRange = "VITASHARP_GPU_MAX_STORAGE_RANGE";

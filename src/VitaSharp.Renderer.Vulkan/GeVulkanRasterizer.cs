@@ -271,6 +271,9 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
 
     private readonly VkCore _core;
     private readonly Vk _vk;
+    private readonly Queue _queue;          // the GE's queue: the renderer's second one, or its own device's
+    private readonly object _queueLock;     // held around its submits (VkCore.WaitIdle holds it too)
+    private readonly bool _reclaim;         // allocations may ask the renderer to free memory (not on a shared device)
     private readonly Device _device;
     private readonly CommandPool _commandPool;
     private readonly CommandBuffer _commandBuffer;
@@ -309,11 +312,18 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
     private ulong _vertexSize;
     private uint _verticesUsed;
 
-    public GeVulkanRasterizer(VkCore core, ShaderCompiler compiler)
+    /// <param name="queue">The queue it submits on (default: the device's first, a device of its own).</param>
+    /// <param name="queueLock">Held around its submits (default: the device's second-queue lock).</param>
+    /// <param name="reclaim">Out-of-memory asks the device's renderer to free memory: only for a device of its own
+    /// (the renderer's reclaim runs on the renderer's threads).</param>
+    public GeVulkanRasterizer(VkCore core, ShaderCompiler compiler, Queue queue = default, object? queueLock = null, bool reclaim = true)
     {
         _core = core;
         _vk = core.Vk;
         _device = core.Device;
+        _queue = queue.Handle != 0 ? queue : core.Queue;
+        _queueLock = queueLock ?? core.SecondaryQueueLock;
+        _reclaim = reclaim;
         _compiler = compiler;
 
         CommandPoolCreateInfo poolInfo = new()
@@ -342,7 +352,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         _vertexModule = CreateModule(compiler, VertexShader, vertex: true);
         _fragmentModule = CreateModule(compiler, FragmentShader, vertex: false);
 
-        (_uploadRing, _uploadRingMemory, _uploadRingMapped) = _core.CreateHostBuffer(UploadRingSize, BufferUsageFlags.TransferSrcBit, MemCat.UploadRing);
+        (_uploadRing, _uploadRingMemory, _uploadRingMapped) = _core.CreateHostBuffer(UploadRingSize, BufferUsageFlags.TransferSrcBit, MemCat.UploadRing, _reclaim);
         EnsureVertexBuffer(1UL << 20); // before anything is recorded: growing it later submits the batch first
         _dummyTexture = CreateTexture(1, 1);
     }
@@ -557,7 +567,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             (surface.Image, surface.Memory, surface.View) = CreateImage(key.Stride, key.Height, ColorFormat,
                 ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
             (surface.Staging, surface.StagingMemory, surface.StagingMapped) = _core.CreateHostBuffer((ulong)key.Stride * (ulong)key.Height * 4,
-                BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit, MemCat.Readback);
+                BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit, MemCat.Readback, _reclaim);
         }
 
         _surfaces[id] = surface;
@@ -572,9 +582,9 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
             ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit, DepthStencilAspect);
         ulong pixels = (ulong)key.Stride * (ulong)key.Height;
         (surface.Staging, surface.StagingMemory, surface.StagingMapped) = _core.CreateHostBuffer(pixels * (ulong)_depthTexelBytes,
-            BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit, MemCat.Readback);
+            BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit, MemCat.Readback, _reclaim);
         (surface.StencilStaging, surface.StencilStagingMemory, surface.StencilStagingMapped) = _core.CreateHostBuffer(pixels,
-            BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit, MemCat.Readback);
+            BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit, MemCat.Readback, _reclaim);
         return surface;
     }
 
@@ -688,14 +698,30 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
     private void DepthToStaging(ReadOnlySpan<byte> source, Surface surface)
     {
         int pixels = surface.Key.Stride * surface.Key.Height;
-        switch (_depthStencilFormat)
+        DepthToTexels(source, _depthStencilFormat, new Span<byte>((void*)surface.StagingMapped, pixels * _depthTexelBytes));
+    }
+
+    private void DepthFromStaging(Surface surface, Span<byte> destination)
+    {
+        int pixels = surface.Key.Stride * surface.Key.Height;
+        DepthFromTexels(new ReadOnlySpan<byte>((void*)surface.StagingMapped, pixels * _depthTexelBytes), _depthStencilFormat, destination);
+    }
+
+    /// <summary>16-bit depth values (<paramref name="source"/>, little-endian) as the depth texels of a buffer copy of
+    /// <paramref name="format"/>'s depth aspect: D16 as they are, D24 scaled to 24 bits in a 32-bit word, D32 as floats.
+    /// Android's drivers offer D24S8 (Adreno, Mali) or D32S8 (PowerVR, the software drivers); every one of them
+    /// gives the 16-bit values back unchanged (<see cref="DepthFromTexels"/>).</summary>
+    internal static void DepthToTexels(ReadOnlySpan<byte> source, Format format, Span<byte> destination)
+    {
+        int pixels = source.Length / 2;
+        switch (format)
         {
             case Format.D16UnormS8Uint:
-                source.CopyTo(new Span<byte>((void*)surface.StagingMapped, pixels * 2));
+                source.CopyTo(destination);
                 break;
             case Format.D24UnormS8Uint:
             {
-                Span<uint> texels = new((void*)surface.StagingMapped, pixels);
+                Span<uint> texels = MemoryMarshal.Cast<byte, uint>(destination);
                 for (int i = 0; i < pixels; i++)
                 {
                     uint depth = (uint)(source[i * 2] | (source[i * 2 + 1] << 8));
@@ -707,7 +733,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
 
             default:
             {
-                Span<float> texels = new((void*)surface.StagingMapped, pixels);
+                Span<float> texels = MemoryMarshal.Cast<byte, float>(destination);
                 for (int i = 0; i < pixels; i++)
                 {
                     texels[i] = (source[i * 2] | (source[i * 2 + 1] << 8)) / 65535f;
@@ -718,17 +744,18 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         }
     }
 
-    private void DepthFromStaging(Surface surface, Span<byte> destination)
+    /// <summary>The depth texels of a buffer copy back as 16-bit depth values (see <see cref="DepthToTexels"/>).</summary>
+    internal static void DepthFromTexels(ReadOnlySpan<byte> source, Format format, Span<byte> destination)
     {
-        int pixels = surface.Key.Stride * surface.Key.Height;
-        switch (_depthStencilFormat)
+        int pixels = destination.Length / 2;
+        switch (format)
         {
             case Format.D16UnormS8Uint:
-                new Span<byte>((void*)surface.StagingMapped, pixels * 2).CopyTo(destination);
+                source[..(pixels * 2)].CopyTo(destination);
                 break;
             case Format.D24UnormS8Uint:
             {
-                Span<uint> texels = new((void*)surface.StagingMapped, pixels);
+                ReadOnlySpan<uint> texels = MemoryMarshal.Cast<byte, uint>(source);
                 for (int i = 0; i < pixels; i++)
                 {
                     uint depth = (uint)(((texels[i] & 0xFFFFFFUL) * 0xFFFF + 0x7FFFFF) / 0xFFFFFF);
@@ -741,7 +768,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
 
             default:
             {
-                Span<float> texels = new((void*)surface.StagingMapped, pixels);
+                ReadOnlySpan<float> texels = MemoryMarshal.Cast<byte, float>(source);
                 for (int i = 0; i < pixels; i++)
                 {
                     uint depth = (uint)Math.Clamp(MathF.Round(texels[i] * 65535f), 0, 65535);
@@ -1185,7 +1212,11 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         SubmitInfo submit = new() { SType = StructureType.SubmitInfo, CommandBufferCount = 1, PCommandBuffers = &cb };
         Fence fence = _fence;
         _vk.ResetFences(_device, 1, in fence).Ok("GE reset fence");
-        _vk.QueueSubmit(_core.Queue, 1, in submit, _fence).Ok("GE submit");
+        lock (_queueLock)
+        {
+            _vk.QueueSubmit(_queue, 1, in submit, _fence).Ok("GE submit");
+        }
+
         _vk.WaitForFences(_device, 1, in fence, true, ulong.MaxValue).Ok("GE wait");
         Submissions++;
         _recording = false;
@@ -1595,13 +1626,18 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         }
 
         ulong rounded = Math.Max(size, Math.Max(_vertexSize * 2, 1UL << 20));
-        (_vertexBuffer, _vertexMemory, _vertexMapped) = _core.CreateHostBuffer(rounded, BufferUsageFlags.VertexBufferBit, MemCat.UploadRing);
+        (_vertexBuffer, _vertexMemory, _vertexMapped) = _core.CreateHostBuffer(rounded, BufferUsageFlags.VertexBufferBit, MemCat.UploadRing, _reclaim);
         _vertexSize = rounded;
     }
 
     public void Dispose()
     {
-        _vk.DeviceWaitIdle(_device);
+        // its own queue only: on the renderer's device a device-wide wait would race the renderer's queue
+        lock (_queueLock)
+        {
+            _vk.QueueWaitIdle(_queue);
+        }
+
         foreach (Pipeline pipeline in _pipelines.Values)
         {
             _vk.DestroyPipeline(_device, pipeline, null);
@@ -2110,7 +2146,7 @@ public sealed unsafe class GeVulkanRasterizer : IGeRasterizer, IDisposable
         _vk.CreateImage(_device, in info, null, out Image image).Ok("GE image");
         _vk.GetImageMemoryRequirements(_device, image, out MemoryRequirements requirements);
         DeviceMemory memory = _core.AllocateMemory(requirements.Size, _core.FindMemoryType(requirements.MemoryTypeBits, MemoryPropertyFlags.DeviceLocalBit),
-            MemCat.RenderTarget, "vkAllocateMemory(GE image)");
+            MemCat.RenderTarget, "vkAllocateMemory(GE image)", _reclaim);
         _vk.BindImageMemory(_device, image, memory, 0).Ok("GE bind image");
         ImageViewCreateInfo viewInfo = new()
         {
