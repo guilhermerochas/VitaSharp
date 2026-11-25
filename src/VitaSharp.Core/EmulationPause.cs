@@ -28,6 +28,12 @@ public static class EmulationPause
     private static long s_guestAtPause, s_framesAtPause;
 
     public static bool IsPaused => s_paused;
+
+    /// <summary>The pauses so far (each one counts when it starts): a host-time measurement whose two ends read different
+    /// counts spans a pause (GuestThread's gaps between HLE calls leave it out).</summary>
+    public static int Pauses => Volatile.Read(ref s_pauses);
+
+    private static int s_pauses;
     /// <summary>Paused by the player (pause key, menu, --start-paused): the front-ends show the "Pausado" badge only
     /// then, not while a save state stops the game for a moment.</summary>
     public static bool IsUserPaused => s_paused && !s_internal;
@@ -73,6 +79,7 @@ public static class EmulationPause
             s_guestAtPause = GuestClock.Ticks;
             s_framesAtPause = Hle.Modules.Display.FramesPresented;
             s_paused = true;
+            Interlocked.Increment(ref s_pauses);
         }
         GuestThread.InterruptAll();
         Log.Info($"Emulation paused{Why(reason)} at guest frame {Hle.Modules.Display.FramesPresented}, guest time {GuestClock.Seconds:F3} s");

@@ -24,11 +24,13 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
   - **Detector de impasse:** quando todas as threads de um ciclo esperam objetos que só elas mesmas sinalizariam, o
     log diz isso numa linha ("impasse: main espera End Frame Event bits 0x2, apagados pela main em ...; End Frame
     espera bit 0x1"), em vez de só a lista de threads.
-  - **Tempo sem CPU por thread:** no STALL e no report, a maior lacuna de host entre duas chamadas HLE seguidas de cada
+  - [x] **Tempo sem CPU por thread:** no STALL e no report, a maior lacuna de host entre duas chamadas HLE seguidas de cada
     thread, separando o sono do ritmo da CPU (pacing) da preempção do host.
-  - **"Antes funcionava":** o VitaSharp guarda, por título, a última versão que chegou ao gameplay sem travar (junto
+    Feito (24/11/2026, feat/alg4-g; em "Corrigido, falta o usuário testar"): `GuestThread.HleGaps.cs`.
+  - [x] **"Antes funcionava":** o VitaSharp guarda, por título, a última versão que chegou ao gameplay sem travar (junto
     do `playtime.json`); o log de uma sessão que trava diz "PCSE00020 rodou sem travar na versão ebec3997" — é o
     ponto de partida de uma bisseção sem perguntar ao usuário.
+    Feito (24/11/2026, feat/alg4-g; em "Corrigido, falta o usuário testar"): `Core.Util.GoodRuns`, no PC e no Android.
   - **Executáveis guardados por merge na main**, para que uma bisseção só precise bootar, sem compilar.
 
 - [x] Gravar tudo (F8) diz o contexto no próprio report.txt (pedido do usuário, 10/11/2026; agente snd1,
@@ -2227,6 +2229,23 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   dump); SceAppMgrForDriver 6 (1B6C2FED/C4924946 caminho de lançamento de debug atrás de
   ksceSblACMgrIsDevelopmentMode; 1574E1A4 montagem por id 0x6A/0x6B/0xCD/600/900; 324DD34E, E8DB7942 e 504023C8
   feitos em 23/11/2026, fix/quick3, em "Corrigido, falta o usuário testar");
+  dev/tty/md). Falta: SceIofilemgrForDriver NID_5B7E5AB8 (id -> caminho pela tabela de 0x20 entradas de 0x38 bytes
+  em 0x81022b30, marca a palavra +8 do bloco extra do mount e acorda o event flag dele: aviso de troca de mídia; achar
+  quem preenche a tabela) e NID_DD46CD63 (para cada objeto de arquivo da classe do módulo com +0x38 == mount, flags
+  +0x40 & máscara e +0x44 == 0, envia o aviso e marca +0x44: precisa desses campos no objeto de arquivo);
+  SceCoredumpForDriver NID_A7D214A7 / NID_D064F6DC / NID_EF20949F (validação do pedido e a fila do thread de dump,
+  escrever o .psp2dmp do processo); SceAppMgrForDriver: 324DD34E, E8DB7942 e 504023C8 feitos em 23/11/2026
+  (fix/quick3, em "Corrigido, falta o usuário testar"); C4924946 feito em 24/11/2026 (feat/alg4-g: num kit de
+  desenvolvimento o ProcessmgrKernel NID_5A57766C com os 6 argumentos e a configuração de depuração GXM do registro,
+  `AppMgr.GxmDebugging`, que o 324DD34E agora também passa; num retail 0x80020012). Faltam dois, [G] cada:
+  1B6C2FED (SceAppMgr 3.74 0x8100da9c; num retail 0x80020012, que já é a resposta): num kit de desenvolvimento,
+  só do processo do kernel (senão 0x8080201F), cria o semáforo "SceAppMgr:semafordbg" (0 de 1) e o callback
+  "SceAppMgr:cbkfordbg" com ele, e, se a thread não é a que já está nesse lançamento, confere o caminho (NULL
+  0x80802016, vazio 0x8080201A) e lança pelo caminho geral do módulo (0x8100b748) com a flag 0x20000 e o semáforo;
+  depois espera o semáforo, que o callback sinaliza quando o app termina, e devolve o erro do lançamento ou 0;
+  1574E1A4 (0x810232ec): montagem por id, cada faixa com a sua checagem de permissão (0x6A/0x6B
+  SceSblACMgrForDriver C98D82EE/8612B243, 0xCD 456DA7AC, 600 4DB7F512, 500-505 e 0x6E-0x70/0x12E-0x130 outro caminho,
+  900/901 o caminho pelo SceFios2KernelForDriver 0F456345 num bloco de 0x124 bytes);
   SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver 14
   (layout dos objetos da libult na memória do processo).
   Entrega movida para "Corrigido, falta o usuário testar" (reboot do sistema, kernN, 22/11/2026); o resto segue aberto aqui.
@@ -3545,6 +3564,25 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   os construtores estáticos do Core passam de 156-186 ms e 15,5 MB para 118 ms e 6,4 MB. Testes: `NidDatabaseTests`
   (o recurso não existe mais e a tabela responde linha a linha como o texto). Testar: abrir um jogo e o sistema; os
   nomes das funções no log (importações, HLE que falta) saem como antes.
+- [ ] (24/11/2026, falta testar) [P3][M] O STALL diz qual versão rodou o jogo sem travar (feat/alg4-g; item "O log e a
+  captura F8 dizem a causa de uma trava de cara" de Diagnóstico): por título, a última versão do VitaSharp que passou de
+  1800 quadros sem STALL fica em `<dados>/good-runs.json`, ao lado do `playtime.json` (`Core.Util.GoodRuns`). No PC o
+  `[watchdog] STALL` ganha a linha `good run: PCSE00020 ran without a stall on version X, data (this one is Y)`. O
+  Android não tinha watchdog: um timer da sessão detecta o mesmo travamento (nenhum quadro por 5 s depois do
+  primeiro, sem contar pausa) e grava `[session] STALL: ...` com a mesma linha. Testes: `GoodRunsTests` (o arquivo, a
+  linha, o rastreador com relógio controlado: registra uma vez, a sessão que travou não conta, pausa não é trava).
+  Testar: jogar um jogo mais de 1 minuto (o arquivo ganha o título com a versão); num jogo que trava, o STALL do log
+  (PC) ou do logcat (Android) diz a última versão que rodou sem travar.
+
+- [ ] (24/11/2026, falta testar) [P3][M] O STALL diz quanto tempo cada thread está sem chamar o HLE e por quê
+  (feat/alg4-g; item "O log e a captura F8 dizem a causa de uma trava de cara" de Diagnóstico): cada thread guarda a
+  lacuna entre duas chamadas HLE (tempo de host, o sono do ritmo da CPU dentro dela, os ciclos de guest e o "host
+  atrasado": o tempo que o ritmo e os ciclos no clock emulado não explicam, a preempção ou um host mais lento que a CPU
+  emulada); a descrição da thread no STALL do watchdog e na F8 mostra a lacuna aberta (`since-hle=`) e a mais longa
+  (`longest-hle-gap=`); uma lacuna que atravessa uma pausa não conta. Custo por chamada HLE: um TickCount64 na saída e
+  na entrada, sem alocação. Testes: `HleGapTests` (relógio controlado). Testar: num jogo que trava (ou ao pausar com o
+  depurador), o `[watchdog] STALL` do log traz `since-hle=... (pacing ..., ... K guest cycles, host late ...)` em
+  cada thread: uma thread presa em código do guest mostra muitos ciclos, uma sem CPU mostra "host late" alto.
 
 - [ ] (24/11/2026, falta testar) [P3][M] Teclado e mouse Bluetooth (fix/adr4; `docs/notes/hardware-coverage.md`): no
   3.74 o SceHid guarda até 8 teclados e 8 mouses; `sceHid{Keyboard,Mouse}Enumerate` copia os handles dos conectados
@@ -4019,7 +4057,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 Itens com correção já na `main` que esperam só a confirmação do usuário no jogo/tela do relato; quem fecha (`[x]`) é o
 usuário. Se o teste falhar, o item volta para "Bugs em aberto".
 
-- [ ] [P2][G] Abrir um jogo não dá retorno visual (relato do usuário, 21/11/2026: "quando eu clico de novo no jogo ele
+- [ ] (22/11/2026, falta testar) [P2][G] Abrir um jogo não dá retorno visual (relato do usuário, 21/11/2026: "quando eu clico de novo no jogo ele
   não abre a janela dele"): pelo log, a sessão começa e a janela só aparece 13 s depois (firmware, input, áudio,
   dispositivo Vulkan), seguida de ~12 s de carregamento do cache de shaders e da etapa de pré-compilação ARM. Fazer,
   no PC e no Android: a janela abre na hora do clique com uma tela de carregamento (nome do jogo e etapa atual);
@@ -4413,7 +4451,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   programa e lidos por outro no mesmo quadro e no seguinte, em LPDDR e CDRAM, também +TileBased; CPU regravando
   devolve a memória ao guest). Testar: Croixleur Sigma (seleção de personagem e diálogos): modelos 3D como antes.
 
-- [ ] [P2][G] CI: no runner Linux os testes de GPU do renderer são pulados ("shaderc not available ... install
+- [ ] (22/11/2026, falta testar) [P2][G] CI: no runner Linux os testes de GPU do renderer são pulados ("shaderc not available ... install
   libshaderc-dev"), então a "passagem" do Linux não testa o renderer (achado do cifix12, 21/11/2026). Instalar o
   shaderc no job Linux (e conferir o macOS) para os testes de renderer rodarem nas 3 plataformas.
   Feito (22/11/2026, fix/quick1 89310536): o Silk.NET só procurava a cópia do Shaderc.Native em runtimes/<RID da distro>
@@ -4439,7 +4477,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   (`IoAsyncSchedulerTests`). Teste: um jogo que usa `sceIoReadAsync` (ex.: o shell copiando o pic0 de um jogo para o
   LiveArea, a Câmera salvando foto) continua funcionando, e carregamentos com leitura assíncrona não engasgam o quadro.
 
-- [ ] [P3][P] `--capture-playback` (rerun): o fim do rerun derrubava o processo quando a pasta da captura não tem
+- [ ] (22/11/2026, falta testar) [P3][P] `--capture-playback` (rerun): o fim do rerun derrubava o processo quando a pasta da captura não tem
   `frames.vsfr` (captura sem quadros): `CaptureAnalyzer.Compare` lançava FileNotFoundException na thread `rerun-end` e
   o resumo PERF não saía. Correção (fix/io1, 22/11/2026): sem `frames.vsfr` no original ou no rerun a comparação é
   pulada e diz isso ("compare: skipped ..."), e um erro de leitura dos quadros vira uma linha `compare: failed` em vez

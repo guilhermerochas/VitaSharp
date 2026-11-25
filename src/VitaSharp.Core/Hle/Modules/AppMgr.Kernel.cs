@@ -1,3 +1,4 @@
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 
 namespace VitaSharp.Core.Hle.Modules;
@@ -363,12 +364,21 @@ public sealed partial class AppMgrShell
         return unchecked((int)0x80020012);
     }
 
-    /// <summary>NID_C4924946(...): a process creation through the process manager with the system's debug setting:
-    /// only with that setting (0x80020012 on a retail unit).</summary>
-    [Hle(Nid = 0xC4924946, Library = "SceAppMgrForDriver", Default = true)]
-    int ksceAppMgr_C4924946(uint first, uint second, uint third, uint fourth)
+    /// <summary>NID_C4924946(title ID, type, path, arg size, args, option): a development kit's process launch through
+    /// the process manager (SceAppMgr 3.74 0x8100282c): ksceSblACMgrIsDevelopmentMode first (a retail unit
+    /// 0x80020012), then SceProcessmgrForKernel NID_5A57766C creates and starts the process with the arguments as
+    /// given (the option is not copied, unlike NID_324DD34E) and the GXM debugging setting of the registry
+    /// (<see cref="AppMgr.GxmDebugging"/>); its result: the new process's ID or the process manager's error.</summary>
+    [Hle(Nid = 0xC4924946, Library = "SceAppMgrForDriver", Cost = HleCost.SchedulerWait)]
+    int ksceAppMgr_C4924946(uint titleId, uint type, uint path, uint argSize, uint args, uint option)
     {
-        return unchecked((int)0x80020012);
+        if (Emu.Hle.Modules.OfType<SystemServicesVsh>().First().ksceSblACMgrIsDevelopmentMode() == 0)
+        {
+            return unchecked((int)0x80020012);
+        }
+
+        ProcessmgrKernel processmgr = Emu.Hle.Modules.OfType<ProcessmgrKernel>().First();
+        return processmgr.NID_5A57766CThroughEntry(titleId, type, path, argSize, args, option, AppMgr.GxmDebugging(Emu, KernelSpace.KernelPid));
     }
 }
 

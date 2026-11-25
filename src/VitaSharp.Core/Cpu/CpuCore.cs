@@ -313,6 +313,10 @@ public sealed unsafe class CpuCore : IDisposable
     private long _throttleInstrs, _throttleStart = -1;
     /// <summary>True while the thread sleeps off CPU pacing (profiling).</summary>
     public volatile bool InThrottle;
+
+    /// <summary>Guest clock ticks this core slept off pacing so far (the thread's own: read for its gaps between HLE
+    /// calls, GuestThread.HleGaps.cs).</summary>
+    public long PacingTicks;
     public struct SleepStat
     {
         public long Count, Requested, Actual;
@@ -380,6 +384,7 @@ public sealed unsafe class CpuCore : IDisposable
             Volatile.Write(ref s_wakeLate, avg + (late - avg) / 16); // racy by design: a lost update only slows the average
         }
         InThrottle = false;
+        Volatile.Write(ref PacingTicks, PacingTicks + (Util.GuestClock.Ticks - t0));
         Stat(ref stat, t0, expected);
     }
 

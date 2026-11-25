@@ -607,6 +607,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
 
     private void DispatchHle(CpuState* s)
     {
+        NoteHleEntry(Environment.TickCount64);
         WaitForWaker();
         Volatile.Write(ref _hleEntryCycles, OwnCycles);
         _hleSeq++; // odd while inside an HLE call (save states: a thread that returns meanwhile is seen)
@@ -705,6 +706,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
             {
                 ContextReplaced = false;
                 _hleSeq++;
+                NoteHleReturn(Environment.TickCount64);
                 return;
             }
         }
@@ -735,6 +737,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         // The stub's next instruction is "bx lr": return directly.
         Arm.BxWritePc(s, s->R[14]);
         _hleSeq++;
+        NoteHleReturn(Environment.TickCount64);
         HleReturned?.Invoke(this, hleFunction);
     }
 
@@ -1031,7 +1034,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         string bt = Status == ThreadStatus.Dormant ? "" : " bt:" + Backtrace(s);
         string hle = (_hleSeq & 1) == 1 ? $" in {InWhat()}" : "";
         string host = BlockedInHost ? " (blocked in the host)" : "";
-        return $"'{Name}' uid=0x{Uid:X} {Status}{hle}{host} wait=[{WaitingOn}] pc=0x{s->R[15]:X8} lr=0x{s->R[14]:X8} sp=0x{s->R[13]:X8}{bt}";
+        return $"'{Name}' uid=0x{Uid:X} {Status}{hle}{host} wait=[{WaitingOn}] pc=0x{s->R[15]:X8} lr=0x{s->R[14]:X8} sp=0x{s->R[13]:X8}{DescribeHleGaps()}{bt}";
     }
 
     public void RequestStop()
