@@ -8,14 +8,14 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
 
 ## Diagnóstico
 
-- [ ] [P2][M] **Gravar tudo sem o jogo, o que falta** (o resto em "Corrigido, falta o usuário testar", feat/capself1):
-  - Entradas do áudio: gravar os fluxos que entram nos decodificadores (sceAudiodec, ATRAC/AT9, MP3/AAC) e nos
-    buffers das vozes NGS durante a gravação, para o rerun sem o jogo reproduzir buracos e erros de decodificação
-    (hoje só a saída em WAV).
-  - Estados de vários processos (o shell com aplicativos abertos) ainda não sobem sem os programas
-    (`SaveStates.BootFromState` recusa); e a gravação do shell pode sair sem `state_start.vss` quando uma thread do
-    shell está em código do guest ("not at a safe point": tentar de novo até um ponto seguro).
-  - Módulos de firmware carregados pela primeira vez durante a gravação vêm do firmware de quem analisa.
+- [ ] [P2][M] **Gravar tudo: o áudio que entra nos decodificadores e nas vozes NGS** (parte do antigo "Gravar tudo
+  sem o jogo, o que falta"; o feito está em "Corrigido, falta o usuário testar"): gravar os fluxos que entram nos
+  decodificadores (sceAudiodec, ATRAC/AT9, MP3/AAC) e nos buffers das vozes NGS durante a gravação, para o rerun sem o
+  jogo reproduzir buracos e erros de decodificação (hoje só a saída em WAV).
+
+- [ ] [P2][G] **Gravar tudo: estados de vários processos sobem sem os programas** (parte do antigo "Gravar tudo sem o
+  jogo, o que falta"): o estado do shell com aplicativos abertos ainda não sobe sem os programas
+  (`SaveStates.BootFromState` recusa estados de mais de um processo); falta guardar e subir a imagem de cada processo.
 
 - [ ] [P3][G] **O log e a captura F8 dizem a causa de uma trava de cara:**
   - **Histórico de cada objeto de sincronização** (event flag, semáforo, mutex, cond, msgpipe): um anel barato com as
@@ -1204,7 +1204,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 ## Android
 
 - [x] App Android, tela da biblioteca: tirar a palavra "VitaSharp" em cima do título da biblioteca, o botão de instalar e o botão de Ajustes ao lado do texto da biblioteca. Feito (feat/andpar): o cabeçalho é só o título; instalar continua no botão flutuante e em Ajustes > Instalar jogo (`AndroidNarrowLayoutTests`). **Falta validar no aparelho.**
-- [ ] [P2][M] Dead Space (port, DEADSPACE) no Android sem som e engasgando (relato do usuário, 15/11/2026, APK build-1f8c024, com "Ativar Plugins do Kernel" e kubridge + fd_fix; no PC roda com som). Logs do celular guardados pelo lead (`<scratchpad>ds_android`). Ler o log primeiro: áudio (saída aberta? grãos/s), fps e tiers da CPU, threads em espera; comparar com o PC na mesma cena.
+- [ ] [P2][M] (precisa do usuário/aparelho) Dead Space (port, DEADSPACE) no Android sem som e engasgando (relato do usuário, 15/11/2026, APK build-1f8c024, com "Ativar Plugins do Kernel" e kubridge + fd_fix; no PC roda com som). Logs do celular guardados pelo lead (`<scratchpad>ds_android`). Ler o log primeiro: áudio (saída aberta? grãos/s), fps e tiers da CPU, threads em espera; comparar com o PC na mesma cena.
 - [x] Paridade de opções PC/Android: toda opção do launcher do desktop também no app Android, com o mesmo nome, padrão
   e efeito (`AndroidOptionParityTests`; regra no README, "Code style"). Feito: compilação rápida de shaders e
   compilar shaders em segundo plano em Ajustes (feat/android-shader-options); Ativar Plugins do Kernel já existe nos
@@ -1745,7 +1745,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   novo depois de pegar o núcleo (`ThreadMgrHleTests.AWaitingThreadTakesNoCoreUntilItIsWoken`,
   `ContendedLocksNeverLetTwoThreadsIn`). No PC, boot-shell depois de 35 s: 2-4 fps antes, 47-59 fps depois; TestGame
   225/0 antes e depois. Falta confirmar no celular.
-- [ ] [P2][M] Sistema do Vita no Android: o shell demora para abrir e as opções do app Configurações não aparecem/não funcionam (relato do usuário, 16/11/2026, APK com a correção da espera sem núcleo). Próximo passo: captura "Gravar tudo" no app Configurações no celular e comparar com o mesmo app no PC; medir o tempo de boot do shell (PC x celular).
+- [ ] [P2][M] (precisa do usuário/aparelho) Sistema do Vita no Android: o shell demora para abrir e as opções do app Configurações não aparecem/não funcionam (relato do usuário, 16/11/2026, APK com a correção da espera sem núcleo). Próximo passo: captura "Gravar tudo" no app Configurações no celular e comparar com o mesmo app no PC; medir o tempo de boot do shell (PC x celular).
 - [x] App .NET MAUI com interface declarativa em C# (MauiReactor), seguindo os mockups em `docs/android/` (biblioteca
   e troféus, ajustes, firmware, conta PSN e rede, driver e informações da GPU, Sistema do Vita) (30/10/2026: gera o
   APK, `src/VitaSharp.Android`; ainda não rodou num aparelho nem no emulador)
@@ -2412,18 +2412,28 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   do magnetômetro para a calibração do shell (`sceMotionDevReadForMagnCalib`, `GetCurrentMagnCalibData`) e o
   `dataInfo`; (2) a fusão do campo no `deviceQuat` como o driver_us faz (hoje só a matriz NED e a estabilidade usam o
   campo); (3) o magnetômetro de um controle no PC (o SDL não expõe um).
-- [ ] [P3][M] Teclado e mouse Bluetooth, o que falta (o feito está em "Corrigido, falta o usuário testar"): os
-  callbacks de dica (enumeração e leitura) ainda não são notificados; as configurações de Bluetooth do shell não
-  listam o dispositivo (o `SceBt` do kernel não conhece os pareados); o `ConsumerControl` e o `Controller` do SceHid.
+- [ ] [P3][M] Teclado e mouse Bluetooth, o que falta (o feito está em "Corrigido, falta o usuário testar"): conferir
+  no Sistema do Vita que Configurações > Bluetooth lista os dois dispositivos (os registros do `SceBt` seguem o 3.74,
+  mas a tela não foi aberta); os eventos do `sceBtReadEvent` de conexão; o `ConsumerControl` e o `Controller` do SceHid.
 - [ ] [P3][G] Processador de mídia Venezia (núcleos MeP + IVC2) para código MeP que não é do firmware (plugin
   VVNZRunner e o homebrew sobre ele; `docs/notes/hardware-coverage.md`): o `vnzimg.skprx` sai do `self2elf` em claro,
   sem chave. Primeira entrega: interpretador do núcleo MeP-c5 numa thread de guest com programa sintético no teste
   (aritmética, memória, desvios, escrita de mailbox lida pelo ARM). Depois o IVC2 (sem documentação pública), o boot
   do `vnzimg` até o estado 8 que o `SceCodecEngineWrapper` espera e os RPCs.
-- [ ] [P3][G] Codecs que faltam no HLE do codec engine (`docs/notes/hardware-coverage.md`): decodificador CELP
-  (`sceAudiodec` tipo `0x1006` recusa hoje), codificadores CELP e G.729 (quadros zerados), decodificador JPEG
-  dividido. Primeira entrega: tabela de tamanho de quadro CELP por modo de taxa conferida com o contrato do
-  `SceAudiodec`, depois quadros decodificados contra valores calculados pela ISO/IEC 14496-3.
+- [ ] [P3][G] Codecs que faltam no HLE do codec engine (`docs/notes/hardware-coverage.md`): a síntese CELP (o
+  decodificador já aceita os quadros, ver "Corrigido, falta o usuário testar", e devolve silêncio), os codificadores
+  CELP e G.729 (quadros zerados), o decodificador JPEG dividido. Estudo (24/11/2026): os codecs rodam no Venezia
+  (MeP), então não há código ARM do firmware para rodar em LLE; o formato é o MPEG-4 CELP narrowband (ISO/IEC
+  14496-3 subparte 3, excitação MPE, 8 kHz, 10 taxas de 3850 a 12200 bps). Não há implementação aberta (o FFmpeg
+  não tem MPEG-4 CELP, só QCELP, outro codec); a síntese precisa das tabelas da norma (quantização vetorial
+  dos LSP, codebooks de ganho). **Bloqueio de licença (decisão do usuário):** o software de referência ISO/IEC
+  14496-5 traz o aviso "MPEG-2 NBC/MPEG-4 Audio" (licença só para produtos que declaram conformidade com a norma;
+  "Copyright is not released for non MPEG-2 NBC/MPEG-4 Audio conforming products"; o autor pode impedir terceiros),
+  restrição de uso incompatível com a GPLv3 (seções 7 e 10), então as tabelas não vêm dele. Caminhos: (1) transcrever
+  as tabelas do texto da norma ISO/IEC 14496-3 (subparte 3; texto pago, com copyright da ISO; se tabelas numéricas
+  podem ser copiadas é questão jurídica); (2) pedir aos detentores uma licença compatível. Com um deles decidido:
+  decodificador (LSP → LPC, excitação adaptativa + MPE, filtro de síntese, pós-filtro se o Vita aplicar) testado com
+  quadros sintéticos de saída calculável, depois o codificador (análise LPC, busca MPE) com ida e volta.
 - [ ] [P3][G] Cartão de memória e eMMC como dispositivos de bloco (`docs/notes/hardware-coverage.md`): hoje o acesso a
   setores falha (`0x803D0000`, `0x8032001A`). Primeira entrega: log de todo acesso a setor por chamador (formatação,
   atualização pelos Ajustes, homebrew) e um arquivo de imagem como base de um dispositivo do `sdstor`, com setor
@@ -3311,6 +3321,33 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   lê esses dados na CPU (Croixleur Sigma e Jak and Daxter só desenham com eles). Testar: Croixleur Sigma
   (PCSG00537) na seleção de personagem e nos diálogos, e Jak and Daxter Collection (PCSA00080) nas sombras do chão:
   tudo igual a antes, sem queda de fps (a linha "program stores" no resumo da sessão mostra quanto é devolvido).
+- [ ] (24/11/2026, falta testar) [P2][M] Gravar tudo: os módulos de firmware carregados durante a gravação saem com o
+  hash (fix/adr4). Um módulo do firmware (os0, vs0, sa0, pd0) carregado pela primeira vez durante a gravação vem, no
+  rerun, do firmware de quem analisa; se esse for outro (outra versão, um módulo modificado), o rerun rodava outro
+  código sem aviso. Agora a captura lista cada um com o SHA-256 da imagem (`fwmodule` no `files/files.tsv`, sem os
+  bytes: o firmware não é do jogo para ir junto), o rerun não põe nada por cima do firmware e, ao carregar um módulo
+  diferente do gravado, o log diz qual (uma vez por módulo) e o resumo do rerun conta quantos diferem. Testes:
+  `CaptureFilesTests.FirmwareModulesLeaveWithTheirHashAndTheRerunSaysWhenTheyDiffer`. Testar: gravar (F8) num jogo que
+  abre um diálogo ou a rede pela primeira vez durante a gravação; o `files/files.tsv` tem linhas `fwmodule`; o rerun
+  num PC com outro firmware avisa "the firmware module ... is not the recording's".
+
+- [ ] (24/11/2026, falta testar) [P2][M] Gravar tudo: o `state_start.vss` sai também quando o começo não é um ponto
+  seguro (fix/adr4). A gravação do shell (ou de um jogo com uma thread presa em código do guest) tentava o estado do
+  início por 3 s e, sem ponto seguro ("not at a safe point"), seguia sem estado nenhum, e o rerun sem o jogo ficava
+  impossível. Agora a gravação segue e o estado é tentado de novo a cada segundo até o primeiro ponto seguro (ou o
+  fim): o `session.txt` traz o estado e uma nota diz quão tarde ele foi tirado ("start save state taken N s after the
+  start, at try T"; o rerun começa dali); sem nenhum ponto seguro até o fim, a nota diz o motivo e as tentativas.
+  Testes: `SessionCaptureFlowTests.AStartStateWithoutASafePointIsTriedAgain`. Testar: no Sistema do Vita (shell com um
+  app aberto), F8 para gravar; a pasta da captura tem `state_start.vss` (ou a nota "start save state taken ...").
+
+- [ ] (24/11/2026, falta testar) [P3][G] CELP no `SceAudiodec`, 1ª parte (fix/adr4): no Vita o decodificador CELP
+  aceita `SceAudiodecInfoCelp` (excitação MPE, 8 kHz, uma das 10 taxas do MPEG-4 CELP narrowband; outra coisa é
+  0x807F3800), anuncia `maxEsSize` 24 (`SCE_AUDIODEC_CELP_MAX_ES_SIZE`) e tira um quadro da taxa por chamada (4650 bps:
+  24 bytes → 320 amostras, 40 ms; 12200 bps: 16 bytes → 80 amostras, 10 ms; a tabela do codificador). O VitaSharp
+  recusava o tipo (0x807F0001). Agora o decodificador é criado e consome os quadros com o tamanho certo; as amostras
+  saem em silêncio (a síntese está no item de codecs). Testes: `AudiodecHleTests.ACelpDecoderTakesTheFramesOfItsBitRate`.
+  Testar: um jogo com chat de voz ou que toca voz CELP não falha mais ao criar o decodificador (o log diz "no CELP
+  decoder yet").
 - [ ] (24/11/2026, falta testar) [P3][M] Teclado e mouse Bluetooth (fix/adr4; `docs/notes/hardware-coverage.md`): no
   3.74 o SceHid guarda até 8 teclados e 8 mouses; `sceHid{Keyboard,Mouse}Enumerate` copia os handles dos conectados
   (lista NULL 0x803B0001, no máximo 8), `Read`/`Peek` conferem o handle (< 1: 0x803B0002; lista NULL ou contagem
@@ -3318,7 +3355,11 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   mouse 0x10) e voltam na hora com quantos copiaram, da fila do dispositivo com posição por leitor. Feito: o teclado
   e o mouse do host como dispositivos pareados (`HostServices.HidKeyboard/HidMouse`, filas de relatórios com uso USB
   HID, modificadores, botões, deslocamento e roda), `Enumerate`, `Read`, `Peek`, `Clear`, `Set/GetIntercept` e o
-  registro dos callbacks de dica como o 3.74; sem a opção nada é pareado, como antes. Testes: `HidDeviceTests`.
+  registro dos callbacks de dica como o 3.74; sem a opção nada é pareado, como antes. Os callbacks de dica de
+  enumeração são notificados quando um teclado/mouse conecta ou desconecta e os de leitura a cada relatório novo; o
+  `SceBt` lista os pareados (`sceBtGetRegisteredInfo`: registros de 0x100 bytes com endereço, classe de dispositivo,
+  conectado e nome, como o 0x81000554 do 3.74; `sceBtGetConnectingInfo` = 2, conectado) para as Configurações >
+  Bluetooth do shell. Testes: `HidDeviceTests`.
   Opção (desligada por padrão; as teclas continuam valendo como controle): PC, Configurações > Emulação > Teclado e
   mouse Bluetooth (`--bt-keyboard-mouse=on`); Android, Ajustes > Teclado e mouse Bluetooth (teclado e mouse físicos
   do celular). Testar: ligar a opção e abrir o navegador do Vita (ou um app que lê teclado): digitar no teclado físico
@@ -4317,7 +4358,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   "refused (0x90010006)". Falta: (5) o ScePspemuMain chega ao sceCompatInitEx e para ("the PSP compat core is not
   emulated"): o núcleo de compatibilidade (pcbc) é o bloqueio até o menu do Adrenaline; (6) e (7) feitos (fix/adr4,
   ver "Corrigido, falta o usuário testar": diálogo de erro e NPXS10028 em dobro).
-- [ ] [P2][M] Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
+- [ ] [P2][M] (precisa do usuário/aparelho) Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
   capturas de 21/11/2026, e um engasgo de 132 ms por leitura de arquivo (fileIo 134 ms; quadro 302 do dump da
   `_232150_tudo`). Achado (perf/ac3pace): fora das gravações o jogo fica em 30 fps (linhas `FPS frame` da sessão) e
   só cai nelas, porque o gravador do GPU dump gasta 21-28 ms/quadro no GPU worker; o rerun headless sem dump dá 29-31
@@ -4402,7 +4443,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   vermelhas e pista cinza (antes verde listrado e ruído). Outros dumps: só os do RR3 e o `VSTEST001_20261111` têm ETC1
   (o caminho mudado é exclusivo do ETC1). O `GL_INVALID_VALUE: mtTextureGL::CreateEmpty` do log é outro assunto (o
   vitaGL recusou um formato numa textura vazia) e não muda a imagem do replay. Falta o usuário confirmar no jogo.
-- [ ] [P1][M] Textura quebrada no MGS3 depois de trocar de jogo pelo shell (relato do usuário, 15/11/2026; captura `shell_20261115_225727_tudo`, com dump da GPU de 177 quadros): shell → Metal Gear Solid HD → God of War Collection → de volta ao MGS, e na abertura do MGS3 (avião) a cabeça do tripulante sai com textura errada e sombra em blocos. Pistas do log: dois jogos vivos ao mesmo tempo ("scenes of several processes interleaved"), e `[vram] pressure 198% ... evicting 0 MB` repetido (VRAM acima do orçamento e nada liberado). Suspeitas: cache de texturas/alvos chaveado só pelo endereço do guest e compartilhado entre processos (o GoW usa os mesmos endereços), ou textura descartada/não recarregada sob pressão de VRAM. Primeiro passo: `replay-gpu --frame=37` do dump e comparar com o MGS aberto direto, sem o GoW.
+- [ ] [P1][M] (precisa do usuário/aparelho) Textura quebrada no MGS3 depois de trocar de jogo pelo shell (relato do usuário, 15/11/2026; captura `shell_20261115_225727_tudo`, com dump da GPU de 177 quadros): shell → Metal Gear Solid HD → God of War Collection → de volta ao MGS, e na abertura do MGS3 (avião) a cabeça do tripulante sai com textura errada e sombra em blocos. Pistas do log: dois jogos vivos ao mesmo tempo ("scenes of several processes interleaved"), e `[vram] pressure 198% ... evicting 0 MB` repetido (VRAM acima do orçamento e nada liberado). Suspeitas: cache de texturas/alvos chaveado só pelo endereço do guest e compartilhado entre processos (o GoW usa os mesmos endereços), ou textura descartada/não recarregada sob pressão de VRAM. Primeiro passo: `replay-gpu --frame=37` do dump e comparar com o MGS aberto direto, sem o GoW.
   Achados (16/11/2026, kill2, 1h20): (1) o `--frame` do replay-gpu é o número do present, não o índice no dump:
   o "quadro 37" da captura é `--frame=17120`. (2) O defeito **reproduz no replay de um renderer novo**, inclusive com
   `--no-targets` (sem o estado de render targets gravado no início do dump): não vem de estado do renderer deixado
@@ -4535,7 +4576,8 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   fila. Prova: `GxmFlowTests.ASceneBegunBeforeTheEntryThatReleasesItsBufferDoesNotStallTheGpu` (sem a correção a espera
   só termina no limite de 250 ms) e `ATransferIntoTheBufferAfterItsSceneIsWaitedForByTheEntry`. Falta a confirmação no
   Wipeout pelo usuário.
-- [ ] [P3][P] Tamanho da classe "espera no escalonador" (12.000 ciclos): `sceKernelDelayThread*` é uma espera como as outras
+- [ ] [P3][P] (precisa de medida num Vita ou de A/B do usuário: nenhum agente fecha sozinho) Tamanho da classe
+  "espera no escalonador" (12.000 ciclos): `sceKernelDelayThread*` é uma espera como as outras
   (o threadmgr 3.74 põe a thread na lista de timers e troca de contexto, o mesmo caminho de uma espera com timeout),
   então fica na classe `SchedulerWait` (`HleCostTests.DelaysAreSchedulerWaits`); baixar só o delay para 2.000
   (perf/desktop-24, não medido) deixaria ele como a única chamada bloqueante fora da classe. O que falta é calibrar a
@@ -4835,7 +4877,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   AndroidAppTests.AndroidGamepadMapsToTheStandardLayout (controle que lista LTRIGGER e move BRAKE; falha sem a
   correção). Se o L2 do controle do usuário ainda não funcionar, o log do `Connect` (eixos listados) e um
   `getevent -l` do gatilho mostram o eixo real. A parte (2), o touchpad do DualShock 4, continua aberta
-- [ ] [P2][M] Android, controle de PS4 no celular, o que sobrou do relato de 10/11/2026 (o L2 está em "[x]" acima):
+- [ ] [P2][M] (precisa do usuário/aparelho) Android, controle de PS4 no celular, o que sobrou do relato de 10/11/2026 (o L2 está em "[x]" acima):
   o touchpad do DualShock 4 vira mouse no Android e esse ponteiro se mistura com o toque na tela; tratar o touchpad
   como entrada do controle (SOURCE_TOUCHPAD/MOUSE do dispositivo do controle, separado do SOURCE_TOUCHSCREEN do
   aparelho; ou capturar o ponteiro) e mapear para o toque frontal/traseiro do Vita sem mexer no toque da tela. Validar

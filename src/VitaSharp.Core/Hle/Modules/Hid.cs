@@ -36,9 +36,20 @@ public sealed partial class Hid : HleModule
     [SnapshotMissing]
     private int _keyboardIntercept;
 
-    /// <summary>The callbacks registered for device changes (enumeration hints) and new reports (read hints).</summary>
+    /// <summary>The callbacks registered for keyboard and mouse changes (enumeration hints) and new reports (read
+    /// hints), by kind.</summary>
     [SnapshotMissing]
-    private readonly HashSet<int> _hintCallbacks = [];
+    private readonly HashSet<int> _keyboardEnumHints = [], _keyboardReadHints = [], _mouseEnumHints = [], _mouseReadHints = [];
+
+    /// <summary>The host devices this module listens to (the read hints follow the device paired now).</summary>
+    [SnapshotIgnore]
+    private HostServices? _hintHost;
+
+    [SnapshotIgnore]
+    private HidKeyboard? _hintKeyboard;
+
+    [SnapshotIgnore]
+    private HidMouse? _hintMouse;
 
     private HidKeyboard? Keyboard => Emu?.Host.HidKeyboard;
 
@@ -195,34 +206,141 @@ public sealed partial class Hid : HleModule
         return 0;
     }
 
-    /// <summary>(SceUID callback, ...): a callback notified when devices of the kind come or go (the enumeration hint)
-    /// or have new reports (the read hint). The paired devices are there from the start: kept for the unregister.</summary>
-    [Hle("sceHidKeyboardRegisterEnumHintCallback")]
-    [Hle("sceHidKeyboardRegisterReadHintCallback")]
-    [Hle("sceHidMouseRegisterEnumHintCallback")]
-    [Hle("sceHidMouseRegisterReadHintCallback")]
-    int sceHidRegisterHintCallback(int callback)
+    // (SceUID callback): FW 3.74 SceHid keeps a list per kind and hint and notifies its callbacks when a device of the
+    // kind connects or disconnects (enumeration) or has a new report (read); the program then enumerates or reads.
+    [Hle] int sceHidKeyboardRegisterEnumHintCallback(int callback) => RegisterHint(_keyboardEnumHints, callback);
+
+    [Hle] int sceHidKeyboardRegisterReadHintCallback(int callback) => RegisterHint(_keyboardReadHints, callback);
+
+    [Hle] int sceHidMouseRegisterEnumHintCallback(int callback) => RegisterHint(_mouseEnumHints, callback);
+
+    [Hle] int sceHidMouseRegisterReadHintCallback(int callback) => RegisterHint(_mouseReadHints, callback);
+
+    [Hle] int sceHidKeyboardUnregisterEnumHintCallback(int callback) => UnregisterHint(_keyboardEnumHints, callback);
+
+    [Hle] int sceHidKeyboardUnregisterReadHintCallback(int callback) => UnregisterHint(_keyboardReadHints, callback);
+
+    [Hle] int sceHidMouseUnregisterEnumHintCallback(int callback) => UnregisterHint(_mouseEnumHints, callback);
+
+    [Hle] int sceHidMouseUnregisterReadHintCallback(int callback) => UnregisterHint(_mouseReadHints, callback);
+
+    private int RegisterHint(HashSet<int> hints, int callback)
     {
-        lock (_hintCallbacks)
+        lock (hints)
         {
-            _hintCallbacks.Add(callback);
+            hints.Add(callback);
+        }
+
+        ListenToHost();
+        return 0;
+    }
+
+    private static int UnregisterHint(HashSet<int> hints, int callback)
+    {
+        lock (hints)
+        {
+            hints.Remove(callback);
         }
 
         return 0;
     }
 
-    [Hle("sceHidKeyboardUnregisterEnumHintCallback")]
-    [Hle("sceHidKeyboardUnregisterReadHintCallback")]
-    [Hle("sceHidMouseUnregisterEnumHintCallback")]
-    [Hle("sceHidMouseUnregisterReadHintCallback")]
-    int sceHidUnregisterHintCallback(int callback)
+    /// <summary>Listens to the host's device changes (once) and to the reports of the devices paired now.</summary>
+    private void ListenToHost()
     {
-        lock (_hintCallbacks)
+        if (Emu?.Host is not { } host)
         {
-            _hintCallbacks.Remove(callback);
+            return;
         }
 
-        return 0;
+        lock (_keyboardEnumHints)
+        {
+            if (_hintHost == null)
+            {
+                _hintHost = host;
+                host.HidDevicesChanged += OnDevicesChanged;
+            }
+        }
+
+        FollowDevices();
+    }
+
+    /// <summary>A keyboard or mouse connected or disconnected: the enumeration hints of its kind, and the read hints
+    /// follow the device paired now.</summary>
+    private void OnDevicesChanged()
+    {
+        bool keyboardChanged = !ReferenceEquals(_hintKeyboard, Keyboard);
+        bool mouseChanged = !ReferenceEquals(_hintMouse, Mouse);
+        FollowDevices();
+        if (keyboardChanged)
+        {
+            NotifyHints(_keyboardEnumHints);
+        }
+
+        if (mouseChanged)
+        {
+            NotifyHints(_mouseEnumHints);
+        }
+    }
+
+    private void FollowDevices()
+    {
+        lock (_keyboardEnumHints)
+        {
+            if (!ReferenceEquals(_hintKeyboard, Keyboard))
+            {
+                if (_hintKeyboard != null)
+                {
+                    _hintKeyboard.ReportAdded -= OnKeyboardReport;
+                }
+
+                _hintKeyboard = Keyboard;
+                if (_hintKeyboard != null)
+                {
+                    _hintKeyboard.ReportAdded += OnKeyboardReport;
+                }
+            }
+
+            if (!ReferenceEquals(_hintMouse, Mouse))
+            {
+                if (_hintMouse != null)
+                {
+                    _hintMouse.ReportAdded -= OnMouseReport;
+                }
+
+                _hintMouse = Mouse;
+                if (_hintMouse != null)
+                {
+                    _hintMouse.ReportAdded += OnMouseReport;
+                }
+            }
+        }
+    }
+
+    private void OnKeyboardReport() => NotifyHints(_keyboardReadHints);
+
+    private void OnMouseReport() => NotifyHints(_mouseReadHints);
+
+    /// <summary>Notifies the callbacks of one hint list (each runs at its thread's next callback check).</summary>
+    private void NotifyHints(HashSet<int> hints)
+    {
+        Span<int> callbacks = stackalloc int[16];
+        int n = 0;
+        lock (hints)
+        {
+            foreach (int callback in hints)
+            {
+                if (n < callbacks.Length)
+                {
+                    callbacks[n++] = callback;
+                }
+            }
+        }
+
+        for (int i = 0; i < n; i++)
+        {
+            Emu.Kernel.Objects.Get<Kernel.Callback>(callbacks[i])?.Notify(0);
+        }
     }
 
     /// <summary>The guest time a host event gets (microseconds of the guest clock).</summary>

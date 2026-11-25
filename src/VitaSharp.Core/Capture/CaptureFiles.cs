@@ -35,10 +35,23 @@ public readonly record struct ChunkHash(ulong A, ulong B, ulong C, ulong D)
 /// Only what was read leaves with the capture, never a whole file that was not read; firmware files (os0, vs0) are the
 /// analyst's own and are not recorded; the save data is the player's, so its reads keep their hash only unless
 /// <see cref="KeepSaveData"/>. Paths are the guest's (app0:...), never the host's.
+/// <para>A firmware module (os0, vs0, sa0, pd0) loaded while recording is listed with its hash only (kind
+/// <c>fwmodule</c>): a re-run loads it from the analyst's firmware and says when that one differs.</para>
 /// <para>Files: <c>files/files.tsv</c> (one line per item) and <c>files/blobs.bin</c> (the kept contents).</para>
 /// </summary>
 public sealed class CaptureFileRecorder : IFileHook
 {
+    /// <summary>The files.tsv kind of a firmware module listed with its hash only.</summary>
+    public const string FirmwareModuleKind = "fwmodule";
+
+    /// <summary>The firmware's own devices: their modules are the analyst's, listed by hash only.</summary>
+    internal static bool IsFirmwareDevice(string device) =>
+        device.Equals("os0", StringComparison.OrdinalIgnoreCase) || device.Equals("vs0", StringComparison.OrdinalIgnoreCase)
+        || device.Equals("sa0", StringComparison.OrdinalIgnoreCase) || device.Equals("pd0", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The firmware modules loaded while recording: guest path, SHA-256 and size of the decrypted image.</summary>
+    private readonly Dictionary<string, (ChunkHash Hash, int Length)> _firmwareModules = new(StringComparer.OrdinalIgnoreCase);
+
     public const string Folder = "files", IndexFile = "files.tsv", BlobFile = "blobs.bin";
 
     private readonly object _lock = new();
@@ -215,6 +228,17 @@ public sealed class CaptureFileRecorder : IFileHook
 
     public void ModuleLoaded(Emulator emu, string guestPath, byte[] elf)
     {
+        int colon = guestPath.IndexOf(':');
+        if (colon > 0 && IsFirmwareDevice(guestPath[..colon]))
+        {
+            lock (_lock)
+            {
+                _firmwareModules[Canonical(guestPath)] = (ChunkHash.Of(elf), elf.Length);
+            }
+
+            return;
+        }
+
         if (!Recorded(emu, guestPath))
         {
             return;
@@ -461,6 +485,11 @@ public sealed class CaptureFileRecorder : IFileHook
                 }
             }
 
+            foreach ((string path, (ChunkHash hash, int length)) in _firmwareModules.OrderBy(m => m.Key, StringComparer.Ordinal))
+            {
+                index.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{FirmwareModuleKind}\t-\t{path}\t-\t{length}\t{hash}\t-\t-"));
+            }
+
             foreach (ReadRecord read in _reads)
             {
                 if (read.Ns < fromNs)
@@ -509,6 +538,9 @@ public sealed class CapturedFiles : IFileHook
     /// <summary>Per file, the recorded reads whose bytes the capture does not hold (hashes only).</summary>
     private readonly Dictionary<string, List<(long Offset, long End)>> _hashOnly = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _warnedHashOnly = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>The firmware modules the recording loaded: guest path and the SHA-256 of their image there.</summary>
+    private readonly Dictionary<string, ChunkHash> _firmwareModules = new(StringComparer.OrdinalIgnoreCase);
+    private int _firmwareMismatches;
 
     /// <summary>The re-run's files: every process brought up from a state puts its title's over its mounts.</summary>
     public static CapturedFiles? Active { get; set; }
@@ -525,6 +557,11 @@ public sealed class CapturedFiles : IFileHook
     /// <summary>Reads of the re-run the recording made but kept with their hash only: their bytes could not be put back
     /// (the re-run read zeros there).</summary>
     public long ReadsWithoutBytes => Interlocked.Read(ref _withoutBytes);
+    /// <summary>The firmware modules the recording listed.</summary>
+    public int FirmwareModules => _firmwareModules.Count;
+    /// <summary>Firmware modules the re-run loaded from this computer's firmware that are not the recording's (another
+    /// firmware version or a patched module): the re-run may differ from there.</summary>
+    public int FirmwareMismatches => Volatile.Read(ref _firmwareMismatches);
 
     private CapturedFiles()
     {
@@ -563,6 +600,21 @@ public sealed class CapturedFiles : IFileHook
             if (!IsPlainName(device) || rel.Contains("..", StringComparison.Ordinal))
             {
                 files.Skipped++;
+                continue;
+            }
+
+            if (kind == CaptureFileRecorder.FirmwareModuleKind)
+            {
+                // a firmware module: nothing is put back (the analyst's firmware has it), its hash is compared at load
+                if (f[5].Length == 64 && f[5].All(Uri.IsHexDigit))
+                {
+                    files._firmwareModules[CaptureFileRecorder.Canonical(path)] = ChunkHash.Parse(f[5]);
+                }
+                else
+                {
+                    files.Skipped++;
+                }
+
                 continue;
             }
 
@@ -820,8 +872,33 @@ public sealed class CapturedFiles : IFileHook
     {
     }
 
+    /// <summary>A firmware module the recording also loaded: when this computer's image is not the recording's, the
+    /// log says so once per module and it is counted (the re-run runs another firmware's code from there).</summary>
     public void ModuleLoaded(Emulator emu, string guestPath, byte[] elf)
     {
+        string path = CaptureFileRecorder.Canonical(guestPath);
+        if (!_firmwareModules.TryGetValue(path, out ChunkHash recorded))
+        {
+            return;
+        }
+
+        var here = ChunkHash.Of(elf);
+        if (here == recorded)
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            if (!_warned.Add("fw|" + path))
+            {
+                return;
+            }
+        }
+
+        Interlocked.Increment(ref _firmwareMismatches);
+        Log.Warn($"[capture] re-run: the firmware module {path} is not the recording's (sha256 {here.ToString()[..16]}... here, "
+            + $"{recorded.ToString()[..16]}... there): it comes from this computer's firmware, another version or a patched one; the re-run may differ from there");
     }
 
     public byte[]? RecordedModule(Emulator emu, string guestPath) =>

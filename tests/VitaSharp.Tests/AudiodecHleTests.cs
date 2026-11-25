@@ -31,6 +31,51 @@ public sealed class AudiodecHleTests(GuestMemoryFixture fixture) : IDisposable
         return c;
     }
 
+    /// <summary>A CELP decoder (SceAudiodecInfoCelp: MPE excitation, 8 kHz, one of the ten MPEG-4 CELP narrowband bit
+    /// rates; anything else is 0x807F3800) takes one frame of its bit rate per call and gives its samples: 4650 bps is
+    /// 320 samples from 24 bytes (40 ms), 12200 bps 80 samples from 16 bytes (10 ms); the stream sizes are the header's
+    /// SCE_AUDIODEC_CELP_MAX_ES_SIZE and the frame's PCM. VitaSharp refused the type. The samples are silent: there is
+    /// no CELP synthesis yet.</summary>
+    [Fact]
+    public void ACelpDecoderTakesTheFramesOfItsBitRate()
+    {
+        const uint Celp = 0x1006;
+        const int CelpInvalidConfig = unchecked((int)0x807F3800);
+        Assert.Equal(0, Call(Audiodec, "sceAudiodecInitLibrary", Celp, _harness.Alloc(16)));
+        uint info = _harness.Alloc(0x14);
+        GuestMemory.W32(info, 0x14);
+        GuestMemory.W32(info + 4, 0);      // MPE
+        GuestMemory.W32(info + 8, 8000);
+        GuestMemory.W32(info + 12, 5000);  // no such bit rate
+        uint ctrl = Ctrl(info);
+        Assert.Equal(CelpInvalidConfig, Call(Audiodec, "sceAudiodecCreateDecoder", ctrl, Celp));
+        GuestMemory.W32(info + 12, 4650);
+        GuestMemory.W32(info + 8, 16000);  // narrowband only
+        Assert.Equal(CelpInvalidConfig, Call(Audiodec, "sceAudiodecCreateDecoder", ctrl, Celp));
+        GuestMemory.W32(info + 8, 8000);
+        Assert.Equal(0, Call(Audiodec, "sceAudiodecCreateDecoder", ctrl, Celp));
+        Assert.Equal(24u, GuestMemory.R32(ctrl + 16));        // maxEsSize
+        Assert.Equal(640u, GuestMemory.R32(ctrl + 28));       // maxPcmSize: 320 S16 samples
+
+        uint es = _harness.Alloc(64), pcm = _harness.Alloc(2048);
+        GuestMemory.Span(pcm, 2048).Fill(0x55);
+        GuestMemory.W32(ctrl + 8, es);
+        GuestMemory.W32(ctrl + 20, pcm);
+        Assert.Equal(0, Call(Audiodec, "sceAudiodecDecodeNFrames", ctrl, 2u));
+        Assert.Equal(48u, GuestMemory.R32(ctrl + 12));        // inputEsSize: two 24-byte frames
+        Assert.Equal(1280u, GuestMemory.R32(ctrl + 24));      // outputPcmSize: two 320-sample frames
+        Assert.Equal(0, GuestMemory.Read<short>(pcm + 1278));
+        Assert.Equal(0x55, GuestMemory.Read<byte>(pcm + 1280));
+
+        GuestMemory.W32(info + 12, 12200);
+        uint ctrl2 = Ctrl(info);
+        Assert.Equal(0, Call(Audiodec, "sceAudiodecCreateDecoder", ctrl2, Celp));
+        GuestMemory.W32(ctrl2 + 8, es);
+        GuestMemory.W32(ctrl2 + 20, pcm);
+        Assert.Equal(0, Call(Audiodec, "sceAudiodecDecode", ctrl2));
+        Assert.Equal((16u, 160u), (GuestMemory.R32(ctrl2 + 12), GuestMemory.R32(ctrl2 + 24)));
+    }
+
     [Fact]
     public void LibraryAndDecoderLifecycle()
     {

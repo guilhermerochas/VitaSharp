@@ -126,7 +126,11 @@ public sealed partial class SystemServicesVsh
     [Hle(Default = true)] int sceBtReplyUserConfirmation(uint mac0, uint mac1, int accept) => BT_ERR_NOT_FOUND;
     /// <summary>(uint mac0, uint mac1): the registered (paired) device: none.</summary>
     [Hle(Default = true)] int sceBtDeleteRegisteredInfo(uint mac0, uint mac1) => BT_ERR_NO_DEVICE;
-    [Hle(Default = true)] int sceBtGetConnectingInfo(uint mac0, uint mac1) => BT_ERR_NO_DEVICE;
+    /// <summary>(uint mac0, uint mac1): the connection state of a device (FW 3.74 SceBt 0xD9B65CAA: 1 not connected,
+    /// 2 connected, 3-6 the audio profiles); a paired keyboard or mouse is connected.</summary>
+    [Hle]
+    int sceBtGetConnectingInfo(uint mac0, uint mac1) =>
+        PairedBluetoothDevices().Exists(d => d.Mac0 == mac0 && d.Mac1 == mac1) ? 2 : BT_ERR_NO_DEVICE;
     [Hle(Default = true)] int sceBtStartConnect(uint mac0, uint mac1) => BT_ERR_NO_DEVICE;
     [Hle(Default = true)] int sceBtStartDisconnect(uint mac0, uint mac1) => BT_ERR_NO_DEVICE;
 

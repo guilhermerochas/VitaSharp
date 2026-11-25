@@ -100,6 +100,71 @@ public sealed class HidDeviceTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(0, Call(Module, "sceHidMouseRead", handle, reports, 16));
     }
 
+    /// <summary>FW 3.74 SceHid notifies the enumeration hints of a kind when a device of it connects or disconnects,
+    /// and its read hints when the device has a new report; an unregistered callback is not notified.</summary>
+    [Fact]
+    public void HintCallbacksHearConnectionsAndReports()
+    {
+        ThreadMgr threads = _harness.Module<ThreadMgr>();
+        _harness.OnGuest(_ =>
+        {
+            int enumHint = Call(threads, "sceKernelCreateCallback", "hid-enum", 0u, SyntheticEntry, 0u);
+            int readHint = Call(threads, "sceKernelCreateCallback", "hid-read", 0u, SyntheticEntry, 0u);
+            int mouseHint = Call(threads, "sceKernelCreateCallback", "hid-mouse", 0u, SyntheticEntry, 0u);
+            Assert.Equal(0, Call(Module, "sceHidKeyboardRegisterEnumHintCallback", enumHint));
+            Assert.Equal(0, Call(Module, "sceHidKeyboardRegisterReadHintCallback", readHint));
+            Assert.Equal(0, Call(Module, "sceHidMouseRegisterEnumHintCallback", mouseHint));
+
+            var keyboard = new HidKeyboard();
+            _harness.Emu.Host.HidKeyboard = keyboard;     // the keyboard connects
+            Assert.Equal(1, Call(threads, "sceKernelGetCallbackCount", enumHint));
+            Assert.Equal(0, Call(threads, "sceKernelGetCallbackCount", mouseHint)); // a keyboard is no mouse
+
+            keyboard.Key(UsageA, true, 10);
+            keyboard.Key(UsageA, false, 20);
+            Assert.Equal(2, Call(threads, "sceKernelGetCallbackCount", readHint));
+
+            Assert.Equal(0, Call(Module, "sceHidKeyboardUnregisterReadHintCallback", readHint));
+            keyboard.Key(UsageB, true, 30);
+            Assert.Equal(2, Call(threads, "sceKernelGetCallbackCount", readHint));
+
+            _harness.Emu.Host.HidKeyboard = null;         // the keyboard disconnects
+            Assert.Equal(2, Call(threads, "sceKernelGetCallbackCount", enumHint));
+            _harness.Emu.Host.HidMouse = new HidMouse();  // a mouse connects
+            Assert.Equal(1, Call(threads, "sceKernelGetCallbackCount", mouseHint));
+        });
+    }
+
+    /// <summary>FW 3.74 SceBt lists the registered devices (0x100-byte records: address, class of device, connected
+    /// flag, name) and their connection state: the paired keyboard and mouse are there for the shell's Bluetooth
+    /// settings; with nothing paired, "no device" as before.</summary>
+    [Fact]
+    public void BluetoothListsThePairedDevices()
+    {
+        SystemServicesVsh bt = _harness.Module<SystemServicesVsh>();
+        uint info = _harness.Alloc(0x100 * 4);
+        Assert.Equal(unchecked((int)0x802F0109), Call(bt, "sceBtGetRegisteredInfo", 0u, 0u, info, 4));
+
+        _harness.Emu.Host.HidKeyboard = new HidKeyboard();
+        _harness.Emu.Host.HidMouse = new HidMouse();
+        Assert.Equal(2, Call(bt, "sceBtGetRegisteredInfo", 0u, 0u, info, 4));
+        Assert.Equal("Keyboard", GuestMemory.ReadCString(info + 0x20, 0x79));
+        Assert.Equal(0x2540u, GuestMemory.R32(info + 0xC));
+        Assert.Equal(1u, GuestMemory.R32(info + 0x10) & 1);
+        Assert.Equal("Mouse", GuestMemory.ReadCString(info + 0x100 + 0x20, 0x79));
+        uint mouseMac0 = GuestMemory.R32(info + 0x100), mac1 = GuestMemory.R32(info + 0x104);
+
+        // one address: that device only; a count of 1: the first
+        Assert.Equal(1, Call(bt, "sceBtGetRegisteredInfo", mouseMac0, mac1, info, 4));
+        Assert.Equal("Mouse", GuestMemory.ReadCString(info + 0x20, 0x79));
+        Assert.Equal(1, Call(bt, "sceBtGetRegisteredInfo", 0u, 0u, info, 1));
+        Assert.Equal(2, Call(bt, "sceBtGetConnectingInfo", mouseMac0, mac1));
+        Assert.Equal(unchecked((int)0x802F0109), Call(bt, "sceBtGetConnectingInfo", 0x12345678u, mac1));
+    }
+
+    /// <summary>A guest address for the callbacks' entry (they are counted, not run).</summary>
+    private const uint SyntheticEntry = 0x81000001;
+
     /// <summary>The host keys' USB HID usages: the desktop's by their Silk.NET names, Android's by their key codes.</summary>
     [Fact]
     public void HostKeysHaveTheirUsbHidUsages()

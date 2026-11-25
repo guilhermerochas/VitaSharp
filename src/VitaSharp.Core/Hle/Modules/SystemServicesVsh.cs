@@ -67,9 +67,82 @@ public sealed partial class SystemServicesVsh : HleModule
     [Hle(Default = true)] int sceBtGetConfiguration() => 0;
     /// <summary>(int config): Settings switches Bluetooth on or off; the emulated stack is up, so it is accepted.</summary>
     [Hle(Default = true)] int sceBtSetConfiguration(int config) => 0;
-    /// <summary>(int index, int, void *info, int size): the record of a paired device; none was ever paired, so the
-    /// stack reports the slot empty (SceBt's "no such device" error).</summary>
-    [Hle(Default = true)] int sceBtGetRegisteredInfo(int index, int a1, uint info, int size) => unchecked((int)0x802F0109);
+    /// <summary>
+    /// (uint mac0, uint mac1, SceBtRegisteredInfo *info, int count): the registered (paired) devices. FW 3.74 SceBt
+    /// (0x81000554) walks its device list, takes the registered ones (all for a zero address, else the one of that
+    /// address), writes a 0x100-byte record of each (+0 the address, +8 the device word, +0xC the class of device,
+    /// +0x10 bit 0 connected and the HID flags, +0x14 vendor/product/version for a HID device, +0x1A its kind, +0x20
+    /// the name) and returns how many it found. The paired keyboard and mouse (the host's, the emulator option) are its
+    /// devices; with none the stack reports no device, as before.
+    /// </summary>
+    [Hle]
+    int sceBtGetRegisteredInfo(uint mac0, uint mac1, uint info, int count)
+    {
+        var devices = PairedBluetoothDevices();
+        if (devices.Count == 0)
+        {
+            return unchecked((int)0x802F0109);
+        }
+
+        int found = 0;
+        foreach (PairedBluetoothDevice device in devices)
+        {
+            if (found >= count)
+            {
+                break;
+            }
+
+            if ((mac0 != 0 || mac1 != 0) && (device.Mac0 != mac0 || device.Mac1 != mac1))
+            {
+                continue;
+            }
+
+            if (info != 0)
+            {
+                uint record = info + (uint)found * BtRegisteredInfoSize;
+                GuestMemory.Fill(record, 0, BtRegisteredInfoSize);
+                GuestMemory.W32(record, device.Mac0);
+                GuestMemory.W32(record + 4, device.Mac1);
+                GuestMemory.W32(record + 0xC, device.ClassOfDevice);
+                GuestMemory.W32(record + 0x10, 1u | 0x100u);           // connected, a HID device
+                GuestMemory.Write(record + 0x1A, (byte)2);              // a HID device
+                GuestMemory.WriteCString(record + 0x20, device.Name, 0x79);
+            }
+
+            found++;
+        }
+
+        return found;
+    }
+
+    /// <summary>The size of one SceBt registered device record.</summary>
+    const uint BtRegisteredInfoSize = 0x100;
+
+    /// <summary>A device paired with the Vita's Bluetooth: its address (two words, as SceBt passes it), class of device
+    /// and name.</summary>
+    internal readonly record struct PairedBluetoothDevice(uint Mac0, uint Mac1, uint ClassOfDevice, string Name);
+
+    /// <summary>The Bluetooth address of the paired keyboard and mouse (a locally administered address, the same on
+    /// every run).</summary>
+    internal const uint PairedKeyboardMac0 = 0x0F1E2D02, PairedMouseMac0 = 0x0F1E2D03, PairedMac1 = 0x0000A55A;
+
+    /// <summary>The devices paired now: the host's keyboard and mouse when the emulator option pairs them (class of
+    /// device: peripheral, keyboard 0x2540 / pointing device 0x2580).</summary>
+    internal List<PairedBluetoothDevice> PairedBluetoothDevices()
+    {
+        var devices = new List<PairedBluetoothDevice>(2);
+        if (Emu?.Host.HidKeyboard != null)
+        {
+            devices.Add(new PairedBluetoothDevice(PairedKeyboardMac0, PairedMac1, 0x2540, "Keyboard"));
+        }
+
+        if (Emu?.Host.HidMouse != null)
+        {
+            devices.Add(new PairedBluetoothDevice(PairedMouseMac0, PairedMac1, 0x2580, "Mouse"));
+        }
+
+        return devices;
+    }
 
     // SceWlan (bootimage SceWlanBt): the Wi-Fi configuration word; no Wi-Fi chip, the word is kept.
     int _wlanConfig;
