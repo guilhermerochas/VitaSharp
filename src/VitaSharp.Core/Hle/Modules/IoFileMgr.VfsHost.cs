@@ -513,7 +513,8 @@ public sealed partial class IoFileMgr
         if (ResolveGuestMount(path, out string fullPath) is { } guest)
         {
             using var block = new GuestPathBlock(this, fullPath);
-            return GuestWalk(guest, block, fullPath, parentOnly: false, out vnode, out _);
+            // vfsMount's own lookup (the module's kind 0x6000) does not wait for the media
+            return GuestWalk(guest, block, fullPath, parentOnly: false, out vnode, out _, waitForMedia: false);
         }
 
         vnode = HostVnode(path);

@@ -291,6 +291,108 @@ public sealed class IoVfsMountTests(GuestMemoryFixture fixture) : IDisposable
         });
     }
 
+    /// <summary>
+    /// FW 3.74 path lookup (FUN_81004bb8): an I/O call on a mount that waits for its media (flags 0x20000) whose
+    /// presence word is not 1 waits on the device class's flag (bit 1, AND, not cleared: FUN_8100b810) before the walk,
+    /// and goes on to the driver once NID_5B7E5AB8 marks the media there. With the word at 1 nothing waits; a mount
+    /// without the bit never waits, even with the shared default word at 0; a 0x2xx class without a flag of its own
+    /// keeps the bit and the default holder (-1), so its wait fails with the UID error. Before, the call went straight
+    /// to the driver.
+    /// </summary>
+    [Fact]
+    public void AnIoCallOnAMountWaitingForItsMediaWaitsUntilTheMediaIsThere()
+    {
+        uint mount = 0;
+        uint stat = 0;
+        _h.OnGuest(_ =>
+        {
+            string? image = _h.Emu.Vfs.Resolve("ux0:tvfs.img", true);
+            File.WriteAllText(image!, "IMG1");
+            RegisterDriver();
+            Assert.Equal(0, Call(Io, "vfsMount", MountParam("/ux/exfat", null, 0x02020001u, 2u | 0x20000u)));
+            mount = GuestMemory.R32(_root + 0x4C);
+            stat = _h.Alloc(0x58);
+            _calls.Clear();
+            Assert.Equal(0, Io.sceIoGetstat("tvfs0:hello.txt", stat)); // the media is there: no wait
+            Assert.Contains("getstat", _calls);
+        });
+
+        uint extra = GuestMemory.R32(mount + 0xCC);
+        uint present = GuestMemory.R32(extra + 8);
+        GuestMemory.W32(present, 0); // the memory card is gone
+        EventFlag flag = Assert.Single(_h.Emu.Kernel.Objects.All<EventFlag>(), f => f.Name == "SceIofileDevWaitForMC");
+        _calls.Clear();
+        int result = int.MinValue;
+        HleHarness.GuestRun waiting = _h.Start(_ => result = Io.sceIoGetstat("tvfs0:hello.txt", stat), "media-wait");
+        Until(() => flag.Waiters == 1, "the getstat waiting for the media");
+        Assert.Equal(int.MinValue, result);
+        Assert.Empty(_calls); // it waits before the walk: the driver has not been asked
+
+        _h.OnGuest(_ => Assert.Equal(0, Call(Io, "ksceIofilemgr_5B7E5AB8", 0x800u)));
+        _h.Join(waiting);
+        Assert.Equal(0, result);
+        Assert.Contains("getstat", _calls);
+        Assert.Equal(1u, GuestMemory.R32(present));
+        Assert.Equal(0, flag.Waiters);
+
+        _h.OnGuest(_ =>
+        {
+            // without the bit nothing waits, even with the default presence word every mount points at at 0
+            Assert.Equal(0, Call(Io, "vfsMount", MountParam("/tvfs", null, 0x02020001u, 2u, assign: "tvfs1:")));
+            uint plain = GuestMemory.R32(_root + 0x4C);
+            uint defaultPresent = GuestMemory.R32(GuestMemory.R32(plain + 0xCC) + 8);
+            GuestMemory.W32(defaultPresent, 0);
+            Assert.Equal(0, Io.sceIoGetstat("tvfs1:hello.txt", stat));
+
+            // a 0x2xx class without its own flag: the default holder's -1, the wait's error is the call's
+            Assert.Equal(0, Call(Io, "vfsMount", MountParam("/tvfs2", null, 0x02040001u, 2u | 0x20000u, assign: "tvfs2:")));
+            Assert.Equal(SceError.UNKNOWN_EVF_ID, Io.sceIoGetstat("tvfs2:hello.txt", stat));
+            GuestMemory.W32(defaultPresent, 1);
+            Assert.Equal(0, Io.sceIoGetstat("tvfs2:hello.txt", stat));
+        });
+    }
+
+    /// <summary>
+    /// FW 3.74 descriptor calls (FUN_8100b830, which read, write, lseek, fgetstat, dread and close go through): a file
+    /// opened on a mount that waits for its media (bit 1 of the file object's +0x2C) waits on the class's flag while
+    /// the presence word of its mount is not 1, before the driver's op; NID_5B7E5AB8 wakes it. Before, the read went
+    /// straight to the driver.
+    /// </summary>
+    [Fact]
+    public void ADescriptorCallOnAMountWaitingForItsMediaWaitsUntilTheMediaIsThere()
+    {
+        uint mount = 0;
+        uint buffer = 0;
+        int fd = 0;
+        _h.OnGuest(_ =>
+        {
+            string? image = _h.Emu.Vfs.Resolve("ux0:tvfs.img", true);
+            File.WriteAllText(image!, "IMG1");
+            RegisterDriver();
+            Assert.Equal(0, Call(Io, "vfsMount", MountParam("/ux/exfat", null, 0x02020001u, 2u | 0x20000u)));
+            mount = GuestMemory.R32(_root + 0x4C);
+            fd = Io.sceIoOpen("tvfs0:hello.txt", (int)ORdOnly, 0);
+            Assert.True(fd > 0);
+            buffer = _h.Alloc(0x20);
+        });
+
+        uint present = GuestMemory.R32(GuestMemory.R32(mount + 0xCC) + 8);
+        GuestMemory.W32(present, 0); // the memory card is gone
+        EventFlag flag = Assert.Single(_h.Emu.Kernel.Objects.All<EventFlag>(), f => f.Name == "SceIofileDevWaitForMC");
+        _calls.Clear();
+        int result = int.MinValue;
+        HleHarness.GuestRun waiting = _h.Start(_ => result = Io.sceIoRead(fd, buffer, 5), "media-wait-fd");
+        Until(() => flag.Waiters == 1, "the read waiting for the media");
+        Assert.Equal(int.MinValue, result);
+        Assert.Empty(_calls);
+
+        _h.OnGuest(_ => Assert.Equal(0, Call(Io, "ksceIofilemgr_5B7E5AB8", 0x800u)));
+        _h.Join(waiting);
+        Assert.Equal(5, result);
+        Assert.Equal("hi fr", GuestMemory.ReadCString(buffer, 5));
+        _h.OnGuest(_ => Assert.Equal(0, Io.sceIoClose(fd)));
+    }
+
     [Fact]
     public void TheMountCallsTheDriversMountSetRootAndDevctlAndItsDeviceIsTheHostFile()
     {

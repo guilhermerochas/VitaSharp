@@ -2210,9 +2210,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   deflatePrime (encoder deflate próprio em nível de bit), ScePervasiveForDriver (palavras de identificação), ScePower
   SoftReset/0x3951AF53 e SceSyscon SetPowerMode e entradas (reboot do sistema emulado: SystemPower.Rebooted, o host
   boota de novo), SceIofilemgrForDriver vfsRmdev e NID_A39A9CA7 (vnodes de dispositivo de bloco dos mounts tipo 3 em
-  dev/tty/md). Falta: a espera das chamadas de E/S numa montagem que espera a mídia (bit 0x20000) enquanto a
-  palavra de presença não é 1 (FUN_81004bb8; o flag e as palavras já existem, ver "Corrigido, falta o usuário
-  testar");
+  dev/tty/md) e a espera das chamadas de E/S pela mídia (em "Corrigido, falta o usuário testar"). Falta: quem zera
+  a palavra de presença e limpa o flag quando a mídia sai (o driver do cartão; não se emula a retirada);
   SceCoredumpForDriver NID_A7D214A7 / NID_D064F6DC / NID_EF20949F (a validação, a fila de duas vagas e o arquivo
   de core estão em "Corrigido, falta o usuário testar"; falta a suspensão do processo durante o dump e as notas da
   Sony no .psp2dmp: PROCESS_INFO, THREAD_INFO, THREAD_REG_INFO, MODULE_INFO, MEM_BLK_INFO e as outras que o módulo
@@ -3365,7 +3364,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   guarda a palavra inteira do tipo de sistema de arquivos (antes só o byte baixo, sem a classe em +0x4E). Teste
   `IoVfsMountTests.AMountThatWaitsForItsMediaGetsTheDeviceClassFlag` (falha sem a mudança). Antes o create
   recebia um callback, o aviso dava 0x8001000C e nada era escrito. Teste: `IoErrorEventTests` (falha sem a
-  mudança). Testar: tirar o cartão de memória não se emula; nada muda na tela, os jogos de sempre continuam abrindo.
+  mudança). As chamadas de E/S por caminho numa montagem com o bit 0x20000 cuja palavra de presença não é 1 esperam,
+  antes da busca, o bit 1 do flag da classe (FUN_81004bb8 -> FUN_8100b810: ksceKernelWaitEventFlag(flag, 1, AND),
+  sem limpar; a palavra é lida uma vez), acordadas pelo NID_5B7E5AB8; as buscas do próprio módulo para montar
+  (tipos 0x1000, 0x2000, 0x6000, 0x7000: a cobertura do vfsMount) não esperam; uma classe 0x2xx sem flag próprio
+  fica com o -1 padrão e a chamada devolve o erro da espera. As chamadas por descritor (read, write, lseek,
+  fgetstat, dread, close, dclose) esperam do mesmo jeito quando o objeto de arquivo tem o bit 1 de +0x2C (posto na
+  abertura pelo bit 0x20000 da montagem; FUN_8100b830, por onde passam todas) (fix/small4). Testes
+  `IoVfsMountTests.AnIoCallOnAMountWaitingForItsMediaWaitsUntilTheMediaIsThere` e
+  `ADescriptorCallOnAMountWaitingForItsMediaWaitsUntilTheMediaIsThere` (falham sem a mudança).
+  Testar: tirar o cartão de memória não se emula; nada muda na tela, os jogos de sempre continuam abrindo.
 - [ ] (25/11/2026, falta testar) [P2][G] Pedidos de dump do SceCoredump conferidos como no 3.74 (fix/small2):
   `NID_A7D214A7` e `NID_D064F6DC` (pid, arg, alvo, pedido) conferem o pedido antes de enfileirá-lo para o thread de
   dump, na ordem do módulo (0x81007100): pedido NULL ou palavra de tamanho (+0) até 3, 0x80010016; com 0x34 bytes ou

@@ -282,4 +282,63 @@ public sealed partial class IoFileMgr
         GuestMemory.W32(extra + 8, words + presentOffset);
         GuestMemory.W32(extra + 0xC, holder);
     }
+
+    ThreadMgr? _mediaWaitThreads;
+
+    ThreadMgr MediaWaitThreads => _mediaWaitThreads ??= Emu.Hle.Modules.OfType<ThreadMgr>().First();
+
+    /// <summary>
+    /// The wait of a path lookup on a mount that waits for its media (FW 3.74 FUN_81004bb8, before the walk): when the
+    /// mount has the bit 0x20000 and its presence word is not 1, the calling thread waits for bit 1 of the wait flag
+    /// (FUN_8100b810: ksceKernelWaitEventFlag(flag, 1, AND, NULL, NULL), the bit is not cleared), which NID_5B7E5AB8
+    /// sets. The module checks the word once and does not look again after the wait; the wait's error (a class
+    /// without a flag of its own: the default holder's -1) is the lookup's. 0 when there is nothing to wait for.
+    /// </summary>
+    int WaitForMountMedia(uint mount)
+    {
+        if ((GuestMemory.R32(mount + 0x50) & 0x20000) == 0)
+        {
+            return 0;
+        }
+
+        return WaitForMedia(mount);
+    }
+
+    /// <summary>
+    /// The same wait for the calls on a descriptor (FW 3.74 FUN_8100b830, which every descriptor call goes through:
+    /// read, write, pread, pwrite, lseek, ioctl, fgetstat, fchstat, sync, dread, close): a file object opened on a
+    /// mount that waits for its media (bit 1 of +0x2C, from the mount's bit 0x20000 at the open) waits while the
+    /// presence word of its vnode's mount is not 1.
+    /// </summary>
+    int WaitForFileMedia(uint file)
+    {
+        if (file == 0 || (GuestMemory.R32(file + 0x2C) & 2) == 0)
+        {
+            return 0;
+        }
+
+        uint vnode = GuestMemory.R32(file + 0x18);
+        uint mount = vnode == 0 ? 0 : GuestMemory.R32(vnode + 0x4C);
+        return mount == 0 ? 0 : WaitForMedia(mount);
+    }
+
+    int WaitForMedia(uint mount)
+    {
+        uint extra = GuestMemory.R32(mount + 0xCC);
+        if (extra == 0)
+        {
+            return 0;
+        }
+
+        uint present = GuestMemory.R32(extra + 8);
+        if (present == 0 || GuestMemory.R32(present) == 1)
+        {
+            return 0;
+        }
+
+        uint holder = GuestMemory.R32(extra + 0xC);
+        int flag = holder == 0 ? -1 : (int)GuestMemory.R32(holder);
+        int result = MediaWaitThreads.sceKernelWaitEventFlagThroughEntry(flag, 1, EventFlag.WaitAnd, new Ptr<uint>(0), new Ptr<uint>(0));
+        return result < 0 ? result : 0;
+    }
 }
