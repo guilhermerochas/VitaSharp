@@ -118,71 +118,55 @@ public sealed partial class AllegrexCore
     }
 
     /// <summary>
-    /// The IL tier's add.s (sub.s passes <paramref name="right"/> with its sign flipped: x - y is x + (-y) in IEEE,
-    /// signed zeros included) for code that entered in round-to-nearest with no exception enabled: as
-    /// <see cref="FpuFastResult"/> gives it, for a result whose exponent is 2..253 or an exact zero, else -1.
+    /// The IL tier's add.s on float locals (sub.s negates the right operand): the sum, or NaN when the fast path
+    /// does not apply (an operand not normal or zero, a result outside exponents 2..253); a fast result is never NaN.
+    /// Only the sum is on the result's dependency chain: the checks only branch.
     /// </summary>
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static long FpuAddNearest(uint left, uint right)
+    internal static float FpuAddFloat(float a, float b)
     {
-        if (!IsNormalOrZeroBits(left) || !IsNormalOrZeroBits(right))
-        {
-            return -1;
-        }
-
-        // the host's float sum is the correctly rounded one (round-to-nearest-even), and two-sum gives exactly what
-        // it dropped (no overflow here: an exponent of 253 at most comes out)
-        float a = BitConverter.UInt32BitsToSingle(left);
-        float b = BitConverter.UInt32BitsToSingle(right);
         float sum = a + b;
-        float rightPart = sum - a;
-        float error = (a - (sum - rightPart)) + (b - rightPart);
         uint bits = BitConverter.SingleToUInt32Bits(sum);
-
-        // a sum of two floats is a multiple of the smallest denormal: a zero result is an exact zero
-        if ((bits & 0x7FFFFFFF) == 0)
+        bool zero = (bits & 0x7FFFFFFF) == 0;
+        if (!IsNormalOrZeroBits(BitConverter.SingleToUInt32Bits(a)) || !IsNormalOrZeroBits(BitConverter.SingleToUInt32Bits(b)) || (!zero && ((bits >> 23) & 0xFF) - 2 > 251))
         {
-            return bits;
+            return float.NaN;
         }
 
-        if (((bits >> 23) & 0xFF) - 2 > 251)
-        {
-            return -1;
-        }
-
-        return bits | (error != 0 ? 1L << 32 : 0);
+        return sum;
     }
 
-    /// <summary>The IL tier's mul.s, as <see cref="FpuAddNearest"/> (a product of two floats is exact in double).</summary>
+    /// <summary>The inexact cause of <see cref="FpuAddFloat"/> (1 or 0): two-sum gives exactly what the float sum dropped.</summary>
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static long FpuMultiplyNearest(uint left, uint right)
+    internal static uint FpuAddInexact(float a, float b, float sum)
     {
-        if (!IsNormalOrZeroBits(left) || !IsNormalOrZeroBits(right))
-        {
-            return -1;
-        }
-
-        double exact = (double)BitConverter.UInt32BitsToSingle(left) * BitConverter.UInt32BitsToSingle(right);
-        float nearest = (float)exact;
-        return FinishNearest(exact, nearest, nearest != exact);
+        float rightPart = sum - a;
+        return (a - (sum - rightPart)) + (b - rightPart) != 0 ? 1u : 0u;
     }
 
+    /// <summary>The IL tier's mul.s on float locals, as <see cref="FpuAddFloat"/>; an exact zero needs a zero operand
+    /// (a product that underflows to zero takes the full handler).</summary>
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    private static long FinishNearest(double exact, float nearest, bool inexact)
+    internal static float FpuMultiplyFloat(float a, float b)
     {
-        uint bits = BitConverter.SingleToUInt32Bits(nearest);
-        if (exact == 0)
+        float product = a * b;
+        uint bits = BitConverter.SingleToUInt32Bits(product);
+        uint left = BitConverter.SingleToUInt32Bits(a);
+        uint right = BitConverter.SingleToUInt32Bits(b);
+        bool exactZero = ((left | right) & 0x7FFFFFFF) == 0 || (left & 0x7FFFFFFF) == 0 || (right & 0x7FFFFFFF) == 0;
+        if (!IsNormalOrZeroBits(left) || !IsNormalOrZeroBits(right) || (!exactZero && ((bits >> 23) & 0xFF) - 2 > 251))
         {
-            return bits;
+            return float.NaN;
         }
 
-        // exponent 2..253: the exact value is well inside the normal range, no underflow or overflow to judge
-        if (((bits >> 23) & 0xFF) - 2 > 251)
-        {
-            return -1;
-        }
+        return product;
+    }
 
-        return bits | (inexact ? 1L << 32 : 0);
+    /// <summary>The inexact cause of <see cref="FpuMultiplyFloat"/>: the double product is exact.</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    internal static uint FpuMultiplyInexact(float a, float b, float product)
+    {
+        return (double)a * b != product ? 1u : 0u;
     }
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
@@ -215,24 +199,65 @@ public sealed partial class AllegrexCore
             return;
         }
 
-        uint[] v = _vfpr;
-        uint[] results = _laneD;
-        for (int i = 0; i < size; i++)
+        // every lane read before any is written (the vectors may overlap); in locals, with no span to bounds-check
+        // (what the Native AOT build, which has no IL tier, runs as fast as it can)
+        ref uint v = ref System.Runtime.InteropServices.MemoryMarshal.GetArrayDataReference(_vfpr);
+        uint d0 = LaneResult(operation, Lane(ref v, lanesS, 0), Lane(ref v, lanesT, 0));
+        if (size == 1)
         {
-            uint s = v[(lanesS >> (i * 8)) & 0x7F];
-            uint t = v[(lanesT >> (i * 8)) & 0x7F];
-            results[i] = operation switch
-            {
-                0 => AllegrexVfpuMath.Add(s, t),
-                1 => AllegrexVfpuMath.Subtract(s, t),
-                _ => AllegrexVfpuMath.Multiply(s, t),
-            };
+            SetLane(ref v, lanesD, 0, d0);
+            return;
         }
 
-        for (int i = 0; i < size; i++)
+        uint d1 = LaneResult(operation, Lane(ref v, lanesS, 1), Lane(ref v, lanesT, 1));
+        if (size == 2)
         {
-            v[(lanesD >> (i * 8)) & 0x7F] = results[i];
+            SetLane(ref v, lanesD, 0, d0);
+            SetLane(ref v, lanesD, 1, d1);
+            return;
         }
+
+        uint d2 = LaneResult(operation, Lane(ref v, lanesS, 2), Lane(ref v, lanesT, 2));
+        if (size == 3)
+        {
+            SetLane(ref v, lanesD, 0, d0);
+            SetLane(ref v, lanesD, 1, d1);
+            SetLane(ref v, lanesD, 2, d2);
+            return;
+        }
+
+        uint d3 = LaneResult(operation, Lane(ref v, lanesS, 3), Lane(ref v, lanesT, 3));
+        SetLane(ref v, lanesD, 0, d0);
+        SetLane(ref v, lanesD, 1, d1);
+        SetLane(ref v, lanesD, 2, d2);
+        SetLane(ref v, lanesD, 3, d3);
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private static uint LaneResult(uint operation, uint s, uint t)
+    {
+        switch (operation)
+        {
+            case 0:
+                return AllegrexVfpuMath.Add(s, t);
+            case 1:
+                return AllegrexVfpuMath.Subtract(s, t);
+            default:
+                return AllegrexVfpuMath.Multiply(s, t);
+        }
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private static void SetLane(ref uint registers, uint lanes, int i, uint value)
+    {
+        System.Runtime.CompilerServices.Unsafe.Add(ref registers, (int)((lanes >> (i * 8)) & 0x7F)) = value;
+    }
+
+    /// <summary>Lane <paramref name="i"/> of a decoded vector (the index is 0..127, inside the register file).</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private static uint Lane(ref uint registers, uint lanes, int i)
+    {
+        return System.Runtime.CompilerServices.Unsafe.Add(ref registers, (int)((lanes >> (i * 8)) & 0x7F));
     }
 
     /// <summary>vdot as the block decoded it.</summary>
@@ -283,7 +308,10 @@ public sealed partial class AllegrexCore
 
     private bool VfpuPrefixesAtRest()
     {
-        return _vfpuControl[VfpuSPrefix] == VfpuIdentityPrefix && _vfpuControl[VfpuTPrefix] == VfpuIdentityPrefix && _vfpuControl[VfpuDPrefix] == 0;
+        ref uint control = ref System.Runtime.InteropServices.MemoryMarshal.GetArrayDataReference(_vfpuControl);
+        return System.Runtime.CompilerServices.Unsafe.Add(ref control, VfpuSPrefix) == VfpuIdentityPrefix
+            && System.Runtime.CompilerServices.Unsafe.Add(ref control, VfpuTPrefix) == VfpuIdentityPrefix
+            && System.Runtime.CompilerServices.Unsafe.Add(ref control, VfpuDPrefix) == 0;
     }
 
     /// <summary>Opcode 0x18: vadd and vsub with the prefixes at rest directly, the rest through <see cref="ExecuteVfpu0"/>.</summary>

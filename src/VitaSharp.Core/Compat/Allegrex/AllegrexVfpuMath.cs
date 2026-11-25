@@ -42,6 +42,7 @@ public static class AllegrexVfpuMath
     }
 
     /// <summary>The value an input is used as: denormals as zeros.</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static float Input(uint bits)
     {
         return Single(FlushDenormal(bits));
@@ -51,6 +52,7 @@ public static class AllegrexVfpuMath
     /// Finishes a lane result: a NaN becomes the VFPU NaN with <paramref name="nanSign"/>, a result below the flush
     /// threshold (judged on the exact value) the zero of its sign.
     /// </summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static uint Finish(float result, double exact, uint nanSign)
     {
         uint bits = Bits(result);
@@ -67,6 +69,7 @@ public static class AllegrexVfpuMath
         return bits;
     }
 
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static uint Add(uint left, uint right)
     {
         float a = Input(left);
@@ -74,6 +77,7 @@ public static class AllegrexVfpuMath
         return Finish(a + b, (double)a + b, 0);
     }
 
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static uint Subtract(uint left, uint right)
     {
         float a = Input(left);
@@ -81,6 +85,7 @@ public static class AllegrexVfpuMath
         return Finish(a - b, (double)a - b, 0);
     }
 
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static uint Multiply(uint left, uint right)
     {
         float a = Input(left);
@@ -221,50 +226,30 @@ public static class AllegrexVfpuMath
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     private static uint DotRound(int sum, int highest)
     {
-        // |sum| without the overflow check (four 26-bit terms cannot reach int.MinValue)
+        // |sum| without the overflow check (four 26-bit terms cannot reach int.MinValue), the extra bits truncated
         int signMask = sum >> 31;
         uint magnitude = (uint)((sum ^ signMask) - signMask) >> DotExtraBits;
-        int exponent = highest;
-        if (magnitude != 0)
+        uint signBit = (uint)signMask & 0x80000000u;
+        if (magnitude == 0)
         {
-            int normalize = 8 - BitOperations.LeadingZeroCount(magnitude);
-            exponent += normalize;
-            if (normalize > 0)
-            {
-                uint half = 1u << (normalize - 1);
-                uint kept = magnitude >> normalize;
-                uint dropped = magnitude & ((2 * half) - 1);
-                magnitude = kept + ((dropped + (kept & 1)) > half ? 1u : 0u);
-                if (magnitude >= 2 * DotImplicitBit)
-                {
-                    magnitude >>= 1;
-                    exponent++;
-                }
-            }
-            else if (normalize < 0)
-            {
-                magnitude <<= -normalize;
-            }
-        }
-        else
-        {
-            exponent = -128;
+            return signBit;
         }
 
+        // the host's int-to-float conversion rounds to 24 bits, nearest even, as the hardware does: the value is
+        // magnitude * 2^(highest - 23), so only the exponent moves
+        uint rounded = BitConverter.SingleToUInt32Bits((int)magnitude);
+        int exponent = (int)(rounded >> 23) - 127 + highest - 23;
         if (exponent <= -127)
         {
-            exponent = -127;
-            magnitude = 0;
+            return signBit;
         }
 
         if (exponent >= 128)
         {
-            exponent = 128;
-            magnitude = 0;
+            return signBit | 0x7F800000u;
         }
 
-        uint signBit = sum < 0 ? 0x80000000u : 0u;
-        return signBit | ((uint)(exponent + 127) << 23) | (magnitude & 0x007FFFFF);
+        return signBit | ((uint)(exponent + 127) << 23) | (rounded & 0x007FFFFF);
     }
 
     /// <summary>One lane of the dot product: false when it makes the result NaN (a NaN operand, inf * 0, or an

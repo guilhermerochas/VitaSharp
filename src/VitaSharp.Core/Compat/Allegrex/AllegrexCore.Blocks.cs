@@ -274,7 +274,14 @@ public sealed partial class AllegrexCore
     private Block BuildBlock(uint pc)
     {
         // a branch at the length limit still takes its delay slot: one more than the limit
-        Block block = new() { Generation = _generation, Start = pc, Instructions = new DecodedInstruction[_blockLimit + 1] };
+        // without the IL tier (Native AOT, or never hot) a block never asks to be compiled
+        Block block = new()
+        {
+            Generation = _generation,
+            Start = pc,
+            Instructions = new DecodedInstruction[_blockLimit + 1],
+            CompileTried = _ilHotInstructions == long.MaxValue,
+        };
         uint address = pc;
         bool delaySlotNext = false;
         int count = 0;
@@ -674,12 +681,6 @@ public sealed partial class AllegrexCore
         uint target;
         while (true)
         {
-            if (i >= count)
-            {
-                stop = ChainEnd;
-                break;
-            }
-
             if (i == 0)
             {
                 // a block entry: count it for the IL tier, and run its compiled region when the budget holds the block
@@ -712,13 +713,19 @@ public sealed partial class AllegrexCore
                 }
             }
 
-            ref DecodedInstruction d = ref Unsafe.Add(ref first, i);
-            if (ExecutePlain(ref r, ref d))
+            // the plain instructions back to back: the block entry work above happens once per block, not here
+            while (i < count && ExecutePlain(ref r, ref Unsafe.Add(ref first, i)))
             {
                 i++;
-                continue;
             }
 
+            if (i >= count)
+            {
+                stop = ChainEnd;
+                break;
+            }
+
+            ref DecodedInstruction d = ref Unsafe.Add(ref first, i);
             byte op = d.Op;
             if (op < OpBeq || op > OpJalr || i + 1 >= count || !IsPlain(Unsafe.Add(ref first, i + 1).Op))
             {

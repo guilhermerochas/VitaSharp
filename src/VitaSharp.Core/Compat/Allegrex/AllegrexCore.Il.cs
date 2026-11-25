@@ -32,19 +32,23 @@ public sealed partial class AllegrexCore
     private static readonly AsyncLocal<long?> s_forcedIlHotInstructions = new();
     private static readonly AsyncLocal<int?> s_forcedBlockLimit = new();
 
-    private static readonly FieldInfo s_busField = Field(nameof(_bus));
-    private static readonly FieldInfo s_endBlockField = Field(nameof(_endBlock));
-    private static readonly FieldInfo s_currentPcField = Field(nameof(_currentPc));
-    private static readonly FieldInfo s_currentInDelaySlotField = Field(nameof(_currentInDelaySlot));
-    private static readonly FieldInfo s_fprField = Field(nameof(_fpr));
-    private static readonly FieldInfo s_vfprField = Field(nameof(_vfpr));
-    private static readonly FieldInfo s_fcr31Field = Field(nameof(_fcr31));
-    private static readonly MethodInfo s_store32 = Method(nameof(Store32));
+    private static readonly FieldInfo s_busField = typeof(AllegrexCore).GetField(nameof(_bus), BindingFlags.NonPublic | BindingFlags.Instance)!;
+    private static readonly FieldInfo s_endBlockField = typeof(AllegrexCore).GetField(nameof(_endBlock), BindingFlags.NonPublic | BindingFlags.Instance)!;
+    private static readonly FieldInfo s_currentPcField = typeof(AllegrexCore).GetField(nameof(_currentPc), BindingFlags.NonPublic | BindingFlags.Instance)!;
+    private static readonly FieldInfo s_currentInDelaySlotField = typeof(AllegrexCore).GetField(nameof(_currentInDelaySlot), BindingFlags.NonPublic | BindingFlags.Instance)!;
+    private static readonly FieldInfo s_fprField = typeof(AllegrexCore).GetField(nameof(_fpr), BindingFlags.NonPublic | BindingFlags.Instance)!;
+    private static readonly FieldInfo s_vfprField = typeof(AllegrexCore).GetField(nameof(_vfpr), BindingFlags.NonPublic | BindingFlags.Instance)!;
+    private static readonly FieldInfo s_fcr31Field = typeof(AllegrexCore).GetField(nameof(_fcr31), BindingFlags.NonPublic | BindingFlags.Instance)!;
+    private static readonly MethodInfo s_store32 = typeof(AllegrexCore).GetMethod(nameof(Store32), BindingFlags.NonPublic | BindingFlags.Instance)!;
     private static readonly MethodInfo s_read32 = typeof(IAllegrexBus).GetMethod(nameof(IAllegrexBus.Read32))!;
-    private static readonly MethodInfo s_fpuArithmetic = Method(nameof(FpuArithmeticCompiled));
-    private static readonly MethodInfo s_fpuAdd = typeof(AllegrexCore).GetMethod(nameof(FpuAddNearest), BindingFlags.NonPublic | BindingFlags.Static)!;
-    private static readonly MethodInfo s_fpuMultiply = typeof(AllegrexCore).GetMethod(nameof(FpuMultiplyNearest), BindingFlags.NonPublic | BindingFlags.Static)!;
-    private static readonly MethodInfo s_prefixesAtRest = Method(nameof(VfpuPrefixesAtRest));
+    private static readonly MethodInfo s_fpuArithmetic = typeof(AllegrexCore).GetMethod(nameof(FpuArithmeticCompiled), BindingFlags.NonPublic | BindingFlags.Instance)!;
+    private static readonly MethodInfo s_fpuAdd = typeof(AllegrexCore).GetMethod(nameof(FpuAddFloat), BindingFlags.NonPublic | BindingFlags.Static)!;
+    private static readonly MethodInfo s_fpuAddInexact = typeof(AllegrexCore).GetMethod(nameof(FpuAddInexact), BindingFlags.NonPublic | BindingFlags.Static)!;
+    private static readonly MethodInfo s_fpuMultiply = typeof(AllegrexCore).GetMethod(nameof(FpuMultiplyFloat), BindingFlags.NonPublic | BindingFlags.Static)!;
+    private static readonly MethodInfo s_fpuMultiplyInexact = typeof(AllegrexCore).GetMethod(nameof(FpuMultiplyInexact), BindingFlags.NonPublic | BindingFlags.Static)!;
+    private static readonly MethodInfo s_bitsToSingle = typeof(BitConverter).GetMethod(nameof(BitConverter.UInt32BitsToSingle))!;
+    private static readonly MethodInfo s_singleToBits = typeof(BitConverter).GetMethod(nameof(BitConverter.SingleToUInt32Bits))!;
+    private static readonly MethodInfo s_prefixesAtRest = typeof(AllegrexCore).GetMethod(nameof(VfpuPrefixesAtRest), BindingFlags.NonPublic | BindingFlags.Instance)!;
     private static readonly MethodInfo s_vfpuDot = typeof(AllegrexCore).GetMethod(nameof(VfpuDot4), BindingFlags.NonPublic | BindingFlags.Static)!;
     private static readonly MethodInfo s_vfpuAdd = typeof(AllegrexVfpuMath).GetMethod(nameof(AllegrexVfpuMath.Add))!;
     private static readonly MethodInfo s_vfpuSubtract = typeof(AllegrexVfpuMath).GetMethod(nameof(AllegrexVfpuMath.Subtract))!;
@@ -66,16 +70,6 @@ public sealed partial class AllegrexCore
 
     /// <summary>Regions compiled by this core (statistics, tests).</summary>
     public int CompiledBlocks => _compiledBlocks;
-
-    private static FieldInfo Field(string name)
-    {
-        return typeof(AllegrexCore).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!;
-    }
-
-    private static MethodInfo Method(string name)
-    {
-        return typeof(AllegrexCore).GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance)!;
-    }
 
     /// <summary>Tests: cores created in this async flow compile every compilable block at once (or never, with
     /// long.MaxValue), with blocks of at most <paramref name="blockLimit"/> instructions (one, a branch with its delay
@@ -263,7 +257,7 @@ public sealed partial class AllegrexCore
         private readonly LocalBuilder _consumed;
         private readonly LocalBuilder _address;
         private readonly LocalBuilder _target;
-        private readonly LocalBuilder _fast;
+        private readonly LocalBuilder _result;
         private readonly LocalBuilder[] _lanes = new LocalBuilder[4];
         private bool _usesVfpu;
 
@@ -280,7 +274,7 @@ public sealed partial class AllegrexCore
             _consumed = il.DeclareLocal(typeof(int));
             _address = il.DeclareLocal(typeof(uint));
             _target = il.DeclareLocal(typeof(uint));
-            _fast = il.DeclareLocal(typeof(long));
+            _result = il.DeclareLocal(typeof(float));
             for (int i = 0; i < 4; i++)
             {
                 _lanes[i] = il.DeclareLocal(typeof(uint));
@@ -428,7 +422,8 @@ public sealed partial class AllegrexCore
 
         private void DeclareFpr(int register)
         {
-            _fpr[register] ??= _il.DeclareLocal(typeof(uint));
+            // as floats, bit-cast at the boundaries: the arithmetic's dependency chain is then the float operation alone
+            _fpr[register] ??= _il.DeclareLocal(typeof(float));
         }
 
         private void DeclareVfpr(int index)
@@ -456,7 +451,7 @@ public sealed partial class AllegrexCore
         /// <summary>The FPU/VFPU locals and FCR31 from the core (at entry, and after a full FPU handler ran).</summary>
         private void LoadFloat()
         {
-            LoadArray(s_fprField, _fpr);
+            LoadArray(s_fprField, _fpr, true);
             LoadArray(s_vfprField, _vfpr);
             if (_fcr31 != null)
             {
@@ -466,7 +461,7 @@ public sealed partial class AllegrexCore
             }
         }
 
-        private void LoadArray(FieldInfo field, LocalBuilder?[] locals)
+        private void LoadArray(FieldInfo field, LocalBuilder?[] locals, bool asFloat = false)
         {
             for (int k = 0; k < locals.Length; k++)
             {
@@ -476,6 +471,11 @@ public sealed partial class AllegrexCore
                     _il.Emit(OpCodes.Ldfld, field);
                     _il.Emit(OpCodes.Ldc_I4, k);
                     _il.Emit(OpCodes.Ldelem_U4);
+                    if (asFloat)
+                    {
+                        _il.Emit(OpCodes.Call, s_bitsToSingle);
+                    }
+
                     _il.Emit(OpCodes.Stloc, locals[k]!);
                 }
             }
@@ -498,7 +498,7 @@ public sealed partial class AllegrexCore
 
         private void WriteBackFloat()
         {
-            WriteBackArray(s_fprField, _fpr, _fprWritten);
+            WriteBackArray(s_fprField, _fpr, _fprWritten, true);
             WriteBackArray(s_vfprField, _vfpr, _vfprWritten);
             if (_fcr31Written)
             {
@@ -508,7 +508,7 @@ public sealed partial class AllegrexCore
             }
         }
 
-        private void WriteBackArray(FieldInfo field, LocalBuilder?[] locals, bool[] written)
+        private void WriteBackArray(FieldInfo field, LocalBuilder?[] locals, bool[] written, bool asFloat = false)
         {
             for (int k = 0; k < locals.Length; k++)
             {
@@ -518,6 +518,11 @@ public sealed partial class AllegrexCore
                     _il.Emit(OpCodes.Ldfld, field);
                     _il.Emit(OpCodes.Ldc_I4, k);
                     _il.Emit(OpCodes.Ldloc, locals[k]!);
+                    if (asFloat)
+                    {
+                        _il.Emit(OpCodes.Call, s_singleToBits);
+                    }
+
                     _il.Emit(OpCodes.Stelem_I4);
                 }
             }
@@ -855,30 +860,37 @@ public sealed partial class AllegrexCore
         {
             Label slow = _il.DefineLabel();
             Label done = _il.DefineLabel();
-            // the region entered in round-to-nearest with no exception enabled, so the fast result commits as is
+            // the region entered in round-to-nearest with no exception enabled, so the fast result commits as is;
+            // sub.s is add.s of the negated right operand (x - y is x + (-y) in IEEE, signed zeros included)
+            bool multiply = d.Immediate == 2;
             _il.Emit(OpCodes.Ldloc, _fpr[d.S]!);
             _il.Emit(OpCodes.Ldloc, _fpr[d.T]!);
             if (d.Immediate == 1)
             {
-                _il.Emit(OpCodes.Ldc_I4, unchecked((int)0x80000000));
-                _il.Emit(OpCodes.Xor);
+                _il.Emit(OpCodes.Neg);
             }
 
-            _il.Emit(OpCodes.Call, d.Immediate == 2 ? s_fpuMultiply : s_fpuAdd);
-            _il.Emit(OpCodes.Stloc, _fast);
-            _il.Emit(OpCodes.Ldloc, _fast);
-            _il.Emit(OpCodes.Ldc_I4_0);
-            _il.Emit(OpCodes.Conv_I8);
-            _il.Emit(OpCodes.Blt, slow);
+            _il.Emit(OpCodes.Call, multiply ? s_fpuMultiply : s_fpuAdd);
+            _il.Emit(OpCodes.Stloc, _result);
+
+            // NaN (never a fast result) asks for the full handler
+            _il.Emit(OpCodes.Ldloc, _result);
+            _il.Emit(OpCodes.Ldloc, _result);
+            _il.Emit(OpCodes.Bne_Un, slow);
 
             // fcr31 = (fcr31 & ~causes) | (e << 12) | (e << 2); fd = result
             _il.Emit(OpCodes.Ldloc, _fcr31!);
             _il.Emit(OpCodes.Ldc_I4, unchecked((int)~FpuCauseMask));
             _il.Emit(OpCodes.And);
-            _il.Emit(OpCodes.Ldloc, _fast);
-            _il.Emit(OpCodes.Ldc_I4, 32);
-            _il.Emit(OpCodes.Shr_Un);
-            _il.Emit(OpCodes.Conv_U4);
+            _il.Emit(OpCodes.Ldloc, _fpr[d.S]!);
+            _il.Emit(OpCodes.Ldloc, _fpr[d.T]!);
+            if (d.Immediate == 1)
+            {
+                _il.Emit(OpCodes.Neg);
+            }
+
+            _il.Emit(OpCodes.Ldloc, _result);
+            _il.Emit(OpCodes.Call, multiply ? s_fpuMultiplyInexact : s_fpuAddInexact);
             _il.Emit(OpCodes.Dup);
             _il.Emit(OpCodes.Stloc, _address);
             _il.Emit(OpCodes.Ldc_I4, 12);
@@ -889,8 +901,7 @@ public sealed partial class AllegrexCore
             _il.Emit(OpCodes.Shl);
             _il.Emit(OpCodes.Or);
             _il.Emit(OpCodes.Stloc, _fcr31!);
-            _il.Emit(OpCodes.Ldloc, _fast);
-            _il.Emit(OpCodes.Conv_U4);
+            _il.Emit(OpCodes.Ldloc, _result);
             _il.Emit(OpCodes.Stloc, _fpr[d.D]!);
             _il.Emit(OpCodes.Br, done);
 
