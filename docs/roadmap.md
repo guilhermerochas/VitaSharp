@@ -935,10 +935,40 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   atrasado, com os 2 workers ocupados e 17 jobs na fila: limite de vazão, alavanca da frente (3)), GTAVCECTY x2 e
   PSVAS1178 0 → 0; opção ligada: 0 → 0 em todos; `--compare` dos 8 dumps nos dois modos pixel-idêntico. O engasgo do
   1º quadro continua com a opção desligada (a thread da GPU passa a esperar os workers em vez de montar: 2,1-4,4 s no
-  PCSE00053 com a CPU da máquina a 83-96%), e é o que a opção ligada resolve. Próximas partes: (3) estado dinâmico EDS3/vertex input onde houver; (4) Android: medir no
-  Killzone o tempo de carregamento a mais e a queda de pipelines no thread da GPU
+  PCSE00053 com a CPU da máquina a 83-96%), e é o que a opção ligada resolve. Próxima parte: Android: medir no
+  Killzone o tempo de carregamento a mais e a queda de pipelines no thread da GPU.
+  Estado dinâmico (frente 2; perf/stut1, 25/11/2026): contado, não implementado. Nos 10.973 pipelines gravados de 70
+  títulos (cópias dos `pipelines.list`), blend e máscara dinâmicos (`VK_EXT_extended_dynamic_state3`) tiram 6,7%,
+  vertex input dinâmico 2,8%, tudo junto 9,5%, mas quase tudo nos conjuntos 2D pequenos (GTAVCECTY 57 → 31); os 3D
+  que engasgam ficam com quase todos: PCSC00045 2.058 → 2.034 (1,2%), PCSE00333 809 → 794 (1,9%), PCSE00053 262 →
+  254 (3,1%), PCSA00017 0%. Com a compilação ao carregar o programa os replays frios já têm 0 pipelines na thread da
+  GPU e 0 quadros >= 4 ms, então não há quadro lento para tirar; só sobraria pouco trabalho a menos no carregamento.
+  Fica fora (tabela e motivo em `docs/notes/pipeline-skip.md`).
+  Mais workers (frente 3; perf/stut1, 25/11/2026, feito): além dos workers de sempre (metade das CPUs, 1-6, prioridade
+  normal), workers de folga em prioridade abaixo do normal até 90% das CPUs menos 1 (a thread da GPU), no máximo 8 ao
+  todo: 8 CPUs 4 + 2, 6 CPUs 3 + 1, 12 ou mais 6 + 2, 4 ou menos sem mudança; Android sem mudança (a `ThreadPlacement`
+  já move os workers entre núcleos lentos e rápidos). Referências: yuzu e forks `hardware_concurrency - 1` no desktop
+  (forks Android: 3 núcleos livres ou 2-8 escolhido), Ryujinx 8 threads de tradução e `min(ProcessorCount, 8)`
+  compilações, Dolphin `clamp(núcleos - 3, 1, 4)`; o pedido do draw atual já vai primeiro (a thread da GPU roda ela
+  mesma o job que ainda não começou). `VulkanRenderer.AutoShaderWorkers`, `VITASHARP_SHADER_SPARE_WORKERS` (A/B),
+  teste `ShaderWorkerCountTests`. Replay frio do PCSE00053 (140 MB), fixado em 4 CPUs (2 workers lá; +1 equivale ao
+  4 → 6 de 8 CPUs), compilação ao carregar desligada, 2x alternado: esperas de pipeline 2.432/3.243 → 1.824/1.419 ms,
+  shaders esperados 21/12 → 4/5, pior quadro 2.326/3.550 → 1.788/2.120 ms (com 3 workers normais: o mesmo); com a
+  opção ligada (padrão) 0 quadros lentos nos dois e espera do carregamento 8,1 → 7,0-7,4 s (PCSE00333 0,93-1,03 →
+  0,86 s); 4 workers em 4 CPUs pioram (9,3 s). `--compare` dos 13 dumps contra a base: pixel-idênticos. Falta:
+  medir em gameplay no PC de 8 CPUs sem fixação (o efeito da prioridade baixa quando o jogo ocupa a CPU).
+  Pipelines internos (frente 5; perf/stut1, 25/11/2026, feito): agora contados (linha da sessão "built-in pipelines on
+  the GPU thread", uma linha de log por montagem) e somados à espera do quadro. Replay frio dos 13 dumps com a
+  compilação ao carregar ligada: 1 em 4 dumps, sempre o de carga de MSAA, 12-27 ms num quadro (GTAVCECTY x2, shell x2)
+  e era o único quadro lento deles (1 quadro >= 4 ms cada, 2 >= 16,7 ms); 0 nos outros 9; os de depth, ordem de
+  memória e overlay não apareceram. Uma cena multisample prevista (BeginScene do prefetch, superfície conhecida na
+  criação do programa) monta o pipeline de carga dela num worker, antes de qualquer outro job (`PrebuildMsaaLoad`,
+  `VulkanRenderer.MsaaNative.cs`; layout e shaders da carga criados sob lock). Nos 4 dumps: 1 → 0 montado na thread
+  da GPU, quadros >= 4 ms 1 → 0. Teste `RendererPathsTests.FirstMultisampledSceneFindsItsLoadPipelineBuiltByAWorker`
+  (2x e 4x, com e sem a criação do programa; sem a correção: (1, 0) em vez de (0, 1)). Ficam no 1º uso as variantes
+  tile-word e integer view da carga, que a previsão não vê.
   Entrega movida para "Corrigido, falta o usuário testar" (uber2/uber3/uber4, 22/11/2026); o resto segue aberto aqui.
-  Junto aqui (triagem de 22/11/2026) o item das bibliotecas de pipeline, que já cai na frente (3): o próximo passo dele é medir mais workers.
+  Junto aqui (triagem de 22/11/2026) o item das bibliotecas de pipeline, que já cai na frente (3): mais workers feito (acima).
   [P2][G] Engasgos da primeira vez: montar os pipelines que faltam com `VK_EXT_graphics_pipeline_library` (ligação
   rápida, sem otimizar, no thread da GPU) e trocar pelo otimizado em segundo plano; prever também as variantes
   tile-word e de saída inteira. Pular o desenho foi analisado e descartado: quase nada do que trava pode ser pulado

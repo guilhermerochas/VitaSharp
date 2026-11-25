@@ -337,6 +337,7 @@ public sealed unsafe partial class VulkanRenderer
             return;
         }
 
+        PrebuildMsaaLoad(known.Scene);
         Interlocked.Increment(ref _statKnownScenes);
         foreach ((GxmFragmentProgram fragmentProgram, GxmProgramInfo? vertexProgram) in _loadedFragmentPrograms)
         {

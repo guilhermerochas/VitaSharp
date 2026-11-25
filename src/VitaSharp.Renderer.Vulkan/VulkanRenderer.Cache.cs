@@ -89,6 +89,21 @@ public sealed unsafe partial class VulkanRenderer
         _statGpuPipelineKinds[kind]++;
     }
 
+    /// <summary>GPU thread: built-in pipelines (fixed GLSL of their own: MSAA load, depth unpack/pack/resample, memory
+    /// order, shell overlay) built on first use, with their shader compiles; counted as frame stall like a draw's.</summary>
+    private int _statBuiltinPipelines;
+    private long _statBuiltinTicks, _statBuiltinMaxTicks;
+
+    private void NoteBuiltinPipeline(long startTicks, string what)
+    {
+        long ticks = Stopwatch.GetTimestamp() - startTicks;
+        Log.Info($"[shadercache] present {_presentCount}: built-in {what} pipeline built on the GPU thread in {Ms(ticks):F1} ms");
+        _statBuiltinPipelines++;
+        _statBuiltinTicks += ticks;
+        _statBuiltinMaxTicks = Math.Max(_statBuiltinMaxTicks, ticks);
+        _frameStallTicks += ticks;
+    }
+
     private void NoteShaderTime(long ticks)
     {
         _statShaderTicks += ticks;
@@ -510,7 +525,7 @@ public sealed unsafe partial class VulkanRenderer
             if (_asyncShaders && !_prewarmJobs.IsEmpty && EnsureShaderWorkers())
             {
                 shared = true;
-                _workAvailable.Release(_shaderWorkerCount);
+                _workAvailable.Release(TotalShaderWorkers);
             }
             while (RunPrewarmItem())
             {
@@ -529,7 +544,7 @@ public sealed unsafe partial class VulkanRenderer
         failed += _statPrewarmFailed;
         bool stopped = _stopPrewarm || _stopShaderJobs || _deviceLost;
         Log.Info($"{head}; prewarmed {_statPrewarmed} pipelines ({_statPrewarmModules} shader modules) in {sw.ElapsedMilliseconds} ms"
-            + (shared ? $" (with {_shaderWorkerCount} shader workers)" : "")
+            + (shared ? $" (with {TotalShaderWorkers} shader workers)" : "")
             + (failed > 0 ? $", {failed} skipped" : "") + (_statPrewarmStale > 0 ? $", {_statPrewarmStale} stale" : "") + (stopped ? " (stopped early)" : ""));
         if (!stopped && _statPrewarmed > 0)
         {
@@ -1122,6 +1137,7 @@ public sealed unsafe partial class VulkanRenderer
                 + $" ({Ms(_statShaderTicks):F0} ms on the GPU thread); pipelines {_statPrewarmed} prewarmed ({_statPrewarmUsed} used),"
                 + $" {_statGpuPipelines} compiled on the GPU thread ({Ms(_statGpuPipelineTicks):F0} ms, worst {Ms(_statGpuPipelineMaxTicks):F1} ms;"
                 + $" built or linked there: tile-word {_statGpuPipelineKinds[0]}, fetch pass {_statGpuPipelineKinds[1]}, integer view {_statGpuPipelineKinds[2]}, MSAA {_statGpuPipelineKinds[3]}, other {_statGpuPipelineKinds[4]});"
+                + $" built-in pipelines on the GPU thread: {_statBuiltinPipelines} ({Ms(_statBuiltinTicks):F1} ms, worst {Ms(_statBuiltinMaxTicks):F1} ms), MSAA load built by the workers {_statMsLoadPrebuilt} ({_statMsLoadPrebuiltUsed} used);"
                 + $" frames stalled >= {HitchMs} ms by shader/pipeline work: {_statHitchFrames}, >= {LongHitchMs} ms: {_statLongHitchFrames}, >= {SevereHitchMs} ms: {_statSevereHitchFrames} (worst {Ms(_statWorstFrameStallTicks):F1} ms);"
                 + $" shaderc ({_compiler.OptLevel}): {ShaderCompiler.Compiled} compiled in {Ms(ShaderCompiler.CompileTicks):F0} ms, {ShaderCompiler.DiskHits} .spv disk hits; prefetch: {_statAsyncQueued} shaders queued to {(_shaderWorkers?.Length ?? 0)} workers, {_statAsyncWaited} waited for by the GPU thread; {_statPipelinesPrefetched} pipelines prefetched, {_statPipelineWaits} waited for ({Ms(_statPipelineWaitTicks):F0} ms)"
                 + $"; rebuild: {_rebuildSummary ?? (_rebuildActive ? "still running" : "not needed")}" + PipelineLibraryReport() + ProgramLoadReport());

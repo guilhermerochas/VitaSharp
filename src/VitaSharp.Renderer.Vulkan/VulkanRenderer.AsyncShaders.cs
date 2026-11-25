@@ -48,9 +48,56 @@ public sealed unsafe partial class VulkanRenderer
         _asyncShaders = Flag(EnvVars.AsyncShaders) ?? vulkanRendererOptions.AsyncShaders;
         _asyncPipelines = _asyncShaders && (Flag(EnvVars.AsyncPipelines) ?? vulkanRendererOptions.AsyncPipelines);
         int workers = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.ShaderWorkers), out int n) && n > 0 ? n : vulkanRendererOptions.ShaderWorkers;
-        _shaderWorkerCount = workers > 0 ? Math.Min(workers, 64) : Math.Clamp(Environment.ProcessorCount / 2, 1, 6);
+        if (workers > 0)
+        {
+            _shaderWorkerCount = Math.Min(workers, 64);
+            _spareShaderWorkerCount = 0;
+        }
+        else
+        {
+            (_shaderWorkerCount, _spareShaderWorkerCount) = AutoShaderWorkers(Environment.ProcessorCount, OperatingSystem.IsAndroid());
+        }
+
+        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.ShaderSpareWorkers), out int spareWorkers) && spareWorkers >= 0)
+        {
+            _spareShaderWorkerCount = Math.Min(spareWorkers, 64);
+        }
+
+        string spare = _spareShaderWorkerCount > 0 ? $" + {_spareShaderWorkerCount} at below-normal priority" : "";
         Log.Info($"[gpu] shaders: shaderc optimisation {_compiler.OptLevel}, background compilation "
-            + (_asyncShaders ? $"on ({_shaderWorkerCount} workers, pipelines {(_asyncPipelines ? "on" : "off")})" : "off"));
+            + (_asyncShaders ? $"on ({_shaderWorkerCount} workers{spare}, pipelines {(_asyncPipelines ? "on" : "off")})" : "off"));
+    }
+
+    /// <summary>Spare-time shader workers: started after the <see cref="_shaderWorkerCount"/> ones, at below-normal
+    /// priority, so they only take the CPU time the guest threads, the GPU thread and the other workers leave idle.</summary>
+    private int _spareShaderWorkerCount;
+
+    /// <summary>All shader worker threads (normal and spare-time).</summary>
+    private int TotalShaderWorkers => _shaderWorkerCount + _spareShaderWorkerCount;
+
+    /// <summary>
+    /// The automatic number of shader workers for <paramref name="processors"/> logical processors: half of them (1-6)
+    /// at normal priority, as before, plus spare-time workers at below-normal priority up to the CPU budget, 90% of the
+    /// processors less one for the GPU thread (at most 8 in all). The references size their pools by the cores: yuzu
+    /// and its forks run hardware_concurrency - 1 pipeline workers on desktop, Ryujinx translates its disk cache on 8
+    /// threads with min(ProcessorCount, 8) backend compiles, Dolphin compiles on clamp(cores - 3, 1, 4) threads. A burst
+    /// of new pipelines is the frame waiting for the driver (60-90 ms per pipeline with a cold driver cache), so idle
+    /// cores are better spent on it; the lower priority keeps a burst in the background from slowing the game when the
+    /// CPU is full (the Windows scheduler runs a below-normal thread only on a core no normal one wants).
+    /// <para>Android: no spare-time workers. The thread placement (VitaSharp.Mobile.Core ThreadPlacement) puts the
+    /// shader workers on the slow cores while the hot threads fill the fast ones, the phone's power and thermal budget
+    /// is shared with the game, and the yuzu forks leave 3 cores free there.</para>
+    /// </summary>
+    internal static (int Normal, int Spare) AutoShaderWorkers(int processors, bool mobile)
+    {
+        int normal = Math.Clamp(processors / 2, 1, 6);
+        if (mobile)
+        {
+            return (normal, 0);
+        }
+
+        int budget = Math.Min(processors * 9 / 10 - 1, 8);
+        return (normal, Math.Max(budget - normal, 0));
     }
 
     /// <param name="rebuild">queued by the boot rebuild (<see cref="RebuildFromRecipes"/>) rather than by a draw</param>
@@ -274,6 +321,7 @@ public sealed unsafe partial class VulkanRenderer
             }
         }
         _prefetchScene = new PredictedScene(true, f, attach, samples);
+        PrebuildMsaaLoad(_prefetchScene);
     }
 
     private void PrefetchPipeline(DrawCommand d, ulong vk, ulong fk, uint colorFormat)
@@ -576,9 +624,11 @@ public sealed unsafe partial class VulkanRenderer
                 return true;
             }
 
-            var workers = new Thread[_shaderWorkerCount];
+            var workers = new Thread[TotalShaderWorkers];
             for (int i = 0; i < workers.Length; i++)
             {
+                bool spare = i >= _shaderWorkerCount;
+                // the "Shader worker" prefix is how the Android thread placement recognises them (ThreadPlacement.Classify)
                 workers[i] = new Thread(() =>
                 {
                     NativeThread.Register("Shader worker");
@@ -586,8 +636,8 @@ public sealed unsafe partial class VulkanRenderer
                 })
                 {
                     IsBackground = true,
-                    Name = $"Shader worker {i}",
-                    Priority = s_workerPriority
+                    Name = spare ? $"Shader worker {i} (spare)" : $"Shader worker {i}",
+                    Priority = spare ? ThreadPriority.BelowNormal : s_workerPriority
                 };
                 workers[i].Start();
             }
@@ -607,6 +657,13 @@ public sealed unsafe partial class VulkanRenderer
         while (true)
         {
             TestWorkerGate?.Wait();
+            // the scene-start load of a predicted multisampled scene first: one small pipeline per surface format, needed
+            // before the scene's first draw (VulkanRenderer.MsaaNative.cs, PrebuildMsaaLoad)
+            if (RunMsaaLoadJob())
+            {
+                continue;
+            }
+
             // shader jobs first: pipeline jobs need their modules; but a pipeline whose shaders are no longer pending goes
             // ahead of the shader jobs queued after it, so the work finishes in the order it was submitted, as the GPU
             // thread needs it (a cold replay of a dump: a first frame with 127 new shaders and 40 pipelines left every

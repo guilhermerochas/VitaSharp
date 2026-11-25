@@ -142,6 +142,7 @@ public sealed unsafe partial class VulkanRenderer
             return _memoryOrderPipeline;
         }
 
+        long builtinStart = System.Diagnostics.Stopwatch.GetTimestamp();
         EnsureLoadLayout();
         byte* entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
         PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
@@ -175,6 +176,7 @@ public sealed unsafe partial class VulkanRenderer
             Layout = _msLoadLayout,
         };
         _vk.CreateGraphicsPipelines(_dev, _vkPipelineCache, 1, in gci, null, out _memoryOrderPipeline).Ok("memory order pipeline");
+        NoteBuiltinPipeline(builtinStart, "memory order");
         return _memoryOrderPipeline;
     }
 }

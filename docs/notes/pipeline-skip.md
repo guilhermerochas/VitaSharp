@@ -257,3 +257,81 @@ shader that reads the framebuffer through `last_frag_in` (input attachment 0, pr
 and `colorAttachmentCount` 0. Adding the key's colour attachments to the fragment library and to the link did not
 remove it, so the call is not identified yet. The frames stay pixel-identical. This has to be fixed before the
 libraries can be turned on by default.
+
+## Dynamic blend, write mask and vertex input (perf/stut1, 25 November 2026): counted, not implemented
+`VK_EXT_extended_dynamic_state3` (colour blend enable/equation and write mask; polygon mode) and
+`VK_EXT_vertex_input_dynamic_state` would let one pipeline serve the variants of a shader pair that differ only in
+that state, as in Ryujinx and yuzu. Counted over the recorded pipelines of 70 titles (copies of their
+`pipelines.list`, 10,994 recipes, 10,973 distinct): the shaders, attachment format, samples, tile-word and fetch-pass
+flavour stay in the key, and the rest is collapsed.
+
+| state made dynamic | pipelines | fewer |
+|---|---|---|
+| none (today) | 10,973 | - |
+| blend + write mask | 10,240 | 6.7% |
+| + polygon mode | 10,240 | 6.7% |
+| vertex input only | 10,663 | 2.8% |
+| blend + mask + polygon + vertex input | 9,928 | 9.5% |
+| + topology class (points/lines/triangles) | 9,908 | 9.7% |
+
+- The share is in small 2D/UI-heavy sets (GTAVCECTY 57 -> 31, DEADSPACE 42 -> 29, the shell 343 -> 270). The 3D games
+  whose first session stutters keep almost all of theirs: PCSC00045 2,058 -> 2,034 (1.2%), PCSE00333 809 -> 794
+  (1.9%), PCSE00053 262 -> 254 (3.1%), PCSA00017 888 -> 888.
+- A variant of an existing pair is also the cheapest pipeline for the driver (its stages are already compiled), so
+  the time saved is below the count's share.
+- With compile-on-program-load (on by default) the cold replays of the dumps already build 0 pipelines on the GPU
+  thread and have 0 frames >= 4 ms stalled, so there is no slow frame for it to remove; the only effect left would be
+  a few percent less work while loading.
+- Not worth the second path (two pipeline key shapes, extension feature checks per driver, the Mali/Adreno path kept).
+  Revisit only if a title's recorded list shows a large share of same-pair variants.
+
+## Spare-time shader workers (perf/stut1, 25 November 2026)
+The automatic pool was half the logical processors (1-6) at normal priority: 4 workers on the 8-thread desktop, 2
+when pinned to 4 CPUs. How the references size theirs: yuzu and its forks run `hardware_concurrency - 1` pipeline
+workers on desktop (the Android forks keep 3 cores free or let the user choose 2-8), Ryujinx translates its disk cache
+on 8 threads with `min(ProcessorCount, 8)` backend compiles, Dolphin compiles on `clamp(cores - 3, 1, 4)` threads.
+None of them leaves cores idle while a frame waits for the driver. The draw that needs a pipeline already goes first
+here: the GPU thread runs a queued shader job itself, and builds a queued pipeline it reaches before a worker does.
+
+Now (`VulkanRenderer.AutoShaderWorkers`): the same normal-priority workers, plus spare-time workers at below-normal
+priority up to 90% of the processors less one for the GPU thread, at most 8 in all (8 CPUs: 4 + 2; 6: 3 + 1; 12 or
+more: 6 + 2; 4 or fewer: unchanged). The Windows scheduler runs a below-normal thread only on a core no normal thread
+wants, so a burst uses idle cores without slowing the guest threads when the CPU is full. On Linux and macOS .NET
+thread priorities have little or no effect, so there the spare workers compete like the others. Android keeps the
+normal pool only: the thread placement (`VitaSharp.Mobile.Core` `ThreadPlacement`) moves the shader workers between
+the slow and the fast cores by the hot threads' load, and the phone's power budget is shared with the game.
+`--shader-workers=N` / `VITASHARP_SHADER_WORKERS=N` still set the exact pool (no spare workers);
+`VITASHARP_SHADER_SPARE_WORKERS=N` sets the spare ones (A/B).
+
+Measured on a cold replay (fresh emulator shader cache and NVIDIA driver cache per run) of the PCSE00053 capture of
+18 November 2026 (140 MB, 150 frames), pinned to 4 CPUs at BelowNormal, so 2 workers is the automatic value there and
+one more stands for the 8-CPU change (4 -> 6). Runs alternated:
+
+| compile-on-program-load off | 2 workers | 2 + 1 spare | 3 workers |
+|---|---|---|---|
+| pipelines waited for (ms) | 43 / 37 (2432 / 3243), 46 / 46 (2183 / 1882) | 33 / 26 (1824 / 1419) | 27 / 30 (1715 / 1513) |
+| shaders waited for | 21 / 12, 22 / 22 | 4 / 5 | 4 / 5 |
+| worst frame stalled (ms) | 2326 / 3550, 2230 / 1988 | 1788 / 2120 | 1645 / 1479 |
+
+- Frames >= 4 ms stay at 3-5: the dump starts in the middle of a burst, and its first frames wait in every case.
+- With compile-on-program-load on (the default) the replay has 0 frames stalled in every case; the load wait (all
+  programs compiled before the first command) went from 8.1 s to 7.0-7.4 s with 3 workers (PCSE00333: 0.93-1.03 s to
+  0.86 s). 4 workers on the 4 pinned CPUs were slower (9.3 s): with the GPU thread, more threads than cores.
+- Load-time numbers taken while three other heavy jobs ran (9-89 s per run) were discarded.
+
+## Built-in pipelines (perf/stut1, 25 November 2026)
+The renderer's own full-screen passes (scene-start MSAA load, depth unpack/pack/resample, memory order, shell
+overlay) have fixed GLSL and were built on first use on the GPU thread, outside every counter. They are now counted
+(session line: "built-in pipelines on the GPU thread: N (ms, worst)", one "built-in <kind> pipeline built on the GPU
+thread" log line each) and their time is frame stall like a draw's.
+
+Counted on cold replays of all 13 dumps (compile-on-program-load on, async shaders): 1 per dump in 4 of them, always
+the MSAA load, 12-27 ms in one frame (GTAVCECTY x2: 12 and 27 ms, shell x2: 13 and 22 ms), and in those dumps they
+were the only frames stalled (1 frame >= 4 ms each, 2 of them >= 16.7 ms). 0 in the other 9 (PCSE00053 x5, PCSE00333,
+PCSE01023, PSVAS1178, one shell dump).
+
+Done: a predicted multisampled scene (the draw prefetch's BeginScene, a surface made known at program load) queues
+its MSAA load pipeline (attachment format and sample count) to the shader workers, ahead of every other job; the GPU
+thread takes it from there (`PrebuildMsaaLoad`, `VulkanRenderer.MsaaNative.cs`; the load layout and shaders are
+created under a lock). The tile-word and integer-view renderings, which the prediction cannot see, still build theirs
+on first use. The other built-in kinds did not appear in any dump.

@@ -112,6 +112,7 @@ public sealed unsafe partial class VulkanRenderer
             return p;
         }
 
+        long builtinStart = System.Diagnostics.Stopwatch.GetTimestamp();
         var att = new AttachmentDescription(0, format, SampleCountFlags.Count1Bit, AttachmentLoadOp.Load, AttachmentStoreOp.Store,
             AttachmentLoadOp.DontCare, AttachmentStoreOp.DontCare, ImageLayout.General, ImageLayout.General);
         var colorRef = new AttachmentReference(0, ImageLayout.General);
@@ -162,6 +163,7 @@ public sealed unsafe partial class VulkanRenderer
             Layout = _msLoadLayout,
         };
         _vk.CreateGraphicsPipelines(_dev, _vkPipelineCache, 1, in gci, null, out Pipeline pipeline).Ok("shell overlay pipeline");
+        NoteBuiltinPipeline(builtinStart, "shell overlay");
         return _overlayPipelines[format] = (pass, pipeline);
     }
 }

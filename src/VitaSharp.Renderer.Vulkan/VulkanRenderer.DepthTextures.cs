@@ -334,6 +334,7 @@ void main() {
             return _depthUnpackPipelines[layout];
         }
 
+        long builtinStart = System.Diagnostics.Stopwatch.GetTimestamp();
         EnsureLoadLayout();
         ShaderModule fs = _depthUnpackFs[layout] = CompileBuiltin(DepthUnpackFs(layout), false);
         byte* entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
@@ -373,6 +374,7 @@ void main() {
             Layout = _msLoadLayout,
         };
         _vk.CreateGraphicsPipelines(_dev, _vkPipelineCache, 1, in gci, null, out _depthUnpackPipelines[layout]).Ok("depth unpack pipeline");
+        NoteBuiltinPipeline(builtinStart, "depth unpack");
         return _depthUnpackPipelines[layout];
     }
 
@@ -490,10 +492,12 @@ void main() {
             return existing.Pipeline;
         }
 
+        long builtinStart = System.Diagnostics.Stopwatch.GetTimestamp();
         EnsureLoadLayout();
         ShaderModule fragmentShader = CompileBuiltin(DepthPackFs(layout, sample), false);
         Pipeline pipeline = CreateDepthPassPipeline(fragmentShader, samples, 1u << sample);
         _depthPackPipelines[(layout, sample)] = (pipeline, fragmentShader);
+        NoteBuiltinPipeline(builtinStart, "depth pack");
         return pipeline;
     }
 
@@ -660,10 +664,12 @@ void main() {
             return existing.Pipeline;
         }
 
+        long builtinStart = System.Diagnostics.Stopwatch.GetTimestamp();
         EnsureLoadLayout();
         ShaderModule fragmentShader = CompileBuiltin(DepthResampleFs(ratioX, ratioY), false);
         Pipeline pipeline = CreateDepthPassPipeline(fragmentShader, SampleCountFlags.Count1Bit, 1u);
         _depthResamplePipelines[(ratioX, ratioY)] = (pipeline, fragmentShader);
+        NoteBuiltinPipeline(builtinStart, "depth resample");
         return pipeline;
     }
 

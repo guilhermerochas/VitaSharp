@@ -306,6 +306,10 @@ public static class EnvVars
     public const string ShaderRebuild = "VITASHARP_SHADER_REBUILD";
     public const string ShaderWorkers = "VITASHARP_SHADER_WORKERS";
     public const string ShaderWorkerPrio = "VITASHARP_SHADER_WORKER_PRIO";
+    /// <summary>N (A/B): spare-time shader workers at below-normal priority, started after the normal ones (default:
+    /// automatic on desktop, 90% of the processors less one in all, at most 8; none on Android or when
+    /// VITASHARP_SHADER_WORKERS / --shader-workers sets the pool).</summary>
+    public const string ShaderSpareWorkers = "VITASHARP_SHADER_SPARE_WORKERS";
     /// <summary>1 = an application the shell launches replaces the shell instead of running as a second process.</summary>
     public const string SingleProcess = "VITASHARP_SINGLE_PROCESS";
     public const string SkipUnicorn = "VITASHARP_SKIP_UNICORN";
