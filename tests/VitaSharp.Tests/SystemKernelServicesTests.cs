@@ -124,6 +124,44 @@ public sealed class SystemKernelServicesTests(GuestMemoryFixture fixture) : IDis
         Assert.Equal(0u, GuestMemory.R32(p + 0x5C));
         Assert.Equal(unchecked((int)0x80360001), Call(s, "sceMotionDevGetGyroBias", 0u));
         Assert.Equal(1, Call(s, "sceMotionDevIsReady"));
-        Assert.Equal(unchecked((int)0x80360001), Call(s, "sceMotionDevRead", p, 0x41, 1));
+        Assert.Equal(unchecked((int)0x80360001), Call(s, "sceMotionDevRead", p, 0x41, p));
+        Assert.Equal(0, Call(s, "sceMotionDevRead", p, 16, p + 0x40));   // no raw ring: no record, nothing new
+    }
+
+    /// <summary>FW 3.74 SceMotionDev keeps the magnetometer calibration the shell's updater stores (12 words and a
+    /// version counting the updates; 0x80360105 until the first), refuses the update to a program that is no system
+    /// program (0x80360002), and checks the raw read's buffer and count (1..64). Before, the update kept nothing and the
+    /// current calibration stayed "not calibrated".</summary>
+    [Fact]
+    public void TheMagnetometerCalibrationIsKeptAsTheFirmwareDoes()
+    {
+        Sensors s = Module<Sensors>();
+        uint calib = Alloc(0x40), version = Alloc(4), current = Alloc(0x40), raw = Alloc(0x40 * 64);
+        for (uint i = 0; i < 13; i++)
+        {
+            GuestMemory.W32(calib + i * 4, 0x100 + i);
+        }
+
+        Assert.Equal(unchecked((int)0x80360105), Call(s, "sceMotionDevGetCurrentMagnCalibData", current));
+        Assert.Equal(unchecked((int)0x80360002), Call(s, "sceMotionDevUpdateMagnCalibData", calib, version));   // no system program
+        Assert.Equal(unchecked((int)0x80360002), Call(s, "sceMotionDevReadForMagnCalib", raw, 16, 0));
+
+        Emu().Access = VitaSharp.Core.Loader.Self.ProgramAccess.Of(0x2800000000000001UL, fromSystemSoftware: true, retailApplication: true);
+        Assert.Equal(unchecked((int)0x80360001), Call(s, "sceMotionDevUpdateMagnCalibData", 0u, version));
+        Assert.Equal(unchecked((int)0x80360001), Call(s, "sceMotionDevUpdateMagnCalibData", calib, 0u));
+        Assert.Equal(0, Call(s, "sceMotionDevUpdateMagnCalibData", calib, version));
+        Assert.Equal(1u, GuestMemory.R32(version));
+        Assert.Equal(0, Call(s, "sceMotionDevGetCurrentMagnCalibData", current));
+        Assert.Equal(1u, GuestMemory.R32(current));                   // the version, not the record's own first word
+        Assert.Equal(0x101u, GuestMemory.R32(current + 4));
+        Assert.Equal(0x10Cu, GuestMemory.R32(current + 0x30));
+        Assert.Equal(0, Call(s, "sceMotionDevUpdateMagnCalibData", calib, version));
+        Assert.Equal(2u, GuestMemory.R32(version));
+        Assert.Equal(unchecked((int)0x80360001), Call(s, "sceMotionDevGetCurrentMagnCalibData", 0u));
+
+        Assert.Equal(unchecked((int)0x80360001), Call(s, "sceMotionDevReadForMagnCalib", 0u, 16, 0));
+        Assert.Equal(unchecked((int)0x80360001), Call(s, "sceMotionDevReadForMagnCalib", raw, 0x41, 0));
+        Assert.Equal(unchecked((int)0x80360001), Call(s, "sceMotionDevReadForMagnCalib", raw, 0, 0));
+        Assert.Equal(0, Call(s, "sceMotionDevReadForMagnCalib", raw, 16, 0));
     }
 }

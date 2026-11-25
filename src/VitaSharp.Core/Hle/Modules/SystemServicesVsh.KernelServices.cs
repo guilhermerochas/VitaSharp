@@ -326,8 +326,6 @@ public sealed partial class Sensors
     [Hle] int sceMotionDevMagnSamplingStop() => 0;
     /// <summary>(void): whether the driver finished its start-up: always.</summary>
     [Hle] int sceMotionDevIsReady() => 1;
-    /// <summary>(const void *calib): stores a new magnetometer calibration; no magnetometer is emulated.</summary>
-    [Hle] int sceMotionDevUpdateMagnCalibData(uint calib) => calib == 0 ? ERR_DEV_NULL : 0;
     [Hle] int sceMotionDevUpdateMagnStabilityLevel(int level) => 0;
 
     /// <summary>(void *loc 0x30): the sensor positions, as sceMotionGetDeviceLocation reports them.</summary>
@@ -365,8 +363,22 @@ public sealed partial class Sensors
         GuestMemory.Write(type, (byte)0);
         return 0;
     }
-    /// <summary>(void *buf, int size &lt;= 0x40, int count): raw sensor records, as sceMotionDevReadForMagnCalib.</summary>
-    [Hle] int sceMotionDevRead(uint buf, int size, int count) => buf == 0 || count == 0 || size > 0x40 ? ERR_DEV_NULL : sceMotionDevReadForMagnCalibThroughEntry(buf, size, count);
+    /// <summary>
+    /// (void *records, int count, uint *updated): the raw sensor records of the caller's ring, as FW 3.74 (SceMotionDev
+    /// 0xC0095F0F, FUN_81004420): a NULL argument or a count outside 1..64 is 0x80360001; *updated says whether the
+    /// driver has new samples, then how many records it copied. No raw sensor ring is emulated: none, nothing new.
+    /// </summary>
+    [Hle]
+    int sceMotionDevRead(uint records, int count, uint updated)
+    {
+        if (records == 0 || updated == 0 || count > 0x40 || count < 1)
+        {
+            return ERR_DEV_NULL;
+        }
+
+        GuestMemory.W32(updated, 0);
+        return 0;
+    }
 }
 
 public sealed partial class SystemUtil

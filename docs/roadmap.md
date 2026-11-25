@@ -2408,9 +2408,9 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `location_provider` do shell, que nos modelos 3G lê o `SceGps` (driver do modem); o VitaSharp emula um modelo Wi-Fi
   (sem receptor, o `ksceGps` fica no estado 2 com driver e sem sessão), e o Near (NPXS10000) já usa o liblocation real
   contra o provedor do shell sem posição. Usa: Near, Mapas.
-- [ ] [P3][M] Magnetômetro, o que falta (o feito está em "Corrigido, falta o usuário testar"): (1) os registros brutos
-  do magnetômetro para a calibração do shell (`sceMotionDevReadForMagnCalib`, `GetCurrentMagnCalibData`) e o
-  `dataInfo`; (2) a fusão do campo no `deviceQuat` como o driver_us faz (hoje só a matriz NED e a estabilidade usam o
+- [ ] [P3][M] Magnetômetro, o que falta (o feito está em "Corrigido, falta o usuário testar"): (1) o anel de
+  registros brutos do driver (`sceMotionDevRead`/`ReadForMagnCalib` copiam os registros do leitor, modo 0x10005 do
+  FUN_81004420; o formato do registro ainda não foi lido) e o `dataInfo`; (2) a fusão do campo no `deviceQuat` como o driver_us faz (hoje só a matriz NED e a estabilidade usam o
   campo); (3) o magnetômetro de um controle no PC (o SDL não expõe um).
 - [ ] [P3][M] Teclado e mouse Bluetooth, o que falta (o feito está em "Corrigido, falta o usuário testar"): conferir
   no Sistema do Vita que Configurações > Bluetooth lista os dois dispositivos (os registros do `SceBt` seguem o 3.74,
@@ -3318,6 +3318,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `HidDeviceTests.ConsumerControlsAnswerAsTheFirmware`. Testar: com "Teclado e mouse Bluetooth" ligado, abrir o
   Sistema do Vita e entrar em Configurações > Bluetooth: os dois aparecem, e ligar e desligar a opção com a tela
   aberta atualiza a lista.
+- [ ] (24/11/2026, falta testar) [P3][M] Calibração do magnetômetro guardada como no 3.74 (fix/small2): o SceMotionDev
+  guarda uma calibração (12 palavras e uma versão que conta as atualizações); `sceMotionDevUpdateMagnCalibData`
+  (0x787384FA) recusa quem não é programa do sistema (0x80360002), confere os ponteiros (0x80360001), guarda as 12
+  palavras depois da primeira e escreve a versão nova; `GetCurrentMagnCalibData` (0xAAB4B41F) dá 0x80360105 até a
+  primeira e depois a versão e as palavras. Antes a atualização não guardava nada e a assinatura tinha um argumento
+  só. As leituras brutas conferem os argumentos como o 3.74: `ReadForMagnCalib` (buffer e contagem 1..64, depois
+  programa do sistema) e `sceMotionDevRead` (buffer, contagem e o ponteiro de "há dados novos", que recebe 0).
+  Teste: `SystemKernelServicesTests.TheMagnetometerCalibrationIsKeptAsTheFirmwareDoes` (falha sem a mudança).
+  Testar: abrir o Sistema do Vita e deixar a inicialização terminar: o shell segue sem erro de calibração (o
+  atualizador de calibração lê e grava por essas chamadas); nada mais muda na tela.
 - [ ] (24/11/2026, falta testar) [P3][M] Memória gravada por programas de shader (VLDST store) volta para a memória do
   guest (fix/small2, `VulkanRenderer.StoreWriteback.cs`). No Vita o USSE grava direto na memória onde o buffer está
   mapeado, e a CPU lê o que o programa gravou quando o trabalho da cena termina; aqui as gravações ficavam só no
