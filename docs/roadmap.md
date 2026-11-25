@@ -4574,6 +4574,24 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   cópia no fim da cena pega dados de outro quadro e o oclusor fica deslocado em quadros alternados. Rodar o jogo no
   ponto do relato com VITASHARP_UB_SCENE_END=audit (e o A/B =frame) e ver se o vs 724271F2CFC4A93C aparece com
   buffers reescritos depois do fim da cena e se o pisca some com =frame.
+  Andamento (ac3w, 25/11/2026; não resolvido): o audit refutou os uniforms atrasados (0 reescritas depois do draw, do
+  fim da cena e do flip em 65630 draws) e =frame não muda nada. Reprodução sem jogar: `run PCSE00053 --load-state=<o
+  quick.vss do relato> --kernel-plugins=on --headless --vulkan --frames=300 --flicker-check --dump-frames=<saída>
+  --dump-every=1` (docs/notes/session-capture.md) dá 34 [flash] em 300 quadros (parede escura em quadros alternados);
+  o estado só carrega com a correção do `SaveStates.ProgramOf` (88a769dc). No dump antigo, lendo a profundidade no fim
+  de cada cena: todas as cenas do ds 0x61100000 usam a mesma imagem 960x800 (sem cópia entre tamanhos); na área da
+  parede, no quadro ruim a profundidade final do G-buffer é igual à do pré-passe em 99,98% dos pixels (a parede falhou
+  o LESS_EQUAL; albedo preto) e no bom a parede fica 1-100 unidades de 2^24 na frente em 52% e empata no resto. O
+  oclusor (vs 724271F2, vértices 0x8E58BD5C, 61 índices) e a parede (vs C700C860, 0x8E59EC14, 2329 índices) usam a
+  MVP bit a bit igual no mesmo quadro (fatia de vub1; nada atrasado), e a face do oclusor está exatamente no plano de
+  uma face da parede (x = 11916/32767*11 nos dois), mas com outros vértices e outra triangulação: a profundidade
+  interpolada dos dois difere por arredondamento (~1 passo de 2^-24 com sinal que muda com a câmera), por isso a
+  invariância de posição (Invariant/NoContraction) não resolve. Falta saber como o hardware do Vita (ISP do SGX543:
+  profundidade por equação de plano, precisão, regra de empate) faz essa parede passar sempre, e reproduzir isso de
+  forma genérica (comparar com o Vita3K no mesmo ponto; estudar a interpolação de profundidade do PowerVR).
+  Também aberto: com `--dump-frames --dump-every=1`, 6 de 8 execuções desse comando morreram em silêncio logo depois do
+  load (sem exceção .NET, sem minidump, código 127/139 no Git Bash; uma coincidiu com um TDR do driver, LiveKernelEvent
+  141); sem `--dump-frames`, 1 de 3 morreu igual. Investigar (leitura de quadros depois da troca do backend no load).
 - [ ] [P1][G] PSM em Unity não abre (relato do usuário, 22/11/2026; log de 19:33, NPOA00239): o título traz o próprio
   runtime (`ux0:psm/<título>/runtime/eboot.bin`, PCSI00010 "Unity Runtime for PlayStation Mobile", mais mono_prx e
   bridge_prx), que está cifrado com a chave do conteúdo, e o carregador o lê como SELF comum: `InvalidDataException: Not

@@ -1,3 +1,4 @@
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Localization;
 using VitaSharp.Core.SaveState;
 using VitaSharp.Mobile.Core.Library;
@@ -12,6 +13,7 @@ namespace VitaSharp.Tests;
 public sealed class AndroidGameStatesTests : IDisposable
 {
     private const string TitleId = "PCSA00001";
+    private const int AppPid = 0x40010003;
     private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-game-states-" + Guid.NewGuid().ToString("N"));
 
     public AndroidGameStatesTests()
@@ -26,7 +28,7 @@ public sealed class AndroidGameStatesTests : IDisposable
 
     /// <summary>A state file with this build's header and a kernel object table whose modules are
     /// <paramref name="modules"/> (uid, path); nothing else (enough for the header and ProgramOf).</summary>
-    private static void WriteState(string path, string titleId, byte[]? thumbnail = null, string? schema = null, params (int Uid, string Path)[] modules)
+    private static void WriteState(string path, string titleId, byte[]? thumbnail = null, string? schema = null, params (int Uid, string Path, int OwnerPid)[] modules)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var header = new SaveStateHeader
@@ -43,12 +45,12 @@ public sealed class AndroidGameStatesTests : IDisposable
         var objects = new SnapshotWriter();
         objects.Write(1);
         objects.Write(modules.Length);
-        foreach ((int uid, string modulePath) in modules)
+        foreach ((int uid, string modulePath, int ownerPid) in modules)
         {
             objects.Write(KernelSnapshot.Module);
             objects.Write(uid);
             objects.Write("module");
-            objects.Write(0);
+            objects.Write(ownerPid);
             objects.Write(0);
             int block = objects.BeginBlock();
             objects.Write(modulePath);
@@ -65,7 +67,7 @@ public sealed class AndroidGameStatesTests : IDisposable
     {
         string path = Path.Combine(_root, "jak.vss");
         // the program's own module has the lowest uid; the libraries it loaded come after it
-        WriteState(path, TitleId, modules: [(0x40010003, "app0:sce_module/libc.suprx"), (0x40010001, "app0:Jak1.self")]);
+        WriteState(path, TitleId, modules: [(0x40010003, "app0:sce_module/libc.suprx", AppPid), (0x40010001, "app0:Jak1.self", AppPid)]);
         Assert.Equal("Jak1.self", SaveStates.BootExecutable(path));
     }
 
@@ -73,17 +75,30 @@ public sealed class AndroidGameStatesTests : IDisposable
     public void BootExecutableIsEbootForTheGamesOwnExecutableAndForUnreadableStates()
     {
         string eboot = Path.Combine(_root, "eboot.vss");
-        WriteState(eboot, TitleId, modules: [(0x40010001, "app0:/eboot.bin")]);
+        WriteState(eboot, TitleId, modules: [(0x40010001, "app0:/eboot.bin", AppPid)]);
         Assert.Equal("eboot.bin", SaveStates.BootExecutable(eboot));
 
         string outside = Path.Combine(_root, "outside.vss");
-        WriteState(outside, TitleId, modules: [(0x40010001, "vs0:vsh/shell/shell.self")]);
+        WriteState(outside, TitleId, modules: [(0x40010001, "vs0:vsh/shell/shell.self", AppPid)]);
         Assert.Equal("eboot.bin", SaveStates.BootExecutable(outside));
 
         string garbage = Path.Combine(_root, "garbage.vss");
         File.WriteAllText(garbage, "not a state");
         Assert.Equal("eboot.bin", SaveStates.BootExecutable(garbage));
         Assert.Equal("eboot.bin", SaveStates.BootExecutable(Path.Combine(_root, "missing.vss")));
+    }
+
+    [Fact]
+    public void BootExecutableLeavesOutTheKernelProcessModules()
+    {
+        // a session with the kernel process (kernel plugins on) loads the firmware kernel modules and the plugins at
+        // system boot, with lower uids than the game's eboot: the state was still saved in the game's executable
+        string path = Path.Combine(_root, "kernel.vss");
+        WriteState(path, TitleId, modules: [(0x40010005, "os0:kd/bootimage.skprx/SceClockgen", KernelSpace.KernelPid),
+            (0x40010101, "ur0:tai/kubridge.skprx", KernelSpace.KernelPid), (0x40010201, "app0:Jak1.self", AppPid),
+            (0x40010203, "app0:sce_module/libc.suprx", AppPid)]);
+        Assert.Equal("app0:Jak1.self", SaveStates.ProgramOf(path));
+        Assert.Equal("Jak1.self", SaveStates.BootExecutable(path));
     }
 
     [Fact]
@@ -99,12 +114,12 @@ public sealed class AndroidGameStatesTests : IDisposable
     public void SlotsListsAllSixWithPictureDateAndProblems()
     {
         byte[] png = [0x89, (byte)'P', (byte)'N', (byte)'G'];
-        WriteState(SaveStates.SlotPath(_root, TitleId, 1), TitleId, png, modules: [(1, "app0:eboot.bin")]);
-        WriteState(SaveStates.SlotPath(_root, TitleId, 3), "PCSB99999", modules: [(1, "app0:eboot.bin")]);
-        WriteState(SaveStates.SlotPath(_root, TitleId, 4), TitleId, schema: "another build", modules: [(1, "app0:eboot.bin")]);
+        WriteState(SaveStates.SlotPath(_root, TitleId, 1), TitleId, png, modules: [(1, "app0:eboot.bin", AppPid)]);
+        WriteState(SaveStates.SlotPath(_root, TitleId, 3), "PCSB99999", modules: [(1, "app0:eboot.bin", AppPid)]);
+        WriteState(SaveStates.SlotPath(_root, TitleId, 4), TitleId, schema: "another build", modules: [(1, "app0:eboot.bin", AppPid)]);
         File.WriteAllText(SaveStates.SlotPath(_root, TitleId, 5), "broken");
         // the quick slot (desktop F5) is not one of the six
-        WriteState(SaveStates.SlotPath(_root, TitleId, 0), TitleId, modules: [(1, "app0:eboot.bin")]);
+        WriteState(SaveStates.SlotPath(_root, TitleId, 0), TitleId, modules: [(1, "app0:eboot.bin", AppPid)]);
 
         IReadOnlyList<StateSlot> slots = GameStates.Slots(_root, TitleId);
 

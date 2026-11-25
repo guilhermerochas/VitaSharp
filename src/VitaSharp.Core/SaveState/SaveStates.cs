@@ -722,8 +722,9 @@ public static partial class SaveStates
 
     /// <summary>
     /// The executable the state was saved in: its main module ("app0:Jak1.self" after the Jak and Daxter Collection's
-    /// LoadExec), the first module of its kernel object table (the program loads it before anything else). Read from
-    /// the sections before the memory, so it is quick. Null when the file cannot be read.
+    /// LoadExec), the first module of its kernel object table (the program loads it before anything else), leaving out
+    /// the kernel process's modules (loaded at system boot, before any program). Read from the sections before the
+    /// memory, so it is quick. Null when the file cannot be read.
     /// </summary>
     public static string? ProgramOf(string path)
     {
@@ -747,10 +748,12 @@ public static partial class SaveStates
                     string kind = r.ReadStringNotNull();
                     int uid = r.ReadInt32();
                     r.ReadStringNotNull();
-                    r.ReadInt32();
+                    int ownerPid = r.ReadInt32();
                     r.ReadInt32();
                     SnapshotReader b = r.ReadBlock();
-                    if (kind == KernelSnapshot.Module && (first == null || uid < first.Value.Uid))
+                    // the kernel process's modules (firmware kernel modules, kernel plugins) are loaded at system boot,
+                    // before any program: they are not the executable the state was saved in
+                    if (kind == KernelSnapshot.Module && ownerPid != KernelSpace.KernelPid && (first == null || uid < first.Value.Uid))
                     {
                         first = (uid, b.ReadStringNotNull());
                     }
