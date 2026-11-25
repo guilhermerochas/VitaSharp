@@ -503,7 +503,7 @@ What `dotnet test tests/VitaSharp.Tests` needs per system; a test whose requirem
 - `RendererPipelineLibraryTests` checks the linked pipelines where the software device has the extension with fast
   linking (SwiftShader, Mesa lavapipe) and the whole-pipeline fallback everywhere else.
 - Firmware: without it the tests of the real firmware modules (`libSceJson`, `libSceXml`, `libpaf`, the update file
-  install; `dbutil` then runs the HLE side only) are skipped. `VITASHARP_FIRMWARE_PUP` names a
+  install, the `sa0` fonts; `dbutil` then runs the HLE side only) are skipped. `VITASHARP_FIRMWARE_PUP` names a
   `PSVUPDAT.PUP`, `VITASHARP_FIRMWARE_DIR` a `vs0` or Vita3K data folder; the Piglet compiler tests need `libshacccg.suprx` in `ur0:data` of Vita3K's data folder or of the
   folder named by `VITASHARP_TEST_INSTALLED_DATA`.
 - `VITASHARP_TEST_INSTALLED_DATA` (optional, read only): a VitaSharp data folder with installed games and firmware for

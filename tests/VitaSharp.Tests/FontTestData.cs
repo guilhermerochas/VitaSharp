@@ -363,10 +363,26 @@ internal static class FontTestData
     private static byte[] BE16(int v) => [(byte)(v >> 8), (byte)v];
     private static byte[] BE32(int v) => [(byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8), (byte)v];
 
-    /// <summary>Firmware font directory of a local Vita3K install, used by optional checks against the real files.</summary>
+    /// <summary>Firmware font directory (sa0:data/font/<paramref name="sub"/>) of the data folder named by
+    /// VITASHARP_FIRMWARE_DIR, else of a local Vita3K install, used by optional checks against the real files (read
+    /// only); null without one.</summary>
     public static string? FirmwareFontDir(string sub)
     {
-        string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vita3K", "Vita3K", "sa0", "data", "font", sub);
+        string? env = Environment.GetEnvironmentVariable(VitaSharp.Core.Util.EnvVars.FirmwareDir);
+        string root = !string.IsNullOrEmpty(env) ? env : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vita3K", "Vita3K");
+        string dir = Path.Combine(root, "sa0", "data", "font", sub);
         return Directory.Exists(dir) ? dir : null;
+    }
+}
+
+/// <summary>Skipped without the firmware fonts (<see cref="FontTestData.FirmwareFontDir"/>).</summary>
+public sealed class FirmwareFontFactAttribute : FactAttribute
+{
+    public FirmwareFontFactAttribute(string sub)
+    {
+        if (FontTestData.FirmwareFontDir(sub) == null)
+        {
+            Skip = $"sa0:data/font/{sub} not found (set {VitaSharp.Core.Util.EnvVars.FirmwareDir} to a Vita3K data folder, or install Vita3K's firmware fonts)";
+        }
     }
 }
