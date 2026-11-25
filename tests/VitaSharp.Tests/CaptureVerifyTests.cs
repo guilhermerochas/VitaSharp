@@ -111,8 +111,8 @@ public sealed class CaptureVerifyTests : IDisposable
     {
         CaptureVerify.Result r = CaptureVerify.Compare([Flash(101, 5)], [Flash(101, 5)], 50, 200);
         Assert.Equal(CaptureVerify.Verdict.StillPresent, r.Verdict);
-        Assert.Contains(r.Lines, l => l.Contains("[flash] present 101 cell 1,1: ainda presente", StringComparison.Ordinal));
-        Assert.Contains(r.Lines, l => l.Contains("flash: 1 -> 1 (ainda presente)", StringComparison.Ordinal));
+        Assert.Contains(r.Entries, e => e.Outcome == CaptureVerify.Outcome.StillPresent && e.Finding.Where == "present 101 cell 1,1" && e.Replayed?.Present == 101);
+        Assert.Contains(new CaptureVerify.KindCount("flash", 1, 1, CaptureVerify.Outcome.StillPresent), r.Kinds);
         // one present either way, and a whole-picture flash covers every cell
         Assert.Equal(CaptureVerify.Verdict.StillPresent, CaptureVerify.Compare([Flash(101, 5)], [Flash(102, -1)], 50, 200).Verdict);
     }
@@ -123,7 +123,7 @@ public sealed class CaptureVerifyTests : IDisposable
         CaptureVerify.Result r = CaptureVerify.Compare([Flash(101), new CaptureVerify.Item("black-flash", 150, -2, 2, "x")], [], 50, 200);
         Assert.Equal(CaptureVerify.Verdict.Fixed, r.Verdict);
         Assert.Equal((2, 0, 2), (r.Recorded, r.StillThere, r.Gone));
-        Assert.Contains(r.Lines, l => l.Contains("[black-flash] present 150: corrigido", StringComparison.Ordinal));
+        Assert.Contains(r.Entries, e => e.Outcome == CaptureVerify.Outcome.Fixed && e.Finding.Kind == "black-flash" && e.Finding.Present == 150);
     }
 
     [Fact]
@@ -133,7 +133,7 @@ public sealed class CaptureVerifyTests : IDisposable
         Assert.Equal(CaptureVerify.Verdict.Changed, CaptureVerify.Compare([Flash(101)], [Flash(104)], 50, 200).Verdict);
         CaptureVerify.Result fresh = CaptureVerify.Compare([Flash(101)], [Flash(170)], 50, 200);
         Assert.Equal(CaptureVerify.Verdict.Changed, fresh.Verdict);
-        Assert.Contains(fresh.Lines, l => l.Contains("[flash] present 170: novo", StringComparison.Ordinal));
+        Assert.Contains(fresh.Entries, e => e.Outcome == CaptureVerify.Outcome.New && e.Finding.Present == 170);
     }
 
     /// <summary>Findings before the dump (the pre-roll) or after it are listed as not checked, never as fixed; the
@@ -143,8 +143,8 @@ public sealed class CaptureVerifyTests : IDisposable
     {
         CaptureVerify.Result r = CaptureVerify.Compare([Flash(10), new CaptureVerify.Item("stall", 120, -2, 1, "400 ms")], [], 50, 200);
         Assert.Equal(CaptureVerify.Verdict.NothingToCheck, r.Verdict);
-        Assert.Contains(r.Lines, l => l.Contains("fora do dump", StringComparison.Ordinal));
-        Assert.DoesNotContain(r.Lines, l => l.Contains("stall", StringComparison.Ordinal));
+        Assert.Contains(r.Entries, e => e.Outcome == CaptureVerify.Outcome.NotChecked && e.Finding.Present == 10);
+        Assert.DoesNotContain(r.Entries, e => e.Finding.Kind == "stall");
     }
 
     [Fact]

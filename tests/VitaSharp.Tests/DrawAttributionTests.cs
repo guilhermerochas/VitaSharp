@@ -22,8 +22,7 @@ public sealed class DrawAttributionTests
     public void ADrawMissingInTheFlashingFrameIsResponsible()
     {
         DrawAttribution.Result r = DrawAttribution.Attribute([P(9, 1, Background, 256), P(9, 2, Hud, 128), P(10, 3, Background, 256), P(11, 4, Background, 256), P(11, 5, Hud, 128)], 10);
-        Assert.Equal((Hud, 2L), (r.Responsible?.Fs, r.Responsible?.Draw));
-        Assert.Contains("falta no quadro do pisca", r.Why, StringComparison.Ordinal);
+        Assert.Equal((Hud, 2L, DrawAttribution.Reason.MissingInFlash), (r.Responsible?.Draw.Fs, r.Responsible?.Draw.Draw, r.Responsible?.Reason));
     }
 
     [Fact]
@@ -31,24 +30,22 @@ public sealed class DrawAttributionTests
     {
         DrawAttribution.Result r = DrawAttribution.Attribute(
             [P(9, 1, Background, 256), P(9, 2, Hud, 128), P(10, 3, Background, 256), P(10, 4, Hud, 0, "depth=0/True st=0/0", depth: 0.25)], 10);
-        Assert.Equal((Hud, 4L), (r.Responsible?.Fs, r.Responsible?.Draw));
-        Assert.Contains("não escreveu na região", r.Why, StringComparison.Ordinal);
-        Assert.Contains("depth 0/True (vizinho 7/True)", r.Why, StringComparison.Ordinal);
-        Assert.Contains("profundidade antes 0.2500 (vizinho 0.5000)", r.Why, StringComparison.Ordinal);
+        Assert.Equal((Hud, 4L, DrawAttribution.Reason.WroteNothingInFlash, 128), (r.Responsible?.Draw.Fs, r.Responsible?.Draw.Draw, r.Responsible?.Reason, r.Responsible?.OtherChanged));
+        Assert.Contains(new DrawAttribution.Difference("depth", "0/True", "7/True"), r.Responsible!.Differences);
+        Assert.Contains(new DrawAttribution.Difference(DrawAttribution.DepthField, "0.2500", "0.5000"), r.Responsible.Differences);
     }
 
     [Fact]
     public void ADrawOnlyTheFlashingFrameHasOrWithAnotherStateIsResponsible()
     {
         DrawAttribution.Result extra = DrawAttribution.Attribute([P(9, 1, Background, 256), P(10, 2, Background, 256), P(10, 3, 0xEE, 40)], 10);
-        Assert.Equal(0xEEUL, extra.Responsible?.Fs);
-        Assert.Contains("só no quadro do pisca", extra.Why, StringComparison.Ordinal);
+        Assert.Equal((0xEEUL, DrawAttribution.Reason.OnlyInFlash), (extra.Responsible?.Draw.Fs, extra.Responsible?.Reason));
         DrawAttribution.Result blend = DrawAttribution.Attribute([P(9, 1, Hud, 128, "blend=none"), P(10, 2, Hud, 128, "blend=F:0/6/7")], 10);
-        Assert.Contains("estado diferente", blend.Why, StringComparison.Ordinal);
-        Assert.Contains("blend F:0/6/7 (vizinho none)", blend.Why, StringComparison.Ordinal);
+        Assert.Equal(DrawAttribution.Reason.OtherState, blend.Responsible?.Reason);
+        Assert.Contains(new DrawAttribution.Difference("blend", "F:0/6/7", "none"), blend.Responsible!.Differences);
         // the neighbour after, when the flashing frame is the dump's first
         DrawAttribution.Result after = DrawAttribution.Attribute([P(10, 1, Background, 256), P(11, 2, Background, 256), P(11, 3, Hud, 128)], 10);
-        Assert.Equal(Hud, after.Responsible?.Fs);
+        Assert.Equal(Hud, after.Responsible?.Draw.Fs);
     }
 
     [Fact]
@@ -56,7 +53,7 @@ public sealed class DrawAttributionTests
     {
         DrawAttribution.Result r = DrawAttribution.Attribute([P(9, 1, Background, 256), P(10, 2, Background, 256)], 10);
         Assert.Null(r.Responsible);
-        Assert.Contains(r.Lines, l => l.Contains("nenhum draw", StringComparison.Ordinal));
+        Assert.Equal((1, 1), (r.FlashDraws, r.NeighbourDraws));
     }
 
     [Fact]
@@ -127,9 +124,9 @@ public sealed class DrawProbeRenderTests(GuestMemoryFixture fx)
         Assert.Equal(2, probed.Count(p => p.Present == flash.Present - 1 && p.Changed > 0));
         DrawAttribution.Result result = DrawAttribution.Attribute(probed, flash.Present);
         Assert.NotNull(result.Responsible);
-        Assert.Equal(flash.Present, result.Responsible!.Value.Present);
-        Assert.StartsWith("depth=0/", result.Responsible.Value.State, StringComparison.Ordinal);
-        Assert.Contains("não escreveu na região", result.Why, StringComparison.Ordinal);
-        Assert.Contains("depth 0/", result.Why, StringComparison.Ordinal);
+        Assert.Equal(flash.Present, result.Responsible!.Draw.Present);
+        Assert.StartsWith("depth=0/", result.Responsible.Draw.State, StringComparison.Ordinal);
+        Assert.Equal(DrawAttribution.Reason.WroteNothingInFlash, result.Responsible.Reason);
+        Assert.Contains(result.Responsible.Differences, d => d.Field == "depth" && d.Flash.StartsWith("0/", StringComparison.Ordinal));
     }
 }

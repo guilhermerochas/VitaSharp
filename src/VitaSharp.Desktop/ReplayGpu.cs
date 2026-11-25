@@ -463,7 +463,7 @@ static class ReplayGpu
         Core.Capture.DrawAttribution.Write(Path.Combine(s.Out, $"probe_{s.ProbePresent}.txt"), header, probed);
         Core.Capture.DrawAttribution.Result result = Core.Capture.DrawAttribution.Attribute(probed, s.ProbePresent);
         var text = new StringBuilder(header).Append('\n');
-        foreach (string line in result.Lines)
+        foreach (string line in VerifyCapture.AttributionLines(result))
         {
             text.Append(line).Append('\n');
         }

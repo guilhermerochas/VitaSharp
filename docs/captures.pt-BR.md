@@ -1,4 +1,4 @@
-<!-- pair: captures.md sha256=be5ad6cfc2f87509e1702eaf5c72f5950f0c16968342709a2722af3ed292e1d1 -->
+<!-- pair: captures.md sha256=9134911046b3859b20c7589bf957b72802e0647c4ac7cc7b716792ed4ee4b84c -->
 # Analisar uma gravação do Gravar tudo sem o jogo
 
 [English](captures.md) | **Português**
@@ -97,7 +97,7 @@ resultado: corrigido
 
 *corrigido*: todo achado da gravação sumiu e nada novo apareceu; *ainda presente*: um achado está no mesmo present
 (um a mais ou a menos) e na mesma célula; *mudou*: ele se deslocou, ou o replay mostra um achado que a gravação não
-tinha (*novo*). Achados antes do dump (a pré-gravação) ou depois dele aparecem como não verificados. Código de saída
+tinha (*novo*). O relatório sai no idioma do emulador (`VITASHARP_LANGUAGE`, o do sistema por padrão). Achados antes do dump (a pré-gravação) ou depois dele aparecem como não verificados. Código de saída
 0 corrigido, 1 ainda presente, 2 mudou, 3 nada a verificar, 4 o replay falhou. Tudo vai para `--out` (padrão
 `<gravação>/verify`: `verify.txt`, o `log.txt` e o `findings.txt` do replay); a gravação não é alterada. Opções do
 replay (`--res-scale=2`, `--env=CHAVE=VALOR`, `--msaa=...`) vão para o replay; um dump gravado numa escala de
@@ -153,9 +153,9 @@ replay sem eles: *o achado some* (o interruptor aponta a classe do bug), *muda* 
 ```
 A/B dos interruptores do renderizador (18; o replay de cada um contra o replay sem eles):
   depth-seed-off (VITASHARP_DEPTH_SEED=0: ...): igual
-  msaa-off (VITASHARP_MSAA=off: MSAA scenes drawn single-sampled): o achado some
+  msaa-off (VITASHARP_MSAA=off: cenas MSAA desenhadas com uma amostra): o achado some
   ...
-  o achado some com: msaa-off (a classe do bug: MSAA scenes drawn single-sampled)
+  o achado some com: msaa-off (a classe do bug: cenas MSAA desenhadas com uma amostra)
 ```
 
 Os replays ficam em `<out>/ab/<nome>/`.

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using VitaSharp.Core.Capture;
+using VitaSharp.Core.Localization;
 
 namespace VitaSharp.Desktop;
 
@@ -58,7 +59,7 @@ static class VerifyCapture
         var report = new StringBuilder();
         report.AppendLine($"verify {Path.GetFileName(dir)} with {Diagnostics.BuildVersion()}");
         List<CaptureVerify.Item> recorded = RecordedFindings(dir);
-        report.AppendLine($"gravação: {recorded.Count} achados ({string.Join(", ", recorded.GroupBy(r => r.Kind).Select(g => $"{g.Count()} {g.Key}"))})");
+        report.AppendLine(Loc.Format("VerifyRecorded", recorded.Count, string.Join(", ", recorded.GroupBy(r => r.Kind).Select(g => $"{g.Count()} {g.Key}"))));
         var verdicts = new List<CaptureVerify.Verdict>();
         string dump = Path.Combine(dir, "gpu.vsgd");
         if (File.Exists(dump))
@@ -67,21 +68,19 @@ static class VerifyCapture
             (int rc, CaptureVerify.Result? result) = ReplayAndCompare(dump, replayOut, recorded, replayOptions, keepFrames: options.Contains("--keep-frames"));
             if (result == null)
             {
-                report.AppendLine($"replay do dump da GPU: falhou (código {rc}; {Path.Combine(replayOut, "log.txt")})");
+                report.AppendLine(Loc.Format("VerifyReplayFailed", rc, Path.Combine(replayOut, "log.txt")));
                 Console.Write(report);
                 File.WriteAllText(Path.Combine(outDir, "verify.txt"), report.ToString());
                 return 4;
             }
 
-            report.AppendLine($"replay do dump da GPU com este build ({result.Recorded} achados da gravação dentro do dump):");
-            foreach (string line in result.Lines)
+            report.AppendLine(Loc.Format("VerifyReplayHeader", result.Recorded));
+            foreach (string line in ResultLines(result, rerun: false))
             {
                 report.AppendLine(line);
             }
 
-            report.AppendLine($"  replay: {CaptureVerify.Word(result.Verdict)}" + (result.Verdict == CaptureVerify.Verdict.StillPresent
-                ? " (o replay executa os comandos gravados: se o build que gravou também o mostra no replay, a causa está no renderizador; se a causa vem antes da GPU, nos comandos, use --rerun)"
-                : ""));
+            report.AppendLine(Loc.Format("VerifyReplayVerdict", Word(result.Verdict)) + (result.Verdict == CaptureVerify.Verdict.StillPresent ? Loc.Get("VerifyReplayStillHint") : ""));
             verdicts.Add(result.Verdict);
             Attribute(dump, outDir, result.Kept, replayOptions, report);
             if (options.Any(o => o == "--ab" || o.StartsWith("--ab=", StringComparison.Ordinal) || o.StartsWith("--ab-env=", StringComparison.Ordinal)))
@@ -91,7 +90,7 @@ static class VerifyCapture
         }
         else
         {
-            report.AppendLine("replay do dump da GPU: a captura não tem gpu.vsgd");
+            report.AppendLine(Loc.Get("VerifyNoDump"));
         }
 
         if (options.Contains("--rerun"))
@@ -102,7 +101,7 @@ static class VerifyCapture
         }
 
         CaptureVerify.Verdict verdict = Combine(verdicts);
-        report.AppendLine($"resultado: {CaptureVerify.Word(verdict)}");
+        report.AppendLine(Loc.Format("VerifyResult", Word(verdict)));
         Console.Write(report);
         File.WriteAllText(Path.Combine(outDir, "verify.txt"), report.ToString());
         Console.WriteLine($"-> {Path.Combine(outDir, "verify.txt")}");
@@ -149,6 +148,97 @@ static class VerifyCapture
         return items;
     }
 
+    // ------------------------------------------------------------------ the report's texts (Texts.resx, Verify*)
+
+    internal static string Word(CaptureVerify.Verdict verdict) => Loc.Get(verdict switch
+    {
+        CaptureVerify.Verdict.Fixed => "VerifyWord.Fixed",
+        CaptureVerify.Verdict.StillPresent => "VerifyWord.StillPresent",
+        CaptureVerify.Verdict.Changed => "VerifyWord.Changed",
+        _ => "VerifyWord.NothingToCheck",
+    });
+
+    internal static string Word(CaptureVerify.Outcome outcome) => Loc.Get(outcome switch
+    {
+        CaptureVerify.Outcome.Fixed => "VerifyWord.Fixed",
+        CaptureVerify.Outcome.StillPresent => "VerifyWord.StillPresent",
+        CaptureVerify.Outcome.New => "VerifyWord.New",
+        _ => "VerifyWord.Changed",
+    });
+
+    internal static string Word(CaptureVerify.SwitchEffect effect) => Loc.Get(effect switch
+    {
+        CaptureVerify.SwitchEffect.Removes => "VerifyEffect.Removes",
+        CaptureVerify.SwitchEffect.Changes => "VerifyEffect.Changes",
+        _ => "VerifyEffect.Same",
+    });
+
+    /// <summary>What a switch changes (VerifySwitch.NAME; one given with --ab-env: VerifySwitchCustom).</summary>
+    internal static string What(CaptureVerify.Switch sw) =>
+        CaptureVerify.RendererSwitches.Any(s => s.Name == sw.Name) ? Loc.Get($"VerifySwitch.{sw.Name}") : Loc.Get("VerifySwitchCustom");
+
+    internal static string EntryLine(CaptureVerify.Entry entry)
+    {
+        CaptureVerify.Item f = entry.Finding;
+        string head = $"[{f.Kind}] {f.Where}";
+        return entry.Outcome switch
+        {
+            CaptureVerify.Outcome.StillPresent or CaptureVerify.Outcome.Moved when entry.Replayed is { } r => Loc.Format($"VerifyOutcome.{entry.Outcome}", head, r.Where, r.Detail),
+            CaptureVerify.Outcome.Fixed => Loc.Format("VerifyOutcome.Fixed", head, f.Present - 1, f.Present + 1),
+            CaptureVerify.Outcome.New => Loc.Format("VerifyOutcome.New", head, f.Detail),
+            _ => Loc.Format("VerifyOutcome.NotChecked", head),
+        };
+    }
+
+    /// <summary>A comparison as the report shows it: every finding, then every kind (recording -> replay or re-run).</summary>
+    internal static List<string> ResultLines(CaptureVerify.Result result, bool rerun)
+    {
+        var lines = result.Entries.Select(e => "  " + EntryLine(e)).ToList();
+        lines.Add(Loc.Get(rerun ? "VerifyByKindRerun" : "VerifyByKindReplay"));
+        lines.AddRange(result.Kinds.Select(k => FormattableString.Invariant($"    {k.Kind}: {k.Before} -> {k.After} ({Word(k.Outcome)})")));
+        return lines;
+    }
+
+    /// <summary>The draw responsible for a finding as attribution_P.txt and the report show it.</summary>
+    internal static List<string> AttributionLines(DrawAttribution.Result result)
+    {
+        var lines = new List<string> { Loc.Format("VerifyAttrSummary", result.Present, result.FlashDraws, result.FlashWriting, result.Neighbour, result.NeighbourDraws, result.NeighbourWriting) };
+        if (result.FlashDraws == 0 && result.NeighbourDraws == 0)
+        {
+            lines.Add(Loc.Get("VerifyAttrNoDraws"));
+            return lines;
+        }
+
+        if (result.Responsible is not { } responsible)
+        {
+            lines.Add(Loc.Get("VerifyAttrNone"));
+            return lines;
+        }
+
+        lines.Add(Loc.Format("VerifyAttrResponsible", responsible.Draw.Describe()));
+        lines.Add(Loc.Format("VerifyAttrWhy", Why(responsible, result.Neighbour)));
+        if (result.Candidates.Count > 1)
+        {
+            lines.Add(Loc.Format("VerifyAttrOthers", result.Candidates.Count - 1));
+            lines.AddRange(result.Candidates.Skip(1).Take(12).Select(c => $"  {Why(c, result.Neighbour)}: {c.Draw.Describe()}"));
+        }
+
+        return lines;
+    }
+
+    static string Why(DrawAttribution.Candidate candidate, long neighbour)
+    {
+        string why = Loc.Format($"VerifyReason.{candidate.Reason}", neighbour, candidate.Draw.Changed, candidate.OtherChanged);
+        if (candidate.Differences.Count == 0)
+        {
+            return why;
+        }
+
+        IEnumerable<string> fields = candidate.Differences.Select(d => Loc.Format("VerifyDifference",
+            d.Field is DrawAttribution.DepthField or DrawAttribution.StencilField ? Loc.Get($"VerifyField.{d.Field}") : d.Field, d.Flash, d.Neighbour));
+        return why + "; " + string.Join(", ", fields);
+    }
+
     /// <summary>The switches of --ab (all, or the names given) and of every --ab-env=KEY=VALUE.</summary>
     internal static List<CaptureVerify.Switch> Switches(string[] options)
     {
@@ -178,7 +268,7 @@ static class VerifyCapture
             int eq = env.IndexOf('=');
             if (eq > 0)
             {
-                chosen.Add(new CaptureVerify.Switch(env, env[..eq], env[(eq + 1)..], "given with --ab-env"));
+                chosen.Add(new CaptureVerify.Switch(env, env[..eq], env[(eq + 1)..]));
             }
         }
 
@@ -194,10 +284,10 @@ static class VerifyCapture
     {
         List<CaptureVerify.Switch> switches = Switches(options);
         var findings = baseline.Items.Where(i => CaptureVerify.PictureKinds.Contains(i.Kind)).ToList();
-        report.AppendLine($"A/B dos interruptores do renderizador ({switches.Count}; o replay de cada um contra o replay sem eles):");
+        report.AppendLine(Loc.Format("VerifyAbHeader", switches.Count));
         if (findings.Count == 0 || switches.Count == 0)
         {
-            report.AppendLine(findings.Count == 0 ? "  nada para comparar: o replay deste build não mostra achado de imagem" : "  nenhum interruptor escolhido");
+            report.AppendLine(Loc.Get(findings.Count == 0 ? "VerifyAbNothing" : "VerifyAbNoneChosen"));
             return;
         }
 
@@ -210,29 +300,29 @@ static class VerifyCapture
             (int rc, (long First, long Last, List<CaptureVerify.Item> Items)? replayed) = Replay(dump, dir, args, keepFrames: false);
             if (replayed is not { } r)
             {
-                report.AppendLine($"  {sw.Name} ({sw.Env}): o replay falhou (código {rc}; {Path.Combine(dir, "log.txt")})");
+                report.AppendLine(Loc.Format("VerifyAbReplayFailed", sw.Name, sw.Env, rc, Path.Combine(dir, "log.txt")));
                 continue;
             }
 
             long last = Math.Min(Math.Min(baseline.Last, r.Last), stop);
             (CaptureVerify.SwitchEffect effect, CaptureVerify.Result result) = CaptureVerify.CompareSwitch(findings.Where(i => i.Present <= last).ToList(), r.Items, Math.Max(baseline.First, r.First), last);
             effects.Add((sw, effect));
-            report.AppendLine($"  {sw.Name} ({sw.Env}: {sw.What}): {CaptureVerify.Word(effect)}");
+            report.AppendLine($"  {sw.Name} ({sw.Env}: {What(sw)}): {Word(effect)}");
             if (effect == CaptureVerify.SwitchEffect.Changes)
             {
-                foreach (string line in result.Lines.Where(l => !l.StartsWith("  por tipo", StringComparison.Ordinal) && !l.StartsWith("    ", StringComparison.Ordinal)).Take(3))
+                foreach (CaptureVerify.Entry entry in result.Entries.Where(e => e.Outcome != CaptureVerify.Outcome.StillPresent).Take(3))
                 {
-                    report.AppendLine("    " + line.TrimStart());
+                    report.AppendLine("    " + EntryLine(entry));
                 }
             }
         }
 
         var removing = effects.Where(e => e.Effect == CaptureVerify.SwitchEffect.Removes).ToList();
         report.AppendLine(removing.Count > 0
-            ? $"  o achado some com: {string.Join(", ", removing.Select(e => e.Switch.Name))} (a classe do bug: {string.Join("; ", removing.Select(e => e.Switch.What))})"
+            ? Loc.Format("VerifyAbRemovedBy", string.Join(", ", removing.Select(e => e.Switch.Name)), string.Join("; ", removing.Select(e => What(e.Switch))))
             : effects.Any(e => e.Effect == CaptureVerify.SwitchEffect.Changes)
-                ? $"  nenhum interruptor tira o achado; mudam: {string.Join(", ", effects.Where(e => e.Effect == CaptureVerify.SwitchEffect.Changes).Select(e => e.Switch.Name))}"
-                : "  nenhum interruptor muda o achado: a causa está nos comandos gravados ou num caminho do renderizador sem interruptor");
+                ? Loc.Format("VerifyAbChangedBy", string.Join(", ", effects.Where(e => e.Effect == CaptureVerify.SwitchEffect.Changes).Select(e => e.Switch.Name)))
+                : Loc.Get("VerifyAbNoEffect"));
     }
 
     /// <summary>Most findings still present whose draws are probed (one replay each, up to their present).</summary>
@@ -251,10 +341,10 @@ static class VerifyCapture
             args.AddRange(replayOptions);
             int rc = RunSelf(args, Path.Combine(dir, "console.txt"));
             string attribution = Path.Combine(dir, $"attribution_{item.Present}.txt");
-            report.AppendLine($"  draw responsável por [{item.Kind}] {item.Where}:");
+            report.AppendLine(Loc.Format("VerifyDrawResponsible", item.Kind, item.Where));
             if (!File.Exists(attribution))
             {
-                report.AppendLine($"    a sonda não terminou (código {rc}; {Path.Combine(dir, "log.txt")})");
+                report.AppendLine(Loc.Format("VerifyProbeFailed", rc, Path.Combine(dir, "log.txt")));
                 continue;
             }
 
@@ -358,20 +448,20 @@ static class VerifyCapture
             : null;
         if (latest == null)
         {
-            report.AppendLine($"re-run: falhou (código {rc}; sem report.txt em {reruns})");
-            return new CaptureVerify.Result(CaptureVerify.Verdict.NothingToCheck, new List<string>(), 0, 0, 0, 0, 0);
+            report.AppendLine(Loc.Format("VerifyRerunFailed", rc, reruns));
+            return new CaptureVerify.Result(CaptureVerify.Verdict.NothingToCheck, new List<CaptureVerify.Entry>(), new List<CaptureVerify.KindCount>(), 0, 0, 0, 0, 0);
         }
 
         SortedDictionary<string, int> recorded = CaptureVerify.ReportCounts(Path.Combine(dir, "report.txt"));
         SortedDictionary<string, int> again = CaptureVerify.ReportCounts(Path.Combine(latest, "report.txt"));
         CaptureVerify.Result result = CaptureVerify.CompareRerun(recorded, again);
-        report.AppendLine($"re-run da lógica a partir do estado ({latest}):");
-        foreach (string line in result.Lines)
+        report.AppendLine(Loc.Format("VerifyRerunHeader", latest));
+        foreach (string line in ResultLines(result, rerun: true))
         {
             report.AppendLine(line);
         }
 
-        report.AppendLine($"  re-run: {CaptureVerify.Word(result.Verdict)}");
+        report.AppendLine(Loc.Format("VerifyRerunVerdict", Word(result.Verdict)));
         return result;
     }
 }

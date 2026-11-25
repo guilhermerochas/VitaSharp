@@ -71,9 +71,40 @@ public static class DrawAttribution
         return list;
     }
 
-    /// <summary>The attribution: the lines to print and the draw responsible (null when no draw into the shown surface
-    /// differs: the difference comes from a surface drawn earlier and sampled, or from which buffer was presented).</summary>
-    public sealed record Result(Probed? Responsible, string Why, List<string> Lines);
+    /// <summary>Why a draw differs between the flashing frame and the neighbour.</summary>
+    public enum Reason
+    {
+        /// <summary>The neighbour has the draw (and it writes the region), the flashing frame does not.</summary>
+        MissingInFlash,
+        /// <summary>Only the flashing frame has the draw (and it writes the region).</summary>
+        OnlyInFlash,
+        /// <summary>The same draw wrote nothing in the region in the flashing frame (rejected by the depth, stencil or
+        /// alpha test, clipped or moved), but did in the neighbour.</summary>
+        WroteNothingInFlash,
+        /// <summary>The same draw wrote the region only in the flashing frame.</summary>
+        WroteOnlyInFlash,
+        /// <summary>The same draw, writing the region in both, with another state.</summary>
+        OtherState,
+    }
+
+    /// <summary>A state field (depth=, st=, blend=...) or the depth/stencil under the region before the draw, as it was
+    /// in the flashing frame and in the neighbour.</summary>
+    public readonly record struct Difference(string Field, string Flash, string Neighbour);
+
+    /// <summary>One draw that differs: the draw, why, the pixels the matching draw of the other frame wrote, and the
+    /// fields that differ.</summary>
+    public sealed record Candidate(Probed Draw, Reason Reason, int OtherChanged, List<Difference> Differences);
+
+    /// <summary>The depth and stencil fields of <see cref="Difference"/> (the others are the state's own names).</summary>
+    public const string DepthField = "depth-before", StencilField = "stencil-before";
+
+    /// <summary>The attribution: the presents compared, their draws into the shown surface (and how many wrote the
+    /// region), and the draws that differ, the first being the draw responsible (none: the difference comes from a
+    /// surface drawn earlier and sampled, or from which buffer was presented).</summary>
+    public sealed record Result(long Present, long Neighbour, int FlashDraws, int FlashWriting, int NeighbourDraws, int NeighbourWriting, List<Candidate> Candidates)
+    {
+        public Candidate? Responsible => Candidates.Count > 0 ? Candidates[0] : null;
+    }
 
     /// <summary>
     /// Lines up the draws behind <paramref name="flashPresent"/> with those behind the neighbour present (the one
@@ -81,15 +112,11 @@ public static class DrawAttribution
     /// </summary>
     public static Result Attribute(IReadOnlyList<Probed> draws, long flashPresent)
     {
-        var lines = new List<string>();
         var flash = draws.Where(d => d.Present == flashPresent).OrderBy(d => d.Draw).ToList();
         long neighbourPresent = draws.Any(d => d.Present == flashPresent - 1) ? flashPresent - 1 : flashPresent + 1;
         var other = draws.Where(d => d.Present == neighbourPresent).OrderBy(d => d.Draw).ToList();
-        lines.Add(FormattableString.Invariant($"present {flashPresent}: {flash.Count} draws no alvo mostrado ({flash.Count(d => d.Changed > 0)} escreveram na região); vizinho {neighbourPresent}: {other.Count} draws ({other.Count(d => d.Changed > 0)} escreveram)"));
-        if (flash.Count == 0 && other.Count == 0)
-        {
-            return new Result(null, "nenhum draw no alvo mostrado nos dois quadros (imagem da CPU, ou o dump não tem os draws)", lines);
-        }
+        var candidates = new List<Candidate>();
+        var result = new Result(flashPresent, neighbourPresent, flash.Count, flash.Count(d => d.Changed > 0), other.Count, other.Count(d => d.Changed > 0), candidates);
 
         // longest common subsequence of (vs, fs): the same draws of the two frames, in order
         int n = flash.Count, m = other.Count;
@@ -102,19 +129,6 @@ public static class DrawAttribution
             }
         }
 
-        Probed? responsible = null;
-        string why = "";
-        var candidates = new List<string>();
-        void Candidate(Probed draw, string reason)
-        {
-            candidates.Add($"  {reason}: {draw.Describe()}");
-            if (responsible == null)
-            {
-                responsible = draw;
-                why = reason;
-            }
-        }
-
         int a = 0, b = 0;
         while (a < n || b < m)
         {
@@ -123,14 +137,11 @@ public static class DrawAttribution
                 Probed x = flash[a], y = other[b];
                 if ((x.Changed > 0) != (y.Changed > 0))
                 {
-                    string written = x.Changed > 0
-                        ? FormattableString.Invariant($"escreveu {x.Changed} px da região no quadro do pisca e 0 no vizinho")
-                        : FormattableString.Invariant($"não escreveu na região no quadro do pisca (no vizinho: {y.Changed} px)");
-                    Candidate(x, written + StateDifference(x, y));
+                    candidates.Add(new Candidate(x, x.Changed > 0 ? Reason.WroteOnlyInFlash : Reason.WroteNothingInFlash, y.Changed, Differences(x, y)));
                 }
                 else if (x.Changed > 0 && x.State != y.State)
                 {
-                    Candidate(x, "estado diferente do vizinho" + StateDifference(x, y));
+                    candidates.Add(new Candidate(x, Reason.OtherState, y.Changed, Differences(x, y)));
                 }
 
                 a++;
@@ -140,7 +151,7 @@ public static class DrawAttribution
             {
                 if (flash[a].Changed > 0)
                 {
-                    Candidate(flash[a], FormattableString.Invariant($"só no quadro do pisca (escreveu {flash[a].Changed} px da região)"));
+                    candidates.Add(new Candidate(flash[a], Reason.OnlyInFlash, 0, new List<Difference>()));
                 }
 
                 a++;
@@ -149,28 +160,14 @@ public static class DrawAttribution
             {
                 if (other[b].Changed > 0)
                 {
-                    Candidate(other[b], FormattableString.Invariant($"falta no quadro do pisca (no vizinho {neighbourPresent} escreveu {other[b].Changed} px da região)"));
+                    candidates.Add(new Candidate(other[b], Reason.MissingInFlash, other[b].Changed, new List<Difference>()));
                 }
 
                 b++;
             }
         }
 
-        if (responsible is { } r)
-        {
-            lines.Add($"draw responsável: {r.Describe()}");
-            lines.Add($"  por quê: {why}");
-            if (candidates.Count > 1)
-            {
-                lines.Add($"outras diferenças ({candidates.Count - 1}):");
-                lines.AddRange(candidates.Skip(1).Take(12));
-            }
-
-            return new Result(r, why, lines);
-        }
-
-        lines.Add("nenhum draw no alvo mostrado difere na região: a diferença vem de um alvo desenhado antes e amostrado (textura), ou de qual buffer foi apresentado");
-        return new Result(null, "nenhum draw difere", lines);
+        return result;
     }
 
     /// <summary>The same draw of two frames: the same programs (the shown surface may be another buffer of a double or
@@ -179,30 +176,30 @@ public static class DrawAttribution
 
     /// <summary>The state fields that differ (depth=, st=, blend=...), and the depth/stencil under the region before the
     /// draw when they differ.</summary>
-    private static string StateDifference(Probed x, Probed y)
+    private static List<Difference> Differences(Probed x, Probed y)
     {
-        var parts = new List<string>();
+        var parts = new List<Difference>();
         Dictionary<string, string> sx = Fields(x.State), sy = Fields(y.State);
         foreach (string key in sx.Keys.Union(sy.Keys))
         {
             string vx = sx.GetValueOrDefault(key, "-"), vy = sy.GetValueOrDefault(key, "-");
             if (vx != vy)
             {
-                parts.Add($"{key} {vx} (vizinho {vy})");
+                parts.Add(new Difference(key, vx, vy));
             }
         }
 
         if (Math.Abs(x.Depth - y.Depth) > 1e-4)
         {
-            parts.Add(FormattableString.Invariant($"profundidade antes {x.Depth:F4} (vizinho {y.Depth:F4})"));
+            parts.Add(new Difference(DepthField, x.Depth.ToString("F4", CultureInfo.InvariantCulture), y.Depth.ToString("F4", CultureInfo.InvariantCulture)));
         }
 
         if (Math.Abs(x.Stencil - y.Stencil) > 0.01)
         {
-            parts.Add(FormattableString.Invariant($"estêncil antes {x.Stencil:F2} (vizinho {y.Stencil:F2})"));
+            parts.Add(new Difference(StencilField, x.Stencil.ToString("F2", CultureInfo.InvariantCulture), y.Stencil.ToString("F2", CultureInfo.InvariantCulture)));
         }
 
-        return parts.Count == 0 ? "" : "; " + string.Join(", ", parts);
+        return parts;
     }
 
     private static Dictionary<string, string> Fields(string state)

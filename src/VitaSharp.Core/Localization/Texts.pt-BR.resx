@@ -117,6 +117,207 @@
   <data name="Captures" xml:space="preserve">
     <value>Capturas</value>
   </data>
+  <data name="VerifyRecorded" xml:space="preserve">
+    <value>gravação: {0} achados ({1})</value>
+  </data>
+  <data name="VerifyReplayFailed" xml:space="preserve">
+    <value>replay do dump da GPU: falhou (código {0}; {1})</value>
+  </data>
+  <data name="VerifyReplayHeader" xml:space="preserve">
+    <value>replay do dump da GPU com este build ({0} achados da gravação dentro do dump):</value>
+  </data>
+  <data name="VerifyReplayVerdict" xml:space="preserve">
+    <value>  replay: {0}</value>
+  </data>
+  <data name="VerifyReplayStillHint" xml:space="preserve">
+    <value> (o replay executa os comandos gravados: se o build que gravou também o mostra no replay, a causa está no renderizador; se a causa vem antes da GPU, nos comandos, use --rerun)</value>
+  </data>
+  <data name="VerifyNoDump" xml:space="preserve">
+    <value>replay do dump da GPU: a captura não tem gpu.vsgd</value>
+  </data>
+  <data name="VerifyResult" xml:space="preserve">
+    <value>resultado: {0}</value>
+  </data>
+  <data name="VerifyAbHeader" xml:space="preserve">
+    <value>A/B dos interruptores do renderizador ({0}; o replay de cada um contra o replay sem eles):</value>
+  </data>
+  <data name="VerifyAbNothing" xml:space="preserve">
+    <value>  nada para comparar: o replay deste build não mostra achado de imagem</value>
+  </data>
+  <data name="VerifyAbNoneChosen" xml:space="preserve">
+    <value>  nenhum interruptor escolhido</value>
+  </data>
+  <data name="VerifyAbReplayFailed" xml:space="preserve">
+    <value>  {0} ({1}): o replay falhou (código {2}; {3})</value>
+  </data>
+  <data name="VerifyAbRemovedBy" xml:space="preserve">
+    <value>  o achado some com: {0} (a classe do bug: {1})</value>
+  </data>
+  <data name="VerifyAbChangedBy" xml:space="preserve">
+    <value>  nenhum interruptor tira o achado; mudam: {0}</value>
+  </data>
+  <data name="VerifyAbNoEffect" xml:space="preserve">
+    <value>  nenhum interruptor muda o achado: a causa está nos comandos gravados ou num caminho do renderizador sem interruptor</value>
+  </data>
+  <data name="VerifyDrawResponsible" xml:space="preserve">
+    <value>  draw responsável por [{0}] {1}:</value>
+  </data>
+  <data name="VerifyProbeFailed" xml:space="preserve">
+    <value>    a sonda não terminou (código {0}; {1})</value>
+  </data>
+  <data name="VerifyRerunFailed" xml:space="preserve">
+    <value>re-run: falhou (código {0}; sem report.txt em {1})</value>
+  </data>
+  <data name="VerifyRerunHeader" xml:space="preserve">
+    <value>re-run da lógica a partir do estado ({0}):</value>
+  </data>
+  <data name="VerifyRerunVerdict" xml:space="preserve">
+    <value>  re-run: {0}</value>
+  </data>
+  <data name="VerifyWord.NothingToCheck" xml:space="preserve">
+    <value>nada a verificar</value>
+  </data>
+  <data name="VerifyWord.Fixed" xml:space="preserve">
+    <value>corrigido</value>
+  </data>
+  <data name="VerifyWord.StillPresent" xml:space="preserve">
+    <value>ainda presente</value>
+  </data>
+  <data name="VerifyWord.Changed" xml:space="preserve">
+    <value>mudou</value>
+  </data>
+  <data name="VerifyWord.New" xml:space="preserve">
+    <value>novo</value>
+  </data>
+  <data name="VerifyOutcome.StillPresent" xml:space="preserve">
+    <value>{0}: ainda presente (replay: {1}: {2})</value>
+  </data>
+  <data name="VerifyOutcome.Moved" xml:space="preserve">
+    <value>{0}: mudou (replay: {1}: {2})</value>
+  </data>
+  <data name="VerifyOutcome.Fixed" xml:space="preserve">
+    <value>{0}: corrigido (replay: nada nos presents {1}-{2})</value>
+  </data>
+  <data name="VerifyOutcome.New" xml:space="preserve">
+    <value>{0}: novo (não estava na gravação): {1}</value>
+  </data>
+  <data name="VerifyOutcome.NotChecked" xml:space="preserve">
+    <value>{0}: fora do dump da GPU (pré-gravação ou depois do fim do dump): não verificado pelo replay (use --rerun)</value>
+  </data>
+  <data name="VerifyByKindReplay" xml:space="preserve">
+    <value>  por tipo (gravação -&gt; replay):</value>
+  </data>
+  <data name="VerifyByKindRerun" xml:space="preserve">
+    <value>  por tipo (gravação -&gt; re-run; o re-run não é determinístico: compare contagens):</value>
+  </data>
+  <data name="VerifyEffect.Same" xml:space="preserve">
+    <value>igual</value>
+  </data>
+  <data name="VerifyEffect.Removes" xml:space="preserve">
+    <value>o achado some</value>
+  </data>
+  <data name="VerifyEffect.Changes" xml:space="preserve">
+    <value>muda</value>
+  </data>
+  <data name="VerifySwitchCustom" xml:space="preserve">
+    <value>dado com --ab-env</value>
+  </data>
+  <data name="VerifySwitch.depth-seed-off" xml:space="preserve">
+    <value>profundidade/estêncil criados para uma cena que carrega a superfície começam indefinidos, não da imagem anterior dela</value>
+  </data>
+  <data name="VerifySwitch.msaa-off" xml:space="preserve">
+    <value>cenas MSAA desenhadas com uma amostra</value>
+  </data>
+  <data name="VerifySwitch.msaa-ss" xml:space="preserve">
+    <value>cenas MSAA desenhadas como superamostragem 2x</value>
+  </data>
+  <data name="VerifySwitch.msaa-native" xml:space="preserve">
+    <value>cenas MSAA multiamostradas</value>
+  </data>
+  <data name="VerifySwitch.store-writeback-off" xml:space="preserve">
+    <value>o que os shaders gravam fica no espelho do renderizador, não na memória do guest</value>
+  </data>
+  <data name="VerifySwitch.scene-breaks-strict" xml:space="preserve">
+    <value>todo envio de textura ou cópia dentro de uma cena termina a renderização</value>
+  </data>
+  <data name="VerifySwitch.fetch-pass-merge-off" xml:space="preserve">
+    <value>draws de blending programável não dividem um passe de fetch</value>
+  </data>
+  <data name="VerifySwitch.fetch-pass-merge-on" xml:space="preserve">
+    <value>draws de blending programável dividem um passe de fetch</value>
+  </data>
+  <data name="VerifySwitch.fetch-large-off" xml:space="preserve">
+    <value>draws grandes de blending programável leem uma cópia da superfície</value>
+  </data>
+  <data name="VerifySwitch.fetch-large-on" xml:space="preserve">
+    <value>draws de blending programável de qualquer tamanho renderizam no passe de fetch</value>
+  </data>
+  <data name="VerifySwitch.fetch-pass-join-off" xml:space="preserve">
+    <value>outros draws terminam um passe de fetch aberto</value>
+  </data>
+  <data name="VerifySwitch.fetch-pass-join-on" xml:space="preserve">
+    <value>outros draws continuam num passe de fetch aberto</value>
+  </data>
+  <data name="VerifySwitch.depth-feedback-off" xml:space="preserve">
+    <value>draws que amostram a própria profundidade leem uma cópia</value>
+  </data>
+  <data name="VerifySwitch.depth-feedback-on" xml:space="preserve">
+    <value>draws que amostram a própria profundidade a leem no lugar</value>
+  </data>
+  <data name="VerifySwitch.depth-ops-none-off" xml:space="preserve">
+    <value>profundidade/estêncil sem uso continuam carregados e gravados</value>
+  </data>
+  <data name="VerifySwitch.gpu-profile-mali" xml:space="preserve">
+    <value>os caminhos do renderizador para GPUs tile-based (celular)</value>
+  </data>
+  <data name="VerifySwitch.gpu-poison" xml:space="preserve">
+    <value>conteúdo indefinido ganha valores gritantes (alvos novos magenta): a leitura de algo nunca desenhado aparece</value>
+  </data>
+  <data name="VerifySwitch.res-scale-1" xml:space="preserve">
+    <value>resolução nativa</value>
+  </data>
+  <data name="VerifyAttrSummary" xml:space="preserve">
+    <value>present {0}: {1} draws no alvo mostrado ({2} escreveram na região); vizinho {3}: {4} draws ({5} escreveram)</value>
+  </data>
+  <data name="VerifyAttrNoDraws" xml:space="preserve">
+    <value>nenhum draw no alvo mostrado nos dois quadros (imagem da CPU, ou o dump não tem os draws)</value>
+  </data>
+  <data name="VerifyAttrResponsible" xml:space="preserve">
+    <value>draw responsável: {0}</value>
+  </data>
+  <data name="VerifyAttrWhy" xml:space="preserve">
+    <value>  por quê: {0}</value>
+  </data>
+  <data name="VerifyAttrOthers" xml:space="preserve">
+    <value>outras diferenças ({0}):</value>
+  </data>
+  <data name="VerifyAttrNone" xml:space="preserve">
+    <value>nenhum draw no alvo mostrado difere na região: a diferença vem de um alvo desenhado antes e amostrado (textura), ou de qual buffer foi apresentado</value>
+  </data>
+  <data name="VerifyReason.MissingInFlash" xml:space="preserve">
+    <value>falta no quadro do pisca (no vizinho {0} escreveu {2} px da região)</value>
+  </data>
+  <data name="VerifyReason.OnlyInFlash" xml:space="preserve">
+    <value>só no quadro do pisca (escreveu {1} px da região)</value>
+  </data>
+  <data name="VerifyReason.WroteNothingInFlash" xml:space="preserve">
+    <value>não escreveu na região no quadro do pisca (no vizinho: {2} px)</value>
+  </data>
+  <data name="VerifyReason.WroteOnlyInFlash" xml:space="preserve">
+    <value>escreveu {1} px da região no quadro do pisca e 0 no vizinho</value>
+  </data>
+  <data name="VerifyReason.OtherState" xml:space="preserve">
+    <value>estado diferente do vizinho</value>
+  </data>
+  <data name="VerifyDifference" xml:space="preserve">
+    <value>{0} {1} (vizinho {2})</value>
+  </data>
+  <data name="VerifyField.depth-before" xml:space="preserve">
+    <value>profundidade antes</value>
+  </data>
+  <data name="VerifyField.stencil-before" xml:space="preserve">
+    <value>estêncil antes</value>
+  </data>
   <data name="CaptureMarked" xml:space="preserve">
     <value>Problema marcado ({0}): um estado salvo deste momento vai na gravação</value>
   </data>
