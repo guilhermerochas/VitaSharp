@@ -227,6 +227,24 @@ frames uses (one set of rules: the analyzer's). Tests: `CaptureVerifyTests` (rul
 `CaptureVerifyRenderTests` (a synthetic scene with a HUD that disappears for one frame, recorded into a GPU dump and
 replayed on the software Vulkan device).
 
+### A flicker from a save state, without playing
+
+A save state taken at the spot of a report (F5 / quick.vss, or the `state_*.vss` of a capture) is enough to see a
+flicker and to confirm its fix, with no input:
+
+```
+VitaSharp.Desktop run <TITLEID> --data=<data folder> --load-state=<state.vss> --headless --vulkan --frames=300 \
+    --flicker-check --dump-frames=<out> --dump-every=1
+```
+
+The state loads after 120 presents (`--load-state=PATH@fN` for another frame; a state saved with "Ativar Plugins do
+Kernel" on needs `--kernel-plugins=on`, as the session it came from); `--flicker-check[=threshold]` runs the frames
+through `FrameFindings` at the end: one `FLICKER [flash] present N: ...` line per finding, the summary
+`FLICKER <frames> frames: <n> flash(es), ...: presents ...` and `findings.txt` (the format of `replay-gpu --findings`
+and `verify`) in `--findings-out=DIR` (default: the `--dump-frames` folder). The number of flashes before and after a
+change is the measure; the PNGs show where. The data folder is a copy (junctions to the game and the firmware, copied
+saves and states): the run writes to it.
+
 ## Analyzer
 
 ```

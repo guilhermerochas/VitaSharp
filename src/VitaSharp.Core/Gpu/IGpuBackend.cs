@@ -10,6 +10,16 @@ public interface IGpuBackend : IDisposable
 {
     void Execute(GpuCommand command);
 
+    /// <summary>
+    /// Disposes this backend for the one <see cref="GpuQueue"/> makes right after it (a state load, LoadExec, a live
+    /// graphics option): a backend may hand its device to that one instead of destroying it. A plain
+    /// <see cref="IDisposable.Dispose"/> means no backend follows.
+    /// </summary>
+    void DisposeForReplacement()
+    {
+        Dispose();
+    }
+
     /// <summary>Called on the worker thread when the queue runs empty (good moment to flush/submit).</summary>
     void Idle()
     {

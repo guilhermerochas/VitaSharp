@@ -94,8 +94,9 @@ public sealed class VulkanRendererOptions
     /// as it lives, as in other emulators (a state load never recreates it). Destroying and recreating all of it for the
     /// window crashed the process on the NVIDIA driver (native heap corruption, then a TDR, 06/11/2026) and lost the
     /// device on Mali at the second recreation (Killzone loading a state twice, Uncharted loading one after its LoadExec:
-    /// VK_ERROR_DEVICE_LOST in the first frame's fence, 0 fps, 13/11/2026). <see cref="ReleaseKeptDevice"/> destroys what
-    /// the last renderer kept.
+    /// VK_ERROR_DEVICE_LOST in the first frame's fence, 0 fps, 13/11/2026). Without a surface (headless) only a renderer
+    /// replaced through the GPU queue hands its device on (<see cref="VulkanRenderer.DisposeForReplacement"/>).
+    /// <see cref="ReleaseKeptDevice"/> destroys what the last renderer kept.
     /// </summary>
     public bool KeepDevice = true;
     internal DeviceHandoff? _handoff;
@@ -118,7 +119,7 @@ public sealed class VulkanRendererOptions
         h.Core.Dispose();
     }
 
-    internal sealed record DeviceHandoff(VkCore Core, Silk.NET.Vulkan.SwapchainKHR Swapchain, IPresentationSurface Surface);
+    internal sealed record DeviceHandoff(VkCore Core, Silk.NET.Vulkan.SwapchainKHR Swapchain, IPresentationSurface? Surface);
 }
 
 /// <summary>GXM command executor on Vulkan 1.3 (dynamic rendering + extended dynamic state).</summary>
@@ -2587,6 +2588,21 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Disposed for the renderer the GPU queue makes right after (state load, LoadExec, a graphics option): the Vulkan
+    /// instance and device go to it (<see cref="VulkanRendererOptions.KeepDevice"/>) with or without a window. Headless
+    /// runs destroyed and created the instance on the state load's transient thread, and the Intel driver's per-thread
+    /// data (igc64, loaded with every installed driver) then corrupted the native heap when that thread ended (0xC0000374
+    /// in RtlFreeHeap from its fiber-local storage callback in LdrShutdownThread; 25/11/2026).
+    /// </summary>
+    public void DisposeForReplacement()
+    {
+        _disposingForReplacement = true;
+        Dispose();
+    }
+
+    private bool _disposingForReplacement;
+
     public void Dispose()
     {
         StopShaderWorkers();
@@ -2698,7 +2714,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         }
         _imagePool.Dispose();
         _compiler.Dispose();
-        if (_options.KeepDevice && _options.Surface != null && !_deviceLost)
+        // without a window (headless) the device is kept only for the renderer that replaces this one
+        // (DisposeForReplacement): a plain Dispose there ends the session and destroys it
+        if (_options.KeepDevice && (_options.Surface != null || _disposingForReplacement) && !_deviceLost)
         {
             // the next renderer takes the device (VulkanRendererOptions.KeepDevice); a lost one is made again
             _core.Reclaim = null;
