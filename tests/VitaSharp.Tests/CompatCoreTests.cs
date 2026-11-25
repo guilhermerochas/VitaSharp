@@ -291,6 +291,62 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
         });
     }
 
+    /// <summary>The scripted core released, the boot handshake run, channel 3's request taken and answered, and the
+    /// core's answer interrupt reaching WaitIntr (on the guest thread).</summary>
+    private uint RunTheScriptedCoreToTheAnswer(ScriptedBootCore core)
+    {
+        uint window = Init();
+        Assert.Equal(0, Compat.ReleaseCoreForTests()); // past the start path's license step (see StartTakesTheLicenseQuerysAnswer)
+        Assert.Equal(2, Call(Compat, "sceCompatGetStatus"));
+        Assert.True(Compat.Runner!.Running);
+        Assert.Equal(0x88600000u, core.ResetPc);
+
+        Assert.Equal(0, Call(Compat, "sceCompatWaitSpecialRequest", 1));
+        Assert.Equal(PcbcMagic, core.BootWord);
+        Assert.True(core.SawAcknowledged);
+        Assert.Equal(0u, GuestMemory.R32(window + 0x3D78000)); // back to idle after state 3
+
+        int request = Call(Compat, "sceCompatWaitAndGetRequest", 3u, 0u);
+        Assert.Equal((int)(ScriptedBootCore.RequestAddress >> 1), request);
+        uint located = window + (((uint)request << 1) & 0x3FFFFFF);
+        Assert.Equal(ScriptedBootCore.RequestCommand, GuestMemory.R32(located));
+
+        Assert.Equal(0, Call(Compat, "sceCompatWaitIntr", 0u)); // the semaphore starts at 1
+        uint info = _harness.Alloc(8);
+        GuestMemory.W32(info, 5);
+        GuestMemory.W32(info + 4, ScriptedBootCore.RequestAddress + 0x100);
+        Assert.Equal(0, Call(Compat, "sceCompatReturnValueEx", 0u, info, 0x1122334455667788UL));
+        Assert.Equal(0, Call(Compat, "sceCompatWaitIntr", 0u)); // the core's answer interrupt
+        Assert.Equal([0x55667788u, 0x11223344u, 5u, 0u, ScriptedBootCore.RequestAddress + 0x100, 0u], core.Answer);
+        return window;
+    }
+
+    /// <summary>The controller words written and virtual interrupt 9 rung (on the guest thread).</summary>
+    private void WriteTheControllerAndRingNine()
+    {
+        uint controller = _harness.Alloc(12);
+        GuestMemory.W32(controller, 0x0000_8000);
+        GuestMemory.W32(controller + 4, 0x7F80_7F80);
+        GuestMemory.W32(controller + 8, 0x0000_0001);
+        Assert.Equal(0, Call(Compat, "sceCompatWriteSharedCtrl", controller));
+        Assert.Equal(0, Call(Compat, "sceCompatInterrupt", 9));
+    }
+
+    /// <summary>The core took virtual interrupt 9 with the controller words; Stop ends it (on the guest thread).</summary>
+    private void TheCoreTookNineThenStop(ScriptedBootCore core)
+    {
+        Until(() => core.Done, "the core to take the virtual interrupt");
+        Assert.Equal([0x0000_8000u, 0x7F80_7F80u, 0x0000_0001u], core.Controller);
+        Assert.Equal(9, core.VirtualInterrupt);
+        Assert.Equal(0u, Compat.SharedSram.Read32(0x8C0 + 9 * 8));
+
+        Assert.Equal(0, Call(Compat, "sceCompatStop"));
+        Assert.Equal(1, Call(Compat, "sceCompatGetStatus"));
+        Assert.Null(Compat.Runner);
+        Assert.True(core.StoppedByHost);
+        Assert.Equal(NoCore, Call(Compat, "sceCompatInterrupt", 9));
+    }
+
     /// <summary>The whole phase-1 protocol with the scripted boot (see <see cref="ScriptedBootCore"/>).</summary>
     [Fact]
     public void TheBootHandshakeARequestTheControllerAndAVirtualInterruptReachTheCore()
@@ -298,46 +354,31 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
         ScriptedBootCore core = UseScriptedCore();
         _harness.OnGuest(_ =>
         {
-            uint window = Init();
-            Assert.Equal(0, Compat.ReleaseCoreForTests()); // past the start path's license step (see StartTakesTheLicenseQuerysAnswer)
-            Assert.Equal(2, Call(Compat, "sceCompatGetStatus"));
-            Assert.True(Compat.Runner!.Running);
-            Assert.Equal(0x88600000u, core.ResetPc);
+            RunTheScriptedCoreToTheAnswer(core);
+            WriteTheControllerAndRingNine();
+            TheCoreTookNineThenStop(core);
+        });
+    }
 
-            Assert.Equal(0, Call(Compat, "sceCompatWaitSpecialRequest", 1));
-            Assert.Equal(PcbcMagic, core.BootWord);
-            Assert.True(core.SawAcknowledged);
-            Assert.Equal(0u, GuestMemory.R32(window + 0x3D78000)); // back to idle after state 3
-
-            int request = Call(Compat, "sceCompatWaitAndGetRequest", 3u, 0u);
-            Assert.Equal((int)(ScriptedBootCore.RequestAddress >> 1), request);
-            uint located = window + (((uint)request << 1) & 0x3FFFFFF);
-            Assert.Equal(ScriptedBootCore.RequestCommand, GuestMemory.R32(located));
-
-            Assert.Equal(0, Call(Compat, "sceCompatWaitIntr", 0u)); // the semaphore starts at 1
-            uint info = _harness.Alloc(8);
-            GuestMemory.W32(info, 5);
-            GuestMemory.W32(info + 4, ScriptedBootCore.RequestAddress + 0x100);
-            Assert.Equal(0, Call(Compat, "sceCompatReturnValueEx", 0u, info, 0x1122334455667788UL));
-            Assert.Equal(0, Call(Compat, "sceCompatWaitIntr", 0u)); // the core's answer interrupt
-            Assert.Equal([0x55667788u, 0x11223344u, 5u, 0u, ScriptedBootCore.RequestAddress + 0x100, 0u], core.Answer);
-
-            uint controller = _harness.Alloc(12);
-            GuestMemory.W32(controller, 0x0000_8000);
-            GuestMemory.W32(controller + 4, 0x7F80_7F80);
-            GuestMemory.W32(controller + 8, 0x0000_0001);
-            Assert.Equal(0, Call(Compat, "sceCompatWriteSharedCtrl", controller));
-            Assert.Equal(0, Call(Compat, "sceCompatInterrupt", 9));
-            Until(() => core.Done, "the core to take the virtual interrupt");
-            Assert.Equal([0x0000_8000u, 0x7F80_7F80u, 0x0000_0001u], core.Controller);
-            Assert.Equal(9, core.VirtualInterrupt);
-            Assert.Equal(0u, Compat.SharedSram.Read32(0x8C0 + 9 * 8));
-
-            Assert.Equal(0, Call(Compat, "sceCompatStop"));
-            Assert.Equal(1, Call(Compat, "sceCompatGetStatus"));
-            Assert.Null(Compat.Runner);
-            Assert.True(core.StoppedByHost);
-            Assert.Equal(NoCore, Call(Compat, "sceCompatInterrupt", 9));
+    /// <summary>
+    /// The interleaving of a loaded host: the core's thread polled the controller mark once after the answer (nothing
+    /// yet) and does not run again until the ARM has written the controller words and rung virtual interrupt 9, so the
+    /// core's next slice sees line 0x19 before any new poll of the mark. Its handler still takes the interrupt and reads
+    /// the words (the ARM writes them before it rings), as a boot's handler does (see <see cref="MipsBoot"/>).
+    /// </summary>
+    [Fact]
+    public void AVirtualInterruptRungBeforeTheCorePolledTheControllerStillReachesIt()
+    {
+        ScriptedBootCore core = UseScriptedCore();
+        using ManualResetEventSlim release = new(false);
+        core.HoldAfterAnEmptyPoll = release;
+        _harness.OnGuest(_ =>
+        {
+            RunTheScriptedCoreToTheAnswer(core);
+            Until(() => core.HeldAfterAnEmptyPoll, "the core to poll the controller mark before the ARM writes it");
+            WriteTheControllerAndRingNine();
+            release.Set();
+            TheCoreTookNineThenStop(core);
         });
     }
 
@@ -881,6 +922,11 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
         public volatile bool Done;
         public volatile bool StoppedByHost;
 
+        /// <summary>Set by a test: the first poll of the controller mark after the answer that finds nothing waits on it
+        /// (see <see cref="HeldAfterAnEmptyPoll"/>).</summary>
+        public ManualResetEventSlim? HoldAfterAnEmptyPoll;
+        public volatile bool HeldAfterAnEmptyPoll;
+
         public bool Halted => Done;
 
         public void Reset(uint pc)
@@ -959,13 +1005,29 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
                 }
             }
 
+            PollController();
+            if (_state == 4 && HoldAfterAnEmptyPoll is { } hold)
+            {
+                // between two slices, as a host thread descheduled here would be: the ARM goes on meanwhile
+                HoldAfterAnEmptyPoll = null;
+                HeldAfterAnEmptyPoll = true;
+                using (Scheduler.Block())
+                {
+                    hold.Wait();
+                }
+            }
+
+            return 50;
+        }
+
+        /// <summary>After the answer: the controller words once the mark at 0x140 is set.</summary>
+        private void PollController()
+        {
             if (_state == 4 && Bus.Read32(Sram + 0x140) != 0)
             {
                 Controller = [Bus.Read32(Sram + 0x120), Bus.Read32(Sram + 0x124), Bus.Read32(Sram + 0x128)];
                 _state = 5;
             }
-
-            return 50;
         }
 
         private void Take(int line)
@@ -983,8 +1045,11 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
                 Bus.Write32(Mailbox + 0x10, 1u << 7);
                 _state = 4;
             }
-            else if (line == 0x19 && _state == 5 && Bus.Read32(Sram + 0x8C0 + 9 * 8) == 1)
+            else if (line == 0x19 && _state >= 4 && Bus.Read32(Sram + 0x8C0 + 9 * 8) == 1)
             {
+                // the handler reads the controller words itself, as a boot's handler does (MipsBoot): the ARM writes
+                // them before it rings, and the core's thread may not have polled the mark since (a loaded host)
+                PollController();
                 Bus.Write32(Sram + 0x8C0 + 9 * 8, 0);
                 VirtualInterrupt = 9;
                 Done = true;
