@@ -3376,7 +3376,9 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   segmentos são os da primeira, e o VitaSharp carrega toda instância inteira. "Achada" aqui: um módulo carregado a
   exporta ou é uma biblioteca do firmware (banco de NIDs; o HLE faz o papel do módulo). Antes o VitaSharp ligava os
   stubs onde estivessem. Os módulos sintéticos dos testes (`SceModuleBuilder`, `SyntheticTitle`) passaram a ter o
-  segmento de código R+X, como um módulo de verdade. Teste: `ImportEntryCheckTests` (falha sem a mudança). Testar:
+  segmento de código R+X, como um módulo de verdade. `VitaSharp.Desktop import-check [--fs=<pasta fs>]` aplica a
+  mesma checagem, só lendo, a todo módulo de usuário instalado (títulos, atualizações, plugins de ux0/ur0:tai) e
+  lista as recusas. Teste: `ImportEntryCheckTests` (falha sem a mudança). Testar:
   jogos, homebrew e plugins de usuário abrem como antes (todo módulo que o Vita aceita passa; um que o Vita recusa
   agora é recusado com 0x8002D01E no log).
 - [ ] (25/11/2026, falta testar) [P2][G] Fila de dump do SceCoredump e o arquivo de core (fix/small3,

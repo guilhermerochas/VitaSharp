@@ -53,6 +53,41 @@ public sealed class ImportEntryCheckTests(GuestMemoryFixture fixture) : IDisposa
         Assert.Equal(IllegalExport, LoadUser(Write("data", "rwx.suprx", Importer("ImportRwx", ReadWriteExecute))));
     }
 
+    /// <summary>
+    /// The read-only census of installed modules (VitaSharp.Desktop import-check) answers as the loader: over a data
+    /// folder with a title (eboot.bin R+X, a module with its stubs in a writable segment), an update and a user plugin,
+    /// it counts each module, passes the ones the loader loads and names the one it refuses, with the stub.
+    /// </summary>
+    [Fact]
+    public void TheCensusOfInstalledModulesAnswersAsTheLoader()
+    {
+        string fs = Path.Combine(_harness.Root, "census-fs");
+        string app = Path.Combine(fs, "ux0", "app", "TEST00001");
+        Directory.CreateDirectory(Path.Combine(app, "sce_module"));
+        File.WriteAllBytes(Path.Combine(app, "eboot.bin"), Importer("CensusMain", 5).Build());
+        File.WriteAllBytes(Path.Combine(app, "sce_module", "bad.suprx"), Importer("CensusBad", ReadWrite).Build());
+        string patch = Path.Combine(fs, "ux0", "patch", "TEST00001");
+        Directory.CreateDirectory(patch);
+        File.WriteAllBytes(Path.Combine(patch, "eboot.bin"), Importer("CensusPatch", 5).Build());
+        string tai = Path.Combine(fs, "ur0", "tai");
+        Directory.CreateDirectory(tai);
+        File.WriteAllBytes(Path.Combine(tai, "plugin.suprx"), Importer("CensusPlugin", 5).Build());
+        File.WriteAllBytes(Path.Combine(tai, "unknown.suprx"), Importer("CensusUnknown", ReadWrite, "NoSuchLibrary", 0x0BADC0DE).Build());
+
+        var census = Core.Firmware.ImportEntryCensus.Scan(fs);
+
+        Assert.Equal(5, census.Modules);
+        Assert.Equal(4, census.Passed);
+        (string module, string problem) = Assert.Single(census.Refused);
+        Assert.Equal("ux0/app/TEST00001/sce_module/bad.suprx", module);
+        Assert.Contains("SceLibKernel", problem);
+        Assert.Empty(census.Unreadable);
+
+        // the loader refuses the same module
+        string loaded = Write("data", "census-bad.suprx", Importer("CensusBad2", ReadWrite));
+        Assert.Equal(IllegalExport, LoadUser(loaded));
+    }
+
     [Fact]
     public void ALibraryNotFoundAndAKernelModuleAreNotChecked()
     {

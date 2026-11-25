@@ -23,6 +23,14 @@ public sealed class ModuleImage
     /// ksceKernelGetModuleInfo use): each one's size in memory and its p_flags (1 = executable).</summary>
     public List<(uint MemSize, uint Flags)> Segments { get; } = new();
 
+    /// <summary>The loadable segments where this image laid them out (address, size in memory, p_flags): the space
+    /// <see cref="ImportEntries"/> points into, as a loaded module's segments and its relocated entries are.</summary>
+    public List<(uint Address, uint Size, uint Flags)> SegmentLayout { get; } = new();
+
+    /// <summary>Each imported library's function stub addresses and variable entries, in <see cref="SegmentLayout"/>'s
+    /// space (what modulemgr checks before the link: <see cref="ModuleLoader.ImportEntryProblem"/>).</summary>
+    public List<(string Library, uint LibNid, uint[] FunctionEntries, uint[] VariableEntries)> ImportEntries { get; } = new();
+
     private const uint PT_LOAD = 1, PT_SCE_RELA = 0x60000000;
     private const ushort ET_SCE_EXEC = 0xFE00;
 
@@ -96,7 +104,9 @@ public sealed class ModuleImage
         var result = new ModuleImage { Name = CString(m.Slice(mi + 4, 27)), Attributes = U16LE(m, mi), ModuleNid = U32LE(m, mi + 0x34) };
         foreach ((int Index, uint Off, uint Vaddr, uint FileSz, uint MemSz) l in loads)
         {
-            result.Segments.Add((l.MemSz, U32LE(e.Slice((int)phoff + l.Index * 32, 32), 24)));
+            uint flags = U32LE(e.Slice((int)phoff + l.Index * 32, 32), 24);
+            result.Segments.Add((l.MemSz, flags));
+            result.SegmentLayout.Add((segs[l.Index].Address, l.MemSz, flags));
         }
 
         uint exportTop = U32LE(m, mi + 0x24), exportEnd = U32LE(m, mi + 0x28);
@@ -131,21 +141,39 @@ public sealed class ModuleImage
         for (uint p = infoBase + importTop; p + 0x24 <= infoBase + importEnd;)
         {
             ushort size = U16LE(m, (int)p);
-            ushort nfunc = U16LE(m, (int)p + 6);
-            uint libNid, libName, funcNids;
+            ushort nfunc = U16LE(m, (int)p + 6), nvar = U16LE(m, (int)p + 8);
+            uint libNid, libName, funcNids, funcEntries, varEntries;
             if (size == 0x24)
             {
                 libNid = U32LE(m, (int)p + 0x0C);
                 libName = U32LE(m, (int)p + 0x10);
                 funcNids = U32LE(m, (int)p + 0x14);
+                funcEntries = U32LE(m, (int)p + 0x18);
+                varEntries = U32LE(m, (int)p + 0x20);
             }
             else
             {
                 libNid = U32LE(m, (int)p + 0x10);
                 libName = U32LE(m, (int)p + 0x14);
                 funcNids = U32LE(m, (int)p + 0x1C);
+                funcEntries = U32LE(m, (int)p + 0x20);
+                varEntries = U32LE(m, (int)p + 0x28);
             }
             result.Imports.Add((Str(libName), libNid, Nids(funcNids, nfunc)));
+            // the entries are link addresses in a fixed executable: moved into the layout's space like the tables
+            uint[] stubs = Nids(funcEntries, nfunc);
+            uint[] variables = Nids(varEntries, nvar);
+            for (int i = 0; i < stubs.Length; i++)
+            {
+                stubs[i] -= bias;
+            }
+
+            for (int i = 0; i < variables.Length; i++)
+            {
+                variables[i] = variables[i] == 0 ? 0 : variables[i] - bias;
+            }
+
+            result.ImportEntries.Add((Str(libName), libNid, stubs, variables));
             if (size == 0)
             {
                 break;

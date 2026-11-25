@@ -1183,45 +1183,64 @@ public static class ModuleLoader
     /// </summary>
     private static void CheckImportEntries(LoadedModule m, string library, uint[] functionEntries, uint[] variableEntries)
     {
+        var segments = new List<(uint Address, uint Size, uint Flags)>(m.Segments.Count);
+        foreach (KeyValuePair<int, SegmentInfo> segment in m.Segments)
+        {
+            uint flags = m.SegmentFlags.TryGetValue(segment.Key, out (uint Flags, uint MemSz, uint FileSz) segmentFlags) ? segmentFlags.Flags : 0;
+            segments.Add((segment.Value.Address, segment.Value.Size, flags));
+        }
+
+        if (ImportEntryProblem(segments, library, functionEntries, variableEntries) is { } problem)
+        {
+            throw new ModuleRefusedException(Kernel.SceError.MODULEMGR_ILLEGAL_EXPORT, $"{m.Path}: {problem}");
+        }
+    }
+
+    /// <summary>
+    /// The 3.74 check of one import library's entries (see <see cref="CheckImportEntries"/>) against a module's segments
+    /// (address, size in memory, p_flags): null when they pass, else what fails. Shared by the loader and the
+    /// read-only check of installed modules (<see cref="ModuleImage.ImportEntries"/>).
+    /// </summary>
+    public static string? ImportEntryProblem(IReadOnlyList<(uint Address, uint Size, uint Flags)> segments, string library,
+        uint[] functionEntries, uint[] variableEntries)
+    {
         foreach (uint stub in functionEntries)
         {
-            if (!EntryInSegment(m, stub, 0x10, requireExecutable: true))
+            if (!EntryInSegment(segments, stub, 0x10, requireExecutable: true))
             {
-                throw new ModuleRefusedException(Kernel.SceError.MODULEMGR_ILLEGAL_EXPORT,
-                    $"{m.Path}: an import stub of {library} at 0x{stub:X8} is not in a read-execute segment");
+                return $"an import stub of {library} at 0x{stub:X8} is not in a read-execute segment";
             }
         }
 
         foreach (uint entry in variableEntries)
         {
-            if (entry != 0 && !EntryInSegment(m, entry, 4, requireExecutable: false))
+            if (entry != 0 && !EntryInSegment(segments, entry, 4, requireExecutable: false))
             {
-                throw new ModuleRefusedException(Kernel.SceError.MODULEMGR_ILLEGAL_EXPORT,
-                    $"{m.Path}: a variable import of {library} at 0x{entry:X8} is not in a read-only segment");
+                return $"a variable import of {library} at 0x{entry:X8} is not in a read-only segment";
             }
         }
+
+        return null;
     }
 
     /// <summary>The segment holding <paramref name="address"/> (segments never overlap) has the right
     /// permissions and holds the <paramref name="size"/> bytes from it.</summary>
-    private static bool EntryInSegment(LoadedModule m, uint address, uint size, bool requireExecutable)
+    private static bool EntryInSegment(IReadOnlyList<(uint Address, uint Size, uint Flags)> segments, uint address, uint size, bool requireExecutable)
     {
         if ((ulong)address + size > uint.MaxValue)
         {
             return false;
         }
 
-        foreach (KeyValuePair<int, SegmentInfo> segment in m.Segments)
+        foreach ((uint segmentAddress, uint segmentSize, uint flags) in segments)
         {
-            SegmentInfo info = segment.Value;
-            if (address < info.Address || address >= info.Address + info.Size)
+            if (address < segmentAddress || address >= segmentAddress + segmentSize)
             {
                 continue;
             }
 
-            uint flags = m.SegmentFlags.TryGetValue(segment.Key, out (uint Flags, uint MemSz, uint FileSz) segmentFlags) ? segmentFlags.Flags : 0;
             bool allowed = requireExecutable ? (flags & 7) == 5 : (flags & 2) == 0;
-            return allowed && address + size <= info.Address + info.Size;
+            return allowed && address + size <= segmentAddress + segmentSize;
         }
 
         return false;
