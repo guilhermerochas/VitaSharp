@@ -8,9 +8,14 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
 
 ## Diagnóstico
 
-- [ ] [P2][G] **Gravar tudo: estados de vários processos sobem sem os programas** (parte do antigo "Gravar tudo sem o
-  jogo, o que falta"): o estado do shell com aplicativos abertos ainda não sobe sem os programas
-  (`SaveStates.BootFromState` recusa estados de mais de um processo); falta guardar e subir a imagem de cada processo.
+- [ ] [P2][G] **Gravar tudo: estados de vários processos sobem sem os programas, o que falta** (a 1ª entrega, cada
+  processo com a sua seção `process<N>/boot`, está em "Corrigido, falta o usuário testar"):
+  - o load confere os pids: o primeiro processo do estado precisa ter o pid que o primeiro processo do boot recebe
+    (o mesmo numa sessão que começou pelo shell ou pelo jogo); falta o caso de um primeiro processo com outro pid;
+  - os lançamentos pendentes do appmgr (`PendingLaunch`, pedidos feitos e ainda não atendidos pelo shell) e os
+    processos que ainda estavam subindo no momento do estado não são guardados nem refeitos;
+  - conferir num rerun de uma captura real do shell LLE (shell.self + um jogo aberto pela LiveArea) que o shell volta
+    a receber os eventos do aplicativo (o `IsShell` agora vem da imagem) e que a tela certa fica na frente.
 
 - [ ] [P3][G] **O log e a captura F8 dizem a causa de uma trava de cara:**
   - **Histórico de cada objeto de sincronização** (event flag, semáforo, mutex, cond, msgpipe): um anel barato com as
@@ -3309,6 +3314,19 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (25/11/2026, falta testar) [P2][G] Gravar tudo: estados de vários processos sobem sem os programas, 1ª entrega
+  (fix/cap4). `SaveStates.BootFromState` recusava todo estado de mais de um processo (o shell com aplicativos
+  abertos), então um rerun de captura feita sob o shell só rodava com os mesmos programas instalados. Agora cada
+  processo além do primeiro grava a sua seção `process<N>/boot` (os seus módulos como carregados: caminho, segmentos,
+  hash da imagem; nenhum binário além da memória que o estado já tem) e o boot cria esses processos ao lado do
+  primeiro, com o pid e o id de aplicativo que tinham, antes de repor a memória no espaço de cada um; os módulos
+  voltam da memória de cada processo e o load traz as threads. A imagem de boot (versão 2) também guarda se o
+  processo era o shell, o título do lançamento e se era serviço de fundo. Estado antigo sem essas seções: o boot
+  recusa com a mensagem do processo que falta. Testes:
+  `SaveStateBootFromStateTests.AStateOfTheShellAndAnApplicationBootsWithoutTheirPrograms`. Testar: com o shell do
+  Vita e um jogo aberto, gravar (F8) e rodar o rerun numa pasta de dados sem o jogo: o estado sobe com os dois
+  processos e o jogo segue rodando.
 
 - [ ] (25/11/2026, falta testar) [P2][M] Gravar tudo: o áudio que entra nas vozes NGS e no libatrac (fix/cap4). O
   rerun sem o jogo tocava o que estivesse na memória do estado nos buffers das vozes NGS e nos handles do libatrac

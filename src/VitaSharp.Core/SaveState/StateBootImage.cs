@@ -14,7 +14,9 @@ namespace VitaSharp.Core.SaveState;
 /// </summary>
 public sealed class StateBootImage
 {
-    private const int Version = 1;
+    /// <summary>2: <see cref="IsShell"/>, <see cref="LaunchedTitleId"/>, <see cref="Background"/> (version 1 reads
+    /// them as false, none, false).</summary>
+    private const int Version = 2;
 
     public string TitleId = "", Title = "", Self = "eboot.bin";
     /// <summary>The application's folder as the system names it ("ux0:app/PCSE00333"); empty outside the data folder.</summary>
@@ -22,6 +24,12 @@ public sealed class StateBootImage
     public byte[] ParamSfo = [];
     public ulong AuthorityId;
     public bool IsSystemProgram, RunsOnSystemCore, RetailApplication;
+    /// <summary>The process declared itself the shell (sceAppMgrDeclareShellProcess2).</summary>
+    public bool IsShell;
+    /// <summary>The title its launch named for the process when it differs from the application's own; empty: none.</summary>
+    public string LaunchedTitleId = "";
+    /// <summary>A background service, launched without the screen.</summary>
+    public bool Background;
     public uint ProcessParam, TlsInit, TlsInitSize, TlsAreaSize;
     public int MainModuleUid;
     public List<ModuleEntry> Modules = [];
@@ -39,8 +47,9 @@ public sealed class StateBootImage
         public SortedDictionary<int, (uint Flags, uint MemSz, uint FileSz)> SegmentFlags = new();
     }
 
-    /// <summary>The boot image of the system's first process (and the kernel's modules).</summary>
-    public static StateBootImage Of(Emulator emu)
+    /// <summary>The boot image of process <paramref name="emu"/>: with <paramref name="withKernel"/>, the system's first
+    /// process, also the kernel's modules (the other processes' images hold their own modules only).</summary>
+    public static StateBootImage Of(Emulator emu, bool withKernel = true)
     {
         var image = new StateBootImage
         {
@@ -52,6 +61,9 @@ public sealed class StateBootImage
             IsSystemProgram = emu.IsSystemProgram,
             RunsOnSystemCore = emu.RunsOnSystemCore,
             RetailApplication = !emu.Access.IsNonGameProgram,
+            IsShell = emu.IsShell,
+            LaunchedTitleId = emu.LaunchedTitleId ?? "",
+            Background = emu.IsBackgroundProcess,
             ProcessParam = emu.Kernel.ProcessParam,
             TlsInit = emu.Kernel.TlsInit,
             TlsInitSize = emu.Kernel.TlsInitSize,
@@ -72,7 +84,7 @@ public sealed class StateBootImage
 
         var firmwareShells = new HashSet<LoadedModule>();
         Emulator? kernel = emu.Vita.KernelProcess;
-        if (kernel != null)
+        if (kernel != null && withKernel)
         {
             foreach (LoadedModule shell in kernel.FirmwareKernel.Modules)
             {
@@ -145,6 +157,9 @@ public sealed class StateBootImage
         w.Write(IsSystemProgram);
         w.Write(RunsOnSystemCore);
         w.Write(RetailApplication);
+        w.Write(IsShell);
+        w.Write(LaunchedTitleId);
+        w.Write(Background);
         w.Write(ProcessParam);
         w.Write(TlsInit);
         w.Write(TlsInitSize);
@@ -188,7 +203,7 @@ public sealed class StateBootImage
     {
         var r = new SnapshotReader(data);
         int version = r.ReadInt32();
-        if (version != Version)
+        if (version is < 1 or > Version)
         {
             throw new SnapshotException($"the state's boot section has version {version}, this build reads {Version}");
         }
@@ -204,12 +219,19 @@ public sealed class StateBootImage
             IsSystemProgram = r.ReadBool(),
             RunsOnSystemCore = r.ReadBool(),
             RetailApplication = r.ReadBool(),
-            ProcessParam = r.ReadUInt32(),
-            TlsInit = r.ReadUInt32(),
-            TlsInitSize = r.ReadUInt32(),
-            TlsAreaSize = r.ReadUInt32(),
-            MainModuleUid = r.ReadInt32(),
         };
+        if (version >= 2)
+        {
+            image.IsShell = r.ReadBool();
+            image.LaunchedTitleId = r.ReadStringNotNull();
+            image.Background = r.ReadBool();
+        }
+
+        image.ProcessParam = r.ReadUInt32();
+        image.TlsInit = r.ReadUInt32();
+        image.TlsInitSize = r.ReadUInt32();
+        image.TlsAreaSize = r.ReadUInt32();
+        image.MainModuleUid = r.ReadInt32();
         int count = r.ReadInt32();
         for (int i = 0; i < count; i++)
         {

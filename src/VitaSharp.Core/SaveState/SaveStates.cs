@@ -474,6 +474,8 @@ public static partial class SaveStates
             var processFunctions = new SnapshotWriter();
             process.Hle.SaveState(processFunctions);
             list.Add((prefix + FunctionsSection, processFunctions.Data.ToArray()));
+            // what a computer without the application needs to bring this process up (BootFromState): its own modules
+            list.Add((prefix + BootSection, StateBootImage.Of(process, withKernel: false).Write()));
             CaptureModules(process, prefix, layouts, list);
         }
 

@@ -373,6 +373,46 @@ public sealed class VitaSystem
         return Objects.Register(new AppObject(emulator));
     }
 
+    /// <summary>A process of a save state booted without its programs (<see cref="SaveState.SaveStates.BootFromState"/>):
+    /// it takes the pid it had when the state was saved.</summary>
+    internal int RegisterAs(Emulator emulator, int pid)
+    {
+        if (!Objects.TryRegisterAs(new ProcessObject(emulator), pid))
+        {
+            throw new SaveState.SnapshotException($"the state's process 0x{pid:X} cannot take its pid here: another object holds it");
+        }
+
+        lock (_lock)
+        {
+            _processes.Add(emulator);
+            _foreground ??= emulator;
+        }
+
+        return pid;
+    }
+
+    /// <summary>The application id a process of a save state booted without its programs had (<see cref="RegisterAs"/>).</summary>
+    internal int RegisterAppAs(Emulator emulator, int appId)
+    {
+        using ProcessScope.Scope scope = ProcessScope.Enter(emulator);
+        if (!Objects.TryRegisterAs(new AppObject(emulator), appId))
+        {
+            throw new SaveState.SnapshotException($"the state's application 0x{appId:X} cannot take its id here: another object holds it");
+        }
+
+        return appId;
+    }
+
+    /// <summary>The process on screen when a state booted without its programs was saved: nothing runs yet and nothing
+    /// is shown (the state's load brings the display), so the process takes the screen without being told.</summary>
+    internal void SetForegroundFromState(Emulator emulator)
+    {
+        lock (_lock)
+        {
+            _foreground = emulator;
+        }
+    }
+
     public Emulator? ByAppId(int appId) => Objects.Get<AppObject>(appId)?.Process;
 
     /// <summary>The process of the application named <paramref name="name"/> (<see cref="Emulator.AppName"/>, the title

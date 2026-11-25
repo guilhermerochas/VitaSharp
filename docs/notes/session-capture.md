@@ -167,8 +167,11 @@ installed; a module it loads from them is the recorded decrypted image (no licen
 recording did not make is logged with its path and counted ("files:" line of the re-run's summary), and so is a read
 whose bytes the recording kept as a hash only (the default: the re-run reads zeros there). A received
 capture is untrusted: a line whose path would leave `.files/` (a drive or root path, `..`, a device that is not a
-plain name) or does not parse is skipped. States of several
-processes (the shell with applications) are refused. `--boot=title` boots the installed game instead and loads the
+plain name) or does not parse is skipped. A state of several
+processes (the shell with applications it opened) brings each process up the same way, from its own boot
+section (`process<N>/boot`: its modules as loaded, with the pid and application id it had); its programs are not
+needed either (a state of an earlier build without those sections loads only into a system running the same
+applications). `--boot=title` boots the installed game instead and loads the
 state after 120 frames (states of earlier builds, without the boot section, need it).
 
 With the capture's run options (Jak 1's `--cpu-mhz=0` comes along), from `state_preroll.vss` (default when present)
