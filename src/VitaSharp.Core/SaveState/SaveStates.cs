@@ -125,13 +125,26 @@ public static partial class SaveStates
     /// <see cref="Save(Emulator, string, byte[], int)"/> into <paramref name="output"/> instead of a file (the Gravar
     /// tudo pre-roll keeps its ring of states in memory): the same state, the same safe point and pause.
     /// </summary>
-    public static SaveStateHeader Save(Emulator emu, Stream output, byte[]? thumbnailPng = null, int timeoutMs = 3000)
+    public static SaveStateHeader Save(Emulator emu, Stream output, byte[]? thumbnailPng = null, int timeoutMs = 3000) =>
+        Save(emu, output, null, thumbnailPng, timeoutMs);
+
+    /// <summary>
+    /// <see cref="Save(Emulator, Stream, byte[], int)"/>, incremental with <paramref name="incremental"/>: while the
+    /// game is stopped only the pages written since the previous state of that image are read from guest memory (the
+    /// others are the image's), and the memory sections are built after the game goes on; the image then holds this
+    /// state's pages. The same file as a full state.
+    /// </summary>
+    public static SaveStateHeader Save(Emulator emu, Stream output, Memory.SnapshotPages? incremental, byte[]? thumbnailPng = null, int timeoutMs = 3000)
     {
         lock (s_gate)
         {
-            return SaveLocked(emu, null, output, thumbnailPng, timeoutMs);
+            return SaveLocked(emu, null, output, thumbnailPng, timeoutMs, incremental);
         }
     }
+
+    /// <summary>Milliseconds the last save state held the game (its threads held at safe points, then paused) and, of
+    /// them, the capture of the state with the game paused (the PERF line of the Gravar tudo pre-roll; tests).</summary>
+    public static (double HeldMs, double CaptureMs) LastStop { get; private set; }
 
     /// <summary>One save or load at a time: the Gravar tudo pre-roll saves every 30 s on its own thread, and one that ran
     /// during a load (Tearaway in debug mode) resumed the emulation the load had paused, so the load failed half done
@@ -139,7 +152,7 @@ public static partial class SaveStates
     /// threads being replaced.</summary>
     private static readonly object s_gate = new();
 
-    private static SaveStateHeader SaveLocked(Emulator emu, string? path, Stream? output, byte[]? thumbnailPng, int timeoutMs)
+    private static SaveStateHeader SaveLocked(Emulator emu, string? path, Stream? output, byte[]? thumbnailPng, int timeoutMs, Memory.SnapshotPages? incremental = null)
     {
         CheckSystem(emu);
         CheckModules(emu);
@@ -170,9 +183,11 @@ public static partial class SaveStates
                     var seq = kinds.Keys.ToDictionary(t => t, t => t.HleSequence);
                     SaveStateHeader? header = null;
                     List<(string Name, byte[] Data)>? sections = null;
+                    IncrementalMemory? pages = null;
+                    long captureStart = Stopwatch.GetTimestamp();
                     try
                     {
-                        (header, sections) = Capture(emu, kinds, thumbnailPng);
+                        (header, sections, pages) = Capture(emu, kinds, thumbnailPng, incremental);
                     }
                     catch (SnapshotRetryException e)
                     {
@@ -189,6 +204,8 @@ public static partial class SaveStates
                         if (why == null)
                         {
                             long pausedMs = sw.ElapsedMilliseconds;
+                            LastStop = (sw.Elapsed.TotalMilliseconds, Stopwatch.GetElapsedTime(captureStart).TotalMilliseconds);
+                            pages?.Commit(incremental!);
                             // a recording's HLE trace notes where every thread was (a re-run from this state is compared from there)
                             VitaSharp.Core.Capture.HleCallTrace.MarkState(kinds.Select(k => (k.Key, k.Value == GuestThread.SafeKind.Reissue)));
                             // the game goes on while the file is compressed and written
@@ -203,6 +220,8 @@ public static partial class SaveStates
                             }
 
                             held.Clear();
+                            // an incremental state's memory sections, from its own copies of the pages, with the game running
+                            pages?.Serialize(sections!);
                             if (output != null)
                             {
                                 long start = output.CanSeek ? output.Position : 0;
@@ -438,7 +457,36 @@ public static partial class SaveStates
     }
 
     /// <summary>Takes the whole state into memory (the emulation is stopped); the file is written afterwards.</summary>
-    private static (SaveStateHeader, List<(string, byte[])>) Capture(Emulator emu, Dictionary<GuestThread, GuestThread.SafeKind> kinds, byte[]? thumbnailPng)
+    /// <summary>The memory of an incremental state (<see cref="SaveStates.Save(Emulator, Stream, Memory.SnapshotPages, byte[], int)"/>):
+    /// every block's pages, captured while the game is stopped; the sections are built from them afterwards.</summary>
+    private sealed class IncrementalMemory
+    {
+        public uint Epoch;
+        public readonly Dictionary<(AddressSpace? Space, uint Address, uint Size), ReadOnlyMemory<byte>[]> Blocks = new();
+        public readonly List<(int Section, ReadOnlyMemory<byte>[] Pages, uint Address, int SpacePid, int FirstPid)> Sections = new();
+        public long Read, Reused;
+
+        /// <summary>The state was taken: its pages are the image of the next one.</summary>
+        public void Commit(Memory.SnapshotPages image)
+        {
+            image.Blocks = Blocks;
+            image.Epoch = Epoch;
+            image.LastRead = Read;
+            image.LastReused = Reused;
+        }
+
+        public void Serialize(List<(string Name, byte[] Data)> sections)
+        {
+            foreach ((int section, ReadOnlyMemory<byte>[] pages, uint address, int spacePid, int firstPid) in Sections)
+            {
+                byte[] data = GuestMemory.SerializePages(pages, out bool wordPages);
+                sections[section] = (MemorySection(wordPages, address, spacePid, firstPid), data);
+            }
+        }
+    }
+
+    private static (SaveStateHeader, List<(string, byte[])>, IncrementalMemory?) Capture(Emulator emu, Dictionary<GuestThread, GuestThread.SafeKind> kinds, byte[]? thumbnailPng,
+        Memory.SnapshotPages? incremental)
     {
         var header = new SaveStateHeader
         {
@@ -572,6 +620,25 @@ public static partial class SaveStates
         var bt = new SnapshotWriter();
         GuestMemory.WriteBlockTable(bt, blocks);
         list.Add((BlocksSection, bt.Data.ToArray()));
+        if (incremental != null)
+        {
+            // the pages written since the image's state, by the dirty-page tracker (every guest, HLE and GPU write marks
+            // its page; a sweep folds the marks into versions)
+            var pages = new IncrementalMemory { Epoch = DirtyPages.Sweep() };
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                GuestMemory.Block b = blocks[i];
+                (AddressSpace? Space, uint Address, uint Size) key = (b.Space, b.Address, b.Size);
+                ReadOnlyMemory<byte>[] blockPages = emu.Memory.CapturePages(b, incremental.Blocks.GetValueOrDefault(key), incremental.Epoch, ref pages.Read, ref pages.Reused);
+                pages.Blocks[key] = blockPages;
+                pages.Sections.Add((list.Count, blockPages, b.Address, blockSpacePids[i], emu.Pid));
+                list.Add(("", []));
+            }
+
+            Log.Info($"Save state: memory {blocks.Count} blocks, {pages.Read} pages read and {pages.Reused} unchanged since the previous state in {Stopwatch.GetElapsedTime(t0).TotalMilliseconds:F0} ms");
+            return (header, list, pages);
+        }
+
         for (int i = 0; i < blocks.Count; i++)
         {
             GuestMemory.Block b = blocks[i];
@@ -580,7 +647,7 @@ public static partial class SaveStates
             raw += data.Length;
         }
         Log.Info($"Save state: memory {blocks.Count} blocks, {raw >> 20} MB of non-zero pages copied in {Stopwatch.GetElapsedTime(t0).TotalMilliseconds:F0} ms");
-        return (header, list);
+        return (header, list, null);
     }
 
     /// <summary>The sections of the HLE modules of <paramref name="process"/> with save state support.</summary>
@@ -1042,7 +1109,7 @@ public static partial class SaveStates
         {
             emu.Gpu.WaitIdle();
             long t0 = Stopwatch.GetTimestamp();
-            (SaveStateHeader header, List<(string Name, byte[] Data)> sections) = Capture(emu, kinds, null);
+            (SaveStateHeader header, List<(string Name, byte[] Data)> sections, _) = Capture(emu, kinds, null, null);
             (IReadOnlyDictionary<string, SnapshotLayout> layouts, _) = CheckSections(emu, header, sections);
             Log.Info($"Load state: running session kept in memory in {Stopwatch.GetElapsedTime(t0).TotalMilliseconds:F0} ms");
             return new UndoState(sections, layouts);

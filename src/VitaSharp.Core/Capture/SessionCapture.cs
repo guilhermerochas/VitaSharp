@@ -7,6 +7,7 @@ using System.Text;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Kernel;
+using VitaSharp.Core.Memory;
 using VitaSharp.Core.SaveState;
 using VitaSharp.Core.Util;
 
@@ -39,13 +40,27 @@ public sealed class SessionCaptureOptions
     public long DumpMaxFrames = 5400;
     /// <summary>Memory limit of the pre-roll's encoded frames.</summary>
     public long PreRollMaxBytes = 192L << 20;
-    /// <summary>Seconds between the pre-roll's save states (the game stops ~0.1-0.3 s for each). They are kept in
-    /// memory, from the newest one taken at or before the pre-roll's start on (<see cref="PreRollStateMaxBytes"/> at
-    /// most), so a recording starts from a state at most one interval before its pre-roll.
-    /// VITASHARP_CAPTURE_STATE_INTERVAL.</summary>
+    /// <summary>Seconds between the pre-roll's save states while they stop the game less than
+    /// <see cref="PreRollStateStopBudgetMs"/> (incremental states, <see cref="IncrementalStates"/>: the pages written
+    /// since the previous one); <see cref="PreRollSlowStateInterval"/> otherwise, and until three states measured it.
+    /// They are kept in memory, from the newest one taken at or before the pre-roll's start on
+    /// (<see cref="PreRollStateMaxBytes"/> at most), so a recording starts from a state at most one interval before its
+    /// pre-roll. VITASHARP_CAPTURE_STATE_INTERVAL sets both intervals.</summary>
     public double PreRollStateInterval = 5;
+    /// <summary>Seconds between the pre-roll's states that stop the game for a frame or more (a whole state: 0.1-0.35
+    /// s in a game).</summary>
+    public double PreRollSlowStateInterval = 10;
+    /// <summary>The longest stop (median of the last three states, ms) at which the short interval is used: about
+    /// one frame at 60 fps, a stop the player does not feel.</summary>
+    public double PreRollStateStopBudgetMs = 16;
     /// <summary>Memory limit of the pre-roll's save states (the oldest go first; the newest is always kept).</summary>
     public long PreRollStateMaxBytes = 384L << 20;
+    /// <summary>The pre-roll's states are incremental (<see cref="SnapshotPages"/>): the game stops only for the pages it
+    /// wrote since the previous one, at the cost of an image of the non-zero guest memory kept between states. Off on
+    /// Android (memory).</summary>
+    public bool IncrementalStates = true;
+    /// <summary>Every this many pre-roll states one is taken whole (the image is dropped first).</summary>
+    public int FullStateEvery = 12;
     /// <summary>Presented pictures waiting for the encoder before new ones are dropped (their timing is kept).</summary>
     public int EncoderQueueFrames = 120;
     /// <summary>Recording parts (a re-run records without a state or a GPU dump).</summary>
@@ -129,12 +144,31 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     private readonly LinkedList<InputEvent> _ringInput = new();
     private readonly List<PreRollState> _states = new();
     private long _stateBytes;
+    /// <summary>The image of the last incremental pre-roll state (<see cref="SessionCaptureOptions.IncrementalStates"/>).</summary>
+    private readonly SnapshotPages _ringPages = new();
+    private int _ringStatesSinceFull;
     private bool _statesRefused;
     private long _droppedPictures;
     // timing of the pre-roll's periodic states (game stopped) for the PERF line
     private readonly List<double> _stateStopMs = new();
 
-    private double StateInterval => Math.Max(0.01, _options.PreRollStateInterval);
+    /// <summary>The time to the next pre-roll state: the short interval while the last three stopped the game less
+    /// than the budget, the slow one otherwise.</summary>
+    internal double CurrentStateInterval => StateInterval;
+
+    private double StateInterval
+    {
+        get
+        {
+            bool quick;
+            lock (_stateStopMs)
+            {
+                quick = _stateStopMs.Count >= 3 && Median(_stateStopMs.GetRange(_stateStopMs.Count - 3, 3)) < _options.PreRollStateStopBudgetMs;
+            }
+
+            return Math.Max(0.01, quick ? _options.PreRollStateInterval : Math.Max(_options.PreRollStateInterval, _options.PreRollSlowStateInterval));
+        }
+    }
 
     /// <summary>A pre-roll save state, in memory (the state file's bytes).</summary>
     private sealed record PreRollState(byte[] Data, long StartNs, long GuestUs, long Flip);
@@ -258,6 +292,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         if (double.TryParse(Environment.GetEnvironmentVariable(EnvVars.CaptureStateInterval), NumberStyles.Float, CultureInfo.InvariantCulture, out double interval) && interval > 0)
         {
             options.PreRollStateInterval = interval;
+            options.PreRollSlowStateInterval = interval;
         }
         _privacy = options.Privacy ?? CapturePrivacy.ForThisComputer(Path.GetDirectoryName(Path.GetFullPath(options.Root)), emu.Options.Psn);
         // the last button and touch changes are always kept (a compare per poll): the report says what the player did
@@ -466,6 +501,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         _ringInput.Clear();
         _states.Clear();
         _stateBytes = 0;
+        _ringPages.Clear();
     }
 
     /// <summary>A save state every <see cref="SessionCaptureOptions.PreRollStateInterval"/> while armed and not
@@ -508,13 +544,24 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             try
             {
                 long ns = CaptureClock.NowNs, flip = Hle.Modules.Display.FramesPresented;
-                var sw = Stopwatch.StartNew();
                 AddInput(InputEvent.Now("mark", "preroll_state begin"));
                 using var stream = new MemoryStream();
-                SaveStateHeader header = SaveStates.Save(_emu, stream, null, 2000);
+                SnapshotPages? image = null;
+                if (_options.IncrementalStates)
+                {
+                    if (++_ringStatesSinceFull >= Math.Max(1, _options.FullStateEvery))
+                    {
+                        _ringStatesSinceFull = 0;
+                        _ringPages.Clear();
+                    }
+
+                    image = _ringPages;
+                }
+
+                SaveStateHeader header = SaveStates.Save(_emu, stream, image, null, 2000);
                 lock (_stateStopMs)
                 {
-                    _stateStopMs.Add(sw.Elapsed.TotalMilliseconds);
+                    _stateStopMs.Add(SaveStates.LastStop.HeldMs);
                 }
 
                 AddInput(InputEvent.Now("mark", "preroll_state"));
@@ -1486,7 +1533,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         {
             if (_stateStopMs.Count > 0)
             {
-                sb.AppendLine(FormattableString.Invariant($"preroll-states: {_stateStopMs.Count} taken this session, median {Median(_stateStopMs):F0} ms, max {_stateStopMs.Max():F0} ms to save each (the game stops for part of it: the 'Save state:' lines of log.txt)"));
+                sb.AppendLine(FormattableString.Invariant($"preroll-states: {_stateStopMs.Count} taken this session, median {Median(_stateStopMs):F1} ms, max {_stateStopMs.Max():F1} ms with the game held for each ({(_options.IncrementalStates ? "incremental: only the pages written since the previous one are read then" : "whole")}; the 'Save state:' lines of log.txt)"));
             }
         }
 

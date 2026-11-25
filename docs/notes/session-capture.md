@@ -25,8 +25,8 @@ Tests: `tests/VitaSharp.Tests/SessionCaptureTests.cs`, `SessionCapturePrivacyTes
 >   parar, abra o menu de novo e escolha **Parar gravação**.
 > - **Pré-gravação** (para defeitos rápidos): com ela ligada, a gravação também inclui os segundos *antes* de você
 >   apertar. No PC: Configurações > Geral > *"Pré-gravação"*, ou ligue o modo de depuração (F9). No Android: menu de
->   pausa > *"Pré-gravação: ligada"*. Ela guarda um estado salvo a cada 5 s (na memória), o que pausa o jogo por um
->   instante.
+>   pausa > *"Pré-gravação: ligada"*. Ela guarda um estado salvo na memória a cada 5 s (no PC, só o que mudou desde
+>   o anterior: o jogo para alguns milissegundos) ou 10 s (quando o estado para o jogo um quadro ou mais).
 > - **Marcar o problema:** durante a gravação, aperte **Shift+F8** (no Android: menu de pausa > *"Marcar o problema"*)
 >   no instante em que ele aparece: a gravação ganha uma marca e um estado salvo daquele momento.
 > - Envie o arquivo `.zip` da pasta `captures` (dentro da pasta de dados do VitaSharp; no Android,
@@ -104,9 +104,17 @@ Folder `<data>/captures/<TITLEID>_<yyyyMMdd_HHmmss>_tudo/` and its zip:
 
 Armed by `--capture-preroll[=SECONDS]` (launcher "Pré-gravação"), `VITASHARP_CAPTURE_PREROLL=SECONDS`, debug mode
 on the desktop (F9 or `--debug-mode`, 10 s), or the Android pause menu. While armed, the presented frames, their
-timing and the input go into memory rings, and a save state is taken every 5 s (`SessionCaptureOptions.
-PreRollStateInterval`, `VITASHARP_CAPTURE_STATE_INTERVAL`) into memory (`SaveStates.Save(emu, Stream)`: nothing is
-written to disk while armed). The states are kept from the newest one taken at or before the pre-roll's start on
+timing and the input go into memory rings, and a save state is taken into memory (`SaveStates.Save(emu, Stream)`:
+nothing is written to disk while armed) every 5 s (`SessionCaptureOptions.PreRollStateInterval`) while the last three
+stopped the game less than a frame (`PreRollStateStopBudgetMs`, 16 ms), else every 10 s (`PreRollSlowStateInterval`,
+and until three are measured); `VITASHARP_CAPTURE_STATE_INTERVAL` sets both. On the desktop the states are
+incremental (`IncrementalStates`, `SnapshotPages`, `GuestMemory.SnapshotPages.cs`): the capture sweeps the dirty-page
+tracker (`DirtyPages`, every guest, HLE and GPU write marks its page; the sweep is exact with every guest thread
+stopped) and reads only the pages written since the previous state, the others are the previous state's image, and
+the memory sections are built after the game goes on; every 12th state is whole (`FullStateEvery`). Measured
+(`SaveStateIncrementalTests`, synthetic title with 48 MB of non-zero memory, the game held): a whole state 18.5 ms,
+the first incremental one 24 ms, the next ones 1.8-3.7 ms (260 pages read of 12,837); the image costs about the
+non-zero guest memory in host memory, so Android takes whole states (every 10 s there). The states are kept from the newest one taken at or before the pre-roll's start on
 (it covers the whole pre-roll; the older ones go), within `PreRollStateMaxBytes` (384 MB on the desktop, 128 MB on
 Android; the oldest go first, the newest always stays): with the default 10 s pre-roll that is three or four
 states. The rings keep everything since the oldest kept state, and at least the pre-roll time, within a memory
@@ -148,7 +156,7 @@ Measured on the desktop (GTX 1650 laptop, 4 logical CPUs given to the emulator, 
 | Files read (`files/`) | the index (path, offset, length, hash per read); the distinct bytes only up to `--capture-files-mb` (default 0); a SHA-256 per `sceIoRead` (off: one static field read) |
 | CPU while recording | the GPU dump's (~0.2-7 ms/frame on the GPU worker + compression on other threads), the frame encoder (~1 ms/frame on its own thread), the per-frame downscale copy on the GPU (the debug-mode replay ring's), a compare per input poll |
 | Start | one save state: the game stops 0.1-0.35 s |
-| Pre-roll armed | the same frame encoding, the input rings, and a save state every 5 s into memory (0.1-0.35 s stop each; 30-50 MB each, three or four held) |
+| Pre-roll armed | the same frame encoding, the input rings, and a save state into memory every 5 s (incremental, desktop: a few ms of stop) or 10 s (whole: 0.1-0.35 s stop each); 30-50 MB each, two to four held, plus the incremental image (~ the non-zero guest memory) |
 | Off | nothing: no tap, no input wrapper, no thread; the HLE dispatch reads one static flag (`DebugMode.CollectHleErrors`) and the RNG one static field |
 
 ## Privacy

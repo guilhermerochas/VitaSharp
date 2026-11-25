@@ -1,4 +1,4 @@
-<!-- pair: captures.md sha256=e789bf1d24a7bb1c6458e8b2e6eabbf1fc4648279168c5870e1399b5b42fc54b -->
+<!-- pair: captures.md sha256=be5ad6cfc2f87509e1702eaf5c72f5950f0c16968342709a2722af3ed292e1d1 -->
 # Analisar uma gravação do Gravar tudo sem o jogo
 
 [English](captures.md) | **Português**
@@ -59,7 +59,7 @@ carregado (o jogo, os módulos do firmware, os plugins) é reconstruído da mem�
 é reproduzida e a reexecução é gravada e comparada com a original (`reruns/<...>/compare.txt`: as imagens e a
 primeira chamada HLE diferente). Um caminho escrito na gravação nunca é aberto: a reexecução usa a pasta de dados
 indicada (`--data=<pasta>`). `--boot=title` sobe o jogo instalado e carrega o estado nele. `--from=preroll` (o
-padrão com pré-gravação: um estado no máximo 5 s antes dela), `--from=start`, ou `--from=markN`: o estado do momento
+padrão com pré-gravação: um estado no máximo 5-10 s antes dela), `--from=start`, ou `--from=markN`: o estado do momento
 em que o jogador marcou o problema (Shift+F8 durante a gravação, ou "Marcar o problema" no menu de pausa do Android;
 `state_mark_N.vss`, listado no `session.txt` e no relatório).
 

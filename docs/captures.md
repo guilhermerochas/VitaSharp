@@ -1,4 +1,4 @@
-<!-- pair: captures.pt-BR.md sha256=6a6bbef9fa77e01bc55275abf49f3aef676c2943c2cbb7401d78b7409a452167 -->
+<!-- pair: captures.pt-BR.md sha256=b485ae75167a5a448261bf24d517e24fd4e6dbe9b001a0f53a2a4597e66c0c8c -->
 # Analysing a Record everything capture without the game
 
 **English** | [Português](captures.pt-BR.md)
@@ -59,7 +59,7 @@ plugins), so two captures of the same version have the same hashes.
 back and the re-run is recorded and compared with the original (`reruns/<...>/compare.txt`: the pictures, and the
 first HLE call that differs). A path written in the capture is never opened: the re-run uses the data folder it is
 given (`--data=<folder>`). `--boot=title` boots the installed game instead and loads the state into it.
-`--from=preroll` (the default with a pre-roll: a state at most 5 s before it), `--from=start`, or `--from=markN`: the
+`--from=preroll` (the default with a pre-roll: a state at most 5-10 s before it), `--from=start`, or `--from=markN`: the
 state of the moment the player marked the problem (Shift+F8 while recording, or the Android pause menu's "Mark the
 problem"; `state_mark_N.vss`, listed in `session.txt` and in the report).
 

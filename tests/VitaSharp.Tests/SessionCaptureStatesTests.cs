@@ -28,6 +28,7 @@ public sealed class SessionCaptureStatesTests(GuestMemoryFixture fixture)
             Threads = () => "no threads",
             Info = () => "test info",
             PreRollStateInterval = 0.2,
+            PreRollSlowStateInterval = 0.2,
         };
         configure?.Invoke(options);
         return new SessionCapture(emu, options);
@@ -151,6 +152,34 @@ public sealed class SessionCaptureStatesTests(GuestMemoryFixture fixture)
         }
         finally
         {
+            emu.Stop();
+        }
+    }
+
+    /// <summary>The pre-roll takes its states at the short interval only once three of them stopped the game less
+    /// than the budget (a frame), at the slow one before and when they stop it longer.</summary>
+    [Theory]
+    [InlineData(1e9, 0.2)]
+    [InlineData(0.0, 0.6)]
+    public void TheShortIntervalIsUsedOnlyWhileTheStatesStopTheGameLessThanAFrame(double budgetMs, double expected)
+    {
+        using var h = new HleHarness(fixture, "capinterval");
+        Emulator emu = StartTitle(h);
+        using SessionCapture cap = NewCapture(emu, Path.Combine(h.Root, "captures"), o =>
+        {
+            o.PreRollSlowStateInterval = 0.6;
+            o.PreRollStateStopBudgetMs = budgetMs;
+        });
+        try
+        {
+            Assert.Equal(0.6, cap.CurrentStateInterval); // nothing measured yet
+            cap.SetPreRoll(60);
+            HleHarness.Until(() => cap.PreRollStatesTaken >= 3, "three pre-roll states");
+            Assert.Equal(expected, cap.CurrentStateInterval);
+        }
+        finally
+        {
+            cap.SetPreRoll(0);
             emu.Stop();
         }
     }
