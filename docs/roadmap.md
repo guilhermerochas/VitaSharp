@@ -935,10 +935,52 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   atrasado, com os 2 workers ocupados e 17 jobs na fila: limite de vazão, alavanca da frente (3)), GTAVCECTY x2 e
   PSVAS1178 0 → 0; opção ligada: 0 → 0 em todos; `--compare` dos 8 dumps nos dois modos pixel-idêntico. O engasgo do
   1º quadro continua com a opção desligada (a thread da GPU passa a esperar os workers em vez de montar: 2,1-4,4 s no
-  PCSE00053 com a CPU da máquina a 83-96%), e é o que a opção ligada resolve. Próximas partes: (3) estado dinâmico EDS3/vertex input onde houver; (4) Android: medir no
-  Killzone o tempo de carregamento a mais e a queda de pipelines no thread da GPU
+  PCSE00053 com a CPU da máquina a 83-96%), e é o que a opção ligada resolve. Próxima parte: Android: medir no
+  Killzone o tempo de carregamento a mais e a queda de pipelines no thread da GPU.
+  Estado dinâmico (frente 2; perf/stut1, 25/11/2026): contado, não implementado. Nos 10.973 pipelines gravados de 70
+  títulos (cópias dos `pipelines.list`), blend e máscara dinâmicos (`VK_EXT_extended_dynamic_state3`) tiram 6,7%,
+  vertex input dinâmico 2,8%, tudo junto 9,5%, mas quase tudo nos conjuntos 2D pequenos (GTAVCECTY 57 → 31); os 3D
+  que engasgam ficam com quase todos: PCSC00045 2.058 → 2.034 (1,2%), PCSE00333 809 → 794 (1,9%), PCSE00053 262 →
+  254 (3,1%), PCSA00017 0%. Com a compilação ao carregar o programa os replays frios já têm 0 pipelines na thread da
+  GPU e 0 quadros >= 4 ms, então não há quadro lento para tirar; só sobraria pouco trabalho a menos no carregamento.
+  Fica fora (tabela e motivo em `docs/notes/pipeline-skip.md`).
+  Workers pelo orçamento de CPU (frente 3; perf/uber5-uber6, 21/11/2026, feito): `ShaderWorkerBudget` deixa o
+  processo em no máximo 90% dos processadores lógicos, com 2 núcleos para a CPU emulada e a thread da GPU enquanto ela
+  trabalha (8 CPUs: 5 workers; fixado em 4: 2) e o orçamento inteiro quando ela espera um shader/pipeline, da 1ª
+  espera até o present daquele quadro, ou quando o jogo espera o carregamento do cache (8: 7; 4: 3). Android: 2 e 4
+  nos núcleos LITTLE (2 big + 6 LITTLE; antes 4 fixos). Referências: yuzu/Eden (todos os processadores menos 1,
+  prioridade baixa), Dolphin (núcleos - 3, 1-4), RPCS3 (tabela, 8 threads: 2), os três com um VkPipelineCache
+  compartilhado. Replay frio, opção desligada, base → orçamento (4 CPUs): 1º quadro PCSE00053 2.475-2.543 →
+  1.761-2.183 ms, 2º dump 2.431-2.828 → 1.770-2.057 ms; ligada: 0 → 0 em todos (números e escala em
+  `docs/notes/pipeline-skip.md`). Testes `RendererPathsTests.ShaderWorkersRunTheWholePoolFromAWaitUntilTheFrameIsPresented`
+  e `ShaderWorkerBudgetTests`. Falta: medir em 8 CPUs livres e no Android (Killzone).
+  Mais workers de folga (frente 3; perf/stut1, 25/11/2026, feito; juntado ao orçamento em fix/recover1, 25/11/2026):
+  a regra própria do stut1 (metade das CPUs em prioridade normal + folga abaixo do normal até 90% - 1, no máximo 8)
+  virou parte do `ShaderWorkerBudget`, para não haver duas regras de tamanho: os `Steady` workers rodam em prioridade
+  normal e os acima deles (`Spare`) são a folga, em prioridade abaixo do normal, e só rodam enquanto uma thread espera
+  os workers (8 CPUs: 5 + 2; 4: 2 + 1; 16: 8 + 4); `VITASHARP_SHADER_SPARE_WORKERS=N` (A/B) troca o número de folga
+  sobre o mesmo `Steady`. Referências: yuzu e forks `hardware_concurrency - 1` no desktop (forks Android: 3 núcleos
+  livres ou 2-8 escolhido), Ryujinx 8 threads de tradução e `min(ProcessorCount, 8)` compilações, Dolphin
+  `clamp(núcleos - 3, 1, 4)`; o pedido do draw atual já vai primeiro (a thread da GPU roda ela mesma o job que ainda
+  não começou). Teste `ShaderWorkerCountTests`. Medida do stut1 (antes da junção, com a folga rodando também fora
+  das esperas): replay frio do PCSE00053 (140 MB), fixado em 4 CPUs (2 workers lá; +1 equivale ao
+  4 → 6 de 8 CPUs), compilação ao carregar desligada, 2x alternado: esperas de pipeline 2.432/3.243 → 1.824/1.419 ms,
+  shaders esperados 21/12 → 4/5, pior quadro 2.326/3.550 → 1.788/2.120 ms (com 3 workers normais: o mesmo); com a
+  opção ligada (padrão) 0 quadros lentos nos dois e espera do carregamento 8,1 → 7,0-7,4 s (PCSE00333 0,93-1,03 →
+  0,86 s); 4 workers em 4 CPUs pioram (9,3 s). `--compare` dos 13 dumps contra a base: pixel-idênticos. Falta:
+  medir em gameplay no PC de 8 CPUs sem fixação (o efeito da prioridade baixa quando o jogo ocupa a CPU).
+  Pipelines internos (frente 5; perf/stut1, 25/11/2026, feito): agora contados (linha da sessão "built-in pipelines on
+  the GPU thread", uma linha de log por montagem) e somados à espera do quadro. Replay frio dos 13 dumps com a
+  compilação ao carregar ligada: 1 em 4 dumps, sempre o de carga de MSAA, 12-27 ms num quadro (GTAVCECTY x2, shell x2)
+  e era o único quadro lento deles (1 quadro >= 4 ms cada, 2 >= 16,7 ms); 0 nos outros 9; os de depth, ordem de
+  memória e overlay não apareceram. Uma cena multisample prevista (BeginScene do prefetch, superfície conhecida na
+  criação do programa) monta o pipeline de carga dela num worker, antes de qualquer outro job (`PrebuildMsaaLoad`,
+  `VulkanRenderer.MsaaNative.cs`; layout e shaders da carga criados sob lock). Nos 4 dumps: 1 → 0 montado na thread
+  da GPU, quadros >= 4 ms 1 → 0. Teste `RendererPathsTests.FirstMultisampledSceneFindsItsLoadPipelineBuiltByAWorker`
+  (2x e 4x, com e sem a criação do programa; sem a correção: (1, 0) em vez de (0, 1)). Ficam no 1º uso as variantes
+  tile-word e integer view da carga, que a previsão não vê.
   Entrega movida para "Corrigido, falta o usuário testar" (uber2/uber3/uber4, 22/11/2026); o resto segue aberto aqui.
-  Junto aqui (triagem de 22/11/2026) o item das bibliotecas de pipeline, que já cai na frente (3): o próximo passo dele é medir mais workers.
+  Junto aqui (triagem de 22/11/2026) o item das bibliotecas de pipeline, que já cai na frente (3): mais workers feito (acima).
   [P2][G] Engasgos da primeira vez: montar os pipelines que faltam com `VK_EXT_graphics_pipeline_library` (ligação
   rápida, sem otimizar, no thread da GPU) e trocar pelo otimizado em segundo plano; prever também as variantes
   tile-word e de saída inteira. Pular o desenho foi analisado e descartado: quase nada do que trava pode ser pulado
@@ -2246,8 +2288,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   1574E1A4 (0x810232ec): montagem por id, cada faixa com a sua checagem de permissão (0x6A/0x6B
   SceSblACMgrForDriver C98D82EE/8612B243, 0xCD 456DA7AC, 600 4DB7F512, 500-505 e 0x6E-0x70/0x12E-0x130 outro caminho,
   900/901 o caminho pelo SceFios2KernelForDriver 0F456345 num bloco de 0x124 bytes);
-  SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver 14
-  (layout dos objetos da libult na memória do processo).
+  SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver: feito
+  (feat/kernO, 21/11/2026, ver "Corrigido, falta o usuário testar").
   Entrega movida para "Corrigido, falta o usuário testar" (reboot do sistema, kernN, 22/11/2026); o resto segue aberto aqui.
 - [x] (22/11/2026, fix/quick1 529bd5a0: a montagem id 0xCA de ux0:pspemu fica registrada no AppMgr como no SceAppMgr 3.74; sceAppMgrUmount e o par do apputil desmontam; testes falham sem) [P3][G] sceAppMgrPspSaveDataRootMount (HLE) escreve `ux0:pspemu` como ponto de montagem sem registrar uma
   montagem no AppMgr, então um sceAppMgrUmount dele falha: conferir no appmgr 3.74 o que é montado (o SAVEDATA do
@@ -3386,6 +3428,18 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (25/11/2026, falta testar) [P2][G] SceUlobjMgrForDriver lê os objetos da libult na memória do processo como o
+  SceUlobjMgr 3.74 (feat/kernO, trazido em fix/recover1). Duas implementações da mesma biblioteca existiam
+  (feat/kernO e feat/kern9); ficou a do kernO, conferida contra o descompilado do 3.74 (só estudo): faz as 14
+  consultas (o kern9 fazia 8 e deixava 8E200387, CDAD91AD, B978DB70, 3685D4FB, 0C29AFEC e 5D7A7925 em resposta
+  padrão), o start mapeia a tabela de objetos e a entrega à libult (segundo start 0x80028003), e o NID_A90A564C
+  devolve (tabela, &revisão, registro) na ordem do módulo (registro +0x14, +0xC), que o kern9 tinha trocada. Nas
+  8 consultas em comum as duas leem os mesmos campos (cabeçalho +0x20 tamanho / +0x22 tipo, nós de 12 bytes, limite
+  do pool, entradas não nulas da tabela, mapa de estados 0,1,4,5,3,2); os 6 testes de objeto do kern9
+  (`UlobjKernelTests`: mutex com dono e esperas, condição pelo pool do mutex, semáforo, pool e pool de dados com as
+  listas, tabela de entradas, estado da thread) passam sem mudança contra o kernO e entraram junto. O que testar:
+  nada visível em jogo (só depuradores e o core dump usam); os jogos com libult rodam como antes.
+
 - [ ] (25/11/2026, falta testar) [P3][M] Entradas de import conferidas antes do link, como o modulemgr 3.74
   (fix/small4). Antes de ligar cada biblioteca que acha (FUN_81008aa0 -> FUN_81005100), num módulo de processo de
   usuário, o 3.74 exige que cada stub de função caiba inteiro (0x10 bytes) num segmento de permissão R+X exata (5,
@@ -4117,6 +4171,34 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Teste: `KernelPluginBootOrderTests`. Testar: com "Ativar Plugins do Kernel" ligado, abrir um título; o `last.log`
   mostra cada `kernel plugin ...: loaded and started (...) (at system boot)` e `kernel plugins: N of M loaded and started
   at system boot` antes da linha do título (`PSM title ...`/`Loading ...`), também quando o título falha.
+- [ ] (23/11/2026, falta testar) [P3][P] SDK do programa lido no lugar certo para as regras antigas do libgxm
+  (fix/gxmex4): o libgxm 3.74 pede o SDK ao `sceKernelGetMainModuleSdkVersion` (SceProcessParam +0xC); o VitaSharp
+  lia +0x10, que é o ponteiro do nome da thread principal: com nome NULL todo programa ganhava as regras dos SDKs
+  antes do 2.50 (perfil YUV acima de 3 no `sceGxmSetYuvProfile`, modo 2 no NID_D352F90A), e com nome nenhum programa
+  antigo as ganhava. Agora as duas funções seguem o SDK do programa. Testes:
+  `GxmFlowTests.YuvProfileAndVisibilityBufferFollowTheFirmwareChecks` (falha sem a correção). Testar: os filmes e as
+  texturas YUV dos jogos continuam com as cores de antes (nenhum `sceGxmSetYuvProfile: 0x805B0003` novo no log).
+- [ ] (23/11/2026, falta testar) [P3][P] `sceGxmBeginScene` confere as superfícies contra o render target como o
+  libgxm 3.74 (fix/gxmex4; também `sceGxmBeginSceneEx` e `_sceGxmBeginScene`), depois do driver achar o render
+  target e nesta ordem: render target 2X com cor que não seja MSAA downscale → SCE_GXM_ERROR_UNSUPPORTED
+  (0x805B0009); região válida fora do render target → INVALID_VALUE; superfície de cor menor que a região (em pixels
+  do alvo: com MSAA sem downscale o tamanho dividido pela grade de amostras, com downscale sem MSAA o dobro) →
+  INVALID_VALUE; stride da profundidade menor que a largura da região arredondada para 32 vezes as amostras na
+  horizontal (antes do SDK 2.00, bit 0x400, sem arredondar) → INVALID_VALUE. A largura/altura da cor vem do que o
+  `sceGxmColorSurfaceInit` recebeu (o libgxm lê da textura embutida, igual para superfícies lineares e tiled).
+  Falta: a quarta palavra que o driver devolve do render target, que quando não é zero exige a região inteira (ver o
+  que é no SceGpuEs4). Testes: `GxmFlowTests.BeginSceneChecksTheSurfacesAgainstTheRenderTarget` (falha sem a
+  correção). Testar: os jogos que o usuário já abre continuam abrindo e mostrando imagem, em especial os com MSAA
+  (nenhum `sceGxmBeginScene: 0x805B0003` ou `0x805B0009` novo no log).
+- [ ] (23/11/2026, falta testar) [P3][P] `sceGxmColorSurfaceSetFormat` como o libgxm 3.74 (fix/gxmex4): superfície
+  NULL → INVALID_POINTER; desligada → UNSUPPORTED (antes do SDK 3.10, bit 0x8000, é a sem dados; do 3.10 em diante a
+  que o `sceGxmColorSurfaceInit` não descreveu); formato que a tabela do libgxm não conhece → INVALID_VALUE
+  (0xD0800000 só antes do SDK 3.10); formato de outro tamanho de pixel (bits; bytes antes do SDK 1.60) ou que uma
+  superfície com downscale não aceita → UNSUPPORTED; ao aceitar, a textura da superfície também troca de formato
+  (antes só gravava o formato, sem conferir nada). Falta: as mesmas checagens de formato no
+  `sceGxmColorSurfaceInit` (formato desconhecido, downscale, tipos tiled/swizzled). Testes:
+  `GxmFlowTests.ColorSurfaceSetFormatFollowsTheFirmwareRules` (SDK 1.50/3.0F/3.10/3.57). Testar: os jogos que o
+  usuário já abre continuam com as cores de antes (nenhum `sceGxmColorSurfaceSetFormat: 0x805B000x` no log).
 
 - [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo analisável e reexecutável sem o jogo (feat/capself1,
   `docs/captures.md`): (1) nenhum arquivo da gravação leva dado pessoal: uma última etapa troca, em todo texto e no
@@ -4593,10 +4675,25 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   No Vita esses registradores guardam o que uma tarefa anterior deixou (o programa sobrescreve o resultado); o
   gerador agora zera todos os bancos (sa, p e as saídas também no fragmento), GeneratorVersion 34. Replay do dump:
   198/198 quadros idênticos entre execuções (antes 81-147/198). Teste: `ShaderRegisterInitTests`.
+  Também (fix/spidey2, 22/11/2026): a validação de sincronização (`VITASHARP_VK_VALIDATION=sync` no `replay-gpu`)
+  achou WRITE_AFTER_READ entre a cópia de readback do quadro (`RecordReadback`, sem barreira quando o alvo não tem
+  escala) e os draws do quadro seguinte no mesmo alvo, só sem swapchain (headless/replay); agora há barreiras antes e
+  depois da cópia em todos os casos.
   Testar: The Amazing Spider-Man, abrir a pausa (e a folha de contatos) e ficar alguns segundos: RESUME e as opções
   abaixo sempre visíveis, sem piscar.
 
 ## Bugs em aberto
+- [ ] [P3][P] `sceSslInternalGetCertificateAuthority` (feat/browser-1, trazido em fix/recover1) entrega todas as raízes do
+  `vs0:data/external/cert/CA_LIST.cer` para qualquer categoria e máscara. No libssl 3.74 (FUN_810482b0, só estudo)
+  cada categoria (1, 2, ...) e cada bit da máscara escolhem um trecho do arquivo por uma tabela de deslocamentos e
+  tamanhos; o sistema só pede (0, 0xFFFFFFFF), que é a lista inteira. Reproduzir a tabela e testar uma categoria e um
+  bit isolados. A validação dos certificados continua no código TLS do guest (nada é aceito pelo emulador).
+- [ ] Renderizador passa do `maxStorageBufferRange` do dispositivo: o espelho da CDRAM dos slots mapeados
+  (`VulkanRenderer.Mapped.cs`: CDRAM 256 MB + 32 MB de rascunho) é ligado como um storage buffer de 288 MB, e o
+  limite é 128 MB no lavapipe do Mesa 22.3 (e em várias GPUs móveis). A camada de validação acusa
+  `VUID-VkWriteDescriptorSet-descriptorType-00333`, e o lavapipe 22.3 cai com SIGSEGV em
+  `RendererTextureTests.EveryTextureFormatAndLayoutSamplesAndTheDumpReplaysTheSame`. Ligar uma janela dentro do limite
+  (ou dividir o espelho) e testar com um dispositivo que declara 128 MB.
 - [x] [P1][M] Testes de hooks: interferência de memória compartilhada (23/11/2026, hookfix1/cifix17/hookmem1):
 - [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053) em 2x: textura da parede piscando e imagem embaçada (relato do
   usuário, 23/11/2026; captura `PCSE00053_20261123_134501_tudo`, build 793a9e96, resolução interna 2x por atalho no

@@ -56,7 +56,10 @@ public sealed partial class Net
     bool _netInited;
     /// <summary>sceNetInit was called (and not sceNetTerm).</summary>
     internal bool Initialized { get { lock (_netLock) return _netInited; } }
-    uint _errnoLoc;
+    /// <summary>Each guest thread's errno word (by thread id; 0 for host callers). States of builds before it had one
+    /// shared word: the threads make theirs again.</summary>
+    [VitaSharp.Core.SaveState.SnapshotMissing]
+    readonly Dictionary<int, uint> _errnoSlots = new();
     int _nextSock = 1, _nextEpoll = 1, _nextResolver = 1, _nextDump = 1;
     readonly Dictionary<int, NetSocket> _sockets = new();
     readonly Dictionary<int, NetEpoll> _epolls = new();
@@ -80,14 +83,46 @@ public sealed partial class Net
         finally { _blockedWaits--; }
     }
 
-    /// <summary>Records errno for a failed call and returns the code (Vita3K ret_net_errno behaviour).</summary>
+    /// <summary>Records errno for a failed call and returns the code (Vita3K ret_net_errno behaviour). The calling thread's
+    /// errno is written even before it ever asked for sceNetErrnoLoc: libnet's errno is per thread and always there, and
+    /// ScePsp2Compat's connect() reads it only after a non-blocking sceNetConnect failed (EINPROGRESS); with the slot made
+    /// on that first read, WebKit's first connection of a process saw errno 0 and gave up (Browser: C2-14919-4).</summary>
     int NetErr(int code)
     {
-        if (_errnoLoc != 0) GuestMemory.W32(_errnoLoc, (uint)(code & 0xFF));
+        uint slot = ErrnoSlot();
+        if (slot != 0)
+        {
+            GuestMemory.W32(slot, (uint)(code & 0xFF));
+        }
+
         return code;
     }
 
-    [Hle] uint sceNetErrnoLoc() { if (_errnoLoc == 0) _errnoLoc = Emu.Memory.Alloc(16, "net errno", MemoryRegion.User, 16); return _errnoLoc; }
+    /// <summary>int *sceNetErrnoLoc(void): the calling thread's errno (each guest thread has its own, as in libnet).</summary>
+    [Hle]
+    uint sceNetErrnoLoc() => ErrnoSlot();
+
+    /// <summary>The current guest thread's errno word (made on first use; host callers without a thread share one).</summary>
+    uint ErrnoSlot()
+    {
+        int threadId = Kernel.GuestThread.Current?.Uid ?? 0;
+        lock (_errnoSlots)
+        {
+            if (_errnoSlots.TryGetValue(threadId, out uint slot))
+            {
+                return slot;
+            }
+
+            if (Emu?.Memory is not { } memory)
+            {
+                return 0;
+            }
+
+            slot = memory.Alloc(16, "net errno", MemoryRegion.User, 16);
+            _errnoSlots[threadId] = slot;
+            return slot;
+        }
+    }
 
     /// <summary>SceNetInitParam (0xC): +0 memory, +4 size, +8 flags.</summary>
     [Hle]

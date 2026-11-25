@@ -49,14 +49,23 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        while (!boot.Join(ShaderCacheLoadReportMs))
+        // the game waits for the workers: the whole pool may run (ShaderWorkerBudget)
+        BeginWaitForWorkers();
+        try
         {
-            progress?.Invoke(new ShaderCacheLoadProgress(Volatile.Read(ref _bootItemsDone), Volatile.Read(ref _bootItemsQueued), false));
-            if (cancel.IsCancellationRequested || _deviceLost)
+            while (!boot.Join(ShaderCacheLoadReportMs))
             {
-                Log.Info($"[shadercache] load before start: the game starts before the end ({_bootItemsDone} of {_bootItemsQueued} done, the rest in the background)");
-                return true;
+                progress?.Invoke(new ShaderCacheLoadProgress(Volatile.Read(ref _bootItemsDone), Volatile.Read(ref _bootItemsQueued), false));
+                if (cancel.IsCancellationRequested || _deviceLost)
+                {
+                    Log.Info($"[shadercache] load before start: the game starts before the end ({_bootItemsDone} of {_bootItemsQueued} done, the rest in the background)");
+                    return true;
+                }
             }
+        }
+        finally
+        {
+            EndWaitForWorkers();
         }
 
         progress?.Invoke(new ShaderCacheLoadProgress(Volatile.Read(ref _bootItemsDone), Volatile.Read(ref _bootItemsQueued), true));

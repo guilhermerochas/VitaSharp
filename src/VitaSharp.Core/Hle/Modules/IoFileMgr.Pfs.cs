@@ -15,6 +15,15 @@ namespace VitaSharp.Core.Hle.Modules;
 // folder, as the console's PFS shows the image's plain files there; the key is not needed). The ACID directory calls run an ioctl on the
 // directory (it must exist: the I/O manager's error), the devctl calls on the mount's PFS device. The facade entries
 // are the I/O manager's own stand-ins for an absent pfsmgr: each answers -1.
+//
+// Each mount is pfsmgr's mount entry in kernel memory, the vfs mount's data (+0xC4) as on the console: +0xC the source
+// path (0x40 bytes), +0x4C the root path "/<mount point>", +0x6E the assign name "<mount point>0:", +0x92 the mode
+// (16 bits), +0x94 its flags (1 no key, 4 not approved yet, 0x20 mode 3, 0x40 modes 7 and 9 and a mode 10 without a
+// key), +0x96 the key (16 bytes), +0xAC the quota, +0xB0 the image's header value (0 here: no image), +0x170 the AC
+// list (AC modes; its nodes' payload at +0xC), +0x178 the authority IDs (16 pairs of words, an empty one all ones, kept
+// packed), +0x1F8 the mount's misc block (+0 the assign name) and +0x20C the table's size (16). The device's mount
+// block (fs type 3, the storage type of the mount the source is on in +0x4E, the entry in +0xC4) is the one the
+// device's vnodes have.
 public sealed partial class IoFileMgr
 {
     const int PFS_ERR_NOT_MOUNTED = unchecked((int)0x80010013);
@@ -23,21 +32,26 @@ public sealed partial class IoFileMgr
     [SnapshotMissing] // states of builds before it: none
     readonly Dictionary<string, string> _pfsMounts = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>The type each PFS mount was made with.</summary>
-    [SnapshotMissing]
-    readonly Dictionary<string, int> _pfsTypes = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>The mount entry of each PFS mount (in kernel memory).</summary>
+    [SnapshotMissing] // states of builds before it: none
+    readonly Dictionary<string, uint> _pfsEntries = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>The approved PFS mounts: pfsmgr clears a mount's "not approved" flag at its first approval and never
-    /// sets it again.</summary>
-    [SnapshotMissing]
-    readonly HashSet<string> _pfsApproved = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>The fields of pfsmgr 3.74's mount entry (see the file's header).</summary>
+    const uint PfsEntrySize = 0x230, PfsEntrySource = 0xC, PfsEntryRoot = 0x4C, PfsEntryAssign = 0x6E, PfsEntryMode = 0x92;
+    const uint PfsEntryFlags = 0x94, PfsEntryKey = 0x96, PfsEntryQuota = 0xAC, PfsEntryImageValue = 0xB0;
+    const uint PfsEntryAcList = 0x170, PfsEntryAuthorities = 0x178, PfsEntryMisc = 0x1F8, PfsEntryAuthorityCount = 0x20C;
 
-    /// <summary>The program authority IDs approved on each PFS mount (pfsmgr's table of 16 per mount).</summary>
-    [SnapshotMissing] // states of builds before it: no authority approved
-    readonly Dictionary<string, List<ulong>> _pfsAuthorities = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>The entry's flags: no key, not approved yet, mode 3, modes 7 / 9 / 10 without a key.</summary>
+    const ushort PfsFlagNoKey = 1, PfsFlagNotApproved = 4, PfsFlagMode3 = 0x20, PfsFlagPlain = 0x40;
+
+    /// <summary>The fs type of a PFS mount (the request's +8, a mount of kind 1 over the source).</summary>
+    const uint PfsFsType = 3;
 
     /// <summary>How many program authority IDs pfsmgr approves on one mount.</summary>
     const int PfsAuthoritiesPerMount = 16;
+
+    /// <summary>The size of NID_4C148288's information block.</summary>
+    internal const uint PfsMountInfoSize = 0x68;
 
     /// <summary>pfsmgr's "the table is full" (an approval past the 16th authority ID).</summary>
     const int PFS_ERR_AUTHORITIES_FULL = unchecked((int)0x8001001C);
@@ -181,9 +195,10 @@ public sealed partial class IoFileMgr
                 return VFS_ERR_EXIST;
             }
 
+            uint entry = NewPfsEntry(point, sourcePath, key, mode);
             _pfsMounts[point] = sourcePath;
-            _pfsTypes[point] = (int)mode;
-            _pfsAuthorities[point] = new List<ulong>();
+            _pfsEntries[point] = entry;
+            PfsDeviceMount(point, entry);
         }
 
         string device = PfsDevice(point);
@@ -193,6 +208,76 @@ public sealed partial class IoFileMgr
         }
 
         return 0;
+    }
+
+    /// <summary>pfsmgr's new mount entry (0x81000b84 and Mount2's flag, see the file's header), "not approved".</summary>
+    uint NewPfsEntry(string point, string sourcePath, uint key, uint mode)
+    {
+        uint entry = Emu.Memory.Alloc(PfsEntrySize, "pfs mount entry", MemoryRegion.Kernel, 16);
+        GuestMemory.Fill(entry, 0, PfsEntrySize);
+        GuestMemory.WriteCString(entry + PfsEntrySource, sourcePath, 0x40);
+        GuestMemory.WriteCString(entry + PfsEntryRoot, "/" + point, 0x21);
+        GuestMemory.WriteCString(entry + PfsEntryAssign, PfsDevice(point) + ":", 0x22);
+        GuestMemory.Write(entry + PfsEntryMode, (ushort)mode);
+        ushort flags = 0;
+        if (key == 0)
+        {
+            flags |= PfsFlagNoKey;
+        }
+        else
+        {
+            GuestMemory.Copy(entry + PfsEntryKey, key, 0x10);
+        }
+
+        if (mode == 3)
+        {
+            flags |= PfsFlagMode3;
+        }
+        else if ((mode == 10 && flags == PfsFlagNoKey) || mode is 7 or 9)
+        {
+            flags |= PfsFlagPlain;
+        }
+
+        if ((mode & ~8u) == 4 || mode == 8)
+        {
+            // the AC pseudo drives' list, empty
+            GuestMemory.W32(entry + PfsEntryAcList, entry + PfsEntryAcList);
+            GuestMemory.W32(entry + PfsEntryAcList + 4, entry + PfsEntryAcList);
+        }
+
+        GuestMemory.Fill(entry + PfsEntryAuthorities, 0xFF, PfsAuthoritiesPerMount * 8);
+        GuestMemory.W32(entry + PfsEntryMisc, entry + PfsEntryAssign);
+        GuestMemory.W32(entry + PfsEntryAuthorityCount, PfsAuthoritiesPerMount);
+        GuestMemory.Write(entry + PfsEntryFlags, (ushort)(flags | PfsFlagNotApproved));
+        return entry;
+    }
+
+    /// <summary>The authority table's slot holding <paramref name="authority"/>, searched as pfsmgr 3.74 does
+    /// (0x81000fec: up to the first empty slot, the table kept packed); -1 when it is not there.</summary>
+    static int PfsAuthoritySlot(uint entry, ulong authority)
+    {
+        int count = (int)GuestMemory.R32(entry + PfsEntryAuthorityCount);
+        for (int slot = 0; slot < count; slot++)
+        {
+            ulong value = GuestMemory.Read<ulong>(entry + PfsEntryAuthorities + (uint)slot * 8);
+            if (value == authority)
+            {
+                return slot;
+            }
+
+            if (value == ulong.MaxValue)
+            {
+                return -1;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>The mount entry of a mount point (the caller holds the table's lock), or 0.</summary>
+    uint PfsEntryOf(string point)
+    {
+        return _pfsEntries.TryGetValue(point, out uint entry) ? entry : 0;
     }
 
     /// <summary>
@@ -233,8 +318,8 @@ public sealed partial class IoFileMgr
 
             lock (_pfsMounts)
             {
-                bool approved = _pfsAuthorities.TryGetValue(point, out List<ulong>? authorities) && authorities.Contains(authority);
-                return approved && _pfsTypes.TryGetValue(point, out int mountMode) ? mountMode : PFS_ERR_NOT_MOUNTED;
+                uint entry = PfsEntryOf(point);
+                return entry != 0 && PfsAuthoritySlot(entry, authority) >= 0 ? GuestMemory.Read<ushort>(entry + PfsEntryMode) : PFS_ERR_NOT_MOUNTED;
             }
         }
 
@@ -242,7 +327,7 @@ public sealed partial class IoFileMgr
         return result != 0 ? result : kscePfsApproveThroughEntry(mountPoint, 0, authorityLow, authorityHigh);
     }
 
-    /// <summary>kscePfsUnmount(mountPoint): unknown 0x80010013; the mount point no longer served.</summary>
+    /// <summary>kscePfsUnmount(mountPoint): unknown 0x80010013; the mount point no longer served, its entry freed.</summary>
     [Hle(Nid = 0x680BC384, Library = "ScePfsMgrForKernel")]
     int kscePfsUnmount(uint mountPoint)
     {
@@ -251,6 +336,7 @@ public sealed partial class IoFileMgr
             return VFS_ERR_INVAL;
         }
 
+        uint entry;
         lock (_pfsMounts)
         {
             if (!_pfsMounts.Remove(point))
@@ -258,12 +344,16 @@ public sealed partial class IoFileMgr
                 return PFS_ERR_NOT_MOUNTED;
             }
 
-            _pfsApproved.Remove(point);
-            _pfsTypes.Remove(point);
-            _pfsAuthorities.Remove(point);
+            _pfsEntries.Remove(point, out entry);
         }
 
         string device = PfsDevice(point);
+        ForgetHostMount(device + ":");
+        if (entry != 0)
+        {
+            Emu.Memory.Free(entry);
+        }
+
         if (!device.Contains('/') && !device.Contains(':'))
         {
             Emu.Vfs.Unmount(device);
@@ -274,8 +364,9 @@ public sealed partial class IoFileMgr
 
     /// <summary>
     /// kscePfsApprove(mountPoint, program authority ID) as pfsmgr 3.74 makes it (the ID is a 64-bit argument, in the
-    /// third and fourth words): a bad mount point 0x80010016, unknown 0x80010013, an ID already approved 0x80010011, a
-    /// 17th ID 0x8001001C; the ID added and the mount approved.
+    /// third and fourth words; 0x81000df0): a bad mount point 0x80010016, unknown 0x80010013, an ID already approved
+    /// 0x80010011, a 17th ID 0x8001001C; the ID in the first empty slot of the entry's table and the entry's "not
+    /// approved" flag cleared.
     /// </summary>
     [Hle(Nid = 0xD8D0FEE5, Library = "ScePfsMgrForKernel")]
     int kscePfsApprove(uint mountPoint, uint padding, uint authorityLow, uint authorityHigh)
@@ -288,37 +379,35 @@ public sealed partial class IoFileMgr
         ulong authority = authorityLow | ((ulong)authorityHigh << 32);
         lock (_pfsMounts)
         {
-            if (!_pfsMounts.ContainsKey(point))
+            uint entry = PfsEntryOf(point);
+            if (entry == 0)
             {
                 return PFS_ERR_NOT_MOUNTED;
             }
 
-            if (!_pfsAuthorities.TryGetValue(point, out List<ulong>? authorities))
-            {
-                authorities = new List<ulong>();
-                _pfsAuthorities[point] = authorities;
-            }
-
-            if (authorities.Contains(authority))
+            if (PfsAuthoritySlot(entry, authority) >= 0)
             {
                 return VFS_ERR_EXIST;
             }
 
-            if (authorities.Count >= PfsAuthoritiesPerMount)
+            int empty = PfsAuthoritySlot(entry, ulong.MaxValue);
+            if (empty < 0)
             {
                 return PFS_ERR_AUTHORITIES_FULL;
             }
 
-            authorities.Add(authority);
-            _pfsApproved.Add(point);
+            GuestMemory.Write(entry + PfsEntryAuthorities + (uint)empty * 8, authority);
+            ushort flags = GuestMemory.Read<ushort>(entry + PfsEntryFlags);
+            GuestMemory.Write(entry + PfsEntryFlags, (ushort)(flags & ~PfsFlagNotApproved));
         }
 
         return 0;
     }
 
     /// <summary>
-    /// kscePfsDisapprove(mountPoint, program authority ID) as pfsmgr 3.74 makes it: a bad mount point 0x80010016,
-    /// unknown 0x80010013, an ID not approved 0x80010002; the ID removed (the mount stays approved).
+    /// kscePfsDisapprove(mountPoint, program authority ID) as pfsmgr 3.74 makes it (0x81000ed0): a bad mount point
+    /// 0x80010016, unknown 0x80010013, an ID not approved 0x80010002; the ID removed and the ones after it moved down
+    /// one slot (the mount stays approved).
     /// </summary>
     [Hle(Nid = 0x2D67D8CA, Library = "ScePfsMgrForKernel")]
     int kscePfsDisapprove(uint mountPoint, uint padding, uint authorityLow, uint authorityHigh)
@@ -331,15 +420,26 @@ public sealed partial class IoFileMgr
         ulong authority = authorityLow | ((ulong)authorityHigh << 32);
         lock (_pfsMounts)
         {
-            if (!_pfsMounts.ContainsKey(point))
+            uint entry = PfsEntryOf(point);
+            if (entry == 0)
             {
                 return PFS_ERR_NOT_MOUNTED;
             }
 
-            if (!_pfsAuthorities.TryGetValue(point, out List<ulong>? authorities) || !authorities.Remove(authority))
+            int slot = PfsAuthoritySlot(entry, authority);
+            if (slot < 0)
             {
                 return VFS_ERR_NOENT;
             }
+
+            uint table = entry + PfsEntryAuthorities;
+            int count = (int)GuestMemory.R32(entry + PfsEntryAuthorityCount);
+            for (int next = slot + 1; next < count; next++)
+            {
+                GuestMemory.Write(table + (uint)(next - 1) * 8, GuestMemory.Read<ulong>(table + (uint)next * 8));
+            }
+
+            GuestMemory.Write(table + (uint)(count - 1) * 8, ulong.MaxValue);
         }
 
         return 0;
@@ -431,21 +531,50 @@ public sealed partial class IoFileMgr
         return PfsDevctl(mountPoint);
     }
 
-    /// <summary>NID_4C148288(mountPoint, state): NULLs 0x80010016; *state 1 when the mount is approved, 0 when it is
-    /// not or not mounted; 0.</summary>
+    /// <summary>
+    /// NID_4C148288(mount, info) as pfsmgr 3.74 has it (0x81000000): the information of a vfs mount that is a PFS
+    /// mount (fs type 3 in the mount's +0x4C byte, else 0x80010016, nothing written), from its entry (the mount's data,
+    /// +0xC4), into a block of 0x68 bytes: +0 the mount, +4 the entry's source path, +8 its root path, +0xC its assign
+    /// name, +0x10 the mode (16 bits), +0x14 the quota (+0xAC), +0x18 the image's header value (+0xB0), +0x1C the
+    /// authority table's size (+0x20C), +0x20 the table (+0x178), +0x24 the number of AC list nodes and +0x28 their
+    /// payloads (up to 16; zeros, and 0 nodes, for a mode that is not an AC one: 4, 8, 12); 0. A NULL mount is a data
+    /// abort on the console: 0x80010016 here.
+    /// </summary>
     [Hle(Nid = 0x4C148288, Library = "ScePfsMgrForKernel")]
-    int kscePfs_4C148288(uint mountPoint, uint state)
+    int kscePfs_4C148288(uint mount, uint info)
     {
-        if (state == 0 || PfsMountPoint(mountPoint) is not { } point)
+        if (mount == 0 || GuestMemory.Read<byte>(mount + 0x4C) != PfsFsType)
         {
             return VFS_ERR_INVAL;
         }
 
-        lock (_pfsMounts)
+        uint entry = GuestMemory.R32(mount + 0xC4);
+        ushort mode = GuestMemory.Read<ushort>(entry + PfsEntryMode);
+        GuestMemory.W32(info + 0x00, mount);
+        GuestMemory.W32(info + 0x04, entry + PfsEntrySource);
+        GuestMemory.W32(info + 0x08, entry + PfsEntryRoot);
+        GuestMemory.W32(info + 0x0C, entry + PfsEntryAssign);
+        GuestMemory.Write(info + 0x10, mode);
+        GuestMemory.W32(info + 0x14, GuestMemory.R32(entry + PfsEntryQuota));
+        GuestMemory.W32(info + 0x18, GuestMemory.R32(entry + PfsEntryImageValue));
+        GuestMemory.W32(info + 0x1C, GuestMemory.R32(entry + PfsEntryAuthorityCount));
+        GuestMemory.W32(info + 0x20, entry + PfsEntryAuthorities);
+        GuestMemory.W32(info + 0x24, 0);
+        GuestMemory.Fill(info + 0x28, 0, 0x40);
+        if ((mode & 0xFFF7) != 4 && mode != 8)
         {
-            GuestMemory.W32(state, _pfsApproved.Contains(point) ? 1u : 0u);
+            return 0;
         }
 
+        uint head = entry + PfsEntryAcList;
+        uint count = 0;
+        for (uint node = GuestMemory.R32(head); node != head && count < 0x10; node = GuestMemory.R32(node))
+        {
+            GuestMemory.W32(info + 0x28 + count * 4, node + 0xC);
+            count++;
+        }
+
+        GuestMemory.W32(info + 0x24, count);
         return 0;
     }
 

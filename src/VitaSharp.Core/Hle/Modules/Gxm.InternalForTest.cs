@@ -26,15 +26,9 @@ public sealed partial class Gxm
     /// compatibility word): before that, NID_D352F90A takes any mode and sceGxmSetYuvProfile any profile.</summary>
     const uint LenientSdkLimit = 0x02500000;
 
-    bool LenientSdk
-    {
-        get
-        {
-            uint processParam = Emu.Linker.ProcessParam;
-            uint sdk = processParam != 0 && GuestMemory.R32(processParam) >= 0x14 ? GuestMemory.R32(processParam + 0x10) : 0x03740011;
-            return sdk < LenientSdkLimit;
-        }
-    }
+    /// <summary>libgxm reads the SDK with sceKernelGetMainModuleSdkVersion (SceProcessParam +0xC; +0x10 is the main
+    /// thread's name pointer).</summary>
+    bool LenientSdk => MainModuleSdkVersion() < LenientSdkLimit;
 
     /// <summary>An immediate context for a test setter: NULL or unknown 0x805B0004, a deferred one 0x805B0003.</summary>
     GxmContext? TestContext(uint ctx, out int error)

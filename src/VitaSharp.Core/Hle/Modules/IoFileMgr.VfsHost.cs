@@ -85,7 +85,7 @@ public sealed partial class IoFileMgr
 
     /// <summary>The host vnode of <paramref name="vitaPath"/> with one more reference, made (with its folders') when
     /// it has none yet; 0 when the path names nothing.</summary>
-    uint HostVnode(string vitaPath)
+    internal uint HostVnode(string vitaPath)
     {
         string path = NormalizeHostPath(vitaPath);
         int colon = path.IndexOf(':');
@@ -166,18 +166,75 @@ public sealed partial class IoFileMgr
                 return known;
             }
 
-            uint mount = Emu.Memory.Alloc(MountSize, "vfs host mount", MemoryRegion.Kernel, 16);
-            uint misc = Emu.Memory.Alloc(0x60, "vfs host mount misc", MemoryRegion.Kernel, 16);
-            GuestMemory.Fill(mount, 0, MountSize);
-            GuestMemory.Fill(misc, 0, 0x60);
-            GuestMemory.WriteCString(misc + 0x20, assign, 0x1F);
-            GuestMemory.W32(misc, misc + 0x20);
-            GuestMemory.W32(mount + 0x48, 1);
-            GuestMemory.W32(mount + 0x4C, 1);
-            GuestMemory.W32(mount + 0x7C, misc);
-            GuestMemory.WriteCString(mount + 0x80, assign, 0x3F);
+            uint mount = NewHostMount(assign, 1, 0);
             _hostMounts[assign] = mount;
             return mount;
+        }
+    }
+
+    /// <summary>A device's mount block: state 1, <paramref name="type"/> in +0x4C (the fs type), the driver's data in
+    /// +0xC4, a misc block with the assign name (+0x7C), the assign name as its root path.</summary>
+    uint NewHostMount(string assign, uint type, uint data)
+    {
+        uint mount = Emu.Memory.Alloc(MountSize, "vfs host mount", MemoryRegion.Kernel, 16);
+        uint misc = Emu.Memory.Alloc(0x60, "vfs host mount misc", MemoryRegion.Kernel, 16);
+        GuestMemory.Fill(mount, 0, MountSize);
+        GuestMemory.Fill(misc, 0, 0x60);
+        GuestMemory.WriteCString(misc + 0x20, assign, 0x1F);
+        GuestMemory.W32(misc, misc + 0x20);
+        GuestMemory.W32(mount + 0x48, 1);
+        GuestMemory.W32(mount + 0x4C, type);
+        GuestMemory.W32(mount + 0x7C, misc);
+        GuestMemory.WriteCString(mount + 0x80, assign, 0x3F);
+        GuestMemory.W32(mount + 0xC4, data);
+        return mount;
+    }
+
+    /// <summary>The mount block of a PFS mount's device ("&lt;mount point&gt;0:"): fs type 3 and the mount's entry as
+    /// its data, as the I/O manager makes it for pfsmgr's mount request; the device's vnodes are on it.</summary>
+    void PfsDeviceMount(string point, uint entry)
+    {
+        string assign = PfsDevice(point) + ":";
+        ForgetHostMount(assign);
+        lock (_hostMounts)
+        {
+            _hostMounts[assign] = NewHostMount(assign, PfsFsType, entry);
+        }
+    }
+
+    /// <summary>An unmounted device: its mount block and the vnodes of its paths are no longer the ones its paths
+    /// get (a later mount of the same name makes new ones).</summary>
+    void ForgetHostMount(string assign)
+    {
+        lock (_hostMounts)
+        {
+            _hostMounts.Remove(assign);
+        }
+
+        lock (_hostVnodes)
+        {
+            List<string>? stale = null;
+            foreach (string path in _hostVnodeByPath.Keys)
+            {
+                if (path.StartsWith(assign, StringComparison.OrdinalIgnoreCase))
+                {
+                    stale ??= new List<string>();
+                    stale.Add(path);
+                }
+            }
+
+            if (stale == null)
+            {
+                return;
+            }
+
+            foreach (string path in stale)
+            {
+                if (_hostVnodeByPath.Remove(path, out uint vnode))
+                {
+                    _hostVnodes.Remove(vnode);
+                }
+            }
         }
     }
 

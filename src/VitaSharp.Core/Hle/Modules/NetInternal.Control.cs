@@ -44,9 +44,10 @@ public sealed partial class Net
             return NetErr(unchecked((int)0x80410100) | errno);
         }
 
-        if (_errnoLoc != 0)
+        uint errnoSlot = ErrnoSlot();
+        if (errnoSlot != 0)
         {
-            GuestMemory.W32(_errnoLoc, 0xCD);
+            GuestMemory.W32(errnoSlot, 0xCD);
         }
 
         return result;

@@ -170,7 +170,12 @@ public static class Formats
                     1 => M(G, B, A, R),
                     2 => M(R, G, B, A),
                     3 => M(B, G, R, A),
-                    _ => s_identity
+                    // X4U4U4U4_1BGR / _1RGB (the X nibble on top) and U4U4U4X4_RGB1 / _BGR1 (the X nibble at the bottom):
+                    // the colour nibbles as in ABGR / ARGB / RGBA / BGRA, alpha 1 (gxm.h)
+                    4 => M(A, B, G, O),
+                    5 => M(G, B, A, O),
+                    6 => M(R, G, B, O),
+                    _ => M(B, G, R, O),
                 };
             case TexBase.U1U5U5U5:
                 // uploaded as A1R5G5B5 (A in bit 15, then 5-bit fields from the top). GXM names the fields from the most

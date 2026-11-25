@@ -113,7 +113,8 @@ public static class AppServices
             Prefs = AppPreferences.Load(Data.AppSettingsFile);
             // the texts' language (Ajustes > Language): set before any screen or the game reads a text
             VitaSharp.Core.Localization.Loc.SetLanguage(Prefs.Language);
-            if (Prefs.DebugMode)
+            // debug mode: the setting, or VITASHARP_DEBUG_MODE=1 in config/env.txt (as --debug-mode / the variable on desktop)
+            if (Prefs.DebugMode || System.Environment.GetEnvironmentVariable(EnvVars.DebugMode) is "1" or "on" or "true")
             {
                 Log.Level = LogLevel.Debug;
                 DebugMode.Enable();

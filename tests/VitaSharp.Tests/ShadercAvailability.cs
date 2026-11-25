@@ -11,6 +11,12 @@ namespace VitaSharp.Tests;
 /// libshaderc-dev). The probe loads it as the renderer does (<see cref="ShadercLoader"/>). Tests that compile shaders
 /// are skipped with the reason when the library cannot be loaded.
 /// </summary>
+/// <remarks>
+/// The probe never unloads the library (no Dispose, no NativeLibrary.Free), as the renderer does not
+/// (<c>ShaderCompiler.Dispose</c>): shaderc registers a process-exit handler that stays behind after dlclose, so on
+/// Linux every test host that ran the probe jumped into the unmapped library at exit (SIGSEGV after a passing run,
+/// and a crash dump each time under WSL's crash collector).
+/// </remarks>
 public static class ShadercAvailability
 {
     /// <summary>The API the probe loaded, never disposed: disposing a Silk.NET API unloads its library (dlclose), and
@@ -19,20 +25,24 @@ public static class ShadercAvailability
     /// a9b03f1b).</summary>
     private static Shaderc? s_probe;
 
-    private static readonly Lazy<string?> s_reason = new(() =>
+    private static readonly Lazy<string?> s_reason = new(Probe);
+
+    public static string? SkipReason => s_reason.Value;
+
+    /// <summary>Loads shaderc as the renderer does (once per process: the library stays loaded) and returns null, or why
+    /// it cannot be loaded.</summary>
+    internal static string? Probe()
     {
         try
         {
-            s_probe = ShadercLoader.Load();
+            s_probe ??= ShadercLoader.Load();
             return null;
         }
         catch (Exception e) when (e is FileNotFoundException or DllNotFoundException or BadImageFormatException)
         {
             return $"shaderc not available ({e.Message.TrimEnd('.', '!')}; bundled copy: {BundledLoadError()}): " + InstallHint();
         }
-    });
-
-    public static string? SkipReason => s_reason.Value;
+    }
 
     /// <summary>Whether the probe's shaderc API is still held (it is kept for the whole process).</summary>
     internal static bool ProbeKeptLoaded => s_probe != null;
