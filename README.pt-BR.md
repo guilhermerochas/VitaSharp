@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=729b10a7cd17901594434a86edce1b3b382f47a12e1091cb0cf8ecd37f82d665 -->
+<!-- pair: README.md sha256=74a0a6970e9e006e5c98703a1cddb38cb64389c65d8f18791fce77e92b01ca31 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -205,7 +205,9 @@ ainda não são emulados.
 
 **Teclado e mouse Bluetooth.** **Configurações > Emulação > Teclado e mouse Bluetooth** (ou `--bt-keyboard-mouse=on`)
 pareia o teclado e o mouse do PC com o Vita, para jogos e apps que leem teclado ou mouse (SceHid: o navegador, chat).
-Desligado por padrão; as teclas continuam valendo como controle com ele ligado.
+Desligado por padrão; as teclas continuam valendo como controle com ele ligado. As teclas de mídia do teclado
+(reproduzir/pausar, faixas, volume) também chegam ao Vita como seus controles de consumidor, no Windows, Linux (X11),
+macOS e Android.
 
 Os dados ficam em `%APPDATA%\VitaSharp` no Windows (`~/.local/share/VitaSharp` no Linux,
 `~/Library/Application Support/VitaSharp` no macOS; `--data=<pasta>` ou `VITASHARP_DATA` trocam a pasta): jogos em
