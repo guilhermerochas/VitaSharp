@@ -4826,6 +4826,17 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   por thread do compilador do driver Intel (igc64), porque sem janela a troca do backend destruía e recriava a
   instância Vulkan nessa thread; agora a troca mantém a instância e o dispositivo também sem janela, e um crash nativo
   deixa uma linha `FATAL native exception` no log.
+  Medido depois (ac3w, 25/11/2026): o ds 0x61100000 é S8D24 (fmt 0x01266000, stride 704); a área ruim fica em
+  x 158-648, y 0-151, dentro do recorte 704x576 das duas passadas (sem aliasing de stride). Com os vértices e as MVPs
+  do dump, a profundidade do oclusor no modelo (float32, numpy) bate com a do pré-passe do renderer (99,9% a 2 passos
+  de 2^-24). Sem os oclusores, a parede fica de 0 a 2 passos atrás do pré-passe no quadro ruim e 1-2 passos na frente
+  no bom: um empate de 1-2 LSB do D24 que troca de lado com a câmera. A semântica estrita (o G-buffer carregaria o
+  próprio G-buffer anterior, sem o pré-passe) faria 77% da cena falhar: o pré-passe chega mesmo ao G-buffer no Vita.
+  Patente da Imagination (WO2001095257A1): o ISP guarda A,B,C por polígono (12 bytes) e avalia A·x+B·y+C em relação
+  ao tile, sem regra de desempate descrita; com isso faces coplanares de triangulação diferente não dão profundidade
+  igual garantida, então recalcular a profundidade pelo plano não basta. Falta a referência (Vita3K ou o aparelho no
+  mesmo ponto) para saber de que lado o Vita resolve esse empate (conversão float→D24 ao gravar/carregar a superfície,
+  precisão do ISP) antes de mudar o renderer.
 - [ ] [P1][G] PSM em Unity não abre (relato do usuário, 22/11/2026; log de 19:33, NPOA00239): o título traz o próprio
   runtime (`ux0:psm/<título>/runtime/eboot.bin`, PCSI00010 "Unity Runtime for PlayStation Mobile", mais mono_prx e
   bridge_prx), que está cifrado com a chave do conteúdo, e o carregador o lê como SELF comum: `InvalidDataException: Not
