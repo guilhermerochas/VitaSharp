@@ -392,10 +392,19 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
                     throw new GuestThreadExitException(0, false);
                 case ExitReason.Breakpoint:
                     throw new GuestFaultException($"BKPT #{s->SvcImm} at 0x{s->SvcPc:X8}");
+                case ExitReason.DataAbort:
+                    TakeDataAbort(s);
+                    break;
                 case ExitReason.Undefined:
                 {
-                    if (ReachedDefaultExceptionHandler(s, out string unhandled))
+                    if (ReachedDefaultExceptionHandler(s, out string unhandled, out uint unhandledKind))
                     {
+                        if (unhandledKind == ExceptionDataAbort)
+                        {
+                            LetDataAbortThrough(s);
+                            break;
+                        }
+
                         throw new GuestFaultException(unhandled);
                     }
 

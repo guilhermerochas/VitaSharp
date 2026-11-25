@@ -1,6 +1,7 @@
 using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Memory;
+using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Kernel;
 
@@ -27,6 +28,7 @@ public sealed unsafe partial class GuestThread
     private uint _exceptionStack;
     private string? _deliveredFault;
     private uint _deliveredFaultPc;
+    private uint _deliveredKind;
     private ProcessmgrKernel? _exceptionManager; // the one whose chain the thread entered
 
     /// <summary>CPSR.M of the thread's CPU (diagnostics and tests).</summary>
@@ -117,9 +119,15 @@ public sealed unsafe partial class GuestThread
             s->Ifar = faultPc;
             s->Ifsr = FaultTranslationPage;
         }
+        else if (kind == ExceptionDataAbort)
+        {
+            s->Dfar = s->AbortAddr;
+            s->Dfsr = s->AbortStatus;
+        }
 
         _deliveredFault = message;
         _deliveredFaultPc = faultPc;
+        _deliveredKind = kind;
         s->Exit = ExitReason.None;
         ExceptionModes.EnterException(s, mode, link, vector);
         return true;
@@ -129,9 +137,10 @@ public sealed unsafe partial class GuestThread
     /// True when the thread reached the default handler at the end of the chain (no handler took the exception): the
     /// interrupted state is put back and <paramref name="message"/> is the fault as VitaSharp reports it.
     /// </summary>
-    internal bool ReachedDefaultExceptionHandler(CpuState* s, out string message)
+    internal bool ReachedDefaultExceptionHandler(CpuState* s, out string message, out uint kind)
     {
         message = "";
+        kind = _deliveredKind;
         uint code = _exceptionManager?.DefaultExceptionHandlerCode ?? 0;
         if (code == 0 || s->SvcPc != code || _deliveredFault == null)
         {
@@ -143,6 +152,75 @@ public sealed unsafe partial class GuestThread
         message = $"{_deliveredFault} (no exception handler took it)";
         _deliveredFault = null;
         return true;
+    }
+
+    /// <summary>
+    /// A guest access hit a page no block maps while a data abort handler is registered (<see cref="ExitReason.DataAbort"/>,
+    /// <see cref="DataAborts"/>): the access enters the kernel's data abort chain (abort mode, LR = the instruction + 8,
+    /// DFSR/DFAR). One taken in a handler (an exception mode), or by no handler, is let through.
+    /// </summary>
+    private void TakeDataAbort(CpuState* s)
+    {
+        s->Exit = ExitReason.None;
+        bool write = (s->AbortStatus & DataAborts.WriteNotRead) != 0;
+        string message = $"Data abort: {(write ? "write to" : "read of")} unmapped address 0x{s->AbortAddr:X8} at 0x{s->SvcPc:X8}";
+        uint pc = s->SvcPc, address = s->AbortAddr;
+        if (!TryDeliverException(s, ExceptionDataAbort, pc, message))
+        {
+            LetDataAbortThrough(s);
+        }
+        else if (Interlocked.Increment(ref s_dataAbortsDelivered) <= 8)
+        {
+            Log.Info($"Data abort at 0x{pc:X8} on unmapped address 0x{address:X8}: entering the data abort handlers");
+        }
+    }
+
+    private static int s_dataAbortsDelivered;
+
+    /// <summary>
+    /// A data abort no handler took: the page of the faulting address is let through (<see cref="GuestMemory.TolerateFault"/>)
+    /// and the instruction runs again, reading zeros, as it does with no handler registered.
+    /// </summary>
+    private void LetDataAbortThrough(CpuState* s)
+    {
+        s->Exit = ExitReason.None;
+        GuestMemory.TolerateFault(s->MemBase, s->AbortAddr);
+        if (Interlocked.Increment(ref s_dataAbortsLetThrough) <= 8)
+        {
+            Log.Info($"Data abort at 0x{s->R[15]:X8} on unmapped address 0x{s->AbortAddr:X8} taken by no handler: the page reads zeros, as before");
+        }
+    }
+
+    private static int s_dataAbortsLetThrough;
+
+    /// <summary>
+    /// A data abort handler exists in <paramref name="emu"/>'s system now (registered, or a default handler every
+    /// kind enters): guest accesses start checking the page mapping (<see cref="DataAborts.Arm"/>), at once for the
+    /// calling thread; the first time, every process's translated code is dropped so new code carries the guards.
+    /// </summary>
+    internal static void ArmDataAborts(Emulator emu)
+    {
+        if (VitaSystem.DataAbortGuardsOff)
+        {
+            return;
+        }
+
+        if (Current is { } thread)
+        {
+            thread.Core.State->AbortGuard = 1;
+        }
+
+        bool first = false;
+        foreach (Emulator process in emu.Vita.ProcessesAndKernel)
+        {
+            first |= process.Code.ArmDataAborts();
+        }
+
+        emu.Vita.DataAbortHandlerRegistered = true;
+        if (first)
+        {
+            Log.Info("Data aborts: a data abort handler is registered; guest memory accesses now check the page mapping");
+        }
     }
 
     /// <summary>The thread's abort and undefined mode stacks (kernel memory), made the first time it takes an exception.</summary>
@@ -184,6 +262,8 @@ public sealed unsafe partial class GuestThread
         w.Write(_exceptionStack);
         w.Write(_deliveredFault);
         w.Write(_deliveredFaultPc);
+        // appended (read only when present): the kind being delivered (a data abort no handler takes is let through)
+        w.Write(_deliveredKind);
     }
 
     private void ReadExceptionState(SaveState.SnapshotReader r, CpuState* s)
@@ -210,6 +290,7 @@ public sealed unsafe partial class GuestThread
         _exceptionStack = r.ReadUInt32();
         _deliveredFault = r.ReadString();
         _deliveredFaultPc = r.ReadUInt32();
+        _deliveredKind = r.AtEnd ? 0 : r.ReadUInt32();
         if (_exceptionStack != 0 || _deliveredFault != null)
         {
             // the manager whose chain the thread entered: the kernel process's, where kernel modules register handlers

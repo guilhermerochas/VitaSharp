@@ -225,6 +225,12 @@ public sealed unsafe partial class NativeRuntime
             HandlerTable.Pointers[op](s, ins, pc);
             return 0; // an exit the handler raised (UDF, SVC...) is seen by the block exits, exactly like the interpreter
         }
+        catch (GuestDataAbortException)
+        {
+            // the instruction took a data abort (the state was stored before the callout): the block stops there
+            DataAborts.RaiseAt(s, pc);
+            return 1;
+        }
         catch (Exception e)
         {
             t_fault = ExceptionDispatchInfo.Capture(e);

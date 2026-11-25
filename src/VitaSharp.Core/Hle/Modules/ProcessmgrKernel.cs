@@ -297,6 +297,12 @@ public sealed partial class ProcessmgrKernel : HleModule
             _exceptionHandlers[handler] = (kind << 16) | priority;
         }
 
+        if (kind == GuestThread.ExceptionDataAbort)
+        {
+            // guest accesses to unmapped pages raise data aborts from now on (without a handler they read zeros)
+            GuestThread.ArmDataAborts(Emu);
+        }
+
         return 0;
     }
 

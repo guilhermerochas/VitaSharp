@@ -15,6 +15,7 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
     public static readonly IlJitCompiler Instance = new();
 
     private static readonly MethodInfo s_condPassed = typeof(Arm).GetMethod(nameof(Arm.CondPassed), BindingFlags.Static | BindingFlags.Public)!;
+    private static readonly MethodInfo s_raiseDataAbort = typeof(DataAborts).GetMethod(nameof(DataAborts.RaiseAt), BindingFlags.Static | BindingFlags.Public)!;
     private const int PcOffset = 15 * 4; // offsetof(CpuState, R[15])
 
     public string Name => "il";
@@ -66,8 +67,37 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
     /// <summary>True in IL dump mode: the dispatcher counts the executions of IL blocks for the dump's index.</summary>
     public static readonly bool CountExecutions = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(Util.EnvVars.IlDump));
 
-    /// <summary>The block's body: one handler call per instruction, guarded by its condition, then return.</summary>
+    /// <summary>
+    /// The block's body: one handler call per instruction, guarded by its condition, then return. With data aborts
+    /// armed (<see cref="DataAborts"/>) the body is a try block that keeps the address of the running instruction in a
+    /// local, and a data abort thrown by a memory helper stops the block there (<see cref="DataAborts.RaiseAt"/>).
+    /// </summary>
     private static void EmitBlock(ILGenerator ilGenerator, Block b)
+    {
+        if (b.Owner?.DataAbortGuards != true)
+        {
+            EmitBody(ilGenerator, b, null);
+            ilGenerator.Emit(OpCodes.Ret);
+            return;
+        }
+
+        LocalBuilder pc = ilGenerator.DeclareLocal(typeof(int));
+        Label end = ilGenerator.DefineLabel();
+        ilGenerator.BeginExceptionBlock();
+        EmitBody(ilGenerator, b, pc);
+        ilGenerator.Emit(OpCodes.Leave, end);
+        ilGenerator.BeginCatchBlock(typeof(GuestDataAbortException));
+        ilGenerator.Emit(OpCodes.Pop);
+        ilGenerator.Emit(OpCodes.Ldarg_0);
+        ilGenerator.Emit(OpCodes.Ldloc, pc);
+        ilGenerator.Emit(OpCodes.Call, s_raiseDataAbort);
+        ilGenerator.Emit(OpCodes.Leave, end);
+        ilGenerator.EndExceptionBlock();
+        ilGenerator.MarkLabel(end);
+        ilGenerator.Emit(OpCodes.Ret);
+    }
+
+    private static void EmitBody(ILGenerator ilGenerator, Block b, LocalBuilder? pc)
     {
         DecodedInst[] insts = b.Insts;
         for (int i = 0; i < insts.Length; i++)
@@ -94,6 +124,12 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
                 ilGenerator.Emit(OpCodes.Call, s_condPassed);
                 ilGenerator.Emit(OpCodes.Brfalse, skip);
             }
+            if (pc != null)
+            {
+                ilGenerator.Emit(OpCodes.Ldc_I4, (int)d.Address);
+                ilGenerator.Emit(OpCodes.Stloc, pc);
+            }
+
             ilGenerator.Emit(OpCodes.Ldarg_0);
             ilGenerator.Emit(OpCodes.Ldc_I4, (int)d.Raw);
             ilGenerator.Emit(OpCodes.Ldc_I4, (int)d.Address);
@@ -103,7 +139,6 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
                 ilGenerator.MarkLabel(skip);
             }
         }
-        ilGenerator.Emit(OpCodes.Ret);
     }
 
     private static void EmitStorePc(ILGenerator ilGenerator, uint pc)

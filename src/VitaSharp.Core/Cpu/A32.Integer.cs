@@ -1087,6 +1087,13 @@ internal static unsafe partial class A32
         uint offAddr = U ? baseVal + offset : baseVal - offset;
         uint addr = P ? offAddr : baseVal;
         bool wback = !P || W;
+        // a data abort leaves the base as it was: checked before the writeback some forms do first
+        DataAborts.Check(state, addr, ((L ? 4u : 0u) | op) switch
+        {
+            2 or 3 => 8u,
+            6 => 1u,
+            _ => 2u,
+        }, !L && op != 2);
         switch ((L ? 4u : 0u) | op)
         {
             case 1:
@@ -1149,6 +1156,11 @@ internal static unsafe partial class A32
         uint start = U ? (P ? baseVal + 4 : baseVal) : (P ? baseVal - 4 * count : baseVal - 4 * count + 4);
         uint newBase = U ? baseVal + 4 * count : baseVal - 4 * count;
         uint addr = start;
+        if (count != 0)
+        {
+            DataAborts.Check(state, start, 4 * count, !L); // a data abort leaves the base and the registers as they were
+        }
+
         if (L)
         {
             if (W)
@@ -1219,6 +1231,13 @@ internal static unsafe partial class A32
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void ExclusiveCore(CpuState* state, uint op, bool load, uint addr, uint rt, uint rd, uint rt2)
     {
+        DataAborts.Check(state, addr, op switch
+        {
+            0 => 4u,
+            1 => 8u,
+            2 => 1u,
+            _ => 2u,
+        }, !load);
         if (load)
         {
             ReserveExclusive(state, addr);
@@ -1283,6 +1302,7 @@ internal static unsafe partial class A32
         }
         else
         {
+            DataAborts.Check(state, addr, 4, true);
             state->R[rt] = Interlocked.Exchange(ref *(uint*)Mem.Ptr(state, addr), state->R[rt2]);
             Mem.MarkDirty(state, addr);
         }
