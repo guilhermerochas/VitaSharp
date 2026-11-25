@@ -2495,10 +2495,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `param_1[0x10..]`) e se o campo corrige o yaw continuamente (os ramos com `DAT_81015258` em 0x810066xx); só então
   trocar o `MotionFusion.Reset` (hoje só a gravidade) com teste; (3) o magnetômetro de um controle no PC (o SDL não
   expõe um).
-- [ ] [P3][M] Teclado e mouse Bluetooth, o que falta (o feito está em "Corrigido, falta o usuário testar"): conferir
-  no Sistema do Vita que Configurações > Bluetooth lista os dois dispositivos (os registros do `SceBt` seguem o 3.74,
-  mas a tela não foi aberta); no Wayland, conferir se o scancode que o GLFW dá a uma tecla de mídia é o do evdev + 8
-  como no X11; o monitor de teclas de mídia do macOS ainda não rodou num Mac (só o mapeamento é testado).
 - [ ] [P3][G] Processador de mídia Venezia (núcleos MeP + IVC2) para código MeP que não é do firmware (plugin
   VVNZRunner e o homebrew sobre ele; `docs/notes/hardware-coverage.md`): o `vnzimg.skprx` sai do `self2elf` em claro,
   sem chave. Primeira entrega: interpretador do núcleo MeP-c5 numa thread de guest com programa sintético no teste
@@ -3385,6 +3381,18 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (25/11/2026, falta testar) [P3][M] Teclado e mouse Bluetooth, o que faltava (fix/small5): no Wayland o GLFW
+  3.4 entrega à janela o código evdev da tecla, sem o +8 (o `keyboardHandleKey` do `wl_window.c` passa o código do
+  `wl_keyboard` direto ao `_glfwInputKey` e só soma 8 para o xkbcommon); no X11 é o keycode do X (evdev + 8). O
+  VitaSharp lia todo scancode do Linux como do X11, então no Wayland Play/Pause (KEY_PLAYPAUSE 164) não virava nada
+  e outras teclas podiam cair na tecla de mídia errada. Agora a janela pergunta a plataforma ao GLFW
+  (`glfwGetPlatform`) e lê o scancode como evdev, keycode do X ou set 1 do Windows
+  (`HidUsages.ConsumerFromScancode(scancode, ScancodeKind)`). Teste: `HidDeviceTests.MediaKeyScancodesFollowGlfwsPlatform`
+  (não compila sem a mudança; pela leitura antiga o 164 do Wayland dá 0, não Play/Pause). Testar: com "Teclado e mouse
+  Bluetooth" ligado, abrir o Sistema do Vita em Configurações > Bluetooth (os dois dispositivos listados); num Linux
+  com Wayland, as teclas de mídia do teclado (tocar/pausar, volume, próxima) agem no jogo/app como no X11; num Mac, as
+  teclas de mídia (o monitor do macOS ainda não rodou num Mac, só o mapeamento é testado).
 
 - [ ] (25/11/2026, falta testar) [P3][M] Entradas de import conferidas antes do link, como o modulemgr 3.74
   (fix/small4). Antes de ligar cada biblioteca que acha (FUN_81008aa0 -> FUN_81005100), num módulo de processo de
