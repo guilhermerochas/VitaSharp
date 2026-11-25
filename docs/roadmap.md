@@ -3761,7 +3761,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 Itens com correção já na `main` que esperam só a confirmação do usuário no jogo/tela do relato; quem fecha (`[x]`) é o
 usuário. Se o teste falhar, o item volta para "Bugs em aberto".
 
-- [ ] [P2][G] Abrir um jogo não dá retorno visual (relato do usuário, 21/11/2026: "quando eu clico de novo no jogo ele
+- [ ] (22/11/2026, falta testar) [P2][G] Abrir um jogo não dá retorno visual (relato do usuário, 21/11/2026: "quando eu clico de novo no jogo ele
   não abre a janela dele"): pelo log, a sessão começa e a janela só aparece 13 s depois (firmware, input, áudio,
   dispositivo Vulkan), seguida de ~12 s de carregamento do cache de shaders e da etapa de pré-compilação ARM. Fazer,
   no PC e no Android: a janela abre na hora do clique com uma tela de carregamento (nome do jogo e etapa atual);
@@ -4155,7 +4155,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   programa e lidos por outro no mesmo quadro e no seguinte, em LPDDR e CDRAM, também +TileBased; CPU regravando
   devolve a memória ao guest). Testar: Croixleur Sigma (seleção de personagem e diálogos): modelos 3D como antes.
 
-- [ ] [P2][G] CI: no runner Linux os testes de GPU do renderer são pulados ("shaderc not available ... install
+- [ ] (22/11/2026, falta testar) [P2][G] CI: no runner Linux os testes de GPU do renderer são pulados ("shaderc not available ... install
   libshaderc-dev"), então a "passagem" do Linux não testa o renderer (achado do cifix12, 21/11/2026). Instalar o
   shaderc no job Linux (e conferir o macOS) para os testes de renderer rodarem nas 3 plataformas.
   Feito (22/11/2026, fix/quick1 89310536): o Silk.NET só procurava a cópia do Shaderc.Native em runtimes/<RID da distro>
@@ -4181,7 +4181,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   (`IoAsyncSchedulerTests`). Teste: um jogo que usa `sceIoReadAsync` (ex.: o shell copiando o pic0 de um jogo para o
   LiveArea, a Câmera salvando foto) continua funcionando, e carregamentos com leitura assíncrona não engasgam o quadro.
 
-- [ ] [P3][P] `--capture-playback` (rerun): o fim do rerun derrubava o processo quando a pasta da captura não tem
+- [ ] (22/11/2026, falta testar) [P3][P] `--capture-playback` (rerun): o fim do rerun derrubava o processo quando a pasta da captura não tem
   `frames.vsfr` (captura sem quadros): `CaptureAnalyzer.Compare` lançava FileNotFoundException na thread `rerun-end` e
   o resumo PERF não saía. Correção (fix/io1, 22/11/2026): sem `frames.vsfr` no original ou no rerun a comparação é
   pulada e diz isso ("compare: skipped ..."), e um erro de leitura dos quadros vira uma linha `compare: failed` em vez
