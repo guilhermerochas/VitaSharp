@@ -301,7 +301,7 @@ sealed class SessionCaptureControl : IDisposable
             CapturedFiles? files = CapturedFiles.Materialize(dir, filesDir);
             CapturedFiles.Active = files;
             CaptureHooks.Files = files;
-            // the audio the recording's decoders consumed: put back or checked frame by frame
+            // the audio the recording's decoders and NGS voices consumed: put back or checked frame by frame
             CapturedAudioInputs? audioInputs = CapturedAudioInputs.Load(dir, fromUs);
             CaptureHooks.AudioInputs = audioInputs;
             Log.Info(files != null
@@ -346,7 +346,7 @@ sealed class SessionCaptureControl : IDisposable
                     }
                     if (audioInputs != null)
                     {
-                        cmp += $"\naudio inputs: {audioInputs.Frames} decoder frames recorded, {audioInputs.Restored} put back, {audioInputs.Differ} different without their bytes (the log names the first decoder of each)";
+                        cmp += "\n" + audioInputs.Describe();
                     }
 
                     if (files != null)

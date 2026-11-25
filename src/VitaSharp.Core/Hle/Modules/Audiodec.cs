@@ -205,10 +205,10 @@ public sealed unsafe partial class Audiodec : HleModule
         for (uint f = 0; f < frames; f++)
         {
             // Gravar tudo: a re-run puts the recorded stream back here, a recording keeps what the frame consumed
-            inputs?.Decoding(handle, d.Type, GuestMemory.Span(es + esUsed, (int)esMax));
+            inputs?.Decoding(Capture.AudioInputSource.Audiodec, handle, d.Type, GuestMemory.Span(es + esUsed, (int)esMax));
             int r = DecodeOne(d, es + esUsed, esMax, out int consumed, out int samples);
             if (r != 0) return r;
-            inputs?.Decoded(handle, d.Type, GuestMemory.Span(es + esUsed, Math.Clamp(consumed, 0, (int)esMax)));
+            inputs?.Decoded(Capture.AudioInputSource.Audiodec, handle, d.Type, GuestMemory.Span(es + esUsed, Math.Clamp(consumed, 0, (int)esMax)));
             int bytes = samples * d.Channels * 2;
             uint pcmCap = GuestMemory.R32(ctrl + 28); // maxPcmSize reported at creation: never write past the guest buffer
             if (pcmCap != 0 && bytes > pcmCap) bytes = (int)pcmCap / (d.Channels * 2) * (d.Channels * 2);

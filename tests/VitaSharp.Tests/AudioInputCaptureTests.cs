@@ -76,10 +76,11 @@ public sealed class AudioInputCaptureTests(GuestMemoryFixture fixture) : IDispos
         CaptureHooks.AudioInputs = null;
         string? summary = recorder.Write(_capture, long.MinValue);
         Assert.NotNull(summary);
-        Assert.StartsWith("2 frames of 1 audio decoders", summary);
+        Assert.StartsWith("2 frames (1 sceAudiodec decoders, 0 NGS voices, 0 libatrac streams)", summary);
         string[] lines = File.ReadAllLines(Path.Combine(_capture, AudioInputRecorder.Folder, AudioInputRecorder.IndexFile));
         Assert.Equal(3, lines.Length); // header and two frames
         Assert.Contains($"\t0x1006\t0\t16\t{ChunkHash.Of(original.AsSpan(0, FrameBytes))}\t", lines[1]);
+        Assert.EndsWith("\taudiodec", lines[1]);
 
         // the re-run: the stream the guest has is not the game's (no game here)
         CapturedAudioInputs replay = CapturedAudioInputs.Load(_capture, long.MinValue)!;

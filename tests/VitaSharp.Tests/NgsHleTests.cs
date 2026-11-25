@@ -1,3 +1,4 @@
+using VitaSharp.Core.Capture;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Memory;
 using static VitaSharp.Tests.HleHarness;
@@ -460,5 +461,76 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(OK, Call(N, "sceNgsAT9GetSectionDetails", 512u, 256u, plain, info));
         Assert.Equal(0u, GuestMemory.R32(info + 12));
         Assert.Equal(2u * 0x100, GuestMemory.R32(info)); // frame 2
+    }
+
+    /// <summary>
+    /// "Gravar tudo" keeps what an NGS voice's player reads from the game's buffers (by hash, the bytes only within
+    /// the files limit), and a re-run without the game puts the bytes back where the voice reads them or counts what
+    /// differs. Before, a re-run played whatever the state's memory held.
+    /// </summary>
+    [Theory]
+    [InlineData(1 << 20)]
+    [InlineData(0)]
+    public void AVoicesInputIsRecordedAndARerunPutsItBackOrSaysItDiffers(long maxBytes)
+    {
+        string capture = Path.Combine(Path.GetTempPath(), "vitasharp-ngsinputs-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            uint sys = System();
+            uint master = Voice(Rack(sys, (uint)Invoke(N, "sceNgsVoiceDefGetMasterBuss")!, 1, 2), 0);
+            uint voice = Voice(Rack(sys, (uint)Invoke(N, "sceNgsVoiceDefGetSimpleVoice")!, 1, 2), 0);
+            uint patch = Patch(voice, master);
+            uint matrix = _h.Alloc(16);
+            GuestMemory.Write(matrix, 1f);
+            GuestMemory.Write(matrix + 12, 1f);
+            Assert.Equal(OK, Call(N, "sceNgsVoicePatchSetVolumesMatrix", patch, matrix));
+            uint pcm = Pcm(1024, 0x4000, -0x2000);
+            Assert.Equal(OK, SetPlayer(voice, pcm, 1024 * 4, 0));
+            Assert.Equal(OK, Call(N, "sceNgsVoicePlay", master));
+            Assert.Equal(OK, Call(N, "sceNgsVoicePlay", voice));
+            var recorder = new AudioInputRecorder(maxBytes);
+            CaptureHooks.AudioInputs = recorder;
+            Assert.Equal(OK, Call(N, "sceNgsSystemUpdate", sys));
+            CaptureHooks.AudioInputs = null;
+            Assert.Equal(16384, MasterOutput(master)[0]);
+            string? summary = recorder.Write(capture, long.MinValue);
+            Assert.NotNull(summary);
+            Assert.Contains("(0 sceAudiodec decoders, 1 NGS voices, 0 libatrac streams)", summary);
+            string[] lines = File.ReadAllLines(Path.Combine(capture, AudioInputRecorder.Folder, AudioInputRecorder.IndexFile));
+            Assert.True(lines.Length >= 2);
+            Assert.All(lines.Skip(1), l => Assert.EndsWith("\tngs", l));
+            Assert.Contains($"\t{voice}\t0x0\t0\t", lines[1]);
+
+            // the re-run: the voice starts over on a buffer that is not the game's (no game here)
+            CapturedAudioInputs replay = CapturedAudioInputs.Load(capture, long.MinValue)!;
+            Assert.Equal(lines.Length - 1, replay.Frames);
+            Assert.Equal(OK, Call(N, "sceNgsVoiceKill", voice));
+            GuestMemory.Fill(pcm, 0, 1024 * 4);
+            Assert.Equal(OK, Call(N, "sceNgsVoicePlay", voice));
+            CaptureHooks.AudioInputs = replay;
+            Assert.Equal(OK, Call(N, "sceNgsSystemUpdate", sys));
+            CaptureHooks.AudioInputs = null;
+            Assert.Contains("1 NGS voices", replay.Describe());
+            if (maxBytes > 0)
+            {
+                Assert.Equal(replay.Frames, replay.Restored);
+                Assert.Equal(0, replay.Differ);
+                Assert.Equal(16384, MasterOutput(master)[0]);
+            }
+            else
+            {
+                Assert.Equal(0, replay.Restored);
+                Assert.Equal(replay.Frames, replay.Differ);
+                Assert.Equal(0, MasterOutput(master)[0]);
+            }
+        }
+        finally
+        {
+            CaptureHooks.AudioInputs = null;
+            if (Directory.Exists(capture))
+            {
+                Directory.Delete(capture, true);
+            }
+        }
     }
 }

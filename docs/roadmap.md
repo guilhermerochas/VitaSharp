@@ -8,11 +8,6 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
 
 ## Diagnóstico
 
-- [ ] [P2][M] **Gravar tudo: o áudio que entra nas vozes NGS** (o dos decodificadores `sceAudiodec` está em
-  "Corrigido, falta o usuário testar"): gravar os buffers que as vozes NGS leem durante a gravação (por hash, os bytes
-  só no limite dos arquivos), para o rerun sem o jogo reproduzir buracos; o rerun repõe ou avisa como o
-  `CapturedAudioInputs` faz com os decodificadores. Também o libatrac, se ele não passar pelo `sceAudiodec`.
-
 - [ ] [P2][G] **Gravar tudo: estados de vários processos sobem sem os programas** (parte do antigo "Gravar tudo sem o
   jogo, o que falta"): o estado do shell com aplicativos abertos ainda não sobe sem os programas
   (`SaveStates.BootFromState` recusa estados de mais de um processo); falta guardar e subir a imagem de cada processo.
@@ -3314,6 +3309,20 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (25/11/2026, falta testar) [P2][M] Gravar tudo: o áudio que entra nas vozes NGS e no libatrac (fix/cap4). O
+  rerun sem o jogo tocava o que estivesse na memória do estado nos buffers das vozes NGS e nos handles do libatrac
+  (que decodifica sozinho, sem o `sceAudiodec`). Agora cada trecho que o módulo de fonte de uma voz NGS lê dos buffers
+  do jogo (player PCM16 ou HEVAG, ATRAC9) e cada superquadro que um handle do libatrac decodifica entram no mesmo
+  `audio_inputs/frames.tsv` (nova coluna `source`: `audiodec`, `ngs`, `atrac`; capturas antigas leem como
+  `audiodec`), por hash, com os bytes só dentro do limite dos arquivos (`--capture-files-mb`). No rerun o trecho que
+  a voz ou o handle vai ler é conferido: diferente e com bytes, eles são repostos; só com hash, o log diz qual voz ou
+  handle (uma vez) e o resumo do rerun conta, separado por tipo ("audio inputs: N frames recorded (a sceAudiodec
+  decoders, b NGS voices, c libatrac streams), ..."). Sem captura o gancho custa uma leitura. Testes:
+  `NgsHleTests.AVoicesInputIsRecordedAndARerunPutsItBackOrSaysItDiffers`,
+  `AtracHleTests.AHandlesInputIsRecordedAndARerunPutsItBackOrSaysItDiffers`. Testar: gravar (F8) com
+  `--capture-files-mb=64` num jogo com música ou vozes por NGS ou libatrac e rodar o rerun sem o jogo: a música e as
+  vozes saem iguais, e o resumo do rerun mostra as vozes NGS com "put back".
 
 - [ ] (25/11/2026, falta testar) [P2][M] Gravar tudo: o áudio que entra nos decodificadores (fix/adr4). A captura
   guardava só a saída (WAV); o rerun sem o jogo decodificava o que estivesse na memória do estado. Agora cada quadro
