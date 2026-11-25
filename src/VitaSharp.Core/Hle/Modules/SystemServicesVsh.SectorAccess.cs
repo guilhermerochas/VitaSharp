@@ -1,6 +1,7 @@
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
+using VitaSharp.Core.SaveState;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Hle.Modules;
@@ -18,7 +19,8 @@ public sealed partial class SystemServicesVsh
 
     private static readonly bool s_traceSectors = Environment.GetEnvironmentVariable(EnvVars.TraceSectors) == "1";
 
-    /// <summary>Raw sector accesses made so far (tests, the session's report).</summary>
+    /// <summary>Raw sector accesses made so far (tests, the session's report; not part of a save state).</summary>
+    [SnapshotIgnore]
     internal int SectorAccesses;
 
     /// <summary>The code that made the current call (the HLE stub's return address), symbolized.</summary>
