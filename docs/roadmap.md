@@ -2288,8 +2288,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   1574E1A4 (0x810232ec): montagem por id, cada faixa com a sua checagem de permissão (0x6A/0x6B
   SceSblACMgrForDriver C98D82EE/8612B243, 0xCD 456DA7AC, 600 4DB7F512, 500-505 e 0x6E-0x70/0x12E-0x130 outro caminho,
   900/901 o caminho pelo SceFios2KernelForDriver 0F456345 num bloco de 0x124 bytes);
-  SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver 14
-  (layout dos objetos da libult na memória do processo).
+  SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver: feito
+  (feat/kernO, 21/11/2026, ver "Corrigido, falta o usuário testar").
   Entrega movida para "Corrigido, falta o usuário testar" (reboot do sistema, kernN, 22/11/2026); o resto segue aberto aqui.
 - [x] (22/11/2026, fix/quick1 529bd5a0: a montagem id 0xCA de ux0:pspemu fica registrada no AppMgr como no SceAppMgr 3.74; sceAppMgrUmount e o par do apputil desmontam; testes falham sem) [P3][G] sceAppMgrPspSaveDataRootMount (HLE) escreve `ux0:pspemu` como ponto de montagem sem registrar uma
   montagem no AppMgr, então um sceAppMgrUmount dele falha: conferir no appmgr 3.74 o que é montado (o SAVEDATA do
@@ -3427,6 +3427,18 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (25/11/2026, falta testar) [P2][G] SceUlobjMgrForDriver lê os objetos da libult na memória do processo como o
+  SceUlobjMgr 3.74 (feat/kernO, trazido em fix/recover1). Duas implementações da mesma biblioteca existiam
+  (feat/kernO e feat/kern9); ficou a do kernO, conferida contra o descompilado do 3.74 (só estudo): faz as 14
+  consultas (o kern9 fazia 8 e deixava 8E200387, CDAD91AD, B978DB70, 3685D4FB, 0C29AFEC e 5D7A7925 em resposta
+  padrão), o start mapeia a tabela de objetos e a entrega à libult (segundo start 0x80028003), e o NID_A90A564C
+  devolve (tabela, &revisão, registro) na ordem do módulo (registro +0x14, +0xC), que o kern9 tinha trocada. Nas
+  8 consultas em comum as duas leem os mesmos campos (cabeçalho +0x20 tamanho / +0x22 tipo, nós de 12 bytes, limite
+  do pool, entradas não nulas da tabela, mapa de estados 0,1,4,5,3,2); os 6 testes de objeto do kern9
+  (`UlobjKernelTests`: mutex com dono e esperas, condição pelo pool do mutex, semáforo, pool e pool de dados com as
+  listas, tabela de entradas, estado da thread) passam sem mudança contra o kernO e entraram junto. O que testar:
+  nada visível em jogo (só depuradores e o core dump usam); os jogos com libult rodam como antes.
 
 - [ ] (25/11/2026, falta testar) [P3][M] Entradas de import conferidas antes do link, como o modulemgr 3.74
   (fix/small4). Antes de ligar cada biblioteca que acha (FUN_81008aa0 -> FUN_81005100), num módulo de processo de
