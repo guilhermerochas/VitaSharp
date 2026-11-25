@@ -1,4 +1,4 @@
-<!-- pair: captures.md sha256=07be4372258e5c19a44c7b86548c27144eacc32b3c47f8760343f96fa4cd6db9 -->
+<!-- pair: captures.md sha256=921093dc6c7b944e2fdfadea22ca7aebff4b988721023d0623d19c3a3cc308d8 -->
 # Analisar uma gravação do Gravar tudo sem o jogo
 
 [English](captures.md) | **Português**
@@ -103,5 +103,27 @@ O replay executa os comandos gravados: um achado que continua nele é desenhado 
 comandos, ou já está neles (a causa vem antes da GPU). `--rerun` também roda de novo a lógica do jogo a partir do
 estado da gravação (`rerun`) e compara os dois relatórios tipo por tipo (travadas, ordem de apresentação, buracos e
 estalos do áudio); uma reexecução não é determinística, então só as contagens são comparadas.
+
+### Qual draw
+
+Para cada pisca que continua (no máximo três), o `verify` aponta o draw responsável, sem bisseção manual: mais um
+replay com a sonda de draws (`replay-gpu <dump> --probe=PRESENT:CÉLULA`, que também pode ser usado sozinho) copia a
+região do achado na superfície mostrada naquele present e nos dois vizinhos antes e depois de cada draw nela, com a
+profundidade e o estêncil sob ela antes do draw. Os draws do quadro do pisca são alinhados com os do vizinho (mesmos
+programas, na ordem) e o primeiro que difere é apontado, com os programas (hashes vs/fs), o estado e o motivo:
+
+```
+  draw responsável por [flash] present 1587 cell 1,1:
+    draw responsável: draw 41823 vs=... fs=... rt=0x66600000 depth=0/True st=7/7 blend=none ... t0=0x81200000:0C000000
+      por quê: não escreveu na região no quadro do pisca (no vizinho: 412 px); depth 0/True (vizinho 7/True), profundidade antes 0.2500 (vizinho 1.0000)
+```
+
+Os motivos: *falta no quadro do pisca* (o vizinho tem o draw, o quadro do pisca não), *só no quadro do pisca*, *não
+escreveu na região* (o mesmo draw não escreveu nada ali: rejeitado pelo teste de profundidade, estêncil ou alfa,
+recortado ou deslocado; os campos do estado e a profundidade/estêncil sob ele que diferem são listados), *estado
+diferente*. Quando nenhum draw na superfície mostrada difere, a causa é uma superfície desenhada antes e amostrada,
+ou qual buffer foi apresentado. Os arquivos: `probe_P/probe_P.txt` (cada draw sondado: present, número do draw,
+alvo, programas, pixels da região que mudou, profundidade e estêncil antes, estado) e
+`probe_P/attribution_P.txt`.
 
 Detalhes para desenvolvedores: [`docs/notes/session-capture.md`](notes/session-capture.md).

@@ -1,4 +1,4 @@
-<!-- pair: captures.pt-BR.md sha256=ded487b73b6e872e18f16f9f66ab8f8571b244d0905ffd4327813d8c9ed14686 -->
+<!-- pair: captures.pt-BR.md sha256=c9c26034e9c4be1436468f8084976dfd5669021672f63a73f0215d021e3c8297 -->
 # Analysing a Record everything capture without the game
 
 **English** | [Português](captures.pt-BR.md)
@@ -105,5 +105,26 @@ The replay executes the recorded commands: a finding still there in it is drawn 
 commands, or is already in them (the cause is before the GPU). `--rerun` also runs the game logic again from the
 capture's state (`rerun`) and compares the two reports kind by kind (stalls, presentation order, audio gaps and
 clicks); a re-run is not deterministic, so only the counts are compared.
+
+### Which draw
+
+For every flash still there (at most three), `verify` names the draw responsible, without bisecting by hand: one more
+replay with the draw probe (`replay-gpu <dump> --probe=PRESENT:CELL`, also usable alone) copies the finding's region
+of the surface shown at that present and at its two neighbours before and after every draw into it, with the depth
+and stencil under it before the draw. The draws of the flashing frame are lined up with the neighbour's (same
+programs, in order) and the first that differs is named, with its programs (vs/fs hashes), its state and why:
+
+```
+  draw responsável por [flash] present 1587 cell 1,1:
+    draw responsável: draw 41823 vs=... fs=... rt=0x66600000 depth=0/True st=7/7 blend=none ... t0=0x81200000:0C000000
+      por quê: não escreveu na região no quadro do pisca (no vizinho: 412 px); depth 0/True (vizinho 7/True), profundidade antes 0.2500 (vizinho 1.0000)
+```
+
+The reasons: *falta no quadro do pisca* (the neighbour has the draw, the flashing frame does not), *só no quadro do
+pisca*, *não escreveu na região* (the same draw wrote nothing there: rejected by the depth, stencil or alpha test,
+clipped or moved; the state fields and the depth/stencil under it that differ are listed), *estado diferente*. When
+no draw into the shown surface differs, the cause is a surface drawn earlier and sampled, or which buffer was
+presented. The files: `probe_P/probe_P.txt` (every probed draw: present, draw number, target, programs, pixels of
+the region it changed, depth and stencil before, state) and `probe_P/attribution_P.txt`.
 
 Details for developers: [`docs/notes/session-capture.md`](notes/session-capture.md).

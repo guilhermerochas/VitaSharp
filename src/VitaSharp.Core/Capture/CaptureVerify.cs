@@ -120,7 +120,11 @@ public static class CaptureVerify
     }
 
     /// <summary>The result of one comparison: the lines to print and the verdict.</summary>
-    public sealed record Result(Verdict Verdict, List<string> Lines, int Recorded, int StillThere, int Gone, int Moved, int New);
+    public sealed record Result(Verdict Verdict, List<string> Lines, int Recorded, int StillThere, int Gone, int Moved, int New)
+    {
+        /// <summary>The recorded findings the replay still shows (where the draw probe looks: verify).</summary>
+        public List<Item> Kept { get; init; } = new();
+    }
 
     /// <summary>
     /// The recording's picture findings inside the replayed presents (<paramref name="first"/>-<paramref name="last"/>)
@@ -137,6 +141,7 @@ public static class CaptureVerify
         bool[] used = new bool[candidates.Count];
         int still = 0, gone = 0, moved = 0;
         var stillByKind = new Dictionary<string, int>(StringComparer.Ordinal);
+        var kept = new List<Item>();
         foreach (Item r in inRange)
         {
             int exact = -1, near = -1;
@@ -167,6 +172,7 @@ public static class CaptureVerify
                 used[exact] = true;
                 still++;
                 stillByKind[r.Kind] = stillByKind.GetValueOrDefault(r.Kind) + 1;
+                kept.Add(r);
                 lines.Add($"  [{r.Kind}] {r.Where}: ainda presente (replay: {candidates[exact].Where}: {candidates[exact].Detail})");
             }
             else if (near >= 0)
@@ -215,7 +221,7 @@ public static class CaptureVerify
             : still > 0 ? Verdict.StillPresent
             : moved == 0 && fresh == 0 ? Verdict.Fixed
             : Verdict.Changed;
-        return new Result(verdict, lines, inRange.Count, still, gone, moved, fresh);
+        return new Result(verdict, lines, inRange.Count, still, gone, moved, fresh) { Kept = kept };
     }
 
     /// <summary>The findings of a report.txt (<c>  [kind] present P ...</c> lines, (info) left out) by kind, and the

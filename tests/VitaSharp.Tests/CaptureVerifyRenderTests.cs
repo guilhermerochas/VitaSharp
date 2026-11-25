@@ -18,7 +18,8 @@ internal sealed class FlashScene
     public const uint W = 64, H = 64;
     /// <summary>SCE_GXM_TEXTURE_FORMAT_U8U8U8U8_ABGR.</summary>
     private const uint TexAbgr = 0x0C000000;
-    public const uint DepthAlways = 0x00E00000, DepthNever = 0;
+    /// <summary>SCE_GXM_DEPTH_FUNC_ALWAYS and SCE_GXM_DEPTH_FUNC_NEVER (the function in bits 22-24).</summary>
+    public const uint DepthAlways = 0x01C00000, DepthNever = 0;
 
     private readonly Gxm _g;
     private readonly HleHarness _h;
@@ -250,6 +251,9 @@ public sealed class CaptureVerifyRenderTests(GuestMemoryFixture fx)
         Assert.Contains("ainda presente", r.Output, StringComparison.Ordinal);
         Assert.Contains("resultado: ainda presente", File.ReadAllText(Path.Combine(output, "verify.txt")), StringComparison.Ordinal);
         Assert.True(File.Exists(Path.Combine(output, "replay", CaptureVerify.FindingsFileName)));
+        // the draw probe names the HUD draw the flashing frame lacks
+        Assert.Contains("draw responsável por [flash]", r.Output, StringComparison.Ordinal);
+        Assert.Contains("falta no quadro do pisca", r.Output, StringComparison.Ordinal);
         Assert.Equal(before, Directory.GetFiles(capture));
     }
 

@@ -16,8 +16,9 @@ public sealed class GpuDumpFrameIndex
     {
         /// <summary>Renderer present number (frame_N.png).</summary>
         public long Present;
-        /// <summary>Framebuffer shown.</summary>
+        /// <summary>Framebuffer shown, and its size in pixels.</summary>
         public uint Address;
+        public uint Width, Height;
         /// <summary>Draw numbers in the dump (1-based, inclusive) that produce the frame; empty when none was found.</summary>
         public long FirstDraw, LastDraw;
         /// <summary>The draws between present #Present-1 and #Present (the stream order).</summary>
@@ -72,7 +73,7 @@ public sealed class GpuDumpFrameIndex
                     break;
                 case PresentCommand p:
                     present++;
-                    var f = new Frame { Present = present, Address = p.Frame.Address, IntervalFirst = lastPresentDraws + 1, IntervalLast = draws, InsideScene = cur != null };
+                    var f = new Frame { Present = present, Address = p.Frame.Address, Width = p.Frame.Width, Height = p.Frame.Height, IntervalFirst = lastPresentDraws + 1, IntervalLast = draws, InsideScene = cur != null };
                     lastPresentDraws = draws;
                     ix.Frames.Add(f);
                     begun.Add(scenes.Count);

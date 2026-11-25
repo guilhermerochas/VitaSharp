@@ -80,6 +80,7 @@ static class VerifyCapture
                 ? " (o replay executa os comandos gravados: se o build que gravou também o mostra no replay, a causa está no renderizador; se a causa vem antes da GPU, nos comandos, use --rerun)"
                 : ""));
             verdicts.Add(result.Verdict);
+            Attribute(dump, outDir, result.Kept, replayOptions, report);
         }
         else
         {
@@ -138,6 +139,36 @@ static class VerifyCapture
 
         items.AddRange(CaptureVerify.NanEvents(Path.Combine(dir, "log.txt")));
         return items;
+    }
+
+    /// <summary>Most findings still present whose draws are probed (one replay each, up to their present).</summary>
+    internal const int MaxProbed = 3;
+
+    /// <summary>The draw responsible for each finding the replay still shows (<c>replay-gpu --probe</c> in a child
+    /// process: the draws into the shown surface at the present and its neighbours, region by region), into the
+    /// report.</summary>
+    static void Attribute(string dump, string outDir, IReadOnlyList<CaptureVerify.Item> kept, string[] replayOptions, StringBuilder report)
+    {
+        foreach (CaptureVerify.Item item in kept.Where(k => k.Kind is "flash" or "black-flash").Take(MaxProbed))
+        {
+            string dir = Path.Combine(outDir, $"probe_{item.Present}");
+            Directory.CreateDirectory(dir);
+            var args = new List<string> { "replay-gpu", dump, $"--out={dir}", $"--probe={item.Present}:{item.Cell}", "--fast", "--dump-every=1000000000" };
+            args.AddRange(replayOptions);
+            int rc = RunSelf(args, Path.Combine(dir, "console.txt"));
+            string attribution = Path.Combine(dir, $"attribution_{item.Present}.txt");
+            report.AppendLine($"  draw responsável por [{item.Kind}] {item.Where}:");
+            if (!File.Exists(attribution))
+            {
+                report.AppendLine($"    a sonda não terminou (código {rc}; {Path.Combine(dir, "log.txt")})");
+                continue;
+            }
+
+            foreach (string line in File.ReadLines(attribution).Skip(1))
+            {
+                report.AppendLine("    " + line);
+            }
+        }
     }
 
     /// <summary>Replays <paramref name="dump"/> in a child process with --findings into <paramref name="outDir"/> and
