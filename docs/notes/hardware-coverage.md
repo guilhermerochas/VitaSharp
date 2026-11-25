@@ -157,8 +157,9 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
 
 - **Today:** off by default, the application is "not allowed" (`Hle/Modules/Location.cs`); with the location
   setting (`--location=latitude,longitude`, Android "Localização do celular") the application is allowed and gets
-  that position (`Host/Location.cs`). Missing: the PC's location service, the location callbacks' deliveries, the
-  firmware path (liblocation LLE against the shell's provider, `SceGps` of a 3G model).
+  that position (`Host/Location.cs`); the location callbacks report it from the "SceLocationCallback" thread as 3.74
+  (`Hle/Modules/Location.Callbacks.cs`: the first position, then every `distance` metres). Missing: the PC's
+  location service, the heading callbacks (no compass in the service), the firmware path (liblocation LLE against the shell's provider, `SceGps` of a 3G model).
 - **Impact:** Near, Maps and the location features of apps and games.
 - **Size:** [M]: a host location interface (Windows Geolocation, GeoClue, Core Location, Android `LocationManager`)
   and a fixed position option. **First testable delivery:** a scripted position; with the application allowed,

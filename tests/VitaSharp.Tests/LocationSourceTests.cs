@@ -113,19 +113,115 @@ public sealed class LocationSourceTests(GuestMemoryFixture fixture) : IDisposabl
         Assert.Equal(Location.ERR_DISABLE_APPLICATION, Call(Module, "sceLocationStartLocationCallback", handle, 10u, 0x81000001u, 0u));
     }
 
+    /// <summary>What a guest callback (a real guest function: an HLE stub) was called with.</summary>
+    private sealed class CallbackLog
+    {
+        public readonly List<(int Result, uint Handle, double Latitude, double Longitude, uint Userdata)> Calls = new();
+
+        public int Count
+        {
+            get
+            {
+                lock (Calls)
+                {
+                    return Calls.Count;
+                }
+            }
+        }
+    }
+
+    /// <summary>A guest function that records its (result, handle, info, userdata) calls.</summary>
+    private uint LocationCallback(CallbackLog log)
+    {
+        uint stub = _harness.Alloc(16);
+        VitaSharp.Core.Loader.Linker.WriteHleStub(stub, _harness.Emu.Hle.RegisterHostFunction("location callback", context =>
+        {
+            uint info = context.Gpr(2);
+            lock (log.Calls)
+            {
+                log.Calls.Add(((int)context.Gpr(0), context.Gpr(1), GuestMemory.Read<double>(info), GuestMemory.Read<double>(info + 8), context.Gpr(3)));
+            }
+
+            context.Return(0);
+        }), 0);
+        _harness.Emu.Code.Invalidate(stub, 16);
+        return stub;
+    }
+
     [Fact]
     public void ALocationCallbackRunsOncePerHandleUntilStopped()
     {
         _harness.Emu.Host.Location = new FixedLocationSource(s_somewhere);
         (uint handle, _) = Open();
+        uint callback = LocationCallback(new CallbackLog());
 
         Assert.Equal(Location.ERR_INVALID_ADDRESS, Call(Module, "sceLocationStartLocationCallback", handle, 10u, 0u, 0u));
-        Assert.Equal(0, Call(Module, "sceLocationStartLocationCallback", handle, 10u, 0x81000001u, 0u));
-        Assert.Equal(Location.ERR_MULTIPLE_CALLBACK, Call(Module, "sceLocationStartLocationCallback", handle, 10u, 0x81000001u, 0u));
+        Assert.Equal(Location.ERR_INVALID_ADDRESS, Call(Module, "sceLocationStartLocationCallback", 999u, 10u, 0u, 0u)); // the callback first
+        Assert.Equal(0, Call(Module, "sceLocationStartLocationCallback", handle, 10u, callback, 0u));
+        Assert.Equal(Location.ERR_MULTIPLE_CALLBACK, Call(Module, "sceLocationStartLocationCallback", handle, 10u, callback, 0u));
         Assert.Equal(0, Call(Module, "sceLocationStopLocationCallback", handle));
         Assert.Equal(Location.ERR_NOT_RUNNING_CALLBACK, Call(Module, "sceLocationStopLocationCallback", handle));
-        Assert.Equal(0, Call(Module, "sceLocationStartLocationCallback", handle, 10u, 0x81000001u, 0u));
+        Assert.Equal(0, Call(Module, "sceLocationStartLocationCallback", handle, 10u, callback, 0u));
         Assert.Equal(0, Call(Module, "sceLocationClose", handle)); // closing the handle ends its callback
+        Until(() => !Module.LocationCallbackThreadRunning, "the callback thread to end with the last callback");
+    }
+
+    /// <summary>
+    /// FW 3.74 liblocation: the "SceLocationCallback" thread calls callback(result, handle, &amp;info, userdata) for
+    /// the service's reports. The first position is reported at once, then only a move of at least the distance;
+    /// a source without a position reports nothing; stopping ends the reports and the thread. Before, the callback was
+    /// accepted and never called.
+    /// </summary>
+    [Fact]
+    public void TheCallbackGetsThePositionEveryDistance()
+    {
+        var source = new TestSource();
+        _harness.Emu.Host.Location = source;
+        (uint handle, _) = Open();
+        var log = new CallbackLog();
+        uint callback = LocationCallback(log);
+        Assert.Equal(0, Call(Module, "sceLocationStartLocationCallback", handle, 100u, callback, 0x55u));
+
+        WaitForPasses(2);
+        Assert.Equal(0, log.Count); // no position yet: nothing to report
+
+        source.Fix = s_somewhere;
+        Module.WakeLocationCallbacks();
+        Until(() => log.Count == 1, "the first report");
+        Assert.Equal((0, handle, -23.5613, -46.6565, 0x55u), log.Calls[0]);
+
+        source.Fix = s_somewhere with { Latitude = -23.5613 + 0.0001 }; // ~11 m: under the distance
+        WaitForPasses(2);
+        Assert.Equal(1, log.Count);
+
+        source.Fix = s_somewhere with { Latitude = -23.5513 }; // ~1.1 km from the last report
+        Module.WakeLocationCallbacks();
+        Until(() => log.Count == 2, "the report after a move past the distance");
+        Assert.Equal(-23.5513, log.Calls[1].Latitude);
+
+        Assert.Equal(0, Call(Module, "sceLocationStopLocationCallback", handle));
+        Until(() => !Module.LocationCallbackThreadRunning, "the callback thread to end");
+        source.Fix = s_somewhere;
+        Assert.Equal(2, log.Count);
+    }
+
+    /// <summary>Waits until the callback thread made <paramref name="passes"/> more passes (a whole one after now).</summary>
+    private void WaitForPasses(int passes)
+    {
+        int target = Module.LocationCallbackPasses + passes;
+        Until(() =>
+        {
+            Module.WakeLocationCallbacks();
+            return Module.LocationCallbackPasses >= target;
+        }, $"{passes} passes of the callback thread");
+    }
+
+    [Fact]
+    public void DistancesAreGreatCircleMetres()
+    {
+        Assert.Equal(0.0, Location.DistanceMetres(10, 20, 10, 20));
+        Assert.InRange(Location.DistanceMetres(0, 0, 0, 1), 111_190, 111_200);     // one degree on the equator
+        Assert.InRange(Location.DistanceMetres(-23.5613, -46.6565, -23.5513, -46.6565), 1_100, 1_125);
     }
 
     /// <summary>A capture may go to a public report: while "Gravar tudo" is armed (its pre-roll keeps save states) or

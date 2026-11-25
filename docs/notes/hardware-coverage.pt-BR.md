@@ -161,8 +161,9 @@ compatibilidade PSP". Impacto: todo título de PSP e PSone, homebrew de PSP, Adr
 
 - **Hoje:** desligada por padrão, o aplicativo "sem permissão" (`Hle/Modules/Location.cs`); com a opção de
   localização (`--location=latitude,longitude`, "Localização do celular" no Android) o aplicativo tem permissão e recebe
-  essa posição (`Host/Location.cs`). Falta: o serviço de localização do PC, as entregas dos callbacks de localização, o
-  caminho do firmware (liblocation LLE contra o provedor do shell, `SceGps` de um modelo 3G).
+  essa posição (`Host/Location.cs`); os callbacks de localização a recebem da thread "SceLocationCallback" como no 3.74
+  (`Hle/Modules/Location.Callbacks.cs`: a primeira posição e depois a cada `distance` metros). Falta: o serviço de
+  localização do PC, os callbacks de direção (o serviço não tem bússola), o caminho do firmware (liblocation LLE contra o provedor do shell, `SceGps` de um modelo 3G).
 - **Impacto:** Near, Mapas e os recursos de localização de apps e jogos.
 - **Tamanho:** [M]: uma interface de localização do host (Geolocation do Windows, GeoClue, Core Location,
   `LocationManager` do Android) e uma opção de posição fixa. **Primeira entrega testável:** uma posição roteirizada;

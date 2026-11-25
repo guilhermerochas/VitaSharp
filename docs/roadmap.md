@@ -2402,12 +2402,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   datagrama PDP nos dois sentidos. Depois Matching e o canal WLAN do ScePspemu.
 - [ ] [P3][M] Localização (GPS) pelo host, o que falta (`docs/notes/hardware-coverage.md`; o feito está em
   "Corrigido, falta o usuário testar"): (1) o serviço de localização do próprio PC (Geolocation do Windows, GeoClue
-  no Linux, Core Location no macOS) como fonte "system" no desktop; (2) entregar a posição pelos callbacks
-  (`sceLocationStartLocationCallback` aceita e fica ativo, mas ainda não chama o callback do guest a cada
-  deslocamento de `distance` metros); (3) o caminho do firmware: o liblocation.suprx real é cliente IPC do
-  `location_provider` do shell, que nos modelos 3G lê o `SceGps` (driver do modem); o VitaSharp emula um modelo Wi-Fi
+  no Linux, Core Location no macOS) como fonte "system" no desktop; (2) o caminho do firmware: o liblocation.suprx
+  real é cliente IPC do `location_provider` do shell, que nos modelos 3G lê o `SceGps` (driver do modem); o VitaSharp emula um modelo Wi-Fi
   (sem receptor, o `ksceGps` fica no estado 2 com driver e sem sessão), e o Near (NPXS10000) já usa o liblocation real
-  contra o provedor do shell sem posição. Usa: Near, Mapas.
+  contra o provedor do shell sem posição. Achado (24/11/2026, fix/small2, só estudo do 3.74): o
+  `liblocation_provider.suprx` do shell não importa o `SceGps`; num modelo Wi-Fi ele tira a posição do serviço Skyhook
+  (`https://api.skyhookwireless.com/wps2`, protocolo XML "http://skyhookwireless.com/wps/2005") com a lista de redes
+  Wi-Fi vistas (`scePosNetCtlInetGetScanInfo`) pelo `SceHttp`. Esse serviço não existe mais; dar uma posição ao Near
+  pelo caminho do firmware é responder essa requisição com a posição do host (o `SceNetCtl` com redes vistas e uma
+  resposta WPS), e isso é [G]: decidir com o usuário antes. Usa: Near, Mapas.
 - [ ] [P3][M] Magnetômetro, o que falta (o feito está em "Corrigido, falta o usuário testar"): (1) o anel de
   registros brutos do driver (`sceMotionDevRead`/`ReadForMagnCalib` copiam os registros do leitor, modo 0x10005 do
   FUN_81004420; o formato do registro ainda não foi lido) e o `dataInfo`; (2) a fusão do campo no `deviceQuat` como o driver_us faz (hoje só a matriz NED e a estabilidade usam o
@@ -3303,6 +3306,19 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (24/11/2026, falta testar) [P3][M] Callbacks de localização entregam a posição (fix/small2,
+  `Hle/Modules/Location.Callbacks.cs`). No 3.74 o liblocation.suprx roda os callbacks numa thread própria,
+  "SceLocationCallback" (pilha 0x1000): o `sceLocationStartLocationCallback` guarda o callback e o userdata no handle
+  e pede ao serviço de localização relatórios a cada `distance` metros; a cada relatório a thread lê a posição num
+  SceLocationLocationInfo e chama `callback(resultado, handle, &info, userdata)`, até o Stop ou o Close. Antes o
+  callback era aceito e nunca chamado. Agora a thread de serviço do guest olha a fonte do host cerca de uma vez por
+  segundo e informa a primeira posição e depois cada uma a pelo menos `distance` metros (círculo máximo) da última
+  informada; sem posição, nada. O Start confere o callback antes do handle, como o 3.74 (antes, o contrário). Save
+  state: a thread volta com o UID salvo (`IServiceThreadOwner`). Testes:
+  `LocationSourceTests.TheCallbackGetsThePositionEveryDistance` (callback de guest de verdade; falha sem a mudança),
+  `ALocationCallbackRunsOncePerHandleUntilStopped`, `DistancesAreGreatCircleMetres`. Testar: com a localização
+  ligada (`--location=` ou "Localização do celular"), abrir um app que acompanha a posição (Near, Mapas): a posição
+  aparece sem precisar atualizar à mão e, no celular, muda ao andar.
 - [ ] (24/11/2026, falta testar) [P3][M] Eventos de conexão do Bluetooth e controles de consumo do SceHid
   (fix/small2; `docs/notes/hardware-coverage.md`). No 3.74 o SceBt tem 8 vagas, uma por processo:
   `sceBtRegisterCallback` (0xA23FB154) guarda o callback, a máscara de 64 bits dos tipos de evento e uma fila de 16;
