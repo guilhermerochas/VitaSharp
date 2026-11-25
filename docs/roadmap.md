@@ -4683,6 +4683,11 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   abaixo sempre visíveis, sem piscar.
 
 ## Bugs em aberto
+- [ ] [P3][P] `sceSslInternalGetCertificateAuthority` (feat/browser-1, trazido em fix/recover1) entrega todas as raízes do
+  `vs0:data/external/cert/CA_LIST.cer` para qualquer categoria e máscara. No libssl 3.74 (FUN_810482b0, só estudo)
+  cada categoria (1, 2, ...) e cada bit da máscara escolhem um trecho do arquivo por uma tabela de deslocamentos e
+  tamanhos; o sistema só pede (0, 0xFFFFFFFF), que é a lista inteira. Reproduzir a tabela e testar uma categoria e um
+  bit isolados. A validação dos certificados continua no código TLS do guest (nada é aceito pelo emulador).
 - [ ] Renderizador passa do `maxStorageBufferRange` do dispositivo: o espelho da CDRAM dos slots mapeados
   (`VulkanRenderer.Mapped.cs`: CDRAM 256 MB + 32 MB de rascunho) é ligado como um storage buffer de 288 MB, e o
   limite é 128 MB no lavapipe do Mesa 22.3 (e em várias GPUs móveis). A camada de validação acusa
