@@ -2216,7 +2216,14 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   SceCoredumpForDriver NID_A7D214A7 / NID_D064F6DC / NID_EF20949F (a validação, a fila de duas vagas e o arquivo
   de core estão em "Corrigido, falta o usuário testar"; falta a suspensão do processo durante o dump e as notas da
   Sony no .psp2dmp: PROCESS_INFO, THREAD_INFO, THREAD_REG_INFO, MODULE_INFO, MEM_BLK_INFO e as outras que o módulo
-  nomeia, cada uma com o formato dela); SceAppMgrForDriver 6 (1B6C2FED/C4924946 caminho de lançamento de debug atrás de
+  nomeia, cada uma com o formato dela. Estudo (25/11/2026, fix/small3): cada uma é uma nota ELF montada pelo
+  FUN_81011774 (namesz 0x10, descsz = tamanho - 0x1C, o tipo: SYSTEM_INFO 0x1001, PROCESS_INFO 0x1002, THREAD_INFO
+  0x1003, THREAD_REG_INFO 0x1004, MODULE_INFO 0x1005, LIBRARY_INFO 0x1006, MEM_BLK_INFO 0x1007, FILE_INFO 0x1009,
+  ..., KERNEL_INFO 0x3000; o nome em 16 bytes; o descritor começa pela versão: 1, 0x12, 0x11...), e os dados vêm das
+  estruturas de informação do kernel (PROCESS_INFO: 0x58 bytes do FUN_81001aa4, o nome do processo, 0x10 do
+  FUN_81001e00 e 8 do FUN_81001d44; THREAD_INFO: o número de threads e um registro por thread). Falta ler o layout de
+  cada uma; o FUN_81006ce8 do pedido só segura a referência do processo (0x0F5C84B7), a suspensão fica no thread de
+  dump); SceAppMgrForDriver 6 (1B6C2FED/C4924946 caminho de lançamento de debug atrás de
   ksceSblACMgrIsDevelopmentMode; 1574E1A4 montagem por id 0x6A/0x6B/0xCD/600/900; 324DD34E, E8DB7942 e 504023C8
   feitos em 23/11/2026, fix/quick3, em "Corrigido, falta o usuário testar");
   SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver 14
