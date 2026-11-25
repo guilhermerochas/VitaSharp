@@ -9,7 +9,9 @@ namespace VitaSharp.Core.Host;
 /// about those axes.
 /// </summary>
 /// <param name="TimestampUs">Host monotonic time of the reading in microseconds (only differences are used).</param>
-public readonly record struct MotionSample(ulong TimestampUs, Vector3 Acceleration, Vector3 AngularVelocity);
+/// <param name="MagneticField">The magnetometer's reading in microtesla in the same axes (the Earth's field points north
+/// and, in the northern hemisphere, down); zero when the source has no magnetometer.</param>
+public readonly record struct MotionSample(ulong TimestampUs, Vector3 Acceleration, Vector3 AngularVelocity, Vector3 MagneticField = default);
 
 /// <summary>
 /// Host motion sensors backing SceMotion: a controller's gyro/accelerometer (desktop, SDL), the phone's own sensors

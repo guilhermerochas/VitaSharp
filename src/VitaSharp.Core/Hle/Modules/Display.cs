@@ -171,9 +171,27 @@ public sealed partial class Display : HleModule
         Util.Developer.DevTrace.GuestFrame();
 #endif
 
-        if (pParam == 0) { _base = 0; if (Emu.IsShell) Emu.Vita.SetShellOverlay(null, VBlank.Count); return 0; }
+        if (pParam == 0)
+        {
+            _base = 0;
+            _compatPlaced = false;
+            if (Emu.IsShell)
+            {
+                Emu.Vita.SetShellOverlay(null, VBlank.Count);
+            }
+
+            return 0;
+        }
+
         uint size = GuestMemory.R32(pParam);
-        if (size is not (0x18 or 0x1C)) return ERR_INVALID_VALUE; // SceDisplayFrameBuf or SceDisplayFrameBufExt
+        if (size is not (0x18 or 0x1C))
+        {
+            return ERR_INVALID_VALUE; // SceDisplayFrameBuf or SceDisplayFrameBufExt
+        }
+
+        // the plane 0 record the compat framebuffer shares: a framebuffer set here is shown whole again
+        // (ksceDisplaySetFrameBufInternal clears the record's destination rectangle, Display.Compat.cs)
+        _compatPlaced = false;
         _base = GuestMemory.R32(pParam + 4);
         _pitch = GuestMemory.R32(pParam + 8);
         _format = GuestMemory.R32(pParam + 12);
@@ -194,6 +212,14 @@ public sealed partial class Display : HleModule
             using (FrameLedger.Time(FrameLedger.Cat.GuestGpuWait)) VBlank.WaitFor(_lastFlipVcount + k);
         }
         _lastSetVcount = _lastFlipVcount = VBlank.Count;
+        PresentCurrent();
+        return 0;
+    }
+
+    /// <summary>What the process set last (<see cref="Current"/>, placed by <see cref="CurrentPlacement"/>) goes to the
+    /// screen when the process is in front.</summary>
+    void PresentCurrent()
+    {
         // the display shows the foreground process (the shell, or the application it launched); a process in the
         // background keeps flipping its buffers, and what it last set comes back on screen when it is in front again.
         // A system program in front draws into the shell's shared framebuffer: the shell shows that frame with its own
@@ -202,15 +228,24 @@ public sealed partial class Display : HleModule
         // plane (its on-screen keyboard, notifications): blended over that application's frames (VitaSystem.ShellOverlay).
         if (!Emu.IsForeground && !(Emu.IsShell && SharedFb.ComposesForeground(Emu)))
         {
-            if (Emu.IsShell) Emu.Vita.SetShellOverlay(Current, _lastSetVcount);
-            return 0;
+            if (Emu.IsShell)
+            {
+                Emu.Vita.SetShellOverlay(Current, _lastSetVcount);
+            }
+
+            return;
         }
+
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         var present = new PresentCommand
         {
             Frame = new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format),
+            Placement = CurrentPlacement,
             Overlay = Emu.IsShell ? null : Emu.Vita.ShellOverlay(_lastSetVcount),
-            Flip = FramesPresented, VBlank = _lastSetVcount, GuestUs = GuestClock.Microseconds, HostTicks = now,
+            Flip = FramesPresented,
+            VBlank = _lastSetVcount,
+            GuestUs = GuestClock.Microseconds,
+            HostTicks = now,
         };
         // the GXM display queue's callback flips a frame whose rendering is done: the flip is not ordered behind the
         // work the game queued since (a later scene into this very buffer, waiting for this flip: GpuQueue.SubmitFlip)
@@ -233,7 +268,6 @@ public sealed partial class Display : HleModule
         VitaSharp.Core.Util.FrameLedger.OnPresent(FramesPresented);
         FramesPresented++;
         Presented?.Invoke();
-        return 0;
     }
 
     /// <summary>The process has set a framebuffer (it is showing frames).</summary>
@@ -245,8 +279,16 @@ public sealed partial class Display : HleModule
     /// <summary>The process came to the foreground: its last framebuffer is shown again right away.</summary>
     internal void Represent()
     {
-        if (_base == 0) return;
-        Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format) });
+        if (_base == 0)
+        {
+            return;
+        }
+
+        Emu.Gpu.Submit(new PresentCommand
+        {
+            Frame = new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format),
+            Placement = CurrentPlacement,
+        });
     }
 
     public static long FramesPresented;
@@ -457,7 +499,12 @@ public sealed partial class Ctrl : HleModule
     {
         ControllerState s;
         long read = NextRead(ref _padReads, port);
-        if (Emu.Host.Input is IGuestReadInput ordered)
+        if (PsTv && port >= 1 && Emu.Host.Input is Host.IMultiControllerInput multi)
+        {
+            // a PS TV: the guest's port n (1-4) is the host's n-th controller; one not connected is neutral
+            s = port <= Math.Clamp(multi.ControllerCount, 0, 4) ? multi.GetPad(port - 1) : ControllerState.Neutral;
+        }
+        else if (Emu.Host.Input is IGuestReadInput ordered)
         {
             s = ordered.GetController(port, read);
         }
@@ -552,7 +599,9 @@ public sealed partial class Ctrl : HleModule
         return Peek(port, data, count, negative, api);
     }
 
-    static int Port(int port) => port <= 1 ? 0 : port - 1;
+    /// <summary>The host port a guest port reads: on a handheld ports 0 and 1 are the built-in pad and n the host's n-1;
+    /// on a PS TV the port itself (<see cref="State"/> serves ports 1-4 from the host's controllers).</summary>
+    int Port(int port) => PsTv ? port : port <= 1 ? 0 : port - 1;
 
     /// <summary>Upper bound on the samples one call writes.</summary>
     const uint MaxSamples = 64;
@@ -643,10 +692,40 @@ public sealed partial class Ctrl : HleModule
         lock (_rapid) _rapid[idx] = null;
         return 0;
     }
-    [Hle] int sceCtrlSetActuator(int port, uint state) => 0;
+    /// <summary>SceCtrlPortInfo port types (psp2/ctrl.h).</summary>
+    const byte PortUnpaired = 0, PortPhysical = 1, PortVirtual = 2, PortDualShock3 = 4;
+
+    /// <summary>The unit is a PS TV (<see cref="ConsoleModel.PsTv"/>): ports 1-4 are the host's controllers.</summary>
+    bool PsTv => Emu.Options.Model == ConsoleModel.PsTv;
+
+    /// <summary>How many host controllers a PS TV has on ports 1-4.</summary>
+    int PsTvControllers => Emu.Host.Input is Host.IMultiControllerInput multi ? Math.Clamp(multi.ControllerCount, 0, 4) : 1;
+
+    /// <summary>
+    /// (int port, const SceCtrlActuator *state {small, large, reserved[6]}): the controller's vibration. FW 3.74 SceCtrl
+    /// copies the 8 bytes (a NULL state is 0x80340001) and, while an external controller driver serves ports 1-4 (a PS
+    /// TV's SceDs3/SceBt), hands them to it; on a handheld nothing vibrates and the call answers 0.
+    /// </summary>
+    [Hle]
+    int sceCtrlSetActuator(int port, uint state)
+    {
+        if (state == 0)
+        {
+            return unchecked((int)0x80340001);
+        }
+
+        if (PsTv && port is >= 1 and <= 4)
+        {
+            Emu.Host.Vibration?.SetVibration(port, GuestMemory.Read<byte>(state), GuestMemory.Read<byte>(state + 1));
+        }
+
+        return 0;
+    }
+
     [Hle] int sceCtrlSetLightBar(int port, byte r, byte g, byte b) => 0;
     [Hle] int sceCtrlResetLightBar(int port) => 0;
-    [Hle] int sceCtrlIsMultiControllerSupported() => 0;
+    /// <summary>FW 3.74 SceCtrl asks SceSysroot for the model's capability: 1 on a PS TV, 0 on a handheld.</summary>
+    [Hle] int sceCtrlIsMultiControllerSupported() => PsTv ? 1 : 0;
     [Hle] int sceCtrlSingleControllerMode(int mode) => 0;
 
     [Hle]
@@ -654,8 +733,21 @@ public sealed partial class Ctrl : HleModule
     {
         if (info == 0) return unchecked((int)0x80340002);
         GuestMemory.Fill(info, 0, 5);
-        GuestMemory.Write(info, (byte)1);     // port 0: vita built-in
-        GuestMemory.Write(info + 1, (byte)1);
+        if (PsTv)
+        {
+            // a PS TV: port 0 is the virtual port, ports 1-4 the controllers connected (a DualShock 3 each)
+            GuestMemory.Write(info, PortVirtual);
+            int connected = PsTvControllers;
+            for (int port = 1; port <= 4; port++)
+            {
+                GuestMemory.Write(info + (uint)port, port <= connected ? PortDualShock3 : PortUnpaired);
+            }
+
+            return 0;
+        }
+
+        GuestMemory.Write(info, PortPhysical);     // port 0: vita built-in
+        GuestMemory.Write(info + 1, PortPhysical);
         return 0;
     }
 
@@ -669,27 +761,6 @@ public sealed partial class Ctrl : HleModule
 
     [Hle]
     int sceCtrlGetBatteryInfo(int port, Ptr<byte> level) { level.TrySet(5); return 0; }
-}
-
-/// <summary>SceHid: USB/Bluetooth keyboards and mice. None are attached, so enumeration finds no devices.</summary>
-public sealed partial class Hid : HleModule
-{
-    /// <summary>sceHid{Keyboard,Mouse}Enumerate(int *handles, int count): returns the number of devices written.</summary>
-    [Hle("sceHidKeyboardEnumerate")]
-    [Hle("sceHidMouseEnumerate")]
-    int sceHidEnumerate(uint handles, int count) => 0;
-
-    /// <summary>
-    /// psp2/hid.h: <c>int sceHidKeyboardRead/Peek(SceUInt32 handle, SceHidKeyboardReport *reports[], int nReports)</c>
-    /// and <c>int sceHidMouseRead(SceUInt32 handle, SceHidMouseReport *reports[], int nReports)</c>; the result is the
-    /// number of reports filled. No device is ever attached, so there is never a report: return 0 at once instead of
-    /// blocking (Read is documented as blocking, which would hang a caller polling a handle it never enumerated).
-    /// The report buffers are not touched.
-    /// </summary>
-    [Hle("sceHidKeyboardRead")]
-    [Hle("sceHidKeyboardPeek")]
-    [Hle("sceHidMouseRead")]
-    int sceHidRead(uint handle, uint reports, int nReports) => 0;
 }
 
 public sealed partial class Touch : HleModule

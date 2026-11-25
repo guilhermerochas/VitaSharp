@@ -21,7 +21,7 @@ namespace VitaSharp.Core.Compat.Psp;
 /// writes, the count = now − base the kernel computes, −1 prescalers at init) and Jpcsp <c>MMIOHandlerTimer</c> (the
 /// 48 MHz base, the count and overflow byte, the read that acknowledges, the read-only view at +0x100).
 /// </summary>
-public sealed class PspHardwareTimers : IPspMmioDevice, IPspTimedDevice
+public sealed partial class PspHardwareTimers : IPspMmioDevice, IPspTimedDevice
 {
     /// <summary>PSP physical 0xBC500000.</summary>
     public const uint Base = 0x1C500000;

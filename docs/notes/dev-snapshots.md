@@ -109,6 +109,7 @@ only while one exists; with none open the module saves normally).
 | Fiber | Fiber.cs | hand-written | fibers with their register contexts, per-thread current fiber |
 | Fios2User | Fios2User.cs | hand-written | overlay table |
 | Gxm | Gxm.cs | hand-written | contexts, targets, programs (rebuilt from guest binaries), patchers, recorded command lists and a list being recorded |
+| Compat | Compat.cs, Compat.Snapshot.cs | generated (nested) | SceCompat (window, rings, semaphores), shared SRAM, mailbox, bus banks, PSP hardware with the GE, LCD DMA, the Allegrex and its runner; the core thread parks between slices and is adopted/released on load |
 | SystemGesture | SystemGesture.cs | generated (nested) | touch primitives and recognizers |
 | Http | Http.cs | hand-written | templates/connections/requests; an exchange in flight or an epoll is refused |
 | IoFileMgr | IoFileMgr.cs | hand-written | files reopened by path at their offset, directory listings |

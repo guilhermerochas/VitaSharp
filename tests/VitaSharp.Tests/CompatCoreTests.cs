@@ -608,9 +608,22 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
         public int Draws;
         public bool Disposed;
 
-        public void Draw(GeTopology topology, ReadOnlySpan<GeVertex> vertices, GeRenderState state, GeTarget target)
+        public void Draw(GeTopology topology, ReadOnlySpan<GeVertex> vertices, GeRenderState state, GeSurface color, GeSurface? depth, IGeMemory memory)
         {
             Draws++;
+        }
+
+        public void Flush(IGeMemory memory)
+        {
+        }
+
+        public bool Holds(uint address, int length)
+        {
+            return false;
+        }
+
+        public void Invalidate(uint address, int length)
+        {
         }
 
         public void Dispose()
@@ -770,6 +783,13 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
         _harness.OnGuest(_ =>
         {
             uint window = Init(DisplayBoot());
+            uint readFrom = 0;
+            int readBytes = 0;
+            Compat.LcdDma.BeforeRead = (address, bytes) =>
+            {
+                readFrom = address;
+                readBytes = bytes;
+            };
             Assert.Equal(0, Call(Compat, "sceCompatFrameBufferInit", block));
             Assert.Equal(0, Compat.ReleaseCoreForTests());
             uint results = window + MipsResults;
@@ -780,6 +800,8 @@ public sealed class CompatCoreTests(GuestMemoryFixture fixture) : IDisposable
             Assert.Equal(0xFFFF0000u, GuestMemory.R32(blockBase + 8));
             Assert.Equal(0x80808080u, GuestMemory.R32(blockBase + 12));
             Assert.Equal(0x1234u, GuestMemory.R32(blockBase + 0x800)); // line 1 at the block's pitch
+            Assert.Equal(0x04000000u, readFrom); // the hook before the read: the picture's address and size
+            Assert.Equal(512 * 4 * 272, readBytes);
             Assert.Equal(0, Call(Compat, "sceCompatStop"));
             Assert.False(Compat.LcdDma.Running);
         });

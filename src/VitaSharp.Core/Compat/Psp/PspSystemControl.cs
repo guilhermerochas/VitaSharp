@@ -28,7 +28,7 @@ namespace VitaSharp.Core.Compat.Psp;
 /// and <c>dmacman</c> (0x050 DMAC bits), psp-ghidra-scripts (HW_SYS_CONTROL, 0x104 bytes). The chip version and
 /// the fuse values the Vita's compat core reports are not known: 0 until the boot trace shows them.
 /// </summary>
-public sealed class PspSystemControl : IPspMmioDevice
+public sealed partial class PspSystemControl : IPspMmioDevice
 {
     /// <summary>PSP physical 0xBC100000.</summary>
     public const uint Base = 0x1C100000;
@@ -138,7 +138,7 @@ public sealed class PspSystemControl : IPspMmioDevice
 /// are not stored. Reset: 0. Source: Jpcsp <c>MMIOHandlerCpuBusFrequency</c>. The compat core's time keeps the
 /// compat clock SceCompat sets on the ARM side (333 MHz); these ratios do not change it.
 /// </summary>
-public sealed class PspClockFrequency : IPspMmioDevice
+public sealed partial class PspClockFrequency : IPspMmioDevice
 {
     /// <summary>PSP physical 0xBC200000.</summary>
     public const uint Base = 0x1C200000;

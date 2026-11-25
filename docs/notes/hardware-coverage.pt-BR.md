@@ -1,4 +1,4 @@
-<!-- pair: hardware-coverage.md sha256=cda6b76cd11444a75260162c3438c87ed51bddb9d0bfa13a23033ca08dba4bc2 -->
+<!-- pair: hardware-coverage.md sha256=b5c0b764569353c25d46f43b40882d24287169e94a24ef119dbd9cd05b8ac459 -->
 # Cobertura do hardware (SoC e console do PS Vita)
 
 *English: [hardware-coverage.md](hardware-coverage.md).*
@@ -57,8 +57,8 @@ registrado, não é para emular); **ok** coberto.
 | Câmeras (frontal/traseira), MIPI CSI-2, ISP | `SceCamera`, `lowio` (CSI) | webcam do host / imagem fixa / cinza por câmera (`Host/Camera.cs`, `CameraSetup.cs`); registradores do sensor guardados | ok |
 | Tela de toque frontal, touchpad traseiro | `SceTouch` | mouse/toque do host nos dois painéis | ok |
 | Movimento: acelerômetro, giroscópio | `SceMotionDev`, `SceMotion` | giroscópio/acelerômetro do host (controle SDL, sensores do celular) | ok |
-| Movimento: magnetômetro | `SceMotionDev`, `SceMotion` | só a chave é guardada, sem dados (`magFieldStability` sempre instável) | **(b)** |
-| GPS / localização | `SceGps` (driver do modem), `liblocation`, `location_provider` | sem posição: "localização ligada, este aplicativo sem permissão" | **(b)** |
+| Movimento: magnetômetro | `SceMotionDev`, `SceMotion` | campo do host (magnetômetro do celular no Android, `heading@` roteirizado no PC): matriz NED e campo estável com o magnetômetro ligado | feito (era **(b)**); faltam os registros brutos da calibração |
+| GPS / localização | `SceGps` (driver do modem), `liblocation`, `location_provider` | desligada por padrão ("aplicativo sem permissão"); posição fixa (PC) ou a do celular (Android) quando a opção dá uma | **(b)** |
 | Modem 3G (PCH-1100) | `SceBbmc`, modem USB | ausente, como no modelo Wi-Fi que a unidade é (`0x80330003`) | (c) (fiel ao modelo; o serviço 3G acabou) |
 | Wi-Fi infraestrutura | `SceWlanBt`, `SceNetPs`, `wlanbt_robin_img_ax.skprx` | sockets do host (`--net=real`); perfil offline senão | ok |
 | Wi-Fi ad hoc | ad hoc do `SceNetPs`, `pspnet_adhoc`, `sceNetAdhocctl*`, Matching | perfil offline: a biblioteca funciona, nenhum par é achado | **(b)** |
@@ -69,7 +69,7 @@ registrado, não é para emular); **ok** coberto.
 | Cartão de memória, eMMC interno | `msif.skprx`, `sdif` host 0, `sdstor.skprx` | partições servidas por arquivos; leitura/escrita de setores falha (`0x803D0000`, `0x8032001A`) | **(b)** |
 | Syscon, energia, bateria, RTC, botões | `syscon.skprx`, `ScePower`, `rtc.skprx` | HLE com bateria, carregador, eventos, timers de ociosidade, botão de energia, alarmes | ok |
 | Saída de áudio, chip de codec, conector de fone | `SceAudio`, `SceCodec` (I2C 0x34), `SceHpremote` | dispositivo de áudio do host; ajustes do codec aceitos; nada no conector | ok |
-| Microfone | `SceAudioin`, `SceCodec` | protocolo da porta e ritmo certos, amostras sempre em silêncio (sem captura do host) | **(b)** |
+| Microfone | `SceAudioin`, `SceCodec` | captura do host (OpenAL Soft no desktop, `AudioRecord` no Android) reamostrada para a taxa da porta no ritmo de grain do guest; silêncio sem dispositivo | feito (era **(b)**) |
 | Controles além do embutido, vibração, light bar | `SceCtrl`, `SceDs3`, `SceHid`, `SceBt` | só a porta 0 (o controle embutido); `sceCtrlSetActuator`/`SetLightBar` ignorados; `sceCtrlIsMultiControllerSupported` = 0 | **(b)**, parte do modelo PS TV |
 | Interrupções, timers, GPIO, I2C, gerador de clock, registradores pervasive | `intrmgr`, `systimer`, `lowio`, `SceClockgen` | modelos em HLE; os timers do sistema geram interrupções em tempo de guest; GPIO/I2C sem dispositivos atrás | ok |
 | Modelo do console (PCH-1000 / PCH-1100 / PCH-2000 / VTE-1000 PS TV) | SceSblAIMgr, hardware info do syscon, `vs0` por modelo | PCH-1000 CEX fixo (`Hle/ConsoleIdentity.cs`) | **(b)** (PS TV; cartão interno do PCH-2000) |
@@ -88,9 +88,11 @@ compatibilidade PSP". Impacto: todo título de PSP e PSone, homebrew de PSP, Adr
   registradores pervasive e espera o engine informar o estado 8. Os decodificadores (`SceAvcodec`: AVC, MPEG-4, MP3,
   AAC, ATRAC9, CELP, JPEG), o caminho do microfone (`SceAudioin`) e o `SceNgs` mandam RPCs ao firmware dele. O mesmo
   módulo carrega o `os0:kd/vipimg.skprx` nas duas unidades VIP ("SceVipDriverPu0/1"; a confirmar o que atendem).
-- **Hoje:** as bibliotecas são HLE no nível de usuário; o wrapper guarda a contabilidade por processo, os memblocks
-  sem mapeamento e as listas de transferência, e aceita os RPCs (0) sem rodar nada
-  (`Hle/Modules/CodecEngine.Kernel.cs`).
+- **Hoje:** a opção de modelo (`--model=pstv`, `VITASHARP_MODEL`, Configurações > Emulação > Modelo; `ConsoleModel`)
+  faz o aparelho ser um PS TV: bit 0x200 do sub code (IsDolce / IsGenuineDolce = 1), `sceCtrlIsMultiControllerSupported`
+  = 1, portas 1-4 = os controles do host um a um, `sceCtrlSetActuator` nos motores do controle (rumble do SDL). Falta:
+  o `vs0` do PS TV, os dispositivos do PS TV (câmera/toque/movimento "dummy"), HDMI, USB host, barra de luz, o tipo de
+  placa na informação de hardware, os controles no Android.
 - **Parte (a):** código que manda os próprios programas MeP ao Venezia não tem onde rodar. O plugin de kernel
   homebrew VVNZRunner faz exatamente isso (uma API para rodar código Toshiba MeP em até 6 núcleos, 7 no modo
   estendido do `sceCodecEngineChangeNumWorkerCoresMax`), e o homebrew feito sobre ele não recebe resultado. Pela
@@ -133,8 +135,11 @@ compatibilidade PSP". Impacto: todo título de PSP e PSone, homebrew de PSP, Adr
 
 - **O que o firmware faz:** o `SceAudioin` lê o ADC do chip de codec pelo caminho de áudio do Venezia; portas de 16
   bits mono a 16 ou 48 kHz, uma por processo, adotadas pelo AppMgr.
-- **Hoje:** o protocolo da porta, o ritmo por grain, o mudo e a adoção estão certos; as amostras são sempre zero
-  (`Hle/Modules/Audio.cs`, "virtual microphone (no host capture)").
+- **Hoje (feito):** a porta entrega o microfone do host (`Host/Microphone.cs`, `Host/MicrophoneFeed.cs`,
+  `Hle/Modules/Audio.In.cs`; captura do OpenAL Soft no desktop, `AudioRecord` no Android), reamostrado para a taxa da
+  porta, um grain a cada grain/taxa segundos de tempo do guest; com mudo, sem dispositivo ou permissão, ou num processo
+  para o qual o microfone não está adotado, silêncio. Antes: as amostras eram sempre zero
+  ("virtual microphone (no host capture)").
 - **Impacto:** chat de voz em jogos online e no Party, voz no Skype/Near, gravação de voz em apps, mecânicas de jogo
   que reagem a som (títulos a confirmar).
 - **Tamanho:** [M]: uma interface de captura do host ao lado da da câmera (`Host/`), uma implementação por sistema
@@ -154,7 +159,10 @@ compatibilidade PSP". Impacto: todo título de PSP e PSone, homebrew de PSP, Adr
 
 ### (b) GPS / localização
 
-- **Hoje:** sem posição; o aplicativo está "sem permissão" (`Hle/Modules/Location.cs`).
+- **Hoje:** desligada por padrão, o aplicativo "sem permissão" (`Hle/Modules/Location.cs`); com a opção de
+  localização (`--location=latitude,longitude`, "Localização do celular" no Android) o aplicativo tem permissão e recebe
+  essa posição (`Host/Location.cs`). Falta: o serviço de localização do PC, as entregas dos callbacks de localização, o
+  caminho do firmware (liblocation LLE contra o provedor do shell, `SceGps` de um modelo 3G).
 - **Impacto:** Near, Mapas e os recursos de localização de apps e jogos.
 - **Tamanho:** [M]: uma interface de localização do host (Geolocation do Windows, GeoClue, Core Location,
   `LocationManager` do Android) e uma opção de posição fixa. **Primeira entrega testável:** uma posição roteirizada;
@@ -163,14 +171,18 @@ compatibilidade PSP". Impacto: todo título de PSP e PSone, homebrew de PSP, Adr
 
 ### (b) Magnetômetro
 
-- **Hoje:** o `sceMotionMagnetometerOn` só guarda a chave (`Hle/Modules/Motion.cs`).
+- **Hoje:** a amostra de movimento do host traz o campo magnético (magnetômetro do celular, `heading@` no roteiro);
+  com o magnetômetro ligado e o campo estável, o `sceMotionGetState` dá a matriz NED e STABLE
+  (`Hle/Motion/MotionDevice.cs`). Falta: os registros brutos da calibração do shell e o campo no quaternion da fusão.
 - **Impacto:** direção da bússola (Mapas, Near, títulos de RA que usam o norte), `magFieldStability` e a matriz NED.
 - **Tamanho:** [M]. **Primeira entrega testável:** a leitura de movimento do host ganha campo magnético; um campo
   roteirizado dá a direção e um `magFieldStability` estável no `sceMotionGetSensorState`/`GetState`.
 
 ### (b) Teclado e mouse Bluetooth
 
-- **Hoje:** o `SceHid` não enumera nenhum dispositivo.
+- **Hoje:** com a opção (`--bt-keyboard-mouse=on`, Configurações > Emulação; Android: Ajustes) o teclado e o mouse
+  do host são os dispositivos pareados: `sceHid{Keyboard,Mouse}Enumerate/Read/Peek` como o 3.74 (`Hle/Modules/Hid.cs`,
+  `Host/Hid.cs`). Falta: notificar os callbacks de dica, as configurações de Bluetooth do shell listarem os dispositivos.
 - **Impacto:** digitar no navegador, no IME e em apps que leem o teclado direto; mouse no navegador.
 - **Tamanho:** [M]. **Primeira entrega testável:** o teclado do host oferecido como um teclado pareado (uma opção):
   `sceHidKeyboardEnumerate` devolve um handle e `sceHidKeyboardRead` informa teclas roteirizadas.

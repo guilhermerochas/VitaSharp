@@ -25,7 +25,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// configuration and LCDC sync, rif name, title list, ID storage, secure tick, update state, peripheral state).
 /// Every entry is for the PSP emulator or a system program (0x80010058 otherwise).
 /// </summary>
-public sealed class Compat : HleModule, IDisposable
+public sealed partial class Compat : HleModule, IDisposable
 {
     const int ERR_PERM = unchecked((int)0x80010058), ERR_NOT_STARTED = unchecked((int)0x80027205),
         ERR_NOT_OWNER = unchecked((int)0x8002F001), ERR_ARG = unchecked((int)0x80020005), ERR_INVAL = unchecked((int)0x80010016),
@@ -59,7 +59,8 @@ public sealed class Compat : HleModule, IDisposable
     /// <summary>The handshake word's states.</summary>
     internal const uint HandshakeReady = 1, HandshakeAcknowledged = 2, HandshakeRunning = 3, HandshakeIdle = 0;
 
-    const string PcffPath = "vs0:app/NPXS10028/pcff.skprx", PcbcPath = "os0:kd/pcbc.skprx";
+    static readonly string PcffPath = Io.FirmwareLayout.SystemApplications.Guest("NPXS10028", "pcff.skprx");
+    static readonly string PcbcPath = Io.FirmwareLayout.KernelModules.Guest("pcbc.skprx");
 
     /// <summary>The request channels, the entries of a channel's ring, the command / answer slots.</summary>
     const int Channels = 16, RingEntries = 16, Slots = 3;
@@ -119,12 +120,13 @@ public sealed class Compat : HleModule, IDisposable
 
         // the LCD DMA copies the PSP's picture into the framebuffer block at every PSP vertical blank
         _lcdDma = new CompatLcdDma(_bus, _hardware.Lcdc!);
+        _lcdDma.BeforeRead = SynchronizeGe;
         _hardware.Display!.VblankStarted = _lcdDma.OnVblank;
     }
 
     /// <summary>One channel's ring of request addresses (16 entries; full: the overflow flag, the core's entry left in
     /// the shared SRAM until a request is taken).</summary>
-    sealed class RequestRing
+    sealed partial class RequestRing
     {
         public readonly uint[] Entries = new uint[RingEntries];
         public int Read;
@@ -518,6 +520,13 @@ public sealed class Compat : HleModule, IDisposable
         }
 
         _hardware.Ge?.ReleaseRasterizer();
+    }
+
+    /// <summary>The LCD DMA reads the PSP's picture: what the GE drew there and still holds on the GPU goes to memory
+    /// first (PSP address, any segment).</summary>
+    void SynchronizeGe(uint address, int length)
+    {
+        _hardware.Ge?.SynchronizeMemory(address & AllegrexCore.PhysicalMask, length);
     }
 
     /// <summary>The process ends (or re-executes): the core stops as the module's process event handler stops it, and

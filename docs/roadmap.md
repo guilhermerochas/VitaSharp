@@ -2346,7 +2346,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
      (`0xBD400000`/`0xBD500000`, interrupção 25, do feat/alg4), o controlador de display `0xBE740000` (vblank →
      interrupção 30), o canal de scan-out `0xBC800100` e o LCD DMA para o bloco do framebuffer do ScePspemu, no
      tempo do próprio núcleo pelo runner; VRAM e scratchpad do PSP no topo do banco 3. Falta: número de IRQ PSP das
-     campainhas da mailbox, versão do chip/fuses do núcleo, o compor do segundo plano do `sceDisplaySetFrameBufForCompat`, KIRK (confirmar tudo pelo trace
+     campainhas da mailbox, versão do chip/fuses do núcleo, a conversão para memória do `sceDisplaySetFrameBufForCompat`
+     com `opt` (`SceIftuForDriver_67E37EFC`; o plano 0 posicionado no retângulo já é mostrado: feat/alg6), KIRK (confirmar tudo pelo trace
      do boot real).
   4. [G] ScePspemu de ponta a ponta: lacunas de HLE pelos logs, homebrew de PSP, jogo de PSP e de PSone,
      suspensão/retomada e save state do núcleo.
@@ -2366,9 +2367,17 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   GE (feat/alg4, em andamento; como o 3.74 o atende: `docs/notes/psp-compat.md`, "The GE"): registradores
   `0xBD400000`/`0xBD500000` e processador de listas (`src/VitaSharp.Core/Compat/Ge/GeEngine.cs`), estado dos comandos,
   texturas/CLUT, framebuffer e rasterizador Vulkan num dispositivo próprio (`GeVulkanRasterizer`), testados com listas
-  sintéticas no Vulkan por software. Falta: stencil (o alpha do framebuffer), color test, logic op, máscaras parciais,
-  dither, mipmaps, DXT, patches (Bezier/spline), bounding box; manter o alvo na GPU entre lotes (hoje sobe/desce a
-  região a cada PRIM); o DMA do LCD levando a VRAM ao `ScePspemuFrameBuffer`.
+  sintéticas no Vulkan por software. Feito também: alvo e profundidade na GPU entre PRIMs e listas (descarregados no
+  fim/stall da lista, antes de transferência/textura/CLUT na área e no LCD DMA; 2000 sprites: 1140 → 117 ms por lista no
+  SwiftShader), color test, dither, logic op, DXT1/3/5, mipmaps, stencil (o alpha do framebuffer numa imagem de
+  profundidade+stencil, sincronizada do alpha só em draws com stencil e de volta no descarregamento; clear mode grava),
+  máscaras de bits parciais (MASKRGB por bit num passe de merge só quando parcial; MASKALPHA como máscara do stencil),
+  patches Bezier/spline e bounding box (vértices/patches na feat/alg5, mesclada), ciclo de vida do dispositivo Vulkan
+  do GE (Stop e fim do processo).
+  Save state do núcleo PSP (feat/alg4-savestate): todo o lado PSP vai na seção do SceCompat (Allegrex, runner, PSP
+  hardware com GE e listas em andamento, LCD DMA, mailbox, SRAM, bancos, anéis/semáforos); a thread SceCompatCore
+  para entre fatias para o save e para a pausa; teste `CompatSaveStateTests` (save no meio, load em outro emulador,
+  resultado igual ao de quem não salvou).
   Bloqueio do Start real (licença): o `sceCompatStart` do 3.74, antes de soltar o núcleo, (1) lê
   `tm0:npdrm/act.dat` (0x1038 bytes, `ksceNpDrmReadActData`: conta atual e, da versão 2 em diante, o OpenPSID) para o
   bloco "dat" que o lado PSP lê por `sceCompatDatRead` — erro devolvido, exceto num DEX; (2) lê o rif
@@ -2382,32 +2391,30 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Manager, câmera/AR, apps de vídeo/música/browser) e abrir um item por recurso com o caminho (LLE do módulo real +
   HLE do que falta); os grupos que o plano do VitaSDK marcou como "não se aplica" (Mono do PSM, Piglet, ShaccCg)
   entram aqui como recursos a emular, não como ignorados
-- [ ] [P3][M] Microfone com captura do host (inventário: `docs/notes/hardware-coverage.md`): o `SceAudioin` hoje tem
-  protocolo, ritmo, mudo e adoção certos, mas devolve só silêncio. Interface de captura no `Host/` ao lado da câmera,
-  uma implementação por sistema (WASAPI, PulseAudio/PipeWire, Core Audio, `AudioRecord` do Android) e a fonte
-  "nenhuma"; requisitos no README. Primeira entrega: fonte roteirizada (senoide) no teste, `sceAudioInInput` devolve
-  as amostras no ritmo do grain, mudo e sem fonte dão zeros. Usa: chat de voz, Party, Skype/Near, gravação de voz.
-- [ ] [P3][G] Modelo PS TV (VTE-1000) como opção do console (`docs/notes/hardware-coverage.md`): identidade do KBL
-  (bit `0x200` do product sub code, tipo de placa no hardware info) a partir de uma opção num lugar só
-  (`ConsoleIdentity`, variável no `EnvVars.cs`), o `vs0` do target 2 do pacote, até quatro controles do host nas
-  portas 1-4 pelo caminho do `SceDs3`/`SceHid`, vibração (`sceCtrlSetActuator`) e light bar nos controles do host,
-  HDMI como monitor que aceita os modos, USB host e Ethernet. Primeira entrega: com o modelo PS TV
-  `ksceSblAimgrIsDolce` = 1, AVConfig HDMI sem `0x803A0109`, `sceCtrlIsMultiControllerSupported` = 1, um segundo
-  controle roteirizado aparece na porta 1 e a vibração chega a um destino que grava; o modelo padrão continua igual.
-  Também cobre os outros modelos (PCH-2000: LCD e cartão interno de 1 GB; PCH-1100: modem 3G ausente = fiel).
+- [ ] [P3][G] Modelo PS TV (VTE-1000), o que falta (`docs/notes/hardware-coverage.md`; a 1ª entrega está em
+  "Corrigido, falta o usuário testar"): o tipo de placa no hardware info, o `vs0` do target 2 do pacote (o software
+  de sistema do PS TV), os dispositivos "dummy" (câmera, toque, movimento), light bar, HDMI como monitor que aceita os
+  modos (AVConfig HDMI sem `0x803A0109`), USB host e Ethernet, e os controles do celular no Android. Também cobre os
+  outros modelos (PCH-2000: LCD e cartão interno de 1 GB; PCH-1100: modem 3G ausente = fiel).
 - [ ] [P3][G] Wi-Fi ad hoc entre instâncias do emulador (`docs/notes/hardware-coverage.md`,
   `docs/notes/online-features.md`): hoje `pspnet_adhoc`/Matching não acham nenhum par. Primeira entrega: duas pilhas
   emuladas num teste sobre UDP de loopback, uma cria o grupo, a outra acha (`sceNetAdhocctlScan`), entra e troca um
   datagrama PDP nos dois sentidos. Depois Matching e o canal WLAN do ScePspemu.
-- [ ] [P3][M] Localização (GPS) pelo host (`docs/notes/hardware-coverage.md`): hoje "aplicativo sem permissão".
-  Interface de localização do host (Geolocation do Windows, GeoClue, Core Location, `LocationManager` do Android) e
-  posição fixa por opção. Primeira entrega: posição roteirizada devolvida pelo `sceLocationGetLocation` com o
-  aplicativo permitido; sem fonte, a resposta de hoje. Usa: Near, Mapas.
-- [ ] [P3][M] Magnetômetro (`docs/notes/hardware-coverage.md`): o `sceMotionMagnetometerOn` só guarda a chave. Campo
-  magnético na leitura de movimento do host (sensor do celular, roteiro); primeira entrega: campo roteirizado dá a
-  direção e `magFieldStability` estável em `sceMotionGetSensorState`/`GetState`.
-- [ ] [P3][M] Teclado e mouse Bluetooth (`SceHid`) a partir do host, como opção (`docs/notes/hardware-coverage.md`):
-  primeira entrega: `sceHidKeyboardEnumerate` devolve um handle e `sceHidKeyboardRead` informa teclas roteirizadas.
+- [ ] [P3][M] Localização (GPS) pelo host, o que falta (`docs/notes/hardware-coverage.md`; o feito está em
+  "Corrigido, falta o usuário testar"): (1) o serviço de localização do próprio PC (Geolocation do Windows, GeoClue
+  no Linux, Core Location no macOS) como fonte "system" no desktop; (2) entregar a posição pelos callbacks
+  (`sceLocationStartLocationCallback` aceita e fica ativo, mas ainda não chama o callback do guest a cada
+  deslocamento de `distance` metros); (3) o caminho do firmware: o liblocation.suprx real é cliente IPC do
+  `location_provider` do shell, que nos modelos 3G lê o `SceGps` (driver do modem); o VitaSharp emula um modelo Wi-Fi
+  (sem receptor, o `ksceGps` fica no estado 2 com driver e sem sessão), e o Near (NPXS10000) já usa o liblocation real
+  contra o provedor do shell sem posição. Usa: Near, Mapas.
+- [ ] [P3][M] Magnetômetro, o que falta (o feito está em "Corrigido, falta o usuário testar"): (1) os registros brutos
+  do magnetômetro para a calibração do shell (`sceMotionDevReadForMagnCalib`, `GetCurrentMagnCalibData`) e o
+  `dataInfo`; (2) a fusão do campo no `deviceQuat` como o driver_us faz (hoje só a matriz NED e a estabilidade usam o
+  campo); (3) o magnetômetro de um controle no PC (o SDL não expõe um).
+- [ ] [P3][M] Teclado e mouse Bluetooth, o que falta (o feito está em "Corrigido, falta o usuário testar"): os
+  callbacks de dica (enumeração e leitura) ainda não são notificados; as configurações de Bluetooth do shell não
+  listam o dispositivo (o `SceBt` do kernel não conhece os pareados); o `ConsumerControl` e o `Controller` do SceHid.
 - [ ] [P3][G] Processador de mídia Venezia (núcleos MeP + IVC2) para código MeP que não é do firmware (plugin
   VVNZRunner e o homebrew sobre ele; `docs/notes/hardware-coverage.md`): o `vnzimg.skprx` sai do `self2elf` em claro,
   sem chave. Primeira entrega: interpretador do núcleo MeP-c5 numa thread de guest com programa sintético no teste
@@ -3285,6 +3292,120 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (24/11/2026, falta testar) [P3][M] Teclado e mouse Bluetooth (fix/adr4; `docs/notes/hardware-coverage.md`): no
+  3.74 o SceHid guarda até 8 teclados e 8 mouses; `sceHid{Keyboard,Mouse}Enumerate` copia os handles dos conectados
+  (lista NULL 0x803B0001, no máximo 8), `Read`/`Peek` conferem o handle (< 1: 0x803B0002; lista NULL ou contagem
+  negativa: 0x803B0001; handle que não é do tipo: 0x803B0003), tiram no máximo 16 relatórios (teclado 0x18 bytes,
+  mouse 0x10) e voltam na hora com quantos copiaram, da fila do dispositivo com posição por leitor. Feito: o teclado
+  e o mouse do host como dispositivos pareados (`HostServices.HidKeyboard/HidMouse`, filas de relatórios com uso USB
+  HID, modificadores, botões, deslocamento e roda), `Enumerate`, `Read`, `Peek`, `Clear`, `Set/GetIntercept` e o
+  registro dos callbacks de dica como o 3.74; sem a opção nada é pareado, como antes. Testes: `HidDeviceTests`.
+  Opção (desligada por padrão; as teclas continuam valendo como controle): PC, Configurações > Emulação > Teclado e
+  mouse Bluetooth (`--bt-keyboard-mouse=on`); Android, Ajustes > Teclado e mouse Bluetooth (teclado e mouse físicos
+  do celular). Testar: ligar a opção e abrir o navegador do Vita (ou um app que lê teclado): digitar no teclado físico
+  escreve no campo; o mouse move e clica.
+- [ ] (24/11/2026, falta testar) [P2][M] Fim de processo com thread rodando sobre memória liberada (fix/adr4): no Vita
+  o kill encerra todas as threads do processo e nenhuma roda depois. Causa: uma thread do processo iniciada depois do
+  fim (a tarefa de início do processo, que cria a main e roda os module_start, chegava depois do EndProcess/destroy,
+  e o Start zerava o pedido de parada) rodava livre; o fim esperava 10 s, liberava a memória e a thread caía
+  ("Prefetch abort: jump to unmapped address 0x81000200/0x8100025C", visto na `AppNameTests`). Feito: um processo em
+  fim não inicia thread nenhuma (`GuestThread.Start` recusa com 0x80020001; a tarefa de início para sem anunciar o
+  lançamento ao shell); o pedido de parada é gravado também sob o `WaitLock`, e um Start concorrente não o desfaz; a
+  memória só volta depois que as threads saem (rodadas de 10 s, até 60 s, com novo pedido de parada a cada rodada).
+  Esperas do host revistas: vblank, delay/semáforos (`Sync`), IO assíncrono, filas do GXM, fila de trabalho,
+  interrupções e suspensão checam o pedido de parada ou são limitadas (áudio, câmera, microfone: até um grão/quadro).
+  Testes: `ProcessEndThreadTests` (thread recusada num processo em fim; a thread do laço para antes da memória
+  voltar; aplicativos encerrados e destruídos logo após o lançamento, 8 vezes, sem crash). Testar: no Sistema do
+  Vita, abrir e fechar (ou trocar) aplicativos rapidamente: nenhum "Prefetch abort" nem "did not stop in time" no log.
+- [ ] (24/11/2026, falta testar) [P3][G] Modelo PS TV, 1ª entrega (fix/adr4; `docs/notes/hardware-coverage.md`): no
+  3.74 um PS TV se distingue pela identidade (bit 0x200 do sub code de produto, que o SceSblAIMgr testa:
+  `ksceSblAimgrIsDolce`/`IsGenuineDolce` = 1, `IsGenuineVITA` = 0); o SceCtrl pergunta ao SceSysroot se o modelo
+  aceita vários controles (`sceCtrlIsMultiControllerSupported` = 1) e entrega as portas 1-4, a vibração e a lista de
+  portas ao driver de controles externos (SceDs3/SceBt). Feito: opção de modelo (`EmulatorOptions.Model`,
+  `--model=pstv`, `VITASHARP_MODEL`, Configurações > Emulação > Modelo; o portátil PCH-1000 é o padrão e responde tudo
+  como antes); no PS TV o sub code 0x201, as portas 1-4 lidas dos controles do host um a um (o teclado com o
+  primeiro), `sceCtrlGetControllerPortInfo` = porta virtual + um DualShock 3 por controle conectado,
+  `sceCtrlSetActuator` levado ao controle da porta (SDL rumble; NULL agora responde 0x80340001 como o 3.74 também no
+  portátil). Testes: `PsTvModelTests`. Testar: Configurações > Emulação > Modelo = PlayStation TV, dois controles
+  conectados e um jogo com multijogador local (ou que vibra): cada controle move um jogador e a vibração chega.
+  Falta (item "Modelo PS TV" em "Firmware e sistema"): o `vs0` do PS TV, HDMI, USB host, barra de luz, os
+  dispositivos dummy, o tipo de placa na informação de hardware e os controles no Android.
+
+- [ ] (24/11/2026, falta testar) [P3][M] Magnetômetro (fix/adr4; `docs/notes/hardware-coverage.md`): no Vita o
+  `sceMotionMagnetometerOn` liga o magnetômetro no driver de sensores e o `sceMotionGetState` traz a estabilidade do
+  campo (+0xF4, copiada do registro do driver, driver_us 3.74) e a matriz NED (os eixos do aparelho em Norte-Leste-
+  Baixo). O VitaSharp só guardava a chave: estabilidade sempre UNSTABLE e a NED igual à matriz de rotação. Agora a
+  amostra de movimento do host traz o campo magnético (µT): o magnetômetro do celular no Android (TYPE_MAGNETIC_FIELD,
+  nos eixos do Vita pela mesma rotação do giroscópio) e, no PC, o passo `heading@T:graus` do `--input` (o campo da
+  Terra para essa direção, com a inclinação dos passos `tilt`). Com o magnetômetro ligado e o campo estável (8
+  leituras que concordam em 3 µT, magnitude da Terra), `magFieldStability` = STABLE e a NED vem da gravidade e do
+  campo (TRIAD); desligado, sem campo ou perturbado (ímã, metal), UNSTABLE e a NED = rotação, como antes. Testes:
+  `MotionMagnetometerTests` (norte, leste, em pé, desligado, sem campo, campo perturbado e forte). Testar: no Android,
+  um jogo ou app que usa bússola (mapas, AR) aponta o norte ao girar o celular; no PC,
+  `--input=heading@0:90` faz o Vita apontar para o leste.
+
+- [ ] (24/11/2026, falta testar) [P3][M] Localização pelo host (fix/adr4; `docs/notes/hardware-coverage.md`): no Vita
+  o SceLibLocation responde a posição do serviço de localização quando o usuário permite o aplicativo (Configurações
+  > Dados de localização); sem permissão, `SCE_LOCATION_ERROR_DISABLE_APPLICATION`; sem posição ainda,
+  `SCE_LOCATION_INFO_UNDETERMINED_LOCATION` (0x80101200). Agora há uma fonte de localização no host, **desligada por
+  padrão** (sem fonte tudo fica como antes): posição fixa (`--location=latitude,longitude[,altitude[,precisão]]`,
+  Configurações > Áudio > Localização no PC) e a localização do celular no Android (Ajustes > Localização; a
+  permissão é pedida só quando um jogo pergunta a posição). Com a fonte, a permissão do aplicativo é ALLOW, o diálogo
+  de confirmação termina com "enable", o `sceLocationGetLocation`/`WithTimeout` devolve latitude, longitude,
+  altitude, precisão, direção e velocidade (o que a fonte não sabe vai como `SCE_LOCATION_DATA_INVALID`) e o tick do
+  RTC; sem fix, "indeterminada"; o rumo (heading) fica indeterminado (sem bússola no serviço); o callback de
+  localização é aceito um por handle até o stop/close. Privacidade: a posição nunca vai para o log; com "Gravar tudo"
+  armado ou gravando, o serviço responde "indeterminada" e o `session.txt` guarda `--location=<location>`, a não ser
+  com `--capture-location`/`VITASHARP_CAPTURE_LOCATION=1`; o "Command line" da captura F10 também omite o valor.
+  Testes: `LocationSourceTests` (posição, sem fix, sem fonte, callbacks, captura armada com e sem a opção, o formato
+  da opção, a redação). Testar: no PC, Configurações > Áudio > Localização = `-23.5613,-46.6565` e abrir um jogo que
+  usa localização (o Assassin's Creed III Liberation lê a posição numa thread de geolocalização): ele recebe essa
+  posição; apagar o campo volta ao "sem permissão". O Near usa o liblocation do firmware contra o provedor do shell
+  e ainda não recebe a posição (item em "Firmware e sistema"). No Android,
+  Ajustes > Localização = "Localização do celular": o pedido de permissão aparece só quando o jogo pergunta a
+  posição; recusado, o jogo segue sem posição.
+
+- [ ] (24/11/2026, falta testar) [P3][M] Microfone com captura do host (feat/mic1; `docs/notes/hardware-coverage.md`):
+  no Vita o `SceAudioin` abre uma porta por processo (VOICE 256/512 amostras a 16 kHz, RAW 256 a 16 kHz ou 768 a
+  48 kHz, 0x1F 768 a 48 kHz; S16 mono) e o `sceAudioInInput` bloqueia até a captura ter o grain seguinte, um a cada
+  grain/taxa segundos. O microfone do Vita agora ouve o do host: OpenAL Soft (captura) no PC (WASAPI, PipeWire/PulseAudio,
+  Core Audio) e `AudioRecord` no Android (permissão RECORD_AUDIO pedida só quando um jogo abre a porta; VOICE a 16 kHz
+  com o cancelamento de eco do celular), reamostrado para a taxa da porta (`MicrophoneFeed`), no ritmo do relógio do
+  guest (o modo turbo avança o relógio em vez de pular a espera); com mudo, sem dispositivo, sem permissão ou num
+  processo para o qual o microfone não está adotado, silêncio no mesmo ritmo. O dispositivo do host só liga enquanto a
+  porta está aberta (fecha no release, num LoadExec e num save state sem porta). Opção **Microfone** em Configurações >
+  Áudio (PC: padrão, desligado, tom de teste, cada dispositivo; `--microphone=`) e em Ajustes (Android: celular,
+  desligado, tom de teste); `mic-test` mostra o nível. Privacidade: nada gravado em disco; a captura F8 leva só formato,
+  fonte e ritmo (`audio.txt`), o som só com `--capture-mic-audio`/`VITASHARP_CAPTURE_MIC_AUDIO=1`. Revalidado contra o
+  módulo: a abertura confere tipo, taxa e grain antes do parâmetro (antes o parâmetro vinha primeiro) e aceita os tipos
+  0x10..0x3F0, 0x12 e 0x1F que o firmware aceita. Testes: `MicrophoneTests` (amostras e ritmo por tipo/taxa, reamostragem
+  48 kHz e 44,1 kHz, mudo, sem microfone, dispositivo que não abre, adoção, host adiantado/atrasado, ciclo de vida do
+  dispositivo, ordem das checagens, privacidade da captura, 0 bytes por grain, opções do PC e do celular).
+  Testar: no PC, Configurações > Áudio > Microfone = "Tom de teste (440 Hz)" e abrir um jogo ou app que grava ou usa
+  chat de voz (ou rodar `VitaSharp.Desktop mic-test --microphone=tone`): ouve-se/vê-se o tom; com "Padrão do sistema",
+  `mic-test` mostra o nível subindo ao falar, e no jogo a voz chega; no Android, abrir esse jogo: o pedido de permissão
+  do microfone aparece só quando o jogo abre o microfone, e recusado o jogo segue (silêncio).
+- [ ] (24/11/2026, falta testar) [P1][M] Adrenaline, diálogo de erro do emulador de PSP e NPXS10028 em dobro
+  (fix/adr4, pontos 6 e 7 do item do Adrenaline em "Bugs em aberto"). (6) O `sceGxmIsInitializationInternal`
+  respondia sempre 0; no libgxm 3.74 ele devolve a marca que o sceGxmInitialize/sceGxmVshInitialize liga e o
+  sceGxmTerminate desliga. O libcdlg 3.74 recusa todo diálogo de um programa do SDK 2.50+ com 0x80020436 quando a
+  marca está em 0, e o ScePspemu então saía para a LiveArea (sceAppMgrExitToLiveboardForGameApp(0x80020436), evento
+  16) sem mostrar o erro. Agora a thread SceCommonDialogPafMain sobe e carrega o libcdlg_main/libpaf/libcdlg_compat.
+  (7) O SceAppMgr conhece a aplicação pelo título que o lançamento deu (status +0xC, chamadas por nome, eventos 3/4),
+  e não pela pasta do executável. Ao criar o processo de um nome, o kernel apaga o nome da entrada mais antiga com
+  esse nome e a destrói com motivo 4 antes de anunciar a nova (appmgr 0x81002504). Destruir uma aplicação manda o
+  evento 3 na hora (0x810014F4). Um LaunchAppByName de um título que já roda, vindo de código no shell, vira pedido
+  ao shell (evento 6). Com isso o shell lança o emulador de PSP da bolha pelo 2ndStage, o primeiro (do
+  AdrenalineVsh) sai, e fica um só NPXS10028, em primeiro plano. Testes: `AppNameTests`,
+  `GxmFlowTests.IsInitializationInternalFollowsInitializeAndTerminate`. Testar: abrir o Adrenaline pelo Sistema do
+  Vita. Só um "Process NPXS10028 ... started" fica vivo e vai para primeiro plano, e o log mostra "destroyed: ... is
+  the application PSPEMUCFW now". O diálogo de erro do ScePspemu aparece na tela, sem o "Shell event 16" logo depois
+  de "Starting Init(), type 16". Feito também: o LaunchAppByName do próprio shell (o NPXS10079 de fundo) é um
+  pedido como qualquer outro, como no appmgr 3.74 (0x8100D89C): devolve 0, manda o evento 6, e o shell o inicia pelo
+  2ndStage (flags 0x400000); antes o VitaSharp iniciava direto um processo de fundo que o shell nunca pedira ao kernel
+  (`AppNameTests.TheShellsOwnLaunchByNameIsARequestItAnswersWithTheSecondStage`). Testar: no log do Sistema do Vita,
+  "sceAppMgrLaunchAppByName(0x20000, NPXS10079) from shell" seguido de "2ndStage(..., flags 0x400000): NPXS10079".
+
 - [ ] (24/11/2026, falta testar) [P1][M] Tela de CPU framebuffer preta e 0 fps (Adrenaline, fix/disp1): no Vita o
   `sceDisplaySetFrameBuf` só entrega ao display o endereço do framebuffer, e o display lê essa memória a cada vblank;
   um programa que define o framebuffer uma vez e depois escreve o texto com a CPU (a tela de instalação do Adrenaline,
@@ -4083,18 +4204,6 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
 
 ## Bugs em aberto
 - [x] [P1][M] Testes de hooks: interferência de memória compartilhada (23/11/2026, hookfix1/cifix17/hookmem1):
-  `PluginHookChainFuzzTests` e `PluginHookMatrixProcessTests` (e, raramente, HleCost, Piglet, NpCommerce2,
-  KernelThreadmgrControl) falhavam na suíte completa por dois defeitos do fim do sistema, ambos corrigidos com teste
-  (`SystemEndProcessTasksTests`), e as duas classes saíram da quarentena (Category=Slow):
-  1. (cifix17) o fim do sistema não esperava as tarefas dos processos (fim de processo terminado, LoadExec e início
-     de filho em `Task.Run`): o fim tardio fazia `FreeOwnedBy(pid)` — pid único só dentro de um sistema — e liberava
-     blocos do sistema seguinte na mesma memória (`kernel:trap` → "Undefined instruction 0xE7F000F0").
-  2. (hookmem1) o início de um filho deixado na sua tarefa, vindo depois do `Stop()`, punha o filho rodando de novo
-     e criava a thread `main`, que nenhuma parada alcançava: ela seguia executando código guest depois do fim e
-     gravava zeros nos blocos de kernel dos testes seguintes (registros do framework lidos como 0; achado com
-     `VITASHARP_WATCH`). Agora o sistema marca o fim (`VitaSystem.Ending`: `Emulator.Start` não inicia mais), para de
-     novo depois das tarefas e espera as threads de todos os processos.
-  Nada a testar em jogo (fim de sessão / suíte).
 - [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053) em 2x: textura da parede piscando e imagem embaçada (relato do
   usuário, 23/11/2026; captura `PCSE00053_20261123_134501_tudo`, build 793a9e96, resolução interna 2x por atalho no
   quadro 1587, dump da GPU de 34 quadros): o relatório marca 20 [flash] alternando quadro sim, quadro não (presents
@@ -4187,11 +4296,8 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   trocados); os *ForPid do modulemgr recusam pid 0 (0x8002D017) como o 3.74. Testar: abrir o Adrenaline pelo
   Sistema do Vita com o 8.0.2: no log os hooks 8 (SceCompat) e 32 (ScePspemu +0x6364) aparecem instalados, sem
   "refused (0x90010006)". Falta: (5) o ScePspemuMain chega ao sceCompatInitEx e para ("the PSP compat core is not
-  emulated"): o núcleo de compatibilidade (pcbc) é o bloqueio até o menu do Adrenaline; (6) o diálogo de erro (libcdlg
-  família 0x10, LLE) termina no mesmo instante do Init, sem a thread SceCommonDialogPafMain; (7) o NPXS10028 foi
-  lançado duas vezes (pelo AdrenalineVsh dentro do shell e pelo shell 3 s depois): o SceAppMgr 3.74 não recusa um
-  segundo lançamento por caminho (FUN_8100ce78 não procura o título), então a decisão é do shell; conferir por que o
-  shell não vê o primeiro como o app da bolha.
+  emulated"): o núcleo de compatibilidade (pcbc) é o bloqueio até o menu do Adrenaline; (6) e (7) feitos (fix/adr4,
+  ver "Corrigido, falta o usuário testar": diálogo de erro e NPXS10028 em dobro).
 - [ ] [P2][M] Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
   capturas de 21/11/2026, e um engasgo de 132 ms por leitura de arquivo (fileIo 134 ms; quadro 302 do dump da
   `_232150_tudo`). Achado (perf/ac3pace): fora das gravações o jogo fica em 30 fps (linhas `FPS frame` da sessão) e

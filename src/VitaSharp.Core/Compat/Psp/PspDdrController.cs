@@ -16,7 +16,7 @@ namespace VitaSharp.Core.Compat.Psp;
 /// registers) and Adrenaline <c>cef/binary/main.c</c> (<c>sceKermitWait</c>: the 0x04/0x00 handshake). The meaning of
 /// 0x00 is inferred from that handshake.
 /// </summary>
-public sealed class PspDdrController : IPspMmioDevice
+public sealed partial class PspDdrController : IPspMmioDevice
 {
     /// <summary>PSP physical 0xBD000000.</summary>
     public const uint Base = 0x1D000000;

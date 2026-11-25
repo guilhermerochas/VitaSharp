@@ -169,7 +169,9 @@ public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fixture) : IDisposa
         Assert.Equal(CTRL_INVALID_ARG, Call(c, "sceCtrlSetRapidFire", 0, 0, 0u));
         Assert.Equal(CTRL_INVALID_ARG, Call(c, "sceCtrlClearRapidFire", 2, 0));
         Assert.Equal(0, Call(c, "sceCtrlClearRapidFire", 0, 0));
-        Assert.Equal(0, Call(c, "sceCtrlSetActuator", 0, 0u));
+        // FW 3.74 SceCtrl copies the 8-byte state first: NULL is 0x80340001; on a handheld nothing vibrates
+        Assert.Equal(unchecked((int)0x80340001), Call(c, "sceCtrlSetActuator", 0, 0u));
+        Assert.Equal(0, Call(c, "sceCtrlSetActuator", 1, _harness.Alloc(8)));
         Assert.Equal(0, Call(c, "sceCtrlSetLightBar", 0, (byte)1, (byte)2, (byte)3));
         Assert.Equal(0, Call(c, "sceCtrlResetLightBar", 0));
         Assert.Equal(0, Call(c, "sceCtrlIsMultiControllerSupported"));

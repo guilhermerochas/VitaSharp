@@ -614,8 +614,11 @@ public sealed unsafe class VkCore : IDisposable
             // (GpuQuirk.FarPlaneDiscard)
             ShaderClipDistance = Has(GpuFeature.ShaderClipDistance),
             SampleRateShading = Has(GpuFeature.SampleRateShading),
+            // the PSP GE's logic ops (GeVulkanRasterizer)
+            LogicOp = Has(GpuFeature.LogicOp),
         };
         OcclusionQueryPrecise = Has(GpuFeature.OcclusionQueryPrecise);
+        LogicOp = feats.LogicOp;
         VertexStores = feats.VertexPipelineStoresAndAtomics;
         FragmentStores = feats.FragmentStoresAndAtomics;
         // GXM clips at the near plane: depth clamp stays off (see DepthClamp)
@@ -719,6 +722,9 @@ public sealed unsafe class VkCore : IDisposable
     }
 
     public bool TextureCompressionBC, FillModeNonSolid, WideLines, OcclusionQueryPrecise, SamplerMirrorClampToEdge;
+
+    /// <summary>The logicOp feature is enabled (the PSP GE's logic ops).</summary>
+    public bool LogicOp;
     /// <summary>vertexPipelineStoresAndAtomics / fragmentStoresAndAtomics are enabled (shader memory stores).</summary>
     public bool VertexStores, FragmentStores;
     /// <summary>dynamicRendering is enabled and used; false: every rendering is a render pass (GpuQuirk.RenderPasses).</summary>

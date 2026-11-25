@@ -219,6 +219,14 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
                 return SceError.NOT_DORMANT;
             }
 
+            // a process being ended runs no new thread: on the Vita the kill ends every thread of the process, and one
+            // started after it would run on memory the end gives back (checked under WaitLock: RequestStop sets the
+            // stop under it too, so a stop that comes while this start runs is not undone by the reset below)
+            if (_emu.EndingThreads)
+            {
+                return SceError.ERROR;
+            }
+
             CpuState* s = Core.State;
             new Span<byte>(s, sizeof(CpuState)).Clear();
             s->Fpscr = 0x0300_0000;
@@ -1025,6 +1033,8 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         Core.StopRequested = true;
         lock (WaitLock)
         {
+            // again under WaitLock: a Start running now resets the flag under it, and must not undo this stop
+            Core.StopRequested = true;
             Monitor.PulseAll(WaitLock);
         }
     }

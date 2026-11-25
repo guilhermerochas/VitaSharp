@@ -276,9 +276,10 @@ public sealed partial class EmulationSession : IDisposable
     }
 
     /// <summary>The phone's (or a controller's) motion sensors for SceMotion and, for SceCamera, what Ajustes chose for
-    /// each Vita camera (the phone's camera of that side, a picture, nothing), as the desktop's camera options
+    /// each Vita camera (the phone's camera of that side, a picture, nothing) and the microphone, as the desktop's options
     /// (GameSensors). The motion source set before (the keyboard's tilt keys) becomes the fallback.</summary>
-    public void SetSensors(AndroidMotion motion, VitaSharp.Core.Host.ICameraSource camera)
+    public void SetSensors(AndroidMotion motion, VitaSharp.Core.Host.ICameraSource camera, VitaSharp.Core.Host.IMicrophoneSource microphone,
+        VitaSharp.Core.Host.ILocationSource location)
     {
         if (!ReferenceEquals(_emu.Host.Motion, motion))
         {
@@ -288,7 +289,23 @@ public sealed partial class EmulationSession : IDisposable
         _emu.Host.Motion = motion;
         var prefs = AppServices.Prefs;
         _emu.Host.Camera = VitaSharp.Core.Host.FacingCameras.FromSettings(prefs.CameraFront, prefs.CameraBack, (_, _) => camera, AppServices.Data.Root);
+        // SceAudioIn: the "Microfone" setting (the phone's microphone, off, or the test tone)
+        _emu.Host.Microphone = VitaSharp.Core.Host.MicrophoneSpec.Parse(prefs.Microphone).CreateSource(_ => microphone);
+        // SceLibLocation: the "Localizacao" setting (off by default, the phone's location service, or a fixed position)
+        _emu.Host.Location = VitaSharp.Core.Host.LocationSpec.Parse(prefs.Location).CreateSource(() => location);
+        // SceHid: the "Teclado e mouse Bluetooth" setting pairs the phone's keyboard and mouse with the Vita
+        if (prefs.BluetoothKeyboardMouse)
+        {
+            _emu.Host.HidKeyboard = HidKeyboard = new VitaSharp.Core.Host.HidKeyboard();
+            _emu.Host.HidMouse = HidMouse = new VitaSharp.Core.Host.HidMouse();
+        }
     }
+
+    /// <summary>The phone's keyboard as the Vita's paired keyboard (the setting), null = not paired.</summary>
+    public VitaSharp.Core.Host.HidKeyboard? HidKeyboard { get; private set; }
+
+    /// <summary>The phone's mouse as the Vita's paired mouse (the setting), null = not paired.</summary>
+    public VitaSharp.Core.Host.HidMouse? HidMouse { get; private set; }
 
     /// <summary>surfaceCreated: the first one boots the game, later ones re-attach the renderer.</summary>
     public void SurfaceCreated(AndroidVulkanSurface surface)

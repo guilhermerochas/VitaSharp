@@ -16,7 +16,7 @@ namespace VitaSharp.Core.Compat;
 /// host slower than the console runs the core slower, and the handshake must not fail for it.
 /// </para>
 /// </summary>
-public sealed class CompatCoreRunner
+public sealed partial class CompatCoreRunner
 {
     /// <summary>The thread's name.</summary>
     public const string ThreadName = "SceCompatCore";
@@ -110,6 +110,7 @@ public sealed class CompatCoreRunner
         GuestThread thread = _emulator.Kernel.CreateThread(ThreadName, 0, 64, 0x4000, 0, 0);
         thread.KernelMode = true;
         thread.HostBody = Body;
+        thread.ParksAtSafePoints = true;
         _thread = thread;
         thread.Start(0, 0);
     }
@@ -194,6 +195,8 @@ public sealed class CompatCoreRunner
         {
             while (!self.Core.StopRequested)
             {
+                // between two slices: a pause or a save state stops the core here
+                self.ParkAtSafePoint();
                 if (!ApplyInterruptLevel())
                 {
                     break;
@@ -299,7 +302,8 @@ public sealed class CompatCoreRunner
             {
                 _haltStartUs = (long)_emulator.Kernel.ProcessTimeUs;
                 Monitor.PulseAll(_lock); // the waiters see a halted core's time pass
-                while (!_stopRequested && _wantedLevel == _appliedLevel)
+                GuestThread? thread = _thread;
+                while (!_stopRequested && _wantedLevel == _appliedLevel && thread?.ShouldParkAtSafePoint != true)
                 {
                     long leftNs = nextEventNs == long.MaxValue ? long.MaxValue : nextEventNs - CoreTimeNsLocked();
                     if (leftNs <= 0)

@@ -44,6 +44,27 @@ public interface IInputBackend
 }
 
 /// <summary>
+/// The host's controllers one by one, for a PS TV's ports 1-4 (<see cref="Hle.ConsoleModel.PsTv"/>): the first is the
+/// keyboard with the first controller, as on the handheld's single port.
+/// </summary>
+public interface IMultiControllerInput
+{
+    /// <summary>How many controllers the host has now (at least 1: the keyboard is the first player), at most 4.</summary>
+    int ControllerCount { get; }
+
+    /// <summary>The state of controller <paramref name="index"/> (0-based); neutral when it is not connected.</summary>
+    ControllerState GetPad(int index);
+}
+
+/// <summary>Vibration of the host controller of a port (sceCtrlSetActuator on a PS TV).</summary>
+public interface IControllerVibration
+{
+    /// <summary>Sets the motors of the controller on <paramref name="port"/> (1-4): the small (high frequency) and the
+    /// large (low frequency) motor, 0 = off, 255 = full.</summary>
+    void SetVibration(int port, byte small, byte large);
+}
+
+/// <summary>
 /// An input source that is told which read of the guest it answers: the <paramref name="guestRead"/>-th read of that
 /// port (or panel) by the process, counted by its controller and touch drivers and kept in its save states. A "Gravar
 /// tudo" recording notes at which read the guest first saw each change; its re-run hands the change to that same read,
@@ -167,8 +188,80 @@ public sealed class HostServices : IDisposable
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006", Justification = "used by Hle/Modules/Camera.cs, which is still in build/format-pending.txt: renamed to _cameraStreams with the Hle conversion")]
     internal readonly List<ICameraStream> CameraStreams = new();
 
+    /// <summary>Host microphone backing SceAudioIn (capture device, Android AudioRecord, scripted tone); null = no
+    /// microphone, the port delivers silence at its pace.</summary>
+    public IMicrophoneSource? Microphone { get; set; }
+
+    /// <summary>Where the unit's position comes from (SceLibLocation): a fixed position or the host system's location
+    /// service; null = location off (the default: the application is not allowed to use it).</summary>
+    public ILocationSource? Location { get; set; }
+
+    /// <summary>Where the controllers' vibration goes (the host's gamepads); null = dropped.</summary>
+    public IControllerVibration? Vibration { get; set; }
+
+    /// <summary>The host keyboard as a paired Bluetooth keyboard of the Vita (SceHid; the emulator option, off by
+    /// default); null = no keyboard paired.</summary>
+    public HidKeyboard? HidKeyboard { get; set; }
+
+    /// <summary>The host mouse as a paired Bluetooth mouse of the Vita (SceHid); null = no mouse paired.</summary>
+    public HidMouse? HidMouse { get; set; }
+
+    /// <summary>"Gravar tudo" is armed or recording without --capture-location: the position is withheld (the service
+    /// answers "undetermined"), so a capture, which may go to a public report, never holds where the player is.</summary>
+    public bool LocationWithheld { get; set; }
+
+    /// <summary>The host capture of each process's microphone port; survives a process exec so the new process image
+    /// closes what the old one left open (the host device must not stay on without a port).</summary>
+    private readonly Dictionary<object, MicrophoneFeed> _microphoneFeeds = new();
+
+    /// <summary>Makes <paramref name="feed"/> the capture of <paramref name="process"/>'s port (null = none), closing the
+    /// one it replaces.</summary>
+    public void ReplaceMicrophoneFeed(object process, MicrophoneFeed? feed)
+    {
+        MicrophoneFeed? previous;
+        lock (_microphoneFeeds)
+        {
+            _microphoneFeeds.Remove(process, out previous);
+            if (feed != null)
+            {
+                _microphoneFeeds[process] = feed;
+            }
+        }
+
+        if (previous != null && !ReferenceEquals(previous, feed))
+        {
+            previous.Dispose();
+        }
+    }
+
+    /// <summary>Microphone captures open now (tests; the host device is on while this is above 0).</summary>
+    public int OpenMicrophoneFeeds
+    {
+        get
+        {
+            lock (_microphoneFeeds)
+            {
+                return _microphoneFeeds.Count;
+            }
+        }
+    }
+
     public void Dispose()
     {
+        List<MicrophoneFeed> feeds;
+        lock (_microphoneFeeds)
+        {
+            feeds = _microphoneFeeds.Values.ToList();
+            _microphoneFeeds.Clear();
+        }
+
+        foreach (MicrophoneFeed feed in feeds)
+        {
+            feed.Dispose();
+        }
+
+        Microphone?.Dispose();
+        Location?.Dispose();
         lock (CameraStreams)
         {
             foreach (ICameraStream cameraStream in CameraStreams)

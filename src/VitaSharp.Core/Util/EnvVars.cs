@@ -330,6 +330,15 @@ public static class EnvVars
     /// <summary>=1: "Gravar tudo" keeps the bytes the game read from its save data too (by default only their paths,
     /// positions and hashes: a save is the player's data; --capture-savedata).</summary>
     public const string CaptureSaveData = "VITASHARP_CAPTURE_SAVEDATA";
+    /// <summary>=1: "Gravar tudo" also records what the microphone port captured (by default only its format and pace:
+    /// the microphone is what the player and the people near them say; --capture-mic-audio).</summary>
+    public const string CaptureMicrophoneAudio = "VITASHARP_CAPTURE_MIC_AUDIO";
+    /// <summary>=1: the location source keeps answering while "Gravar tudo" is armed or recording, and session.txt keeps
+    /// the --location= value (by default the position is withheld: it is where the player is; --capture-location).</summary>
+    public const string CaptureLocation = "VITASHARP_CAPTURE_LOCATION";
+    /// <summary>The console model when --model= is not given: "pstv" makes the unit a PlayStation TV (ports 1-4, vibration;
+    /// <see cref="Hle.ConsoleModel"/>); anything else, or unset, the PCH-1000 handheld.</summary>
+    public const string Model = "VITASHARP_MODEL";
 
 
 

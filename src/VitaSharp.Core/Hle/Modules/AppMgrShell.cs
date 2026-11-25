@@ -28,7 +28,7 @@ public sealed partial class AppMgrShell : HleModule
     internal static void WriteStatus(Emulator p, uint st)
     {
         GuestMemory.Fill(st, 0, 0x80);
-        GuestMemory.WriteCString(st + 0x0C, p.TitleId, 0x20);
+        GuestMemory.WriteCString(st + 0x0C, p.AppName, 0x20); // the entry's name: the title its launch named
         GuestMemory.W32(st + 0x30, (uint)p.AppId);
         GuestMemory.W32(st + 0x34, (uint)p.Pid);
         GuestMemory.W32(st + 0x38, p.IsForeground ? 1u : 0u);
@@ -77,7 +77,7 @@ public sealed partial class AppMgrShell : HleModule
         if (status == 0) return ERR_NULL;
         if (name == 0) return Status(Emu, status);
         string tid = GuestMemory.ReadCString(name, 0x20);
-        return Status(Emu.Vita.Processes.FirstOrDefault(e => string.Equals(e.TitleId, tid, StringComparison.OrdinalIgnoreCase)), status);
+        return Status(Emu.Vita.ByAppName(tid), status);
     }
 
     /// <summary>(SceUID appId, SceAppMgrAppStatus *status). An application still waiting for the shell's second launch
@@ -242,7 +242,7 @@ public sealed partial class AppMgrShell : HleModule
         if (name != 0)
         {
             string tid = GuestMemory.ReadCString(name, 0x20);
-            p = Emu.Vita.Processes.FirstOrDefault(e => string.Equals(e.TitleId, tid, StringComparison.OrdinalIgnoreCase));
+            p = Emu.Vita.ByAppName(tid);
         }
         if (p == null) return ERR_NAME;
         p.Terminate(p == Emu ? "ended itself (sceAppMgrDestroyAppByName)" : $"ended by {Emu.Describe()}");
@@ -268,29 +268,47 @@ public sealed partial class AppMgrShell : HleModule
     }
 
     /// <summary>
-    /// (int flags, const char *name, const char *param): starts an application by title id. From the shell (it starts
-    /// NPXS10079, the background download service, with flags 0x20000 and "RemoteDownload") the application runs at
-    /// once as its own process without taking the screen. From any other application (Music's "Start [Content
-    /// Manager]" starts NPXS10026 with flags 0x20000) it is a request to the shell, as in the FW 3.74 kernel appmgr
-    /// (0x8100D89C): the application's entry is made with its flags and parameter and the shell gets event 6
-    /// {application id}; its handler decides and starts it with sceAppMgrLaunchAppByName2ndStage (or cancels it).
-    /// Started directly as a background process, Content Manager opened the shell's shared framebuffer without ever
-    /// being activated, and the shell's frame loop waited for it: the whole system stopped presenting.
+    /// (int flags, const char *name, const char *param): starts an application by title id. As in the FW 3.74 kernel
+    /// appmgr (syscall 0xDAC0AF12 → 0x8100D89C), whoever calls it, the shell included, it is a request to the shell: the
+    /// application's entry is made with its flags and parameter, the shell gets event 6 {application id} and the call
+    /// returns 0. The shell's handler (shell.self 0x8127D402 → 0x8127AC1E) decides and starts it with
+    /// sceAppMgrLaunchAppByName2ndStage, or cancels it (sceAppMgrLaunchAppCancel) while it is not ready. That holds for
+    /// the shell's own requests too: it asks for NPXS10079, the background download service, this way ("RemoteDownload")
+    /// and starts it from its event 6 like any other. VitaSharp started the shell's requests at once, as background
+    /// processes the shell had never asked the kernel for. Started directly, Content Manager (Music's "Start [Content
+    /// Manager]" asks for NPXS10026) opened the shell's shared framebuffer without ever being activated, and the shell's
+    /// frame loop waited for it: the whole system stopped presenting. Only with no shell up does the application start
+    /// at once, in the background.
     /// </summary>
     [Hle]
     int sceAppMgrLaunchAppByName(int flags, uint name, uint param)
     {
         if (name == 0) return ERR_NULL;
         string tid = GuestMemory.ReadCString(name, 0x20);
-        var running = Emu.Vita.Processes.FirstOrDefault(p => string.Equals(p.TitleId, tid, StringComparison.OrdinalIgnoreCase));
-        if (running != null) return Emu.IsShell ? running.AppId : 0;
+        var running = Emu.Vita.ByAppName(tid);
+        bool shellUp = Emu.Vita.Shell != null;
+        if (running != null && !shellUp)
+        {
+            return Emu.IsShell ? running.AppId : 0;
+        }
+
         string? dir = Io.FirmwareLayout.FindApplication(guest => Emu.Vfs.Resolve(guest), tid);
         if (dir == null) return unchecked((int)0x80800006);
         string? launchParam = param != 0 ? GuestMemory.ReadCString(param, 0x400) : null;
-        if (!Emu.IsShell && Emu.Vita.Shell != null)
+        // the kernel does not look for a running process of the title (0x8100D89C): the request goes to the shell,
+        // whose handler starts the title by the second stage, and the new process replaces the older one of the name
+        // (Emulator.ReplaceApplicationsOfTheSameName). A plugin in the shell starts the PSP emulator for a bubble by
+        // LaunchAppByPath4 and then asks for the bubble's title this way
+        if (shellUp)
         {
             Log.Info($"sceAppMgrLaunchAppByName(0x{flags:X}, {tid}) from {Emu.Describe()}");
             Emu.Vita.RequestLaunchByName(Emu, tid, dir, flags, launchParam);
+            if (Emu.IsShell)
+            {
+                // the shell's first service request: the host's launch requests can follow (Runner's --launch-app)
+                Emu.Vita.MarkShellUp();
+            }
+
             return 0;
         }
         Emulator app;
@@ -306,8 +324,7 @@ public sealed partial class AppMgrShell : HleModule
         // the parameter reaches the application as its launch parameter (sceAppMgrGetAppParam)
         if (launchParam != null) app.Hle.Modules.OfType<AppMgr>().First().LaunchParam = launchParam;
         Log.Info($"sceAppMgrLaunchAppByName(0x{flags:X}, {tid}): background process {app.Describe()}");
-        if (Emu.IsShell) Emu.Vita.MarkShellUp();
-        return app.AppId;
+        return 0;
     }
 
     /// <summary>
@@ -336,7 +353,7 @@ public sealed partial class AppMgrShell : HleModule
         string tid = GuestMemory.ReadCString(name, 0x20);
         var objects = Emu.Kernel.Objects;
         void Notify() => objects.Get<Kernel.Callback>(callback)?.Notify(0);
-        if (Emu.Vita.Processes.Any(p => string.Equals(p.TitleId, tid, StringComparison.OrdinalIgnoreCase)))
+        if (Emu.Vita.ByAppName(tid) != null)
         {
             Notify();
             return 0;

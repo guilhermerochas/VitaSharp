@@ -206,6 +206,19 @@ public sealed class GxmFlowTests : IDisposable
         return surface;
     }
 
+    /// <summary>libgxm 3.74 (0x8100D5F4): sceGxmIsInitializationInternal is the flag sceGxmInitialize sets and
+    /// sceGxmTerminate clears. The common dialog refuses its dialogs (0x80020436) while it is 0: answering 0 always
+    /// made the PSP emulator's error dialog end the moment it started.</summary>
+    [Fact]
+    public void IsInitializationInternalFollowsInitializeAndTerminate()
+    {
+        Assert.Equal(0, Call(Gxm, "sceGxmIsInitializationInternal"));
+        Init();
+        Assert.Equal(1, Call(Gxm, "sceGxmIsInitializationInternal"));
+        Assert.Equal(0, Call(Gxm, "sceGxmTerminate"));
+        Assert.Equal(0, Call(Gxm, "sceGxmIsInitializationInternal"));
+    }
+
     [Fact]
     public void InitializeAndTerminate()
     {
@@ -239,7 +252,7 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(INVALID_POINTER, Call(Gxm, "sceGxmMapFragmentUsseMemory", mem, 0x1000u, new Ptr<uint>(0)));
         Assert.Equal(0, Call(Gxm, "sceGxmUnmapVertexUsseMemory", mem));
         Assert.Equal(0, Call(Gxm, "sceGxmUnmapFragmentUsseMemory", mem));
-        foreach (string? fn in new[] { "sceGxmIsDebugVersion", "sceGxmIsInitializationInternal", "sceGxmPadTriggerGpuPaTrace" })
+        foreach (string? fn in new[] { "sceGxmIsDebugVersion", "sceGxmPadTriggerGpuPaTrace" })
         {
             Assert.Equal(0, Call(Gxm, fn));
         }

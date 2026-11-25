@@ -674,7 +674,7 @@ public sealed partial class AppMgr : HleModule
     {
         if (pid.IsNull || name == 0) return ERR_NULL_POINTER;
         string tid = GuestMemory.ReadCString(name, 32);
-        var p = Emu.Vita.Processes.FirstOrDefault(e => string.Equals(e.TitleId, tid, StringComparison.OrdinalIgnoreCase));
+        var p = Emu.Vita.ByAppName(tid);
         if (p == null) return ERR_NOT_FOUND;
         pid.Value = p.Pid;
         return 0;

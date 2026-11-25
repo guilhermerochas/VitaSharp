@@ -34,5 +34,8 @@
   <!-- SceCamera games open the webcam through AVFoundation; macOS asks the user with this text -->
   <key>NSCameraUsageDescription</key>
   <string>Games that use the PS Vita camera see the webcam.</string>
+  <!-- SceAudioIn games and apps open the microphone through OpenAL Soft (Core Audio); macOS asks with this text -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Games and apps that use the PS Vita microphone hear this computer's microphone while they have it open.</string>
 </dict>
 </plist>

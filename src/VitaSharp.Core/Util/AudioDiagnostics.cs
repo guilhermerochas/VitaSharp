@@ -291,6 +291,50 @@ public static class AudioDiagnostics
         }
     }
 
+    // ------------------------------------------------------------------ microphone
+
+    private static readonly ConcurrentDictionary<MicrophoneFeed, byte> s_microphones = new();
+    private static string? s_lastMicrophone;
+
+    /// <summary>A microphone port opened its host capture (only its format and pace are reported, never its samples).</summary>
+    public static void MicrophoneOpened(MicrophoneFeed feed)
+    {
+        s_microphones[feed] = 0;
+        if (DebugMode.Enabled)
+        {
+            Log.Info($"[dbg] {Frame} AUDIO open microphone {feed.Describe()}");
+        }
+    }
+
+    public static void MicrophoneClosed(MicrophoneFeed feed)
+    {
+        if (s_microphones.TryRemove(feed, out _))
+        {
+            s_lastMicrophone = feed.Describe();
+            if (DebugMode.Enabled)
+            {
+                Log.Info($"[dbg] {Frame} AUDIO release microphone {s_lastMicrophone}");
+            }
+        }
+    }
+
+    /// <summary>The microphone ports open now and the last one released (format, source and pace).</summary>
+    public static List<string> MicrophoneDescriptions()
+    {
+        var lines = new List<string>();
+        foreach (MicrophoneFeed feed in s_microphones.Keys)
+        {
+            lines.Add("open: " + feed.Describe());
+        }
+
+        if (s_lastMicrophone is { } last)
+        {
+            lines.Add("released: " + last);
+        }
+
+        return lines;
+    }
+
     // ------------------------------------------------------------------ reports
 
     /// <summary>Debug mode was switched on: everything already open, since those open lines were not logged.</summary>
@@ -395,6 +439,11 @@ public static class AudioDiagnostics
         {
             yield return $"AUDIO summary: {portStats.Describe()}{(portStats.ClosedAt > 0 ? " (released)" : "")}: {Totals(portStats)}";
         }
+
+        foreach (string microphone in MicrophoneDescriptions())
+        {
+            yield return "AUDIO summary: microphone " + microphone;
+        }
     }
 
     /// <summary>The open ports, then the released ones still remembered (the last 64).</summary>
@@ -428,6 +477,12 @@ public static class AudioDiagnostics
         foreach (KeyValuePair<string, string> s in s_streams.OrderBy(k => k.Key))
         {
             sb.AppendLine("  " + s.Value);
+        }
+
+        sb.AppendLine("microphone (format and pace only; its samples are never in a capture unless asked for):");
+        foreach (string microphone in MicrophoneDescriptions())
+        {
+            sb.AppendLine("  " + microphone);
         }
 
         return sb.ToString();

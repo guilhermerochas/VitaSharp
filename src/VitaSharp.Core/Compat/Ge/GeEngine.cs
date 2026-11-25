@@ -398,10 +398,12 @@ public sealed partial class GeEngine : IDisposable
         {
             try
             {
+                OnExecutionStart();
                 ExecuteCommands();
             }
             finally
             {
+                OnExecutionEnd();
                 Volatile.Write(ref _executing, 0);
             }
 
@@ -682,6 +684,11 @@ public sealed partial class GeEngine : IDisposable
 
     /// <summary>Draws one batch (the rasterizer's part, next to the state).</summary>
     partial void DrawBatch(int primitive, int count, GeVertexFormat format);
+
+    /// <summary>A run of the list starts (a start or a stall move) / stops (END, the stall address, the budget).</summary>
+    partial void OnExecutionStart();
+
+    partial void OnExecutionEnd();
 
     /// <summary>A command that only sets state the draws read (the rest of the commands).</summary>
     partial void OnStateCommand(int command, uint argument);

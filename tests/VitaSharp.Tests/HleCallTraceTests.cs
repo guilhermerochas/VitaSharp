@@ -161,4 +161,62 @@ public sealed class HleCallTraceTests : IDisposable
             Call(2_040_100, "main", "sceDisplayWaitVblankStart", "0x00000000"), Call(2_050_000, "main", "sceIoOpen", "0x00000102"));
         Assert.Null(HleCallTrace.FirstDifference(d, e, StateUs));
     }
+
+    /// <summary>
+    /// A thread blocked in a call since before the recording began (the vblank wait it was in when the capture
+    /// started) and still in it when the state was taken: the capture's trace has no call of it before the mark, the
+    /// re-run releases it into that call again. Its mark says so ("in-call"), and the re-run's first call is not paired
+    /// with a capture call: without it the alignment took the capture's next frame and every fd differed by one (macOS
+    /// CI, "sceIoOpen returned 0x0000012B in the capture, 0x0000012A in the re-run").
+    /// </summary>
+    [Fact]
+    public void AThreadInACallSinceBeforeTheRecordingIsMarkedAndItsReissuedCallIsNotPaired()
+    {
+        const long StateUs = 2_410_000;
+        string[] capture =
+        [
+            Call(2_412_000, "main", "sceCtrlPeekBufferPositive", "0x00000001"), Call(2_412_100, "main", "sceIoOpen", "0x0000012A"),
+            Call(2_413_000, "main", "sceIoRead", "0x00000004"), Call(2_414_000, "main", "sceIoClose", "0x00000000"),
+            Call(2_420_000, "main", "sceDisplaySetFrameBuf", "0x00000000"), Call(2_420_100, "main", "sceDisplayWaitVblankStart", "0x00000000"),
+            Call(2_452_000, "main", "sceCtrlPeekBufferPositive", "0x00000001"), Call(2_453_000, "main", "sceIoOpen", "0x0000012B"),
+            Call(2_454_000, "main", "sceIoRead", "0x00000004"), Call(2_455_000, "main", "sceIoClose", "0x00000000"),
+        ];
+        string a = Write("a.tsv", capture.Prepend($"{HleCallTrace.StateMarkLine}\t{StateUs}\tmain\t0\t{HleCallTrace.InCallFlag}").ToArray());
+        string[] rerun =
+        [
+            Call(StateUs + 9, "main", "sceDisplayWaitVblankStart", "0x00000000"),
+            Call(2_430_000, "main", "sceCtrlPeekBufferPositive", "0x00000001"), Call(2_430_100, "main", "sceIoOpen", "0x0000012A"),
+            Call(2_431_000, "main", "sceIoRead", "0x00000004"), Call(2_432_000, "main", "sceIoClose", "0x00000000"),
+            Call(2_440_000, "main", "sceDisplaySetFrameBuf", "0x00000000"), Call(2_440_100, "main", "sceDisplayWaitVblankStart", "0x00000000"),
+            Call(2_470_000, "main", "sceCtrlPeekBufferPositive", "0x00000001"), Call(2_471_000, "main", "sceIoOpen", "0x0000012B"),
+        ];
+        string b = Write("b.tsv", rerun);
+        Assert.Null(HleCallTrace.FirstDifference(a, b, StateUs));
+
+        // still a difference where the re-run really does something else
+        rerun[8] = Call(2_471_000, "main", "sceIoOpen", "0x0000012C");
+        string c = Write("c.tsv", rerun);
+        Assert.StartsWith("thread 'main' call 8: sceIoOpen returned 0x0000012B in the capture, 0x0000012C in the re-run", HleCallTrace.FirstDifference(a, c, StateUs));
+    }
+
+    /// <summary>The trace marks every thread of a state, also one with no call yet, with whether it was in a call.</summary>
+    [Fact]
+    public void TheStateMarkNamesAThreadWithoutCallsAndWhetherItWasInACall()
+    {
+        object waiting = new(), idle = new();
+        HleCallTrace.Begin();
+        try
+        {
+            HleCallTrace.Mark([(waiting, "main", true), (idle, "worker", false)]);
+            string path = Path.Combine(_dir, HleCallTrace.FileName);
+            HleCallTrace.Write(path);
+            string[] lines = File.ReadAllLines(path);
+            Assert.Contains(lines, l => l.StartsWith(HleCallTrace.StateMarkLine + "\t", StringComparison.Ordinal) && l.EndsWith("\tmain\t0\t" + HleCallTrace.InCallFlag, StringComparison.Ordinal));
+            Assert.Contains(lines, l => l.StartsWith(HleCallTrace.StateMarkLine + "\t", StringComparison.Ordinal) && l.EndsWith("\tworker\t0", StringComparison.Ordinal));
+        }
+        finally
+        {
+            HleCallTrace.End();
+        }
+    }
 }

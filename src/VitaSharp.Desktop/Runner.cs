@@ -20,6 +20,29 @@ public static class Runner
 
         options.FirstOrDefault(o => o.StartsWith(name + "="))?[(name.Length + 1)..];
 
+    /// <summary>The Vita microphone for a --microphone= value ("" or null = the default capture device, "none", "tone[:HZ]",
+    /// a device name or index): OpenAL Soft's capture, null for "none".</summary>
+    internal static IMicrophoneSource? CreateMicrophone(string? value) =>
+        MicrophoneSpec.Parse(value).CreateSource(spec => OpenAlMicrophone.TryCreate(spec));
+
+    /// <summary>The SceLibLocation source of --location=: off, or a fixed position. The PC's own location service
+    /// ("system") is not read yet: location stays off then. The position itself is never logged.</summary>
+    internal static ILocationSource? CreateLocation(string? value)
+    {
+        LocationSpec spec = LocationSpec.Parse(value);
+        ILocationSource? source = spec.CreateSource(() =>
+        {
+            Log.Warn("Location: the PC's location service is not supported yet; location stays off (give latitude,longitude)");
+            return null;
+        });
+        if (source != null)
+        {
+            Log.Info("Location: on (a fixed position); withheld while Gravar tudo is armed or recording, unless --capture-location");
+        }
+
+        return source;
+    }
+
     /// <summary>A trace filter: --name=value, or --name value as the HLE docs write it (without this the filter was
     /// silently ignored).</summary>
     internal static string? TraceOpt(string[] options, string name)
@@ -386,6 +409,8 @@ public static class Runner
         using var emu = new Emulator(new EmulatorOptions
         {
             FsRoot = Program.FsRoot,
+            // --model=pstv: the launcher's "Modelo" (a PlayStation TV; default VITASHARP_MODEL, else the handheld)
+            Model = VitaSharp.Core.Hle.ConsoleIdentity.ParseModel(Opt(options, "--model") ?? Environment.GetEnvironmentVariable(EnvVars.Model)),
             EnableJit = !noJit,
             CpuBackend = Opt(options, "--cpu"),
             TraceHle = trace,
@@ -476,6 +501,8 @@ public static class Runner
         // scripted input also works in a window (automated checks of the windowed path: swapchain, LoadExec)
         var scripted = Opt(options, "--input") is { } windowScript ? new ScriptedInput(windowScript) : null;
         emu.Host.Input = scripted ?? (IInputBackend)window;
+        // a PS TV's controllers vibrate (sceCtrlSetActuator); a script has none
+        emu.Host.Vibration = scripted == null ? window.Vibration : null;
         // motion sensors: the controller's gyro (SDL), or the script's tilt steps
         emu.Host.Motion = scripted ?? window.Motion;
         emu.Host.Audio = audio;
@@ -483,6 +510,21 @@ public static class Runner
         // index, "none" = grey, or a .png/.jpg picture); unset = front first webcam, back the next other webcam
         var (camFront, camBack) = CameraSpec.FromOptions(Opt(options, "--camera"), Opt(options, "--camera-front"), Opt(options, "--camera-back"));
         emu.Host.Camera = FlashCapCamera.CreateForVita(camFront, camBack);
+        // SceAudioIn: --microphone= (capture device name or index, "none", or "tone[:HZ]"); unset = the default capture
+        // device, except in hidden test windows (VITASHARP_HIDDEN_WINDOW=1), which stay off the PC's microphone
+        emu.Host.Microphone = Environment.GetEnvironmentVariable(EnvVars.HiddenWindow) == "1" && Opt(options, "--microphone") == null
+            ? null
+            : CreateMicrophone(Opt(options, "--microphone"));
+        // SceLibLocation: --location= (off by default; "latitude,longitude[,altitude[,accuracy]]" a fixed position)
+        emu.Host.Location = CreateLocation(Opt(options, "--location"));
+        // SceHid: --bt-keyboard-mouse=on pairs the PC keyboard and mouse with the Vita as Bluetooth devices (off by
+        // default: the keyboard is the controller; with it the keys go to both)
+        if (OnOff(options, "--bt-keyboard-mouse") == true)
+        {
+            emu.Host.HidKeyboard = window.HidKeyboard = new HidKeyboard();
+            emu.Host.HidMouse = window.HidMouse = new HidMouse();
+            Log.Info("SceHid: the PC keyboard and mouse are paired with the Vita");
+        }
         VulkanRenderer? renderer = null;
         var clock = Stopwatch.StartNew();
         long lastFrames = 0, titleTicks = 0;
@@ -1509,6 +1551,14 @@ public static class Runner
         {
             emu.Host.Camera = FlashCapCamera.CreateForVita(hf ?? "none", hb ?? "none");
         }
+
+        // headless: the microphone only on request (unset: no microphone, silence)
+        if (Opt(options, "--microphone") is { } microphone)
+        {
+            emu.Host.Microphone = CreateMicrophone(microphone);
+        }
+
+        emu.Host.Location = CreateLocation(Opt(options, "--location"));
 
         emu.BacktraceHle = Opt(options, "--bt");
         if (TraceOpt(options, "--trace-hle-only") is { } tho)

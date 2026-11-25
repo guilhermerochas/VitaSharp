@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=0dbbebeb90302ec095576261dd9be2b9cac86838a8471b848e83195626c1c641 -->
+<!-- pair: README.md sha256=994ebaa39a9303459f462f297f0c5d996d1eb892a0aa53e9a4f7e22dc8db7f95 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -179,6 +179,34 @@ O idioma que um jogo vê é o idioma do sistema do Vita; para um jogo sem o seu 
 japonês e inglês, que cai no japonês), o ajuste **Idioma do sistema** dele (na página do jogo no launcher, nos detalhes
 do jogo no Android; `--system-language=<0-19>` na linha de comando) faz só esse jogo ver outro.
 
+**Microfone.** O microfone do Vita (chat de voz, apps que gravam) ouve o dispositivo de captura do PC pelo OpenAL Soft,
+a mesma biblioteca que toca o som (WASAPI no Windows, PipeWire/PulseAudio/ALSA no Linux, Core Audio no macOS; nada a
+instalar). **Configurações > Áudio > Microfone** escolhe o padrão do sistema (o padrão), um dispositivo de captura, desligado
+(silêncio) ou um tom de teste de 440 Hz; na linha de comando `--microphone=<nome|índice|none|tone[:HZ]>`, e `mic-test`
+lista os dispositivos e mostra o nível que um jogo receberia. O dispositivo só liga enquanto um jogo ou app está com a
+porta do microfone aberta; sem dispositivo (ou, no macOS, sem a permissão de microfone para o terminal ou app que roda o
+VitaSharp: **Ajustes do Sistema > Privacidade e Segurança > Microfone**) o jogo ouve silêncio, como numa sala quieta.
+Nada do que o microfone capta é gravado; uma captura **Gravar tudo** guarda só o formato e o ritmo dele, a não ser que
+`--capture-mic-audio` (ou `VITASHARP_CAPTURE_MIC_AUDIO=1`) peça o som também.
+
+**Localização.** Apps e jogos que perguntam ao Vita onde ele está não recebem posição por padrão: o Vita
+responde que o aplicativo não tem permissão, como quando o jogador recusa. **Configurações > Áudio > Localização** (ou
+`--location=<latitude,longitude[,altitude[,precisão]]>`, graus decimais com ponto, metros) dá ao Vita uma posição
+fixa, respondida com essa precisão (10 m quando não informada); vazio ou `none` desliga. O serviço de localização do
+próprio PC ainda não é lido. A posição nunca vai para o log; uma captura **Gravar tudo** a omite (o Vita responde
+"posição indeterminada" enquanto a captura está armada ou gravando, e o `session.txt` guarda `--location=<location>`),
+a não ser com `--capture-location` (ou `VITASHARP_CAPTURE_LOCATION=1`).
+
+**Modelo do console.** **Configurações > Emulação > Modelo** (ou `--model=pstv`, `VITASHARP_MODEL=pstv`) faz o
+aparelho emulado ser um PlayStation TV em vez do PS Vita portátil (PCH-1000, o padrão): os jogos veem um PS TV (vários
+controles suportados), cada controle conectado é um jogador nas portas 1-4 (o teclado joga junto com o primeiro
+controle) e a vibração chega aos controles. O software de sistema próprio do PS TV, os ajustes de HDMI e o USB host
+ainda não são emulados.
+
+**Teclado e mouse Bluetooth.** **Configurações > Emulação > Teclado e mouse Bluetooth** (ou `--bt-keyboard-mouse=on`)
+pareia o teclado e o mouse do PC com o Vita, para jogos e apps que leem teclado ou mouse (SceHid: o navegador, chat).
+Desligado por padrão; as teclas continuam valendo como controle com ele ligado.
+
 Os dados ficam em `%APPDATA%\VitaSharp` no Windows (`~/.local/share/VitaSharp` no Linux,
 `~/Library/Application Support/VitaSharp` no macOS; `--data=<pasta>` ou `VITASHARP_DATA` trocam a pasta): jogos em
 `fs/ux0/app`, firmware em `fs/os0`... , `logs/`, `savestates/`, `captures/` (Gravar tudo), `gpudumps/`,
@@ -296,10 +324,15 @@ L/R, SELECT/PS/START, um botão TRÁS para o touchpad traseiro); toques na image
 Bluetooth ou USB são detectados sozinhos com o layout posicional do desktop (os controles na tela somem enquanto um está
 conectado), e um teclado físico usa as teclas do desktop. **Controles** remapeia os botões de cada controle (toque
 no controle da lista e aperte o botão no controle; **Restaurar padrão** volta ao padrão) e ajusta a troca O/X, zona morta, opacidade,
-vibração (a cada toque, também com o outro dedo no analógico; fraca, média ou forte) e esconder sozinho. O giroscópio e o acelerômetro do celular alimentam o sensor de movimento do Vita.
+vibração (a cada toque, também com o outro dedo no analógico; fraca, média ou forte) e esconder sozinho. O giroscópio e o acelerômetro do celular alimentam o sensor de movimento do Vita, e o magnetômetro, a bússola do Vita (quando o jogo liga o magnetômetro).
 **Ajustes > Sistema > Ao abrir o emulador** pode dar boot no Sistema do Vita (o shell do firmware) ao abrir o app,
 como no desktop. **Ajustes > Câmeras** escolhe o que cada câmera do Vita mostra, como as opções de câmera do desktop: a câmera do
 celular daquele lado (o padrão), uma imagem PNG/JPEG ou nenhuma (quadros cinza).
+**Ajustes > Microfone** escolhe o que o microfone do Vita ouve: o microfone do celular (o padrão; o do fone conectado,
+quando houver), desligado (silêncio) ou o tom de teste. O Android pede a permissão do microfone na primeira vez que um
+jogo abre o microfone, nunca antes; recusada, o jogo ouve silêncio.
+**Ajustes > Localização** dá ao Vita a posição do celular (desligada por padrão): o Android pede a permissão de
+localização na primeira vez que um jogo pergunta onde o Vita está, nunca antes; recusada, a posição fica indeterminada.
 
 **Menu de pausa, save states e Gravar tudo.** O botão PS (na tela ou no controle) pausa um jogo iniciado sozinho:
 **Continuar**, **Salvar estado** / **Carregar estado** (6 slots com imagem), **Ajustes** (toque traseiro, controles na
@@ -477,6 +510,10 @@ O que o `dotnet test tests/VitaSharp.Tests` precisa em cada sistema; um teste se
 - Firmware: sem ele os testes dos módulos reais do firmware (`libSceJson`, `libSceXml`, `libpaf`, a instalação do
   arquivo de atualização) são pulados. `VITASHARP_FIRMWARE_PUP` aponta um `PSVUPDAT.PUP`, `VITASHARP_FIRMWARE_DIR` uma
   pasta `vs0` ou de dados do Vita3K; os testes do compilador do Piglet precisam do `libshacccg.suprx` em `ur0:data`.
+- Os testes do microfone (`MicrophoneTests`) usam um tom roteirizado num relógio que o próprio teste avança: nenhum
+  dispositivo de captura, permissão ou placa de som é preciso em nenhum sistema.
+- Os testes de localização (`LocationSourceTests`) usam uma posição fixa e uma fonte que o teste move: nenhum
+  serviço de localização nem permissão em nenhum sistema.
 - Os testes nunca usam a sua pasta de dados: cada um cria uma pasta temporária (`VITASHARP_DATA` nos processos filhos);
   os testes de jogo rodando iniciam um executável pequeno que os próprios testes escrevem.
 - Opcional: as camadas de validação do Vulkan SDK da LunarG rodam as cargas do renderizador sob validação com

@@ -47,6 +47,45 @@ public sealed unsafe partial class GuestThread
     /// scene open: it runs on until the scene ends.</summary>
     private bool SaveHeld => _saveHold && _callDepth == 0 && !FinishingScene;
 
+    /// <summary>
+    /// A service thread (<see cref="GuestThread.HostBody"/>) whose body never waits on its own between pieces of work
+    /// (the compat core's runner runs the PSP core in slices): it calls <see cref="ParkAtSafePoint"/> between them, a
+    /// save or load holds it like a guest thread (<see cref="HoldForSave"/>), it is at a safe point only while parked
+    /// there, and it stops while the emulation is paused.
+    /// </summary>
+    public bool ParksAtSafePoints { get; set; }
+
+    /// <summary>The body of a <see cref="ParksAtSafePoints"/> thread should park now (the emulation is paused, or a
+    /// save or load holds it): a wait of its own ends early to reach <see cref="ParkAtSafePoint"/>.</summary>
+    public bool ShouldParkAtSafePoint => _saveHold || PausedHere;
+
+    /// <summary>A <see cref="ParksAtSafePoints"/> thread's safe point, between two pieces of its work: it parks here
+    /// while the emulation is paused or a save or load holds it (or until it is asked to stop).</summary>
+    public void ParkAtSafePoint()
+    {
+        if (!ShouldParkAtSafePoint)
+        {
+            return;
+        }
+
+        using Scheduler.Blocked blocked = Scheduler.Block();
+        lock (_suspendLock)
+        {
+            _parkedDepth = _callDepth;
+            try
+            {
+                while (ShouldParkAtSafePoint && !Core.StopRequested)
+                {
+                    Monitor.Wait(_suspendLock, 50);
+                }
+            }
+            finally
+            {
+                _parkedDepth = -1;
+            }
+        }
+    }
+
     internal void HoldForSave(bool hold)
     {
         lock (_suspendLock)
@@ -83,6 +122,11 @@ public sealed unsafe partial class GuestThread
         if (HostBody != null)
         {
             kind = SafeKind.HostBody;
+            if (ParksAtSafePoints)
+            {
+                return IsParked ? null : $"thread '{Name}' (host) is not parked at its safe point yet";
+            }
+
             return BlockedInHost && _callDepth == 0 ? null : $"thread '{Name}' (host) is busy (depth {_callDepth}, parked {_parkedDepth}, {Status}, in {InWhat()})";
         }
         int parked = _parkedDepth;

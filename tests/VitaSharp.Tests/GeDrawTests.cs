@@ -189,7 +189,7 @@ public sealed class GeDrawTests
         Assert.Equal(0xFFu, state.WriteMaskRgb);
         Assert.Equal((3, true, true), (state.TextureFunction, state.TextureAlpha, state.ColorDouble));
         Assert.Equal((0, 0, 479, 271), (state.ScissorLeft, state.ScissorTop, state.ScissorRight, state.ScissorBottom));
-        Assert.NotNull(_rasterizer.LastTarget!.Depth); // a clear that writes depth reads the depth buffer
+        Assert.NotNull(_rasterizer.LastDepth); // a clear that writes depth uses the depth buffer
     }
 
     /// <summary>As on the PSP, the depth buffer is written only while the depth test is on: with the test off (and
@@ -203,25 +203,29 @@ public sealed class GeDrawTests
             .Command(GeCommand.DepthTestEnable, 0).Command(GeCommand.DepthWriteDisable, 0)
             .Command(GeCommand.Primitive, (6u << 16) | 2).End().Start);
         Assert.False(_rasterizer.LastState!.DepthWrite);
-        Assert.Null(_rasterizer.LastTarget!.Depth);
+        Assert.Null(_rasterizer.LastDepth);
     }
 
-    /// <summary>The framebuffer goes to the rasterizer as RGBA8 and comes back in its own format (565 here).</summary>
+    /// <summary>A draw names its framebuffer (VRAM + FBP, FBW, the scissor's rows, the pixel format) and no depth
+    /// buffer when it neither tests nor writes depth; the list's end flushes the rasterizer once, and a block transfer
+    /// reading what the rasterizer holds flushes it before copying.</summary>
     [Fact]
-    public void TheFramebufferIsConvertedForTheRasterizerAndBack()
+    public void TheDrawNamesItsSurfacesAndTheRasterizerIsFlushedWhereMemoryIsRead()
     {
-        _memory.Write16(GeTestMemory.VramBase + 2, GePixels.To565(0x0000FF00)); // pixel (1, 0): green
-        _rasterizer.Paint = target =>
-        {
-            Assert.Equal(GePixels.From565(GePixels.To565(0x0000FF00)), target.Color[1]);
-            target.Color[512 * 3 + 2] = 0x000000FF; // pixel (2, 3): red
-        };
         ThroughVertex(0, 0, 0, 0, 0xFFFFFFFF);
         ThroughVertex(1, 4, 4, 0, 0xFFFFFFFF);
         GeRegisters.Run(_engine, Setup(GePixels.Format565).Command(GeCommand.VertexType, ThroughColorS16)
             .Command(GeCommand.Primitive, (6u << 16) | 2).End().Start);
-        Assert.Equal(GePixels.To565(0x000000FF), _memory.Read16(GeTestMemory.VramBase + (512 * 3 + 2) * 2));
-        Assert.Equal(GePixels.To565(0x0000FF00), _memory.Read16(GeTestMemory.VramBase + 2));
+        Assert.Equal(new GeSurface(GeTestMemory.VramBase, 512, 272, GePixels.Format565), _rasterizer.LastColor);
+        Assert.Null(_rasterizer.LastDepth);
+        Assert.Equal(1, _rasterizer.Flushes);
+
+        GeRegisters.Run(_engine, new GeListBuilder(_memory, 0x08002000).RamBase()
+            .Command(GeCommand.VertexAddress, Vertices & 0xFFFFFF).Command(GeCommand.Primitive, (6u << 16) | 2)
+            .Command(GeCommand.TransferSource, 0).Command(GeCommand.TransferSourceWidth, 512 | 0x040000)
+            .Command(GeCommand.TransferDestination, 0x040000).Command(GeCommand.TransferDestinationWidth, 512 | 0x080000)
+            .Command(GeCommand.TransferSize, 3 | (3u << 10)).Command(GeCommand.TransferStart, 0).End().Start);
+        Assert.Equal(3, _rasterizer.Flushes); // before the transfer read the framebuffer, and at the end
     }
 
     private void TextureSetup(GeListBuilder list, int format, int log2Width, int log2Height, int bufferWidth, bool swizzled = false)
@@ -370,6 +374,64 @@ public sealed class GeDrawTests
     {
         _engine.ReleaseRasterizer();
         Assert.Same(_rasterizer, _engine.Rasterizer);
+    }
+
+    /// <summary>A PSP DXT colour block: the four index rows first, then colour 0 and colour 1 (565, red in the high bits).</summary>
+    private void DxtColorBlock(uint address, ushort first, ushort second, byte row0)
+    {
+        _memory.Write32(address, row0);
+        _memory.Write16(address + 4, first);
+        _memory.Write16(address + 6, second);
+    }
+
+    private uint[] DecodeDxt(int format)
+    {
+        uint[] pixels = new uint[16];
+        Assert.True(GeTextureDecoder.Decode(_memory, Texture, 4, 4, 4, format, false, new uint[256], 0, pixels));
+        return pixels;
+    }
+
+    /// <summary>DXT1 with colour 0 above colour 1: four colours, the two between at a third and two thirds.</summary>
+    [Fact]
+    public void Dxt1FourColourBlock()
+    {
+        DxtColorBlock(Texture, 0xF800, 0x001F, 0b11_10_01_00); // red, blue; row 0 indices 0, 1, 2, 3
+        uint[] pixels = DecodeDxt(GeTextureDecoder.FormatDxt1);
+        Assert.Equal(0xFF0000FFu, pixels[0]);
+        Assert.Equal(0xFFFF0000u, pixels[1]);
+        Assert.Equal(0xFF5500AAu, pixels[2]); // 2/3 red + 1/3 blue
+        Assert.Equal(0xFFAA0055u, pixels[3]);
+        Assert.Equal(0xFF0000FFu, pixels[4]); // rows 1..3: index 0
+    }
+
+    /// <summary>DXT1 with colour 0 not above colour 1: three colours and transparent black for index 3.</summary>
+    [Fact]
+    public void Dxt1ThreeColourBlockHasTransparentBlack()
+    {
+        DxtColorBlock(Texture, 0x001F, 0xF800, 0b11_10_01_00);
+        uint[] pixels = DecodeDxt(GeTextureDecoder.FormatDxt1);
+        Assert.Equal(0xFF7F007Fu, pixels[2]); // halfway
+        Assert.Equal(0u, pixels[3]);
+    }
+
+    /// <summary>DXT3: four rows of 4-bit alpha after the colour block; DXT5: two alphas and 3-bit indices.</summary>
+    [Fact]
+    public void Dxt3AndDxt5Alpha()
+    {
+        DxtColorBlock(Texture, 0xF800, 0x001F, 0);
+        _memory.Write16(Texture + 8, 0x00A0); // row 0: texel 0 alpha 0, texel 1 alpha 0xA
+        uint[] dxt3 = DecodeDxt(GeTextureDecoder.FormatDxt3);
+        Assert.Equal(0x000000FFu, dxt3[0]);
+        Assert.Equal(0xAA0000FFu, dxt3[1]);
+
+        DxtColorBlock(Texture, 0xF800, 0x001F, 0);
+        _memory.Write32(Texture + 8, 0b010_001_000); // texels 0, 1, 2: alpha indices 0, 1, 2
+        _memory.Write16(Texture + 12, 0);
+        _memory.Write16(Texture + 14, 0x00FF); // alpha 0 = 255, alpha 1 = 0
+        uint[] dxt5 = DecodeDxt(GeTextureDecoder.FormatDxt5);
+        Assert.Equal(0xFFu, dxt5[0] >> 24);
+        Assert.Equal(0u, dxt5[1] >> 24);
+        Assert.Equal((6u * 255) / 7, dxt5[2] >> 24);
     }
 
     /// <summary>A 565 texel has no alpha bits and reads as opaque (as the PSP samples it), not as transparent.</summary>

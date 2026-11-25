@@ -32,7 +32,7 @@ public sealed partial class SystemServicesVsh
     /// psp-compat.md). Compared by name because the path is fixed by the firmware (SceCompat loads it by this name)
     /// and nothing in the file tells the layers apart (its module information matches the plain blobs').
     /// </summary>
-    static readonly string[] FwLoaderSecureInnerLayer = ["os0:kd/pcbc.skprx"];
+    static readonly string[] FwLoaderSecureInnerLayer = [Io.FirmwareLayout.KernelModules.Guest("pcbc.skprx")];
 
     [SaveState.SnapshotMissing] // states of builds before it: the loader was never locked
     bool _fwLoaderLocked;

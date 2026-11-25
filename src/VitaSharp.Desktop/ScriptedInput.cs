@@ -17,6 +17,10 @@ namespace VitaSharp.Desktop;
 ///                           x (positive raises the top edge) then roll degrees about y (positive lowers the right
 ///                           edge); it turns there at up to 180 degrees/s and back to flat afterwards. Any tilt step
 ///                           makes the script the SceMotion source.
+///   heading@T:degrees[:len] the magnetometer: the Vita's top edge points that many degrees clockwise from magnetic
+///                           north (with the tilt of the tilt steps); the samples carry the Earth's field
+///                           (MotionAxes.EarthField), SceMotion's NED matrix and stable field. Any heading step makes
+///                           the script the SceMotion source.
 ///   key@T:Name[:len]        hold a keyboard key (Silk.NET key name: "Keypad8", "T", "Space"...) through the default
 ///                           keyboard profile: Vita buttons and sticks, and the virtual motion's tilt keys
 ///                           (<see cref="VirtualMotion"/>, which then becomes the SceMotion source when no tilt step
@@ -38,7 +42,7 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
 {
     enum Kind
     {
-        Button, Tap, BackTap, LStick, RStick, Tilt, Key, MouseLook, MouseStick
+        Button, Tap, BackTap, LStick, RStick, Tilt, Key, MouseLook, MouseStick, Heading
     }
 
     /// <param name="AfterSeconds">"fN+S": the step starts S wall-clock seconds after frame N (NaN: plain timing).</param>
@@ -117,6 +121,9 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
                     break;
                 case "tilt":
                     _steps.Add(new Step(Kind.Tilt, 0, frames, start, Len(3), float.Parse(parts[1], inv), float.Parse(parts[2], inv)));
+                    break;
+                case "heading":
+                    _steps.Add(new Step(Kind.Heading, 0, frames, start, Len(2), float.Parse(parts[1], inv), 0));
                     break;
                 case "key":
                     _steps.Add(new Step(Kind.Key, 0, frames, start, Len(2), 0, 0, KeyName: parts[1]));
@@ -356,7 +363,10 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
     long _motionLastUs = -1;
     float _pitch, _roll; // radians, current (ramped towards the active step)
 
-    bool HasTiltSteps => _steps.Exists(s => s.Kind == Kind.Tilt);
+    bool HasTiltSteps => _steps.Exists(s => s.Kind is Kind.Tilt or Kind.Heading);
+
+    /// <summary>The script has a magnetometer (any heading step): its samples carry the Earth's field.</summary>
+    bool HasHeadingSteps => _steps.Exists(s => s.Kind == Kind.Heading);
 
     public bool HasSensors
     {
@@ -421,13 +431,18 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
 
             float dt = _motionLastUs < 0 ? 0 : (now - _motionLastUs) / 1e6f;
             _motionLastUs = now;
-            float tp = 0, tr = 0;
+            float tp = 0, tr = 0, heading = 0;
             foreach (var s in _steps)
             {
                 if (s.Kind == Kind.Tilt && Active(s))
                 {
                     tp = s.X * MathF.PI / 180;
                     tr = s.Y * MathF.PI / 180;
+                }
+
+                if (s.Kind == Kind.Heading && Active(s))
+                {
+                    heading = s.X;
                 }
             }
 
@@ -436,7 +451,8 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
             var gyro = dt > 0 ? new Vector3((np - _pitch) / dt, (nr - _roll) / dt, 0) : Vector3.Zero;
             _pitch = np;
             _roll = nr;
-            dest[0] = new MotionSample((ulong)now + 1, MotionAxes.TiltGravity(_pitch, _roll), gyro);
+            Vector3 field = HasHeadingSteps ? MotionAxes.EarthField(heading, _pitch, _roll) : Vector3.Zero;
+            dest[0] = new MotionSample((ulong)now + 1, MotionAxes.TiltGravity(_pitch, _roll), gyro, field);
             return 1;
         }
     }

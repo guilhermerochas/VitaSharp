@@ -95,7 +95,11 @@ public sealed class TitleLicenseTests(GuestMemoryFixture fixture) : IDisposable
 
         int processesBefore = _harness.Emu.Vita.Processes.Count;
 
-        int result = Call(_harness.Module<AppMgrShell>(), "sceAppMgrLaunchAppByName", 0x20000, _harness.Str(TitleId), 0u);
+        // the shell's request posts event 6; the second stage the shell answers with loads the executable and fails
+        Assert.Equal(0, Call(_harness.Module<AppMgrShell>(), "sceAppMgrLaunchAppByName", 0x20000, _harness.Str(TitleId), 0u));
+        int appId = BitConverter.ToInt32(_harness.Emu.Vita.TakeShellEvent()!, 4);
+
+        int result = Call(_harness.Module<AppMgrShell>(), "sceAppMgrLaunchAppByName2ndStage", appId, 0u, 0x20000, 0, 0u);
 
         Assert.Equal(TitleLicense.NoLicenseError, result);
         Assert.Null(_harness.Emu.Vita.TakeShellEvent());

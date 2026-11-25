@@ -27,6 +27,23 @@ public sealed class MotionDevice
     long _lastGuestUs;
     bool _live;
 
+    /// <summary>The magnetometer readings of the latest samples (microtesla), newest at <see cref="_fieldHead"/>; the
+    /// field is stable while they agree (<see cref="FieldStable"/>).</summary>
+    readonly Vector3[] _fields = new Vector3[FieldWindow];
+    int _fieldHead, _fieldCount;
+
+    /// <summary>Readings the stability looks at, and how far one may be from their mean (microtesla): a magnet or a
+    /// metal object near the unit moves the field by more.</summary>
+    const int FieldWindow = 8;
+    const float FieldTolerance = 3f;
+
+    /// <summary>The magnitude range of the Earth's field (about 25 to 65 uT), with some margin: outside it the reading is
+    /// disturbed, not the Earth's.</summary>
+    const float FieldMin = 15f, FieldMax = 90f;
+
+    /// <summary>SceMotionMagnFieldStability (psp2/motion.h).</summary>
+    public const byte FieldUnstable = 0, FieldStable = 2;
+
     public MotionFusion Fusion { get; } = new();
 
     /// <summary>True once a host source with sensors delivered samples (the state is no longer the at-rest one).</summary>
@@ -41,7 +58,14 @@ public sealed class MotionDevice
             if (source is not { HasSensors: true })
             {
                 // the controller went away: back to rest, and the next one starts a fresh history
-                if (_live) { _live = false; _count = 0; _lastHostUs = 0; }
+                if (_live)
+                {
+                    _live = false;
+                    _count = 0;
+                    _lastHostUs = 0;
+                    _fieldCount = 0;
+                }
+
                 return;
             }
             // a source may hand a backlog over in several pieces
@@ -63,6 +87,21 @@ public sealed class MotionDevice
                 float dt = _lastHostUs == 0 ? 0 : (s.TimestampUs - _lastHostUs) / 1e6f;
                 _lastHostUs = s.TimestampUs;
                 Fusion.Update(s.Acceleration, s.AngularVelocity, dt);
+                if (s.MagneticField != Vector3.Zero)
+                {
+                    _fields[_fieldHead] = s.MagneticField;
+                    _fieldHead = (_fieldHead + 1) % FieldWindow;
+                    if (_fieldCount < FieldWindow)
+                    {
+                        _fieldCount++;
+                    }
+                }
+                else
+                {
+                    // a reading without the field (the source has no magnetometer now): no heading
+                    _fieldCount = 0;
+                }
+
                 long ts = guestNowUs - (long)Math.Min(newest - s.TimestampUs, 1_000_000UL);
                 if (ts <= _lastGuestUs) ts = _lastGuestUs + 1; // strictly increasing for the guest
                 _lastGuestUs = ts;
@@ -95,8 +134,78 @@ public sealed class MotionDevice
         }
     }
 
-    /// <summary>Writes SceMotionState (0xF8 bytes).</summary>
-    public void WriteState(uint state, long guestNowUs)
+    /// <summary>The magnetometer readings agree with each other and have the Earth field's magnitude (under the lock).</summary>
+    bool FieldIsStable(out Vector3 mean)
+    {
+        mean = Vector3.Zero;
+        if (_fieldCount < FieldWindow)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < _fieldCount; i++)
+        {
+            mean += _fields[i];
+        }
+
+        mean /= _fieldCount;
+        float magnitude = mean.Length();
+        if (magnitude is < FieldMin or > FieldMax)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < _fieldCount; i++)
+        {
+            if (Vector3.Distance(_fields[i], mean) > FieldTolerance)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The NED matrix (SceMotionState +120): the device axes in the North-East-Down frame, in the layout of
+    /// <see cref="MotionFusion.ToMatrix"/> (row x, y, z = the device x, y, z axes; columns north, east, down). Down is
+    /// the gravity the accelerometer reads, east is down x the field, north is east x down (the field's dip drops out).
+    /// False when gravity and the field are parallel (no heading).
+    /// </summary>
+    public static bool NedMatrix(Vector3 gravity, Vector3 field, Span<float> m)
+    {
+        if (gravity.LengthSquared() < 1e-6f || field.LengthSquared() < 1e-6f)
+        {
+            return false;
+        }
+
+        Vector3 down = Vector3.Normalize(gravity);
+        Vector3 east = Vector3.Cross(down, field);
+        if (east.LengthSquared() < 1e-6f)
+        {
+            return false;
+        }
+
+        east = Vector3.Normalize(east);
+        Vector3 north = Vector3.Cross(east, down);
+        m.Clear();
+        m[0] = north.X;
+        m[1] = east.X;
+        m[2] = down.X;
+        m[4] = north.Y;
+        m[5] = east.Y;
+        m[6] = down.Y;
+        m[8] = north.Z;
+        m[9] = east.Z;
+        m[10] = down.Z;
+        m[15] = 1;
+        return true;
+    }
+
+    /// <summary>Writes SceMotionState (0xF8 bytes). With <paramref name="magnetometer"/> on
+    /// (sceMotionMagnetometerOn) and a stable field from the source, the NED matrix comes from gravity and the field and
+    /// magFieldStability is STABLE; otherwise the NED matrix is the rotation matrix and the field UNSTABLE.</summary>
+    public void WriteState(uint state, long guestNowUs, bool magnetometer = false)
     {
         lock (_lock)
         {
@@ -118,14 +227,17 @@ public sealed class MotionDevice
             GuestMemory.Write(state + 52, q.W);
             Span<float> m = stackalloc float[16];
             MotionFusion.ToMatrix(q, m);
+            Span<float> ned = stackalloc float[16];
+            bool stable = magnetometer && FieldIsStable(out Vector3 field) && NedMatrix(f.Acceleration, field, ned);
             for (int i = 0; i < 16; i++)
             {
                 GuestMemory.Write(state + 56 + (uint)i * 4, m[i]);       // rotationMatrix
-                GuestMemory.Write(state + 120 + (uint)i * 4, m[i]);      // nedMatrix: no magnetometer, same as Vita3K
+                // nedMatrix: from gravity and the field; without a stable field the rotation matrix, as Vita3K
+                GuestMemory.Write(state + 120 + (uint)i * 4, stable ? ned[i] : m[i]);
             }
             WriteVector(state + 188, f.BasicOrientation);                // basicOrientation
             GuestMemory.Write(state + 200, (ulong)last.TimestampUs);     // hostTimestamp
-            GuestMemory.Write(state + 244, (byte)0);                     // magFieldStability: UNSTABLE (no magnetometer)
+            GuestMemory.Write(state + 244, stable ? FieldStable : FieldUnstable); // magFieldStability
         }
     }
 

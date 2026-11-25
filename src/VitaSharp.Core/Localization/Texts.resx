@@ -3078,6 +3078,66 @@
   <data name="AudioOutputDefault" xml:space="preserve">
     <value>System default</value>
   </data>
+  <data name="Microphone" xml:space="preserve">
+    <value>Microphone</value>
+  </data>
+  <data name="MicrophoneDetail" xml:space="preserve">
+    <value>What the Vita microphone hears (voice chat, apps that record). The device only turns on while a game or app has its microphone open; nothing it captures is saved, and diagnostic captures keep only its format and pace. Takes effect when a game starts</value>
+  </data>
+  <data name="MMicrophoneDetail" xml:space="preserve">
+    <value>What the Vita microphone hears (voice chat, apps that record). Android asks for the microphone permission the first time a game opens it; nothing it captures is saved. Takes effect when a game starts</value>
+  </data>
+  <data name="MicrophoneDefault" xml:space="preserve">
+    <value>System default</value>
+  </data>
+  <data name="MicrophoneNone" xml:space="preserve">
+    <value>Off (silence)</value>
+  </data>
+  <data name="MicrophoneTone" xml:space="preserve">
+    <value>Test tone (440 Hz)</value>
+  </data>
+  <data name="Location" xml:space="preserve">
+    <value>Location</value>
+  </data>
+  <data name="LocationDetail" xml:space="preserve">
+    <value>Where the Vita is for games and apps that use location. Off by default. A fixed position: latitude,longitude (decimal degrees), optionally altitude and accuracy in metres. Never logged; diagnostic captures withhold it unless --capture-location. Takes effect when a game starts</value>
+  </data>
+  <data name="LocationWatermark" xml:space="preserve">
+    <value>Off, or latitude,longitude</value>
+  </data>
+  <data name="MLocationDetail" xml:space="preserve">
+    <value>Where the Vita is for games and apps that use location. Off by default. With "Phone location", Android asks for the location permission the first time a game asks for its position. Never logged nor saved. Takes effect when a game starts</value>
+  </data>
+  <data name="LocationOff" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="LocationSystem" xml:space="preserve">
+    <value>Phone location</value>
+  </data>
+  <data name="LocationFixed" xml:space="preserve">
+    <value>Fixed position</value>
+  </data>
+  <data name="ConsoleModel" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="ConsoleModelDetail" xml:space="preserve">
+    <value>Which console the emulator is. A PlayStation TV takes up to four controllers (ports 1-4: the keyboard with the first controller, then each other connected controller) and their vibration, for games with local multiplayer. Takes effect when a game starts</value>
+  </data>
+  <data name="ConsoleModelVita" xml:space="preserve">
+    <value>PS Vita (PCH-1000)</value>
+  </data>
+  <data name="ConsoleModelPsTv" xml:space="preserve">
+    <value>PlayStation TV</value>
+  </data>
+  <data name="BluetoothKeyboardMouse" xml:space="preserve">
+    <value>Bluetooth keyboard and mouse</value>
+  </data>
+  <data name="BluetoothKeyboardMouseDetail" xml:space="preserve">
+    <value>The PC keyboard and mouse are paired with the Vita, for games and apps that read a keyboard or mouse (the browser, chat). The keys still work as the controller. Off by default. Takes effect when a game starts</value>
+  </data>
+  <data name="MBluetoothKeyboardMouseDetail" xml:space="preserve">
+    <value>A keyboard and mouse connected to the phone are paired with the Vita, for games and apps that read a keyboard or mouse (the browser, chat). Off by default. Takes effect when a game starts</value>
+  </data>
   <data name="MOn" xml:space="preserve">
     <value>On</value>
   </data>

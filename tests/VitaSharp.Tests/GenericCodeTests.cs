@@ -27,6 +27,8 @@ public partial class GenericCodeTests
     [
         ("src/VitaSharp.Core/Hle/Modules/SystemServicesVsh.EventLog.cs", "NPXS19999",
             "sysmem 3.74 read-only data (segment 0, offset 0x26FAC): the name copied into every event log record"),
+        ("src/VitaSharp.Core/Hle/Modules/Compat.cs", "NPXS10028",
+            "SceCompat 3.74 (os0:kd/bootimage.skprx) read-only data (segment 0, offset 0x4500): the path sceCompatInitEx loads the PSP compatibility firmware from"),
     ];
 
     private static string? RepoRoot([CallerFilePath] string source = "")

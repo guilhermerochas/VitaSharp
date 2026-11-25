@@ -8,7 +8,7 @@ namespace VitaSharp.Core.Compat;
 /// Both sides touch it from their own thread, so every word is read and written atomically (byte and halfword stores
 /// merge into their word with a compare-exchange, as one bus write).
 /// </summary>
-public sealed class CompatSharedSram
+public sealed partial class CompatSharedSram
 {
     /// <summary>The block's size in bytes.</summary>
     public const int Size = 0x1000;

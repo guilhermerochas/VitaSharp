@@ -187,8 +187,12 @@ public sealed partial class Gxm : HleModule
 
     [Hle][Hle("sceGxmUnmapVertexUsseMemoryInternal")] int sceGxmUnmapVertexUsseMemory(uint baseAddr) => 0;
     [Hle][Hle("sceGxmUnmapFragmentUsseMemoryInternal")] int sceGxmUnmapFragmentUsseMemory(uint baseAddr) => 0;
-    /// <summary>No prototype; Vita3K answers 0 (libpaf then initializes GXM itself).</summary>
-    [Hle] int sceGxmIsInitializationInternal() => 0;
+    /// <summary>Whether this process's libgxm is initialized: libgxm 3.74 returns a flag that sceGxmInitialize (and
+    /// sceGxmVshInitialize) set and sceGxmTerminate clears (0x8100D5F4, the byte at 0x81024001). The common dialog
+    /// (libcdlg 3.74 0x81002004) refuses every dialog of a program built with SDK 2.50 or later with 0x80020436 when
+    /// it is 0: the PSP emulator's error dialog (type 0x10) ended at once, without its SceCommonDialogPafMain thread,
+    /// and the emulator left for its LiveArea without showing it. libpaf asks before it initializes GXM itself.</summary>
+    [Hle] int sceGxmIsInitializationInternal() => _initialized ? 1 : 0;
     /// <summary>The UID of the display queue thread sceGxmInitialize made (the Browser asks for it before it starts its web
     /// engine); SCE_GXM_ERROR_UNINITIALIZED before.</summary>
     [Hle] int sceGxmGetDisplayQueueThreadIdInternal() => _displayThread is { } t ? t.Uid : ERR_UNINITIALIZED;

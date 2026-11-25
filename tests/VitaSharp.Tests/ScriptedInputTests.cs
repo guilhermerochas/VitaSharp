@@ -90,6 +90,24 @@ public sealed class ScriptedInputTests
         Assert.Null(s.TakeHostKeys());
     }
 
+    /// <summary>A heading step is the PC's magnetometer test source: the script becomes the motion source and its
+    /// samples carry the Earth's field for that heading; without one they carry none.</summary>
+    [Fact]
+    public void AHeadingStepGivesTheSamplesTheEarthsField()
+    {
+        var s = new ScriptedInput("heading@0:90:600");
+        Assert.True(s.HasSensors);
+        var samples = new MotionSample[4];
+        Assert.Equal(1, s.ReadSamples(samples));
+        System.Numerics.Vector3 expected = VitaSharp.Core.Input.MotionAxes.EarthField(90, 0, 0);
+        Assert.True(System.Numerics.Vector3.Distance(expected, samples[0].MagneticField) < 1e-3f, $"{samples[0].MagneticField}");
+        Assert.Equal(-1f, samples[0].Acceleration.Z, 4);
+
+        var tiltOnly = new ScriptedInput("tilt@0:0:0:600");
+        Assert.Equal(1, tiltOnly.ReadSamples(samples));
+        Assert.Equal(System.Numerics.Vector3.Zero, samples[0].MagneticField);
+    }
+
     [Fact]
     public void ATiltStepMakesTheScriptTheMotionSourceAndTurnsAtMost180DegreesPerSecond()
     {

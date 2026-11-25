@@ -73,7 +73,14 @@ public sealed class AppLaunchFailureTests(GuestMemoryFixture fixture) : IDisposa
         Emulator shell = _harness.Emu;
         int processesBefore = shell.Vita.Processes.Count;
 
-        int result = Call(_harness.Module<AppMgrShell>(), "sceAppMgrLaunchAppByName", 0x20000, _harness.Str(BadTitle), 0u);
+        // the shell's own request is one like any other (FW 3.74 appmgr 0x8100D89C): event 6, and the executable loads
+        // only when the shell's handler starts it by the second stage, which fails with the loader's error
+        Assert.Equal(0, Call(_harness.Module<AppMgrShell>(), "sceAppMgrLaunchAppByName", 0x20000, _harness.Str(BadTitle), 0u));
+        byte[] request = shell.Vita.TakeShellEvent()!;
+        Assert.Equal(ShellEvents.LaunchRequest, BitConverter.ToInt32(request, 0));
+        int appId = BitConverter.ToInt32(request, 4);
+
+        int result = Call(_harness.Module<AppMgrShell>(), "sceAppMgrLaunchAppByName2ndStage", appId, 0u, 0x20000, 0, 0u);
 
         Assert.Equal(SceError.ILLEGAL_SELF_HEADER, result);
         Assert.Null(shell.Vita.TakeShellEvent());

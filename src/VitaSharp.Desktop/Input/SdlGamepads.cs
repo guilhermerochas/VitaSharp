@@ -461,6 +461,22 @@ public sealed unsafe class SdlGamepads : IDisposable
         }
     }
 
+    /// <summary>Sets a controller's motors (SDL_GameControllerRumble on the SDL thread): the low frequency (large) and
+    /// high frequency (small) motor, 0..65535, for up to <see cref="RumbleMilliseconds"/>; 0 and 0 stop them.</summary>
+    public void Rumble(int instanceId, ushort lowFrequency, ushort highFrequency)
+    {
+        _commands.Enqueue(() =>
+        {
+            if (_devices.TryGetValue(instanceId, out Device? device) && device.Controller != null)
+            {
+                _sdl!.GameControllerRumble(device.Controller, lowFrequency, highFrequency, RumbleMilliseconds);
+            }
+        });
+    }
+
+    /// <summary>How long one rumble request lasts (the guest renews it while it wants the motors on).</summary>
+    public const uint RumbleMilliseconds = 2000;
+
     /// <summary>Copies the latest state of a controller; false when it is no longer connected.</summary>
     public bool TryGetState(int instanceId, PadSnapshot into)
     {

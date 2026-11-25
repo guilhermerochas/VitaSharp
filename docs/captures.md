@@ -1,4 +1,4 @@
-<!-- pair: captures.pt-BR.md sha256=f043ad996e01a7ce4ad60126b22757a4b0b338ae9f981008701fb8bf344d97e1 -->
+<!-- pair: captures.pt-BR.md sha256=9cc9de2c11258c7d70566befcf0ca021e1d7998ead979f9c6ef74202adefa7c3 -->
 # Analysing a Record everything capture without the game
 
 **English** | [Português](captures.pt-BR.md)
@@ -28,6 +28,13 @@ the recording, by path, position, length and hash only. The bytes go with it onl
 `report.txt` then says the capture holds data of the game, so it is shared only where that may go. The save data
 (savedata0) is the player's: only its hashes, unless the recording is made with `--capture-savedata` (or
 `VITASHARP_CAPTURE_SAVEDATA=1`); the re-run reads the save of its own data folder.
+The microphone is what the player and the people near them say: `audio.txt` gives only the microphone port's
+format, source and pace, and its sound goes in (`audio/NN_microphone_RATE.wav`) only with `--capture-mic-audio` (or
+`VITASHARP_CAPTURE_MIC_AUDIO=1`).
+The position is where the player is: while a capture is armed or recording, the Vita's location service answers
+"position undetermined" (so no position enters the guest memory the capture keeps) and `session.txt` keeps
+`--location=<location>`; only `--capture-location` (or `VITASHARP_CAPTURE_LOCATION=1`) lets it answer and keeps the
+option's value.
 
 ## What the capture says about the setup
 

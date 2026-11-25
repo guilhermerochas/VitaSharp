@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.md sha256=f140803e0d61a26d412c7c9930f86e99836f0b7cf41b101df34138611f3c690e -->
+<!-- pair: psp-compat.md sha256=04c8bb576cdb4bce4563ff9e4ca06bda66162e79b48b87e98411193367c986ef -->
 # Núcleo de compatibilidade PSP (SceCompat, ScePspemu, Allegrex)
 
 *English: [psp-compat.md](psp-compat.md).*
@@ -251,8 +251,19 @@ framebuffer do PSP na memória do PSP e escreve os pixels de volta, separado do 
   origem), a confirmar pelo trace do boot.
 - **Na tela:** o ScePspemu mostra o bloco com `sceCompatSetDisplayConfig` (`ksceDisplaySetFrameBuf`, 480x272 pitch
   512). O `sceDisplaySetFrameBufForCompat(x, y, largura, altura, pParam, opt)` (syscall `0x45BCB941`: x, y, largura e
-  um bloco {altura, pParam, opt, tamanhos}) é um segundo plano que o ScePspemu põe por cima (checagens em
-  `Display.Compat.cs`); o apresentador o guarda mas ainda não o compõe.
+  um bloco {altura, pParam, opt, tamanhos}; checagens em `Display.Compat.cs`) **não é um segundo plano**: o
+  display.skprx 3.74 (`FUN_810023b8`, só estudo) programa a unidade IFTU do **plano 0** do head (a mesma do
+  `sceDisplaySetFrameBuf`) com o framebuffer escalado para o retângulo (x, y, largura, altura) e grava o registro do
+  plano 0 do processo, o mesmo que o `ksceDisplaySetFrameBufInternal` grava (e cujo retângulo ele limpa). Então a
+  última das duas chamadas é o que fica na tela, o `sceDisplayGetFrameBuf` a devolve, null deixa o plano 0 sem
+  framebuffer, o resto da tela fica preto, o bit 20 das flags do SceDisplayFrameBuf é o filtro bilinear do IFTU (não
+  um número de plano), e com `opt` o IFTU converte para o buffer do `opt` em vez da tela (ainda não feito: a tela não
+  muda). O formato `0x50000000` é A1B5G5R5 de 16 bits (formato 4 do IFTU, o par do `0x10` do A8B8G8R8). O
+  `ksceDisplaySetMergeConf(head, merge, alpha)` só age no **plano 1** (unidade IFTU `2h+1`, o overlay do shell): o
+  `SceIftuForDriver_AF19FD85` e o `_357EAE24` só aceitam as unidades 1 e 3, então a chamada `alpha(2h, 0)` falha
+  (`0x803F0700`) e não faz nada; o boot põe merge 4 e alpha `0xFF` só no head 1. O apresentador mostra o plano 0
+  posicionado (`PresentCommand.Placement`, `VulkanRenderer.CompatPlane.cs`; fora dos dumps da GPU) com o overlay do
+  shell por cima, como o plano 1 é mesclado sobre o plano 0.
 
 ### Velocidade do Allegrex: o cache de blocos e o tier IL planejado
 

@@ -178,7 +178,7 @@ public static partial class SaveStates
                         {
                             long pausedMs = sw.ElapsedMilliseconds;
                             // a recording's HLE trace notes where every thread was (a re-run from this state is compared from there)
-                            VitaSharp.Core.Capture.HleCallTrace.MarkState();
+                            VitaSharp.Core.Capture.HleCallTrace.MarkState(kinds.Select(k => (k.Key, k.Value == GuestThread.SafeKind.Reissue)));
                             // the game goes on while the file is compressed and written
                             if (!wasPaused)
                             {
@@ -320,10 +320,11 @@ public static partial class SaveStates
         return emu.Vita.KernelProcess is { } kernelProcess ? threads.Concat(kernelProcess.Kernel.Threads) : threads;
     }
 
-    /// <summary>Holds every guest thread of <paramref name="emu"/> at its next safe point (module service threads run on).</summary>
+    /// <summary>Holds every guest thread of <paramref name="emu"/> at its next safe point, and the service threads that
+    /// park at their own (<see cref="GuestThread.ParksAtSafePoints"/>); the other module service threads run on.</summary>
     private static List<GuestThread> Hold(Emulator emu)
     {
-        var held = SessionThreads(emu).Where(t => t.HostBody == null).ToList();
+        var held = SessionThreads(emu).Where(t => t.HostBody == null || t.ParksAtSafePoints).ToList();
         foreach (GuestThread? t in held)
         {
             t.HoldForSave(true);

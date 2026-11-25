@@ -19,6 +19,18 @@ public sealed class LauncherSettings
     /// <summary>"Camera traseira" (--camera-back=): "" = the next webcam other than the front one, else the same one;
     /// otherwise as <see cref="CameraFront"/>.</summary>
     public string CameraBack { get; set; } = "";
+    /// <summary>"Microfone" (--microphone=): "" = the system's default capture device, "none" = off (silence), "tone" = a
+    /// 440 Hz test tone, or a capture device name (<see cref="Core.Host.MicrophoneSpec"/>).</summary>
+    public string Microphone { get; set; } = "";
+    /// <summary>"Localizacao" (--location=): "" = off (the default), or "latitude,longitude[,altitude[,accuracy]]", a fixed
+    /// position the Vita's location service answers (<see cref="Core.Host.LocationSpec"/>).</summary>
+    public string Location { get; set; } = "";
+    /// <summary>"Modelo" (--model=): "" = the PS Vita handheld (PCH-1000, the default), "pstv" = a PlayStation TV (up to four
+    /// controllers on ports 1-4, vibration; <see cref="Core.Hle.ConsoleModel"/>).</summary>
+    public string Model { get; set; } = "";
+    /// <summary>"Teclado e mouse Bluetooth" (--bt-keyboard-mouse=on): the PC keyboard and mouse are paired with the Vita
+    /// (SceHid) for games and apps that read a keyboard or mouse; off by default (the keyboard is the controller).</summary>
+    public bool BluetoothKeyboardMouse { get; set; }
     /// <summary>CPU backend: "" = best supported on this PC, or "native", "il", "interp" (--cpu=).</summary>
     public string CpuBackend { get; set; } = "";
     /// <summary>Emulated ARM clock in MHz (--cpu-mhz=): 0 = the Vita's default for applications (333), 444 = the
@@ -321,6 +333,26 @@ public sealed class LauncherSettings
         if (!string.IsNullOrWhiteSpace(CameraBack))
         {
             yield return $"--camera-back={CameraBack}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(Microphone))
+        {
+            yield return $"--microphone={Microphone}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(Location))
+        {
+            yield return $"--location={Location.Trim()}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(Model))
+        {
+            yield return $"--model={Model.Trim()}";
+        }
+
+        if (BluetoothKeyboardMouse)
+        {
+            yield return "--bt-keyboard-mouse=on";
         }
 
         if (!string.IsNullOrWhiteSpace(AudioDevice))

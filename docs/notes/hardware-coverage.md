@@ -1,4 +1,4 @@
-<!-- pair: hardware-coverage.pt-BR.md sha256=06ed11685b2784fe762727f4f93b137ec7e93e3807df2705c09fd2e0756fe72e -->
+<!-- pair: hardware-coverage.pt-BR.md sha256=e7889f5c0efeb7486609a4790dc34f7fa56f490ad192c1289543f88cf94e2b6e -->
 # Hardware coverage (PS Vita SoC and console)
 
 *Português: [hardware-coverage.pt-BR.md](hardware-coverage.pt-BR.md).*
@@ -55,8 +55,8 @@ recorded, not to be emulated); **ok** covered.
 | Cameras (front/back), MIPI CSI-2, ISP | `SceCamera`, `lowio` (CSI) | host webcam / still picture / grey per camera (`Host/Camera.cs`, `CameraSetup.cs`); sensor registers kept | ok |
 | Front touch screen, rear touchpad | `SceTouch` | host mouse/touch for both panels | ok |
 | Motion: accelerometer, gyroscope | `SceMotionDev`, `SceMotion` | host gyro/accelerometer (SDL controller, phone sensors) | ok |
-| Motion: magnetometer | `SceMotionDev`, `SceMotion` | switch kept, no data (`magFieldStability` always unstable) | **(b)** |
-| GPS / location | `SceGps` (driver from the modem), `liblocation`, `location_provider` | no positioning: "location on, this application not allowed" | **(b)** |
+| Motion: magnetometer | `SceMotionDev`, `SceMotion` | host field (phone magnetometer on Android, scripted `heading@` on the PC): NED matrix and stable field while the magnetometer is on | done (was **(b)**); raw calibration records missing |
+| GPS / location | `SceGps` (driver from the modem), `liblocation`, `location_provider` | off by default ("this application not allowed"); a fixed position (PC) or the phone's location (Android) when the setting gives one | **(b)** |
 | 3G modem (PCH-1100) | `SceBbmc`, USB modem | absent, as on the Wi-Fi model the unit is (`0x80330003`) | (c) (faithful to the model; the 3G service is gone) |
 | Wi-Fi infrastructure | `SceWlanBt`, `SceNetPs`, `wlanbt_robin_img_ax.skprx` | host sockets (`--net=real`), offline profile otherwise | ok |
 | Wi-Fi ad hoc | `SceNetPs` ad hoc, `pspnet_adhoc`, `sceNetAdhocctl*`, Matching | offline profile: library works, no peer is ever found | **(b)** |
@@ -67,7 +67,7 @@ recorded, not to be emulated); **ok** covered.
 | Memory card, internal eMMC | `msif.skprx`, `sdif` host 0, `sdstor.skprx` | partitions served at the file level; raw sector reads/writes fail (`0x803D0000`, `0x8032001A`) | **(b)** |
 | Syscon, power, battery, RTC, buttons | `syscon.skprx`, `ScePower`, `rtc.skprx` | HLE with battery, AC, events, idle timers, power button, alarms | ok |
 | Audio out, codec chip, headset jack | `SceAudio`, `SceCodec` (I2C 0x34), `SceHpremote` | host audio device; codec settings accepted; nothing in the jack | ok |
-| Microphone | `SceAudioin`, `SceCodec` | port protocol and pacing right, samples always silent (no host capture) | **(b)** |
+| Microphone | `SceAudioin`, `SceCodec` | host capture (OpenAL Soft on the desktop, `AudioRecord` on Android) resampled to the port's rate at the guest's grain pace; silent without a device | done (was **(b)**) |
 | Controllers beyond the built-in pad, vibration, light bar | `SceCtrl`, `SceDs3`, `SceHid`, `SceBt` | only port 0 (the built-in pad); `sceCtrlSetActuator`/`SetLightBar` ignored; `sceCtrlIsMultiControllerSupported` = 0 | **(b)**, part of the PS TV model |
 | Interrupts, timers, GPIO, I2C, clock generator, pervasive registers | `intrmgr`, `systimer`, `lowio`, `SceClockgen` | HLE models; system timers raise interrupts in guest time; GPIO/I2C have no devices behind them | ok |
 | Console model (PCH-1000 / PCH-1100 / PCH-2000 / VTE-1000 PS TV) | SceSblAIMgr, syscon hardware info, per-model `vs0` | fixed PCH-1000 CEX (`Hle/ConsoleIdentity.cs`) | **(b)** (PS TV; PCH-2000's internal card) |
@@ -112,8 +112,11 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
   controllers (ports 1-4, rumble through `sceCtrlSetActuator`, light bar), the HDMI transmitter and CEC are live,
   `SceCameraDummy`, `SceTouchDummy` and `SceMotionDevDummy` replace the handheld's devices, and the USB host ports and
   the USB Ethernet adapter work.
-- **Today:** the unit is always a PCH-1000 (`Hle/ConsoleIdentity.cs`). Port 0 only, rumble and light bar dropped,
-  HDMI and USB host answer "not a PS TV" / "nothing attached".
+- **Today:** the model option (`--model=pstv`, `VITASHARP_MODEL`, Settings > Emulation > Model; `ConsoleModel`) makes
+  the unit a PS TV: sub code bit 0x200 (IsDolce / IsGenuineDolce = 1), `sceCtrlIsMultiControllerSupported` = 1, ports
+  1-4 = the host's controllers one by one, `sceCtrlSetActuator` to the controller's motors (SDL rumble). Missing: the
+  PS TV `vs0`, the PS TV devices (camera/touch/motion dummies), HDMI ("a monitor that accepts every mode"), USB host,
+  light bar, the hardware info board kind, Android controllers.
 - **Impact:** local multiplayer with several controllers (titles that check `sceCtrlIsMultiControllerSupported` and
   read ports 1-4; which titles is to confirm), rumble on host gamepads, the PS TV's own system software and its
   settings (HDMI resolution, controllers, Ethernet).
@@ -129,8 +132,11 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
 
 - **What the firmware does:** `SceAudioin` reads the codec chip's ADC through Venezia's audio path; ports of 16-bit
   mono at 16 or 48 kHz, one per process, adopted by AppMgr.
-- **Today:** the port protocol, the grain pacing, the mute and the adoption are right; the samples are always zero
-  (`Hle/Modules/Audio.cs`, "virtual microphone (no host capture)").
+- **Today (done):** the port delivers the host's microphone (`Host/Microphone.cs`, `Host/MicrophoneFeed.cs`,
+  `Hle/Modules/Audio.In.cs`; OpenAL Soft capture on the desktop, `AudioRecord` on Android), resampled to the port's
+  rate, one grain per grain/rate seconds of guest time; muted, without a device or permission, or for a process the
+  microphone is not adopted for, silence. Before: the samples were always zero
+  ("virtual microphone (no host capture)").
 - **Impact:** voice chat in online games and Party, Skype/Near voice, voice recording in apps, game mechanics that
   react to sound (titles to confirm).
 - **Size:** [M]: a host capture interface next to the camera's (`Host/`), one implementation per system (WASAPI /
@@ -148,7 +154,10 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
 
 ### (b) GPS / location
 
-- **Today:** no positioning; the application is "not allowed" (`Hle/Modules/Location.cs`).
+- **Today:** off by default, the application is "not allowed" (`Hle/Modules/Location.cs`); with the location
+  setting (`--location=latitude,longitude`, Android "Localização do celular") the application is allowed and gets
+  that position (`Host/Location.cs`). Missing: the PC's location service, the location callbacks' deliveries, the
+  firmware path (liblocation LLE against the shell's provider, `SceGps` of a 3G model).
 - **Impact:** Near, Maps and the location features of apps and games.
 - **Size:** [M]: a host location interface (Windows Geolocation, GeoClue, Core Location, Android `LocationManager`)
   and a fixed position option. **First testable delivery:** a scripted position; with the application allowed,
@@ -156,14 +165,18 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
 
 ### (b) Magnetometer
 
-- **Today:** `sceMotionMagnetometerOn` keeps the switch only (`Hle/Modules/Motion.cs`).
+- **Today:** the host motion sample carries the magnetic field (phone magnetometer, scripted `heading@`); with the
+  magnetometer on and a stable field, `sceMotionGetState` gives the NED matrix and STABLE (`Hle/Motion/MotionDevice.cs`).
+  Missing: the raw records for the shell's calibration and the field in the fused quaternion.
 - **Impact:** compass heading (Maps, Near, AR titles that use the north), `magFieldStability` and the NED matrix.
 - **Size:** [M]. **First testable delivery:** the host motion reading gets a magnetic field; a scripted field gives
   the heading and a stable `magFieldStability` in `sceMotionGetSensorState`/`GetState`.
 
 ### (b) Bluetooth keyboard and mouse
 
-- **Today:** `SceHid` enumerates no device.
+- **Today:** with the option (`--bt-keyboard-mouse=on`, Settings > Emulation; Android: Ajustes) the host keyboard and
+  mouse are the paired devices: `sceHid{Keyboard,Mouse}Enumerate/Read/Peek` as FW 3.74 (`Hle/Modules/Hid.cs`,
+  `Host/Hid.cs`). Missing: the hint callbacks' notifications, the shell's Bluetooth settings listing them.
 - **Impact:** typing in the browser, the IME and apps that read a keyboard directly; mouse in the browser.
 - **Size:** [M]. **First testable delivery:** the host keyboard offered as one paired keyboard (an option):
   `sceHidKeyboardEnumerate` returns one handle and `sceHidKeyboardRead` reports scripted key presses.

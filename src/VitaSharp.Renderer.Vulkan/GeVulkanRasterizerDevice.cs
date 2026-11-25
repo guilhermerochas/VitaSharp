@@ -47,9 +47,27 @@ public sealed class GeVulkanRasterizerDevice : IGeRasterizer, IDisposable
     /// <summary>The batches drawn.</summary>
     public long Draws => _rasterizer.Draws;
 
-    public void Draw(GeTopology topology, ReadOnlySpan<GeVertex> vertices, GeRenderState state, GeTarget target)
+    /// <summary>The rasterizer itself (tests read its counters).</summary>
+    public GeVulkanRasterizer Rasterizer => _rasterizer;
+
+    public void Draw(GeTopology topology, ReadOnlySpan<GeVertex> vertices, GeRenderState state, GeSurface color, GeSurface? depth, IGeMemory memory)
     {
-        _rasterizer.Draw(topology, vertices, state, target);
+        _rasterizer.Draw(topology, vertices, state, color, depth, memory);
+    }
+
+    public void Flush(IGeMemory memory)
+    {
+        _rasterizer.Flush(memory);
+    }
+
+    public bool Holds(uint address, int length)
+    {
+        return _rasterizer.Holds(address, length);
+    }
+
+    public void Invalidate(uint address, int length)
+    {
+        _rasterizer.Invalidate(address, length);
     }
 
     public void Dispose()

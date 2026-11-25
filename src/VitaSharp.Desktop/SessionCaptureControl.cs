@@ -75,6 +75,19 @@ sealed class SessionCaptureControl : IDisposable
             o.KeepSaveData = true;
         }
 
+        // what the microphone captured too (by default only its format and pace): --capture-mic-audio, VITASHARP_CAPTURE_MIC_AUDIO=1
+        if (options.Contains("--capture-mic-audio"))
+        {
+            o.KeepMicrophoneAudio = true;
+        }
+
+        // the location source keeps answering while armed or recording (by default it is withheld: the position is
+        // where the player is): --capture-location, VITASHARP_CAPTURE_LOCATION=1
+        if (options.Contains("--capture-location"))
+        {
+            o.KeepLocation = true;
+        }
+
         // a re-run's own recording has no pre-roll
         _explicitPreRoll = overrides != null ? 0 : ExplicitPreRoll(options, Environment.GetEnvironmentVariable(EnvVars.CapturePreRoll));
         UpdatePreRoll();
