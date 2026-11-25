@@ -19,6 +19,16 @@ The log is buffered and flushed every 250 ms (warnings and errors immediately, a
 kill loses at most a quarter of a second. Unhandled exceptions (any thread) and unobserved task exceptions are logged
 as `UNHANDLED EXCEPTION ...` / `Unobserved task exception` and flushed. A Vulkan device loss logs
 `[gpu] VULKAN DEVICE LOST in <call> at present #N` with the renderer state and the last 20 frame summaries.
+On Windows x64 native heap corruption (0xC0000374, e.g. a driver freeing a bad block) logs
+`FATAL native exception 0xC0000374 (native heap corruption) at <address> on thread <id>: the process ends with exit
+code 0xC0000374` and a `FATAL native exception detail:` line with the module and the thread name
+(`Util/NativeCrashLog.cs`); the process then ends through Windows Error Reporting with that exit code (Git Bash shows
+exit codes mangled, e.g. 127 or 139: read them from PowerShell, `$p.ExitCode`, or from the Application Error event).
+An unhandled access violation (0xC0000005) or a fast fail (0xC0000409) is not logged (Windows refuses a top-level
+filter outside a loaded image): its exit code and the Application Error event tell it. Every orderly exit logs
+`Process exit at guest frame N`; a log without it and without a FATAL line ended in such a crash or from outside (a
+kill). Linux/macOS: no native line (the runtime owns the fault signals); the shell's signal status tells the crash.
+Developer self-test: `VITASHARP_DEBUG_NATIVE_CRASH=heap` crashes the front-end right after the log opens.
 Above 256 M characters in one session, info lines are dropped (warnings/errors still written) so a runaway log cannot
 fill the disk.
 

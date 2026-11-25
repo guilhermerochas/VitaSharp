@@ -4656,9 +4656,11 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   invariância de posição (Invariant/NoContraction) não resolve. Falta saber como o hardware do Vita (ISP do SGX543:
   profundidade por equação de plano, precisão, regra de empate) faz essa parede passar sempre, e reproduzir isso de
   forma genérica (comparar com o Vita3K no mesmo ponto; estudar a interpolação de profundidade do PowerVR).
-  Também aberto: com `--dump-frames --dump-every=1`, 6 de 8 execuções desse comando morreram em silêncio logo depois do
-  load (sem exceção .NET, sem minidump, código 127/139 no Git Bash; uma coincidiu com um TDR do driver, LiveKernelEvent
-  141); sem `--dump-frames`, 1 de 3 morreu igual. Investigar (leitura de quadros depois da troca do backend no load).
+  As saídas silenciosas das execuções headless desse comando (com e sem `--dump-frames`) foram corrigidas à parte
+  (fix/ldcrash, 25/11/2026): eram corrupção do heap nativo (0xC0000374) quando a thread do load terminava, no callback
+  por thread do compilador do driver Intel (igc64), porque sem janela a troca do backend destruía e recriava a
+  instância Vulkan nessa thread; agora a troca mantém a instância e o dispositivo também sem janela, e um crash nativo
+  deixa uma linha `FATAL native exception` no log.
 - [ ] [P1][G] PSM em Unity não abre (relato do usuário, 22/11/2026; log de 19:33, NPOA00239): o título traz o próprio
   runtime (`ux0:psm/<título>/runtime/eboot.bin`, PCSI00010 "Unity Runtime for PlayStation Mobile", mais mono_prx e
   bridge_prx), que está cifrado com a chave do conteúdo, e o carregador o lê como SELF comum: `InvalidDataException: Not
@@ -4860,6 +4862,10 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   e destruíam o device sob o worker. Corrigido: o setter toma o `_backendLock` (a troca pelo `ReplaceOn` usa
   `InstallBackend` sem tomar de novo); teste `GpuQueueDetachTests` (falha sem a correção). Falta: pegar um dump de uma
   queda real para confirmar que era essa a pilha (o laço de Piglet/Renderer sob carga não reproduziu no timebox).
+  Para pegar a pilha (25/11/2026): o log de crash nativo (`Util/NativeCrashLog.cs`) só cobre a corrupção de heap
+  (0xC0000374); um AV não tratado não deixa linha (o Windows recusa um filtro de topo fora de uma imagem carregada).
+  Rodar a suíte sob `cdbX64 -o -G` com `sxd av` e `sxd -c2 "kn 60; !clrstack -f; q" av` (SOS do `dotnet-sos`), ou com
+  WER LocalDumps (precisa de administrador), e apagar o dump depois.
   O `Prefetch` do `Submit` (fora do lock, na thread que envia) já era protegido pelo próprio renderer
   (`_prefetchActive` + `StopShaderWorkers` no início do `Dispose`); faltava a barreira completa entre gravar o flag
   e ler a contagem (no ARM64 a saída do lock é só release). Feito, contrato descrito no `IGpuBackend.Prefetch` e

@@ -1226,6 +1226,12 @@ public static class Runner
             Log.Error($"Unobserved task exception: {e.Exception}");
             Log.Flush();
         };
+        // native crashes (a driver's access violation, native heap corruption): a FATAL line with the exception code
+        NativeCrashLog.Install();
+        if (Environment.GetEnvironmentVariable(EnvVars.DebugNativeCrash) is { Length: > 0 } crashKind)
+        {
+            NativeCrashLog.CrashForTest(crashKind);
+        }
     }
 
     /// <summary>
