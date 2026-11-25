@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=994ebaa39a9303459f462f297f0c5d996d1eb892a0aa53e9a4f7e22dc8db7f95 -->
+<!-- pair: README.md sha256=729b10a7cd17901594434a86edce1b3b382f47a12e1091cb0cf8ecd37f82d665 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -256,6 +256,7 @@ Detalhes em [`docs/notes/plugins.pt-BR.md`](docs/notes/plugins.pt-BR.md).
 | `F5` / `F7` | Salvar / carregar o estado rápido; `Shift+F5` / `Shift+F7` salvam / carregam no slot escolhido |
 | `F6` | Tela de estados por cima do jogo pausado: o slot rápido e os slots 1-9 com o print, a data, o tempo de jogo e a versão; salvar (substituir pergunta antes, mostrando o print antigo e o atual), carregar (com o print grande), apagar (`Del` / Triângulo) |
 | `F8` | Inicia / para o **Gravar tudo** (ver [Relatar um bug](#relatar-um-bug)) |
+| `Shift+F8` | Durante a gravação: marca o problema (uma marca e um estado salvo daquele momento vão na gravação; `rerun --from=mark1` começa dali) |
 | `Ctrl+F8` | Inicia / para um dump da GPU (`gpudumps/*.vsgd`; `replay-gpu` refaz desenho por desenho, sem o jogo) |
 | `F9` | Liga / desliga o modo de depuração (logs detalhados, pré-gravação de 10 s, capturas automáticas) |
 | `F10` | Captura de diagnóstico: o próximo quadro com seus desenhos, texturas, alvos, print e log (`diagnostics/`) |
@@ -370,7 +371,9 @@ Use o **Gravar tudo**: aperte **F8** durante o jogo (a barra de título mostra *
 parar)"*), jogue até o problema aparecer e aperte **F8** de novo. Sai um `.zip` em `captures/` com um estado salvo,
 os controles, todas as imagens com seus tempos, o dump da GPU, o áudio (mix e cada voz) e o log: dá para reproduzir o
 problema sem jogar de novo. No Android: menu de pausa > **Gravar tudo**. Para defeitos rápidos, ligue a
-**Pré-gravação** (Configurações > Geral, ou o modo de depuração com F9): o arquivo inclui os segundos antes da tecla.
+**Pré-gravação** (Configurações > Geral, ou o modo de depuração com F9): o arquivo inclui os segundos antes da tecla. Quando o
+problema aparecer, aperte **Shift+F8** (Android: menu de pausa > **Marcar o problema**): a gravação ganha uma marca e
+um estado salvo daquele momento.
 
 Envie o `.zip` com o nome do jogo (title ID) e o que aconteceu. Toda sessão também grava `logs/last.log`. A
 gravação não leva nada pessoal (caminhos, nomes de usuário, computador e conta viram marcadores) e pode ser analisada

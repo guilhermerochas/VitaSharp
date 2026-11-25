@@ -36,7 +36,7 @@ public sealed class SaveStateBootFromStateTests
 
     /// <summary>A thread of <paramref name="process"/> that counts in its memory and sleeps between counts (A32 loop:
     /// count, sceKernelDelayThread, again); returns the counter's address.</summary>
-    private static uint StartCounter(Emulator process, string name)
+    internal static uint StartCounter(Emulator process, string name)
     {
         uint counter, code;
         using (ProcessScope.Enter(process))
@@ -71,7 +71,7 @@ public sealed class SaveStateBootFromStateTests
         return counter;
     }
 
-    private static uint Read(Emulator process, uint address)
+    internal static uint Read(Emulator process, uint address)
     {
         using (AddressSpace.Use(process.Space))
         {

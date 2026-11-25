@@ -660,6 +660,7 @@ public static class Runner
         capture = new SessionCaptureControl(emu, rendererOptions, () => renderer, options, diag.Status, diag.HostInfo);
         capture.Capture.Options.RecordingChanged = _ => { ShowTitle(); ShowPauseBadge(renderer); };
         window.SessionCaptureToggled += () => capture.Capture.Toggle("F8");
+        window.BugMarked += () => capture.Capture.MarkBug("Shift+F8");
         window.DiagnosticRequested += () => { capture.Capture.NoteKey("F10"); diag.Capture("F10"); };
         // Ctrl+F8: GPU dump recording (docs/notes/gpu-dump.md)
         window.GpuDumpToggled += () => { capture.Capture.NoteKey("Ctrl+F8"); GpuDumpControl.Toggle(emu, () => renderer, options, diag.Status, diag.HostInfo); };
@@ -1127,9 +1128,9 @@ public static class Runner
             {
                 window?.RequestClose();
             }
-            else if (k is "F8" or "Ctrl+F8")
+            else if (k is "F8" or "Ctrl+F8" or "Shift+F8")
             {
-                window?.PressF8(k == "Ctrl+F8");
+                window?.PressF8(k == "Ctrl+F8", k == "Shift+F8");
             }
             else if (k is "F5" or "F6" or "F7" or "Shift+F5" or "Shift+F7")
             {

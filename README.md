@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=83e7d5169877d791ddf0f3e147f05f26e4e288a075390462408570f16a20c430 -->
+<!-- pair: README.pt-BR.md sha256=c4ee7307666efee462865dcd24f3ad2218a12ebc5f6b8b7a9757f01f57adcbc7 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -252,6 +252,7 @@ Details in [`docs/notes/plugins.md`](docs/notes/plugins.md).
 | `F5` / `F7` | Save / load the quick state; `Shift+F5` / `Shift+F7` save / load in the chosen slot |
 | `F6` | Save state picker over the paused game: the quick slot and slots 1-9 with their picture, date, play time and version; save (overwriting asks, showing the old and the current picture), load (with the picture large), delete (`Del` / Triangle) |
 | `F8` | Starts / stops **Record everything** (see [Report a bug](#report-a-bug)) |
+| `Shift+F8` | While recording: marks the problem (a mark and a save state of that moment go into the recording; `rerun --from=mark1` starts there) |
 | `Ctrl+F8` | Starts / stops a GPU dump (`gpudumps/*.vsgd`; `replay-gpu` redraws it draw by draw, without the game) |
 | `F9` | Turns debug mode on / off (detailed logs, 10 s pre-recording, automatic captures) |
 | `F10` | Diagnostic capture: the next frame with its draws, textures, targets, screenshot and log (`diagnostics/`) |
@@ -366,7 +367,9 @@ Use **Record everything**: press **F8** while playing (the title bar shows *"●
 stop)"*), play until the problem shows up and press **F8** again. A `.zip` comes out in `captures/` with a save
 state, the controls, every picture with its timing, the GPU dump, the audio (the mix and every voice) and the log: the
 problem can be reproduced without playing again. On Android: pause menu > **Record everything**. For quick defects,
-turn on **Pre-recording** (Settings > General, or debug mode with F9): the file then includes the seconds before the key.
+turn on **Pre-recording** (Settings > General, or debug mode with F9): the file then includes the seconds before the key. When the problem
+shows, press **Shift+F8** (Android: pause menu > **Mark the problem**): the recording gets a mark and a save state
+of that moment.
 
 Send the `.zip` with the game's name (title ID) and what happened. Every session also writes `logs/last.log`.
 The capture carries nothing personal (paths, user, computer and account names become placeholders) and can be

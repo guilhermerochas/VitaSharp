@@ -164,6 +164,15 @@ public static class CaptureAnalyzer
             sb.AppendLine(l);
         }
 
+        // the player's marks of the problem (Shift+F8 / the pause menu), each with a save state of that moment
+        foreach (InputEvent mark in input.Where(e => e.Kind == "mark" && e.Data.StartsWith("bug ", StringComparison.Ordinal)))
+        {
+            string[] words = mark.Data.Split(' ');
+            string name = words.Length > 1 ? CaptureStates.Mark(int.TryParse(words[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) ? n : 0) : "mark0";
+            bool hasState = CaptureStates.IsValid(name) && File.Exists(Path.Combine(dir, CaptureStates.FileName(name)));
+            sb.AppendLine(FormattableString.Invariant($"marked by the player at {(mark.Ns - startNs) / 1e9:+0.000;-0.000} s (guest frame {mark.Flip}){(hasState ? $": {CaptureStates.FileName(name)}, re-run from it with rerun --from={name}" : ": no save state")}"));
+        }
+
         sb.AppendLine();
         sb.AppendLine($"Findings ({findings.Count}):");
         if (findings.Count == 0)
@@ -507,7 +516,8 @@ public static class CaptureAnalyzer
 
         int end = options.IndexOf('\t', playback);
         string spec = end < 0 ? options[playback..] : options[playback..end];
-        string key = spec.EndsWith("@start", StringComparison.Ordinal) ? "start-state" : "preroll-state";
+        string from = spec.LastIndexOf('@') is int at and >= 0 ? spec[(at + 1)..] : "preroll";
+        string key = CaptureStates.IsValid(from) ? CaptureStates.SessionKey(from) : "preroll-state";
         string[] state = ReadSession(Path.Combine(original, "session.txt")).GetValueOrDefault(key, "").Split(' ');
         int usAt = Array.IndexOf(state, "guest-us");
         if (usAt < 0 || usAt + 1 >= state.Length || !long.TryParse(state[usAt + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out long stateUs))

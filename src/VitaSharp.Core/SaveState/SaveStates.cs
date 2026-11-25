@@ -117,7 +117,19 @@ public static partial class SaveStates
     {
         lock (s_gate)
         {
-            return SaveLocked(emu, path, thumbnailPng, timeoutMs);
+            return SaveLocked(emu, path, null, thumbnailPng, timeoutMs);
+        }
+    }
+
+    /// <summary>
+    /// <see cref="Save(Emulator, string, byte[], int)"/> into <paramref name="output"/> instead of a file (the Gravar
+    /// tudo pre-roll keeps its ring of states in memory): the same state, the same safe point and pause.
+    /// </summary>
+    public static SaveStateHeader Save(Emulator emu, Stream output, byte[]? thumbnailPng = null, int timeoutMs = 3000)
+    {
+        lock (s_gate)
+        {
+            return SaveLocked(emu, null, output, thumbnailPng, timeoutMs);
         }
     }
 
@@ -127,13 +139,13 @@ public static partial class SaveStates
     /// threads being replaced.</summary>
     private static readonly object s_gate = new();
 
-    private static SaveStateHeader SaveLocked(Emulator emu, string path, byte[]? thumbnailPng, int timeoutMs)
+    private static SaveStateHeader SaveLocked(Emulator emu, string? path, Stream? output, byte[]? thumbnailPng, int timeoutMs)
     {
         CheckSystem(emu);
         CheckModules(emu);
         var sw = Stopwatch.StartNew();
         bool wasPaused = EmulationPause.IsPaused;
-        string tmp = path + ".tmp";
+        string? tmp = path != null ? path + ".tmp" : null;
         var held = new List<GuestThread>();
         try
         {
@@ -191,8 +203,23 @@ public static partial class SaveStates
                             }
 
                             held.Clear();
-                            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-                            using (FileStream stream = File.Create(tmp))
+                            if (output != null)
+                            {
+                                long start = output.CanSeek ? output.Position : 0;
+                                using (var w = new SaveStateWriter(output, header))
+                                {
+                                    foreach ((string? name, byte[]? data) in sections!)
+                                    {
+                                        w.Section(name, data);
+                                    }
+                                }
+
+                                Log.Info($"Save state: in memory in {sw.ElapsedMilliseconds} ms ({pausedMs} ms with the game stopped; {(output.CanSeek ? (output.Position - start) / 1024 : 0)} KB, {kinds.Count} threads)");
+                                return header;
+                            }
+
+                            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path!))!);
+                            using (FileStream stream = File.Create(tmp!))
                             using (var w = new SaveStateWriter(stream, header))
                             {
                                 foreach ((string? name, byte[]? data) in sections!)
@@ -201,8 +228,8 @@ public static partial class SaveStates
                                 }
                             }
 
-                            File.Move(tmp, path, overwrite: true);
-                            Log.Info($"Save state: {path} written in {sw.ElapsedMilliseconds} ms ({pausedMs} ms with the game stopped; {new FileInfo(path).Length / 1024} KB, {kinds.Count} threads)");
+                            File.Move(tmp!, path!, overwrite: true);
+                            Log.Info($"Save state: {path} written in {sw.ElapsedMilliseconds} ms ({pausedMs} ms with the game stopped; {new FileInfo(path!).Length / 1024} KB, {kinds.Count} threads)");
                             return header;
                         }
                     }
@@ -219,7 +246,10 @@ public static partial class SaveStates
         {
             try
             {
-                File.Delete(tmp);
+                if (tmp != null)
+                {
+                    File.Delete(tmp);
+                }
             }
             catch (IOException) { }
             // always back to how the player left it, also when the state could not be taken (a hung game): the

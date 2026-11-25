@@ -162,7 +162,7 @@ sealed class SessionCaptureControl : IDisposable
     // ------------------------------------------------------------------ re-run
 
     /// <summary>
-    /// <c>rerun DIR [--from=preroll|start] [--window] [--boot=title] [--seconds=N] [options]</c>: brings up the capture's
+    /// <c>rerun DIR [--from=preroll|start|markN] [--window] [--boot=title] [--seconds=N] [options]</c>: brings up the capture's
     /// program from its state alone (no file of the game or the plugins; --boot=title: boots the installed game and
     /// loads the state into it) with the capture's options, loads its state (the pre-roll's by default), plays the recorded input back by guest clock and
     /// records the re-run as a capture of its own (no state, no GPU dump unless --rerun-gpu-dump) into
@@ -178,7 +178,13 @@ sealed class SessionCaptureControl : IDisposable
             return 1;
         }
         string from = Runner.Opt(extra, "--from") ?? (File.Exists(Path.Combine(dir, "state_preroll.vss")) ? "preroll" : "start");
-        string state = Path.Combine(dir, from == "preroll" ? "state_preroll.vss" : "state_start.vss");
+        if (!CaptureStates.IsValid(from))
+        {
+            Console.Error.WriteLine($"--from={from}: preroll, start or markN (the player's N-th mark, state_mark_N.vss)");
+            return 1;
+        }
+
+        string state = Path.Combine(dir, CaptureStates.FileName(from));
         if (!File.Exists(state))
         {
             Console.Error.WriteLine($"{state} not found: this capture has no {from} save state");
@@ -275,7 +281,7 @@ sealed class SessionCaptureControl : IDisposable
             int at = spec.LastIndexOf('@');
             string dir = at > 1 ? spec[..at] : spec, from = at > 1 ? spec[(at + 1)..] : "preroll";
             var session = ReadSession(Path.Combine(dir, "session.txt"));
-            string key = from == "preroll" ? "preroll-state" : "start-state";
+            string key = CaptureStates.IsValid(from) ? CaptureStates.SessionKey(from) : "preroll-state";
             var line = session.GetValueOrDefault(key, "");
             var parts = line.Split(' ');
             int gi = Array.IndexOf(parts, "guest-us");

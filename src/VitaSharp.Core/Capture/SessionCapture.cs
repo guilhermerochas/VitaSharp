@@ -39,9 +39,13 @@ public sealed class SessionCaptureOptions
     public long DumpMaxFrames = 5400;
     /// <summary>Memory limit of the pre-roll's encoded frames.</summary>
     public long PreRollMaxBytes = 192L << 20;
-    /// <summary>Seconds between the pre-roll's save states (the game stops ~0.1-0.3 s for each; two are kept, so the
-    /// pre-roll reaches one to two intervals back). At least the pre-roll time.</summary>
-    public double PreRollStateInterval = 30;
+    /// <summary>Seconds between the pre-roll's save states (the game stops ~0.1-0.3 s for each). They are kept in
+    /// memory, from the newest one taken at or before the pre-roll's start on (<see cref="PreRollStateMaxBytes"/> at
+    /// most), so a recording starts from a state at most one interval before its pre-roll.
+    /// VITASHARP_CAPTURE_STATE_INTERVAL.</summary>
+    public double PreRollStateInterval = 5;
+    /// <summary>Memory limit of the pre-roll's save states (the oldest go first; the newest is always kept).</summary>
+    public long PreRollStateMaxBytes = 384L << 20;
     /// <summary>Presented pictures waiting for the encoder before new ones are dropped (their timing is kept).</summary>
     public int EncoderQueueFrames = 120;
     /// <summary>Recording parts (a re-run records without a state or a GPU dump).</summary>
@@ -124,15 +128,40 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     private long _ringBytes;
     private readonly LinkedList<InputEvent> _ringInput = new();
     private readonly List<PreRollState> _states = new();
-    private int _stateSeq;
+    private long _stateBytes;
     private bool _statesRefused;
     private long _droppedPictures;
     // timing of the pre-roll's periodic states (game stopped) for the PERF line
     private readonly List<double> _stateStopMs = new();
 
-    private double StateInterval => Math.Max(_preRollSeconds, _options.PreRollStateInterval);
+    private double StateInterval => Math.Max(0.01, _options.PreRollStateInterval);
 
-    private sealed record PreRollState(string Path, long StartNs, long GuestUs, long Flip);
+    /// <summary>A pre-roll save state, in memory (the state file's bytes).</summary>
+    private sealed record PreRollState(byte[] Data, long StartNs, long GuestUs, long Flip);
+
+    /// <summary>The pre-roll's save states taken so far this session (tests).</summary>
+    internal int PreRollStatesTaken
+    {
+        get
+        {
+            lock (_stateStopMs)
+            {
+                return _stateStopMs.Count;
+            }
+        }
+    }
+
+    /// <summary>The pre-roll's save states held now (tests): how many, their bytes, the oldest's host time.</summary>
+    internal (int Count, long Bytes, long OldestNs) PreRollStates
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return (_states.Count, _stateBytes, _states.Count > 0 ? _states[0].StartNs : 0);
+            }
+        }
+    }
 
     private enum WorkKind
     {
@@ -171,6 +200,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         public List<InputEvent> Before = new();
         public string LastWhere = "";
         public long PresentsSeen;
+        /// <summary>The player's marks of the problem (<see cref="MarkBug"/>): number, the state's guest time, host time
+        /// and guest frame; the threads still saving their states.</summary>
+        public readonly List<(int Number, long GuestUs, long Ns, long Flip)> Marks = new();
+        public readonly List<Thread> MarkThreads = new();
+        public int MarkCount;
     }
 
     private string SafeWhere()
@@ -219,6 +253,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         if (Environment.GetEnvironmentVariable(EnvVars.CaptureLocation) == "1")
         {
             options.KeepLocation = true;
+        }
+
+        if (double.TryParse(Environment.GetEnvironmentVariable(EnvVars.CaptureStateInterval), NumberStyles.Float, CultureInfo.InvariantCulture, out double interval) && interval > 0)
+        {
+            options.PreRollStateInterval = interval;
         }
         _privacy = options.Privacy ?? CapturePrivacy.ForThisComputer(Path.GetDirectoryName(Path.GetFullPath(options.Root)), emu.Options.Psn);
         // the last button and touch changes are always kept (a compare per poll): the report says what the player did
@@ -321,7 +360,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                     _stateThread = new Thread(PreRollStateLoop) { IsBackground = true, Name = "capture pre-roll", Priority = ThreadPriority.BelowNormal };
                     _stateThread.Start();
                 }
-                Log.Info($"[capture] pre-roll on: frames, timing and input since the older of the last two save states (one every {StateInterval:F0} s; at least {seconds:F0} s) kept for Gravar tudo");
+                Log.Info(FormattableString.Invariant($"[capture] pre-roll on: frames, timing and input of the last {seconds:F0} s and a save state every {StateInterval:0.##} s (in memory) kept for Gravar tudo"));
             }
             else
             {
@@ -421,18 +460,13 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         _ringFrames.Clear();
         _ringBytes = 0;
         _ringInput.Clear();
-        foreach (PreRollState preRollState in _states)
-        {
-            TryDelete(preRollState.Path);
-        }
-
         _states.Clear();
+        _stateBytes = 0;
     }
 
-    private string PreRollDir => Path.Combine(_options.Root, ".preroll");
-
-    /// <summary>A save state every pre-roll period while armed and not recording (the oldest two are kept, so the ring
-    /// always starts at a state at least one period back).</summary>
+    /// <summary>A save state every <see cref="SessionCaptureOptions.PreRollStateInterval"/> while armed and not
+    /// recording, into memory (<see cref="TrimStates"/>: from the newest one at or before the pre-roll's start on), so
+    /// the ring always starts at a state at most one interval before the pre-roll.</summary>
     private void PreRollStateLoop()
     {
         while (true)
@@ -447,7 +481,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                 }
                 secs = _preRollSeconds;
             }
-            _stateWake.WaitOne(TimeSpan.FromSeconds(_states.Count == 0 ? 2 : StateInterval));
+            _stateWake.WaitOne(TimeSpan.FromSeconds(_states.Count == 0 ? Math.Min(2, StateInterval) : StateInterval));
             lock (_lock)
             {
                 if (_disposed || _preRollSeconds <= 0)
@@ -469,27 +503,27 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 
             try
             {
-                Directory.CreateDirectory(PreRollDir);
-                string path = Path.Combine(PreRollDir, $"{Safe(_emu.TitleId)}_{++_stateSeq % 4}.vss");
                 long ns = CaptureClock.NowNs, flip = Hle.Modules.Display.FramesPresented;
                 var sw = Stopwatch.StartNew();
                 AddInput(InputEvent.Now("mark", "preroll_state begin"));
-                SaveStateHeader header = SaveStates.Save(_emu, path, null, 2000);
+                using var stream = new MemoryStream();
+                SaveStateHeader header = SaveStates.Save(_emu, stream, null, 2000);
                 lock (_stateStopMs)
                 {
                     _stateStopMs.Add(sw.Elapsed.TotalMilliseconds);
                 }
 
                 AddInput(InputEvent.Now("mark", "preroll_state"));
+                byte[] data = stream.ToArray();
                 lock (_lock)
                 {
-                    _states.Add(new PreRollState(path, ns, (long)(header.GuestSeconds * 1e6), flip));
-                    while (_states.Count > 2)
+                    if (_rec == null && _preRollSeconds > 0)
                     {
-                        TryDelete(_states[0].Path);
-                        _states.RemoveAt(0);
+                        _states.Add(new PreRollState(data, ns, (long)(header.GuestSeconds * 1e6), flip));
+                        _stateBytes += data.Length;
+                        TrimStates();
+                        TrimRing();
                     }
-                    TrimRing();
                 }
             }
             catch (SnapshotException e)
@@ -505,7 +539,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                     Log.Info($"[capture] pre-roll save state skipped: {e.Message}");
                 }
             }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or OutOfMemoryException)
             {
                 Log.Warn($"[capture] pre-roll save state: {e.Message}");
             }
@@ -513,6 +547,29 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             {
                 _stateGate.Release();
             }
+        }
+    }
+
+    /// <summary>Keeps the pre-roll's states from the newest one taken at or before the pre-roll's start on (it covers
+    /// the whole pre-roll; the older ones are not needed), and within <see cref="SessionCaptureOptions.PreRollStateMaxBytes"/>
+    /// (the oldest go first, the newest always stays). Under <see cref="_lock"/>.</summary>
+    private void TrimStates()
+    {
+        long cover = CaptureClock.NowNs - (long)(1e9 * _preRollSeconds);
+        int covering = -1;
+        for (int i = 0; i < _states.Count; i++)
+        {
+            if (_states[i].StartNs <= cover)
+            {
+                covering = i;
+            }
+        }
+
+        while (covering > 0 || (_stateBytes > _options.PreRollStateMaxBytes && _states.Count > 1))
+        {
+            _stateBytes -= _states[0].Data.Length;
+            _states.RemoveAt(0);
+            covering--;
         }
     }
 
@@ -571,6 +628,72 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                     TrimRing();
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// The player marks the problem while recording (Shift+F8 on the desktop, the pause menu on Android): a mark in
+    /// input.tsv at once, and a save state of that moment, <c>state_mark_N.vss</c>, taken on a thread of its own (the
+    /// game stops 0.1-0.35 s, as for any state) and listed in session.txt (<c>mark-state-N</c>), so a re-run can start
+    /// right there (<c>rerun --from=markN</c>). False when no recording runs.
+    /// </summary>
+    public bool MarkBug(string reason)
+    {
+        Recording? r = _rec;
+        if (r == null || r.Stopping.IsSet)
+        {
+            _options.Status?.Invoke(Localization.Loc.Get("CaptureMarkNoRecording"));
+            return false;
+        }
+
+        int number = Interlocked.Increment(ref r.MarkCount);
+        AddInput(InputEvent.Now("mark", $"bug {number} {reason}"));
+        var thread = new Thread(() => TakeMarkState(r, number)) { IsBackground = true, Name = "capture mark" };
+        lock (_lock)
+        {
+            r.MarkThreads.Add(thread);
+        }
+
+        thread.Start();
+        Log.Info($"[capture] the player marked the problem ({reason}): mark {number}");
+        return true;
+    }
+
+    private void TakeMarkState(Recording r, int number)
+    {
+        if (!_stateGate.Wait(5000))
+        {
+            lock (_lock)
+            {
+                r.Notes.Add($"mark {number}: no save state (another state was being saved)");
+            }
+
+            return;
+        }
+
+        try
+        {
+            long ns = CaptureClock.NowNs, flip = Hle.Modules.Display.FramesPresented;
+            string path = Path.Combine(r.Dir, CaptureStates.FileName(CaptureStates.Mark(number)));
+            SaveStateHeader header = SaveStates.Save(_emu, path, null, 2000);
+            lock (_lock)
+            {
+                r.Marks.Add((number, (long)(header.GuestSeconds * 1e6), ns, flip));
+                r.Input.Add(InputEvent.Now("mark", $"state_mark_{number}"));
+            }
+
+            _options.Status?.Invoke(Localization.Loc.Format("CaptureMarked", number));
+        }
+        catch (Exception e) when (e is SnapshotException or IOException or UnauthorizedAccessException)
+        {
+            lock (_lock)
+            {
+                r.Notes.Add($"mark {number}: no save state ({e.Message})");
+            }
+        }
+        finally
+        {
+            _stateGate.Release();
         }
     }
 
@@ -892,11 +1015,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         {
             try
             {
-                File.Copy(pre.Path, Path.Combine(dir, "state_preroll.vss"));
+                File.WriteAllBytes(Path.Combine(dir, "state_preroll.vss"), pre.Data);
             }
             catch (IOException e)
             {
-                r.Notes.Add($"pre-roll state not copied: {e.Message}");
+                r.Notes.Add($"pre-roll state not written: {e.Message}");
                 r.PreRoll = null;
             }
         }
@@ -1085,6 +1208,17 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         // a start save state still being retried stops trying (one being written completes first)
         r.Stopping.Set();
         r.StartStateRetry?.Join(10_000);
+        // the marks' states being saved are in the capture (session.txt lists them)
+        Thread[] marking;
+        lock (_lock)
+        {
+            marking = r.MarkThreads.ToArray();
+        }
+
+        foreach (Thread t in marking)
+        {
+            t.Join(10_000);
+        }
         r.StopNs = CaptureClock.NowNs;
         r.StopFlip = Hle.Modules.Display.FramesPresented;
         r.StopUs = GuestClock.Microseconds;
@@ -1322,6 +1456,14 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             sb.AppendLine(_preRollSeconds > 0 ? "preroll-state: none yet (the first one is taken 2 s after the pre-roll is armed)" : "preroll-state: none (pre-roll off)");
         }
 
+        lock (_lock)
+        {
+            foreach ((int number, long guestUs, long ns, long flip) in r.Marks)
+            {
+                sb.AppendLine(FormattableString.Invariant($"{CaptureStates.SessionKey(CaptureStates.Mark(number))}: {CaptureStates.FileName(CaptureStates.Mark(number))} guest-us {guestUs} flip {flip} ns {ns} ({(ns - r.StartNs) / 1e9:F1} s after the start; marked by the player)"));
+            }
+        }
+
         if (r.StartState is { } s)
         {
             sb.AppendLine(FormattableString.Invariant($"start-state: state_start.vss guest-us {s.GuestUs} flip {s.Flip} ns {s.Ns} ({r.StartStateMs:F0} ms to save)"));
@@ -1370,7 +1512,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         sb.AppendLine("  context.txt           where the player is (screen, application in front, processes) and the audio ports with");
         sb.AppendLine("                        their owners, at the start and the stop; frames.png: a contact sheet of the recording");
         sb.AppendLine("  input_before.tsv      the last button and touch changes before the recording started");
-        sb.AppendLine("Re-run (desktop): VitaSharp.Desktop rerun <this folder> [--from=preroll|start] [--window]");
+        sb.AppendLine("Re-run (desktop): VitaSharp.Desktop rerun <this folder> [--from=preroll|start|markN] [--window]");
         sb.AppendLine("Analyze again: vitasharp-perf capture <this folder>");
         File.WriteAllText(Path.Combine(r.Dir, "session.txt"), sb.ToString());
     }
@@ -1520,13 +1662,30 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             }
         }
         _stateWake.Set();
-        try
-        {
-            if (Directory.Exists(PreRollDir) && !Directory.EnumerateFileSystemEntries(PreRollDir).Any())
-            {
-                Directory.Delete(PreRollDir);
-            }
-        }
-        catch (IOException) { }
     }
+}
+
+/// <summary>The save states of a capture by name: <c>preroll</c>, <c>start</c> and <c>markN</c> (the player's N-th
+/// mark), their files and their session.txt keys (rerun --from=, --capture-playback=DIR@).</summary>
+public static class CaptureStates
+{
+    public static string Mark(int number) => FormattableString.Invariant($"mark{number}");
+
+    /// <summary>preroll, start or markN (N >= 1).</summary>
+    public static bool IsValid(string from) =>
+        from is "preroll" or "start" || (from.StartsWith("mark", StringComparison.Ordinal) && int.TryParse(from.AsSpan(4), NumberStyles.None, CultureInfo.InvariantCulture, out int n) && n >= 1);
+
+    public static string FileName(string from) => from switch
+    {
+        "preroll" => "state_preroll.vss",
+        "start" => "state_start.vss",
+        _ => $"state_mark_{from[4..]}.vss",
+    };
+
+    public static string SessionKey(string from) => from switch
+    {
+        "preroll" => "preroll-state",
+        "start" => "start-state",
+        _ => $"mark-state-{from[4..]}",
+    };
 }

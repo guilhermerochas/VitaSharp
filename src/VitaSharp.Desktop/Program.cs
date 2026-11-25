@@ -1010,7 +1010,7 @@ public static class Program
         Console.WriteLine("  run options: --capture-files-mb=MB --capture-savedata  Gravar tudo: keep up to MB of the bytes the game read (default 0: hashes only) / keep the save data's bytes too");
         Console.WriteLine("  run options: --capture-mic-audio     Gravar tudo: also keep what the microphone captured (default: only its format and pace)");
         Console.WriteLine("  run options: --capture-location      Gravar tudo: let the location answer while armed or recording (default: withheld)");
-        Console.WriteLine("  rerun <capture folder> [--from=preroll|start] [--window] [--rerun-gpu-dump] [--boot=title]  replay a Gravar tudo capture's input from its save state (the game and plugins are not needed)");
+        Console.WriteLine("  rerun <capture folder> [--from=preroll|start|markN] [--window] [--rerun-gpu-dump] [--boot=title]  replay a Gravar tudo capture's input from its save state (the game and plugins are not needed)");
         Console.WriteLine("  run options: --nav=<file> [--nav-live] [--nav-out=<dir>]  screen-driven input script (NavScript: tap/press/stable/shot/quit)");
         Console.WriteLine("  hle-implemented [--vitasdk=<tsv>]   list every NID the HLE implements (docs/hle/data/vitasharp-implemented.tsv)");
         Console.WriteLine("  hle-abi-check --headers=<dir> [--fewer]  HLE bindings whose argument registers differ from the vita-headers prototypes");

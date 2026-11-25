@@ -59,6 +59,8 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMu
     public event Action? GpuDumpToggled;
     /// <summary>F8: starts or stops "Gravar tudo", the session capture (docs/notes/session-capture.md).</summary>
     public event Action? SessionCaptureToggled;
+    /// <summary>Shift+F8: the player marks the problem while "Gravar tudo" records (a save state of that moment).</summary>
+    public event Action? BugMarked;
     bool _f8Down;
     /// <summary>Save states (window thread): F5 quick save, Shift+F5 save to the selected slot, F7 quick load, Shift+F7
     /// load the selected slot, F6 next slot. The argument is the slot (0 = quick), or -1 for F6.</summary>
@@ -726,9 +728,17 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMu
 
     // ---------------------------------------------------------------- input
 
-    /// <summary>One F8 press: "Gravar tudo", or with Ctrl the GPU dump (the key handler and --input steps).</summary>
-    public void PressF8(bool ctrl)
+    /// <summary>One F8 press: "Gravar tudo", with Ctrl the GPU dump, with Shift the mark of the problem (the key
+    /// handler and --input steps).</summary>
+    public void PressF8(bool ctrl, bool shift = false)
     {
+        if (shift && !ctrl)
+        {
+            Log.Info("Window: Shift+F8 (mark the problem) pressed");
+            BugMarked?.Invoke();
+            return;
+        }
+
         Log.Info($"Window: {(ctrl ? "Ctrl+F8 (GPU dump)" : "F8 (Gravar tudo)")} pressed");
         (ctrl ? GpuDumpToggled : SessionCaptureToggled)?.Invoke();
     }
@@ -784,10 +794,11 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMu
         }
         if (key == Key.F8)
         {
-            // F8 alone: "Gravar tudo"; Ctrl+F8: the GPU dump (one toggle per press, whatever key repeat sends)
+            // F8 alone: "Gravar tudo"; Ctrl+F8: the GPU dump; Shift+F8: mark the problem (one per press, whatever key
+            // repeat sends)
             if (down && !_f8Down)
             {
-                PressF8(IsControlDown);
+                PressF8(IsControlDown, IsShiftDown);
             }
 
             _f8Down = down;

@@ -210,7 +210,7 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
         return keys;
     }
 
-    bool IsHostKey(string? key) => key is "F8" or "Ctrl+F8" or "Close" or "F10" or "F11" or "F5" or "F6" or "F7" or "Shift+F5" or "Shift+F7" || (key != null && GraphicsHotkeys.IsHotkey(key)) || IsPauseKey(key);
+    bool IsHostKey(string? key) => key is "F8" or "Ctrl+F8" or "Shift+F8" or "Close" or "F10" or "F11" or "F5" or "F6" or "F7" or "Shift+F5" or "Shift+F7" || (key != null && GraphicsHotkeys.IsHotkey(key)) || IsPauseKey(key);
 
     bool IsPauseKey(string? key)
     {
