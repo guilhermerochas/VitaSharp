@@ -543,13 +543,13 @@ public sealed partial class Gxm : HleModule
             return ERR_UNSUPPORTED;
         }
 
-        if (sceGxmColorSurfaceGetScaleMode(surface) != 0 && !info.Downscalable)
+        if (sceGxmColorSurfaceGetScaleModeThroughEntry(surface) != 0 && !info.Downscalable)
         {
             return ERR_UNSUPPORTED;
         }
 
         GuestMemory.W32(surface + 20, format);
-        sceGxmTextureSetFormat(surface + 32, ColorToTextureFormat(format));
+        sceGxmTextureSetFormatThroughEntry(surface + 32, ColorToTextureFormat(format));
         return 0;
     }
 
@@ -948,7 +948,7 @@ public sealed partial class Gxm : HleModule
         // the driver's sample grid: 2X is one sample across and two down, 4X two by two, anything else one
         uint samplesX = rt.MultisampleMode == 2 ? 2u : 1u;
         uint samplesY = rt.MultisampleMode is 1 or 2 ? 2u : 1u;
-        bool downscale = colorSurface != 0 && sceGxmColorSurfaceGetScaleMode(colorSurface) == 1;
+        bool downscale = colorSurface != 0 && sceGxmColorSurfaceGetScaleModeThroughEntry(colorSurface) == 1;
         if (colorSurface != 0 && samplesX == 1 && samplesY == 2 && !downscale)
         {
             xMax = yMax = 0;
