@@ -117,6 +117,207 @@
   <data name="Captures" xml:space="preserve">
     <value>Captures</value>
   </data>
+  <data name="VerifyRecorded" xml:space="preserve">
+    <value>recording: {0} findings ({1})</value>
+  </data>
+  <data name="VerifyReplayFailed" xml:space="preserve">
+    <value>replay of the GPU dump: failed (code {0}; {1})</value>
+  </data>
+  <data name="VerifyReplayHeader" xml:space="preserve">
+    <value>replay of the GPU dump with this build ({0} findings of the recording inside the dump):</value>
+  </data>
+  <data name="VerifyReplayVerdict" xml:space="preserve">
+    <value>  replay: {0}</value>
+  </data>
+  <data name="VerifyReplayStillHint" xml:space="preserve">
+    <value> (the replay runs the recorded commands: if the build that recorded also shows it in the replay, the cause is in the renderer; if the cause comes before the GPU, in the commands, use --rerun)</value>
+  </data>
+  <data name="VerifyNoDump" xml:space="preserve">
+    <value>replay of the GPU dump: the capture has no gpu.vsgd</value>
+  </data>
+  <data name="VerifyResult" xml:space="preserve">
+    <value>result: {0}</value>
+  </data>
+  <data name="VerifyAbHeader" xml:space="preserve">
+    <value>A/B of the renderer switches ({0}; the replay with each against the replay without them):</value>
+  </data>
+  <data name="VerifyAbNothing" xml:space="preserve">
+    <value>  nothing to compare: the replay of this build shows no picture finding</value>
+  </data>
+  <data name="VerifyAbNoneChosen" xml:space="preserve">
+    <value>  no switch chosen</value>
+  </data>
+  <data name="VerifyAbReplayFailed" xml:space="preserve">
+    <value>  {0} ({1}): the replay failed (code {2}; {3})</value>
+  </data>
+  <data name="VerifyAbRemovedBy" xml:space="preserve">
+    <value>  the finding goes away with: {0} (the class of the bug: {1})</value>
+  </data>
+  <data name="VerifyAbChangedBy" xml:space="preserve">
+    <value>  no switch removes the finding; these change it: {0}</value>
+  </data>
+  <data name="VerifyAbNoEffect" xml:space="preserve">
+    <value>  no switch changes the finding: the cause is in the recorded commands or in a renderer path without a switch</value>
+  </data>
+  <data name="VerifyDrawResponsible" xml:space="preserve">
+    <value>  draw responsible for [{0}] {1}:</value>
+  </data>
+  <data name="VerifyProbeFailed" xml:space="preserve">
+    <value>    the probe did not finish (code {0}; {1})</value>
+  </data>
+  <data name="VerifyRerunFailed" xml:space="preserve">
+    <value>re-run: failed (code {0}; no report.txt in {1})</value>
+  </data>
+  <data name="VerifyRerunHeader" xml:space="preserve">
+    <value>re-run of the logic from the state ({0}):</value>
+  </data>
+  <data name="VerifyRerunVerdict" xml:space="preserve">
+    <value>  re-run: {0}</value>
+  </data>
+  <data name="VerifyWord.NothingToCheck" xml:space="preserve">
+    <value>nothing to check</value>
+  </data>
+  <data name="VerifyWord.Fixed" xml:space="preserve">
+    <value>fixed</value>
+  </data>
+  <data name="VerifyWord.StillPresent" xml:space="preserve">
+    <value>still present</value>
+  </data>
+  <data name="VerifyWord.Changed" xml:space="preserve">
+    <value>changed</value>
+  </data>
+  <data name="VerifyWord.New" xml:space="preserve">
+    <value>new</value>
+  </data>
+  <data name="VerifyOutcome.StillPresent" xml:space="preserve">
+    <value>{0}: still present (replay: {1}: {2})</value>
+  </data>
+  <data name="VerifyOutcome.Moved" xml:space="preserve">
+    <value>{0}: changed (replay: {1}: {2})</value>
+  </data>
+  <data name="VerifyOutcome.Fixed" xml:space="preserve">
+    <value>{0}: fixed (replay: nothing at presents {1}-{2})</value>
+  </data>
+  <data name="VerifyOutcome.New" xml:space="preserve">
+    <value>{0}: new (not in the recording): {1}</value>
+  </data>
+  <data name="VerifyOutcome.NotChecked" xml:space="preserve">
+    <value>{0}: outside the GPU dump (pre-roll or after its end): not checked by the replay (use --rerun)</value>
+  </data>
+  <data name="VerifyByKindReplay" xml:space="preserve">
+    <value>  by kind (recording -&gt; replay):</value>
+  </data>
+  <data name="VerifyByKindRerun" xml:space="preserve">
+    <value>  by kind (recording -&gt; re-run; a re-run is not deterministic: compare counts):</value>
+  </data>
+  <data name="VerifyEffect.Same" xml:space="preserve">
+    <value>same</value>
+  </data>
+  <data name="VerifyEffect.Removes" xml:space="preserve">
+    <value>the finding goes away</value>
+  </data>
+  <data name="VerifyEffect.Changes" xml:space="preserve">
+    <value>changes</value>
+  </data>
+  <data name="VerifySwitchCustom" xml:space="preserve">
+    <value>given with --ab-env</value>
+  </data>
+  <data name="VerifySwitch.depth-seed-off" xml:space="preserve">
+    <value>a depth/stencil created for a scene that loads its surface starts undefined, not from the surface's earlier image</value>
+  </data>
+  <data name="VerifySwitch.msaa-off" xml:space="preserve">
+    <value>MSAA scenes drawn single-sampled</value>
+  </data>
+  <data name="VerifySwitch.msaa-ss" xml:space="preserve">
+    <value>MSAA scenes drawn as 2x supersampling</value>
+  </data>
+  <data name="VerifySwitch.msaa-native" xml:space="preserve">
+    <value>MSAA scenes multisampled</value>
+  </data>
+  <data name="VerifySwitch.store-writeback-off" xml:space="preserve">
+    <value>what shader programs store stays in the renderer's mirror, not in guest memory</value>
+  </data>
+  <data name="VerifySwitch.scene-breaks-strict" xml:space="preserve">
+    <value>every texture upload or copy inside a scene ends the rendering</value>
+  </data>
+  <data name="VerifySwitch.fetch-pass-merge-off" xml:space="preserve">
+    <value>programmable-blending draws do not share one fetch pass</value>
+  </data>
+  <data name="VerifySwitch.fetch-pass-merge-on" xml:space="preserve">
+    <value>programmable-blending draws share one fetch pass</value>
+  </data>
+  <data name="VerifySwitch.fetch-large-off" xml:space="preserve">
+    <value>large programmable-blending draws read a copy of the surface</value>
+  </data>
+  <data name="VerifySwitch.fetch-large-on" xml:space="preserve">
+    <value>programmable-blending draws of any size render in the fetch pass</value>
+  </data>
+  <data name="VerifySwitch.fetch-pass-join-off" xml:space="preserve">
+    <value>other draws end an open fetch pass</value>
+  </data>
+  <data name="VerifySwitch.fetch-pass-join-on" xml:space="preserve">
+    <value>other draws keep rendering in an open fetch pass</value>
+  </data>
+  <data name="VerifySwitch.depth-feedback-off" xml:space="preserve">
+    <value>draws that sample their depth buffer read a copy</value>
+  </data>
+  <data name="VerifySwitch.depth-feedback-on" xml:space="preserve">
+    <value>draws that sample their depth buffer read it in place</value>
+  </data>
+  <data name="VerifySwitch.depth-ops-none-off" xml:space="preserve">
+    <value>depth/stencil no draw uses is still loaded and stored</value>
+  </data>
+  <data name="VerifySwitch.gpu-profile-mali" xml:space="preserve">
+    <value>the tile-based (phone) renderer paths</value>
+  </data>
+  <data name="VerifySwitch.gpu-poison" xml:space="preserve">
+    <value>undefined contents get loud values (new targets magenta): a read of something never drawn shows</value>
+  </data>
+  <data name="VerifySwitch.res-scale-1" xml:space="preserve">
+    <value>native resolution</value>
+  </data>
+  <data name="VerifyAttrSummary" xml:space="preserve">
+    <value>present {0}: {1} draws into the shown surface ({2} wrote the region); neighbour {3}: {4} draws ({5} wrote)</value>
+  </data>
+  <data name="VerifyAttrNoDraws" xml:space="preserve">
+    <value>no draw into the shown surface in either frame (a CPU picture, or the dump lacks the draws)</value>
+  </data>
+  <data name="VerifyAttrResponsible" xml:space="preserve">
+    <value>draw responsible: {0}</value>
+  </data>
+  <data name="VerifyAttrWhy" xml:space="preserve">
+    <value>  why: {0}</value>
+  </data>
+  <data name="VerifyAttrOthers" xml:space="preserve">
+    <value>other differences ({0}):</value>
+  </data>
+  <data name="VerifyAttrNone" xml:space="preserve">
+    <value>no draw into the shown surface differs in the region: the difference comes from a surface drawn earlier and sampled (a texture), or from which buffer was presented</value>
+  </data>
+  <data name="VerifyReason.MissingInFlash" xml:space="preserve">
+    <value>missing in the flashing frame (the neighbour {0} wrote {2} px of the region)</value>
+  </data>
+  <data name="VerifyReason.OnlyInFlash" xml:space="preserve">
+    <value>only in the flashing frame (wrote {1} px of the region)</value>
+  </data>
+  <data name="VerifyReason.WroteNothingInFlash" xml:space="preserve">
+    <value>wrote nothing in the region in the flashing frame (in the neighbour: {2} px)</value>
+  </data>
+  <data name="VerifyReason.WroteOnlyInFlash" xml:space="preserve">
+    <value>wrote {1} px of the region in the flashing frame and 0 in the neighbour</value>
+  </data>
+  <data name="VerifyReason.OtherState" xml:space="preserve">
+    <value>another state than the neighbour</value>
+  </data>
+  <data name="VerifyDifference" xml:space="preserve">
+    <value>{0} {1} (neighbour {2})</value>
+  </data>
+  <data name="VerifyField.depth-before" xml:space="preserve">
+    <value>depth before</value>
+  </data>
+  <data name="VerifyField.stencil-before" xml:space="preserve">
+    <value>stencil before</value>
+  </data>
   <data name="CaptureMarked" xml:space="preserve">
     <value>Problem marked ({0}): a save state of this moment goes into the recording</value>
   </data>

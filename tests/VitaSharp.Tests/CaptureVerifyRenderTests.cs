@@ -198,6 +198,9 @@ internal sealed class FlashScene
 [Collection("guest")]
 public sealed class CaptureVerifyRenderTests(GuestMemoryFixture fx)
 {
+    /// <summary>The report's texts in Portuguese whatever the runner's language (the assertions read them).</summary>
+    private static readonly Dictionary<string, string> s_portuguese = new() { [VitaSharp.Core.Util.EnvVars.Language] = "pt-BR" };
+
     private static List<FlashScene.Hud> Frames(int flashAt, FlashScene.Hud flash)
     {
         var frames = new List<FlashScene.Hud>();
@@ -246,7 +249,7 @@ public sealed class CaptureVerifyRenderTests(GuestMemoryFixture fx)
         FrameFindings recorded = FlashScene.CaptureFolder(h, capture, Frames(6, FlashScene.Hud.Missing));
         Assert.Single(recorded.Findings(), f => f.Kind == "flash");
         string[] before = Directory.GetFiles(capture);
-        DesktopProcess.Result r = DesktopProcess.Run(h.Root, ["verify", capture, $"--out={output}", "--no-nan-scan"], timeoutMs: 180_000);
+        DesktopProcess.Result r = DesktopProcess.Run(h.Root, ["verify", capture, $"--out={output}", "--no-nan-scan"], timeoutMs: 180_000, env: s_portuguese);
         Assert.True(r.ExitCode == 1, r.Output);
         Assert.Contains("ainda presente", r.Output, StringComparison.Ordinal);
         Assert.Contains("resultado: ainda presente", File.ReadAllText(Path.Combine(output, "verify.txt")), StringComparison.Ordinal);
@@ -281,7 +284,7 @@ public sealed class CaptureVerifyRenderTests(GuestMemoryFixture fx)
 
         Assert.NotEqual(0UL, fragmentHash);
         string solid = $"{VitaSharp.Core.Util.EnvVars.DebugFs}={fragmentHash:X16}:vec4(0.0, 0.0, 1.0, 1.0)";
-        DesktopProcess.Result r = DesktopProcess.Run(h.Root, ["verify", capture, $"--out={output}", "--no-nan-scan", "--ab=depth-seed-off", $"--ab-env={solid}"], timeoutMs: 300_000);
+        DesktopProcess.Result r = DesktopProcess.Run(h.Root, ["verify", capture, $"--out={output}", "--no-nan-scan", "--ab=depth-seed-off", $"--ab-env={solid}"], timeoutMs: 300_000, env: s_portuguese);
         Assert.True(r.ExitCode == 1, r.Output);
         Assert.Contains("depth-seed-off (VITASHARP_DEPTH_SEED=0: ", r.Output, StringComparison.Ordinal);
         Assert.Contains("): igual", r.Output, StringComparison.Ordinal);
@@ -314,6 +317,6 @@ public sealed class CaptureVerifyRenderTests(GuestMemoryFixture fx)
         (first, last) = again.Presents;
         CaptureVerify.Result changed = CaptureVerify.Compare([], Items(again), first, last);
         Assert.Equal(CaptureVerify.Verdict.Changed, changed.Verdict);
-        Assert.Contains(changed.Lines, l => l.Contains(": novo", StringComparison.Ordinal));
+        Assert.Contains(changed.Entries, e => e.Outcome == CaptureVerify.Outcome.New);
     }
 }

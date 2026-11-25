@@ -9,8 +9,8 @@ namespace VitaSharp.Core.Capture;
 /// build. The capture's findings (the report's rules over frames.vsfr, <see cref="FrameFindings"/>, and the NaN/Inf
 /// anomalies of its log) are set against the findings of the same rules over a replay of its GPU dump made by this
 /// build (<c>replay-gpu --findings</c>: findings.txt), finding by finding (same kind at the same present, one present
-/// either way) and kind by kind, with a short verdict: corrigido (fixed), ainda presente (still there), mudou
-/// (changed). The timing findings (stalls, presentation order) and the audio need the game logic to run again: they
+/// either way) and kind by kind, with a short verdict (<see cref="Verdict"/>: fixed, still present, changed; the
+/// front-end says it in the player's language). The timing findings (stalls, presentation order) and the audio need the game logic to run again: they
 /// are set against a re-run's report (<see cref="CompareRerun"/>), which is not deterministic (counts, not presents).
 /// </summary>
 public static class CaptureVerify
@@ -32,13 +32,26 @@ public static class CaptureVerify
         Changed,
     }
 
-    public static string Word(Verdict verdict) => verdict switch
+    /// <summary>What became of one finding, or of one kind of finding, in the replay or the re-run.</summary>
+    public enum Outcome
     {
-        Verdict.Fixed => "corrigido",
-        Verdict.StillPresent => "ainda presente",
-        Verdict.Changed => "mudou",
-        _ => "nada a verificar",
-    };
+        /// <summary>The same kind at the same place (one present either way, the same cell or the whole picture).</summary>
+        StillPresent,
+        /// <summary>The same kind nearby (another cell, up to 3 presents away), or fewer of the kind.</summary>
+        Moved,
+        /// <summary>Not in the replay.</summary>
+        Fixed,
+        /// <summary>In the replay, not in the recording.</summary>
+        New,
+        /// <summary>Outside the replayed presents (before the dump: the pre-roll; after its end).</summary>
+        NotChecked,
+    }
+
+    /// <summary>One finding and what became of it (<see cref="Replayed"/>: the replay's finding it was matched with).</summary>
+    public readonly record struct Entry(Item Finding, Outcome Outcome, Item? Replayed);
+
+    /// <summary>One kind of finding: how many in the recording and in the replay, and what became of them.</summary>
+    public readonly record struct KindCount(string Kind, int Before, int After, Outcome Outcome);
 
     /// <summary>One finding as findings.txt and the comparison carry it.</summary>
     public readonly record struct Item(string Kind, long Present, int Cell, int Count, string Detail)
@@ -119,8 +132,8 @@ public static class CaptureVerify
         return (first, last, items);
     }
 
-    /// <summary>The result of one comparison: the lines to print and the verdict.</summary>
-    public sealed record Result(Verdict Verdict, List<string> Lines, int Recorded, int StillThere, int Gone, int Moved, int New)
+    /// <summary>The result of one comparison: the verdict, every finding and every kind with what became of it.</summary>
+    public sealed record Result(Verdict Verdict, List<Entry> Entries, List<KindCount> Kinds, int Recorded, int StillThere, int Gone, int Moved, int New)
     {
         /// <summary>The recorded findings the replay still shows (where the draw probe looks: verify).</summary>
         public List<Item> Kept { get; init; } = new();
@@ -134,7 +147,7 @@ public static class CaptureVerify
     /// </summary>
     public static Result Compare(IReadOnlyList<Item> recorded, IReadOnlyList<Item> replayed, long first, long last)
     {
-        var lines = new List<string>();
+        var entries = new List<Entry>();
         var inRange = recorded.Where(r => PictureKinds.Contains(r.Kind) && r.Present >= first && r.Present <= last).ToList();
         var outside = recorded.Where(r => PictureKinds.Contains(r.Kind) && (r.Present < first || r.Present > last)).ToList();
         var candidates = replayed.Where(r => PictureKinds.Contains(r.Kind)).ToList();
@@ -173,18 +186,18 @@ public static class CaptureVerify
                 still++;
                 stillByKind[r.Kind] = stillByKind.GetValueOrDefault(r.Kind) + 1;
                 kept.Add(r);
-                lines.Add($"  [{r.Kind}] {r.Where}: ainda presente (replay: {candidates[exact].Where}: {candidates[exact].Detail})");
+                entries.Add(new Entry(r, Outcome.StillPresent, candidates[exact]));
             }
             else if (near >= 0)
             {
                 used[near] = true;
                 moved++;
-                lines.Add($"  [{r.Kind}] {r.Where}: mudou (replay: {candidates[near].Where}: {candidates[near].Detail})");
+                entries.Add(new Entry(r, Outcome.Moved, candidates[near]));
             }
             else
             {
                 gone++;
-                lines.Add(FormattableString.Invariant($"  [{r.Kind}] {r.Where}: corrigido (replay: nada nos presents {r.Present - 1}-{r.Present + 1})"));
+                entries.Add(new Entry(r, Outcome.Fixed, null));
             }
         }
 
@@ -194,16 +207,16 @@ public static class CaptureVerify
             if (!used[i] && candidates[i].Present >= first && candidates[i].Present <= last)
             {
                 fresh++;
-                lines.Add($"  [{candidates[i].Kind}] {candidates[i].Where}: novo (não estava na gravação): {candidates[i].Detail}");
+                entries.Add(new Entry(candidates[i], Outcome.New, null));
             }
         }
 
         foreach (Item r in outside)
         {
-            lines.Add($"  [{r.Kind}] {r.Where}: fora do dump da GPU (pré-gravação ou depois do fim do dump): não verificado pelo replay (use --rerun)");
+            entries.Add(new Entry(r, Outcome.NotChecked, null));
         }
 
-        lines.Add("  por tipo (gravação -> replay):");
+        var kinds = new List<KindCount>();
         foreach (string kind in PictureKinds)
         {
             int before = inRange.Count(r => r.Kind == kind), after = candidates.Count(c => c.Kind == kind && c.Present >= first && c.Present <= last);
@@ -212,21 +225,20 @@ public static class CaptureVerify
                 continue;
             }
 
-            string word = before == 0 ? "novo" : after == 0 ? "corrigido" : stillByKind.GetValueOrDefault(kind) > 0 ? "ainda presente" : "mudou";
-
-            lines.Add(FormattableString.Invariant($"    {kind}: {before} -> {after} ({word})"));
+            Outcome outcome = before == 0 ? Outcome.New : after == 0 ? Outcome.Fixed : stillByKind.GetValueOrDefault(kind) > 0 ? Outcome.StillPresent : Outcome.Moved;
+            kinds.Add(new KindCount(kind, before, after, outcome));
         }
 
         Verdict verdict = inRange.Count == 0 && fresh == 0 ? Verdict.NothingToCheck
             : still > 0 ? Verdict.StillPresent
             : moved == 0 && fresh == 0 ? Verdict.Fixed
             : Verdict.Changed;
-        return new Result(verdict, lines, inRange.Count, still, gone, moved, fresh) { Kept = kept };
+        return new Result(verdict, entries, kinds, inRange.Count, still, gone, moved, fresh) { Kept = kept };
     }
 
-    /// <summary>One renderer switch the A/B runs (<c>verify --ab</c>): a name, the environment variable and the value
-    /// set for the replay (<c>replay-gpu --env=KEY=VALUE</c>), and what it changes.</summary>
-    public sealed record Switch(string Name, string Key, string Value, string What)
+    /// <summary>One renderer switch the A/B runs (<c>verify --ab</c>): a name (what it changes is the front-end's text
+    /// VerifySwitch.NAME), the environment variable and the value set for the replay (<c>replay-gpu --env=KEY=VALUE</c>).</summary>
+    public sealed record Switch(string Name, string Key, string Value)
     {
         public string Env => $"{Key}={Value}";
     }
@@ -239,24 +251,24 @@ public static class CaptureVerify
     /// </summary>
     public static readonly Switch[] RendererSwitches =
     [
-        new("depth-seed-off", Util.EnvVars.DepthSeed, "0", "a depth/stencil created for a scene that loads its surface starts undefined, not from the surface's earlier image"),
-        new("msaa-off", Util.EnvVars.Msaa, "off", "MSAA scenes drawn single-sampled"),
-        new("msaa-ss", Util.EnvVars.Msaa, "ss", "MSAA scenes drawn as 2x supersampling"),
-        new("msaa-native", Util.EnvVars.Msaa, "native", "MSAA scenes multisampled"),
-        new("store-writeback-off", Util.EnvVars.GpuStoreWriteback, "0", "what shader programs store stays in the renderer's mirror, not in guest memory"),
-        new("scene-breaks-strict", Util.EnvVars.SceneBreaks, "strict", "every texture upload or copy inside a scene ends the rendering"),
-        new("fetch-pass-merge-off", Util.EnvVars.FetchPassMerge, "0", "programmable-blending draws do not share one fetch pass"),
-        new("fetch-pass-merge-on", Util.EnvVars.FetchPassMerge, "1", "programmable-blending draws share one fetch pass"),
-        new("fetch-large-off", Util.EnvVars.FetchLarge, "0", "large programmable-blending draws read a copy of the surface"),
-        new("fetch-large-on", Util.EnvVars.FetchLarge, "1", "programmable-blending draws of any size render in the fetch pass"),
-        new("fetch-pass-join-off", Util.EnvVars.FetchPassJoin, "0", "other draws end an open fetch pass"),
-        new("fetch-pass-join-on", Util.EnvVars.FetchPassJoin, "1", "other draws keep rendering in an open fetch pass"),
-        new("depth-feedback-off", Util.EnvVars.DepthFeedback, "0", "draws that sample their depth buffer read a copy"),
-        new("depth-feedback-on", Util.EnvVars.DepthFeedback, "1", "draws that sample their depth buffer read it in place"),
-        new("depth-ops-none-off", Util.EnvVars.DepthOpsNone, "0", "depth/stencil no draw uses is still loaded and stored"),
-        new("gpu-profile-mali", Util.EnvVars.GpuProfile, "mali", "the tile-based (phone) renderer paths"),
-        new("gpu-poison", Util.EnvVars.GpuPoison, "1", "undefined contents get loud values (new targets magenta): a read of something never drawn shows"),
-        new("res-scale-1", Util.EnvVars.ResScale, "1", "native resolution"),
+        new("depth-seed-off", Util.EnvVars.DepthSeed, "0"),
+        new("msaa-off", Util.EnvVars.Msaa, "off"),
+        new("msaa-ss", Util.EnvVars.Msaa, "ss"),
+        new("msaa-native", Util.EnvVars.Msaa, "native"),
+        new("store-writeback-off", Util.EnvVars.GpuStoreWriteback, "0"),
+        new("scene-breaks-strict", Util.EnvVars.SceneBreaks, "strict"),
+        new("fetch-pass-merge-off", Util.EnvVars.FetchPassMerge, "0"),
+        new("fetch-pass-merge-on", Util.EnvVars.FetchPassMerge, "1"),
+        new("fetch-large-off", Util.EnvVars.FetchLarge, "0"),
+        new("fetch-large-on", Util.EnvVars.FetchLarge, "1"),
+        new("fetch-pass-join-off", Util.EnvVars.FetchPassJoin, "0"),
+        new("fetch-pass-join-on", Util.EnvVars.FetchPassJoin, "1"),
+        new("depth-feedback-off", Util.EnvVars.DepthFeedback, "0"),
+        new("depth-feedback-on", Util.EnvVars.DepthFeedback, "1"),
+        new("depth-ops-none-off", Util.EnvVars.DepthOpsNone, "0"),
+        new("gpu-profile-mali", Util.EnvVars.GpuProfile, "mali"),
+        new("gpu-poison", Util.EnvVars.GpuPoison, "1"),
+        new("res-scale-1", Util.EnvVars.ResScale, "1"),
     ];
 
     /// <summary>What a switch does to the findings the replay showed without it.</summary>
@@ -269,13 +281,6 @@ public static class CaptureVerify
         /// <summary>Some go away or move, or new ones appear.</summary>
         Changes,
     }
-
-    public static string Word(SwitchEffect effect) => effect switch
-    {
-        SwitchEffect.Removes => "o achado some",
-        SwitchEffect.Changes => "muda",
-        _ => "igual",
-    };
 
     /// <summary>The findings of a replay with one switch against the replay without it (<see cref="Compare"/>, the
     /// switch-free replay standing for the recording) over the presents both showed.</summary>
@@ -336,12 +341,12 @@ public static class CaptureVerify
     /// <summary>The recording's report against a re-run's, kind by kind (a re-run is not deterministic: counts only).</summary>
     public static Result CompareRerun(SortedDictionary<string, int> recorded, SortedDictionary<string, int> rerun)
     {
-        var lines = new List<string> { "  por tipo (gravação -> re-run; o re-run não é determinístico: compare contagens):" };
+        var kinds = new List<KindCount>();
         int still = 0, gone = 0, fresh = 0;
         foreach (string kind in recorded.Keys.Union(rerun.Keys).Order(StringComparer.Ordinal))
         {
             int before = recorded.GetValueOrDefault(kind), after = rerun.GetValueOrDefault(kind);
-            string word = before > 0 && after == 0 ? "corrigido" : before == 0 ? "novo" : after >= before ? "ainda presente" : "mudou";
+            Outcome outcome = before > 0 && after == 0 ? Outcome.Fixed : before == 0 ? Outcome.New : after >= before ? Outcome.StillPresent : Outcome.Moved;
             if (before > 0 && after == 0)
             {
                 gone++;
@@ -355,13 +360,13 @@ public static class CaptureVerify
                 still++;
             }
 
-            lines.Add(FormattableString.Invariant($"    {kind}: {before} -> {after} ({word})"));
+            kinds.Add(new KindCount(kind, before, after, outcome));
         }
 
         Verdict verdict = recorded.Count == 0 && rerun.Count == 0 ? Verdict.NothingToCheck
             : still > 0 ? Verdict.StillPresent
             : fresh == 0 ? Verdict.Fixed
             : Verdict.Changed;
-        return new Result(verdict, lines, recorded.Values.Sum(), still, gone, 0, fresh);
+        return new Result(verdict, new List<Entry>(), kinds, recorded.Values.Sum(), still, gone, 0, fresh);
     }
 }

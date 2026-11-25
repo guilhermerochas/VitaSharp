@@ -1,4 +1,4 @@
-<!-- pair: captures.pt-BR.md sha256=b485ae75167a5a448261bf24d517e24fd4e6dbe9b001a0f53a2a4597e66c0c8c -->
+<!-- pair: captures.pt-BR.md sha256=5c75b673ceeb5ac5921bf3df93d9d78b5c2b61420f3f2c26a7eb519c45e85c83 -->
 # Analysing a Record everything capture without the game
 
 **English** | [Português](captures.pt-BR.md)
@@ -90,16 +90,16 @@ order) and the NaN/Inf scan of the float render targets, and sets every finding 
 against them:
 
 ```
-  [flash] present 1587 cell 1,1: ainda presente (replay: present 1587 cell 1,1: ...)
-  [black-flash] present 1600: corrigido (replay: nada nos presents 1599-1601)
-  por tipo (gravação -> replay):
-    flash: 20 -> 0 (corrigido)
-resultado: corrigido
+  [flash] present 1587 cell 1,1: still present (replay: present 1587 cell 1,1: ...)
+  [black-flash] present 1600: fixed (replay: nothing at presents 1599-1601)
+  by kind (recording -> replay):
+    flash: 20 -> 0 (fixed)
+result: fixed
 ```
 
-*corrigido* (fixed): every finding of the recording is gone and nothing new appeared; *ainda presente* (still
-there): a finding is at the same present (one either way) and cell; *mudou* (changed): it moved, or the replay shows
-a finding the recording did not have (*novo*). Findings before the dump (the pre-roll) or after it are listed as not
+*fixed*: every finding of the recording is gone and nothing new appeared; *still present*: a finding is at the same
+present (one either way) and cell; *changed*: it moved, or the replay shows a finding the recording did not have
+(*new*). The report is in the language of the emulator (`VITASHARP_LANGUAGE`, the system's by default). Findings before the dump (the pre-roll) or after it are listed as not
 checked. Exit code 0 fixed, 1 still there, 2 changed, 3 nothing to check, 4 the replay failed. Everything goes into
 `--out` (default `<capture>/verify`: `verify.txt`, the replay's `log.txt` and `findings.txt`); the capture itself is
 not changed. Replay options (`--res-scale=2`, `--env=KEY=VALUE`, `--msaa=...`) go to the replay; a dump recorded at
@@ -120,14 +120,15 @@ and stencil under it before the draw. The draws of the flashing frame are lined 
 programs, in order) and the first that differs is named, with its programs (vs/fs hashes), its state and why:
 
 ```
-  draw responsável por [flash] present 1587 cell 1,1:
-    draw responsável: draw 41823 vs=... fs=... rt=0x66600000 depth=0/True st=7/7 blend=none ... t0=0x81200000:0C000000
-      por quê: não escreveu na região no quadro do pisca (no vizinho: 412 px); depth 0/True (vizinho 7/True), profundidade antes 0.2500 (vizinho 1.0000)
+  draw responsible for [flash] present 1587 cell 1,1:
+    draw responsible: draw 41823 vs=... fs=... rt=0x66600000 depth=0/True st=7/7 blend=none ... t0=0x81200000:0C000000
+      why: wrote nothing in the region in the flashing frame (in the neighbour: 412 px); depth 0/True (neighbour 7/True), depth before 0.2500 (neighbour 1.0000)
 ```
 
-The reasons: *falta no quadro do pisca* (the neighbour has the draw, the flashing frame does not), *só no quadro do
-pisca*, *não escreveu na região* (the same draw wrote nothing there: rejected by the depth, stencil or alpha test,
-clipped or moved; the state fields and the depth/stencil under it that differ are listed), *estado diferente*. When
+The reasons: *missing in the flashing frame* (the neighbour has the draw, the flashing frame does not), *only in
+the flashing frame*, *wrote nothing in the region* (the same draw wrote nothing there: rejected by the depth, stencil
+or alpha test, clipped or moved; the state fields and the depth/stencil under it that differ are listed), *another
+state*. When
 no draw into the shown surface differs, the cause is a surface drawn earlier and sampled, or which buffer was
 presented. The files: `probe_P/probe_P.txt` (every probed draw: present, draw number, target, programs, pixels of
 the region it changed, depth and stencil before, state) and `probe_P/attribution_P.txt`.
@@ -136,8 +137,7 @@ the region it changed, depth and stencil before, state) and `probe_P/attribution
 
 `verify --ab` replays the dump once more for each of the renderer's switches that change how a picture is drawn
 (each in its own process, up to two presents after the last finding) and compares the findings with the
-switch-free replay's: *o achado some* (the finding goes away: the switch names the class of the bug), *muda*, or
-*igual*. The switches (`--ab=NAME,...` picks some; `--ab-env=KEY=VALUE` adds any other, repeatable):
+switch-free replay's: *the finding goes away* (the switch names the class of the bug), *changes*, or *same*. The switches (`--ab=NAME,...` picks some; `--ab-env=KEY=VALUE` adds any other, repeatable):
 
 | Name | Variable | What it changes |
 |---|---|---|
@@ -152,11 +152,11 @@ switch-free replay's: *o achado some* (the finding goes away: the switch names t
 | `res-scale-1` | `VITASHARP_RES_SCALE=1` | native resolution |
 
 ```
-A/B dos interruptores do renderizador (18; o replay de cada um contra o replay sem eles):
-  depth-seed-off (VITASHARP_DEPTH_SEED=0: ...): igual
-  msaa-off (VITASHARP_MSAA=off: MSAA scenes drawn single-sampled): o achado some
+A/B of the renderer switches (18; the replay with each against the replay without them):
+  depth-seed-off (VITASHARP_DEPTH_SEED=0: ...): same
+  msaa-off (VITASHARP_MSAA=off: MSAA scenes drawn single-sampled): the finding goes away
   ...
-  o achado some com: msaa-off (a classe do bug: MSAA scenes drawn single-sampled)
+  the finding goes away with: msaa-off (the class of the bug: MSAA scenes drawn single-sampled)
 ```
 
 The replays go into `<out>/ab/<name>/`.
