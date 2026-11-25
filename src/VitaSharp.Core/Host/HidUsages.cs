@@ -111,4 +111,30 @@ public static class HidUsages
         118 => 0xE7,                                           // META_RIGHT
         _ => 0,
     };
+
+    /// <summary>The consumer-page usage (USB HID page 0x0C) of an Android media key (KEYCODE_*), for the paired
+    /// keyboard's consumer-control device (<see cref="HidConsumerControl"/>); 0 = no media key. The PC front-end has
+    /// no source: its window library reports no media keys.</summary>
+    public static ushort ConsumerFromAndroidKeyCode(int keyCode) => keyCode switch
+    {
+        85 => 0xCD,                                            // MEDIA_PLAY_PAUSE: Play/Pause
+        86 => 0xB7,                                            // MEDIA_STOP: Stop
+        87 => 0xB5,                                            // MEDIA_NEXT: Scan Next Track
+        88 => 0xB6,                                            // MEDIA_PREVIOUS: Scan Previous Track
+        89 => 0xB4,                                            // MEDIA_REWIND: Rewind
+        90 => 0xB3,                                            // MEDIA_FAST_FORWARD: Fast Forward
+        126 => 0xB0,                                           // MEDIA_PLAY: Play
+        127 => 0xB1,                                           // MEDIA_PAUSE: Pause
+        130 => 0xB2,                                           // MEDIA_RECORD: Record
+        129 => 0xB8,                                           // MEDIA_EJECT: Eject
+        24 => 0xE9,                                            // VOLUME_UP: Volume Increment
+        25 => 0xEA,                                            // VOLUME_DOWN: Volume Decrement
+        164 => 0xE2,                                           // VOLUME_MUTE: Mute
+        209 => 0x183,                                          // MUSIC: AL Consumer Control Configuration
+        65 => 0x18A,                                           // ENVELOPE: AL Email Reader
+        210 => 0x192,                                          // CALCULATOR: AL Calculator
+        64 => 0x196,                                           // EXPLORER: AL Internet Browser
+        84 => 0x221,                                           // SEARCH: AC Search
+        _ => 0,
+    };
 }

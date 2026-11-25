@@ -162,12 +162,11 @@ public sealed class HidDeviceTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(unchecked((int)0x802F0109), Call(bt, "sceBtGetConnectingInfo", 0x12345678u, mac1));
     }
 
-    /// <summary>FW 3.74 SceHid: consumer controls follow the keyboard's checks (none is paired: Enumerate finds none,
-    /// Read knows no handle) and keep their hint callbacks. Before, the six were missing imports.</summary>
+    /// <summary>FW 3.74 SceHid: consumer controls follow the keyboard's checks; with nothing paired Enumerate finds none
+    /// and Read knows no handle; the hint callbacks are kept. Before, the six were missing imports.</summary>
     [Fact]
     public void ConsumerControlsAnswerAsTheFirmware()
     {
-        _harness.Emu.Host.HidKeyboard = new HidKeyboard();   // a paired keyboard is no consumer control
         uint handles = _harness.Alloc(32);
         uint reports = _harness.Alloc(0x10 * 16);
         Assert.Equal(InvalidPointer, Call(Module, "sceHidConsumerControlEnumerate", 0u, 8));
@@ -180,6 +179,70 @@ public sealed class HidDeviceTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(0, Call(Module, "sceHidConsumerControlRegisterReadHintCallback", 5));
         Assert.Equal(0, Call(Module, "sceHidConsumerControlUnregisterEnumHintCallback", 5));
         Assert.Equal(0, Call(Module, "sceHidConsumerControlUnregisterReadHintCallback", 5));
+    }
+
+    private const ushort PlayPause = 0xCD, VolumeUp = 0xE9, VolumeDown = 0xEA, Mute = 0xE2, NextTrack = 0xB5;
+
+    /// <summary>
+    /// FW 3.74 SceHid keeps each application collection of a Bluetooth device as a device of its own (FUN_81000524:
+    /// up to eight per device): a keyboard's media keys (its consumer collection) are a consumer-control device next
+    /// to the keyboard. Its reports (0x10 bytes: four 16-bit consumer usages held, then the time) carry at most four
+    /// usages, in the order they were found, and drop the consumer page's reserved usages (FUN_81002218,
+    /// FUN_810016d0); each report once per reader, the read hint on each. Before, no consumer control was paired.
+    /// </summary>
+    [Fact]
+    public void APairedKeyboardsMediaKeysAreItsConsumerControl()
+    {
+        ThreadMgr threads = _harness.Module<ThreadMgr>();
+        _harness.OnGuest(_ =>
+        {
+            int enumHint = Call(threads, "sceKernelCreateCallback", "hid-cc-enum", 0u, SyntheticEntry, 0u);
+            int readHint = Call(threads, "sceKernelCreateCallback", "hid-cc-read", 0u, SyntheticEntry, 0u);
+            Assert.Equal(0, Call(Module, "sceHidConsumerControlRegisterEnumHintCallback", enumHint));
+            Assert.Equal(0, Call(Module, "sceHidConsumerControlRegisterReadHintCallback", readHint));
+
+            var keyboard = new HidKeyboard();
+            _harness.Emu.Host.HidKeyboard = keyboard;     // the keyboard (and its media keys) connects
+            Assert.Equal(1, Call(threads, "sceKernelGetCallbackCount", enumHint));
+            uint handles = _harness.Alloc(32);
+            Assert.Equal(1, Call(Module, "sceHidConsumerControlEnumerate", handles, 8));
+            int handle = (int)GuestMemory.R32(handles);
+            Assert.Equal(Hid.ConsumerControlHandle, handle);
+            uint reports = _harness.Alloc(Hid.ConsumerControlReportSize * 16);
+
+            keyboard.ConsumerControl.Key(PlayPause, true, 1000);
+            keyboard.ConsumerControl.Key(VolumeUp, true, 2000);
+            keyboard.ConsumerControl.Key(0x10, true, 2500);       // a reserved usage: dropped
+            keyboard.ConsumerControl.Key(0x29D, true, 2600);      // past the defined ones: dropped
+            keyboard.ConsumerControl.Key(PlayPause, false, 3000);
+            keyboard.ConsumerControl.Key(PlayPause, false, 3500); // released already: no report
+            keyboard.Key(UsageA, true, 3600);                     // a key of the keyboard is no consumer report
+            Assert.Equal(3, Call(threads, "sceKernelGetCallbackCount", readHint));
+            Assert.Equal(3, Call(Module, "sceHidConsumerControlRead", handle, reports, 16));
+            Assert.Equal((PlayPause, (ushort)0), (GuestMemory.Read<ushort>(reports), GuestMemory.Read<ushort>(reports + 2)));
+            Assert.Equal(1000ul, GuestMemory.Read<ulong>(reports + 8));
+            uint second = reports + Hid.ConsumerControlReportSize;
+            Assert.Equal((PlayPause, VolumeUp, (ushort)0), (GuestMemory.Read<ushort>(second), GuestMemory.Read<ushort>(second + 2), GuestMemory.Read<ushort>(second + 4)));
+            uint third = reports + 2 * Hid.ConsumerControlReportSize;
+            Assert.Equal((VolumeUp, (ushort)0), (GuestMemory.Read<ushort>(third), GuestMemory.Read<ushort>(third + 2)));
+            Assert.Equal(3000ul, GuestMemory.Read<ulong>(third + 8));
+            Assert.Equal(0, Call(Module, "sceHidConsumerControlRead", handle, reports, 16));
+
+            // five held: the report keeps the first four
+            keyboard.ConsumerControl.Key(VolumeDown, true, 4000);
+            keyboard.ConsumerControl.Key(Mute, true, 5000);
+            keyboard.ConsumerControl.Key(NextTrack, true, 6000);
+            keyboard.ConsumerControl.Key(PlayPause, true, 7000);
+            Assert.Equal(4, Call(Module, "sceHidConsumerControlRead", handle, reports, 16));
+            uint last = reports + 3 * Hid.ConsumerControlReportSize;
+            Assert.Equal((VolumeUp, VolumeDown, Mute, NextTrack),
+                (GuestMemory.Read<ushort>(last), GuestMemory.Read<ushort>(last + 2), GuestMemory.Read<ushort>(last + 4), GuestMemory.Read<ushort>(last + 6)));
+
+            _harness.Emu.Host.HidKeyboard = null;         // the keyboard disconnects: its media keys go with it
+            Assert.Equal(2, Call(threads, "sceKernelGetCallbackCount", enumHint));
+            Assert.Equal(0, Call(Module, "sceHidConsumerControlEnumerate", handles, 8));
+            Assert.Equal(NotDevice, Call(Module, "sceHidConsumerControlRead", handle, reports, 16));
+        });
     }
 
     /// <summary>A guest address for the callbacks' entry (they are counted, not run).</summary>
@@ -202,6 +265,14 @@ public sealed class HidDeviceTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(0x2A, HidUsages.FromAndroidKeyCode(67));   // KEYCODE_DEL = backspace
         Assert.Equal(0xE0, HidUsages.FromAndroidKeyCode(113));  // KEYCODE_CTRL_LEFT
         Assert.Equal(0, HidUsages.FromAndroidKeyCode(4));       // KEYCODE_BACK: no key of a keyboard
+        Assert.Equal(0xCD, HidUsages.ConsumerFromAndroidKeyCode(85));  // KEYCODE_MEDIA_PLAY_PAUSE: Play/Pause
+        Assert.Equal(0xE9, HidUsages.ConsumerFromAndroidKeyCode(24));  // KEYCODE_VOLUME_UP: Volume Increment
+        Assert.Equal(0, HidUsages.ConsumerFromAndroidKeyCode(29));     // KEYCODE_A: no media key
+        for (int keyCode = 0; keyCode < 300; keyCode++)
+        {
+            ushort usage = HidUsages.ConsumerFromAndroidKeyCode(keyCode);
+            Assert.True(usage == 0 || HidConsumerControl.IsKept(usage), $"key code {keyCode} maps to a usage SceHid drops");
+        }
     }
 
     /// <summary>The module's checks: a handle below 1, a NULL report list or a negative count, a handle of no device;

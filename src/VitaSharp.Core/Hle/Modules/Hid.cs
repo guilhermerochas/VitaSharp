@@ -275,6 +275,7 @@ public sealed partial class Hid : HleModule
         if (keyboardChanged)
         {
             NotifyHints(_keyboardEnumHints);
+            NotifyHints(_consumerEnumHints); // the keyboard's media keys come and go with it
         }
 
         if (mouseChanged)
@@ -301,6 +302,20 @@ public sealed partial class Hid : HleModule
                 }
             }
 
+            if (!ReferenceEquals(_hintConsumer, ConsumerControl))
+            {
+                if (_hintConsumer != null)
+                {
+                    _hintConsumer.ReportAdded -= OnConsumerReport;
+                }
+
+                _hintConsumer = ConsumerControl;
+                if (_hintConsumer != null)
+                {
+                    _hintConsumer.ReportAdded += OnConsumerReport;
+                }
+            }
+
             if (!ReferenceEquals(_hintMouse, Mouse))
             {
                 if (_hintMouse != null)
@@ -320,6 +335,8 @@ public sealed partial class Hid : HleModule
     private void OnKeyboardReport() => NotifyHints(_keyboardReadHints);
 
     private void OnMouseReport() => NotifyHints(_mouseReadHints);
+
+    private void OnConsumerReport() => NotifyHints(_consumerReadHints);
 
     /// <summary>Notifies the callbacks of one hint list (each runs at its thread's next callback check).</summary>
     private void NotifyHints(HashSet<int> hints)
@@ -347,16 +364,31 @@ public sealed partial class Hid : HleModule
     // FW 3.74 SceHid keeps consumer-control devices (media keys of a Bluetooth keyboard or remote) like the keyboards:
     // Enumerate (NULL list 0x803B0001, at most 8) copies the handles of the connected ones, Read checks the handle
     // (below 1: 0x803B0002; NULL reports or a negative count: 0x803B0001; no device of that handle: 0x803B0003) and
-    // copies at most 16 reports of 0x10 bytes, and the hint callbacks go into lists of their own. No consumer-control
-    // device is ever paired here (the host's keyboard is paired as a keyboard only), so Enumerate finds none and Read
-    // knows no handle. (The controller calls, 0x803B0004 in 3.74, are in FirmwareConstantReturns.cs.)
+    // copies at most 16 reports of 0x10 bytes (FUN_81001714, device type 3: { u16 usages[4], u64 time }), and the hint
+    // callbacks go into lists of their own. The paired keyboard's media keys are its consumer-control device
+    // (<see cref="HidKeyboard.ConsumerControl"/>): it is there while the keyboard is. (The controller calls,
+    // 0x803B0004 in 3.74, are in FirmwareConstantReturns.cs.)
 
-    /// <summary>The callbacks registered for consumer-control changes and reports (never notified: no device).</summary>
+    /// <summary>The handle of the paired keyboard's consumer-control device (numbered like the keyboards').</summary>
+    internal const int ConsumerControlHandle = 1;
+
+    internal const uint ConsumerControlReportSize = 0x10;
+
+    /// <summary>The callbacks registered for consumer-control changes and reports.</summary>
     [SnapshotMissing]
     private readonly HashSet<int> _consumerEnumHints = [], _consumerReadHints = [];
 
+    /// <summary>This process's position in the consumer-control reports.</summary>
+    [SnapshotMissing] // states of builds before it: nothing read
+    private long _consumerPosition;
+
+    [SnapshotIgnore]
+    private HidConsumerControl? _hintConsumer;
+
+    private HidConsumerControl? ConsumerControl => Keyboard?.ConsumerControl;
+
     [Hle]
-    int sceHidConsumerControlEnumerate(uint handles, int count) => Enumerate(handles, count, 0);
+    int sceHidConsumerControlEnumerate(uint handles, int count) => Enumerate(handles, count, ConsumerControl != null ? ConsumerControlHandle : 0);
 
     [Hle]
     int sceHidConsumerControlRead(int handle, uint reports, int count)
@@ -366,7 +398,26 @@ public sealed partial class Hid : HleModule
             return error;
         }
 
-        return ERR_NOT_DEVICE;
+        if (ConsumerControl is not { } consumer || handle != ConsumerControlHandle)
+        {
+            return ERR_NOT_DEVICE;
+        }
+
+        Span<HidConsumerReport> buffer = stackalloc HidConsumerReport[MaxReports];
+        int n = consumer.Read(ref _consumerPosition, buffer[..Math.Min(count, MaxReports)], consume: true);
+        for (int i = 0; i < n; i++)
+        {
+            uint p = reports + (uint)i * ConsumerControlReportSize;
+            HidConsumerReport r = buffer[i];
+            for (int k = 0; k < HidConsumerControl.MaxUsages; k++)
+            {
+                GuestMemory.Write(p + (uint)k * 2, r.Usage(k));
+            }
+
+            GuestMemory.Write(p + 8, r.TimestampUs);
+        }
+
+        return n;
     }
 
     [Hle] int sceHidConsumerControlRegisterEnumHintCallback(int callback) => RegisterHint(_consumerEnumHints, callback);

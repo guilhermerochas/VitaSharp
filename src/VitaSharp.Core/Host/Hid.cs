@@ -103,6 +103,9 @@ public sealed class HidKeyboard : HidReportRing<HidKeyboardReport>
     private readonly List<byte> _held = [];
     private byte _modifiers;
 
+    /// <summary>The keyboard's media keys (its consumer-control collection, which SceHid keeps as a device of its own).</summary>
+    public HidConsumerControl ConsumerControl { get; } = new();
+
     /// <summary>The usages of the modifier keys: 0xE0 left Ctrl .. 0xE7 right GUI (each its bit in the modifiers).</summary>
     public const byte FirstModifier = 0xE0, LastModifier = 0xE7;
 
@@ -196,6 +199,93 @@ public sealed class HidMouse : HidReportRing<HidMouseReport>
 
             _buttons = buttons;
             Add(new HidMouseReport(_buttons, 0, 0, 0, 0, timestampUs));
+        }
+    }
+}
+
+/// <summary>One consumer-control report (FW 3.74 SceHid, 0x10 bytes): up to four consumer-page usages held (USB HID
+/// page 0x0C, 16 bits each, 0 = none) and the guest time (microseconds).</summary>
+public readonly record struct HidConsumerReport(ulong Usages, ulong TimestampUs)
+{
+    /// <summary>Usage <paramref name="index"/> (0..3) of the controls held, 0 = none.</summary>
+    public ushort Usage(int index) => (ushort)(Usages >> (index * 16));
+}
+
+/// <summary>
+/// The media keys of the paired keyboard as SceHid's consumer-control device: each change of the controls held
+/// becomes a report. FW 3.74 SceHid (FUN_81002218, its report parser) keeps at most four usages per report, in the
+/// order it finds them, and only the ones the HID Usage Tables define for the consumer page: 0 and the reserved
+/// ranges (0x07..0x1F, 0x23..0x2F, 0x37..0x3F, 0x49..0x5F, 0x67..0x7F, 0x9F, 0xA5..0xAF, 0xCF..0xDF, 0xEB..0xEF,
+/// 0xF6..0xFF, 0x10E..0x14F, 0x156..0x15F, 0x16B..0x16F, 0x175..0x17F, 0x1BB, 0x1C8..0x1FF, 0x20A..0x219, 0x29D and
+/// up) are dropped (FUN_810016d0 for the upper ones).
+/// </summary>
+public sealed class HidConsumerControl : HidReportRing<HidConsumerReport>
+{
+    /// <summary>The usages one report carries at most.</summary>
+    public const int MaxUsages = 4;
+
+    private readonly List<ushort> _held = [];
+
+    /// <summary>Whether SceHid keeps <paramref name="usage"/> in a report (see the class).</summary>
+    public static bool IsKept(ushort usage)
+    {
+        return usage switch
+        {
+            0 => false,
+            >= 0x07 and <= 0x1F => false,
+            >= 0x23 and <= 0x2F => false,
+            >= 0x37 and <= 0x3F => false,
+            >= 0x49 and <= 0x5F => false,
+            >= 0x67 and <= 0x7F => false,
+            0x9F => false,
+            >= 0xA5 and <= 0xAF => false,
+            >= 0xCF and <= 0xDF => false,
+            >= 0xEB and <= 0xEF => false,
+            >= 0xF6 and <= 0xFF => false,
+            >= 0x10E and <= 0x14F => false,
+            >= 0x156 and <= 0x15F => false,
+            >= 0x16B and <= 0x16F => false,
+            >= 0x175 and <= 0x17F => false,
+            0x1BB => false,
+            >= 0x1C8 and <= 0x1FF => false,
+            >= 0x20A and <= 0x219 => false,
+            >= 0x29D => false,
+            _ => true,
+        };
+    }
+
+    /// <summary>A control went down (<paramref name="down"/>) or up at guest time <paramref name="timestampUs"/>.</summary>
+    public void Key(ushort usage, bool down, ulong timestampUs)
+    {
+        if (!IsKept(usage))
+        {
+            return;
+        }
+
+        lock (_held)
+        {
+            if (down)
+            {
+                if (_held.Contains(usage))
+                {
+                    return;
+                }
+
+                _held.Add(usage);
+            }
+            else if (!_held.Remove(usage))
+            {
+                return;
+            }
+
+            ulong usages = 0;
+            int count = Math.Min(_held.Count, MaxUsages);
+            for (int i = 0; i < count; i++)
+            {
+                usages |= (ulong)_held[i] << (i * 16);
+            }
+
+            Add(new HidConsumerReport(usages, timestampUs));
         }
     }
 }

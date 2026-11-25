@@ -2456,8 +2456,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   campo); (3) o magnetômetro de um controle no PC (o SDL não expõe um).
 - [ ] [P3][M] Teclado e mouse Bluetooth, o que falta (o feito está em "Corrigido, falta o usuário testar"): conferir
   no Sistema do Vita que Configurações > Bluetooth lista os dois dispositivos (os registros do `SceBt` seguem o 3.74,
-  mas a tela não foi aberta); uma fonte do host para os controles de consumo (teclas de mídia de um teclado), hoje
-  nenhum é pareado.
+  mas a tela não foi aberta); as teclas de mídia no PC (a biblioteca de janela, GLFW pelo Silk.NET, não as informa;
+  precisaria de outra fonte de entrada do sistema).
 - [ ] [P3][G] Processador de mídia Venezia (núcleos MeP + IVC2) para código MeP que não é do firmware (plugin
   VVNZRunner e o homebrew sobre ele; `docs/notes/hardware-coverage.md`): o `vnzimg.skprx` sai do `self2elf` em claro,
   sem chave. Primeira entrega: interpretador do núcleo MeP-c5 numa thread de guest com programa sintético no teste
@@ -3517,6 +3517,18 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   (o recurso não existe mais e a tabela responde linha a linha como o texto). Testar: abrir um jogo e o sistema; os
   nomes das funções no log (importações, HLE que falta) saem como antes.
 
+- [ ] (25/11/2026, falta testar) [P3][P] Teclas de mídia do teclado Bluetooth como controle de consumo (fix/small4):
+  no 3.74 o SceHid guarda cada coleção de aplicação de um dispositivo Bluetooth como um dispositivo próprio (até 8 por
+  aparelho, FUN_81000524), então as teclas de mídia de um teclado são um controle de consumo ao lado do teclado; o
+  relatório (0x10 bytes) tem até quatro usos da página de consumo (16 bits cada, na ordem achada) e o tempo, sem os
+  usos reservados da tabela HID (FUN_81002218, FUN_810016d0). Feito: `HidKeyboard.ConsumerControl`,
+  `sceHidConsumerControlEnumerate/Read` com o formato e os callbacks de dica (conexão junto com o teclado, leitura a
+  cada relatório); no Android as teclas de mídia do teclado (tocar/pausar, faixas, volume, mudo...) vão para ele e
+  continuam indo para o celular. Antes nenhum controle de consumo era pareado. Teste:
+  `HidDeviceTests.APairedKeyboardsMediaKeysAreItsConsumerControl` (falha sem a mudança). Testar: Android, com
+  "Teclado e mouse Bluetooth" ligado e um teclado com teclas de mídia, um app ou jogo que leia o controle de consumo
+  (`sceHidConsumerControlRead`) reage a tocar/pausar e às faixas; as teclas de volume continuam mudando o volume do
+  celular.
 - [ ] (24/11/2026, falta testar) [P3][M] Teclado e mouse Bluetooth (fix/adr4; `docs/notes/hardware-coverage.md`): no
   3.74 o SceHid guarda até 8 teclados e 8 mouses; `sceHid{Keyboard,Mouse}Enumerate` copia os handles dos conectados
   (lista NULL 0x803B0001, no máximo 8), `Read`/`Peek` conferem o handle (< 1: 0x803B0002; lista NULL ou contagem

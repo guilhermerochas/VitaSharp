@@ -489,6 +489,13 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
             toHid = true;
         }
 
+        // its media keys go to its consumer-control device, and on to the phone too (the volume keys keep working)
+        if (_session?.HidKeyboard is { } mediaKeyboard && e.RepeatCount == 0
+            && VitaSharp.Core.Host.HidUsages.ConsumerFromAndroidKeyCode((int)keyCode) is var consumerUsage and not 0)
+        {
+            mediaKeyboard.ConsumerControl.Key(consumerUsage, down, VitaSharp.Core.Hle.Modules.Hid.NowUs);
+        }
+
         var action = _keyboard.OnKey((int)keyCode, down, e.RepeatCount > 0);
         if ((action & KeyboardKeyAction.Pause) != 0)
             OpenMenu();
