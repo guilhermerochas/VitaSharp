@@ -4720,9 +4720,26 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   stalled 98 ms`, 4 shaders e 2 pipelines novos), não de IO: a thread `main` esperou 0,0 s de IO, e a espera
   modelada do cartão (7 MB/s) da thread de streaming `Gear::AsynchGeneric` entrava no `fileIo` do ledger e virava a
   "causa" de todo quadro. Feito: o `fileIo` conta só a leitura no host, e o relatório da captura mostra o custo do
-  gravador por quadro e avisa quando ele passa de 4 ms. Falta: (1) baratear o gravador do dump (21 ms/quadro: a
-  codificação dos comandos e dos blocos de uniforms, ~11 MB/quadro crus, no GPU worker; levar para outra thread ou
-  reduzir as cópias/alocações por draw); (2) feito (fix/io1, 22/11/2026), ver "Corrigido, falta o usuário testar".
+  gravador por quadro e avisa quando ele passa de 4 ms. (1) Feito em parte (perf/ac3fps, 25/11/2026): o gravador
+  alocava um array novo por bloco de uniforms, o layout split de cada draw e o buffer de saída do compressor por chunk
+  (~17 MB/quadro de lixo, 60 gen2 em 20 s); agora reaproveita os arrays dos blocos que saem da janela (por tamanho),
+  um scratch do layout, um buffer de chunk do tamanho certo e os buffers do Brotli, e grava com qualidade 2 em vez de
+  3 (benchmark `GpuDumpCompressBenchmarks`: 2,4x menos CPU, arquivo do mesmo tamanho). Medido headless gravando os
+  quadros 600-1200 (2 rodadas cada): gravador 19,2 -> 7,3 ms/quadro no GPU worker, fps ~27,3 -> ~28,7, alocação
+  17,6 -> 3,9-4,6 MB/quadro, pausa de GC 8,5% -> 2,7%. A fila de chunks guarda no máximo compressores + 2 (era 16
+  chunks de buffers de 33-64 MB: com o worker mais rápido ela enchia e o processo ia de 2,1 a 3,4-4,0 GB); quando
+  os compressores não acompanham, o GPU worker espera por eles (o dump fica completo; nada é descartado) e o log do
+  dump mostra o máximo guardado ("at most N MB of chunks buffered", ~280 MB). Working set no fim gravando 2,15-2,25
+  GB (antes 2,06-2,07). Testar: "Gravar tudo" no AC III em gameplay; o relatório da captura deve mostrar o "dump
+  recorder" bem abaixo de 19 ms/quadro e o fps da gravação perto de 30. Falta: a compressão (2 threads, ~66-71 ms de
+  CPU por quadro) é o gargalo que sobra: o worker espera 3,6-9,3 ms/quadro por ela. Os bytes crus não caem com
+  deltas melhores: os blocos de uniforms do AC III são slots de array de 16-33 KB (16384 B x 11562 nos 34 quadros do
+  dump de 23/11) e 58% das palavras de 8 bytes mudam até contra o melhor dos 64 blocos anteriores do mesmo programa
+  (66% contra o anterior, 73% contra o mesmo draw do quadro anterior; 18,5% de palavras zero). Delta contra o mesmo
+  draw do quadro anterior foi medido e descartado: 332 -> 315 MB de uniforms (-5%, -3% dos registros), pago com duas
+  comparações por bloco no GPU worker. Próximo: gravar só os bytes de cada slot que o shader pode ler (ou que o guest
+  escreveu para o draw), ou mais um compressor quando a CPU deixar.
+  (2) feito (fix/io1, 22/11/2026), ver "Corrigido, falta o usuário testar".
 - [x] (18/11/2026, usuário: corrigido; reabre se aparecer de novo) [P1][M] PSVitaAlive (PSVAS1178, homebrew vita2d), bug gráfico no teclado de busca (usuário, 17/11/2026; captura
   `captures/PSVAS1178_20261117_215911_tudo`, 41 achados [flash]): em quadros isolados faltam as teclas e parte do
   texto ("9/12" em vez de "9/128") e triângulos saem do canto superior esquerdo. Causa (replay do gpu.vsgd, quadro

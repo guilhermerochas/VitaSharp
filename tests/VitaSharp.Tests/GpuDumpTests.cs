@@ -414,6 +414,72 @@ public sealed class GpuDumpTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(recorded.Count, lookahead.Prefetched);
     }
 
+    /// <summary>
+    /// When the compressors fall behind the GPU worker, the recorder holds a bounded amount of chunks: the worker waits
+    /// for them once <see cref="GpuDumpRecorder.PendingChunks"/> wait, and the dump still has every draw (records are
+    /// never dropped: a replay needs all of them). With 16 pending chunks of 64 MB buffers a fast worker grew AC III
+    /// Liberation's process from 2.1 to 3.4-4.0 GB while it recorded. Here a compressor held back by the test plays a
+    /// slow one, with small chunks.
+    /// </summary>
+    [Fact]
+    public async Task ARecorderWhoseCompressorsFallBehindHoldsBoundedMemoryAndKeepsEveryDraw()
+    {
+        const int ChunkBytes = 16 << 10;
+        const int Draws = 400;
+        uint buf = fixture.Memory.Alloc(Draws * 0x1000, "gpudump bounded test");
+        GuestMemory.Fill(buf, 0x33, Draws * 0x1000);
+        using var queue = new GpuQueue();
+        queue.Backend = new FakeBackend();
+        Directory.CreateDirectory(_dir);
+        string path = Path.Combine(_dir, "bounded.vsgd");
+        using var compressors = new ManualResetEventSlim(false);
+        var rec = GpuDumpRecorder.Start(new GpuDumpOptions
+        {
+            Path = path,
+            MaxFrames = 1,
+            ChunkBytes = ChunkBytes,
+            BeforeCompress = () => compressors.Wait(),
+        });
+        Assert.NotNull(rec);
+        try
+        {
+            var present = new PresentCommand { Frame = new DisplayFrame(0x60000000, 960, 960, 544, 0) };
+            queue.Submit(present); // the recording starts after it
+            for (int i = 0; i < Draws; i++)
+            {
+                DrawCommand d = Draw([1, 2, 3], [], buf + (uint)(i * 0x1000));
+                d.IndexCount = 0x1000; // a new page per draw: ~4 KB of records each, a chunk every 4 draws
+                queue.Submit(d);
+            }
+            queue.Submit(new PresentCommand { Frame = present.Frame });
+
+            // the worker stops at the bound instead of buffering the ~100 chunks
+            Assert.True(SpinWait.SpinUntil(() => rec!.WaitingForWriter, TimeSpan.FromSeconds(30)), "the GPU worker never waited for the compressors");
+            long pendingLimit = (GpuDumpRecorder.PendingChunks + 2) * (GpuDumpRecorder.BufferBytesFor(ChunkBytes) + 16L);
+            Assert.True(rec!.BufferedBytes <= pendingLimit, $"{rec.BufferedBytes} bytes of chunks held while the compressors wait (limit {pendingLimit})");
+        }
+        finally
+        {
+            compressors.Set();
+        }
+
+        GpuDumpResult result = await rec.Completion.WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Null(result.Error);
+        Assert.Equal(Draws, result.Draws);
+        Assert.True(result.PeakBufferedBytes <= GpuDumpRecorder.MaxBufferedBytes(ChunkBytes),
+            $"at most {result.PeakBufferedBytes} bytes buffered (limit {GpuDumpRecorder.MaxBufferedBytes(ChunkBytes)})");
+        int draws = 0;
+        using var r = new GpuDumpReader(path);
+        while (r.Next())
+        {
+            if (r.Kind == GpuDumpRecord.Draw)
+            {
+                draws++;
+            }
+        }
+        Assert.Equal(Draws, draws);
+    }
+
     [Fact]
     public async Task RecorderStoresWhatTheBackendReadAndOnlyChangesLater()
     {
@@ -540,5 +606,151 @@ public sealed class GpuDumpTests(GuestMemoryFixture fixture) : IDisposable
         using var r = new GpuDumpReader(path);
         Assert.Equal("4", r.Header["first-present"]);
         Assert.Equal("LATE1", r.Header["title-id"]);
+    }
+
+    /// <summary>The uniform block window of <see cref="GpuDumpCodec"/> (4096 blocks), as the writer and the reader keep it.</summary>
+    private const int UniformWindow = 4096;
+
+    private static readonly GxmVertexProgram s_rareVertexProgram = new()
+    {
+        Handle = 0x9ABC,
+        Info = Info(false, 3),
+        Attributes = s_vertexProgram.Attributes,
+        Streams = s_vertexProgram.Streams,
+    };
+
+    /// <summary>
+    /// The recorder's uniform blocks round-trip at the edges of the window, now that the writer copies each new block
+    /// into the array of the block leaving the window: a program whose previous block is exactly a window back gets a
+    /// delta against it (the array the new block then takes), repeats of blocks still in the window are references,
+    /// and a block that left the window is written again. Every draw read back has the bytes that were recorded.
+    /// </summary>
+    [Fact]
+    public void UniformBlocksRoundTripAcrossTheWindowEdge()
+    {
+        var rnd = new Random(11);
+        byte[] Bytes(int n)
+        {
+            byte[] b = new byte[n];
+            rnd.NextBytes(b);
+            return b;
+        }
+
+        byte[] rare = Bytes(512);
+        byte[] rareAgain = (byte[])rare.Clone();
+        rareAgain[40] ^= 0x5A; // a small change: a delta against the block a window back
+        var blocks = new List<(GxmVertexProgram Program, byte[] Uniforms)> { (s_rareVertexProgram, rare) };
+        byte[]? previous = null;
+        for (int i = 1; i < UniformWindow; i++)
+        {
+            // one new block per draw in between (deltas against the previous one, or all new)
+            byte[] b = previous != null && i % 3 != 0 ? (byte[])previous.Clone() : Bytes(512);
+            b[8 + rnd.Next(504)] ^= 0xFF;
+            BitConverter.TryWriteBytes(b.AsSpan(0, 4), i); // each block differs from every other one
+            blocks.Add((s_vertexProgram, b));
+            previous = b;
+        }
+        blocks.Add((s_rareVertexProgram, rareAgain)); // its base is block 0, exactly a window back
+        blocks.Add((s_vertexProgram, blocks[2].Uniforms)); // still in the window: a reference
+        blocks.Add((s_vertexProgram, rare)); // out of the window: written again
+        blocks.Add((s_vertexProgram, previous!)); // in the window: a reference
+
+        var codec = new GpuDumpCodec();
+        var body = new DumpBuffer(1 << 22);
+        var defs = new DumpBuffer();
+        var rec = new DumpBuffer();
+        foreach ((GxmVertexProgram program, byte[] uniforms) in blocks)
+        {
+            DrawCommand d = Draw(uniforms, [], 0x81400000);
+            d.VertexProgram = program;
+            defs.Clear();
+            rec.Clear();
+            Assert.True(codec.Write(d, defs, rec));
+            body.Append(defs);
+            body.Append(rec);
+        }
+        Assert.Equal(2L, codec.UniformStats.Refs);
+
+        var stream = new MemoryStream();
+        GpuDumpCodec.WriteFileHeader(stream, new GpuDumpHeader());
+        byte[]? scratch = null;
+        GpuDumpCodec.WriteChunk(stream, GpuDumpFormat.ChunkRecords, body.Span, 1, ref scratch);
+        stream.Position = 0;
+        using var r = new GpuDumpReader(stream);
+        int index = 0;
+        while (r.Next())
+        {
+            var got = (DrawCommand)r.Command!;
+            Assert.True(blocks[index].Uniforms.AsSpan().SequenceEqual(got.VertexUniformSpan), $"draw {index}: other uniform bytes");
+            Assert.Equal(blocks[index].Program.Handle, got.VertexProgram.Handle);
+            index++;
+        }
+        Assert.Equal(blocks.Count, index);
+    }
+
+    /// <summary>
+    /// The recorder's compressor threads (<see cref="GpuDumpCodec.EncodeChunk(byte, ReadOnlySpan{byte}, int, ref byte[])"/>)
+    /// reuse their ~33 MB output buffer between chunks: a chunk costs its own array and nothing more (a new output
+    /// buffer and a growing stream per chunk were ~12 MB/frame of garbage while AC III Liberation recorded). The chunk
+    /// still reads back as written.
+    /// </summary>
+    [Fact]
+    public void EncodingAChunkAllocatesOnlyTheChunk()
+    {
+        byte[] raw = new byte[4 << 20];
+        for (int i = 0; i < raw.Length; i += 64)
+        {
+            raw[i] = (byte)(i >> 6); // compressible, as records are
+        }
+
+        byte[]? output = null;
+        GpuDumpCodec.EncodeChunk(GpuDumpFormat.ChunkRecords, raw, 2, ref output); // the first chunk sizes the output buffer
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        byte[] chunk = GpuDumpCodec.EncodeChunk(GpuDumpFormat.ChunkRecords, raw, 2, ref output);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.True(allocated < chunk.Length + 4096, $"{allocated} bytes allocated for a chunk of {chunk.Length} bytes ({raw.Length} raw)");
+
+        byte[] buffer = [];
+        byte[]? scratch = null;
+        Assert.True(GpuDumpCodec.ReadChunk(new MemoryStream(chunk), ref buffer, ref scratch, out byte type, out int length));
+        Assert.Equal(GpuDumpFormat.ChunkRecords, type);
+        Assert.True(raw.AsSpan().SequenceEqual(buffer.AsSpan(0, length)));
+    }
+
+    /// <summary>
+    /// Recording allocates nothing per uniform block once the window is full: the recorder runs on the GPU worker,
+    /// where AC III Liberation's ~14 MB of uniform blocks per frame used to be a new array each (about 15 MB/frame of
+    /// garbage while a capture recorded, with gen2 collections that pause the guest threads too).
+    /// </summary>
+    [Fact]
+    public void EncodingUniformBlocksAllocatesNothingOnceTheWindowIsFull()
+    {
+        var rnd = new Random(12);
+        var codec = new GpuDumpCodec();
+        var body = new DumpBuffer(64 << 20);
+        var defs = new DumpBuffer();
+        var rec = new DumpBuffer(1 << 16);
+        byte[] uniforms = new byte[4096];
+        byte[] fragment = new byte[256];
+        DrawCommand d = Draw(uniforms, fragment, 0x81400000);
+        void WriteDraws(int count)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                rnd.NextBytes(uniforms); // every block new: inline, a new entry in the window
+                fragment[i % fragment.Length]++; // a small change: a delta
+                defs.Clear();
+                rec.Clear();
+                codec.Write(d, defs, rec);
+                body.Append(rec);
+            }
+        }
+
+        WriteDraws(UniformWindow); // fills the window (2 blocks per draw)
+        body.Clear();
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        WriteDraws(1000);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.True(allocated < 4096, $"{allocated} bytes allocated for 1000 draws (2000 uniform blocks, {1000 * (4096 + 256)} bytes of them)");
     }
 }

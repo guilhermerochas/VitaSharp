@@ -24,7 +24,15 @@ public sealed class GpuDumpOptions
     /// <summary>Safety limit on the uncompressed record bytes (stops at the next present once exceeded).</summary>
     public long MaxRawBytes = 8L << 30;
     /// <summary>Brotli quality of the chunks (0 = stored, 1-11).</summary>
-    public int Quality = 3; // q5 compressed at ~30 MB/s and stalled the GPU worker; q3 ~150 MB/s, +7% size (replay-gpu --recompress shrinks it later)
+    // Brotli quality of the chunks while recording (replay-gpu --recompress shrinks a dump later, as RenderDoc keeps a
+    // fast codec while capturing and a strong one for saving). q5 compressed at ~30 MB/s and stalled the GPU worker.
+    // GpuDumpCompressBenchmarks on AC III Liberation's records (32 MB chunk): q3 327 ms -> 10.2 MB, q2 136 ms -> 10.0
+    // MB, q1 117 ms -> 11.9 MB; at ~16 MB of records per frame q3 took ~165 ms of CPU per recorded frame, q2 ~70.
+    public int Quality = 2;
+    /// <summary>Uncompressed record bytes per chunk (tests record with small chunks).</summary>
+    internal int ChunkBytes { get; init; } = 32 << 20;
+    /// <summary>Tests: runs on a compressor before each chunk (a compressor slower than the worker).</summary>
+    internal Action? BeforeCompress { get; init; }
     /// <summary>Called once the file is complete (on the writer thread), also when recording failed.</summary>
     public Action<GpuDumpResult>? Finished;
     /// <summary>Called on the GPU worker when recording actually starts.</summary>
@@ -34,7 +42,7 @@ public sealed class GpuDumpOptions
 public sealed class GpuDumpResult
 {
     public string Path = "";
-    public long Frames, Commands, Draws, MemoryRecords, MemoryBytes, RawBytes, FileBytes, ShadowBytes, TapBytes, ComparedBytes;
+    public long Frames, Commands, Draws, MemoryRecords, MemoryBytes, RawBytes, FileBytes, ShadowBytes, TapBytes, ComparedBytes, PeakBufferedBytes;
     public (long Inline, long Refs, long Deltas, long RawBytes, long StoredBytes) Uniforms;
     public long FirstPresent, LastPresent;
     public double Seconds, WorkerMs, TapMs, WriterMs, WriterWaitMs;
@@ -45,7 +53,7 @@ public sealed class GpuDumpResult
         $"({RawBytes / 1048576.0:F1} MB raw, {MemoryBytes / 1048576.0:F1} MB of guest memory in {MemoryRecords} updates, {Draws} draws, {Commands} commands), " +
         $"{(Seconds > 0 ? FileBytes / 1048576.0 / Seconds : 0):F1} MB/s; recorder cost {WorkerMs / Math.Max(1, Frames):F2} ms/frame on the GPU worker ({TapMs / Math.Max(1, Frames):F2} in memory reads) " +
         $"(+{WriterWaitMs / Math.Max(1, Frames):F2} ms/frame waiting for the writer), " +
-        $"{WriterMs / Math.Max(1, Frames):F2} ms/frame compressing (writer thread), {ShadowBytes / 1048576.0:F0} MB shadow memory; " +
+        $"{WriterMs / Math.Max(1, Frames):F2} ms/frame compressing (writer thread), {ShadowBytes / 1048576.0:F0} MB shadow memory, at most {PeakBufferedBytes / 1048576.0:F0} MB of chunks buffered; " +
         $"backend reads {TapBytes / 1048576.0 / Math.Max(1, Frames):F1} MB/frame, compared {ComparedBytes / 1048576.0 / Math.Max(1, Frames):F1} MB/frame; " +
         $"uniform blocks {Uniforms.Inline} inline, {Uniforms.Refs} repeated, {Uniforms.Deltas} deltas ({Uniforms.RawBytes / 1048576.0:F0} MB -> {Uniforms.StoredBytes / 1048576.0:F0} MB)";
 }
@@ -75,11 +83,13 @@ public sealed unsafe class GpuDumpRecorder
     private static int s_tapThread;
 
     private const int PageShift = 12, PageSize = 1 << PageShift;
-    private const int ChunkFlushBytes = 32 << 20;
 
     private readonly GpuDumpOptions _options;
     private readonly GpuDumpCodec _codec = new();
-    private DumpBuffer _main = new(1 << 20);
+    /// <summary>A records buffer holds a whole chunk without growing (growing from 1 MB copied ~64 MB per chunk).</summary>
+    internal static int BufferBytesFor(int chunkBytes) => chunkBytes + Math.Max(chunkBytes / 32, 1 << 12);
+    private int BufferBytes => BufferBytesFor(_options.ChunkBytes);
+    private DumpBuffer _main = new(1 << 12); // the chunk-sized buffer is taken when the recording starts
     private readonly DumpBuffer _cmd = new(1 << 12), _defs = new(1 << 12);
     private byte[]?[]? _shadow;
     private uint[]? _verified;
@@ -88,13 +98,60 @@ public sealed unsafe class GpuDumpRecorder
     private int _state; // 0 armed, 1 recording, 2 finished
     private readonly GpuDumpResult _result = new();
     private long _startTicks, _workerTicks, _waitTicks, _tapTicks;
-    /// <summary>Chunks being compressed (in file order): up to <see cref="s_compressors"/> at once on the thread pool,
-    /// the writer thread writes them in order.</summary>
-    private readonly BlockingCollection<Task<byte[]>> _out = new(boundedCapacity: 16);
-    private static readonly int s_compressors = Math.Clamp(Environment.ProcessorCount / 4, 1, 4);
-    private readonly SemaphoreSlim _compressSlots = new(s_compressors);
+    /// <summary>Chunks being compressed (in file order): up to <see cref="Compressors"/> at once on the thread pool,
+    /// the writer thread writes them in order. At most <see cref="PendingChunks"/> wait; then the GPU worker waits.</summary>
+    private readonly BlockingCollection<Task<byte[]>> _out = new(boundedCapacity: PendingChunks);
+    internal static int Compressors { get; } = Math.Clamp(Environment.ProcessorCount / 4, 1, 4);
+    /// <summary>Chunks handed over and not written yet before the GPU worker waits: one per compressor plus two, so
+    /// the compressors always have the next chunk while the writer writes. It was 16 (~1 GB of 64 MB buffers): with
+    /// a faster worker the queue filled and AC III Liberation's process grew from 2.1 to 3.4-4.0 GB while recording.</summary>
+    internal static int PendingChunks { get; } = Compressors + 2;
+    /// <summary>Records buffers the compressors give back for the worker's next chunks (more are dropped).</summary>
+    internal const int MaxSpares = 2;
+    private readonly SemaphoreSlim _compressSlots = new(Compressors);
     private long _compressTicks;
     private readonly ConcurrentBag<byte[]> _spare = new();
+    /// <summary>The compressors' output buffers: one per compressor at most (each takes one while it runs).</summary>
+    private readonly ConcurrentBag<byte[]> _compressScratch = new();
+    private long _buffered, _peakBuffered;
+    private volatile bool _waitingForWriter;
+
+    /// <summary>
+    /// The most the recorder holds besides the worker's own records buffer and the shadow memory: the chunks handed over
+    /// and not written (<see cref="PendingChunks"/>, one more blocked in the hand-over and one being written; each a
+    /// records buffer or its compressed chunk), the spare buffers and the compressors' output buffers. Whatever the
+    /// compressors' speed: when they fall behind, the GPU worker waits for them (the dump stays complete, since a
+    /// replay needs every record; the game runs slower while it records) instead of buffering more.
+    /// </summary>
+    internal static long MaxBufferedBytes(int chunkBytes)
+    {
+        long buffer = BufferBytesFor(chunkBytes);
+        long compressed = System.IO.Compression.BrotliEncoder.GetMaxCompressedLength((int)buffer);
+        return (PendingChunks + 2) * (buffer + 16) + MaxSpares * buffer + Compressors * Math.Max(compressed, 1 << 16);
+    }
+
+    /// <summary>Bytes the recorder holds now besides the worker's records buffer and the shadow memory (see
+    /// <see cref="MaxBufferedBytes"/>), and the most it held during this recording.</summary>
+    internal long BufferedBytes => Interlocked.Read(ref _buffered);
+    internal long PeakBufferedBytes => Interlocked.Read(ref _peakBuffered);
+    /// <summary>The GPU worker waits for the compressors and the writer (tests).</summary>
+    internal bool WaitingForWriter => _waitingForWriter;
+
+    private void Buffered(long delta)
+    {
+        long now = Interlocked.Add(ref _buffered, delta);
+        long peak = Interlocked.Read(ref _peakBuffered);
+        while (now > peak)
+        {
+            long seen = Interlocked.CompareExchange(ref _peakBuffered, now, peak);
+            if (seen == peak)
+            {
+                break;
+            }
+
+            peak = seen;
+        }
+    }
     private Thread? _writer;
     private FileStream? _file;
     private readonly TaskCompletionSource<GpuDumpResult> _done = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -216,7 +273,7 @@ public sealed unsafe class GpuDumpRecorder
                 return;
             }
         }
-        else if (_main.Length > ChunkFlushBytes)
+        else if (_main.Length > _options.ChunkBytes)
         {
             Flush();
         }
@@ -298,6 +355,7 @@ public sealed unsafe class GpuDumpRecorder
             _options.Finished?.Invoke(_result);
             return;
         }
+        _main = new DumpBuffer(BufferBytes);
         try
         {
             if (backend?.ExportDumpState() is { } state)
@@ -477,7 +535,7 @@ public sealed unsafe class GpuDumpRecorder
 
     // =========================================================== output
 
-    private void Flush()
+    private void Flush(bool last = false)
     {
         if (_main.Length == 0)
         {
@@ -487,10 +545,32 @@ public sealed unsafe class GpuDumpRecorder
         _result.RawBytes += _main.Length;
         byte[] data = _main.Buffer;
         int len = _main.Length;
-        // hand the buffer over to the writer and continue in a spare one (the writer gives buffers back)
-        _main = new DumpBuffer(_spare.TryTake(out byte[]? b) ? b : new byte[1 << 20]);
+        Buffered(data.Length); // leaves the worker: buffered until its compressor gives it back or drops it
+        // hand the buffer over to the writer and continue in a spare one (the compressors give buffers back)
+        if (last)
+        {
+            _main = new DumpBuffer(1 << 12);
+        }
+        else if (_spare.TryTake(out byte[]? spare))
+        {
+            Buffered(-spare.Length);
+            _main = new DumpBuffer(spare);
+        }
+        else
+        {
+            _main = new DumpBuffer(BufferBytes);
+        }
+
         long w0 = Stopwatch.GetTimestamp();
-        _out.Add(Compress(GpuDumpFormat.ChunkRecords, data, len, recycle: true)); // blocks when the writer is 16 chunks behind
+        Task<byte[]> chunk = Compress(GpuDumpFormat.ChunkRecords, data, len, recycle: true);
+        if (!_out.TryAdd(chunk))
+        {
+            // the compressors and the writer are PendingChunks chunks behind: the GPU worker waits for them
+            _waitingForWriter = true;
+            _out.Add(chunk);
+            _waitingForWriter = false;
+        }
+
         long waited = Stopwatch.GetTimestamp() - w0;
         _waitTicks += waited;
         _workerTicks -= waited; // reported separately
@@ -510,7 +590,7 @@ public sealed unsafe class GpuDumpRecorder
             _main.Append(_cmd);
             _cmdPending = false;
         }
-        Flush();
+        Flush(last: true);
         _result.Seconds = (Stopwatch.GetTimestamp() - _startTicks) / (double)Stopwatch.Frequency;
         _result.WorkerMs = _workerTicks * 1000.0 / Stopwatch.Frequency;
         _result.TapMs = _tapTicks * 1000.0 / Stopwatch.Frequency;
@@ -544,15 +624,24 @@ public sealed unsafe class GpuDumpRecorder
 
     private Task<byte[]> Compress(byte type, byte[] data, int len, bool recycle) => Task.Run(() =>
     {
-        _compressSlots.Wait(); // at most Compressors chunks at once (a blocked pool thread is fine: 16 chunks at most)
+        _compressSlots.Wait(); // at most Compressors chunks at once (a blocked pool thread is fine: PendingChunks + 2 at most)
         try
         {
+            _options.BeforeCompress?.Invoke();
             long t0 = Stopwatch.GetTimestamp();
-            byte[] chunk = GpuDumpCodec.EncodeChunk(type, data.AsSpan(0, len), _options.Quality);
+            byte[]? scratch = _compressScratch.TryTake(out byte[]? kept) ? kept : null;
+            long scratchBefore = scratch?.Length ?? 0;
+            byte[] chunk = GpuDumpCodec.EncodeChunk(type, data.AsSpan(0, len), _options.Quality, ref scratch);
+            Buffered(scratch.Length - scratchBefore + chunk.Length);
+            _compressScratch.Add(scratch);
             Interlocked.Add(ref _compressTicks, Stopwatch.GetTimestamp() - t0);
-            if (recycle && data.Length <= 64 << 20 && _spare.Count < 4)
+            if (recycle && data.Length == BufferBytes && _spare.Count < MaxSpares)
             {
-                _spare.Add(data);
+                _spare.Add(data); // stays buffered, as a spare
+            }
+            else if (recycle)
+            {
+                Buffered(-data.Length);
             }
 
             return chunk;
@@ -569,7 +658,9 @@ public sealed unsafe class GpuDumpRecorder
         {
             foreach (Task<byte[]> chunk in _out.GetConsumingEnumerable())
             {
-                _file!.Write(chunk.GetAwaiter().GetResult());
+                byte[] bytes = chunk.GetAwaiter().GetResult();
+                _file!.Write(bytes);
+                Buffered(-bytes.Length);
             }
 
             _file!.Flush();
@@ -589,6 +680,10 @@ public sealed unsafe class GpuDumpRecorder
             _file?.Dispose();
         }
         _result.WriterMs = Interlocked.Read(ref _compressTicks) * 1000.0 / Stopwatch.Frequency;
+        _result.PeakBufferedBytes = PeakBufferedBytes;
+        // the buffers go with the recording (the recorder stays referenced by its callers)
+        _spare.Clear();
+        _compressScratch.Clear();
         Log.Info($"[gpudump] {(_result.Error != null ? "FAILED (" + _result.Error + "): " : "saved")} {_options.Path}: {_result}");
         _done.TrySetResult(_result);
         try

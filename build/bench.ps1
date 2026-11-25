@@ -7,8 +7,9 @@
 #   -Filter: BenchmarkDotNet's globs over Type.Method, comma-separated (default '*'; -Filter list prints the
 #     benchmarks and exits).
 #   -Name: result file name (default bench_<date>_<time>); -Out: results folder (default <temp>/vitasharp-bench).
-#   -Dump / -At9 / -Corpus: fixtures with game data (never in git): a GPU dump for GpuWorkerBenchmarks and
-#     ShaderTranslationBenchmarks, an .at9 file for Atrac9Benchmarks, a block corpus for CpuTranslatorBenchmarks.
+#   -Dump / -At9 / -Corpus: fixtures with game data (never in git): a GPU dump for GpuWorkerBenchmarks,
+#     ShaderTranslationBenchmarks and the GPU dump recorder (GpuDumpRecorderBenchmarks, GpuDumpCompressBenchmarks),
+#     an .at9 file for Atrac9Benchmarks, a block corpus for CpuTranslatorBenchmarks.
 #   -Variants: GpuWorkerBenchmarks runs 'base' and each '|'-separated set of switches (A/B on the same build).
 #   -Affinity: CPU mask of the benchmark processes (default 15 = the first four logical CPUs).
 #   -Compare: after the run, a table of this run against an earlier result file (ratio new/base per benchmark).
