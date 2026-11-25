@@ -93,6 +93,11 @@ public sealed partial class IoFileMgr : HleModule
             return walk;
         }
 
+        if ((flags & (O_WRONLY | O_CREAT | O_TRUNC | O_APPEND)) != 0 && IsReadOnlyDevice(path))
+        {
+            return IO_EROFS;
+        }
+
         if (Emu.IsShell) NoteShellLiveArea(path);
         var host = HostPath(path, (flags & O_WRONLY) != 0);
         if (host == null) return SceError.IO_ENOENT;
@@ -299,6 +304,11 @@ int fd, long offset, int whence)
             return walk;
         }
 
+        if (IsReadOnlyDevice(path))
+        {
+            return IO_EROFS;
+        }
+
         var host = HostPath(path, true);
         if (host == null || !File.Exists(host)) return SceError.IO_ENOENT;
         File.Delete(host);
@@ -317,6 +327,11 @@ int fd, long offset, int whence)
         if (walk < 0)
         {
             return walk;
+        }
+
+        if (IsReadOnlyDevice(path))
+        {
+            return IO_EROFS;
         }
 
         var host = HostPath(path, true);
@@ -340,6 +355,11 @@ int fd, long offset, int whence)
             return walk;
         }
 
+        if (IsReadOnlyDevice(path))
+        {
+            return IO_EROFS;
+        }
+
         var host = HostPath(path, true);
         if (host == null || !Directory.Exists(host)) return SceError.IO_ENOENT;
         try { Directory.Delete(host); return 0; }
@@ -360,6 +380,11 @@ int fd, long offset, int whence)
         if (walk < 0)
         {
             return walk;
+        }
+
+        if (IsReadOnlyDevice(oldPath) || IsReadOnlyDevice(newPath))
+        {
+            return IO_EROFS;
         }
 
         var a = HostPath(oldPath, true);
@@ -501,6 +526,22 @@ int fd, long offset, int whence)
     const int IO_EROFS = unchecked((int)0x8001001E);
     static readonly string[] ReadOnlyDevices = ["app0", "vs0", "os0"];
 
+    /// <summary>The vsh mount ids of the system partitions a mount with read-write permission makes writable.</summary>
+    internal const uint MountIdOs0 = 0x200, MountIdVs0 = 0x300;
+
+    /// <summary>A mount with read-write permission (2): the system partition it names takes writes from then on;
+    /// another permission puts the read-only default back.</summary>
+    internal const int MountPermissionReadWrite = 2;
+
+    /// <summary>Notes the permission a system partition was mounted with (_vshIoMount, ksceIoMount).</summary>
+    internal static void NoteMount(Emulator emu, uint id, int permission)
+    {
+        if (id is MountIdOs0 or MountIdVs0)
+        {
+            emu.Vita.WritableMounts[id] = permission == MountPermissionReadWrite;
+        }
+    }
+
     /// <summary>Inverse of WriteDateTime (same local-time convention as SceIoStat writes).</summary>
     static DateTime ReadDateTime(uint p)
     {
@@ -542,7 +583,23 @@ int fd, long offset, int whence)
         return 0;
     }
 
-    static bool IsReadOnlyDevice(string path) => ReadOnlyDevices.Contains(Io.Vfs.Split(path).device, StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// Whether <paramref name="path"/> is on a read-only mount: app0 (the application's image), and the system
+    /// partitions os0 and vs0 unless mounted again read-write. FW 3.74 iofilemgr answers EROFS (0x8001001E) to an open
+    /// for writing, a create, remove, mkdir, rmdir, rename or chstat there (the mount point's read-only flag).
+    /// </summary>
+    bool IsReadOnlyDevice(string path)
+    {
+        string device = Io.Vfs.Split(path).device;
+        if (!ReadOnlyDevices.Contains(device, StringComparer.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        uint id = device.Equals("vs0", StringComparison.OrdinalIgnoreCase) ? MountIdVs0
+            : device.Equals("os0", StringComparison.OrdinalIgnoreCase) ? MountIdOs0 : 0;
+        return id == 0 || Emu?.Vita is not { } vita || !vita.WritableMounts.TryGetValue(id, out bool writable) || !writable;
+    }
 
     [Hle]
     internal int sceIoChstat(string path, uint stat, int bits)

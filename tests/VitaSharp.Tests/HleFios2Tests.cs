@@ -46,6 +46,9 @@ public sealed class HleFios2Tests(GuestMemoryFixture fixture) : IDisposable
         Set("Hle", new HleRegistry(emu));
         emu.Vfs.Mount("app0", Path.Combine(_root, "app"));
         Directory.CreateDirectory(Path.Combine(_root, "app", "dir"));
+        // app0 is read-only, as on the Vita: what the tests write goes to a writable device
+        emu.Vfs.Mount("ux0", Path.Combine(_root, "ux0"));
+        Directory.CreateDirectory(Path.Combine(_root, "ux0", "dir"));
         var fios = new Fios2 { Emu = emu };
         var libc = new Libc { Emu = emu };
         typeof(Fios2).GetField("_io", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(fios, new IoFileMgr { Emu = emu });
@@ -99,28 +102,29 @@ public sealed class HleFios2Tests(GuestMemoryFixture fixture) : IDisposable
         Fios2 f = NewFios();
         uint data = Buf(16), exists = Buf(4);
         GuestMemory.WriteCString(data, "0123456789");
-        Assert.Equal(10L, Call<long>(f, "sceFiosFileWriteSync", 0u, "app0:dir/b.bin", data, 10L, 0L));
-        Assert.Equal(10L, Call<long>(f, "sceFiosFileGetSizeSync", 0u, "app0:dir/b.bin"));
-        Assert.Equal(0, Call<int>(f, "sceFiosFileExistsSync", 0u, "app0:dir/b.bin", exists));
+        Assert.True(Call<long>(f, "sceFiosFileWriteSync", 0u, "app0:dir/b.bin", data, 10L, 0L) < 0); // app0 is read-only
+        Assert.Equal(10L, Call<long>(f, "sceFiosFileWriteSync", 0u, "ux0:dir/b.bin", data, 10L, 0L));
+        Assert.Equal(10L, Call<long>(f, "sceFiosFileGetSizeSync", 0u, "ux0:dir/b.bin"));
+        Assert.Equal(0, Call<int>(f, "sceFiosFileExistsSync", 0u, "ux0:dir/b.bin", exists));
         Assert.Equal(1, GuestMemory.Read<byte>(exists));
-        Assert.Equal(0, Call<int>(f, "sceFiosDirectoryExistsSync", 0u, "app0:dir/b.bin", exists));
+        Assert.Equal(0, Call<int>(f, "sceFiosDirectoryExistsSync", 0u, "ux0:dir/b.bin", exists));
         Assert.Equal(0, GuestMemory.Read<byte>(exists));
-        Assert.Equal(0, Call<int>(f, "sceFiosDirectoryCreateSync", 0u, "app0:dir/sub"));
+        Assert.Equal(0, Call<int>(f, "sceFiosDirectoryCreateSync", 0u, "ux0:dir/sub"));
         uint dhOut = Buf(4), entry = Buf(0x418);
-        Assert.Equal(0, Call<int>(f, "sceFiosDHOpenSync", 0u, dhOut, "app0:dir", 0u, 0u));
+        Assert.Equal(0, Call<int>(f, "sceFiosDHOpenSync", 0u, dhOut, "ux0:dir", 0u, 0u));
         int dh = (int)GuestMemory.R32(dhOut);
         Assert.Equal(0, Call<int>(f, "sceFiosDHReadSync", 0u, dh, entry));
-        Assert.Equal("app0:dir/b.bin", GuestMemory.ReadCString(entry + 0x18));
+        Assert.Equal("ux0:dir/b.bin", GuestMemory.ReadCString(entry + 0x18));
         Assert.Equal(10L, GuestMemory.Read<long>(entry));
         Assert.Equal(5, GuestMemory.Read<ushort>(entry + 12)); // name length
         Assert.Equal(0, Call<int>(f, "sceFiosDHReadSync", 0u, dh, entry));
         Assert.Equal(1u, GuestMemory.R32(entry + 8) & 1); // "sub" is a directory
         Assert.Equal(unchecked((int)0x80820010), Call<int>(f, "sceFiosDHReadSync", 0u, dh, entry));
         Assert.Equal(0, Call<int>(f, "sceFiosDHCloseSync", 0u, dh));
-        Assert.Equal(unchecked((int)0x8082000E), Call<int>(f, "sceFiosFileDeleteSync", 0u, "app0:dir/sub"));
-        Assert.Equal(0, Call<int>(f, "sceFiosRenameSync", 0u, "app0:dir/b.bin", "app0:dir/c.bin"));
-        Assert.Equal(0, Call<int>(f, "sceFiosDeleteSync", 0u, "app0:dir/c.bin"));
-        Assert.Equal(unchecked((int)0x80820005), Call<int>(f, "sceFiosDeleteSync", 0u, "app0:dir/c.bin"));
+        Assert.Equal(unchecked((int)0x8082000E), Call<int>(f, "sceFiosFileDeleteSync", 0u, "ux0:dir/sub"));
+        Assert.Equal(0, Call<int>(f, "sceFiosRenameSync", 0u, "ux0:dir/b.bin", "ux0:dir/c.bin"));
+        Assert.Equal(0, Call<int>(f, "sceFiosDeleteSync", 0u, "ux0:dir/c.bin"));
+        Assert.Equal(unchecked((int)0x80820005), Call<int>(f, "sceFiosDeleteSync", 0u, "ux0:dir/c.bin"));
     }
 
     /// <summary>A PSARC with a manifest and one zlib-compressed file.</summary>

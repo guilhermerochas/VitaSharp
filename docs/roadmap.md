@@ -362,8 +362,20 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   de módulos de sistema.
   Em andamento (23/11/2026, quick3): patches por origem já cobertos por `UpdateModelTests` (pasta da atualização por
   origem, app0 com a atualização por cima); achado e corrigido na revalidação: a listagem de pasta do app0 com
-  atualização (`App0UpdateListingTests`, em "Corrigido, falta o usuário testar"). Falta: montagens, NIDs,
-  imports/exports e permissões de módulos de sistema.
+  atualização (`App0UpdateListingTests`, em "Corrigido, falta o usuário testar"). Montagens somente leitura (24/11/2026,
+  adr4): achado e corrigido, em "Corrigido, falta o usuário testar" (`ReadOnlyMountTests`). Imports sem quem
+  exporte (24/11/2026, adr4): agora nomeados no log e no F8/report (em "Corrigido, falta o usuário testar").
+  Permissões (25/11/2026, adr4): biblioteca de syscall só do kernel, em "Corrigido, falta o usuário testar". Falta:
+  NIDs (conferir as outras checagens da tabela de exports e imports do modulemgr 3.74).
+- [ ] [P3][M] (opção futura, decisão do lead: não agora) Import sem quem exporte com o stub do 3.74: no modulemgr 3.74
+  (decomp, só estudo) um NID que a biblioteca não exporta ("Library function entry not found ... (ignored)") ou de uma
+  biblioteca ainda não carregada fica com o stub "não ligado" `sub r12, pc, #8; mov pc, #0` (0xE24FC008, 0xE3A0F000):
+  a chamada salta para 0 e o processo cai (r12 = o stub); o stub original só é aceito se for 0xE24FC008, 0xE3E00000
+  (`mvn r0, #0`) ou `movw r12` (senão 0x8002D00A), e é religado quando a biblioteca carrega. Proposta: escrever esse
+  stub para um NID que nenhum módulo carregado exporta e que não está no `nids.txt` (o censo do 3.74), mantendo o
+  retorno 0 para NIDs do firmware que o HLE não implementa; teste com módulo sintético (cai em 0; NID do firmware sem
+  HLE devolve 0; biblioteca carregada depois religa). Risco que adiou: um NID real do 3.74 ausente do `nids.txt` faria
+  um jogo cair onde hoje recebe 0.
 - [x] [P3][M] **Save states:** ida e volta de cada módulo HLE e do escalonador com threads em espera. Feito
   (16/11/2026, rm1, test/savestate-waiting-thread): os módulos HLE já eram cobertos por
   `ModuleSnapshotTests.EveryModuleStateRoundTrips` (cada módulo salvo, carregado noutro emulador e salvo de novo, byte
@@ -3394,6 +3406,31 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   lê esses dados na CPU (Croixleur Sigma e Jak and Daxter só desenham com eles). Testar: Croixleur Sigma
   (PCSG00537) na seleção de personagem e nos diálogos, e Jak and Daxter Collection (PCSA00080) nas sombras do chão:
   tudo igual a antes, sem queda de fps (a linha "program stores" no resumo da sessão mostra quanto é devolvido).
+- [ ] (25/11/2026, falta testar) [P3][M] Biblioteca de syscall só do kernel, como o modulemgr 3.74 (fix/adr4). O
+  modulemgr 3.74 confere a tabela de exports antes de ligar o módulo: uma biblioteca de syscall (atributo 0x4000, as
+  funções que o código de usuário alcança pelo kernel) só pode ser exportada por um módulo do kernel e sem variáveis;
+  um módulo de usuário que exporte uma, ou um do kernel com variáveis, é recusado com 0x8002D01E sem ligar nada. O
+  VitaSharp carregava o módulo de usuário e servia a biblioteca. Testes: `SyscallExportPermissionTests`. Testar: os
+  plugins de kernel (taiHEN, kubridge) e os homebrews de sempre continuam carregando.
+
+- [ ] (24/11/2026, falta testar) [P3][M] Import sem quem exporte nomeado no log e no F8/report (fix/adr4). No Vita
+  3.74 a chamada de um import que nenhum módulo exporta (um NID que o firmware não tem) salta para 0 pelo stub "não
+  ligado" do modulemgr (`sub r12, pc, #8; mov pc, #0`). O VitaSharp devolve 0 (o contrato continua: o `nids.txt` pode
+  não ter uma função real) e só dizia "Unimplemented". Agora a primeira chamada de cada NID dá o aviso "import sem
+  quem exporte: NID ..., biblioteca ...; no Vita 3.74 este stub saltaria para 0" e a lista entra no resumo de HLE que
+  o `hle_errors.txt` da captura F8 e o relatório da sessão trazem ("UNLINKED import"). Testes:
+  `UnlinkedImportTests`. Testar: num homebrew que importa de um plugin não instalado, o log e a captura F8 dizem qual
+  import ficou sem quem exporte.
+
+- [ ] (24/11/2026, falta testar) [P3][M] Montagens somente leitura como o 3.74 (fix/adr4). O iofilemgr 3.74 guarda
+  no ponto de montagem a marca de somente leitura (0x1000) e responde EROFS (0x8001001E) a abrir para escrita, criar,
+  apagar, mkdir, rmdir e renomear no app0 (a imagem do aplicativo) e nas partições do sistema os0 e vs0. O VitaSharp
+  só recusava o chstat: um jogo ou homebrew podia mudar os arquivos do jogo instalado ou do firmware no PC. Agora as
+  mesmas operações dão EROFS ali; uma partição montada de novo com permissão de leitura e escrita (2, como o VitaRW e
+  as ferramentas do VitaShell fazem pelo `_vshIoMount`/`ksceIoMount`) aceita escrita até ser montada de novo com outra
+  permissão. Testes: `ReadOnlyMountTests`. Testar: os jogos e homebrews de sempre continuam salvando (ux0, savedata0);
+  no VitaShell, mexer no vs0 só depois de montá-lo em leitura e escrita.
+
 - [ ] (24/11/2026, falta testar) [P2][M] Gravar tudo: os módulos de firmware carregados durante a gravação saem com o
   hash (fix/adr4). Um módulo do firmware (os0, vs0, sa0, pd0) carregado pela primeira vez durante a gravação vem, no
   rerun, do firmware de quem analisa; se esse for outro (outra versão, um módulo modificado), o rerun rodava outro
