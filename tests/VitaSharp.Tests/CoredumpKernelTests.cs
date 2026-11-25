@@ -145,4 +145,46 @@ public sealed class CoredumpKernelTests(GuestMemoryFixture fixture) : IDisposabl
         Request(0x34, 2, (5, 1), (6, buffer), (7, 0x80), (8, buffer));
         Assert.Equal(SceError.ILLEGAL_PERMISSION, Call(Bridge, name, 0, 0u, buffer, request));
     }
+
+    /// <summary>
+    /// FW 3.74 SceCoredump's queue: a checked request takes one of the two request slots and goes to the dump thread,
+    /// which writes the process's core file (psp2core-*.psp2dmp, written as .tmp and renamed) and frees the slot; with
+    /// both slots taken the request is 0x8001000C. Here the files go to the folder the user names
+    /// (VITASHARP_COREDUMP_DIR); the file is an ELF core (ET_CORE, EM_ARM) with the process's memory blocks. Before,
+    /// every request was refused.
+    /// </summary>
+    [Fact]
+    public void DumpRequestsTakeTheTwoSlotsAndWriteTheCoreFile()
+    {
+        string folder = Path.Combine(_harness.Root, "cores");
+        Bridge.CoredumpDirectory = folder;
+        using var gate = new ManualResetEventSlim(false);
+        Bridge.CoredumpGate = gate;
+        uint request = _harness.Alloc(0x40);
+        uint target = _harness.Alloc(0x10);
+        GuestMemory.W32(request, 4);
+
+        Assert.Equal(0, Call(Bridge, "ksceCoredump_A7D214A7", 0, 0u, target, request));
+        Assert.Equal(0, Call(Bridge, "ksceCoredump_D064F6DC", 0, 0u, target, request));
+        Assert.Equal(unchecked((int)0x8001000C), Call(Bridge, "ksceCoredump_A7D214A7", 0, 0u, target, request)); // both slots taken
+
+        gate.Set();
+        Bridge.WaitForCoredumps();
+        Bridge.CoredumpGate = null;
+        Assert.Equal(0, Call(Bridge, "ksceCoredump_A7D214A7", 0, 0u, target, request));          // a slot is free again
+        Bridge.WaitForCoredumps();
+
+        string[] cores = Directory.GetFiles(folder, "psp2core-*.psp2dmp");
+        Assert.Equal(3, cores.Length);
+        Assert.Empty(Directory.GetFiles(folder, "*.tmp"));
+        byte[] core = File.ReadAllBytes(cores[0]);
+        Assert.Equal(new byte[] { 0x7F, (byte)'E', (byte)'L', (byte)'F', 1, 1 }, core[..6]);
+        Assert.Equal(4, BitConverter.ToUInt16(core, 0x10));      // ET_CORE
+        Assert.Equal(40, BitConverter.ToUInt16(core, 0x12));     // EM_ARM
+        int programHeaders = BitConverter.ToUInt16(core, 0x2C);
+        Assert.True(programHeaders >= 2, $"{programHeaders} program headers");
+        Assert.Equal(4u, BitConverter.ToUInt32(core, 0x34));      // the first is the note
+        Assert.Equal(1u, BitConverter.ToUInt32(core, 0x54));      // then the memory blocks
+        Assert.Matches(@"psp2core-\d{10}-0x[0-9a-f]{10}-.+\.psp2dmp$", Path.GetFileName(cores[0]));
+    }
 }

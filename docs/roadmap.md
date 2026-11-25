@@ -2212,9 +2212,10 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   boota de novo), SceIofilemgrForDriver vfsRmdev e NID_A39A9CA7 (vnodes de dispositivo de bloco dos mounts tipo 3 em
   dev/tty/md). Falta: o event flag do aviso de troca de mídia em +0xC do bloco extra da montagem
   do guest, que o vfsMount do 3.74 cria (os NIDs 5B7E5AB8/DD46CD63 estão em "Corrigido, falta o usuário testar");
-  SceCoredumpForDriver NID_A7D214A7 / NID_D064F6DC / NID_EF20949F (a validação do pedido está feita, em "Corrigido,
-  falta o usuário testar"; falta a fila do thread de dump, com duas vagas de pedido e 0x8001000C quando as duas estão
-  ocupadas (FUN_81006f10), a suspensão do processo e escrever o .psp2dmp dele, o ELF de core com as notas da Sony); SceAppMgrForDriver 6 (1B6C2FED/C4924946 caminho de lançamento de debug atrás de
+  SceCoredumpForDriver NID_A7D214A7 / NID_D064F6DC / NID_EF20949F (a validação, a fila de duas vagas e o arquivo
+  de core estão em "Corrigido, falta o usuário testar"; falta a suspensão do processo durante o dump e as notas da
+  Sony no .psp2dmp: PROCESS_INFO, THREAD_INFO, THREAD_REG_INFO, MODULE_INFO, MEM_BLK_INFO e as outras que o módulo
+  nomeia, cada uma com o formato dela); SceAppMgrForDriver 6 (1B6C2FED/C4924946 caminho de lançamento de debug atrás de
   ksceSblACMgrIsDevelopmentMode; 1574E1A4 montagem por id 0x6A/0x6B/0xCD/600/900; 324DD34E, E8DB7942 e 504023C8
   feitos em 23/11/2026, fix/quick3, em "Corrigido, falta o usuário testar");
   SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver 14
@@ -3330,6 +3331,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (25/11/2026, falta testar) [P2][G] Fila de dump do SceCoredump e o arquivo de core (fix/small3,
+  `VshBridge.CoredumpQueue.cs`). No 3.74 um pedido conferido ocupa uma das duas vagas do módulo (as duas ocupadas:
+  0x8001000C, FUN_81006f10), recebe o próximo id de dump (de 1 até 0x7FFFFFFF) e vai para o thread de dump, que grava
+  `psp2core-<id>-0x<pid>-<título>.psp2dmp` (como .tmp, renomeado no fim) e libera a vaga. Um aparelho de varejo sem a
+  flag de QA não guarda arquivo de core; o VitaSharp só guarda quando pedido: `VITASHARP_COREDUMP_DIR` dá a pasta do
+  host (sem ela, como antes, 0x80020008). O arquivo é um ELF de core (ET_CORE, EM_ARM) com um PT_LOAD por bloco de
+  memória do processo e uma nota "VITASHARP" com o processo e as threads com os registradores; as notas da Sony
+  ainda não. Teste: `CoredumpKernelTests.DumpRequestsTakeTheTwoSlotsAndWriteTheCoreFile` (falha sem a mudança; 50x,
+  0 falhas). Testar: com `VITASHARP_COREDUMP_DIR=<pasta>`, um jogo que trava faz o sistema pedir o dump e o
+  `psp2core-*.psp2dmp` aparece na pasta.
 - [ ] (25/11/2026, falta testar) [P2][G] Eventos de erro de E/S e aviso de troca de mídia do iofilemgr 3.74
   (fix/small3, `IoFileMgr.ErrorEvents.cs`). O módulo monta na partida uma tabela de 32 pontos de montagem (id, o
   caminho interno do sistema de arquivos e o dispositivo: 0x800 "/ux/exfat" ux0:, 0x200 os0:, ...).
