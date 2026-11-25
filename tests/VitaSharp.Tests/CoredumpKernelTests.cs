@@ -88,7 +88,7 @@ public sealed class CoredumpKernelTests(GuestMemoryFixture fixture) : IDisposabl
     public void DumpsAreRefusedAndTheSessionIsKept()
     {
         Assert.Equal(SceError.ILLEGAL_PERMISSION, Call(Bridge, "ksceCoredumpCreateDump", 0, 0u, 0u, 0u, 0u));
-        Assert.Equal(SceError.ILLEGAL_PERMISSION, Call(Bridge, "ksceCoredump_A7D214A7", 0, 0u, 0u, 0u));
+        Assert.Equal(unchecked((int)0x80010016), Call(Bridge, "ksceCoredump_A7D214A7", 0, 0u, 0u, 0u)); // no request
         Assert.Equal(unchecked((int)0x80010069), Call(Bridge, "ksceCoredump_EF20949F", 0u));
         Assert.Equal(1, Call(Bridge, "ksceCoredump_097AA37D"));
         int session = Call(Bridge, "ksceCoredump_13EF8516", 0u);
@@ -97,5 +97,52 @@ public sealed class CoredumpKernelTests(GuestMemoryFixture fixture) : IDisposabl
         Assert.Equal(0, Call(Bridge, "ksceCoredump_10863B61", session));
         Assert.Equal(0, Call(Bridge, "ksceCoredumpCafInit"));
         Assert.Equal(0, Call(Bridge, "ksceCoredumpCafFinal"));
+    }
+
+    /// <summary>FW 3.74 SceCoredump checks a dump request before it queues it (size word, the name and data buffers of
+    /// a 0x34-byte request, the dump level 0/1/2/10 and its buffer, then the target): an invalid one is 0x80010016,
+    /// a valid one is refused because no core file is kept (0x80020008). Before, every request was 0x80020008.</summary>
+    [Theory]
+    [InlineData("ksceCoredump_A7D214A7")]
+    [InlineData("ksceCoredump_D064F6DC")]
+    public void DumpRequestsAreCheckedAsTheFirmware(string name)
+    {
+        const int Invalid = unchecked((int)0x80010016);
+        uint request = _harness.Alloc(0x40);
+        uint buffer = _harness.Alloc(0x10);
+        void Request(uint size, uint level = 0, params (int Word, uint Value)[] words)
+        {
+            GuestMemory.Fill(request, 0, 0x40);
+            GuestMemory.W32(request, size);
+            GuestMemory.W32(request + 8, level);
+            foreach ((int word, uint value) in words)
+            {
+                GuestMemory.W32(request + (uint)word * 4, value);
+            }
+        }
+
+        Request(3);
+        Assert.Equal(Invalid, Call(Bridge, name, 0, 0u, buffer, request));
+        Request(4);
+        Assert.Equal(Invalid, Call(Bridge, name, 0, 0u, 0u, request));             // no target
+        Assert.Equal(SceError.ILLEGAL_PERMISSION, Call(Bridge, name, 0, 0u, buffer, request));
+        Request(0x14, 3);
+        Assert.Equal(Invalid, Call(Bridge, name, 0, 0u, buffer, request));         // level 3
+        Request(0x10, 3);
+        Assert.Equal(SceError.ILLEGAL_PERMISSION, Call(Bridge, name, 0, 0u, buffer, request)); // too short to carry a level
+        Request(0x14, 10, (3, 0x401), (4, buffer));
+        Assert.Equal(Invalid, Call(Bridge, name, 0, 0u, buffer, request));         // level 10, more than 0x400
+        Request(0x14, 10, (3, 0x10));
+        Assert.Equal(Invalid, Call(Bridge, name, 0, 0u, buffer, request));         // level 10 without its buffer
+        Request(0x14, 10, (3, 0x10), (4, buffer));
+        Assert.Equal(SceError.ILLEGAL_PERMISSION, Call(Bridge, name, 0, 0u, buffer, request));
+        Request(0x34, 2, (5, 0xB), (6, buffer));
+        Assert.Equal(Invalid, Call(Bridge, name, 0, 0u, buffer, request));         // 11 names
+        Request(0x34, 2, (5, 1));
+        Assert.Equal(Invalid, Call(Bridge, name, 0, 0u, buffer, request));         // names without their buffer
+        Request(0x34, 2, (7, 0x81), (8, buffer));
+        Assert.Equal(Invalid, Call(Bridge, name, 0, 0u, buffer, request));         // more than 0x80 bytes of data
+        Request(0x34, 2, (5, 1), (6, buffer), (7, 0x80), (8, buffer));
+        Assert.Equal(SceError.ILLEGAL_PERMISSION, Call(Bridge, name, 0, 0u, buffer, request));
     }
 }

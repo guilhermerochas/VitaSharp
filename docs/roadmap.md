@@ -2191,8 +2191,9 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   em 0x81022b30, marca a palavra +8 do bloco extra do mount e acorda o event flag dele: aviso de troca de mídia; achar
   quem preenche a tabela) e NID_DD46CD63 (para cada objeto de arquivo da classe do módulo com +0x38 == mount, flags
   +0x40 & máscara e +0x44 == 0, envia o aviso e marca +0x44: precisa desses campos no objeto de arquivo);
-  SceCoredumpForDriver NID_A7D214A7 / NID_D064F6DC / NID_EF20949F (validação do pedido e a fila do thread de dump,
-  escrever o .psp2dmp do processo); SceAppMgrForDriver 6 (1B6C2FED/C4924946 caminho de lançamento de debug atrás de
+  SceCoredumpForDriver NID_A7D214A7 / NID_D064F6DC / NID_EF20949F (a validação do pedido está feita, em "Corrigido,
+  falta o usuário testar"; falta a fila do thread de dump, com duas vagas de pedido e 0x8001000C quando as duas estão
+  ocupadas (FUN_81006f10), a suspensão do processo e escrever o .psp2dmp dele, o ELF de core com as notas da Sony); SceAppMgrForDriver 6 (1B6C2FED/C4924946 caminho de lançamento de debug atrás de
   ksceSblACMgrIsDevelopmentMode; 1574E1A4 montagem por id 0x6A/0x6B/0xCD/600/900; 324DD34E, E8DB7942 e 504023C8
   feitos em 23/11/2026, fix/quick3, em "Corrigido, falta o usuário testar");
   SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver 14
@@ -3306,6 +3307,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (25/11/2026, falta testar) [P2][G] Pedidos de dump do SceCoredump conferidos como no 3.74 (fix/small2):
+  `NID_A7D214A7` e `NID_D064F6DC` (pid, arg, alvo, pedido) conferem o pedido antes de enfileirá-lo para o thread de
+  dump, na ordem do módulo (0x81007100): pedido NULL ou palavra de tamanho (+0) até 3, 0x80010016; com 0x34 bytes ou
+  mais, +0x14 abaixo de 11 com +0x18 quando não é 0, e +0x1C até 0x80 com +0x20 quando não é 0; com 0x14 bytes ou
+  mais, nível (+8) 0, 1, 2 ou 10, e para 10 +0xC até 0x400 com +0x10 quando não é 0; depois o terceiro argumento.
+  Antes todo pedido dava 0x80020008, e a assinatura chamava o pedido de tamanho. Um pedido válido continua recusado
+  com 0x80020008 (o emulador não guarda arquivo de core; ver o item do kernel em resposta padrão). Teste:
+  `CoredumpKernelTests.DumpRequestsAreCheckedAsTheFirmware` (falha sem a mudança). Testar: nada muda na tela; num
+  jogo que trava, o log segue igual.
 - [ ] (24/11/2026, falta testar) [P3][G] Cartão de memória e eMMC no nível de bloco, primeira entrega (fix/small2,
   `SystemServicesVsh.SectorAccess.cs`, `Host/BlockImage.cs`). Todo acesso cru a setores do cartão de memória
   (`ksceMsifRead/Write/EraseSector`) e do eMMC e do cartão de jogo (`ksceSdifRead/WriteSectorMmc/Sd`) vai para o log

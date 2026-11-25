@@ -155,19 +155,72 @@ public sealed partial class VshBridge
         return 0;
     }
 
-    /// <summary>NID_A7D214A7(pid, ?, buffer, size): the application manager's dump of a process: no core file is kept
-    /// (0x80020008).</summary>
-    [Hle(Nid = 0xA7D214A7, Library = "SceCoredumpForDriver", Default = true)]
-    int ksceCoredump_A7D214A7(int pid, uint flags, uint buffer, uint size)
+    /// <summary>
+    /// The checks FW 3.74 makes on a dump request (SceCoredump 0x81007100 / 0x810072F4) before it queues it for its
+    /// dump thread, in the module's order: a NULL request or one whose size word (+0) is 3 or less is 0x80010016; a
+    /// request of 0x34 bytes or more also needs +0x14 below 11 with +0x18 set when it is not 0, and +0x1C at most 0x80
+    /// with +0x20 set when it is not 0; one of 0x14 bytes or more a dump level (+8) of 0, 1, 2 or 10, and for 10 a +0xC
+    /// of at most 0x400 with +0x10 set when it is not 0; then the third argument must be set. 0 = a valid request.
+    /// </summary>
+    internal static int CoredumpRequestError(uint target, uint request)
     {
-        return SceError.ILLEGAL_PERMISSION;
+        if (request == 0)
+        {
+            return COREDUMP_ERR_INVALID;
+        }
+
+        uint size = GuestMemory.R32(request);
+        if (size <= 3)
+        {
+            return COREDUMP_ERR_INVALID;
+        }
+
+        uint Word(int index) => GuestMemory.R32(request + (uint)index * 4);
+        if (size >= 0x34)
+        {
+            bool names = Word(5) < 0xB && (Word(5) == 0 || Word(6) != 0);
+            bool data = Word(7) <= 0x80 && (Word(7) == 0 || Word(8) != 0);
+            if (!names || !data)
+            {
+                return COREDUMP_ERR_INVALID;
+            }
+        }
+
+        if (size > 0x13)
+        {
+            uint level = Word(2);
+            if (level is not (0 or 1 or 2 or 10))
+            {
+                return COREDUMP_ERR_INVALID;
+            }
+
+            if (level == 10 && (Word(3) > 0x400 || (Word(3) != 0 && Word(4) == 0)))
+            {
+                return COREDUMP_ERR_INVALID;
+            }
+        }
+
+        return target == 0 ? COREDUMP_ERR_INVALID : 0;
     }
 
-    /// <summary>NID_D064F6DC(pid, ?, buffer, size): the same for a second dump kind (0x80020008).</summary>
-    [Hle(Nid = 0xD064F6DC, Library = "SceCoredumpForDriver", Default = true)]
-    int ksceCoredump_D064F6DC(int pid, uint flags, uint buffer, uint size)
+    /// <summary>NID_A7D214A7(pid, arg, target, request): the application manager's dump of a process. The request is
+    /// checked as FW 3.74 checks it (<see cref="CoredumpRequestError"/>); a valid one would go to the dump thread,
+    /// which writes the process's .psp2dmp: the emulator keeps no core file, so it is refused as the module refuses it
+    /// on a retail unit without the QA flag that keeps them (0x80020008).</summary>
+    [Hle(Nid = 0xA7D214A7, Library = "SceCoredumpForDriver", Default = true)]
+    int ksceCoredump_A7D214A7(int pid, uint arg, uint target, uint request)
     {
-        return SceError.ILLEGAL_PERMISSION;
+        int error = CoredumpRequestError(target, request);
+        return error != 0 ? error : SceError.ILLEGAL_PERMISSION;
+    }
+
+    /// <summary>NID_D064F6DC(pid, arg, target, request): the same for a second dump kind (the same checks, then
+    /// 0x80020008).</summary>
+    [Hle(Nid = 0xD064F6DC, Library = "SceCoredumpForDriver", Default = true)]
+    int ksceCoredump_D064F6DC(int pid, uint arg, uint target, uint request)
+    {
+        int error = CoredumpRequestError(target, request);
+        return error != 0 ? error : SceError.ILLEGAL_PERMISSION;
     }
 
     /// <summary>NID_13EF8516(handler): the crash dump module opens its dump session (the system's "NPXS19998"
