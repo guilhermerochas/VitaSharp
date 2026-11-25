@@ -36,6 +36,8 @@ public sealed unsafe partial class VulkanRenderer
         public bool Coherent = true;
         public uint Address, Width, Rows, HostStride, GuestStride, GuestBpp;
         public WritebackConvert Convert;
+        /// <summary>Program stores (VulkanRenderer.StoreWriteback.cs): the dirty-page stamp of the store.</summary>
+        public uint Stamp;
         /// <summary>The address space of the process whose scene rendered the target (the frame retires later, maybe
         /// while another process's command runs).</summary>
         public AddressSpace? Space;

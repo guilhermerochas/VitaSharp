@@ -184,6 +184,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public NanFrame? Nan;
         /// <summary>Render targets copied out this frame, written into guest memory once the frame completes.</summary>
         public readonly List<RtWriteback> Writebacks = new();
+        /// <summary>Memory programs stored to, copied out of the mirror this frame (VulkanRenderer.StoreWriteback.cs).</summary>
+        public readonly List<RtWriteback> StoreWritebacks = new();
         /// <summary>Notifications and other sync points (in submission order) signalled once this frame completed and its results are published.</summary>
         public readonly List<Action> Signals = new();
         public bool Retired;
@@ -535,6 +537,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         using (FrameLedger.Time(FrameLedger.Cat.Writeback))
         {
             CompleteWritebacks(f);
+            CompleteStoreWritebacks(f);
         }
 
         CompleteVisibility(f);
@@ -1608,6 +1611,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
         bool writeback = _renderTarget != null && ScheduleWriteback(_renderTarget);
         _sceneRegions.Clear();
+        ScheduleStoreWritebacks();
         // a scene whose pixels the CPU can read back signals its notifications only once they are in memory; the
         // same holds for every result of earlier work (visibility tests of this or a previous scene, writebacks):
         // games read occlusion results once the frame's last notification arrived

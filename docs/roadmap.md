@@ -3292,6 +3292,25 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (24/11/2026, falta testar) [P3][M] Memória gravada por programas de shader (VLDST store) volta para a memória do
+  guest (fix/small2, `VulkanRenderer.StoreWriteback.cs`). No Vita o USSE grava direto na memória onde o buffer está
+  mapeado, e a CPU lê o que o programa gravou quando o trabalho da cena termina; aqui as gravações ficavam só no
+  espelho do renderizador. Agora as faixas gravadas em cada cena são copiadas do espelho no fim da cena e escritas na
+  memória do guest quando o quadro termina na GPU (como as devoluções de render target no modo preguiçoso: as
+  notificações não esperam por elas, sem mudar o ritmo do jogo). A faixa anotada é a janela inteira do slot (até
+  1 MB), onde a CPU grava outros dados: só entram as palavras que mudaram, nas páginas que a CPU não gravou desde a
+  gravação da GPU (nessas o espelho é igual à memória, fora o que o programa gravou); uma página que a CPU gravou
+  depois fica com o dado da CPU. As escritas não marcam as páginas (uma marca devolveria a faixa a uma cópia do guest
+  mais velha que as gravações seguintes ainda na GPU). Custo: uma cópia por faixa gravada por cena e a comparação na
+  CPU (linha "program stores N KB/frame" do resumo de sincronização); `VITASHARP_GPU_STORE_WRITEBACK=0` volta ao
+  comportamento anterior (A/B). Testes: `RendererMemoryStoreTests.TheCpuReadsWhatAProgramStored` (CDRAM e LPDDR;
+  falha sem a correção: a CPU lia 0x11 em vez de 00 00 E0 40 11 2A 15 00), `PublishingKeepsWhatTheCpuWroteSinceTheStore`
+  (páginas gravadas pela CPU depois, varridas ou só marcadas, ficam com o dado da CPU; nada é marcado),
+  `OnlyTheWordsThatChangedAreCopied`. Fica de fora: a CPU vê os dados no fim do quadro na GPU, não já na notificação
+  da cena (como o `VITASHARP_LAZY_WRITEBACK_SYNC`); com `VITASHARP_TEXDIRTY=0` nada é devolvido; nenhum jogo conhecido
+  lê esses dados na CPU (Croixleur Sigma e Jak and Daxter só desenham com eles). Testar: Croixleur Sigma
+  (PCSG00537) na seleção de personagem e nos diálogos, e Jak and Daxter Collection (PCSA00080) nas sombras do chão:
+  tudo igual a antes, sem queda de fps (a linha "program stores" no resumo da sessão mostra quanto é devolvido).
 - [ ] (24/11/2026, falta testar) [P3][M] Teclado e mouse Bluetooth (fix/adr4; `docs/notes/hardware-coverage.md`): no
   3.74 o SceHid guarda até 8 teclados e 8 mouses; `sceHid{Keyboard,Mouse}Enumerate` copia os handles dos conectados
   (lista NULL 0x803B0001, no máximo 8), `Read`/`Peek` conferem o handle (< 1: 0x803B0002; lista NULL ou contagem
@@ -6664,13 +6683,6 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   conteúdo do início da cena (o quadro anterior) e o resultado acumulava até ficar branco (fundo branco no título, na
   seleção de personagem e nos diálogos); a área do desenho agora é recortada pelo viewport. Seleção de personagem,
   diálogos e o cenário 3D a ~30 fps (`croixleur_boot`)
-- [ ] [P3][M] Memória gravada por programas de shader (VLDST store): o que a GPU grava não volta para a memória do guest
-  (a CPU que ler essa memória vê o conteúdo antigo). Para devolver é preciso saber os bytes que o programa gravou de
-  fato (a faixa anotada é a janela inteira do slot, até 1 MB, onde a CPU grava outros dados no mesmo quadro: copiar a
-  janela inteira de volta sobrescreveria esses dados), por exemplo com os limites min/max gravados por draw num buffer
-  de extensões, e devolver só isso quando o quadro termina. Ver se algum jogo lê esses dados na CPU (31/10/2026, branch
-  fix/croixleur)
-  Entrega movida para "Corrigido, falta o usuário testar" (stores de 16/8 bits e fora da CDRAM, rend1, 22/11/2026); o resto segue aberto aqui.
 
 - [x] The Deer God (PCSB01070): engasgos no gameplay (30/10/2026, main 4603a03, logs
   `20261030_230111_PCSB01070` e `20261030_230208_PCSB01070`). Roda a 60 fps, mas cai de repente para 12–16 fps por
