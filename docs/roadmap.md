@@ -358,15 +358,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   (falha sem a correção). O renderizador não lê esses campos (o decodificador YUV usa as matrizes fixas, CSC1 = BT.601
   full), então a imagem não muda; usar o perfil do contexto no decodificador é parte do item de GXM acima.
   Feito (23/11/2026, fix/quick3): o decodificador usa o perfil da cena (item em "Corrigido, falta o usuário testar").
-- [ ] [P3][M] **Sistema de arquivos, carregador e módulos:** montagens, patches por origem, NIDs, imports/exports, permissões
+- [x] [P3][M] **Sistema de arquivos, carregador e módulos:** montagens, patches por origem, NIDs, imports/exports, permissões
   de módulos de sistema.
   Em andamento (23/11/2026, quick3): patches por origem já cobertos por `UpdateModelTests` (pasta da atualização por
   origem, app0 com a atualização por cima); achado e corrigido na revalidação: a listagem de pasta do app0 com
   atualização (`App0UpdateListingTests`, em "Corrigido, falta o usuário testar"). Montagens somente leitura (24/11/2026,
   adr4): achado e corrigido, em "Corrigido, falta o usuário testar" (`ReadOnlyMountTests`). Imports sem quem
   exporte (24/11/2026, adr4): agora nomeados no log e no F8/report (em "Corrigido, falta o usuário testar").
-  Permissões (25/11/2026, adr4): biblioteca de syscall só do kernel, em "Corrigido, falta o usuário testar". Falta:
-  NIDs (conferir as outras checagens da tabela de exports e imports do modulemgr 3.74).
+  Permissões (25/11/2026, adr4): biblioteca de syscall só do kernel, em "Corrigido, falta o usuário testar". NIDs e
+  tabelas (25/11/2026, adr4): tamanhos das entradas de exports/imports como o modulemgr 3.74, em "Corrigido, falta o
+  usuário testar". Fechado (25/11/2026, adr4); o que ficou de fora é a opção futura do stub do 3.74 logo abaixo.
 - [ ] [P3][M] (opção futura, decisão do lead: não agora) Import sem quem exporte com o stub do 3.74: no modulemgr 3.74
   (decomp, só estudo) um NID que a biblioteca não exporta ("Library function entry not found ... (ignored)") ou de uma
   biblioteca ainda não carregada fica com o stub "não ligado" `sub r12, pc, #8; mov pc, #0` (0xE24FC008, 0xE3A0F000):
@@ -3313,6 +3314,12 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (25/11/2026, falta testar) [P3][M] Tabelas de bibliotecas dos módulos com os tamanhos do modulemgr 3.74
+  (fix/adr4). O modulemgr 3.74 confere a tabela antes de ligar: toda entrada de export tem 0x20 bytes (senão
+  0x8002D009) e as de import são todas de 0x24 ou todas de 0x34 bytes, os dois formatos (senão 0x8002D00A). O
+  VitaSharp percorria tabelas de qualquer tamanho de entrada. Testes: `ModuleTableChecksTests`. Testar: jogos,
+  homebrews e plugins de sempre continuam carregando (um módulo com tabela malformada agora recebe o erro do Vita).
 
 - [ ] (25/11/2026, falta testar) [P3][M] Biblioteca de syscall só do kernel, como o modulemgr 3.74 (fix/adr4). O
   modulemgr 3.74 confere a tabela de exports antes de ligar o módulo: uma biblioteca de syscall (atributo 0x4000, as

@@ -968,6 +968,9 @@ public static class ModuleLoader
 
     /// <summary>Reads module_info at <paramref name="mi"/> and the export and import tables it points at, registering
     /// them with <paramref name="linker"/>.</summary>
+    /// <summary>The size of an export entry, and of the two formats of an import entry (FW 3.74 modulemgr).</summary>
+    private const ushort ExportEntrySize = 0x20, ImportEntrySize = 0x24, ImportEntrySizeLong = 0x34;
+
     private static void ReadTables(LoadedModule m, int infoSeg, uint mi, Linker linker, bool kernel, bool syscallsForUsers)
     {
         uint infoBase = m.Segments[infoSeg].Address;
@@ -1012,12 +1015,18 @@ public static class ModuleLoader
             m.ExtabEnd = infoBase + extabEnd;
         }
 
-        // FW 3.74 modulemgr checks the export table before linking anything: a syscall library (attribute 0x4000) is
-        // the kernel's to export and has no variables; a user module that exports one, or a kernel one with
-        // variables, is refused (0x8002D01E)
+        // FW 3.74 modulemgr checks the export table before linking anything: every entry is 0x20 bytes (else
+        // 0x8002D009); a syscall library (attribute 0x4000) is the kernel's to export and has no variables; a user
+        // module that exports one, or a kernel one with variables, is refused (0x8002D01E)
         for (uint p = infoBase + exportTop; p < infoBase + exportEnd;)
         {
             Span<byte> ex = GuestMemory.Span(p, 0x20);
+            if (U16LE(ex, 0) != ExportEntrySize)
+            {
+                throw new ModuleRefusedException(Kernel.SceError.MODULEMGR_ILLEGAL_EXPORT_TABLE,
+                    $"{m.Path}: an export entry of 0x{U16LE(ex, 0):X} bytes (0x{ExportEntrySize:X} expected)");
+            }
+
             ushort attr = U16LE(ex, 4);
             if ((attr & Linker.SyscallExportAttr) != 0 && (!kernel || U16LE(ex, 8) != 0))
             {
@@ -1032,6 +1041,23 @@ public static class ModuleLoader
             }
 
             p += size;
+        }
+
+        // and the import table: its entries are all 0x24 bytes or all 0x34 bytes (the two formats), else 0x8002D00A
+        if (importEnd > importTop)
+        {
+            ushort first = U16LE(GuestMemory.Span(infoBase + importTop, 2), 0);
+            for (uint p = infoBase + importTop; p < infoBase + importEnd;)
+            {
+                ushort size = U16LE(GuestMemory.Span(p, 2), 0);
+                if (first is not (ImportEntrySize or ImportEntrySizeLong) || size != first)
+                {
+                    throw new ModuleRefusedException(Kernel.SceError.MODULEMGR_ILLEGAL_IMPORT_TABLE,
+                        $"{m.Path}: an import entry of 0x{size:X} bytes (all 0x{ImportEntrySize:X} or all 0x{ImportEntrySizeLong:X} expected)");
+                }
+
+                p += size;
+            }
         }
 
         // exports first (so a module can resolve against itself), then imports
