@@ -196,6 +196,11 @@ public sealed class HostServices : IDisposable
     /// service; null = location off (the default: the application is not allowed to use it).</summary>
     public ILocationSource? Location { get; set; }
 
+    /// <summary>The image file backing the internal eMMC at the block level (SceSdif host 0,
+    /// <see cref="Util.EnvVars.EmmcImage"/>); null = no image, the sector commands reach no device (the partitions
+    /// are served at the file level either way).</summary>
+    public BlockImage? EmmcImage { get; set; } = BlockImage.FromEnvironment(Util.EnvVars.EmmcImage);
+
     /// <summary>Where the controllers' vibration goes (the host's gamepads); null = dropped.</summary>
     public IControllerVibration? Vibration { get; set; }
 
@@ -295,6 +300,7 @@ public sealed class HostServices : IDisposable
 
         Microphone?.Dispose();
         Location?.Dispose();
+        EmmcImage?.Dispose();
         lock (CameraStreams)
         {
             foreach (ICameraStream cameraStream in CameraStreams)

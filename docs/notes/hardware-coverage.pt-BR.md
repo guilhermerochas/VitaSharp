@@ -66,7 +66,7 @@ registrado, não é para emular); **ok** coberto.
 | Porta USB de dispositivo (conector multiuso) | `SceUdcd`, `usbstor*`, `SceUsbMtp`, `usbpspcm`, `usbdev_serial` | cabo sempre desconectado (`0x10`) | **(b)** (Content Manager, armazenamento USB) |
 | Portas USB de host (PS TV) | `SceUsbd`, `SceUsbMass`, `SceUsbAudio`, `SceUsbEtherRtl/Smsc`, `SceUsbServ` | nada conectado | **(b)**, parte do modelo PS TV |
 | Slot do cartucho | `sdif` host 1, `gcauthmgr` | dump do cartucho servido por arquivos (`gro0:`/`grw0:`); a autenticação recusa | ok; autenticação (c) |
-| Cartão de memória, eMMC interno | `msif.skprx`, `sdif` host 0, `sdstor.skprx` | partições servidas por arquivos; leitura/escrita de setores falha (`0x803D0000`, `0x8032001A`) | **(b)** |
+| Cartão de memória, eMMC interno | `msif.skprx`, `sdif` host 0, `sdstor.skprx` | partições servidas por arquivos; leitura/escrita de setores falha (`0x803D0000`, `0x8032001A`), com log por chamador; um arquivo de imagem pode servir o eMMC | **(b)** |
 | Syscon, energia, bateria, RTC, botões | `syscon.skprx`, `ScePower`, `rtc.skprx` | HLE com bateria, carregador, eventos, timers de ociosidade, botão de energia, alarmes | ok |
 | Saída de áudio, chip de codec, conector de fone | `SceAudio`, `SceCodec` (I2C 0x34), `SceHpremote` | dispositivo de áudio do host; ajustes do codec aceitos; nada no conector | ok |
 | Microfone | `SceAudioin`, `SceCodec` | captura do host (OpenAL Soft no desktop, `AudioRecord` no Android) reamostrada para a taxa da porta no ritmo de grain do guest; silêncio sem dispositivo | feito (era **(b)**) |
@@ -205,7 +205,12 @@ compatibilidade PSP". Impacto: todo título de PSP e PSone, homebrew de PSP, Adr
 
 ### (b) Cartão de memória e eMMC como dispositivos de bloco
 
-- **Hoje:** cada partição é uma pasta do host; o acesso a setores falha como um comando de cartão que falhou.
+- **Hoje:** cada partição é uma pasta do host; o acesso a setores falha como um comando de cartão que falhou. Todo
+  acesso cru a setores do cartão de memória e do eMMC vai para o log com quem chamou (`[sectors] ...`: o primeiro de
+  cada chamador e operação, todos com `VITASHARP_TRACE_SECTORS=1`), e `VITASHARP_EMMC_IMAGE=<imagem crua>` faz um
+  arquivo de imagem servir os comandos de setor do eMMC (lido e gravado; além do fim, 0x8032011F, o
+  ADDRESS_OUT_OF_RANGE do cartão como o sdif informa). Falta: os dispositivos do `sdstor` por cima (tabela de
+  partições, caminhos `sdstor0:`), a imagem do cartão de memória.
 - **Impacto:** o que o firmware faz no nível de bloco: formatar o cartão de memória pelos Ajustes, a atualização do
   sistema pelos Ajustes gravando `os0`/`vs0`, homebrew que lê ou grava partições cruas (os drivers de armazenamento
   da cena).

@@ -64,7 +64,7 @@ recorded, not to be emulated); **ok** covered.
 | USB device port (multi connector) | `SceUdcd`, `usbstor*`, `SceUsbMtp`, `usbpspcm`, `usbdev_serial` | cable always disconnected (`0x10`) | **(b)** (Content Manager, USB storage) |
 | USB host ports (PS TV) | `SceUsbd`, `SceUsbMass`, `SceUsbAudio`, `SceUsbEtherRtl/Smsc`, `SceUsbServ` | nothing attached | **(b)**, part of the PS TV model |
 | Game card slot | `sdif` host 1, `gcauthmgr` | card dump served at the file level (`gro0:`/`grw0:`); authentication refuses | ok; authentication (c) |
-| Memory card, internal eMMC | `msif.skprx`, `sdif` host 0, `sdstor.skprx` | partitions served at the file level; raw sector reads/writes fail (`0x803D0000`, `0x8032001A`) | **(b)** |
+| Memory card, internal eMMC | `msif.skprx`, `sdif` host 0, `sdstor.skprx` | partitions served at the file level; raw sector reads/writes fail (`0x803D0000`, `0x8032001A`), logged per caller; an image file can back the eMMC | **(b)** |
 | Syscon, power, battery, RTC, buttons | `syscon.skprx`, `ScePower`, `rtc.skprx` | HLE with battery, AC, events, idle timers, power button, alarms | ok |
 | Audio out, codec chip, headset jack | `SceAudio`, `SceCodec` (I2C 0x34), `SceHpremote` | host audio device; codec settings accepted; nothing in the jack | ok |
 | Microphone | `SceAudioin`, `SceCodec` | host capture (OpenAL Soft on the desktop, `AudioRecord` on Android) resampled to the port's rate at the guest's grain pace; silent without a device | done (was **(b)**) |
@@ -199,7 +199,11 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
 
 ### (b) Memory card and eMMC as block devices
 
-- **Today:** every partition is a host folder; raw sector access fails as a failed card command.
+- **Today:** every partition is a host folder; raw sector access fails as a failed card command. Every raw sector
+  access of the memory card and the eMMC is logged with its caller (`[sectors] ...`: the first of each caller and
+  operation, all of them with `VITASHARP_TRACE_SECTORS=1`), and `VITASHARP_EMMC_IMAGE=<raw image>` backs the eMMC's
+  sector commands with an image file (read and written; past its end 0x8032011F, the card's ADDRESS_OUT_OF_RANGE as
+  sdif reports it). Missing: the `sdstor` devices on top (partition table, `sdstor0:` paths), the memory card image.
 - **Impact:** what the firmware does at the block level: formatting the memory card from Settings, the system update
   from Settings writing `os0`/`vs0`, homebrew that reads or writes raw partitions (the storage drivers of the scene).
 - **Size:** [G]. **First testable delivery:** a log of every sector access per caller (to list the real users), then

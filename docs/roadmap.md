@@ -2438,10 +2438,10 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   podem ser copiadas é questão jurídica); (2) pedir aos detentores uma licença compatível. Com um deles decidido:
   decodificador (LSP → LPC, excitação adaptativa + MPE, filtro de síntese, pós-filtro se o Vita aplicar) testado com
   quadros sintéticos de saída calculável, depois o codificador (análise LPC, busca MPE) com ida e volta.
-- [ ] [P3][G] Cartão de memória e eMMC como dispositivos de bloco (`docs/notes/hardware-coverage.md`): hoje o acesso a
-  setores falha (`0x803D0000`, `0x8032001A`). Primeira entrega: log de todo acesso a setor por chamador (formatação,
-  atualização pelos Ajustes, homebrew) e um arquivo de imagem como base de um dispositivo do `sdstor`, com setor
-  gravado lido de volta e fora do limite como o módulo responde.
+- [ ] [P3][G] Cartão de memória e eMMC como dispositivos de bloco, o que falta (`docs/notes/hardware-coverage.md`; a
+  primeira entrega está em "Corrigido, falta o usuário testar"): os dispositivos do `sdstor` por cima do eMMC com
+  imagem (tabela de partições, caminhos `sdstor0:int-lp-...`), a imagem do cartão de memória no `SceMsif`, e a lista
+  dos chamadores reais que o log mostrar.
 - [ ] [P3][G] Porta USB de dispositivo conectada a um host emulado (Content Manager com PC/PS3, armazenamento USB;
   `docs/notes/hardware-coverage.md`): primeira entrega: evento "cabo conectado", `SceUdcd` em `0x20`, a espera de
   estado retorna e um host roteirizado completa um pedido de controle.
@@ -3306,6 +3306,17 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (24/11/2026, falta testar) [P3][G] Cartão de memória e eMMC no nível de bloco, primeira entrega (fix/small2,
+  `SystemServicesVsh.SectorAccess.cs`, `Host/BlockImage.cs`). Todo acesso cru a setores do cartão de memória
+  (`ksceMsifRead/Write/EraseSector`) e do eMMC e do cartão de jogo (`ksceSdifRead/WriteSectorMmc/Sd`) vai para o log
+  com o chamador (endereço de retorno simbolizado e a thread): o primeiro de cada chamador e operação, ou todos com
+  `VITASHARP_TRACE_SECTORS=1`. `VITASHARP_EMMC_IMAGE=<imagem crua>` faz um arquivo servir os comandos de setor do
+  eMMC (host 0 do sdif): leitura e escrita de setores de 512 bytes no arquivo, depois das conferências de argumento
+  do 3.74 (0x8032000E); um intervalo além do fim responde como o cartão com ADDRESS_OUT_OF_RANGE (bit 31 do R1), que
+  o sdif 3.74 converte em 0x80320100 + o menor bit de erro (FUN_810026e0): 0x8032011F. Sem imagem, como antes
+  (0x8032001A). Teste: `SdifKernelTests.AnImageBacksTheEmmcSectors` (falha sem a mudança). Testar: ligar o Sistema
+  do Vita, abrir Configurações e formatar o cartão de memória ou iniciar uma atualização pelos Ajustes, e mandar o
+  `last.log` com as linhas `[sectors]` (quem acessa os setores).
 - [ ] (24/11/2026, falta testar) [P3][M] Callbacks de localização entregam a posição (fix/small2,
   `Hle/Modules/Location.Callbacks.cs`). No 3.74 o liblocation.suprx roda os callbacks numa thread própria,
   "SceLocationCallback" (pilha 0x1000): o `sceLocationStartLocationCallback` guarda o callback e o userdata no handle

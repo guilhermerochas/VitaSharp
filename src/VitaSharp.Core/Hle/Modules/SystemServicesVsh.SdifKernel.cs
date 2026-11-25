@@ -13,7 +13,7 @@ namespace VitaSharp.Core.Hle.Modules;
 // card is inserted only while its dump is served; every command on the bus (sector reads and writes, CMD56, block
 // length, the SDIO commands) reaches no device and ends as the module ends a command the controller aborted
 // (0x8032001A), after the module's argument checks (0x8032000E). Host indexes above 2 are 0x80320001 (0x80320013 for
-// the insert states).
+// the insert states). An image file can back the eMMC's sector commands (SystemServicesVsh.SectorAccess.cs).
 public sealed partial class SystemServicesVsh
 {
     const int SDIF_ERR_HOST = unchecked((int)0x80320001);
@@ -266,32 +266,50 @@ public sealed partial class SystemServicesVsh
         return context == 0 || buffer == 0 || count == 0 ? SDIF_ERR_INVALID : SDIF_ERR_ABORTED;
     }
 
+    /// <summary>The eMMC's sector command (SceSdif.SectorAccess.cs): the argument checks, then its image when one
+    /// backs the eMMC, else no device; logged with its caller.</summary>
+    int SdifMmcSectors(string operation, uint context, uint sector, uint buffer, uint count, bool write)
+    {
+        int result = SdifSectors(context, buffer, count);
+        if (result != SDIF_ERR_INVALID && EmmcImageTransfer(context, sector, buffer, count, write) is { } transferred)
+        {
+            result = transferred;
+        }
+
+        LogSectorAccess(operation, sector, count, result);
+        return result;
+    }
+
     /// <summary>ksceSdifReadSectorMmc(context, sector, buffer, count).</summary>
-    [Hle(Nid = 0x6F8D529B, Library = "SceSdifForDriver", Default = true)]
+    [Hle(Nid = 0x6F8D529B, Library = "SceSdifForDriver")]
     int ksceSdifReadSectorMmc(uint context, uint sector, uint buffer, uint count)
     {
-        return SdifSectors(context, buffer, count);
+        return SdifMmcSectors("sdif read (eMMC)", context, sector, buffer, count, write: false);
     }
 
     /// <summary>ksceSdifWriteSectorMmc(context, sector, buffer, count).</summary>
-    [Hle(Nid = 0x175543D2, Library = "SceSdifForDriver", Default = true)]
+    [Hle(Nid = 0x175543D2, Library = "SceSdifForDriver")]
     int ksceSdifWriteSectorMmc(uint context, uint sector, uint buffer, uint count)
     {
-        return SdifSectors(context, buffer, count);
+        return SdifMmcSectors("sdif write (eMMC)", context, sector, buffer, count, write: true);
     }
 
     /// <summary>ksceSdifReadSectorSd(context, sector, buffer, count).</summary>
     [Hle(Nid = 0xB9593652, Library = "SceSdifForDriver", Default = true)]
     int ksceSdifReadSectorSd(uint context, uint sector, uint buffer, uint count)
     {
-        return SdifSectors(context, buffer, count);
+        int result = SdifSectors(context, buffer, count);
+        LogSectorAccess("sdif read (SD)", sector, count, result);
+        return result;
     }
 
     /// <summary>ksceSdifWriteSectorSd(context, sector, buffer, count).</summary>
     [Hle(Nid = 0xE0781171, Library = "SceSdifForDriver", Default = true)]
     int ksceSdifWriteSectorSd(uint context, uint sector, uint buffer, uint count)
     {
-        return SdifSectors(context, buffer, count);
+        int result = SdifSectors(context, buffer, count);
+        LogSectorAccess("sdif write (SD)", sector, count, result);
+        return result;
     }
 
     /// <summary>The CMD56 calls (the game card's authentication channel): NULLs or a size other than the block length
