@@ -24,8 +24,9 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
   - **Detector de impasse:** quando todas as threads de um ciclo esperam objetos que só elas mesmas sinalizariam, o
     log diz isso numa linha ("impasse: main espera End Frame Event bits 0x2, apagados pela main em ...; End Frame
     espera bit 0x1"), em vez de só a lista de threads.
-  - **Tempo sem CPU por thread:** no STALL e no report, a maior lacuna de host entre duas chamadas HLE seguidas de cada
+  - [x] **Tempo sem CPU por thread:** no STALL e no report, a maior lacuna de host entre duas chamadas HLE seguidas de cada
     thread, separando o sono do ritmo da CPU (pacing) da preempção do host.
+    Feito (24/11/2026, feat/alg4-g; em "Corrigido, falta o usuário testar"): `GuestThread.HleGaps.cs`.
   - **"Antes funcionava":** o VitaSharp guarda, por título, a última versão que chegou ao gameplay sem travar (junto
     do `playtime.json`); o log de uma sessão que trava diz "PCSE00020 rodou sem travar na versão ebec3997" — é o
     ponto de partida de uma bisseção sem perguntar ao usuário.
@@ -3300,6 +3301,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (24/11/2026, falta testar) [P3][M] O STALL diz quanto tempo cada thread está sem chamar o HLE e por quê
+  (feat/alg4-g; item "O log e a captura F8 dizem a causa de uma trava de cara" de Diagnóstico): cada thread guarda a
+  lacuna entre duas chamadas HLE (tempo de host, o sono do ritmo da CPU dentro dela, os ciclos de guest e o "host
+  atrasado": o tempo que o ritmo e os ciclos no clock emulado não explicam, a preempção ou um host mais lento que a CPU
+  emulada); a descrição da thread no STALL do watchdog e na F8 mostra a lacuna aberta (`since-hle=`) e a mais longa
+  (`longest-hle-gap=`); uma lacuna que atravessa uma pausa não conta. Custo por chamada HLE: um TickCount64 na saída e
+  na entrada, sem alocação. Testes: `HleGapTests` (relógio controlado). Testar: num jogo que trava (ou ao pausar com o
+  depurador), o `[watchdog] STALL` do log traz `since-hle=... (pacing ..., ... K guest cycles, host late ...)` em
+  cada thread: uma thread presa em código do guest mostra muitos ciclos, uma sem CPU mostra "host late" alto.
 
 - [ ] (24/11/2026, falta testar) [P3][M] Teclado e mouse Bluetooth (fix/adr4; `docs/notes/hardware-coverage.md`): no
   3.74 o SceHid guarda até 8 teclados e 8 mouses; `sceHid{Keyboard,Mouse}Enumerate` copia os handles dos conectados
