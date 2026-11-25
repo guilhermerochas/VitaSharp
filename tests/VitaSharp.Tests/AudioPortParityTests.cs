@@ -183,15 +183,15 @@ public sealed class AudioPortParityTests
 /// <summary>[Theory] skipped unless OpenAL Soft with ALC_SOFT_loopback loads (the desktop side of the audio parity).</summary>
 public sealed class OpenAlLoopbackTheoryAttribute : TheoryAttribute
 {
-    private static readonly Lazy<bool> Available = new(() =>
+    private static readonly Lazy<bool> s_available = new(() =>
     {
-        using OpenAlAudio? audio = OpenAlAudio.TryCreateLoopback(48000);
+        using var audio = OpenAlAudio.TryCreateLoopback(48000);
         return audio != null;
     });
 
     public OpenAlLoopbackTheoryAttribute()
     {
-        if (!Available.Value)
+        if (!s_available.Value)
         {
             Skip = "OpenAL Soft with ALC_SOFT_loopback not available (the desktop side of the audio parity)";
         }
