@@ -87,6 +87,8 @@ public sealed partial class Location : HleModule
         {
             _handles.Clear();
             _locationCallbacks.Clear();
+            _callbackInfo.Clear();
+            Monitor.PulseAll(_lock);
         }
 
         return 0;
@@ -122,6 +124,7 @@ public sealed partial class Location : HleModule
         lock (_lock)
         {
             _locationCallbacks.Remove(handle);
+            RemoveLocationCallback(handle);
             return _handles.Remove(handle) ? 0 : ERR_INVALID_HANDLE;
         }
     }
@@ -213,19 +216,20 @@ public sealed partial class Location : HleModule
 
     [Hle] int sceLocationCancelGetLocation(uint handle) => Get(handle) == null ? ERR_INVALID_HANDLE : 0;
 
-    /// <summary>With a source the callback is accepted (one per handle) and runs until stopped; the service has not
-    /// delivered a position through it yet (the application reads it with sceLocationGetLocation).</summary>
+    /// <summary>(handle, uint distance, callback, userdata): with a source the callback is accepted (one per handle)
+    /// and the "SceLocationCallback" thread reports the position through it until it is stopped
+    /// (Location.Callbacks.cs). FW 3.74 checks the callback before the handle (SceLibLocation 0x12D1F0EA).</summary>
     [Hle]
     int sceLocationStartLocationCallback(uint handle, uint distance, uint callback, uint userdata)
     {
-        if (Get(handle) == null)
-        {
-            return ERR_INVALID_HANDLE;
-        }
-
         if (callback == 0)
         {
             return ERR_INVALID_ADDRESS;
+        }
+
+        if (Get(handle) == null)
+        {
+            return ERR_INVALID_HANDLE;
         }
 
         if (!Allowed)
@@ -235,7 +239,13 @@ public sealed partial class Location : HleModule
 
         lock (_lock)
         {
-            return _locationCallbacks.Add(handle) ? 0 : ERR_MULTIPLE_CALLBACK;
+            if (!_locationCallbacks.Add(handle))
+            {
+                return ERR_MULTIPLE_CALLBACK;
+            }
+
+            AddLocationCallback(handle, distance, callback, userdata);
+            return 0;
         }
     }
 
@@ -249,7 +259,13 @@ public sealed partial class Location : HleModule
 
         lock (_lock)
         {
-            return _locationCallbacks.Remove(handle) ? 0 : ERR_NOT_RUNNING_CALLBACK;
+            if (!_locationCallbacks.Remove(handle))
+            {
+                return ERR_NOT_RUNNING_CALLBACK;
+            }
+
+            RemoveLocationCallback(handle);
+            return 0;
         }
     }
 

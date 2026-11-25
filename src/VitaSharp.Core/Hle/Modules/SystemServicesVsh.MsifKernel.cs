@@ -91,21 +91,27 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x58654AA3, Library = "SceMsifForDriver", Default = true)]
     int ksceMsifReadSector(uint sector, uint buffer, uint count)
     {
-        return MsifTransfer(buffer, count);
+        int result = MsifTransfer(buffer, count);
+        LogSectorAccess("msif read (memory card)", sector, count, result);
+        return result;
     }
 
     /// <summary>ksceMsifWriteSector(int sector, const void *buffer, int count): no raw block access (0x803D0000).</summary>
     [Hle(Nid = 0x329035EF, Library = "SceMsifForDriver", Default = true)]
     int ksceMsifWriteSector(uint sector, uint buffer, uint count)
     {
-        return MsifTransfer(buffer, count);
+        int result = MsifTransfer(buffer, count);
+        LogSectorAccess("msif write (memory card)", sector, count, result);
+        return result;
     }
 
     /// <summary>ksceMsifEraseSector(int sector, int count): no sectors 0x803D0001; no raw block access (0x803D0000).</summary>
     [Hle(Nid = 0x0F86BEEA, Library = "SceMsifForDriver", Default = true)]
     int ksceMsifEraseSector(uint sector, uint count)
     {
-        return count == 0 ? MSIF_ERR_INVALID_ARGUMENT : MSIF_ERR_DEVICE;
+        int result = count == 0 ? MSIF_ERR_INVALID_ARGUMENT : MSIF_ERR_DEVICE;
+        LogSectorAccess("msif erase (memory card)", sector, count, result);
+        return result;
     }
 
     /// <summary>ksceMsifSetAccessMode(int mode): 0 or 1 (else 0x803D0001); 0.</summary>

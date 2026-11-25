@@ -8,14 +8,14 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
 
 ## Diagnóstico
 
-- [ ] [P2][M] **Gravar tudo sem o jogo, o que falta** (o resto em "Corrigido, falta o usuário testar", feat/capself1):
-  - Entradas do áudio: gravar os fluxos que entram nos decodificadores (sceAudiodec, ATRAC/AT9, MP3/AAC) e nos
-    buffers das vozes NGS durante a gravação, para o rerun sem o jogo reproduzir buracos e erros de decodificação
-    (hoje só a saída em WAV).
-  - Estados de vários processos (o shell com aplicativos abertos) ainda não sobem sem os programas
-    (`SaveStates.BootFromState` recusa); e a gravação do shell pode sair sem `state_start.vss` quando uma thread do
-    shell está em código do guest ("not at a safe point": tentar de novo até um ponto seguro).
-  - Módulos de firmware carregados pela primeira vez durante a gravação vêm do firmware de quem analisa.
+- [ ] [P2][M] **Gravar tudo: o áudio que entra nos decodificadores e nas vozes NGS** (parte do antigo "Gravar tudo
+  sem o jogo, o que falta"; o feito está em "Corrigido, falta o usuário testar"): gravar os fluxos que entram nos
+  decodificadores (sceAudiodec, ATRAC/AT9, MP3/AAC) e nos buffers das vozes NGS durante a gravação, para o rerun sem o
+  jogo reproduzir buracos e erros de decodificação (hoje só a saída em WAV).
+
+- [ ] [P2][G] **Gravar tudo: estados de vários processos sobem sem os programas** (parte do antigo "Gravar tudo sem o
+  jogo, o que falta"): o estado do shell com aplicativos abertos ainda não sobe sem os programas
+  (`SaveStates.BootFromState` recusa estados de mais de um processo); falta guardar e subir a imagem de cada processo.
 
 - [ ] [P3][G] **O log e a captura F8 dizem a causa de uma trava de cara:**
   - **Histórico de cada objeto de sincronização** (event flag, semáforo, mutex, cond, msgpipe): um anel barato com as
@@ -1204,7 +1204,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 ## Android
 
 - [x] App Android, tela da biblioteca: tirar a palavra "VitaSharp" em cima do título da biblioteca, o botão de instalar e o botão de Ajustes ao lado do texto da biblioteca. Feito (feat/andpar): o cabeçalho é só o título; instalar continua no botão flutuante e em Ajustes > Instalar jogo (`AndroidNarrowLayoutTests`). **Falta validar no aparelho.**
-- [ ] [P2][M] Dead Space (port, DEADSPACE) no Android sem som e engasgando (relato do usuário, 15/11/2026, APK build-1f8c024, com "Ativar Plugins do Kernel" e kubridge + fd_fix; no PC roda com som). Logs do celular guardados pelo lead (`<scratchpad>ds_android`). Ler o log primeiro: áudio (saída aberta? grãos/s), fps e tiers da CPU, threads em espera; comparar com o PC na mesma cena.
+- [ ] [P2][M] (precisa do usuário/aparelho) Dead Space (port, DEADSPACE) no Android sem som e engasgando (relato do usuário, 15/11/2026, APK build-1f8c024, com "Ativar Plugins do Kernel" e kubridge + fd_fix; no PC roda com som). Logs do celular guardados pelo lead (`<scratchpad>ds_android`). Ler o log primeiro: áudio (saída aberta? grãos/s), fps e tiers da CPU, threads em espera; comparar com o PC na mesma cena.
 - [x] Paridade de opções PC/Android: toda opção do launcher do desktop também no app Android, com o mesmo nome, padrão
   e efeito (`AndroidOptionParityTests`; regra no README, "Code style"). Feito: compilação rápida de shaders e
   compilar shaders em segundo plano em Ajustes (feat/android-shader-options); Ativar Plugins do Kernel já existe nos
@@ -1745,7 +1745,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   novo depois de pegar o núcleo (`ThreadMgrHleTests.AWaitingThreadTakesNoCoreUntilItIsWoken`,
   `ContendedLocksNeverLetTwoThreadsIn`). No PC, boot-shell depois de 35 s: 2-4 fps antes, 47-59 fps depois; TestGame
   225/0 antes e depois. Falta confirmar no celular.
-- [ ] [P2][M] Sistema do Vita no Android: o shell demora para abrir e as opções do app Configurações não aparecem/não funcionam (relato do usuário, 16/11/2026, APK com a correção da espera sem núcleo). Próximo passo: captura "Gravar tudo" no app Configurações no celular e comparar com o mesmo app no PC; medir o tempo de boot do shell (PC x celular).
+- [ ] [P2][M] (precisa do usuário/aparelho) Sistema do Vita no Android: o shell demora para abrir e as opções do app Configurações não aparecem/não funcionam (relato do usuário, 16/11/2026, APK com a correção da espera sem núcleo). Próximo passo: captura "Gravar tudo" no app Configurações no celular e comparar com o mesmo app no PC; medir o tempo de boot do shell (PC x celular).
 - [x] App .NET MAUI com interface declarativa em C# (MauiReactor), seguindo os mockups em `docs/android/` (biblioteca
   e troféus, ajustes, firmware, conta PSN e rede, driver e informações da GPU, Sistema do Vita) (30/10/2026: gera o
   APK, `src/VitaSharp.Android`; ainda não rodou num aparelho nem no emulador)
@@ -2190,9 +2190,18 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   dev/tty/md). Falta: SceIofilemgrForDriver NID_5B7E5AB8 (id -> caminho pela tabela de 0x20 entradas de 0x38 bytes
   em 0x81022b30, marca a palavra +8 do bloco extra do mount e acorda o event flag dele: aviso de troca de mídia; achar
   quem preenche a tabela) e NID_DD46CD63 (para cada objeto de arquivo da classe do módulo com +0x38 == mount, flags
-  +0x40 & máscara e +0x44 == 0, envia o aviso e marca +0x44: precisa desses campos no objeto de arquivo);
-  SceCoredumpForDriver NID_A7D214A7 / NID_D064F6DC / NID_EF20949F (validação do pedido e a fila do thread de dump,
-  escrever o .psp2dmp do processo); SceAppMgrForDriver 6 (1B6C2FED/C4924946 caminho de lançamento de debug atrás de
+  +0x40 & máscara e +0x44 == 0, envia o aviso e marca +0x44: precisa desses campos no objeto de arquivo). Estudo
+  (25/11/2026, fix/small2): a tabela de 0x81022b30 é dado estático do módulo (32 pontos de montagem: o id e o
+  caminho; o `FUN_810182e8` só a lê e liga a ela a montagem criada), então o 5B7E5AB8 resolve o caminho do id até a
+  montagem do guest e só faz efeito numa montagem com objeto de guest (as do `vfsMount`, `IoFileMgr.VfsMount.cs`); as
+  montagens por id do VitaSharp são pastas do host sem objeto, e para elas não há o que marcar. O DD46CD63 não
+  percorre objetos de arquivo: percorre os objetos de uma classe própria do módulo (pedidos de aviso: +0x38 a
+  montagem, +0x3C o processo, +0x40 a máscara de eventos, +0x44 já avisado, +0x48 o buffer do processo), copia um
+  registro de 0x1C bytes para o processo e acorda quem espera; falta achar a função que cria esses pedidos (a
+  inscrição no aviso de troca de mídia) antes de implementar os dois;
+  SceCoredumpForDriver NID_A7D214A7 / NID_D064F6DC / NID_EF20949F (a validação do pedido está feita, em "Corrigido,
+  falta o usuário testar"; falta a fila do thread de dump, com duas vagas de pedido e 0x8001000C quando as duas estão
+  ocupadas (FUN_81006f10), a suspensão do processo e escrever o .psp2dmp dele, o ELF de core com as notas da Sony); SceAppMgrForDriver 6 (1B6C2FED/C4924946 caminho de lançamento de debug atrás de
   ksceSblACMgrIsDevelopmentMode; 1574E1A4 montagem por id 0x6A/0x6B/0xCD/600/900; 324DD34E, E8DB7942 e 504023C8
   feitos em 23/11/2026, fix/quick3, em "Corrigido, falta o usuário testar");
   SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver 14
@@ -2404,32 +2413,46 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   datagrama PDP nos dois sentidos. Depois Matching e o canal WLAN do ScePspemu.
 - [ ] [P3][M] Localização (GPS) pelo host, o que falta (`docs/notes/hardware-coverage.md`; o feito está em
   "Corrigido, falta o usuário testar"): (1) o serviço de localização do próprio PC (Geolocation do Windows, GeoClue
-  no Linux, Core Location no macOS) como fonte "system" no desktop; (2) entregar a posição pelos callbacks
-  (`sceLocationStartLocationCallback` aceita e fica ativo, mas ainda não chama o callback do guest a cada
-  deslocamento de `distance` metros); (3) o caminho do firmware: o liblocation.suprx real é cliente IPC do
-  `location_provider` do shell, que nos modelos 3G lê o `SceGps` (driver do modem); o VitaSharp emula um modelo Wi-Fi
+  no Linux, Core Location no macOS) como fonte "system" no desktop; (2) o caminho do firmware: o liblocation.suprx
+  real é cliente IPC do `location_provider` do shell, que nos modelos 3G lê o `SceGps` (driver do modem); o VitaSharp emula um modelo Wi-Fi
   (sem receptor, o `ksceGps` fica no estado 2 com driver e sem sessão), e o Near (NPXS10000) já usa o liblocation real
-  contra o provedor do shell sem posição. Usa: Near, Mapas.
-- [ ] [P3][M] Magnetômetro, o que falta (o feito está em "Corrigido, falta o usuário testar"): (1) os registros brutos
-  do magnetômetro para a calibração do shell (`sceMotionDevReadForMagnCalib`, `GetCurrentMagnCalibData`) e o
-  `dataInfo`; (2) a fusão do campo no `deviceQuat` como o driver_us faz (hoje só a matriz NED e a estabilidade usam o
+  contra o provedor do shell sem posição. Achado (24/11/2026, fix/small2, só estudo do 3.74): o
+  `liblocation_provider.suprx` do shell não importa o `SceGps`; num modelo Wi-Fi ele tira a posição do serviço Skyhook
+  (`https://api.skyhookwireless.com/wps2`, protocolo XML "http://skyhookwireless.com/wps/2005") com a lista de redes
+  Wi-Fi vistas (`scePosNetCtlInetGetScanInfo`) pelo `SceHttp`. Esse serviço não existe mais; dar uma posição ao Near
+  pelo caminho do firmware é responder essa requisição com a posição do host (o `SceNetCtl` com redes vistas e uma
+  resposta WPS), e isso é [G]: decidir com o usuário antes. Usa: Near, Mapas.
+- [ ] [P3][M] Magnetômetro, o que falta (o feito está em "Corrigido, falta o usuário testar"): (1) o anel de
+  registros brutos do driver (`sceMotionDevRead`/`ReadForMagnCalib` copiam os registros do leitor, modo 0x10005 do
+  FUN_81004420; o formato do registro ainda não foi lido) e o `dataInfo`; (2) a fusão do campo no `deviceQuat` como o driver_us faz (hoje só a matriz NED e a estabilidade usam o
   campo); (3) o magnetômetro de um controle no PC (o SDL não expõe um).
-- [ ] [P3][M] Teclado e mouse Bluetooth, o que falta (o feito está em "Corrigido, falta o usuário testar"): os
-  callbacks de dica (enumeração e leitura) ainda não são notificados; as configurações de Bluetooth do shell não
-  listam o dispositivo (o `SceBt` do kernel não conhece os pareados); o `ConsumerControl` e o `Controller` do SceHid.
+- [ ] [P3][M] Teclado e mouse Bluetooth, o que falta (o feito está em "Corrigido, falta o usuário testar"): conferir
+  no Sistema do Vita que Configurações > Bluetooth lista os dois dispositivos (os registros do `SceBt` seguem o 3.74,
+  mas a tela não foi aberta); uma fonte do host para os controles de consumo (teclas de mídia de um teclado), hoje
+  nenhum é pareado.
 - [ ] [P3][G] Processador de mídia Venezia (núcleos MeP + IVC2) para código MeP que não é do firmware (plugin
   VVNZRunner e o homebrew sobre ele; `docs/notes/hardware-coverage.md`): o `vnzimg.skprx` sai do `self2elf` em claro,
   sem chave. Primeira entrega: interpretador do núcleo MeP-c5 numa thread de guest com programa sintético no teste
   (aritmética, memória, desvios, escrita de mailbox lida pelo ARM). Depois o IVC2 (sem documentação pública), o boot
   do `vnzimg` até o estado 8 que o `SceCodecEngineWrapper` espera e os RPCs.
-- [ ] [P3][G] Codecs que faltam no HLE do codec engine (`docs/notes/hardware-coverage.md`): decodificador CELP
-  (`sceAudiodec` tipo `0x1006` recusa hoje), codificadores CELP e G.729 (quadros zerados), decodificador JPEG
-  dividido. Primeira entrega: tabela de tamanho de quadro CELP por modo de taxa conferida com o contrato do
-  `SceAudiodec`, depois quadros decodificados contra valores calculados pela ISO/IEC 14496-3.
-- [ ] [P3][G] Cartão de memória e eMMC como dispositivos de bloco (`docs/notes/hardware-coverage.md`): hoje o acesso a
-  setores falha (`0x803D0000`, `0x8032001A`). Primeira entrega: log de todo acesso a setor por chamador (formatação,
-  atualização pelos Ajustes, homebrew) e um arquivo de imagem como base de um dispositivo do `sdstor`, com setor
-  gravado lido de volta e fora do limite como o módulo responde.
+- [ ] [P3][G] Codecs que faltam no HLE do codec engine (`docs/notes/hardware-coverage.md`): a síntese CELP (o
+  decodificador já aceita os quadros, ver "Corrigido, falta o usuário testar", e devolve silêncio), os codificadores
+  CELP e G.729 (quadros zerados), o decodificador JPEG dividido. Estudo (24/11/2026): os codecs rodam no Venezia
+  (MeP), então não há código ARM do firmware para rodar em LLE; o formato é o MPEG-4 CELP narrowband (ISO/IEC
+  14496-3 subparte 3, excitação MPE, 8 kHz, 10 taxas de 3850 a 12200 bps). Não há implementação aberta (o FFmpeg
+  não tem MPEG-4 CELP, só QCELP, outro codec); a síntese precisa das tabelas da norma (quantização vetorial
+  dos LSP, codebooks de ganho). **Bloqueio de licença (decisão do usuário):** o software de referência ISO/IEC
+  14496-5 traz o aviso "MPEG-2 NBC/MPEG-4 Audio" (licença só para produtos que declaram conformidade com a norma;
+  "Copyright is not released for non MPEG-2 NBC/MPEG-4 Audio conforming products"; o autor pode impedir terceiros),
+  restrição de uso incompatível com a GPLv3 (seções 7 e 10), então as tabelas não vêm dele. Caminhos: (1) transcrever
+  as tabelas do texto da norma ISO/IEC 14496-3 (subparte 3; texto pago, com copyright da ISO; se tabelas numéricas
+  podem ser copiadas é questão jurídica); (2) pedir aos detentores uma licença compatível. Com um deles decidido:
+  decodificador (LSP → LPC, excitação adaptativa + MPE, filtro de síntese, pós-filtro se o Vita aplicar) testado com
+  quadros sintéticos de saída calculável, depois o codificador (análise LPC, busca MPE) com ida e volta.
+- [ ] [P3][G] Cartão de memória e eMMC como dispositivos de bloco, o que falta (`docs/notes/hardware-coverage.md`; a
+  primeira entrega está em "Corrigido, falta o usuário testar"): os dispositivos do `sdstor` por cima do eMMC com
+  imagem (tabela de partições, caminhos `sdstor0:int-lp-...`), a imagem do cartão de memória no `SceMsif`, e a lista
+  dos chamadores reais que o log mostrar.
 - [ ] [P3][G] Porta USB de dispositivo conectada a um host emulado (Content Manager com PC/PS3, armazenamento USB;
   `docs/notes/hardware-coverage.md`): primeira entrega: evento "cabo conectado", `SceUdcd` em `0x20`, a espera de
   estado retorna e um host roteirizado completa um pedido de controle.
@@ -3294,6 +3317,110 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (25/11/2026, falta testar) [P2][G] Pedidos de dump do SceCoredump conferidos como no 3.74 (fix/small2):
+  `NID_A7D214A7` e `NID_D064F6DC` (pid, arg, alvo, pedido) conferem o pedido antes de enfileirá-lo para o thread de
+  dump, na ordem do módulo (0x81007100): pedido NULL ou palavra de tamanho (+0) até 3, 0x80010016; com 0x34 bytes ou
+  mais, +0x14 abaixo de 11 com +0x18 quando não é 0, e +0x1C até 0x80 com +0x20 quando não é 0; com 0x14 bytes ou
+  mais, nível (+8) 0, 1, 2 ou 10, e para 10 +0xC até 0x400 com +0x10 quando não é 0; depois o terceiro argumento.
+  Antes todo pedido dava 0x80020008, e a assinatura chamava o pedido de tamanho. Um pedido válido continua recusado
+  com 0x80020008 (o emulador não guarda arquivo de core; ver o item do kernel em resposta padrão). Teste:
+  `CoredumpKernelTests.DumpRequestsAreCheckedAsTheFirmware` (falha sem a mudança). Testar: nada muda na tela; num
+  jogo que trava, o log segue igual.
+- [ ] (24/11/2026, falta testar) [P3][G] Cartão de memória e eMMC no nível de bloco, primeira entrega (fix/small2,
+  `SystemServicesVsh.SectorAccess.cs`, `Host/BlockImage.cs`). Todo acesso cru a setores do cartão de memória
+  (`ksceMsifRead/Write/EraseSector`) e do eMMC e do cartão de jogo (`ksceSdifRead/WriteSectorMmc/Sd`) vai para o log
+  com o chamador (endereço de retorno simbolizado e a thread): o primeiro de cada chamador e operação, ou todos com
+  `VITASHARP_TRACE_SECTORS=1`. `VITASHARP_EMMC_IMAGE=<imagem crua>` faz um arquivo servir os comandos de setor do
+  eMMC (host 0 do sdif): leitura e escrita de setores de 512 bytes no arquivo, depois das conferências de argumento
+  do 3.74 (0x8032000E); um intervalo além do fim responde como o cartão com ADDRESS_OUT_OF_RANGE (bit 31 do R1), que
+  o sdif 3.74 converte em 0x80320100 + o menor bit de erro (FUN_810026e0): 0x8032011F. Sem imagem, como antes
+  (0x8032001A). Teste: `SdifKernelTests.AnImageBacksTheEmmcSectors` (falha sem a mudança). Testar: ligar o Sistema
+  do Vita, abrir Configurações e formatar o cartão de memória ou iniciar uma atualização pelos Ajustes, e mandar o
+  `last.log` com as linhas `[sectors]` (quem acessa os setores).
+- [ ] (24/11/2026, falta testar) [P3][M] Callbacks de localização entregam a posição (fix/small2,
+  `Hle/Modules/Location.Callbacks.cs`). No 3.74 o liblocation.suprx roda os callbacks numa thread própria,
+  "SceLocationCallback" (pilha 0x1000): o `sceLocationStartLocationCallback` guarda o callback e o userdata no handle
+  e pede ao serviço de localização relatórios a cada `distance` metros; a cada relatório a thread lê a posição num
+  SceLocationLocationInfo e chama `callback(resultado, handle, &info, userdata)`, até o Stop ou o Close. Antes o
+  callback era aceito e nunca chamado. Agora a thread de serviço do guest olha a fonte do host cerca de uma vez por
+  segundo e informa a primeira posição e depois cada uma a pelo menos `distance` metros (círculo máximo) da última
+  informada; sem posição, nada. O Start confere o callback antes do handle, como o 3.74 (antes, o contrário). Save
+  state: a thread volta com o UID salvo (`IServiceThreadOwner`). Testes:
+  `LocationSourceTests.TheCallbackGetsThePositionEveryDistance` (callback de guest de verdade; falha sem a mudança),
+  `ALocationCallbackRunsOncePerHandleUntilStopped`, `DistancesAreGreatCircleMetres`. Testar: com a localização
+  ligada (`--location=` ou "Localização do celular"), abrir um app que acompanha a posição (Near, Mapas): a posição
+  aparece sem precisar atualizar à mão e, no celular, muda ao andar.
+- [ ] (24/11/2026, falta testar) [P3][M] Eventos de conexão do Bluetooth e controles de consumo do SceHid
+  (fix/small2; `docs/notes/hardware-coverage.md`). No 3.74 o SceBt tem 8 vagas, uma por processo:
+  `sceBtRegisterCallback` (0xA23FB154) guarda o callback, a máscara de 64 bits dos tipos de evento e uma fila de 16;
+  cada evento (tipo, status, uma palavra, o endereço) entra nas vagas cuja máscara tem o bit do tipo (fila cheia: o
+  evento se perde e a próxima leitura dá 0x802F0C04 uma vez) e o callback é notificado; `sceBtReadEvent` (0x26BAC23D)
+  copia registros de 16 bytes, o mais antigo primeiro (sem vaga: 0x802F0C03); `sceBtUnregisterCallback` libera a
+  vaga. Antes a leitura dava sempre 0 e nada entrava na fila. Agora o teclado e o mouse pareados (a opção do emulador)
+  geram o evento 5 (conectado, status 0) ao entrar e o 6 (desconectado, motivo HCI 0x13) ao sair, com o endereço
+  deles (`SystemServicesVsh.BluetoothEvents.cs`). Os seis `sceHidConsumerControl*` faltavam: agora respondem como o
+  3.74 (mesmas conferências do teclado, até 8 dispositivos, relatórios de 0x10 bytes; nenhum controle de consumo é
+  pareado, então a enumeração não acha nenhum e a leitura não conhece o handle; os callbacks de dica ficam guardados).
+  Testes: `BluetoothEventTests` (três casos: fila e notificação, máscara, fila cheia; falham sem a mudança) e
+  `HidDeviceTests.ConsumerControlsAnswerAsTheFirmware`. Testar: com "Teclado e mouse Bluetooth" ligado, abrir o
+  Sistema do Vita e entrar em Configurações > Bluetooth: os dois aparecem, e ligar e desligar a opção com a tela
+  aberta atualiza a lista.
+- [ ] (24/11/2026, falta testar) [P3][M] Calibração do magnetômetro guardada como no 3.74 (fix/small2): o SceMotionDev
+  guarda uma calibração (12 palavras e uma versão que conta as atualizações); `sceMotionDevUpdateMagnCalibData`
+  (0x787384FA) recusa quem não é programa do sistema (0x80360002), confere os ponteiros (0x80360001), guarda as 12
+  palavras depois da primeira e escreve a versão nova; `GetCurrentMagnCalibData` (0xAAB4B41F) dá 0x80360105 até a
+  primeira e depois a versão e as palavras. Antes a atualização não guardava nada e a assinatura tinha um argumento
+  só. As leituras brutas conferem os argumentos como o 3.74: `ReadForMagnCalib` (buffer e contagem 1..64, depois
+  programa do sistema) e `sceMotionDevRead` (buffer, contagem e o ponteiro de "há dados novos", que recebe 0).
+  Teste: `SystemKernelServicesTests.TheMagnetometerCalibrationIsKeptAsTheFirmwareDoes` (falha sem a mudança).
+  Testar: abrir o Sistema do Vita e deixar a inicialização terminar: o shell segue sem erro de calibração (o
+  atualizador de calibração lê e grava por essas chamadas); nada mais muda na tela.
+- [ ] (24/11/2026, falta testar) [P3][M] Memória gravada por programas de shader (VLDST store) volta para a memória do
+  guest (fix/small2, `VulkanRenderer.StoreWriteback.cs`). No Vita o USSE grava direto na memória onde o buffer está
+  mapeado, e a CPU lê o que o programa gravou quando o trabalho da cena termina; aqui as gravações ficavam só no
+  espelho do renderizador. Agora as faixas gravadas em cada cena são copiadas do espelho no fim da cena e escritas na
+  memória do guest quando o quadro termina na GPU (como as devoluções de render target no modo preguiçoso: as
+  notificações não esperam por elas, sem mudar o ritmo do jogo). A faixa anotada é a janela inteira do slot (até
+  1 MB), onde a CPU grava outros dados: só entram as palavras que mudaram, nas páginas que a CPU não gravou desde a
+  gravação da GPU (nessas o espelho é igual à memória, fora o que o programa gravou); uma página que a CPU gravou
+  depois fica com o dado da CPU. As escritas não marcam as páginas (uma marca devolveria a faixa a uma cópia do guest
+  mais velha que as gravações seguintes ainda na GPU). Custo: uma cópia por faixa gravada por cena e a comparação na
+  CPU (linha "program stores N KB/frame" do resumo de sincronização); `VITASHARP_GPU_STORE_WRITEBACK=0` volta ao
+  comportamento anterior (A/B). Testes: `RendererMemoryStoreTests.TheCpuReadsWhatAProgramStored` (CDRAM e LPDDR;
+  falha sem a correção: a CPU lia 0x11 em vez de 00 00 E0 40 11 2A 15 00), `PublishingKeepsWhatTheCpuWroteSinceTheStore`
+  (páginas gravadas pela CPU depois, varridas ou só marcadas, ficam com o dado da CPU; nada é marcado),
+  `OnlyTheWordsThatChangedAreCopied`. Fica de fora: a CPU vê os dados no fim do quadro na GPU, não já na notificação
+  da cena (como o `VITASHARP_LAZY_WRITEBACK_SYNC`); com `VITASHARP_TEXDIRTY=0` nada é devolvido; nenhum jogo conhecido
+  lê esses dados na CPU (Croixleur Sigma e Jak and Daxter só desenham com eles). Testar: Croixleur Sigma
+  (PCSG00537) na seleção de personagem e nos diálogos, e Jak and Daxter Collection (PCSA00080) nas sombras do chão:
+  tudo igual a antes, sem queda de fps (a linha "program stores" no resumo da sessão mostra quanto é devolvido).
+- [ ] (24/11/2026, falta testar) [P2][M] Gravar tudo: os módulos de firmware carregados durante a gravação saem com o
+  hash (fix/adr4). Um módulo do firmware (os0, vs0, sa0, pd0) carregado pela primeira vez durante a gravação vem, no
+  rerun, do firmware de quem analisa; se esse for outro (outra versão, um módulo modificado), o rerun rodava outro
+  código sem aviso. Agora a captura lista cada um com o SHA-256 da imagem (`fwmodule` no `files/files.tsv`, sem os
+  bytes: o firmware não é do jogo para ir junto), o rerun não põe nada por cima do firmware e, ao carregar um módulo
+  diferente do gravado, o log diz qual (uma vez por módulo) e o resumo do rerun conta quantos diferem. Testes:
+  `CaptureFilesTests.FirmwareModulesLeaveWithTheirHashAndTheRerunSaysWhenTheyDiffer`. Testar: gravar (F8) num jogo que
+  abre um diálogo ou a rede pela primeira vez durante a gravação; o `files/files.tsv` tem linhas `fwmodule`; o rerun
+  num PC com outro firmware avisa "the firmware module ... is not the recording's".
+
+- [ ] (24/11/2026, falta testar) [P2][M] Gravar tudo: o `state_start.vss` sai também quando o começo não é um ponto
+  seguro (fix/adr4). A gravação do shell (ou de um jogo com uma thread presa em código do guest) tentava o estado do
+  início por 3 s e, sem ponto seguro ("not at a safe point"), seguia sem estado nenhum, e o rerun sem o jogo ficava
+  impossível. Agora a gravação segue e o estado é tentado de novo a cada segundo até o primeiro ponto seguro (ou o
+  fim): o `session.txt` traz o estado e uma nota diz quão tarde ele foi tirado ("start save state taken N s after the
+  start, at try T"; o rerun começa dali); sem nenhum ponto seguro até o fim, a nota diz o motivo e as tentativas.
+  Testes: `SessionCaptureFlowTests.AStartStateWithoutASafePointIsTriedAgain`. Testar: no Sistema do Vita (shell com um
+  app aberto), F8 para gravar; a pasta da captura tem `state_start.vss` (ou a nota "start save state taken ...").
+
+- [ ] (24/11/2026, falta testar) [P3][G] CELP no `SceAudiodec`, 1ª parte (fix/adr4): no Vita o decodificador CELP
+  aceita `SceAudiodecInfoCelp` (excitação MPE, 8 kHz, uma das 10 taxas do MPEG-4 CELP narrowband; outra coisa é
+  0x807F3800), anuncia `maxEsSize` 24 (`SCE_AUDIODEC_CELP_MAX_ES_SIZE`) e tira um quadro da taxa por chamada (4650 bps:
+  24 bytes → 320 amostras, 40 ms; 12200 bps: 16 bytes → 80 amostras, 10 ms; a tabela do codificador). O VitaSharp
+  recusava o tipo (0x807F0001). Agora o decodificador é criado e consome os quadros com o tamanho certo; as amostras
+  saem em silêncio (a síntese está no item de codecs). Testes: `AudiodecHleTests.ACelpDecoderTakesTheFramesOfItsBitRate`.
+  Testar: um jogo com chat de voz ou que toca voz CELP não falha mais ao criar o decodificador (o log diz "no CELP
+  decoder yet").
 - [ ] (24/11/2026, falta testar) [P3][M] Teclado e mouse Bluetooth (fix/adr4; `docs/notes/hardware-coverage.md`): no
   3.74 o SceHid guarda até 8 teclados e 8 mouses; `sceHid{Keyboard,Mouse}Enumerate` copia os handles dos conectados
   (lista NULL 0x803B0001, no máximo 8), `Read`/`Peek` conferem o handle (< 1: 0x803B0002; lista NULL ou contagem
@@ -3301,7 +3428,11 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   mouse 0x10) e voltam na hora com quantos copiaram, da fila do dispositivo com posição por leitor. Feito: o teclado
   e o mouse do host como dispositivos pareados (`HostServices.HidKeyboard/HidMouse`, filas de relatórios com uso USB
   HID, modificadores, botões, deslocamento e roda), `Enumerate`, `Read`, `Peek`, `Clear`, `Set/GetIntercept` e o
-  registro dos callbacks de dica como o 3.74; sem a opção nada é pareado, como antes. Testes: `HidDeviceTests`.
+  registro dos callbacks de dica como o 3.74; sem a opção nada é pareado, como antes. Os callbacks de dica de
+  enumeração são notificados quando um teclado/mouse conecta ou desconecta e os de leitura a cada relatório novo; o
+  `SceBt` lista os pareados (`sceBtGetRegisteredInfo`: registros de 0x100 bytes com endereço, classe de dispositivo,
+  conectado e nome, como o 0x81000554 do 3.74; `sceBtGetConnectingInfo` = 2, conectado) para as Configurações >
+  Bluetooth do shell. Testes: `HidDeviceTests`.
   Opção (desligada por padrão; as teclas continuam valendo como controle): PC, Configurações > Emulação > Teclado e
   mouse Bluetooth (`--bt-keyboard-mouse=on`); Android, Ajustes > Teclado e mouse Bluetooth (teclado e mouse físicos
   do celular). Testar: ligar a opção e abrir o navegador do Vita (ou um app que lê teclado): digitar no teclado físico
@@ -4300,7 +4431,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   "refused (0x90010006)". Falta: (5) o ScePspemuMain chega ao sceCompatInitEx e para ("the PSP compat core is not
   emulated"): o núcleo de compatibilidade (pcbc) é o bloqueio até o menu do Adrenaline; (6) e (7) feitos (fix/adr4,
   ver "Corrigido, falta o usuário testar": diálogo de erro e NPXS10028 em dobro).
-- [ ] [P2][M] Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
+- [ ] [P2][M] (precisa do usuário/aparelho) Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
   capturas de 21/11/2026, e um engasgo de 132 ms por leitura de arquivo (fileIo 134 ms; quadro 302 do dump da
   `_232150_tudo`). Achado (perf/ac3pace): fora das gravações o jogo fica em 30 fps (linhas `FPS frame` da sessão) e
   só cai nelas, porque o gravador do GPU dump gasta 21-28 ms/quadro no GPU worker; o rerun headless sem dump dá 29-31
@@ -4385,7 +4516,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   vermelhas e pista cinza (antes verde listrado e ruído). Outros dumps: só os do RR3 e o `VSTEST001_20261111` têm ETC1
   (o caminho mudado é exclusivo do ETC1). O `GL_INVALID_VALUE: mtTextureGL::CreateEmpty` do log é outro assunto (o
   vitaGL recusou um formato numa textura vazia) e não muda a imagem do replay. Falta o usuário confirmar no jogo.
-- [ ] [P1][M] Textura quebrada no MGS3 depois de trocar de jogo pelo shell (relato do usuário, 15/11/2026; captura `shell_20261115_225727_tudo`, com dump da GPU de 177 quadros): shell → Metal Gear Solid HD → God of War Collection → de volta ao MGS, e na abertura do MGS3 (avião) a cabeça do tripulante sai com textura errada e sombra em blocos. Pistas do log: dois jogos vivos ao mesmo tempo ("scenes of several processes interleaved"), e `[vram] pressure 198% ... evicting 0 MB` repetido (VRAM acima do orçamento e nada liberado). Suspeitas: cache de texturas/alvos chaveado só pelo endereço do guest e compartilhado entre processos (o GoW usa os mesmos endereços), ou textura descartada/não recarregada sob pressão de VRAM. Primeiro passo: `replay-gpu --frame=37` do dump e comparar com o MGS aberto direto, sem o GoW.
+- [ ] [P1][M] (precisa do usuário/aparelho) Textura quebrada no MGS3 depois de trocar de jogo pelo shell (relato do usuário, 15/11/2026; captura `shell_20261115_225727_tudo`, com dump da GPU de 177 quadros): shell → Metal Gear Solid HD → God of War Collection → de volta ao MGS, e na abertura do MGS3 (avião) a cabeça do tripulante sai com textura errada e sombra em blocos. Pistas do log: dois jogos vivos ao mesmo tempo ("scenes of several processes interleaved"), e `[vram] pressure 198% ... evicting 0 MB` repetido (VRAM acima do orçamento e nada liberado). Suspeitas: cache de texturas/alvos chaveado só pelo endereço do guest e compartilhado entre processos (o GoW usa os mesmos endereços), ou textura descartada/não recarregada sob pressão de VRAM. Primeiro passo: `replay-gpu --frame=37` do dump e comparar com o MGS aberto direto, sem o GoW.
   Achados (16/11/2026, kill2, 1h20): (1) o `--frame` do replay-gpu é o número do present, não o índice no dump:
   o "quadro 37" da captura é `--frame=17120`. (2) O defeito **reproduz no replay de um renderer novo**, inclusive com
   `--no-targets` (sem o estado de render targets gravado no início do dump): não vem de estado do renderer deixado
@@ -4454,6 +4585,13 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   (`_prefetchActive` + `StopShaderWorkers` no início do `Dispose`); faltava a barreira completa entre gravar o flag
   e ler a contagem (no ARM64 a saída do lock é só release). Feito, contrato descrito no `IGpuBackend.Prefetch` e
   coberto por `RendererPrefetchDisposeTests`.
+  Corrigido (24/11/2026, fix/small2): outro caminho nativo que sobrevivia ao `Dispose` era o watcher de fences
+  (`FenceRetireWatcher`, só com `VITASHARP_RETIRE_WAKE=1`/`measure`, ligado nos testes `RetireWake*`): o `Dispose`
+  fazia `Join(1000)` e destruía as fences, e o renderer o device logo depois, mesmo com a thread ainda dentro do
+  `vkWaitForFences` (uma thread sem CPU numa máquina sobrecarregada passa de 1 s). Agora o `Dispose` espera a thread
+  sair, sem prazo; ela confere o pedido de parada depois de cada espera (no máximo 50 ms). Teste:
+  `FenceRetireWatcherTests` (fences falsas com a espera presa; falha sem a correção). O resto continua: guardar o log
+  do testhost na próxima queda para ver a pilha.
 - [x] Minecraft (PCSE00491) no Android fica mais lento com o tempo: duplicado (15/11/2026), junto no item "Minecraft
   (PCSE00491) fica lento jogando no celular" da seção Android. Nota que só estava aqui: no desktop o UC passou 18 s em
   sceAvcdecDeleteDecoder na tela de título com o main num PC só (f1567), a conferir
@@ -4511,7 +4649,8 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   fila. Prova: `GxmFlowTests.ASceneBegunBeforeTheEntryThatReleasesItsBufferDoesNotStallTheGpu` (sem a correção a espera
   só termina no limite de 250 ms) e `ATransferIntoTheBufferAfterItsSceneIsWaitedForByTheEntry`. Falta a confirmação no
   Wipeout pelo usuário.
-- [ ] [P3][P] Tamanho da classe "espera no escalonador" (12.000 ciclos): `sceKernelDelayThread*` é uma espera como as outras
+- [ ] [P3][P] (precisa de medida num Vita ou de A/B do usuário: nenhum agente fecha sozinho) Tamanho da classe
+  "espera no escalonador" (12.000 ciclos): `sceKernelDelayThread*` é uma espera como as outras
   (o threadmgr 3.74 põe a thread na lista de timers e troca de contexto, o mesmo caminho de uma espera com timeout),
   então fica na classe `SchedulerWait` (`HleCostTests.DelaysAreSchedulerWaits`); baixar só o delay para 2.000
   (perf/desktop-24, não medido) deixaria ele como a única chamada bloqueante fora da classe. O que falta é calibrar a
@@ -4811,7 +4950,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   AndroidAppTests.AndroidGamepadMapsToTheStandardLayout (controle que lista LTRIGGER e move BRAKE; falha sem a
   correção). Se o L2 do controle do usuário ainda não funcionar, o log do `Connect` (eixos listados) e um
   `getevent -l` do gatilho mostram o eixo real. A parte (2), o touchpad do DualShock 4, continua aberta
-- [ ] [P2][M] Android, controle de PS4 no celular, o que sobrou do relato de 10/11/2026 (o L2 está em "[x]" acima):
+- [ ] [P2][M] (precisa do usuário/aparelho) Android, controle de PS4 no celular, o que sobrou do relato de 10/11/2026 (o L2 está em "[x]" acima):
   o touchpad do DualShock 4 vira mouse no Android e esse ponteiro se mistura com o toque na tela; tratar o touchpad
   como entrada do controle (SOURCE_TOUCHPAD/MOUSE do dispositivo do controle, separado do SOURCE_TOUCHSCREEN do
   aparelho; ou capturar o ponteiro) e mapear para o toque frontal/traseiro do Vita sem mexer no toque da tela. Validar
@@ -6666,13 +6805,6 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   conteúdo do início da cena (o quadro anterior) e o resultado acumulava até ficar branco (fundo branco no título, na
   seleção de personagem e nos diálogos); a área do desenho agora é recortada pelo viewport. Seleção de personagem,
   diálogos e o cenário 3D a ~30 fps (`croixleur_boot`)
-- [ ] [P3][M] Memória gravada por programas de shader (VLDST store): o que a GPU grava não volta para a memória do guest
-  (a CPU que ler essa memória vê o conteúdo antigo). Para devolver é preciso saber os bytes que o programa gravou de
-  fato (a faixa anotada é a janela inteira do slot, até 1 MB, onde a CPU grava outros dados no mesmo quadro: copiar a
-  janela inteira de volta sobrescreveria esses dados), por exemplo com os limites min/max gravados por draw num buffer
-  de extensões, e devolver só isso quando o quadro termina. Ver se algum jogo lê esses dados na CPU (31/10/2026, branch
-  fix/croixleur)
-  Entrega movida para "Corrigido, falta o usuário testar" (stores de 16/8 bits e fora da CDRAM, rend1, 22/11/2026); o resto segue aberto aqui.
 
 - [x] The Deer God (PCSB01070): engasgos no gameplay (30/10/2026, main 4603a03, logs
   `20261030_230111_PCSB01070` e `20261030_230208_PCSB01070`). Roda a 60 fps, mas cai de repente para 12–16 fps por

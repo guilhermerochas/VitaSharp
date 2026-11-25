@@ -114,7 +114,7 @@ public sealed class RendererMemoryStoreTests(GuestMemoryFixture fx)
 
     /// <summary>The RGB of every pixel of each presented frame: frame 0 stores then reads, frame 1 only reads, frame 2
     /// reads after the CPU rewrote the buffer with 0x33 bytes.</summary>
-    private List<byte[]> Run(string tag, MemoryRegion region, uint word, string? gpuQuirks)
+    private List<byte[]> Run(string tag, MemoryRegion region, uint word, string? gpuQuirks, byte[]? memoryAfterStore = null)
     {
         using IDisposable driver = SoftwareVulkan.Use();
         string frames = Path.Combine(Path.GetTempPath(), "vitasharp-store-" + Guid.NewGuid().ToString("N"));
@@ -166,6 +166,11 @@ public sealed class RendererMemoryStoreTests(GuestMemoryFixture fx)
                         }
 
                         Scene(store: true);
+                        if (memoryAfterStore != null)
+                        {
+                            GuestMemory.ReadSpan(buffer, memoryAfterStore.Length).CopyTo(memoryAfterStore);
+                        }
+
                         Scene(store: false);
                         GuestMemory.Fill(buffer, 0x33, BufferBytes);
                         Scene(store: false);
@@ -244,5 +249,90 @@ public sealed class RendererMemoryStoreTests(GuestMemoryFixture fx)
         Assert.True(Matching(frames[1], stored) == total, $"{setup}: the next frame read {Matching(frames[1], stored)} of {total} pixels right ({Matching(frames[1], (0x11, 0x11, 0x11))} read the stale guest memory)");
         // the CPU rewrote the memory: its pages go back to the guest copy
         Assert.True(Matching(frames[2], (0x33, 0x33, 0x33)) == total, $"{setup}: after the CPU rewrote the buffer {Matching(frames[2], (0x33, 0x33, 0x33))} of {total} pixels read it");
+    }
+
+    /// <summary>
+    /// The CPU reads what a program stored once the scene's GPU work is done (on the Vita the USSE stores into the
+    /// memory itself): the float at +0, the byte at +5 and the half at +6 are in guest memory after the storing frame,
+    /// and the bytes the program did not store keep the CPU's 0x11. Before, the stores stayed in the renderer's mirror
+    /// and the CPU read the stale 0x11 bytes.
+    /// </summary>
+    [SoftwareVulkanTheory]
+    [InlineData(MemoryRegion.User)]
+    [InlineData(MemoryRegion.Cdram)]
+    public void TheCpuReadsWhatAProgramStored(MemoryRegion region)
+    {
+        byte[] memory = new byte[0x2000];
+        Run($"storecpu{region}", region, 0, null, memory);
+        byte[] want = [0x00, 0x00, 0xE0, 0x40, 0x11, 0x2A, 0x15, 0x00];
+        Assert.True(memory.AsSpan(0, 8).SequenceEqual(want), $"{region} memory after the storing frame: {Convert.ToHexString(memory, 0, 8)}, want {Convert.ToHexString(want)}");
+        int other = memory.AsSpan(8).IndexOfAnyExcept((byte)0x11);
+        Assert.True(other < 0, $"{region} memory: byte +0x{other + 8:X} the program did not store changed to 0x{memory[Math.Max(0, other) + 8]:X2}");
+    }
+
+    /// <summary>
+    /// The publishing contract (<see cref="VulkanRenderer.PublishStored"/>): a stored range is the program's whole
+    /// window, where the CPU also writes. Pages the CPU wrote since the store (swept or still marked) keep the CPU's
+    /// data; on the other pages only the words that changed are written, and the pages are not marked written (a mark
+    /// would send the stored range back to an older guest copy while newer stores are in flight).
+    /// </summary>
+    [Fact]
+    public void PublishingKeepsWhatTheCpuWroteSinceTheStore()
+    {
+        if (!DirtyPages.Enabled)
+        {
+            return;
+        }
+
+        using HleHarness harness = new(fx, "storepublish");
+        const uint Page = 1u << DirtyPages.PageShift;
+        uint buffer = fx.Memory.Alloc(4 * Page, "storepublish", MemoryRegion.User);
+        try
+        {
+            GuestMemory.Fill(buffer, 0x11, 4 * Page);
+            DirtyPages.Sweep();
+            DirtyPages.Sweep();
+            uint stamp = DirtyPages.Epoch + 1;
+            byte[] stored = new byte[4 * Page];
+            stored.AsSpan().Fill(0x11);
+            stored.AsSpan(0, 8).Fill(0x22);                     // page 0: stored, the CPU did not touch it
+            stored.AsSpan((int)Page + 16, 4).Fill(0x22);        // page 1: stored, the CPU wrote the page since (swept)
+            stored.AsSpan((int)(2 * Page) + 32, 4).Fill(0x22);  // page 2: stored, the CPU wrote it since (still marked)
+            stored.AsSpan((int)(3 * Page) + 1, 3).Fill(0x22);   // page 3: a partial word
+            GuestMemory.Write(buffer + Page + 64, 0x33333333u);
+            DirtyPages.Sweep();
+            GuestMemory.Write(buffer + 2 * Page + 64, 0x44444444u);
+
+            int written = VulkanRenderer.PublishStored(stored, buffer, stamp);
+
+            Assert.Equal(12, written);
+            Assert.True(GuestMemory.ReadSpan(buffer, 8).SequenceEqual(stored.AsSpan(0, 8)), "page 0: the stored words were not written");
+            Assert.Equal(0x11111111u, GuestMemory.Read<uint>(buffer + Page + 16));
+            Assert.Equal(0x33333333u, GuestMemory.Read<uint>(buffer + Page + 64));
+            Assert.Equal(0x11111111u, GuestMemory.Read<uint>(buffer + 2 * Page + 32));
+            Assert.Equal(0x44444444u, GuestMemory.Read<uint>(buffer + 2 * Page + 64));
+            Assert.Equal(0x22222211u, GuestMemory.Read<uint>(buffer + 3 * Page));
+            Assert.False(DirtyPages.MarkedNow(buffer, Page), "publishing marked page 0 written");
+            Assert.False(DirtyPages.MarkedNow(buffer + 3 * Page, Page), "publishing marked page 3 written");
+        }
+        finally
+        {
+            fx.Memory.Free(buffer);
+        }
+    }
+
+    [Fact]
+    public void OnlyTheWordsThatChangedAreCopied()
+    {
+        byte[] guest = new byte[133];
+        byte[] stored = new byte[133];
+        guest.AsSpan().Fill(0x11);
+        stored.AsSpan().Fill(0x11);
+        stored[70] = 0x5A;   // a word inside the second 64-byte chunk
+        stored[132] = 0x6B;  // the tail byte
+
+        Assert.Equal(5, VulkanRenderer.CopyChangedWords(stored, guest));
+        Assert.Equal(stored, guest);
+        Assert.Equal(0, VulkanRenderer.CopyChangedWords(stored, guest));
     }
 }

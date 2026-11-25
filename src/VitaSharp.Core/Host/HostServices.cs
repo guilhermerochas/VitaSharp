@@ -196,15 +196,53 @@ public sealed class HostServices : IDisposable
     /// service; null = location off (the default: the application is not allowed to use it).</summary>
     public ILocationSource? Location { get; set; }
 
+    /// <summary>The image file backing the internal eMMC at the block level (SceSdif host 0,
+    /// <see cref="Util.EnvVars.EmmcImage"/>); null = no image, the sector commands reach no device (the partitions
+    /// are served at the file level either way).</summary>
+    public BlockImage? EmmcImage { get; set; } = BlockImage.FromEnvironment(Util.EnvVars.EmmcImage);
+
     /// <summary>Where the controllers' vibration goes (the host's gamepads); null = dropped.</summary>
     public IControllerVibration? Vibration { get; set; }
 
     /// <summary>The host keyboard as a paired Bluetooth keyboard of the Vita (SceHid; the emulator option, off by
-    /// default); null = no keyboard paired.</summary>
-    public HidKeyboard? HidKeyboard { get; set; }
+    /// default); null = no keyboard paired. Setting it connects or disconnects the device
+    /// (<see cref="HidDevicesChanged"/>).</summary>
+    public HidKeyboard? HidKeyboard
+    {
+        get => _hidKeyboard;
+        set
+        {
+            if (ReferenceEquals(_hidKeyboard, value))
+            {
+                return;
+            }
+
+            _hidKeyboard = value;
+            HidDevicesChanged?.Invoke();
+        }
+    }
 
     /// <summary>The host mouse as a paired Bluetooth mouse of the Vita (SceHid); null = no mouse paired.</summary>
-    public HidMouse? HidMouse { get; set; }
+    public HidMouse? HidMouse
+    {
+        get => _hidMouse;
+        set
+        {
+            if (ReferenceEquals(_hidMouse, value))
+            {
+                return;
+            }
+
+            _hidMouse = value;
+            HidDevicesChanged?.Invoke();
+        }
+    }
+
+    private HidKeyboard? _hidKeyboard;
+    private HidMouse? _hidMouse;
+
+    /// <summary>A paired keyboard or mouse was connected or disconnected (SceHid's enumeration hint).</summary>
+    public event Action? HidDevicesChanged;
 
     /// <summary>"Gravar tudo" is armed or recording without --capture-location: the position is withheld (the service
     /// answers "undetermined"), so a capture, which may go to a public report, never holds where the player is.</summary>
@@ -262,6 +300,7 @@ public sealed class HostServices : IDisposable
 
         Microphone?.Dispose();
         Location?.Dispose();
+        EmmcImage?.Dispose();
         lock (CameraStreams)
         {
             foreach (ICameraStream cameraStream in CameraStreams)

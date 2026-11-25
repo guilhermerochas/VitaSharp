@@ -1,5 +1,6 @@
 using VitaSharp.Core.Hle.Motion;
 using VitaSharp.Core.Memory;
+using VitaSharp.Core.SaveState;
 
 namespace VitaSharp.Core.Hle.Modules;
 
@@ -198,8 +199,72 @@ public sealed partial class Sensors : HleModule
     /// <summary>(void *calib): the 0x6C-byte gyro calibration record; empty without factory data.</summary>
     [Hle] int sceMotionDevGetGyroCalibData(uint calib) { if (calib == 0) return ERR_DEV_NULL; GuestMemory.Fill(calib, 0, 0x6C); return 0; }
 
-    /// <summary>(void *calib 0x34): fails until a magnetometer calibration has been made.</summary>
-    [Hle] int sceMotionDevGetCurrentMagnCalibData(uint calib) => calib == 0 ? ERR_DEV_NULL : ERR_DEV_NOT_CALIBRATED;
+    /// <summary>The magnetometer calibration the shell's updater stored (FW 3.74 SceMotionDev keeps one: 12 words and a
+    /// version that counts the updates, 0 = never calibrated).</summary>
+    [SnapshotMissing] // states of builds before it: never calibrated
+    private readonly uint[] _magnCalib = new uint[MagnCalibWords];
+
+    [SnapshotMissing]
+    private uint _magnCalibVersion;
+
+    /// <summary>The words of a calibration after the record's first (the version), 0x34-byte records.</summary>
+    private const int MagnCalibWords = 12;
+    private const uint MagnCalibBytes = 0x34;
+
+    /// <summary>
+    /// (SceMotionDevMagnCalibData *calib 0x34): the current calibration, as FW 3.74 (SceMotionDev 0xAAB4B41F,
+    /// FUN_81006c68): NULL is 0x80360001, 0x80360105 until one was stored, else +0 the version and the 12 words.
+    /// </summary>
+    [Hle]
+    int sceMotionDevGetCurrentMagnCalibData(uint calib)
+    {
+        if (calib == 0)
+        {
+            return ERR_DEV_NULL;
+        }
+
+        if (_magnCalibVersion == 0)
+        {
+            return ERR_DEV_NOT_CALIBRATED;
+        }
+
+        GuestMemory.W32(calib, _magnCalibVersion);
+        for (int i = 0; i < MagnCalibWords; i++)
+        {
+            GuestMemory.W32(calib + 4 + (uint)i * 4, _magnCalib[i]);
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// (const SceMotionDevMagnCalibData *calib, uint *version): stores a new calibration, as FW 3.74 (SceMotionDev
+    /// 0x787384FA, FUN_81006af8): a program that is no system program gets 0x80360002, a NULL argument 0x80360001;
+    /// the 12 words after the record's first are kept (its own version word is ignored), the version counts up and is
+    /// written to <paramref name="version"/>.
+    /// </summary>
+    [Hle]
+    int sceMotionDevUpdateMagnCalibData(uint calib, uint version)
+    {
+        if (!Emu.Access.IsSystemProgram)
+        {
+            return ERR_DEV_SIZE;
+        }
+
+        if (calib == 0 || version == 0)
+        {
+            return ERR_DEV_NULL;
+        }
+
+        for (int i = 0; i < MagnCalibWords; i++)
+        {
+            _magnCalib[i] = GuestMemory.R32(calib + 4 + (uint)i * 4);
+        }
+
+        _magnCalibVersion++;
+        GuestMemory.W32(version, _magnCalibVersion);
+        return 0;
+    }
 
     /// <summary>(u8 mode[8]): the measurement mode, 7 until the driver has been switched to another one.</summary>
     [Hle]
@@ -211,14 +276,30 @@ public sealed partial class Sensors : HleModule
         return 0;
     }
 
-    /// <summary>(void *buf, int size &lt;= 0x40, int count): raw magnetometer samples for the calibration; with no
-    /// magnetometer the field reads zero.</summary>
+    /// <summary>
+    /// (void *records, int count, int): the raw sensor records the calibration reads, as FW 3.74 (SceMotionDev
+    /// 0xCC4FDA6A, FUN_81004420 in mode 0x10005): a NULL buffer or a count outside 1..64 is 0x80360001, a program that
+    /// is no system program 0x80360002; then the records the driver's ring holds for the reader, how many. No raw
+    /// sensor ring is emulated, so none is there (0, nothing written).
+    /// </summary>
     [Hle]
-    int sceMotionDevReadForMagnCalib(uint buf, int size, int count)
+    int sceMotionDevReadForMagnCalib(uint records, int count, int unused)
     {
-        if (buf == 0) return ERR_DEV_NULL;
-        if ((uint)size > 0x40) return ERR_DEV_SIZE;
-        GuestMemory.Fill(buf, 0, (uint)size);
+        if (records == 0 || count > 0x40)
+        {
+            return ERR_DEV_NULL;
+        }
+
+        if (!Emu.Access.IsSystemProgram)
+        {
+            return ERR_DEV_SIZE;
+        }
+
+        if (count < 1)
+        {
+            return ERR_DEV_NULL;
+        }
+
         return 0;
     }
 

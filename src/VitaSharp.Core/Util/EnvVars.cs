@@ -400,6 +400,15 @@ public static class EnvVars
     public const string WatchMax = "VITASHARP_WATCH_MAX";
     public const string WritebackMax = "VITASHARP_WRITEBACK_MAX";
     public const string WritebackRegionMax = "VITASHARP_WRITEBACK_REGION_MAX";
+    /// <summary>0 (A/B): memory that shader programs store to (VLDST stores) stays only in the renderer's mirror, as
+    /// before; by default it is written into guest memory when the storing scene's frame retires. Default 1.</summary>
+    public const string GpuStoreWriteback = "VITASHARP_GPU_STORE_WRITEBACK";
+    /// <summary>Path of a raw image file (512-byte sectors) backing the internal eMMC at the block level (SceSdif host 0:
+    /// the raw sector reads and writes of sdstor and homebrew). Unset = none. The file is read and written.</summary>
+    public const string EmmcImage = "VITASHARP_EMMC_IMAGE";
+    /// <summary>1: log every raw sector access of the memory card and the eMMC (op, sectors, caller, result); without
+    /// it only the first access of each caller and operation is logged.</summary>
+    public const string TraceSectors = "VITASHARP_TRACE_SECTORS";
 
     /// <summary>Android: =off turns off both the pinning of the hot threads (guest main thread, GPU worker) to the
     /// fast cores and the Performance Hint (ADPF) session, to compare with them on (docs/android/README.md).</summary>

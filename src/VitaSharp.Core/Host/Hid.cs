@@ -46,7 +46,12 @@ public class HidReportRing<T>
             _ring[_next % Capacity] = report;
             _next++;
         }
+
+        ReportAdded?.Invoke();
     }
+
+    /// <summary>A report was added (SceHid's read hint), raised outside the ring's lock.</summary>
+    public event Action? ReportAdded;
 
     /// <summary>Copies the reports numbered from <paramref name="position"/> on (the oldest still kept when it is older)
     /// into <paramref name="dest"/>, oldest first, as many as fit, and moves <paramref name="position"/> past them when

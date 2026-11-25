@@ -79,6 +79,67 @@ public sealed class SessionCaptureFlowTests(GuestMemoryFixture fixture) : IDispo
         cap.Dispose();
     }
 
+    /// <summary>A start save state that finds no safe point at first (a thread of the shell running guest code) is
+    /// tried again while the recording goes on, and taken at the first safe point: session.txt has it and a note says
+    /// how late; one that never finds one says so with its tries. Before, the recording went on without any state.</summary>
+    [Theory]
+    [InlineData(2)]
+    [InlineData(int.MaxValue)]
+    public void AStartStateWithoutASafePointIsTriedAgain(int failures)
+    {
+        string root = Path.Combine(_harness.Root, "captures_state" + (failures == int.MaxValue ? "_never" : ""));
+        int tries = 0;
+        var cap = new SessionCapture(_harness.Emu, new SessionCaptureOptions
+        {
+            Root = root,
+            SetPresentTap = _ => { },
+            StartState = true,
+            GpuDump = false,
+            Zip = false,
+            Threads = () => "no threads",
+            Info = () => "test info",
+        })
+        {
+            StartStateRetryMs = 20,
+            SaveStartState = path =>
+            {
+                if (Interlocked.Increment(ref tries) <= failures)
+                {
+                    throw new VitaSharp.Core.SaveState.SnapshotException("not at a safe point: thread 'SceShellMain' runs guest code");
+                }
+
+                File.WriteAllText(path, "state");
+                return new VitaSharp.Core.SaveState.SaveStateHeader { GuestSeconds = 1.5 };
+            },
+        };
+        try
+        {
+            Assert.True(cap.Start("test"));
+            HleHarness.Until(() => cap.IsRecording && Volatile.Read(ref tries) >= Math.Min(failures, 5) + 1, "the tries");
+            Assert.True(cap.Stop("test end"));
+            Assert.True(cap.Idle.Wait(120_000), "the recording was not saved");
+            string session = File.ReadAllText(Path.Combine(cap.Dir!, "session.txt"));
+            if (failures == int.MaxValue)
+            {
+                Assert.Contains("start-state: none", session);
+                Assert.Contains("note: no start save state: not at a safe point", session);
+                Assert.False(File.Exists(Path.Combine(cap.Dir!, "state_start.vss")));
+            }
+            else
+            {
+                Assert.Contains("start-state: state_start.vss guest-us 1500000", session);
+                Assert.Contains("note: start save state taken", session);
+                Assert.Contains("at try 3", session);
+                Assert.True(File.Exists(Path.Combine(cap.Dir!, "state_start.vss")));
+            }
+        }
+        finally
+        {
+            cap.Hurry();
+            cap.Dispose();
+        }
+    }
+
     /// <summary>A pause of the emulation during a recording (the pause menu, a save state) leaves a pause and a resume
     /// mark in input.tsv: the analyzer tells a present interval spent paused from a stall of the game.</summary>
     [Fact]

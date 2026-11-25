@@ -118,4 +118,53 @@ public sealed class SdifKernelTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(0, Call(Services, "ksceSdifMemoryCardDisableSlowMode"));
         Assert.False(Services.SdifSlowMode);
     }
+
+    /// <summary>
+    /// An image file backing the eMMC (VITASHARP_EMMC_IMAGE / HostServices.EmmcImage): the eMMC's sector commands read
+    /// and write it (a sector written is read back and is in the file); a range past its end is the card's
+    /// ADDRESS_OUT_OF_RANGE as FW 3.74 sdif reports it (0x8032011F); the argument checks come first; the game card
+    /// keeps no device; every access is counted for the per-caller log. Before, every sector command was aborted.
+    /// </summary>
+    [Fact]
+    public void AnImageBacksTheEmmcSectors()
+    {
+        const int Sectors = 64;
+        string path = Path.Combine(_harness.Root, "emmc.img");
+        byte[] contents = new byte[Sectors * 0x200];
+        for (int i = 0; i < contents.Length; i++)
+        {
+            contents[i] = (byte)(i / 0x200);
+        }
+
+        File.WriteAllBytes(path, contents);
+        _harness.Emu.Host.EmmcImage = VitaSharp.Core.Host.BlockImage.Open(path);
+        uint device = Pointer("ksceSdifGetSdContextPartValidateMmc");
+        uint buffer = _harness.Alloc(0x400);
+        int before = Services.SectorAccesses;
+
+        Assert.Equal(0, Call(Services, "ksceSdifReadSectorMmc", device, 5u, buffer, 2u));
+        Assert.Equal((byte)5, GuestMemory.Read<byte>(buffer));
+        Assert.Equal((byte)6, GuestMemory.Read<byte>(buffer + 0x3FF));
+
+        GuestMemory.Fill(buffer, 0xA5, 0x400);
+        Assert.Equal(0, Call(Services, "ksceSdifWriteSectorMmc", device, 10u, buffer, 2u));
+        GuestMemory.Fill(buffer, 0, 0x400);
+        Assert.Equal(0, Call(Services, "ksceSdifReadSectorMmc", device, 10u, buffer, 2u));
+        Assert.Equal((byte)0xA5, GuestMemory.Read<byte>(buffer + 0x3FF));
+
+        Assert.Equal(SystemServicesVsh.SDIF_ERR_OUT_OF_RANGE, Call(Services, "ksceSdifReadSectorMmc", device, 63u, buffer, 2u));
+        Assert.Equal(SystemServicesVsh.SDIF_ERR_OUT_OF_RANGE, Call(Services, "ksceSdifWriteSectorMmc", device, 64u, buffer, 1u));
+        Assert.Equal(0, Call(Services, "ksceSdifReadSectorMmc", device, 63u, buffer, 1u));
+        Assert.Equal(Invalid, Call(Services, "ksceSdifReadSectorMmc", device, 0u, 0u, 1u));
+        Assert.Equal(Aborted, Call(Services, "ksceSdifReadSectorSd", device, 0u, buffer, 1u));   // only the eMMC has an image
+        Assert.Equal(8, Services.SectorAccesses - before);
+
+        _harness.Emu.Host.EmmcImage.Dispose();
+        _harness.Emu.Host.EmmcImage = null;
+        byte[] onDisk = File.ReadAllBytes(path);
+        Assert.Equal(0xA5, onDisk[10 * 0x200]);
+        Assert.Equal(0xA5, onDisk[12 * 0x200 - 1]);
+        Assert.Equal(12, onDisk[12 * 0x200]);
+        Assert.Equal(Aborted, Call(Services, "ksceSdifReadSectorMmc", device, 0u, buffer, 1u));   // no image: no device
+    }
 }

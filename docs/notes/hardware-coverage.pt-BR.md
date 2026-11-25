@@ -57,7 +57,7 @@ registrado, não é para emular); **ok** coberto.
 | Câmeras (frontal/traseira), MIPI CSI-2, ISP | `SceCamera`, `lowio` (CSI) | webcam do host / imagem fixa / cinza por câmera (`Host/Camera.cs`, `CameraSetup.cs`); registradores do sensor guardados | ok |
 | Tela de toque frontal, touchpad traseiro | `SceTouch` | mouse/toque do host nos dois painéis | ok |
 | Movimento: acelerômetro, giroscópio | `SceMotionDev`, `SceMotion` | giroscópio/acelerômetro do host (controle SDL, sensores do celular) | ok |
-| Movimento: magnetômetro | `SceMotionDev`, `SceMotion` | campo do host (magnetômetro do celular no Android, `heading@` roteirizado no PC): matriz NED e campo estável com o magnetômetro ligado | feito (era **(b)**); faltam os registros brutos da calibração |
+| Movimento: magnetômetro | `SceMotionDev`, `SceMotion` | campo do host (magnetômetro do celular no Android, `heading@` roteirizado no PC): matriz NED e campo estável com o magnetômetro ligado | feito (era **(b)**); a calibração gravada como o 3.74; falta o anel de registros brutos |
 | GPS / localização | `SceGps` (driver do modem), `liblocation`, `location_provider` | desligada por padrão ("aplicativo sem permissão"); posição fixa (PC) ou a do celular (Android) quando a opção dá uma | **(b)** |
 | Modem 3G (PCH-1100) | `SceBbmc`, modem USB | ausente, como no modelo Wi-Fi que a unidade é (`0x80330003`) | (c) (fiel ao modelo; o serviço 3G acabou) |
 | Wi-Fi infraestrutura | `SceWlanBt`, `SceNetPs`, `wlanbt_robin_img_ax.skprx` | sockets do host (`--net=real`); perfil offline senão | ok |
@@ -66,7 +66,7 @@ registrado, não é para emular); **ok** coberto.
 | Porta USB de dispositivo (conector multiuso) | `SceUdcd`, `usbstor*`, `SceUsbMtp`, `usbpspcm`, `usbdev_serial` | cabo sempre desconectado (`0x10`) | **(b)** (Content Manager, armazenamento USB) |
 | Portas USB de host (PS TV) | `SceUsbd`, `SceUsbMass`, `SceUsbAudio`, `SceUsbEtherRtl/Smsc`, `SceUsbServ` | nada conectado | **(b)**, parte do modelo PS TV |
 | Slot do cartucho | `sdif` host 1, `gcauthmgr` | dump do cartucho servido por arquivos (`gro0:`/`grw0:`); a autenticação recusa | ok; autenticação (c) |
-| Cartão de memória, eMMC interno | `msif.skprx`, `sdif` host 0, `sdstor.skprx` | partições servidas por arquivos; leitura/escrita de setores falha (`0x803D0000`, `0x8032001A`) | **(b)** |
+| Cartão de memória, eMMC interno | `msif.skprx`, `sdif` host 0, `sdstor.skprx` | partições servidas por arquivos; leitura/escrita de setores falha (`0x803D0000`, `0x8032001A`), com log por chamador; um arquivo de imagem pode servir o eMMC | **(b)** |
 | Syscon, energia, bateria, RTC, botões | `syscon.skprx`, `ScePower`, `rtc.skprx` | HLE com bateria, carregador, eventos, timers de ociosidade, botão de energia, alarmes | ok |
 | Saída de áudio, chip de codec, conector de fone | `SceAudio`, `SceCodec` (I2C 0x34), `SceHpremote` | dispositivo de áudio do host; ajustes do codec aceitos; nada no conector | ok |
 | Microfone | `SceAudioin`, `SceCodec` | captura do host (OpenAL Soft no desktop, `AudioRecord` no Android) reamostrada para a taxa da porta no ritmo de grain do guest; silêncio sem dispositivo | feito (era **(b)**) |
@@ -161,8 +161,9 @@ compatibilidade PSP". Impacto: todo título de PSP e PSone, homebrew de PSP, Adr
 
 - **Hoje:** desligada por padrão, o aplicativo "sem permissão" (`Hle/Modules/Location.cs`); com a opção de
   localização (`--location=latitude,longitude`, "Localização do celular" no Android) o aplicativo tem permissão e recebe
-  essa posição (`Host/Location.cs`). Falta: o serviço de localização do PC, as entregas dos callbacks de localização, o
-  caminho do firmware (liblocation LLE contra o provedor do shell, `SceGps` de um modelo 3G).
+  essa posição (`Host/Location.cs`); os callbacks de localização a recebem da thread "SceLocationCallback" como no 3.74
+  (`Hle/Modules/Location.Callbacks.cs`: a primeira posição e depois a cada `distance` metros). Falta: o serviço de
+  localização do PC, os callbacks de direção (o serviço não tem bússola), o caminho do firmware (liblocation LLE contra o provedor do shell, `SceGps` de um modelo 3G).
 - **Impacto:** Near, Mapas e os recursos de localização de apps e jogos.
 - **Tamanho:** [M]: uma interface de localização do host (Geolocation do Windows, GeoClue, Core Location,
   `LocationManager` do Android) e uma opção de posição fixa. **Primeira entrega testável:** uma posição roteirizada;
@@ -173,7 +174,10 @@ compatibilidade PSP". Impacto: todo título de PSP e PSone, homebrew de PSP, Adr
 
 - **Hoje:** a amostra de movimento do host traz o campo magnético (magnetômetro do celular, `heading@` no roteiro);
   com o magnetômetro ligado e o campo estável, o `sceMotionGetState` dá a matriz NED e STABLE
-  (`Hle/Motion/MotionDevice.cs`). Falta: os registros brutos da calibração do shell e o campo no quaternion da fusão.
+  (`Hle/Motion/MotionDevice.cs`). A calibração que o atualizador do shell grava fica guardada como no 3.74
+  (`sceMotionDevUpdateMagnCalibData` / `GetCurrentMagnCalibData`: 12 palavras e um contador de atualizações; as
+  leituras brutas conferem os argumentos como o 3.74). Falta: o anel de registros brutos do driver (o que
+  `sceMotionDevRead`/`ReadForMagnCalib` copiam: nenhum ainda) e o campo no quaternion da fusão.
 - **Impacto:** direção da bússola (Mapas, Near, títulos de RA que usam o norte), `magFieldStability` e a matriz NED.
 - **Tamanho:** [M]. **Primeira entrega testável:** a leitura de movimento do host ganha campo magnético; um campo
   roteirizado dá a direção e um `magFieldStability` estável no `sceMotionGetSensorState`/`GetState`.
@@ -182,7 +186,11 @@ compatibilidade PSP". Impacto: todo título de PSP e PSone, homebrew de PSP, Adr
 
 - **Hoje:** com a opção (`--bt-keyboard-mouse=on`, Configurações > Emulação; Android: Ajustes) o teclado e o mouse
   do host são os dispositivos pareados: `sceHid{Keyboard,Mouse}Enumerate/Read/Peek` como o 3.74 (`Hle/Modules/Hid.cs`,
-  `Host/Hid.cs`). Falta: notificar os callbacks de dica, as configurações de Bluetooth do shell listarem os dispositivos.
+  `Host/Hid.cs`), com os callbacks de dica notificados; o SceBt os lista (`sceBtGetRegisteredInfo`) e enfileira as
+  conexões e desconexões como os eventos 5 e 6 do `sceBtReadEvent` (`SystemServicesVsh.BluetoothEvents.cs`). Os
+  controles de consumo (`sceHidConsumerControl*`) respondem como o 3.74 sem nenhum desses pareado; as chamadas de
+  controle (`sceHidController*`) respondem 0x803B0004, como o 3.74. Falta: uma fonte do host para as teclas de
+  consumo (teclas de mídia) e conferir à mão a tela de Bluetooth do shell.
 - **Impacto:** digitar no navegador, no IME e em apps que leem o teclado direto; mouse no navegador.
 - **Tamanho:** [M]. **Primeira entrega testável:** o teclado do host oferecido como um teclado pareado (uma opção):
   `sceHidKeyboardEnumerate` devolve um handle e `sceHidKeyboardRead` informa teclas roteirizadas.
@@ -197,7 +205,12 @@ compatibilidade PSP". Impacto: todo título de PSP e PSone, homebrew de PSP, Adr
 
 ### (b) Cartão de memória e eMMC como dispositivos de bloco
 
-- **Hoje:** cada partição é uma pasta do host; o acesso a setores falha como um comando de cartão que falhou.
+- **Hoje:** cada partição é uma pasta do host; o acesso a setores falha como um comando de cartão que falhou. Todo
+  acesso cru a setores do cartão de memória e do eMMC vai para o log com quem chamou (`[sectors] ...`: o primeiro de
+  cada chamador e operação, todos com `VITASHARP_TRACE_SECTORS=1`), e `VITASHARP_EMMC_IMAGE=<imagem crua>` faz um
+  arquivo de imagem servir os comandos de setor do eMMC (lido e gravado; além do fim, 0x8032011F, o
+  ADDRESS_OUT_OF_RANGE do cartão como o sdif informa). Falta: os dispositivos do `sdstor` por cima (tabela de
+  partições, caminhos `sdstor0:`), a imagem do cartão de memória.
 - **Impacto:** o que o firmware faz no nível de bloco: formatar o cartão de memória pelos Ajustes, a atualização do
   sistema pelos Ajustes gravando `os0`/`vs0`, homebrew que lê ou grava partições cruas (os drivers de armazenamento
   da cena).

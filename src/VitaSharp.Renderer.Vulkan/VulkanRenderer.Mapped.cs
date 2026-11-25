@@ -327,6 +327,8 @@ public sealed unsafe partial class VulkanRenderer
     /// placement: <paramref name="delta"/> = mirror offset minus address, <see cref="CdramDelta"/> for CDRAM).</summary>
     private void NoteGpuWritten(uint start, uint end, uint delta = CdramDelta)
     {
+        uint storeStart = start;
+        uint storeEnd = end;
         if (_gpuWritten.Count >= 4096)
         {
             _gpuWritten.Clear(); // runaway bookkeeping: back to guest copies
@@ -374,6 +376,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         _gpuWritten[start] = (end, stamp, delta);
+        NoteSceneStore(storeStart, storeEnd, delta, stamp); // into guest memory at the scene's end (VulkanRenderer.StoreWriteback.cs)
         GpuQueue.SceneEndSweeps = true;
         _mirrorWritesPending = true;
         if (_diagActive != null)
@@ -602,6 +605,7 @@ public sealed unsafe partial class VulkanRenderer
                 }
             }
             _storeAreaUsed = 0;
+            DropSceneStoresInStoreArea();
             Log.WarnOnce("store-area-wrap", $"[gpu] the {StoreAreaBytes >> 20} MB store area for memory programs store to outside CDRAM is full: it starts over");
             lo = addr;
             hi = addr + size;

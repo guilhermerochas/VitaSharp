@@ -17,7 +17,10 @@ public sealed unsafe partial class Audiodec : HleModule
         ERR_NOT_INITIALIZED = unchecked((int)0x807F0005), ERR_INVALID_PTR = unchecked((int)0x807F0008),
         ERR_INVALID_HANDLE = unchecked((int)0x807F0009), ERR_NOT_HANDLE_IN_USE = unchecked((int)0x807F000A),
         ERR_INVALID_SIZE = unchecked((int)0x807F000D), ERR_AT9_INVALID_CONFIG = unchecked((int)0x807F2000),
-        ERR_MP3_INVALID_VERSION = unchecked((int)0x807F2801);
+        ERR_MP3_INVALID_VERSION = unchecked((int)0x807F2801), ERR_CELP_INVALID_CONFIG = unchecked((int)0x807F3800);
+
+    /// <summary>SCE_AUDIODEC_CELP_MAX_ES_SIZE (psp2/audiodec.h): the largest CELP frame, 4650 bps at 40 ms.</summary>
+    const uint CelpMaxEsSize = 24;
     const uint TYPE_AT9 = 0x1003, TYPE_MP3 = 0x1004, TYPE_AAC = 0x1005, TYPE_CELP = 0x1006;
     const uint CtrlSize = 0x28;
 
@@ -133,11 +136,26 @@ public sealed unsafe partial class Audiodec : HleModule
                 pcmMax = (uint)(d.Channels * 2048 * (sbr ? 2 : 1));
                 break;
             }
+            case TYPE_CELP:
+            {
+                // info (SceAudiodecInfoCelp): size, excitationMode (0 = MPE), samplingRate (8000), bitRate, lostCount;
+                // a frame is the MPEG-4 CELP narrowband frame of the bit rate (the encoder's table)
+                if (GuestMemory.R32(info + 4) != 0 || GuestMemory.R32(info + 8) != 8000 || CelpFrame(d) is not { } frame)
+                {
+                    return ERR_CELP_INVALID_CONFIG;
+                }
+
+                d.Channels = 1;
+                GuestMemory.W32(info + 16, 0); // lostCount
+                esMax = CelpMaxEsSize;
+                pcmMax = (uint)(frame.Samples * 2);
+                Log.WarnOnce("audiodec-celp", "sceAudiodec: no CELP decoder yet: CELP frames decode to silence of their length");
+                break;
+            }
             default:
-                Log.WarnOnce("audiodec" + codecType, $"sceAudiodec: codec 0x{codecType:X} (CELP) is not supported");
                 return ERR_INVALID_TYPE;
         }
-        if (d.Codec == null && d.At9 == null)
+        if (d.Codec == null && d.At9 == null && d.Type != TYPE_CELP)
             Log.WarnOnce("audiodec-noffmpeg" + d.Type, $"sceAudiodec: no {CodecName(d.Type)} decoder (FFmpeg is unavailable): frames decode to silence");
         d.Pcm = new short[pcmMax / 2 + 4096];
         lock (_decoders)
@@ -152,7 +170,7 @@ public sealed unsafe partial class Audiodec : HleModule
         return 0;
     }
 
-    static string CodecName(uint type) => type switch { TYPE_AT9 => "ATRAC9", TYPE_MP3 => "MP3", TYPE_AAC => "AAC", _ => $"codec 0x{type:X}" };
+    static string CodecName(uint type) => type switch { TYPE_AT9 => "ATRAC9", TYPE_MP3 => "MP3", TYPE_AAC => "AAC", TYPE_CELP => "CELP", _ => $"codec 0x{type:X}" };
 
     Decoder? Find(uint ctrl, out int error)
     {
@@ -199,8 +217,22 @@ public sealed unsafe partial class Audiodec : HleModule
     }
 
     /// <summary>Decodes one frame at <paramref name="es"/> into d.Pcm (interleaved S16).</summary>
+    /// <summary>The CELP frame (samples at 8 kHz, bytes) of a decoder's bit rate (its info block, +12).</summary>
+    static (int Samples, int Bytes)? CelpFrame(Decoder d) =>
+        d.Info.Length >= 16 ? Audioenc.Frame(BitConverter.ToUInt32(d.Info, 12)) : null;
+
     int DecodeOne(Decoder d, uint es, uint esMax, out int consumed, out int samples)
     {
+        if (d.Type == TYPE_CELP)
+        {
+            // one frame of the bit rate: its bytes are taken, its samples come out (silent: no CELP synthesis yet)
+            (int frameSamples, int frameBytes) = CelpFrame(d) ?? (0, 0);
+            consumed = frameBytes;
+            samples = frameSamples;
+            Array.Clear(d.Pcm, 0, frameSamples);
+            return 0;
+        }
+
         if (d.At9 != null)
         {
             int avail = (int)Math.Min((uint)d.Staging.Length - 16, esMax);

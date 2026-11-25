@@ -55,7 +55,7 @@ recorded, not to be emulated); **ok** covered.
 | Cameras (front/back), MIPI CSI-2, ISP | `SceCamera`, `lowio` (CSI) | host webcam / still picture / grey per camera (`Host/Camera.cs`, `CameraSetup.cs`); sensor registers kept | ok |
 | Front touch screen, rear touchpad | `SceTouch` | host mouse/touch for both panels | ok |
 | Motion: accelerometer, gyroscope | `SceMotionDev`, `SceMotion` | host gyro/accelerometer (SDL controller, phone sensors) | ok |
-| Motion: magnetometer | `SceMotionDev`, `SceMotion` | host field (phone magnetometer on Android, scripted `heading@` on the PC): NED matrix and stable field while the magnetometer is on | done (was **(b)**); raw calibration records missing |
+| Motion: magnetometer | `SceMotionDev`, `SceMotion` | host field (phone magnetometer on Android, scripted `heading@` on the PC): NED matrix and stable field while the magnetometer is on | done (was **(b)**); the stored calibration as 3.74; the raw sensor ring missing |
 | GPS / location | `SceGps` (driver from the modem), `liblocation`, `location_provider` | off by default ("this application not allowed"); a fixed position (PC) or the phone's location (Android) when the setting gives one | **(b)** |
 | 3G modem (PCH-1100) | `SceBbmc`, USB modem | absent, as on the Wi-Fi model the unit is (`0x80330003`) | (c) (faithful to the model; the 3G service is gone) |
 | Wi-Fi infrastructure | `SceWlanBt`, `SceNetPs`, `wlanbt_robin_img_ax.skprx` | host sockets (`--net=real`), offline profile otherwise | ok |
@@ -64,7 +64,7 @@ recorded, not to be emulated); **ok** covered.
 | USB device port (multi connector) | `SceUdcd`, `usbstor*`, `SceUsbMtp`, `usbpspcm`, `usbdev_serial` | cable always disconnected (`0x10`) | **(b)** (Content Manager, USB storage) |
 | USB host ports (PS TV) | `SceUsbd`, `SceUsbMass`, `SceUsbAudio`, `SceUsbEtherRtl/Smsc`, `SceUsbServ` | nothing attached | **(b)**, part of the PS TV model |
 | Game card slot | `sdif` host 1, `gcauthmgr` | card dump served at the file level (`gro0:`/`grw0:`); authentication refuses | ok; authentication (c) |
-| Memory card, internal eMMC | `msif.skprx`, `sdif` host 0, `sdstor.skprx` | partitions served at the file level; raw sector reads/writes fail (`0x803D0000`, `0x8032001A`) | **(b)** |
+| Memory card, internal eMMC | `msif.skprx`, `sdif` host 0, `sdstor.skprx` | partitions served at the file level; raw sector reads/writes fail (`0x803D0000`, `0x8032001A`), logged per caller; an image file can back the eMMC | **(b)** |
 | Syscon, power, battery, RTC, buttons | `syscon.skprx`, `ScePower`, `rtc.skprx` | HLE with battery, AC, events, idle timers, power button, alarms | ok |
 | Audio out, codec chip, headset jack | `SceAudio`, `SceCodec` (I2C 0x34), `SceHpremote` | host audio device; codec settings accepted; nothing in the jack | ok |
 | Microphone | `SceAudioin`, `SceCodec` | host capture (OpenAL Soft on the desktop, `AudioRecord` on Android) resampled to the port's rate at the guest's grain pace; silent without a device | done (was **(b)**) |
@@ -94,7 +94,8 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
   unchanged (LLE), so the only path is emulating the engine. Unlike `pcbc`, `vnzimg.skprx` comes out of `self2elf`
   in plain form (measured entropy 4.4-5.5 bits/byte, readable strings): no key blocks it. The IVC2 coprocessor (the
   vector unit of each core) is documented nowhere public; VitaLoader Redux lists it as not implemented.
-- **(b) part (codecs):** the HLE has no CELP decoder (creating one answers the invalid type error, with a warning), and the CELP and G.729
+- **(b) part (codecs):** the CELP decoder takes the frames of its bit rate but outputs silence (no synthesis yet; no
+  open MPEG-4 CELP implementation exists, the standard's tables come from the ISO/IEC 14496-5 reference software), and the CELP and G.729
   encoders produce zero frames; the split JPEG decoder is refused. Users: voice chat (`SceVoice`, Party), voice
   recording, games that record and play back the microphone.
 - **Size:** MeP core interpreter [G]; IVC2 [G, unknown ISA]; running `vnzimg` to state 8 and serving RPCs [G]. CELP
@@ -156,8 +157,9 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
 
 - **Today:** off by default, the application is "not allowed" (`Hle/Modules/Location.cs`); with the location
   setting (`--location=latitude,longitude`, Android "Localização do celular") the application is allowed and gets
-  that position (`Host/Location.cs`). Missing: the PC's location service, the location callbacks' deliveries, the
-  firmware path (liblocation LLE against the shell's provider, `SceGps` of a 3G model).
+  that position (`Host/Location.cs`); the location callbacks report it from the "SceLocationCallback" thread as 3.74
+  (`Hle/Modules/Location.Callbacks.cs`: the first position, then every `distance` metres). Missing: the PC's
+  location service, the heading callbacks (no compass in the service), the firmware path (liblocation LLE against the shell's provider, `SceGps` of a 3G model).
 - **Impact:** Near, Maps and the location features of apps and games.
 - **Size:** [M]: a host location interface (Windows Geolocation, GeoClue, Core Location, Android `LocationManager`)
   and a fixed position option. **First testable delivery:** a scripted position; with the application allowed,
@@ -167,7 +169,10 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
 
 - **Today:** the host motion sample carries the magnetic field (phone magnetometer, scripted `heading@`); with the
   magnetometer on and a stable field, `sceMotionGetState` gives the NED matrix and STABLE (`Hle/Motion/MotionDevice.cs`).
-  Missing: the raw records for the shell's calibration and the field in the fused quaternion.
+  The calibration the shell's updater stores is kept as 3.74 (`sceMotionDevUpdateMagnCalibData` /
+  `GetCurrentMagnCalibData`: 12 words and an update counter; the raw reads check their arguments as 3.74). Missing:
+  the driver's raw sensor ring (the records `sceMotionDevRead`/`ReadForMagnCalib` copy: none yet) and the field in
+  the fused quaternion.
 - **Impact:** compass heading (Maps, Near, AR titles that use the north), `magFieldStability` and the NED matrix.
 - **Size:** [M]. **First testable delivery:** the host motion reading gets a magnetic field; a scripted field gives
   the heading and a stable `magFieldStability` in `sceMotionGetSensorState`/`GetState`.
@@ -176,7 +181,11 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
 
 - **Today:** with the option (`--bt-keyboard-mouse=on`, Settings > Emulation; Android: Ajustes) the host keyboard and
   mouse are the paired devices: `sceHid{Keyboard,Mouse}Enumerate/Read/Peek` as FW 3.74 (`Hle/Modules/Hid.cs`,
-  `Host/Hid.cs`). Missing: the hint callbacks' notifications, the shell's Bluetooth settings listing them.
+  `Host/Hid.cs`), with the hint callbacks notified; SceBt lists them (`sceBtGetRegisteredInfo`) and queues their
+  connections and disconnections as events 5 and 6 for `sceBtReadEvent` (`SystemServicesVsh.BluetoothEvents.cs`).
+  Consumer controls (`sceHidConsumerControl*`) answer as 3.74 with no such device paired; the controller calls answer
+  0x803B0004, as 3.74. Missing: a host source of consumer-control keys (media keys), the shell's Bluetooth settings
+  screen checked by hand.
 - **Impact:** typing in the browser, the IME and apps that read a keyboard directly; mouse in the browser.
 - **Size:** [M]. **First testable delivery:** the host keyboard offered as one paired keyboard (an option):
   `sceHidKeyboardEnumerate` returns one handle and `sceHidKeyboardRead` reports scripted key presses.
@@ -190,7 +199,11 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
 
 ### (b) Memory card and eMMC as block devices
 
-- **Today:** every partition is a host folder; raw sector access fails as a failed card command.
+- **Today:** every partition is a host folder; raw sector access fails as a failed card command. Every raw sector
+  access of the memory card and the eMMC is logged with its caller (`[sectors] ...`: the first of each caller and
+  operation, all of them with `VITASHARP_TRACE_SECTORS=1`), and `VITASHARP_EMMC_IMAGE=<raw image>` backs the eMMC's
+  sector commands with an image file (read and written; past its end 0x8032011F, the card's ADDRESS_OUT_OF_RANGE as
+  sdif reports it). Missing: the `sdstor` devices on top (partition table, `sdstor0:` paths), the memory card image.
 - **Impact:** what the firmware does at the block level: formatting the memory card from Settings, the system update
   from Settings writing `os0`/`vs0`, homebrew that reads or writes raw partitions (the storage drivers of the scene).
 - **Size:** [G]. **First testable delivery:** a log of every sector access per caller (to list the real users), then

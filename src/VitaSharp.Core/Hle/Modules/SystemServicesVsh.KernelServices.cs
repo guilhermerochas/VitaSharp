@@ -108,9 +108,6 @@ public sealed partial class SystemServicesVsh
     const int BT_ERR_INVALID_ARG = unchecked((int)0x802F1202), BT_ERR_NO_DEVICE = unchecked((int)0x802F0109),
         BT_ERR_NOT_FOUND = unchecked((int)0x802F0C01);
 
-    /// <summary>(void *events, int max): the events queued for the caller: none.</summary>
-    [Hle(Default = true)] int sceBtReadEvent(uint events, int max) => 0;
-    [Hle(Default = true)] int sceBtUnregisterCallback(int cb) => 0;
     /// <summary>(void): the stack's last error, none.</summary>
     [Hle(Default = true)] int sceBtGetLastError() => 0;
     /// <summary>(int status 0..4): the AVRCP play status sent to a connected remote (none: only checked).</summary>
@@ -126,7 +123,11 @@ public sealed partial class SystemServicesVsh
     [Hle(Default = true)] int sceBtReplyUserConfirmation(uint mac0, uint mac1, int accept) => BT_ERR_NOT_FOUND;
     /// <summary>(uint mac0, uint mac1): the registered (paired) device: none.</summary>
     [Hle(Default = true)] int sceBtDeleteRegisteredInfo(uint mac0, uint mac1) => BT_ERR_NO_DEVICE;
-    [Hle(Default = true)] int sceBtGetConnectingInfo(uint mac0, uint mac1) => BT_ERR_NO_DEVICE;
+    /// <summary>(uint mac0, uint mac1): the connection state of a device (FW 3.74 SceBt 0xD9B65CAA: 1 not connected,
+    /// 2 connected, 3-6 the audio profiles); a paired keyboard or mouse is connected.</summary>
+    [Hle]
+    int sceBtGetConnectingInfo(uint mac0, uint mac1) =>
+        PairedBluetoothDevices().Exists(d => d.Mac0 == mac0 && d.Mac1 == mac1) ? 2 : BT_ERR_NO_DEVICE;
     [Hle(Default = true)] int sceBtStartConnect(uint mac0, uint mac1) => BT_ERR_NO_DEVICE;
     [Hle(Default = true)] int sceBtStartDisconnect(uint mac0, uint mac1) => BT_ERR_NO_DEVICE;
 
@@ -325,8 +326,6 @@ public sealed partial class Sensors
     [Hle] int sceMotionDevMagnSamplingStop() => 0;
     /// <summary>(void): whether the driver finished its start-up: always.</summary>
     [Hle] int sceMotionDevIsReady() => 1;
-    /// <summary>(const void *calib): stores a new magnetometer calibration; no magnetometer is emulated.</summary>
-    [Hle] int sceMotionDevUpdateMagnCalibData(uint calib) => calib == 0 ? ERR_DEV_NULL : 0;
     [Hle] int sceMotionDevUpdateMagnStabilityLevel(int level) => 0;
 
     /// <summary>(void *loc 0x30): the sensor positions, as sceMotionGetDeviceLocation reports them.</summary>
@@ -364,8 +363,22 @@ public sealed partial class Sensors
         GuestMemory.Write(type, (byte)0);
         return 0;
     }
-    /// <summary>(void *buf, int size &lt;= 0x40, int count): raw sensor records, as sceMotionDevReadForMagnCalib.</summary>
-    [Hle] int sceMotionDevRead(uint buf, int size, int count) => buf == 0 || count == 0 || size > 0x40 ? ERR_DEV_NULL : sceMotionDevReadForMagnCalibThroughEntry(buf, size, count);
+    /// <summary>
+    /// (void *records, int count, uint *updated): the raw sensor records of the caller's ring, as FW 3.74 (SceMotionDev
+    /// 0xC0095F0F, FUN_81004420): a NULL argument or a count outside 1..64 is 0x80360001; *updated says whether the
+    /// driver has new samples, then how many records it copied. No raw sensor ring is emulated: none, nothing new.
+    /// </summary>
+    [Hle]
+    int sceMotionDevRead(uint records, int count, uint updated)
+    {
+        if (records == 0 || updated == 0 || count > 0x40 || count < 1)
+        {
+            return ERR_DEV_NULL;
+        }
+
+        GuestMemory.W32(updated, 0);
+        return 0;
+    }
 }
 
 public sealed partial class SystemUtil
