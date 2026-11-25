@@ -4764,6 +4764,10 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   e destruíam o device sob o worker. Corrigido: o setter toma o `_backendLock` (a troca pelo `ReplaceOn` usa
   `InstallBackend` sem tomar de novo); teste `GpuQueueDetachTests` (falha sem a correção). Falta: pegar um dump de uma
   queda real para confirmar que era essa a pilha (o laço de Piglet/Renderer sob carga não reproduziu no timebox).
+  Para pegar a pilha (25/11/2026): o log de crash nativo (`Util/NativeCrashLog.cs`) só cobre a corrupção de heap
+  (0xC0000374); um AV não tratado não deixa linha (o Windows recusa um filtro de topo fora de uma imagem carregada).
+  Rodar a suíte sob `cdbX64 -o -G` com `sxd av` e `sxd -c2 "kn 60; !clrstack -f; q" av` (SOS do `dotnet-sos`), ou com
+  WER LocalDumps (precisa de administrador), e apagar o dump depois.
   O `Prefetch` do `Submit` (fora do lock, na thread que envia) já era protegido pelo próprio renderer
   (`_prefetchActive` + `StopShaderWorkers` no início do `Dispose`); faltava a barreira completa entre gravar o flag
   e ler a contagem (no ARM64 a saída do lock é só release). Feito, contrato descrito no `IGpuBackend.Prefetch` e
