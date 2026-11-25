@@ -190,6 +190,10 @@ public static class Program
                 // implementation, as docs/hle/data/vitasharp-implemented.tsv (nid, name, module, library, "vh" when the
                 // VitaSDK lists it); to the file, else to stdout (the log goes to stderr either way).
                 return ListHleImplemented(args.Skip(1).FirstOrDefault(a => a.StartsWith("--vitasdk="))?["--vitasdk=".Length..], OptValue(args, "--out"));
+            case "import-check":
+                // import-check [--fs=<fs folder>]: the FW 3.74 import entry check over every installed user module
+                // (titles, updates, user plugins), read only (ImportEntryCensus); exit 1 when one would be refused
+                return ImportCheck(OptValue(args, "--fs") ?? FsRoot);
             case "kernel-census":
                 // kernel-census [--root=<repository>]: the HLE status of every FW 3.74 kernel export in
                 // docs/hle/data/kernel-exports.tsv and the per-library table of docs/hle/kernel-exports.md
@@ -854,6 +858,25 @@ public static class Program
 
     /// <summary>kernel-census: updates the census of the FW 3.74 kernel exports from this build's HLE
     /// (<see cref="VitaSharp.Core.Firmware.KernelCensus"/>).</summary>
+    /// <summary>import-check: the modulemgr 3.74 import entry check over the installed user modules of
+    /// <paramref name="fsRoot"/>, nothing loaded, run or written (ImportEntryCensus).</summary>
+    static int ImportCheck(string fsRoot)
+    {
+        var census = VitaSharp.Core.Firmware.ImportEntryCensus.Scan(fsRoot);
+        foreach ((string module, string problem) in census.Refused)
+        {
+            Console.WriteLine($"REFUSED {module}: {problem}");
+        }
+
+        foreach ((string module, string error) in census.Unreadable)
+        {
+            Console.WriteLine($"UNREADABLE {module}: {error}");
+        }
+
+        Console.WriteLine($"{census.Modules} modules checked, {census.Passed} pass, {census.Refused.Count} refused, {census.Unreadable.Count} unreadable");
+        return census.Refused.Count == 0 ? 0 : 1;
+    }
+
     static int KernelCensus(string root)
     {
         string? error = VitaSharp.Core.Firmware.KernelCensus.Update(root, out string summary);
@@ -1015,6 +1038,7 @@ public static class Program
         Console.WriteLine("  hle-implemented [--vitasdk=<tsv>]   list every NID the HLE implements (docs/hle/data/vitasharp-implemented.tsv)");
         Console.WriteLine("  hle-abi-check --headers=<dir> [--fewer]  HLE bindings whose argument registers differ from the vita-headers prototypes");
         Console.WriteLine("  kernel-census [--root=<repo>]       HLE status of the FW 3.74 kernel exports (docs/hle/data/kernel-exports.tsv, kernel-exports.md)");
+        Console.WriteLine("  import-check [--fs=<fs folder>]     FW 3.74 import entry check over every installed user module, read only");
         Console.WriteLine("  audio-devices [--audio-device=<name>]  list the audio outputs and show the one a game opens");
         Console.WriteLine("  hle-coverage [--out=<tsv>] [--vitasdk=<tsv>] [--status=<repo>]  HLE coverage of every function the installed firmware exports (games/system/general)");
         Console.WriteLine("  imports <TITLEID|folder> [x.self] [--tsv=<file>]   list the system functions a title (or one of its executables) needs; --tsv: who provides each one");

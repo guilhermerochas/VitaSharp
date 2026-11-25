@@ -300,7 +300,7 @@ public static class SyntheticTitle
         BinaryPrimitives.WriteUInt32LittleEndian(ph[12..], Base);
         BinaryPrimitives.WriteUInt32LittleEndian(ph[16..], (uint)seg.Length);
         BinaryPrimitives.WriteUInt32LittleEndian(ph[20..], Fb2Off + Width * Height * 4);
-        BinaryPrimitives.WriteUInt32LittleEndian(ph[24..], 7);                    // RWX
+        BinaryPrimitives.WriteUInt32LittleEndian(ph[24..], 5);                    // R+X, as a module's text (its import stubs must be there)
         BinaryPrimitives.WriteUInt32LittleEndian(ph[28..], 0x1000);
         seg.CopyTo(elf, DataOffset);
         return elf;

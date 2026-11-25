@@ -111,4 +111,119 @@ public static class HidUsages
         118 => 0xE7,                                           // META_RIGHT
         _ => 0,
     };
+
+    /// <summary>The consumer-page usage (USB HID page 0x0C) of an Android media key (KEYCODE_*), for the paired
+    /// keyboard's consumer-control device (<see cref="HidConsumerControl"/>); 0 = no media key. The PC front-end has
+    /// no source: its window library reports no media keys.</summary>
+    public static ushort ConsumerFromAndroidKeyCode(int keyCode) => keyCode switch
+    {
+        85 => 0xCD,                                            // MEDIA_PLAY_PAUSE: Play/Pause
+        86 => 0xB7,                                            // MEDIA_STOP: Stop
+        87 => 0xB5,                                            // MEDIA_NEXT: Scan Next Track
+        88 => 0xB6,                                            // MEDIA_PREVIOUS: Scan Previous Track
+        89 => 0xB4,                                            // MEDIA_REWIND: Rewind
+        90 => 0xB3,                                            // MEDIA_FAST_FORWARD: Fast Forward
+        126 => 0xB0,                                           // MEDIA_PLAY: Play
+        127 => 0xB1,                                           // MEDIA_PAUSE: Pause
+        130 => 0xB2,                                           // MEDIA_RECORD: Record
+        129 => 0xB8,                                           // MEDIA_EJECT: Eject
+        24 => 0xE9,                                            // VOLUME_UP: Volume Increment
+        25 => 0xEA,                                            // VOLUME_DOWN: Volume Decrement
+        164 => 0xE2,                                           // VOLUME_MUTE: Mute
+        209 => 0x183,                                          // MUSIC: AL Consumer Control Configuration
+        65 => 0x18A,                                           // ENVELOPE: AL Email Reader
+        210 => 0x192,                                          // CALCULATOR: AL Calculator
+        64 => 0x196,                                           // EXPLORER: AL Internet Browser
+        84 => 0x221,                                           // SEARCH: AC Search
+        _ => 0,
+    };
+
+    /// <summary>
+    /// The consumer-page usage of a media key the PC's window library (GLFW) reports with no key token, by its
+    /// scancode: on Windows the PS/2 set 1 code with the extended bit (0x100) that the keyboard driver gives each media
+    /// key, on Linux (X11) the X keycode (the evdev code + 8). 0 = no media key or another system (macOS sends media
+    /// keys as system events the window never gets).
+    /// </summary>
+    public static ushort ConsumerFromScancode(int scancode)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return ConsumerFromWindowsScancode(scancode);
+        }
+
+        return OperatingSystem.IsLinux() || OperatingSystem.IsFreeBSD() ? ConsumerFromX11Keycode(scancode) : (ushort)0;
+    }
+
+    /// <summary>Windows: the scancode (set 1, extended bit 0x100) of a media key.</summary>
+    public static ushort ConsumerFromWindowsScancode(int scancode) => scancode switch
+    {
+        0x122 => 0xCD,                                         // Play/Pause
+        0x124 => 0xB7,                                         // Stop
+        0x110 => 0xB6,                                         // Scan Previous Track
+        0x119 => 0xB5,                                         // Scan Next Track
+        0x120 => 0xE2,                                         // Mute
+        0x12E => 0xEA,                                         // Volume Decrement
+        0x130 => 0xE9,                                         // Volume Increment
+        0x16D => 0x183,                                        // Media Select: AL Consumer Control Configuration
+        0x16C => 0x18A,                                        // Mail: AL Email Reader
+        0x121 => 0x192,                                        // Calculator: AL Calculator
+        0x132 => 0x223,                                        // Browser Home: AC Home
+        0x165 => 0x221,                                        // Browser Search: AC Search
+        _ => 0,
+    };
+
+    /// <summary>
+    /// macOS: a media key arrives as an NSSystemDefined event of subtype 8 (NX_SUBTYPE_AUX_CONTROL_BUTTONS) whose
+    /// data1 holds the key (bits 16..31, NX_KEYTYPE_*) and its state (bits 8..15: 0x0A down, 0x0B up). The usage, and
+    /// whether the key went down; 0 for another event or key.
+    /// </summary>
+    public static ushort ConsumerFromMacSystemEvent(short subtype, long data1, out bool down)
+    {
+        down = false;
+        if (subtype != 8)
+        {
+            return 0;
+        }
+
+        int state = (int)((data1 >> 8) & 0xFF);
+        if (state != 0x0A && state != 0x0B)
+        {
+            return 0;
+        }
+
+        down = state == 0x0A;
+        return ((data1 >> 16) & 0xFFFF) switch
+        {
+            0 => 0xE9,                                         // NX_KEYTYPE_SOUND_UP: Volume Increment
+            1 => 0xEA,                                         // NX_KEYTYPE_SOUND_DOWN: Volume Decrement
+            7 => 0xE2,                                         // NX_KEYTYPE_MUTE: Mute
+            16 => 0xCD,                                        // NX_KEYTYPE_PLAY: Play/Pause
+            17 => 0xB5,                                        // NX_KEYTYPE_NEXT: Scan Next Track
+            18 => 0xB6,                                        // NX_KEYTYPE_PREVIOUS: Scan Previous Track
+            19 => 0xB3,                                        // NX_KEYTYPE_FAST: Fast Forward
+            20 => 0xB4,                                        // NX_KEYTYPE_REWIND: Rewind
+            _ => 0,
+        };
+    }
+
+    /// <summary>Linux (X11): the X keycode (evdev KEY_* + 8) of a media key.</summary>
+    public static ushort ConsumerFromX11Keycode(int keycode) => keycode switch
+    {
+        172 => 0xCD,                                           // KEY_PLAYPAUSE: Play/Pause
+        174 => 0xB7,                                           // KEY_STOPCD: Stop
+        173 => 0xB6,                                           // KEY_PREVIOUSSONG: Scan Previous Track
+        171 => 0xB5,                                           // KEY_NEXTSONG: Scan Next Track
+        121 => 0xE2,                                           // KEY_MUTE: Mute
+        122 => 0xEA,                                           // KEY_VOLUMEDOWN: Volume Decrement
+        123 => 0xE9,                                           // KEY_VOLUMEUP: Volume Increment
+        208 => 0xB0,                                           // KEY_PLAYCD: Play
+        209 => 0xB1,                                           // KEY_PAUSECD: Pause
+        176 => 0xB4,                                           // KEY_REWIND: Rewind
+        216 => 0xB3,                                           // KEY_FASTFORWARD: Fast Forward
+        163 => 0x18A,                                          // KEY_MAIL: AL Email Reader
+        148 => 0x192,                                          // KEY_CALC: AL Calculator
+        158 => 0x196,                                          // KEY_WWW: AL Internet Browser
+        225 => 0x221,                                          // KEY_SEARCH: AC Search
+        _ => 0,
+    };
 }

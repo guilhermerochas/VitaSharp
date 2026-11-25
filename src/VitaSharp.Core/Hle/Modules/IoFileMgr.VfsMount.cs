@@ -717,12 +717,25 @@ public sealed partial class IoFileMgr
     /// <summary>
     /// Walks the elements of <paramref name="fullPath"/> past the mount's root path with the driver's lookup op,
     /// stopping before the last one when <paramref name="parentOnly"/>: the vnode reached (the root for the root path)
-    /// and where the last element starts in the path (-1 for the root). A failed lookup's error.
+    /// and where the last element starts in the path (-1 for the root). A failed lookup's error. On a mount that waits
+    /// for its media the I/O calls first wait for it (<see cref="WaitForMountMedia"/>); the module's own lookups for
+    /// mounting (its kinds 0x1000, 0x2000, 0x6000, 0x7000) pass <paramref name="waitForMedia"/> false.
     /// </summary>
-    int GuestWalk(GuestMount mount, in GuestPathBlock path, string fullPath, bool parentOnly, out uint vnode, out int lastStart)
+    int GuestWalk(GuestMount mount, in GuestPathBlock path, string fullPath, bool parentOnly, out uint vnode, out int lastStart,
+        bool waitForMedia = true)
     {
         vnode = mount.Root;
         lastStart = -1;
+        if (waitForMedia)
+        {
+            int waited = WaitForMountMedia(mount.Mount);
+            if (waited < 0)
+            {
+                vnode = 0;
+                return waited;
+            }
+        }
+
         int position = mount.RootPath.Length;
         var elements = new List<(int Start, int Length)>();
         while (position < fullPath.Length)
@@ -884,6 +897,12 @@ public sealed partial class IoFileMgr
 
     int GuestClose(OpenFile file)
     {
+        int waited = WaitForFileMedia(file.GuestFile);
+        if (waited < 0)
+        {
+            return waited;
+        }
+
         int result = ksceVopCloseThroughEntry(file.GuestVnode, file.GuestFile);
         ForgetGuestDescriptor(file.GuestFile);
         GuestFreeFile(file.GuestVnode, file.GuestFile);
@@ -909,6 +928,12 @@ public sealed partial class IoFileMgr
 
     int GuestTransfer(OpenFile file, uint offset, uint buffer, uint size)
     {
+        int waited = WaitForFileMedia(file.GuestFile);
+        if (waited < 0)
+        {
+            return waited;
+        }
+
         uint count = Emu.Memory.Alloc(0x10, "vfs result", MemoryRegion.Kernel, 16);
         try
         {
@@ -962,6 +987,12 @@ public sealed partial class IoFileMgr
 
     int GuestDclose(OpenDir directory)
     {
+        int waited = WaitForFileMedia(directory.GuestFile);
+        if (waited < 0)
+        {
+            return waited;
+        }
+
         int result = ksceVopDcloseThroughEntry(directory.GuestVnode, directory.GuestFile);
         ForgetGuestDescriptor(directory.GuestFile);
         GuestFreeFile(directory.GuestVnode, directory.GuestFile);

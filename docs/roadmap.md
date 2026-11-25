@@ -370,6 +370,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Permissões (25/11/2026, adr4): biblioteca de syscall só do kernel, em "Corrigido, falta o usuário testar". NIDs e
   tabelas (25/11/2026, adr4): tamanhos das entradas de exports/imports como o modulemgr 3.74, em "Corrigido, falta o
   usuário testar". Fechado (25/11/2026, adr4); o que ficou de fora é a opção futura do stub do 3.74 logo abaixo.
+  Entradas de import antes do link (small4): em "Corrigido, falta o usuário testar".
 - [ ] [P3][M] (opção futura, decisão do lead: não agora) Import sem quem exporte com o stub do 3.74: no modulemgr 3.74
   (decomp, só estudo) um NID que a biblioteca não exporta ("Library function entry not found ... (ignored)") ou de uma
   biblioteca ainda não carregada fica com o stub "não ligado" `sub r12, pc, #8; mov pc, #0` (0xE24FC008, 0xE3A0F000):
@@ -2213,9 +2214,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   deflatePrime (encoder deflate próprio em nível de bit), ScePervasiveForDriver (palavras de identificação), ScePower
   SoftReset/0x3951AF53 e SceSyscon SetPowerMode e entradas (reboot do sistema emulado: SystemPower.Rebooted, o host
   boota de novo), SceIofilemgrForDriver vfsRmdev e NID_A39A9CA7 (vnodes de dispositivo de bloco dos mounts tipo 3 em
-  dev/tty/md). Falta: a espera das chamadas de E/S numa montagem que espera a mídia (bit 0x20000) enquanto a
-  palavra de presença não é 1 (FUN_81004bb8; o flag e as palavras já existem, ver "Corrigido, falta o usuário
-  testar");
+  dev/tty/md) e a espera das chamadas de E/S pela mídia (em "Corrigido, falta o usuário testar"). Falta: quem zera
+  a palavra de presença e limpa o flag quando a mídia sai (o driver do cartão; não se emula a retirada);
   SceCoredumpForDriver NID_A7D214A7 / NID_D064F6DC / NID_EF20949F (a validação, a fila de duas vagas e o arquivo
   de core estão em "Corrigido, falta o usuário testar"; falta a suspensão do processo durante o dump e as notas da
   Sony no .psp2dmp: PROCESS_INFO, THREAD_INFO, THREAD_REG_INFO, MODULE_INFO, MEM_BLK_INFO e as outras que o módulo
@@ -2466,12 +2466,39 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   resposta WPS), e isso é [G]: decidir com o usuário antes. Usa: Near, Mapas.
 - [ ] [P3][M] Magnetômetro, o que falta (o feito está em "Corrigido, falta o usuário testar"): (1) o anel de
   registros brutos do driver (`sceMotionDevRead`/`ReadForMagnCalib` copiam os registros do leitor, modo 0x10005 do
-  FUN_81004420; o formato do registro ainda não foi lido) e o `dataInfo`; (2) a fusão do campo no `deviceQuat` como o driver_us faz (hoje só a matriz NED e a estabilidade usam o
-  campo); (3) o magnetômetro de um controle no PC (o SDL não expõe um).
+  FUN_81004420; o formato do registro ainda não foi lido) e o `dataInfo`. Achado (25/11/2026, small4, estudo do
+  SceMotionDev 3.74): cada registro tem 0xF0 bytes copiados inteiros da fila do driver (até 64, a fila escolhida pelo
+  leitor entre 16); +0xA (4 bits baixos) e +0xB (quantas amostras) no cabeçalho, as amostras de 0x24 bytes a partir
+  de +0xC com o contador de tempo em +0x18 de cada uma (o driver desconta a volta do contador, 0xFFFF por unidade de
+  +0xA); +8 ganha o bit 0x40 quando o registro é de outro leitor. Falta ler o conteúdo de cada amostra (acelerômetro,
+  giroscópio e campo em unidades brutas do sensor). Mais (small4, timebox de 1 h sem fechar): a amostra i começa em
+  `registro + i*0x24` (tempo em +0x18, bandeiras em +0x1E, o bit 0x8 = campo válido, o campo em +0x32/+0x34/+0x36
+  como int16 << 2); o campo vem do magnetômetro no I2C 1, endereço 0x18, registro 0x11 (8 bytes, FUN_810003a4 e
+  vizinhas); acelerômetro e giroscópio chegam pelo syscon (`SceSysconForDriver_40FF3898`, pacotes de movimento):
+  falta ler esse caminho para saber as unidades brutas antes de montar a fila a partir da amostra do host.
+  Lido (small4, 2ª rodada, timebox de 1 h sem fechar): o pacote de movimento do syscon (FUN_81000610 -> FUN_810027e4)
+  tem [0] = 2, [1] = tamanho, [4] -> registro +9, [5] (4 bits baixos = intervalo) -> +0xA, [6..7] = contador da
+  primeira amostra, [8..11] = um nibble de bandeiras por amostra (até 6) e os dados a partir de +0xC, cada grupo de
+  3 x u16 presente conforme o nibble. Na amostra: +0x18 = intervalo x contador, +0x1C = contador, +0x1E = bandeiras
+  (bit 0: +0x20/+0x22/+0x24; bit 2: +0x2C/+0x2E/+0x30; bit 3: o campo +0x32..; bit 1 do nibble: formato largo, com
+  +0x26..+0x2A e +0x38/+0x3A). O driver_us lê o grupo do bit 0 pelo FUN_8100a52c (escalado pelo tempo, provável
+  giroscópio) e o do bit 2 pelo FUN_8100a478 (provável acelerômetro), os dois sem sinal e corrigidos pela calibração
+  de fábrica (`DAT_81015214`, `DAT_810152ac`). Montar a fila a partir da amostra do host exige inverter essa
+  calibração (ler de onde ela vem: a calibração gravada do aparelho) e confirmar qual grupo é qual: [G];
+  (2) a fusão do campo no `deviceQuat` como o driver_us faz (hoje só a matriz NED e a estabilidade usam o campo).
+  Achado (small4, estudo do driver_us 3.74, timebox de 1 h sem fechar): na primeira amostra depois de um reset
+  (o pedido pendente em `DAT_81010148` por leitor), com o magnetômetro desligado (`DAT_81015258` = 0, posto pelo
+  `sceMotionMagnetometerOn`) a referência do mundo é a constante (0,1,0), (1,0,0), (0,0,1) (dados em 0x81004DE0);
+  com ele ligado o FUN_8100b380 monta a referência dos vetores normalizados da gravidade e do campo (produtos
+  vetoriais, TRIAD) e a orientação passa a ter o norte; a cada amostra o FUN_8100a5fc filtra o campo bruto (+0x32 da
+  amostra) para o campo usado. Falta: ler em que eixo do mundo o norte cai (a matriz que o FUN_8100b380 grava em
+  `param_1[0x10..]`) e se o campo corrige o yaw continuamente (os ramos com `DAT_81015258` em 0x810066xx); só então
+  trocar o `MotionFusion.Reset` (hoje só a gravidade) com teste; (3) o magnetômetro de um controle no PC (o SDL não
+  expõe um).
 - [ ] [P3][M] Teclado e mouse Bluetooth, o que falta (o feito está em "Corrigido, falta o usuário testar"): conferir
   no Sistema do Vita que Configurações > Bluetooth lista os dois dispositivos (os registros do `SceBt` seguem o 3.74,
-  mas a tela não foi aberta); uma fonte do host para os controles de consumo (teclas de mídia de um teclado), hoje
-  nenhum é pareado.
+  mas a tela não foi aberta); no Wayland, conferir se o scancode que o GLFW dá a uma tecla de mídia é o do evdev + 8
+  como no X11; o monitor de teclas de mídia do macOS ainda não rodou num Mac (só o mapeamento é testado).
 - [ ] [P3][G] Processador de mídia Venezia (núcleos MeP + IVC2) para código MeP que não é do firmware (plugin
   VVNZRunner e o homebrew sobre ele; `docs/notes/hardware-coverage.md`): o `vnzimg.skprx` sai do `self2elf` em claro,
   sem chave. Primeira entrega: interpretador do núcleo MeP-c5 numa thread de guest com programa sintético no teste
@@ -3359,6 +3386,21 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (25/11/2026, falta testar) [P3][M] Entradas de import conferidas antes do link, como o modulemgr 3.74
+  (fix/small4). Antes de ligar cada biblioteca que acha (FUN_81008aa0 -> FUN_81005100), num módulo de processo de
+  usuário, o 3.74 exige que cada stub de função caiba inteiro (0x10 bytes) num segmento de permissão R+X exata (5,
+  FUN_81004570) e cada entrada de variável não nula (4 bytes) num segmento sem escrita (FUN_810045cc); senão a carga
+  falha com 0x8002D01E. Uma biblioteca que ele não acha tem a checagem feita e o resultado ignorado; os módulos do
+  processo do kernel (0x10005) não são conferidos; os bits 0x100/0x400 do objeto do módulo, que pulam a checagem,
+  marcam a segunda instância de um módulo compartilhado (o `+0xDC` aponta para a primeira; FUN_81001518), cujos
+  segmentos são os da primeira, e o VitaSharp carrega toda instância inteira. "Achada" aqui: um módulo carregado a
+  exporta ou é uma biblioteca do firmware (banco de NIDs; o HLE faz o papel do módulo). Antes o VitaSharp ligava os
+  stubs onde estivessem. Os módulos sintéticos dos testes (`SceModuleBuilder`, `SyntheticTitle`) passaram a ter o
+  segmento de código R+X, como um módulo de verdade. `VitaSharp.Desktop import-check [--fs=<pasta fs>]` aplica a
+  mesma checagem, só lendo, a todo módulo de usuário instalado (títulos, atualizações, plugins de ux0/ur0:tai) e
+  lista as recusas. Teste: `ImportEntryCheckTests` (falha sem a mudança). Testar:
+  jogos, homebrew e plugins de usuário abrem como antes (todo módulo que o Vita aceita passa; um que o Vita recusa
+  agora é recusado com 0x8002D01E no log).
 - [ ] (25/11/2026, falta testar) [P2][G] Fila de dump do SceCoredump e o arquivo de core (fix/small3,
   `VshBridge.CoredumpQueue.cs`). No 3.74 um pedido conferido ocupa uma das duas vagas do módulo (as duas ocupadas:
   0x8001000C, FUN_81006f10), recebe o próximo id de dump (de 1 até 0x7FFFFFFF) e vai para o thread de dump, que grava
@@ -3385,7 +3427,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   guarda a palavra inteira do tipo de sistema de arquivos (antes só o byte baixo, sem a classe em +0x4E). Teste
   `IoVfsMountTests.AMountThatWaitsForItsMediaGetsTheDeviceClassFlag` (falha sem a mudança). Antes o create
   recebia um callback, o aviso dava 0x8001000C e nada era escrito. Teste: `IoErrorEventTests` (falha sem a
-  mudança). Testar: tirar o cartão de memória não se emula; nada muda na tela, os jogos de sempre continuam abrindo.
+  mudança). As chamadas de E/S por caminho numa montagem com o bit 0x20000 cuja palavra de presença não é 1 esperam,
+  antes da busca, o bit 1 do flag da classe (FUN_81004bb8 -> FUN_8100b810: ksceKernelWaitEventFlag(flag, 1, AND),
+  sem limpar; a palavra é lida uma vez), acordadas pelo NID_5B7E5AB8; as buscas do próprio módulo para montar
+  (tipos 0x1000, 0x2000, 0x6000, 0x7000: a cobertura do vfsMount) não esperam; uma classe 0x2xx sem flag próprio
+  fica com o -1 padrão e a chamada devolve o erro da espera. As chamadas por descritor (read, write, lseek,
+  fgetstat, dread, close, dclose) esperam do mesmo jeito quando o objeto de arquivo tem o bit 1 de +0x2C (posto na
+  abertura pelo bit 0x20000 da montagem; FUN_8100b830, por onde passam todas) (fix/small4). Testes
+  `IoVfsMountTests.AnIoCallOnAMountWaitingForItsMediaWaitsUntilTheMediaIsThere` e
+  `ADescriptorCallOnAMountWaitingForItsMediaWaitsUntilTheMediaIsThere` (falham sem a mudança).
+  Testar: tirar o cartão de memória não se emula; nada muda na tela, os jogos de sempre continuam abrindo.
 - [ ] (25/11/2026, falta testar) [P2][G] Gravar tudo: conferir uma correção sem jogar (feat/f8x). `VitaSharp.Desktop
   verify <captura|zip>` reproduz o dump da GPU da gravação com o build atual (`replay-gpu --findings`, as regras do
   report.txt por `FrameFindings` e a varredura de NaN/Inf) e diz por achado e por tipo, com números, *corrigido /
@@ -3416,7 +3467,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   real do host (feat/f8x). Teste: `SessionCaptureFlowTests.ASecondCaptureOnTheSameEmulatorRecordsTheInputItself`
   (NullReferenceException sem a correção). Testar: `VitaSharp.Desktop rerun <captura> --window` abre e grava a
   reexecução em `reruns/`.
-
 - [ ] (25/11/2026, falta testar) [P2][G] Pedidos de dump do SceCoredump conferidos como no 3.74 (fix/small2):
   `NID_A7D214A7` e `NID_D064F6DC` (pid, arg, alvo, pedido) conferem o pedido antes de enfileirá-lo para o thread de
   dump, na ordem do módulo (0x81007100): pedido NULL ou palavra de tamanho (+0) até 3, 0x80010016; com 0x34 bytes ou
@@ -3615,6 +3665,23 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   depurador), o `[watchdog] STALL` do log traz `since-hle=... (pacing ..., ... K guest cycles, host late ...)` em
   cada thread: uma thread presa em código do guest mostra muitos ciclos, uma sem CPU mostra "host late" alto.
 
+- [ ] (25/11/2026, falta testar) [P3][P] Teclas de mídia do teclado Bluetooth como controle de consumo (fix/small4):
+  no 3.74 o SceHid guarda cada coleção de aplicação de um dispositivo Bluetooth como um dispositivo próprio (até 8 por
+  aparelho, FUN_81000524), então as teclas de mídia de um teclado são um controle de consumo ao lado do teclado; o
+  relatório (0x10 bytes) tem até quatro usos da página de consumo (16 bits cada, na ordem achada) e o tempo, sem os
+  usos reservados da tabela HID (FUN_81002218, FUN_810016d0). Feito: `HidKeyboard.ConsumerControl`,
+  `sceHidConsumerControlEnumerate/Read` com o formato e os callbacks de dica (conexão junto com o teclado, leitura a
+  cada relatório); no Android as teclas de mídia do teclado (tocar/pausar, faixas, volume, mudo...) vão para ele e
+  continuam indo para o celular. No PC (Windows e Linux X11) a tecla de mídia que o GLFW informa sem nome (Unknown)
+  vai pelo scancode: conjunto 1 com o bit estendido no Windows (0x122 tocar/pausar...), o keycode do X11 (evdev + 8)
+  no Linux (`HidUsages.ConsumerFromScancode`); no macOS, onde as teclas de mídia são eventos `NSSystemDefined` que a
+  janela do GLFW não recebe, um monitor local de `NSEvent` instalado pelo runtime do Objective-C (subtipo 8, a tecla
+  em `data1 >> 16`, 0x0A/0x0B apertada/solta; `MacMediaKeys`). Antes nenhum controle de consumo era pareado.
+  Testes: `HidDeviceTests.APairedKeyboardsMediaKeysAreItsConsumerControl` (falha sem a mudança),
+  `PcMediaKeysHaveTheirConsumerUsages` e `MacMediaKeyEventsHaveTheirConsumerUsages`. Testar: com "Teclado e mouse Bluetooth" ligado (PC: Configurações >
+  Emulação ou `--bt-keyboard-mouse=on`; Android: Ajustes) e um teclado com teclas de mídia, um app ou jogo que leia o
+  controle de consumo (`sceHidConsumerControlRead`) reage a tocar/pausar e às faixas; as teclas de volume continuam
+  mudando o volume do celular/PC.
 - [ ] (24/11/2026, falta testar) [P3][M] Teclado e mouse Bluetooth (fix/adr4; `docs/notes/hardware-coverage.md`): no
   3.74 o SceHid guarda até 8 teclados e 8 mouses; `sceHid{Keyboard,Mouse}Enumerate` copia os handles dos conectados
   (lista NULL 0x803B0001, no máximo 8), `Read`/`Peek` conferem o handle (< 1: 0x803B0002; lista NULL ou contagem

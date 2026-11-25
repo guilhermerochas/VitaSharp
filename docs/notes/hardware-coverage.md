@@ -183,9 +183,14 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
   mouse are the paired devices: `sceHid{Keyboard,Mouse}Enumerate/Read/Peek` as FW 3.74 (`Hle/Modules/Hid.cs`,
   `Host/Hid.cs`), with the hint callbacks notified; SceBt lists them (`sceBtGetRegisteredInfo`) and queues their
   connections and disconnections as events 5 and 6 for `sceBtReadEvent` (`SystemServicesVsh.BluetoothEvents.cs`).
-  Consumer controls (`sceHidConsumerControl*`) answer as 3.74 with no such device paired; the controller calls answer
-  0x803B0004, as 3.74. Missing: a host source of consumer-control keys (media keys), the shell's Bluetooth settings
-  screen checked by hand.
+  The paired keyboard's media keys are its consumer-control device (3.74 keeps each application collection of a
+  Bluetooth device as a device of its own): `sceHidConsumerControlEnumerate/Read` give reports of up to four consumer
+  usages, the reserved ones dropped, as 3.74 (`HidConsumerControl`); the source is the keyboard's media keys: on
+  Android by key code, on Windows and Linux (X11) by the scancode GLFW gives a key it has no token for (set 1 with the
+  extended bit on Windows, the X keycode on Linux; `HidUsages.ConsumerFromScancode`); on macOS, where media keys are
+  `NSSystemDefined` events the GLFW window never gets, a local `NSEvent` monitor installed through the Objective-C
+  runtime (`Desktop/Host/MacMediaKeys.cs`; subtype 8, the key and its state in data1). The controller
+  calls answer 0x803B0004, as 3.74. Missing: the shell's Bluetooth settings screen checked by hand.
 - **Impact:** typing in the browser, the IME and apps that read a keyboard directly; mouse in the browser.
 - **Size:** [M]. **First testable delivery:** the host keyboard offered as one paired keyboard (an option):
   `sceHidKeyboardEnumerate` returns one handle and `sceHidKeyboardRead` reports scripted key presses.

@@ -24,7 +24,15 @@ public sealed class SceModuleBuilder(string name)
     private uint _codeMemSize = Size;
     private uint _dataMemSize;
     private uint _moduleNid = 0x12345678;
+    private uint _codeFlags = 5;
     private readonly List<(int Offset, byte[] Bytes)> _payloads = [];
+
+    /// <summary>The code segment's ELF permissions (p_flags; R+X = 5, as a module's text has them, by default).</summary>
+    public SceModuleBuilder CodeSegmentFlags(uint flags)
+    {
+        _codeFlags = flags;
+        return this;
+    }
 
     /// <summary>module_info's module NID (+0x34; a firmware module's names its firmware build).</summary>
     public SceModuleBuilder ModuleNid(uint nid)
@@ -346,7 +354,7 @@ public sealed class SceModuleBuilder(string name)
             BinaryPrimitives.WriteUInt32LittleEndian(h[(at + 28)..], 0x10);
         }
 
-        Ph(h, 0x34, 1, SegOffset, (uint)segmentSize, Math.Max(_codeMemSize, (uint)segmentSize), 7);
+        Ph(h, 0x34, 1, SegOffset, (uint)segmentSize, Math.Max(_codeMemSize, (uint)segmentSize), _codeFlags);
         int relaHeader = 0x54;
         if (_dataMemSize != 0)
         {

@@ -1140,6 +1140,11 @@ public static class ModuleLoader
 
             uint[] fn = nfunc > 0 ? GuestMemory.Span<uint>(funcNids, nfunc).ToArray() : [];
             uint[] fe = nfunc > 0 ? GuestMemory.Span<uint>(funcEntries, nfunc).ToArray() : [];
+            if (!kernel && ImportLibraryIsFound(linker, lib, libNid, fn))
+            {
+                CheckImportEntries(m, lib, fe, nvar > 0 ? GuestMemory.Span<uint>(varEntries, nvar).ToArray() : []);
+            }
+
             for (int i = 0; i < nfunc; i++)
             {
                 linker.BindFunctionImport(fn[i], libNid, lib, fe[i], m.Segments, kernel);
@@ -1163,5 +1168,107 @@ public static class ModuleLoader
 
             p += size;
         }
+    }
+
+    /// <summary>The library names of the firmware's NID database (the libraries a Vita has), made when first asked.</summary>
+    private static HashSet<string>? s_firmwareLibraries;
+
+    /// <summary>
+    /// Whether FW 3.74 modulemgr would find the library an import names (FUN_81005ecc): a loaded module exports it,
+    /// or it is one of the firmware's (here the HLE stands in for its module). Only a found library gets its entries
+    /// checked before the link (FUN_81008aa0); the check of a library not found is made and its result ignored.
+    /// </summary>
+    private static bool ImportLibraryIsFound(Linker linker, string library, uint libNid, uint[] functionNids)
+    {
+        if (functionNids.Length > 0 && linker.TryGetFunctionExport(libNid, functionNids[0], out _))
+        {
+            return true;
+        }
+
+        HashSet<string>? libraries = s_firmwareLibraries;
+        if (libraries == null)
+        {
+            libraries = new HashSet<string>(StringComparer.Ordinal);
+            foreach (Hle.NidInfo info in Hle.NidDatabase.All)
+            {
+                libraries.Add(info.Library);
+            }
+
+            s_firmwareLibraries = libraries;
+        }
+
+        return libraries.Contains(library);
+    }
+
+    /// <summary>
+    /// FW 3.74 modulemgr (FUN_81005100, before it links an import library of a module of a user process): each function
+    /// stub has to lie whole (0x10 bytes) in a segment of the module with permissions R+X exactly (5, FUN_81004570),
+    /// and each variable entry that is not 0 (4 bytes) in a segment without write permission (FUN_810045cc); otherwise
+    /// the load fails with 0x8002D01E. (The module's +4 bits 0x100/0x400, which skip it, mark a second instance of a
+    /// shared module, whose segments are the first instance's; the emulator loads every instance whole.)
+    /// </summary>
+    private static void CheckImportEntries(LoadedModule m, string library, uint[] functionEntries, uint[] variableEntries)
+    {
+        var segments = new List<(uint Address, uint Size, uint Flags)>(m.Segments.Count);
+        foreach (KeyValuePair<int, SegmentInfo> segment in m.Segments)
+        {
+            uint flags = m.SegmentFlags.TryGetValue(segment.Key, out (uint Flags, uint MemSz, uint FileSz) segmentFlags) ? segmentFlags.Flags : 0;
+            segments.Add((segment.Value.Address, segment.Value.Size, flags));
+        }
+
+        if (ImportEntryProblem(segments, library, functionEntries, variableEntries) is { } problem)
+        {
+            throw new ModuleRefusedException(Kernel.SceError.MODULEMGR_ILLEGAL_EXPORT, $"{m.Path}: {problem}");
+        }
+    }
+
+    /// <summary>
+    /// The 3.74 check of one import library's entries (see <see cref="CheckImportEntries"/>) against a module's segments
+    /// (address, size in memory, p_flags): null when they pass, else what fails. Shared by the loader and the
+    /// read-only check of installed modules (<see cref="ModuleImage.ImportEntries"/>).
+    /// </summary>
+    public static string? ImportEntryProblem(IReadOnlyList<(uint Address, uint Size, uint Flags)> segments, string library,
+        uint[] functionEntries, uint[] variableEntries)
+    {
+        foreach (uint stub in functionEntries)
+        {
+            if (!EntryInSegment(segments, stub, 0x10, requireExecutable: true))
+            {
+                return $"an import stub of {library} at 0x{stub:X8} is not in a read-execute segment";
+            }
+        }
+
+        foreach (uint entry in variableEntries)
+        {
+            if (entry != 0 && !EntryInSegment(segments, entry, 4, requireExecutable: false))
+            {
+                return $"a variable import of {library} at 0x{entry:X8} is not in a read-only segment";
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The segment holding <paramref name="address"/> (segments never overlap) has the right
+    /// permissions and holds the <paramref name="size"/> bytes from it.</summary>
+    private static bool EntryInSegment(IReadOnlyList<(uint Address, uint Size, uint Flags)> segments, uint address, uint size, bool requireExecutable)
+    {
+        if ((ulong)address + size > uint.MaxValue)
+        {
+            return false;
+        }
+
+        foreach ((uint segmentAddress, uint segmentSize, uint flags) in segments)
+        {
+            if (address < segmentAddress || address >= segmentAddress + segmentSize)
+            {
+                continue;
+            }
+
+            bool allowed = requireExecutable ? (flags & 7) == 5 : (flags & 2) == 0;
+            return allowed && address + size <= segmentAddress + segmentSize;
+        }
+
+        return false;
     }
 }

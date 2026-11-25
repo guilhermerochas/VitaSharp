@@ -225,6 +225,12 @@ int fd, long offset, int whence)
     {
         if (_files.TryGetValue(fd, out var guest) && guest.GuestFile != 0)
         {
+            int waited = WaitForFileMedia(guest.GuestFile);
+            if (waited < 0)
+            {
+                return waited;
+            }
+
             return ksceVopLseekThroughEntry(guest.GuestVnode, guest.GuestFile, (uint)offset, (uint)(offset >> 32), (uint)whence);
         }
 
@@ -439,6 +445,12 @@ int fd, long offset, int whence)
         if (!_dirs.TryGetValue(fd, out var d)) return SceError.IO_EBADF;
         if (d.GuestFile != 0)
         {
+            int waited = WaitForFileMedia(d.GuestFile);
+            if (waited < 0)
+            {
+                return waited;
+            }
+
             return ksceVopDreadThroughEntry(d.GuestVnode, d.GuestFile, dirent);
         }
 
@@ -511,6 +523,12 @@ int fd, long offset, int whence)
     {
         if (_files.TryGetValue(fd, out var guest) && guest.GuestFile != 0)
         {
+            int waited = WaitForFileMedia(guest.GuestFile);
+            if (waited < 0)
+            {
+                return waited;
+            }
+
             return ksceVopFgetstatThroughEntry(guest.GuestVnode, guest.GuestFile, stat);
         }
 
