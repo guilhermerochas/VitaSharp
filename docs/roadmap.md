@@ -2530,6 +2530,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 - [ ] [P3][G] Porta USB de dispositivo conectada a um host emulado (Content Manager com PC/PS3, armazenamento USB;
   `docs/notes/hardware-coverage.md`): primeira entrega: evento "cabo conectado", `SceUdcd` em `0x20`, a espera de
   estado retorna e um host roteirizado completa um pedido de controle.
+  Achado (25/11/2026, small5, estudo do SceUdcd 3.74, sem fechar): a troca de cabo não é uma chamada, é o
+  tratador de interrupção do controlador (o ramo que lê o registro +0x38 do controlador, bit 1): de um lado grava
+  0x10 na palavra de cabo, põe a conexão de volta no valor guardado e, se ela era 2 (estabelecida), chama o `attach`
+  (+0x34 do bloco SceUdcdDriver, com a versão USB e o user data) de cada driver iniciado (FUN_810014fc) e avisa o
+  ScePower (E4E3C316 3); do outro grava 0x20, guarda a conexão, põe 4 (suspensa) e chama o `detach` (+0x38,
+  FUN_81001548). Conferir qual dos dois lados é "conectado": o HLE de hoje chama 0x10 de desconectado, como o
+  vita-headers, e esse sentido precisa ser confirmado contra o código. Os pedidos de controle chegam ao
+  `processRequest` (+0x2C) pelo mesmo tratador. Falta no VitaSharp um jeito genérico de rodar um tratador de
+  interrupção de kernel (código de guest a partir de um evento do host): é a base da 1ª entrega (evento do host ->
+  tratador numa thread de kernel -> callbacks do driver -> a espera de estado acorda), [G] por isso.
 - [x] [P3][P] Idioma do sistema por jogo (pedido do usuário, 09/11/2026): opção "Idioma do sistema" nos ajustes de cada jogo
   (desktop e Android) que sobrepõe o idioma que o jogo recebe (SceSystemParamLang / `/CONFIG/SYSTEM/language`), para
   jogos sem o idioma do aparelho. Caso real: Killzone Mercenary PCSC00045 (lançamento asiático) só tem japonês
