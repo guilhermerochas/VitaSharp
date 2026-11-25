@@ -24,7 +24,11 @@ public sealed class GpuDumpOptions
     /// <summary>Safety limit on the uncompressed record bytes (stops at the next present once exceeded).</summary>
     public long MaxRawBytes = 8L << 30;
     /// <summary>Brotli quality of the chunks (0 = stored, 1-11).</summary>
-    public int Quality = 3; // q5 compressed at ~30 MB/s and stalled the GPU worker; q3 ~150 MB/s, +7% size (replay-gpu --recompress shrinks it later)
+    // Brotli quality of the chunks while recording (replay-gpu --recompress shrinks a dump later, as RenderDoc keeps a
+    // fast codec while capturing and a strong one for saving). q5 compressed at ~30 MB/s and stalled the GPU worker.
+    // GpuDumpCompressBenchmarks on AC III Liberation's records (32 MB chunk): q3 327 ms -> 10.2 MB, q2 136 ms -> 10.0
+    // MB, q1 117 ms -> 11.9 MB; at ~16 MB of records per frame q3 took ~165 ms of CPU per recorded frame, q2 ~70.
+    public int Quality = 2;
     /// <summary>Called once the file is complete (on the writer thread), also when recording failed.</summary>
     public Action<GpuDumpResult>? Finished;
     /// <summary>Called on the GPU worker when recording actually starts.</summary>
@@ -79,7 +83,9 @@ public sealed unsafe class GpuDumpRecorder
 
     private readonly GpuDumpOptions _options;
     private readonly GpuDumpCodec _codec = new();
-    private DumpBuffer _main = new(1 << 20);
+    /// <summary>A records buffer holds a whole chunk without growing (growing from 1 MB copied ~64 MB per chunk).</summary>
+    private const int ChunkBufferBytes = ChunkFlushBytes + (1 << 20);
+    private DumpBuffer _main = new(1 << 12); // the chunk-sized buffer is taken when the recording starts
     private readonly DumpBuffer _cmd = new(1 << 12), _defs = new(1 << 12);
     private byte[]?[]? _shadow;
     private uint[]? _verified;
@@ -298,6 +304,7 @@ public sealed unsafe class GpuDumpRecorder
             _options.Finished?.Invoke(_result);
             return;
         }
+        _main = new DumpBuffer(ChunkBufferBytes);
         try
         {
             if (backend?.ExportDumpState() is { } state)
@@ -488,7 +495,7 @@ public sealed unsafe class GpuDumpRecorder
         byte[] data = _main.Buffer;
         int len = _main.Length;
         // hand the buffer over to the writer and continue in a spare one (the writer gives buffers back)
-        _main = new DumpBuffer(_spare.TryTake(out byte[]? b) ? b : new byte[1 << 20]);
+        _main = new DumpBuffer(_spare.TryTake(out byte[]? b) ? b : new byte[ChunkBufferBytes]);
         long w0 = Stopwatch.GetTimestamp();
         _out.Add(Compress(GpuDumpFormat.ChunkRecords, data, len, recycle: true)); // blocks when the writer is 16 chunks behind
         long waited = Stopwatch.GetTimestamp() - w0;

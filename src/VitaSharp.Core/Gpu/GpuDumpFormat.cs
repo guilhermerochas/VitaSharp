@@ -261,6 +261,8 @@ public sealed class GpuDumpCodec
     public int ProgramCount => _ids.Count + _infos.Count;
 
     private readonly UniformBlocks _uniforms = new();
+    /// <summary>Writer: the whole-layout uniform block of a stage with split slots (<see cref="RecordedUniforms"/>).</summary>
+    private byte[] _recordedScratch = [];
     /// <summary>Uniform block statistics (writer): blocks written inline, as references, as deltas; bytes before/after.</summary>
     public (long Inline, long Refs, long Deltas, long RawBytes, long StoredBytes) UniformStats => _uniforms.Stats;
 
@@ -298,6 +300,31 @@ public sealed class GpuDumpCodec
             return id;
         }
 
+        /// <summary>Writer: arrays of blocks that left the window, by length (<see cref="AddCopy"/>).</summary>
+        private readonly Dictionary<int, Stack<byte[]>> _freeByLength = new();
+
+        /// <summary>Writer: adds a copy of <paramref name="data"/>. The writer never hands its blocks out, so the array
+        /// of the block leaving the window is free: it goes to the free arrays of its length, and the copy takes one of
+        /// the data's length from there. Blocks have the few lengths of the programs' layouts, so once the window is
+        /// full the recorder allocates nothing per block (it used to allocate every block anew: ~15 MB/frame).</summary>
+        private int AddCopy(ReadOnlySpan<byte> data, ulong hash)
+        {
+            if (_ring[_next % Window] is { } evicted)
+            {
+                if (!_freeByLength.TryGetValue(evicted.Length, out Stack<byte[]>? sameLength))
+                {
+                    sameLength = new Stack<byte[]>();
+                    _freeByLength[evicted.Length] = sameLength;
+                }
+
+                sameLength.Push(evicted);
+            }
+
+            byte[] content = _freeByLength.TryGetValue(data.Length, out Stack<byte[]>? free) && free.TryPop(out byte[]? reused) ? reused : new byte[data.Length];
+            data.CopyTo(content);
+            return Add(content, hash);
+        }
+
         public void Write(DumpBuffer w, ReadOnlySpan<byte> data, int stream)
         {
             w.Var((uint)data.Length);
@@ -316,7 +343,6 @@ public sealed class GpuDumpCodec
             }
             else
             {
-                byte[] content = data.ToArray();
                 if (_lastOfStream.TryGetValue(stream, out int baseId) && Live(baseId) && _ring[baseId % Window].Length == data.Length && TryDelta(w, _ring[baseId % Window], data, _next - baseId))
                 {
                     Stats.Deltas++;
@@ -327,7 +353,8 @@ public sealed class GpuDumpCodec
                     w.Bytes(data);
                     Stats.Inline++;
                 }
-                _lastOfStream[stream] = Add(content, hash);
+                // copied after the delta is written: the array taken may be the delta's base (a block a window back)
+                _lastOfStream[stream] = AddCopy(data, hash);
             }
             Stats.RawBytes += data.Length;
             Stats.StoredBytes += w.Length - start;
@@ -734,23 +761,31 @@ public sealed class GpuDumpCodec
     }
 
     /// <summary>A stage's uniform data as dumps hold it: the whole layout, the split slots' bytes put back in place.</summary>
-    private static ReadOnlySpan<byte> RecordedUniforms(DrawCommand d, GxmProgramInfo info, ReadOnlySpan<byte> data, int stage)
+    /// <remarks>The result of a split layout is in a buffer reused by the next call (each stage's block is written
+    /// before the next stage's is built).</remarks>
+    private ReadOnlySpan<byte> RecordedUniforms(DrawCommand d, GxmProgramInfo info, ReadOnlySpan<byte> data, int stage)
     {
         if (!info.HasSplit)
         {
             return data;
         }
 
-        byte[] full = new byte[info.UniformBytes];
+        if (_recordedScratch.Length < info.UniformBytes)
+        {
+            _recordedScratch = new byte[Math.Max(info.UniformBytes, _recordedScratch.Length * 2)];
+        }
+
+        Span<byte> full = _recordedScratch.AsSpan(0, info.UniformBytes);
+        full.Clear();
         foreach (UniformBufferSlot uniformBufferSlot in info.UniformSlots)
         {
             if (uniformBufferSlot.IsSplit)
             {
-                d.SplitSpan(stage + uniformBufferSlot.Split).CopyTo(full.AsSpan(uniformBufferSlot.ByteOffset));
+                d.SplitSpan(stage + uniformBufferSlot.Split).CopyTo(full[uniformBufferSlot.ByteOffset..]);
             }
             else if (uniformBufferSlot.DataOffset < data.Length)
             {
-                data.Slice(uniformBufferSlot.DataOffset, Math.Min(uniformBufferSlot.ByteSize, data.Length - uniformBufferSlot.DataOffset)).CopyTo(full.AsSpan(uniformBufferSlot.ByteOffset));
+                data.Slice(uniformBufferSlot.DataOffset, Math.Min(uniformBufferSlot.ByteSize, data.Length - uniformBufferSlot.DataOffset)).CopyTo(full[uniformBufferSlot.ByteOffset..]);
             }
         }
         return full;
@@ -1006,14 +1041,35 @@ public sealed class GpuDumpCodec
     /// <summary>A whole encoded chunk (header and payload) as a new array (compressing on any thread).</summary>
     public static byte[] EncodeChunk(byte type, ReadOnlySpan<byte> raw, int quality)
     {
-        using var ms = new MemoryStream(raw.Length / 3 + 64);
-        byte[]? scratch = null;
-        WriteChunk(ms, type, raw, quality, ref scratch);
-        return ms.ToArray();
+        // the compressor's output buffer (~33 MB for a recorder chunk) is reused between chunks: one per compressor
+        // running at the same time; a new one per chunk was most of what a recording allocated
+        byte[]? scratch = s_chunkScratch.TryTake(out byte[]? kept) ? kept : null;
+        byte codec = CompressChunk(raw, quality, ref scratch, out int written);
+        ReadOnlySpan<byte> payload = codec == GpuDumpFormat.CodecBrotli ? scratch.AsSpan(0, written) : raw;
+        byte[] chunk = new byte[ChunkHeaderBytes + payload.Length];
+        WriteChunkHeader(chunk, type, raw.Length, payload.Length, codec);
+        payload.CopyTo(chunk.AsSpan(ChunkHeaderBytes));
+        if (s_chunkScratch.Count < 4)
+        {
+            s_chunkScratch.Add(scratch);
+        }
+
+        return chunk;
     }
 
-    /// <summary>Compresses <paramref name="raw"/> into a chunk (Brotli at <paramref name="quality"/>, stored when that does not help).</summary>
-    public static void WriteChunk(Stream output, byte type, ReadOnlySpan<byte> raw, int quality, ref byte[]? scratch)
+    private const int ChunkHeaderBytes = 10;
+
+    private static void WriteChunkHeader(Span<byte> head, byte type, int rawLength, int payloadLength, byte codec)
+    {
+        head[0] = type;
+        BinaryPrimitives.WriteUInt32LittleEndian(head[1..], (uint)rawLength);
+        BinaryPrimitives.WriteUInt32LittleEndian(head[5..], (uint)payloadLength);
+        head[9] = codec;
+    }
+
+    /// <summary>Brotli at <paramref name="quality"/> into <paramref name="scratch"/>: the payload is the first
+    /// <paramref name="written"/> bytes of it, or the raw bytes (stored) when that does not help.</summary>
+    private static byte CompressChunk(ReadOnlySpan<byte> raw, int quality, [System.Diagnostics.CodeAnalysis.NotNull] ref byte[]? scratch, out int written)
     {
         int max = BrotliEncoder.GetMaxCompressedLength(raw.Length);
         if (scratch == null || scratch.Length < max)
@@ -1021,18 +1077,24 @@ public sealed class GpuDumpCodec
             scratch = new byte[Math.Max(max, 1 << 16)];
         }
 
-        byte codec = GpuDumpFormat.CodecStored;
-        ReadOnlySpan<byte> payload = raw;
-        if (quality > 0 && raw.Length > 64 && BrotliEncoder.TryCompress(raw, scratch, out int written, quality, 22) && written < raw.Length)
+        if (quality > 0 && raw.Length > 64 && BrotliEncoder.TryCompress(raw, scratch, out written, quality, 22) && written < raw.Length)
         {
-            codec = GpuDumpFormat.CodecBrotli;
-            payload = scratch.AsSpan(0, written);
+            return GpuDumpFormat.CodecBrotli;
         }
-        Span<byte> head = stackalloc byte[10];
-        head[0] = type;
-        BinaryPrimitives.WriteUInt32LittleEndian(head[1..], (uint)raw.Length);
-        BinaryPrimitives.WriteUInt32LittleEndian(head[5..], (uint)payload.Length);
-        head[9] = codec;
+
+        written = raw.Length;
+        return GpuDumpFormat.CodecStored;
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentBag<byte[]> s_chunkScratch = new();
+
+    /// <summary>Compresses <paramref name="raw"/> into a chunk (Brotli at <paramref name="quality"/>, stored when that does not help).</summary>
+    public static void WriteChunk(Stream output, byte type, ReadOnlySpan<byte> raw, int quality, ref byte[]? scratch)
+    {
+        byte codec = CompressChunk(raw, quality, ref scratch, out int written);
+        ReadOnlySpan<byte> payload = codec == GpuDumpFormat.CodecBrotli ? scratch.AsSpan(0, written) : raw;
+        Span<byte> head = stackalloc byte[ChunkHeaderBytes];
+        WriteChunkHeader(head, type, raw.Length, payload.Length, codec);
         output.Write(head);
         output.Write(payload);
     }

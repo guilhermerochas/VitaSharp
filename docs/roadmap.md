@@ -4602,9 +4602,18 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   stalled 98 ms`, 4 shaders e 2 pipelines novos), não de IO: a thread `main` esperou 0,0 s de IO, e a espera
   modelada do cartão (7 MB/s) da thread de streaming `Gear::AsynchGeneric` entrava no `fileIo` do ledger e virava a
   "causa" de todo quadro. Feito: o `fileIo` conta só a leitura no host, e o relatório da captura mostra o custo do
-  gravador por quadro e avisa quando ele passa de 4 ms. Falta: (1) baratear o gravador do dump (21 ms/quadro: a
-  codificação dos comandos e dos blocos de uniforms, ~11 MB/quadro crus, no GPU worker; levar para outra thread ou
-  reduzir as cópias/alocações por draw); (2) feito (fix/io1, 22/11/2026), ver "Corrigido, falta o usuário testar".
+  gravador por quadro e avisa quando ele passa de 4 ms. (1) Feito em parte (perf/ac3fps, 25/11/2026): o gravador
+  alocava um array novo por bloco de uniforms, o layout split de cada draw e o buffer de saída do compressor por chunk
+  (~17 MB/quadro de lixo, 60 gen2 em 20 s); agora reaproveita os arrays dos blocos que saem da janela (por tamanho),
+  um scratch do layout, um buffer de chunk do tamanho certo e os buffers do Brotli, e grava com qualidade 2 em vez de
+  3 (benchmark `GpuDumpCompressBenchmarks`: 2,4x menos CPU, arquivo do mesmo tamanho). Medido headless gravando os
+  quadros 600-1200 (2 rodadas cada): gravador 19,2 -> 7,5 ms/quadro no GPU worker, fps 26-28 -> 28-30, alocação
+  17,6 -> 11,8 MB/quadro (o chunk novo do Brotli ainda não estava nessa medida), pausa de GC 8,5% -> 2,5%. Testar:
+  "Gravar tudo" no AC III em gameplay; o relatório da captura deve mostrar o "dump recorder" bem abaixo de 19 ms/quadro
+  e o fps da gravação perto de 30. Falta: os compressores (2 threads) ficam no limite com ~12 MB/quadro crus (+2,6
+  ms/quadro esperando o writer) e o worker lê mais memória por quadro quando não atrasa (1,7 -> 2,8 GB em 600
+  quadros); reduzir os bytes crus (deltas dos uniforms ~80% do tamanho) ou mais um compressor quando a CPU deixar.
+  (2) feito (fix/io1, 22/11/2026), ver "Corrigido, falta o usuário testar".
 - [x] (18/11/2026, usuário: corrigido; reabre se aparecer de novo) [P1][M] PSVitaAlive (PSVAS1178, homebrew vita2d), bug gráfico no teclado de busca (usuário, 17/11/2026; captura
   `captures/PSVAS1178_20261117_215911_tudo`, 41 achados [flash]): em quadros isolados faltam as teclas e parte do
   texto ("9/12" em vez de "9/128") e triângulos saem do canto superior esquerdo. Causa (replay do gpu.vsgd, quadro
