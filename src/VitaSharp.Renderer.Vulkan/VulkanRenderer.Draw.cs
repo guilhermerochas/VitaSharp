@@ -1212,7 +1212,7 @@ public sealed unsafe partial class VulkanRenderer
     private readonly HashSet<(uint, Format)> _rawLogged = new();
     private readonly Dictionary<Format, bool> _rawFormatOk = new();
 
-    private void Draw(DrawCommand d)
+    private void DrawCore(DrawCommand d)
     {
         _drawSerial++;
         if (_traceManual)

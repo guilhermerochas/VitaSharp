@@ -1,4 +1,4 @@
-<!-- pair: captures.md sha256=755ec992845e8b4c3961f6552170416a944bfd8140877cdc7e3c5638a68e767b -->
+<!-- pair: captures.md sha256=be5ad6cfc2f87509e1702eaf5c72f5950f0c16968342709a2722af3ed292e1d1 -->
 # Analisar uma gravação do Gravar tudo sem o jogo
 
 [English](captures.md) | **Português**
@@ -58,7 +58,10 @@ O `rerun` sobe o programa a partir do próprio estado salvo da gravação: todo 
 carregado (o jogo, os módulos do firmware, os plugins) é reconstruído da memória do estado; depois a entrada gravada
 é reproduzida e a reexecução é gravada e comparada com a original (`reruns/<...>/compare.txt`: as imagens e a
 primeira chamada HLE diferente). Um caminho escrito na gravação nunca é aberto: a reexecução usa a pasta de dados
-indicada (`--data=<pasta>`). `--boot=title` sobe o jogo instalado e carrega o estado nele.
+indicada (`--data=<pasta>`). `--boot=title` sobe o jogo instalado e carrega o estado nele. `--from=preroll` (o
+padrão com pré-gravação: um estado no máximo 5-10 s antes dela), `--from=start`, ou `--from=markN`: o estado do momento
+em que o jogador marcou o problema (Shift+F8 durante a gravação, ou "Marcar o problema" no menu de pausa do Android;
+`state_mark_N.vss`, listado no `session.txt` e no relatório).
 
 O `hle_calls.tsv` tem uma linha por chamada HLE da gravação (tempo do guest, thread, função, biblioteca, r0-r3,
 resultado, endereço de retorno); o `hle_errors.txt` soma por função, com os retornos de erro.
@@ -71,5 +74,90 @@ reexecução lê zeros ali). O `report.txt` lista o que foi lido e se os bytes s
 O que ainda precisa do jogo: os bytes de uma gravação feita sem `--capture-files-mb`, módulos do firmware
 que o jogo carrega pela primeira vez durante a gravação (vêm do firmware de quem analisa), e gravações do shell do
 sistema com aplicativos abertos (vários processos; subir esses a partir do estado ainda não é suportado).
+
+## Conferir uma correção
+
+```
+VitaSharp.Desktop verify <pasta ou zip da gravação> [--out=<dir>] [--rerun] [opções do replay]
+```
+
+Diz se o problema que a gravação registrou ainda está lá com o build que roda o comando, sem o jogo e sem ninguém
+jogar. Ele reproduz o dump da GPU da gravação com este build (`replay-gpu --findings`, num processo próprio), aplica
+as regras de imagem do relatório aos quadros reproduzidos (os mesmos quadros que uma gravação vê, até 480x272:
+quadros pretos, `[flash]` da imagem inteira ou de uma célula da grade 4x4, imagens fora de ordem) e a varredura de
+NaN/Inf dos alvos de ponto flutuante, e compara cada achado da gravação dentro do dump com eles:
+
+```
+  [flash] present 1587 cell 1,1: ainda presente (replay: present 1587 cell 1,1: ...)
+  [black-flash] present 1600: corrigido (replay: nada nos presents 1599-1601)
+  por tipo (gravação -> replay):
+    flash: 20 -> 0 (corrigido)
+resultado: corrigido
+```
+
+*corrigido*: todo achado da gravação sumiu e nada novo apareceu; *ainda presente*: um achado está no mesmo present
+(um a mais ou a menos) e na mesma célula; *mudou*: ele se deslocou, ou o replay mostra um achado que a gravação não
+tinha (*novo*). Achados antes do dump (a pré-gravação) ou depois dele aparecem como não verificados. Código de saída
+0 corrigido, 1 ainda presente, 2 mudou, 3 nada a verificar, 4 o replay falhou. Tudo vai para `--out` (padrão
+`<gravação>/verify`: `verify.txt`, o `log.txt` e o `findings.txt` do replay); a gravação não é alterada. Opções do
+replay (`--res-scale=2`, `--env=CHAVE=VALOR`, `--msaa=...`) vão para o replay; um dump gravado numa escala de
+resolução leva os alvos de renderização nessa escala, então o replay na mesma escala começa exatamente dos pixels que
+o jogador viu.
+
+O replay executa os comandos gravados: um achado que continua nele é desenhado pelo renderizador a partir desses
+comandos, ou já está neles (a causa vem antes da GPU). `--rerun` também roda de novo a lógica do jogo a partir do
+estado da gravação (`rerun`) e compara os dois relatórios tipo por tipo (travadas, ordem de apresentação, buracos e
+estalos do áudio); uma reexecução não é determinística, então só as contagens são comparadas.
+
+### Qual draw
+
+Para cada pisca que continua (no máximo três), o `verify` aponta o draw responsável, sem bisseção manual: mais um
+replay com a sonda de draws (`replay-gpu <dump> --probe=PRESENT:CÉLULA`, que também pode ser usado sozinho) copia a
+região do achado na superfície mostrada naquele present e nos dois vizinhos antes e depois de cada draw nela, com a
+profundidade e o estêncil sob ela antes do draw. Os draws do quadro do pisca são alinhados com os do vizinho (mesmos
+programas, na ordem) e o primeiro que difere é apontado, com os programas (hashes vs/fs), o estado e o motivo:
+
+```
+  draw responsável por [flash] present 1587 cell 1,1:
+    draw responsável: draw 41823 vs=... fs=... rt=0x66600000 depth=0/True st=7/7 blend=none ... t0=0x81200000:0C000000
+      por quê: não escreveu na região no quadro do pisca (no vizinho: 412 px); depth 0/True (vizinho 7/True), profundidade antes 0.2500 (vizinho 1.0000)
+```
+
+Os motivos: *falta no quadro do pisca* (o vizinho tem o draw, o quadro do pisca não), *só no quadro do pisca*, *não
+escreveu na região* (o mesmo draw não escreveu nada ali: rejeitado pelo teste de profundidade, estêncil ou alfa,
+recortado ou deslocado; os campos do estado e a profundidade/estêncil sob ele que diferem são listados), *estado
+diferente*. Quando nenhum draw na superfície mostrada difere, a causa é uma superfície desenhada antes e amostrada,
+ou qual buffer foi apresentado. Os arquivos: `probe_P/probe_P.txt` (cada draw sondado: present, número do draw,
+alvo, programas, pixels da região que mudou, profundidade e estêncil antes, estado) e
+`probe_P/attribution_P.txt`.
+
+### Qual interruptor (A/B)
+
+O `verify --ab` reproduz o dump mais uma vez para cada interruptor do renderizador que muda como a imagem é
+desenhada (cada um num processo próprio, até dois presents depois do último achado) e compara os achados com os do
+replay sem eles: *o achado some* (o interruptor aponta a classe do bug), *muda* ou *igual*. Os interruptores
+(`--ab=NOME,...` escolhe alguns; `--ab-env=CHAVE=VALOR` acrescenta qualquer outro, repetível):
+
+| Nome | Variável | O que muda |
+|---|---|---|
+| `depth-seed-off` | `VITASHARP_DEPTH_SEED=0` | profundidade/estêncil carregados começam indefinidos em vez da imagem anterior da superfície |
+| `msaa-off` / `msaa-ss` / `msaa-native` | `VITASHARP_MSAA` | cenas MSAA com uma amostra, como superamostragem 2x, multiamostradas |
+| `store-writeback-off` | `VITASHARP_GPU_STORE_WRITEBACK=0` | o que os shaders gravam fica no espelho do renderizador |
+| `scene-breaks-strict` | `VITASHARP_SCENE_BREAKS=strict` | todo envio ou cópia dentro de uma cena termina a renderização |
+| `fetch-pass-merge-*`, `fetch-large-*`, `fetch-pass-join-*`, `depth-feedback-*` | `VITASHARP_FETCH_PASS_MERGE`, `_FETCH_LARGE`, `_FETCH_PASS_JOIN`, `_DEPTH_FEEDBACK` (0 e 1) | os passes de fetch do blending programável e da leitura de profundidade |
+| `depth-ops-none-off` | `VITASHARP_DEPTH_OPS_NONE=0` | profundidade/estêncil sem uso continuam carregados e gravados |
+| `gpu-profile-mali` | `VITASHARP_GPU_PROFILE=mali` | os caminhos do renderizador para GPUs tile-based (celular) |
+| `gpu-poison` | `VITASHARP_GPU_POISON=1` | conteúdo indefinido ganha valores gritantes: a leitura de algo nunca desenhado aparece |
+| `res-scale-1` | `VITASHARP_RES_SCALE=1` | resolução nativa |
+
+```
+A/B dos interruptores do renderizador (18; o replay de cada um contra o replay sem eles):
+  depth-seed-off (VITASHARP_DEPTH_SEED=0: ...): igual
+  msaa-off (VITASHARP_MSAA=off: MSAA scenes drawn single-sampled): o achado some
+  ...
+  o achado some com: msaa-off (a classe do bug: MSAA scenes drawn single-sampled)
+```
+
+Os replays ficam em `<out>/ab/<nome>/`.
 
 Detalhes para desenvolvedores: [`docs/notes/session-capture.md`](notes/session-capture.md).

@@ -117,6 +117,15 @@
   <data name="Captures" xml:space="preserve">
     <value>Captures</value>
   </data>
+  <data name="CaptureMarked" xml:space="preserve">
+    <value>Problem marked ({0}): a save state of this moment goes into the recording</value>
+  </data>
+  <data name="CaptureMarkNoRecording" xml:space="preserve">
+    <value>Mark the problem while recording (start Record everything first)</value>
+  </data>
+  <data name="MMarkBug" xml:space="preserve">
+    <value>Mark the problem</value>
+  </data>
   <data name="CaptureSaved" xml:space="preserve">
     <value>Recording saved: {0}</value>
   </data>
@@ -1438,7 +1447,7 @@
     <value>In-game shortcuts</value>
   </data>
   <data name="ShortcutsText" xml:space="preserve">
-    <value>F11 full screen · P pause (Controls &gt; Emulator shortcuts) · F5 / F7 save and load the quick state, F6 picks the slot · F8 "Record everything" (state, controls, pictures, audio and GPU dump in a .zip in captures) · Ctrl+F8 only the GPU dump · F9 turns debug mode on and off · F10 diagnostic (.zip in the diagnostics folder) · Mouse: left button = front screen, right button = rear touchpad.</value>
+    <value>F11 full screen · P pause (Controls &gt; Emulator shortcuts) · F5 / F7 save and load the quick state, F6 picks the slot · F8 "Record everything" (state, controls, pictures, audio and GPU dump in a .zip in captures) · Shift+F8 marks the problem while recording · Ctrl+F8 only the GPU dump · F9 turns debug mode on and off · F10 diagnostic (.zip in the diagnostics folder) · Mouse: left button = front screen, right button = rear touchpad.</value>
   </data>
   <data name="ShowInFolder" xml:space="preserve">
     <value>Show in folder</value>

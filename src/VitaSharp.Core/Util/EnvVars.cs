@@ -327,6 +327,9 @@ public static class EnvVars
     /// <summary>=SECONDS (0 = no limit; default 60): "Gravar tudo" stops and saves by itself after that long
     /// (--capture-max=SECONDS; SessionCaptureOptions.MaxSeconds).</summary>
     public const string CaptureMaxSeconds = "VITASHARP_CAPTURE_MAX_SECONDS";
+    /// <summary>=SECONDS (default 5): the time between the pre-roll's save states, kept in memory
+    /// (SessionCaptureOptions.PreRollStateInterval; each stops the game 0.1-0.35 s).</summary>
+    public const string CaptureStateInterval = "VITASHARP_CAPTURE_STATE_INTERVAL";
     /// <summary>=MB: most bytes of distinct file contents "Gravar tudo" keeps of what the game read from its own mounts
     /// (files/; default 0 = only paths, offsets, lengths and hashes, no file of the game; --capture-files-mb=MB).</summary>
     public const string CaptureFilesMegabytes = "VITASHARP_CAPTURE_FILES_MB";

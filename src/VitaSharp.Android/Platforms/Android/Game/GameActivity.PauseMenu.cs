@@ -155,9 +155,15 @@ public sealed partial class GameActivity
             tiles.Add(Tile(Loc.Get("MRecenter"), IconRecenter, () => { _sensors?.Recenter(); Toast.MakeText(this, Loc.Get("MRecentered"), ToastLength.Short)?.Show(); }));
         // "Gravar tudo" (every build): the session capture, docs/notes/session-capture.md
         if (session?.Capture.IsRecording == true)
+        {
             tiles.Add(Tile(Loc.Get("MStopRecording"), IconStop, () => { session.Capture.Stop("pause menu"); ShowMainPage(); }, CRec));
+            // the player marks the problem: a mark and a save state of this moment go into the recording
+            tiles.Add(Tile(Loc.Get("MMarkBug"), IconSave, () => { session.Capture.MarkBug("pause menu"); CloseMenu(); }, CRec));
+        }
         else
+        {
             tiles.Add(Tile(Loc.Get("MRecordAll"), IconRecord, () => { session?.Capture.Start("pause menu"); CloseMenu(); }, CRec));
+        }
 #if VITASHARP_DEVELOPER
         tiles.Add(Tile(Loc.Get("MDeveloper"), IconDev, ShowDeveloperPage));
 #endif

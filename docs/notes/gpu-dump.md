@@ -58,6 +58,8 @@ VitaSharp.Desktop replay-gpu <dump.vsgd> [options]
 | `--async-shaders=on` | background shader compilation (default off in the replay) |
 | `--prefetch-ahead=N` | with `--async-shaders=on`: a second reader hands each command to the shader/pipeline prefetch N presents before it executes, as a game's submitting thread does while the GPU thread runs a frame behind (default 1; 0 = just before it runs). Without `--async-shaders=on` there is no prefetch and every first-use pipeline is built on the GPU thread |
 | `--speed=X` (without `--window`) | keeps the recorded pace headless too (default: as fast as possible), so the prefetch workers get the time a game gives them; first-use stalls are in the `[shadercache] session` line (frames stalled >= 4 / 16.7 / 50 ms, worst; the pipelines the GPU thread built itself by variant: tile-word, fetch pass, integer view, MSAA, other) and in one `[shadercache] present N: stalled X ms` line per frame stalled >= 50 ms (the dump's first frame is cold: everything it draws is new at once) |
+| `--findings` | the capture report's picture rules over the replayed frames (a `FrameFindings` present tap: the frames as a recording sees them) and debug mode's NaN/Inf scan: `<out>/findings.txt`, what `verify` compares (docs/captures.md); `--no-nan-scan` leaves debug mode off |
+| `--probe=P[:CELL]` | the draw probe (`VulkanRenderer.DrawProbe.cs`): for every draw into the surface shown at presents P-1, P and P+1, the pixels of the region (CELL of the report's 4x4 grid, -1 the whole picture) it changed, the depth and stencil under the region before it, its programs and state: `<out>/probe_P.txt`, and the draw responsible (`DrawAttribution`: the flashing frame's draws lined up with the neighbour's) in `<out>/attribution_P.txt`. Each probed draw ends and resumes the rendering (a diagnostic run); without `--frame` the replay stops after P+2 |
 | `--no-idle` | do not reproduce the recorded idle points (earlier submission of work) |
 | `--no-targets` | do not restore the render targets recorded at the start (to see what depends on them) |
 | `--info` | header, record statistics, size per frame, guest memory read per MB of address space |
@@ -100,6 +102,11 @@ the guest submitted them), and the guest memory the backend actually read.
 - **Render targets:** they live only on the GPU, so at the start the renderer reads back every colour target
   (`IGpuBackend.ExportDumpState`, `VulkanRenderer.GpuDump.cs`) and the replay recreates them with their contents
   before the first command. Without this, Killzone's menu text (glyphs rendered once into a target) was missing.
+  Since renderer state v2 (25/11/2026) each target is carried at its internal resolution with its image size and
+  scale: a dump taken at `VITASHARP_RES_SCALE=2` replays at 2x from exactly the recorded pixels, and at another scale
+  from them resampled (nearest, raw bits kept); v1 dumps (native targets) still load. Before, a dump taken at a scale
+  carried no target at all ("render targets are not carried in dumps taken at a resolution scale") and its replay
+  started from guest memory.
 - **Header:** title, build and commit, OS, CPU backend, GPU, renderer description (driver, MSAA mode, shader
   settings, cache), debug mode, command line, every `VITASHARP_*` variable, first present.
 

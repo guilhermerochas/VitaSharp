@@ -286,6 +286,8 @@ public static class Program
                 return 0;
             case "replay-gpu" when args.Length >= 2:
                 return ReplayGpu.Run(args[1], args.Skip(2).ToArray());
+            case "verify" when args.Length >= 2:
+                return VerifyCapture.Run(args[1], args.Skip(2).ToArray());
             case "rerun" when args.Length >= 2:
                 return SessionCaptureControl.Rerun(args[1], args.Skip(2).ToArray());
             case "boot-shell":
@@ -1002,12 +1004,13 @@ public static class Program
         Console.WriteLine("  --data=<folder>                      use another data folder (default: " + DataPaths.DefaultRoot() + ")");
         Console.WriteLine("  test <scenario.txt> [options]        run an automated scenario (frames, contact sheet, report); run options given here win over the scenario's args=");
         ReplayGpu.PrintUsage();
+        VerifyCapture.PrintUsage();
         Console.WriteLine("  run options: --gpu-dump-at=F1:F2[:file]  record frames F1..F2 as a GPU dump (Ctrl+F8 in the window starts/stops one)");
         Console.WriteLine("  run options: --capture-preroll[=S] --capture-at=A:B  Gravar tudo (F8): keep the last S s / record guest frames A..B");
         Console.WriteLine("  run options: --capture-files-mb=MB --capture-savedata  Gravar tudo: keep up to MB of the bytes the game read (default 0: hashes only) / keep the save data's bytes too");
         Console.WriteLine("  run options: --capture-mic-audio     Gravar tudo: also keep what the microphone captured (default: only its format and pace)");
         Console.WriteLine("  run options: --capture-location      Gravar tudo: let the location answer while armed or recording (default: withheld)");
-        Console.WriteLine("  rerun <capture folder> [--from=preroll|start] [--window] [--rerun-gpu-dump] [--boot=title]  replay a Gravar tudo capture's input from its save state (the game and plugins are not needed)");
+        Console.WriteLine("  rerun <capture folder> [--from=preroll|start|markN] [--window] [--rerun-gpu-dump] [--boot=title]  replay a Gravar tudo capture's input from its save state (the game and plugins are not needed)");
         Console.WriteLine("  run options: --nav=<file> [--nav-live] [--nav-out=<dir>]  screen-driven input script (NavScript: tap/press/stable/shot/quit)");
         Console.WriteLine("  hle-implemented [--vitasdk=<tsv>]   list every NID the HLE implements (docs/hle/data/vitasharp-implemented.tsv)");
         Console.WriteLine("  hle-abi-check --headers=<dir> [--fewer]  HLE bindings whose argument registers differ from the vita-headers prototypes");

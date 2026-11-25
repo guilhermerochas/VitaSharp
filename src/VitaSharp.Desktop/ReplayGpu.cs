@@ -32,6 +32,11 @@ static class ReplayGpu
         Console.WriteLine("    --env=KEY=VALUE        any renderer/shader environment switch (repeatable); --no-recorded-env ignores the recorded ones");
         Console.WriteLine("    --res-scale=2|3|4|0.75|0.5  internal resolution (VITASHARP_RES_SCALE), as in run/test");
         Console.WriteLine("    --compare=<dir>        compare the written frames with frame_N.png of another run (compare.txt, diff_N.png)");
+        Console.WriteLine("    --probe=P[:CELL]       which draws wrote (or failed to write) the region of a finding at present P (CELL 0-15 of the");
+        Console.WriteLine("                           report's 4x4 grid, -1 the whole picture) in P and its neighbours: <out>/probe_P.txt and the");
+        Console.WriteLine("                           draw responsible in <out>/attribution_P.txt (the replay stops after P+2 unless --frame is given)");
+        Console.WriteLine("    --findings             run the capture report's picture rules over the replayed frames (as a recording sees them) and the");
+        Console.WriteLine("                           NaN/Inf scan: <out>/findings.txt (what verify compares with the recording's findings)");
         Console.WriteLine("    --window [--hold] [--speed=X|--fast]  show it in a window at the recorded pace (X times), keep it open at the end");
         Console.WriteLine("    --shader-cache=<dir>   the shader cache to read and write (default: a new temporary one, deleted at the end;");
         Console.WriteLine("                           the user's own cache is used only when its folder is given here)");
@@ -218,6 +223,9 @@ static class ReplayGpu
     sealed class Settings
     {
         public long StopFrame = long.MaxValue, TraceFrame = -1, LimitFrame = -1, DrawLimit = -1;
+        /// <summary>--probe=P[:CELL]: the present of the finding (-1: none) and its cell (-1: the whole picture).</summary>
+        public long ProbePresent = -1;
+        public int ProbeCell = -1;
         /// <summary>Which draws produce each present (built when --trace-draws or --draw-limit is given).</summary>
         public GpuDumpFrameIndex? Index;
         public bool Idle = true, ImportState = true;
@@ -263,6 +271,21 @@ static class ReplayGpu
                 return 1;
             }
         }
+        if (Opt(options, "--probe") is { } probeSpec)
+        {
+            string[] p = probeSpec.Split(':');
+            if (!long.TryParse(p[0], out s.ProbePresent) || (p.Length > 1 && !int.TryParse(p[1], out s.ProbeCell)))
+            {
+                Console.Error.WriteLine("--probe=P[:CELL]: a present number and a cell of the 4x4 grid (0-15, -1 the whole picture)");
+                return 1;
+            }
+
+            if (s.StopFrame == long.MaxValue)
+            {
+                s.StopFrame = s.ProbePresent + 2;
+            }
+        }
+
         Directory.CreateDirectory(s.Out);
         foreach (var f in Directory.GetFiles(s.Out, "frame_*.png"))
         {
@@ -282,7 +305,7 @@ static class ReplayGpu
 
         long firstPresent = header.Long("first-present");
         Log.Info($"[replay] {path}: {header["title-id"]} {header["title"]}, recorded with {header["build"]} on {header["gpu"]}, presents after #{firstPresent}");
-        if (s.TraceFrame >= 0 || s.DrawLimit >= 0)
+        if (s.TraceFrame >= 0 || s.DrawLimit >= 0 || s.ProbePresent >= 0)
         {
             // which draws of the dump each present shows: a game running ahead of its display queue draws a frame one
             // or two presents before it is shown, and the limit / trace must act on the draws behind frame_F.png
@@ -308,6 +331,16 @@ static class ReplayGpu
             AsyncPipelines = Opt(options, "--async-shaders") is "on" or "1" or "true",
             FirstPresent = firstPresent,
         };
+        // --findings: the frames as a recording's present tap sees them, through the capture report's rules (verify)
+        Core.Capture.FrameFindings? findings = options.Contains("--findings") ? new Core.Capture.FrameFindings() : null;
+        if (findings != null)
+        {
+            ro.PresentTap = findings;
+            if (!options.Contains("--no-nan-scan"))
+            {
+                DebugMode.Enable(); // the NaN/Inf scan of every float target (VulkanRenderer.NanCheck.cs)
+            }
+        }
         s.LoadShaderCache = Runner.LoadShaderCacheChoice(options) == true;
         if (temporaryCache)
         {
@@ -375,6 +408,10 @@ static class ReplayGpu
         }
 
         Log.Flush();
+        if (findings != null)
+        {
+            WriteFindings(s.Out, findings);
+        }
         if (temporaryCache)
         {
             DeleteTemporaryCache(ro.ShaderCacheDir!);
@@ -417,6 +454,36 @@ static class ReplayGpu
     }
 
     static VulkanRenderer? _renderer;
+
+    /// <summary>--probe: probe_P.txt (every probed draw) and attribution_P.txt (the draw responsible).</summary>
+    static void WriteProbe(Settings s, DrawProbe probe)
+    {
+        List<Core.Capture.DrawAttribution.Probed> probed = probe.Results;
+        string header = $"probe of present {s.ProbePresent}, cell {s.ProbeCell}: region {probe.X},{probe.Y} {probe.Width}x{probe.Height} of the shown surface; presents {s.ProbePresent - 1}-{s.ProbePresent + 1}";
+        Core.Capture.DrawAttribution.Write(Path.Combine(s.Out, $"probe_{s.ProbePresent}.txt"), header, probed);
+        Core.Capture.DrawAttribution.Result result = Core.Capture.DrawAttribution.Attribute(probed, s.ProbePresent);
+        var text = new StringBuilder(header).Append('\n');
+        foreach (string line in result.Lines)
+        {
+            text.Append(line).Append('\n');
+        }
+
+        File.WriteAllText(Path.Combine(s.Out, $"attribution_{s.ProbePresent}.txt"), text.ToString());
+        Console.Write(text);
+        Log.Info($"[replay] probe: {probed.Count} draws probed around present #{s.ProbePresent} -> probe_{s.ProbePresent}.txt, attribution_{s.ProbePresent}.txt");
+    }
+
+    /// <summary>--findings: <out>/findings.txt with the report's picture findings of the replayed frames and the
+    /// NaN/Inf anomalies of the replay's log.</summary>
+    static void WriteFindings(string outDir, Core.Capture.FrameFindings findings)
+    {
+        (long first, long last) = findings.Presents;
+        var items = findings.Findings().Where(f => !f.Info).Select(Core.Capture.CaptureVerify.ToItem).ToList();
+        items.AddRange(Core.Capture.CaptureVerify.NanEvents(Path.Combine(outDir, "log.txt")));
+        string path = Path.Combine(outDir, Core.Capture.CaptureVerify.FindingsFileName);
+        Core.Capture.CaptureVerify.WriteFindings(path, first, last, items);
+        Console.WriteLine($"findings: {items.Count} in presents {first}-{last} ({findings.Count} frames) -> {path}");
+    }
 
     /// <summary>
     /// --compile-on-program-load: the replay's stand-in for a game creating its programs while it loads. Every vertex
@@ -499,6 +566,15 @@ static class ReplayGpu
             var limit = s.DrawLimit >= 0 ? FrameDraws(s, s.LimitFrame, "--draw-limit") : null;
             var traced = s.TraceFrame >= 0 ? FrameDraws(s, s.TraceFrame, "--trace-draws") : null;
             long skipFrom = limit != null ? limit.FirstDraw + s.DrawLimit : long.MaxValue, skipTo = limit?.LastDraw ?? -1;
+            // --probe: the draws behind the finding's present and its neighbours, region by region (VulkanRenderer.DrawProbe.cs)
+            Func<long, long, bool>? probeDraw = null;
+            DrawProbe? probe = s.ProbePresent >= 0 && s.Index != null ? DrawProbe.Around(s.Index, s.ProbePresent, s.ProbeCell, out probeDraw) : null;
+            if (s.ProbePresent >= 0 && probe == null)
+            {
+                Log.Warn($"[replay] --probe: present #{s.ProbePresent} is not in the dump");
+            }
+
+            renderer.Probe = probe;
             bool tracing = false;
             void BeginTrace()
             {
@@ -527,8 +603,9 @@ static class ReplayGpu
                 tracing = false;
             }
             var st = GpuDumpPlayer.Play(reader, renderer, s.Idle, s.ImportState,
-                executeDraw: (draw, _) =>
+                executeDraw: (draw, frameDraw) =>
                 {
+                    probeDraw?.Invoke(draw, frameDraw);
                     if (traced != null && draw == traced.FirstDraw)
                     {
                         BeginTrace(); // no scene begin before it (dump cut)
@@ -597,6 +674,11 @@ static class ReplayGpu
             else if (s.TraceFrame >= 0)
             {
                 Log.Warn($"[replay] present #{s.TraceFrame} was not traced (its draws {traced?.FirstDraw}-{traced?.LastDraw} were not replayed: --frame too low, or not in the dump)");
+            }
+
+            if (probe != null)
+            {
+                WriteProbe(s, probe);
             }
 
             double sec = wall.Elapsed.TotalSeconds;

@@ -117,6 +117,15 @@
   <data name="Captures" xml:space="preserve">
     <value>Capturas</value>
   </data>
+  <data name="CaptureMarked" xml:space="preserve">
+    <value>Problema marcado ({0}): um estado salvo deste momento vai na gravação</value>
+  </data>
+  <data name="CaptureMarkNoRecording" xml:space="preserve">
+    <value>Marque o problema durante a gravação (comece o Gravar tudo antes)</value>
+  </data>
+  <data name="MMarkBug" xml:space="preserve">
+    <value>Marcar o problema</value>
+  </data>
   <data name="CaptureSaved" xml:space="preserve">
     <value>Gravação salva: {0}</value>
   </data>
@@ -1438,7 +1447,7 @@
     <value>Atalhos no jogo</value>
   </data>
   <data name="ShortcutsText" xml:space="preserve">
-    <value>F11 tela cheia · P pausa (Controles &gt; Atalhos do emulador) · F5 / F7 salvar e carregar o estado rápido, F6 escolhe o slot · F8 "Gravar tudo" (estado, controles, imagens, áudio e dump da GPU num .zip em captures) · Ctrl+F8 só o dump da GPU · F9 liga e desliga o modo de depuração · F10 diagnóstico (.zip na pasta de diagnósticos) · Mouse: botão esquerdo = tela frontal, botão direito = touchpad traseiro.</value>
+    <value>F11 tela cheia · P pausa (Controles &gt; Atalhos do emulador) · F5 / F7 salvar e carregar o estado rápido, F6 escolhe o slot · F8 "Gravar tudo" (estado, controles, imagens, áudio e dump da GPU num .zip em captures) · Shift+F8 marca o problema durante a gravação · Ctrl+F8 só o dump da GPU · F9 liga e desliga o modo de depuração · F10 diagnóstico (.zip na pasta de diagnósticos) · Mouse: botão esquerdo = tela frontal, botão direito = touchpad traseiro.</value>
   </data>
   <data name="ShowInFolder" xml:space="preserve">
     <value>Mostrar na pasta</value>

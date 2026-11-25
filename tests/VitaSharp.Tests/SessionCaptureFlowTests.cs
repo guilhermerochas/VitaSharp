@@ -228,4 +228,32 @@ public sealed class SessionCaptureFlowTests(GuestMemoryFixture fixture) : IDispo
             cap.Dispose();
         }
     }
+
+    /// <summary>A second capture on the same emulator (the re-run's own recording next to the window's F8 one) takes
+    /// over the input recording around the host's real input, never around the first capture's recorder: its
+    /// constructor threw a NullReferenceException (the input already wrapped, so no recorder of its own was made).</summary>
+    [Fact]
+    public void ASecondCaptureOnTheSameEmulatorRecordsTheInputItself()
+    {
+        string root = Path.Combine(_harness.Root, "captures2");
+        VitaSharp.Core.Host.IInputBackend? original = _harness.Emu.Host.Input;
+        SessionCaptureOptions Options() => new() { Root = root, SetPresentTap = _ => { }, StartState = false, GpuDump = false, Zip = false };
+        var first = new SessionCapture(_harness.Emu, Options());
+        var second = new SessionCapture(_harness.Emu, Options());
+        try
+        {
+            InputRecorder recorder = Assert.IsType<InputRecorder>(_harness.Emu.Host.Input);
+            Assert.Same(original, recorder.Inner); // the host's input, not the first capture's recorder
+            Assert.Same(recorder, _harness.Emu.Host.Motion);
+            second.Dispose();
+            Assert.Same(original, _harness.Emu.Host.Input is InputRecorder r ? r.Inner : _harness.Emu.Host.Input);
+        }
+        finally
+        {
+            second.Dispose();
+            first.Dispose();
+        }
+
+        Assert.Same(original, _harness.Emu.Host.Input is InputRecorder left ? left.Inner : _harness.Emu.Host.Input);
+    }
 }

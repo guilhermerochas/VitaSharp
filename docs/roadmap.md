@@ -3386,6 +3386,37 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `IoVfsMountTests.AMountThatWaitsForItsMediaGetsTheDeviceClassFlag` (falha sem a mudança). Antes o create
   recebia um callback, o aviso dava 0x8001000C e nada era escrito. Teste: `IoErrorEventTests` (falha sem a
   mudança). Testar: tirar o cartão de memória não se emula; nada muda na tela, os jogos de sempre continuam abrindo.
+- [ ] (25/11/2026, falta testar) [P2][G] Gravar tudo: conferir uma correção sem jogar (feat/f8x). `VitaSharp.Desktop
+  verify <captura|zip>` reproduz o dump da GPU da gravação com o build atual (`replay-gpu --findings`, as regras do
+  report.txt por `FrameFindings` e a varredura de NaN/Inf) e diz por achado e por tipo, com números, *corrigido /
+  ainda presente / mudou / novo* (saída 0/1/2/3); `--rerun` compara travadas, ordem e áudio de uma reexecução. Para
+  cada pisca que continua aponta o draw responsável (`replay-gpu --probe=P:CÉLULA`: os draws que escreveram ou não a
+  região nos quadros com e sem o pisca, com hashes vs/fs, estado, profundidade e estêncil), e `--ab` reproduz com
+  cada interruptor do renderizador (profundidade semeada, MSAA, store writeback, quebras de cena, passes de fetch,
+  caminhos do celular, poison, escala nativa) e diz qual tira ou muda o achado. Testes: `CaptureVerifyTests`,
+  `CaptureVerifyRenderTests` (cena GXM sintética no Vulkan por software, o comando de ponta a ponta),
+  `DrawAttributionTests`, `DrawProbeRenderTests`. Testar: numa gravação F8 de um pisca já relatado (ex. o HUD do
+  AC3L), `VitaSharp.Desktop verify <zip> --ab` diz "ainda presente" com o build que tem o bug, aponta um draw e um
+  interruptor, e "corrigido" com o build que tem a correção.
+- [ ] (25/11/2026, falta testar) [P2][M] Dumps da GPU numa escala de resolução levam os alvos de renderização nessa
+  escala (feat/f8x, estado do renderizador v2): antes o dump a 2x não levava alvo nenhum e o replay começava da memória
+  do guest. Teste: `GpuDumpResScaleTests` (2x→2x os mesmos pixels, 2x→1x reamostrado; falha sem a mudança com
+  diferença média 85). Testar: com F1 em 2x, Ctrl+F8 num menu com texto; `replay-gpu <dump> --res-scale=2` mostra o
+  primeiro quadro igual ao do jogo (antes: partes pretas ou faltando).
+- [ ] (25/11/2026, falta testar) [P2][M] Gravar tudo: a pré-gravação guarda estados na memória (incrementais: só as
+  páginas escritas desde o anterior) e o jogador marca o problema (feat/f8x). O estado da pré-gravação fica no máximo
+  um intervalo antes dela (antes: até um minuto, um a cada 30 s em disco); Shift+F8 durante a gravação (Android: menu
+  de pausa > "Marcar o problema") grava `state_mark_N.vss` daquele instante, listado no session.txt e no report, e
+  `rerun <captura> --from=markN` reexecuta dali. Testes: `SessionCaptureStatesTests` (50x sob carga, 0 falhas),
+  `SaveStateIncrementalTests`. Testar: com o modo de depuração (F9), jogar um minuto sem sentir engasgo a cada
+  intervalo; F8, Shift+F8 no momento do defeito, F8; o zip tem `state_preroll.vss` e `state_mark_1.vss`, e o report
+  diz "marked by the player at ...".
+- [ ] (25/11/2026, falta testar) [P3][P] Gravar tudo: uma segunda captura no mesmo emulador (a gravação da
+  reexecução ao lado da do F8) não derruba mais o construtor (`_input` nulo); ela grava a entrada em volta da entrada
+  real do host (feat/f8x). Teste: `SessionCaptureFlowTests.ASecondCaptureOnTheSameEmulatorRecordsTheInputItself`
+  (NullReferenceException sem a correção). Testar: `VitaSharp.Desktop rerun <captura> --window` abre e grava a
+  reexecução em `reruns/`.
+
 - [ ] (25/11/2026, falta testar) [P2][G] Pedidos de dump do SceCoredump conferidos como no 3.74 (fix/small2):
   `NID_A7D214A7` e `NID_D064F6DC` (pid, arg, alvo, pedido) conferem o pedido antes de enfileirá-lo para o thread de
   dump, na ordem do módulo (0x81007100): pedido NULL ou palavra de tamanho (+0) até 3, 0x80010016; com 0x34 bytes ou

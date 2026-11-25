@@ -25,7 +25,10 @@ Tests: `tests/VitaSharp.Tests/SessionCaptureTests.cs`, `SessionCapturePrivacyTes
 >   parar, abra o menu de novo e escolha **Parar gravação**.
 > - **Pré-gravação** (para defeitos rápidos): com ela ligada, a gravação também inclui os segundos *antes* de você
 >   apertar. No PC: Configurações > Geral > *"Pré-gravação"*, ou ligue o modo de depuração (F9). No Android: menu de
->   pausa > *"Pré-gravação: ligada"*. Ela guarda um estado salvo a cada 30 s, o que pausa o jogo por um instante.
+>   pausa > *"Pré-gravação: ligada"*. Ela guarda um estado salvo na memória a cada 5 s (no PC, só o que mudou desde
+>   o anterior: o jogo para alguns milissegundos) ou 10 s (quando o estado para o jogo um quadro ou mais).
+> - **Marcar o problema:** durante a gravação, aperte **Shift+F8** (no Android: menu de pausa > *"Marcar o problema"*)
+>   no instante em que ele aparece: a gravação ganha uma marca e um estado salvo daquele momento.
 > - Envie o arquivo `.zip` da pasta `captures` (dentro da pasta de dados do VitaSharp; no Android,
 >   `.vitasharp/captures` na raiz do armazenamento, ou `Android/data/io.github.vitasharp/files/captures` com root ou
 >   sem a permissão "Acesso a todos os arquivos").
@@ -87,7 +90,8 @@ Folder `<data>/captures/<TITLEID>_<yyyyMMdd_HHmmss>_tudo/` and its zip:
 | `timeline.tsv` | one line per presented frame: those numbers plus frame interval, GPU ms, draws, scenes, new shaders/pipelines, the biggest stall cause (FrameLedger) and its ms, framebuffer address and size, pre-roll flag |
 | `input.tsv` | every change of pad and touch the guest read, every motion sample, every `sceKernelGetRandomNumber` result, the emulator hotkeys and the capture's marks, with host ns, guest µs and guest flip |
 | `state_start.vss` | save state taken at the start of the recording |
-| `state_preroll.vss` | save state at the start of the pre-roll (when armed) |
+| `state_preroll.vss` | save state at the start of the pre-roll (when armed): the newest of the pre-roll's in-memory states taken at or before the pre-roll's start |
+| `state_mark_N.vss` | save state of the moment the player marked the problem (Shift+F8, Android pause menu "Marcar o problema"); session.txt `mark-state-N` |
 | `gpu.vsgd` | GPU dump from the start (the Ctrl+F8 format; `replay-gpu`); up to 5400 frames on the desktop, 1800 on Android |
 | `audio/*.wav`, `audio/files.txt`, `audio_mix.wav` | every guest audio port and every NGS source voice as a WAV (`AudioDump`), the time each opened, and their mix at 48 kHz as the device would play it; the microphone port only with `--capture-mic-audio` / `VITASHARP_CAPTURE_MIC_AUDIO=1` (by default `audio.txt` has only its format, source and pace) |
 | `threads_start.txt`, `threads_stop.txt` | guest threads (wait state, backtrace, recent HLE calls in debug mode), held mutexes, GPU queue |
@@ -101,12 +105,34 @@ Folder `<data>/captures/<TITLEID>_<yyyyMMdd_HHmmss>_tudo/` and its zip:
 
 Armed by `--capture-preroll[=SECONDS]` (launcher "Pré-gravação"), `VITASHARP_CAPTURE_PREROLL=SECONDS`, debug mode
 on the desktop (F9 or `--debug-mode`, 10 s), or the Android pause menu. While armed, the presented frames, their
-timing and the input go into memory rings, and a save state is taken every 30 s (`SessionCaptureOptions.
-PreRollStateInterval`; at least the pre-roll time) into `<data>/captures/.preroll/` (the last two are kept). The
-rings keep everything since the older of the two states, and at least the pre-roll time, within a memory limit
-(192 MB of encoded frames on the desktop, 64 MB on Android). A recording starts with the ring (frames flagged
-pre-roll) and copies the older state as `state_preroll.vss`, so a glitch seen before F8 is in the capture and
-can be re-run.
+timing and the input go into memory rings, and a save state is taken into memory (`SaveStates.Save(emu, Stream)`:
+nothing is written to disk while armed) every 5 s (`SessionCaptureOptions.PreRollStateInterval`) while the last three
+stopped the game less than a frame (`PreRollStateStopBudgetMs`, 16 ms), else every 10 s (`PreRollSlowStateInterval`,
+and until three are measured); `VITASHARP_CAPTURE_STATE_INTERVAL` sets both. On the desktop the states are
+incremental (`IncrementalStates`, `SnapshotPages`, `GuestMemory.SnapshotPages.cs`): the capture sweeps the dirty-page
+tracker (`DirtyPages`, every guest, HLE and GPU write marks its page; the sweep is exact with every guest thread
+stopped) and reads only the pages written since the previous state, the others are the previous state's image, and
+the memory sections are built after the game goes on; every 12th state is whole (`FullStateEvery`). Measured
+(`SaveStateIncrementalTests`, synthetic title with 48 MB of non-zero memory, the game held): a whole state 18.5 ms,
+the first incremental one 24 ms, the next ones 1.8-3.7 ms (260 pages read of 12,837); the image costs about the
+non-zero guest memory in host memory, so Android takes whole states (every 10 s there). The states are kept from the newest one taken at or before the pre-roll's start on
+(it covers the whole pre-roll; the older ones go), within `PreRollStateMaxBytes` (384 MB on the desktop, 128 MB on
+Android; the oldest go first, the newest always stays): with the default 10 s pre-roll that is three or four
+states. The rings keep everything since the oldest kept state, and at least the pre-roll time, within a memory
+limit (192 MB of encoded frames on the desktop, 64 MB on Android). A recording starts with the ring (frames flagged
+pre-roll) and writes the oldest kept state as `state_preroll.vss`, so a glitch seen before F8 is in the capture and
+can be re-run from a state at most one interval before the pre-roll (before 25/11/2026: one every 30 s into
+`<data>/captures/.preroll/`, so the state could be up to a minute before the glitch).
+
+### Marking the problem
+
+While recording, Shift+F8 (`WindowHost.BugMarked`; `--input` key `Shift+F8`) or the Android pause menu's "Marcar o
+problema" calls `SessionCapture.MarkBug`: a `bug N <reason>` mark goes into `input.tsv` at once, and a save state of
+that moment is taken on a thread of its own into `state_mark_N.vss` (the game stops 0.1-0.35 s, as for any state).
+The stop waits for it; `session.txt` lists it as `mark-state-N: state_mark_N.vss guest-us ... flip ... ns ...`, the
+report has a "marked by the player at +S s" line, and `rerun <capture> --from=markN` re-runs from it
+(`CaptureStates`: the names, files and session keys of preroll, start and markN). Outside a recording the mark is
+refused with a notice.
 
 ### Frames file
 
@@ -131,7 +157,7 @@ Measured on the desktop (GTX 1650 laptop, 4 logical CPUs given to the emulator, 
 | Files read (`files/`) | the index (path, offset, length, hash per read); the distinct bytes only up to `--capture-files-mb` (default 0); a SHA-256 per `sceIoRead` (off: one static field read) |
 | CPU while recording | the GPU dump's (~0.2-7 ms/frame on the GPU worker + compression on other threads), the frame encoder (~1 ms/frame on its own thread), the per-frame downscale copy on the GPU (the debug-mode replay ring's), a compare per input poll |
 | Start | one save state: the game stops 0.1-0.35 s |
-| Pre-roll armed | the same frame encoding, the input rings, and a save state every 30 s (0.1-0.35 s stop each) |
+| Pre-roll armed | the same frame encoding, the input rings, and a save state into memory every 5 s (incremental, desktop: a few ms of stop) or 10 s (whole: 0.1-0.35 s stop each); 30-50 MB each, two to four held, plus the incremental image (~ the non-zero guest memory) |
 | Off | nothing: no tap, no input wrapper, no thread; the HLE dispatch reads one static flag (`DebugMode.CollectHleErrors`) and the RNG one static field |
 
 ## Privacy
@@ -212,6 +238,20 @@ the LoadExec, with or without a capture: an open Jak bug), the Croixleur Sigma S
 Android build on a phone. The user's F5 state of Jak 1 hangs intermittently right after the load (main waits on
 `DMAPut`, F3DPlaybackThread on `F3DRecordingMessagePipe`): 2 of 3 runs with the pre-roll, 1 of 4 without in the bug
 agent's runs; the hang starts before the pre-roll's next save state.
+
+## Verify (is the problem still there?)
+
+`VitaSharp.Desktop verify <capture>` (`src/VitaSharp.Desktop/VerifyCapture.cs`, `Core/Capture/CaptureVerify.cs`):
+the capture's findings (the report's rules over `frames.vsfr` through `FrameFindings`, and the `[anomaly] ... nan:`
+lines of `log.txt`) against those of a replay of `gpu.vsgd` by the running build. The replay runs in a child process
+(`replay-gpu --findings`: the renderer's switches are static, read once per process) with `FrameFindings` as its
+present tap, so it sees each frame as a recording does (the debug-mode replay ring's downscale), and debug mode on for
+the NaN/Inf scan; it writes `findings.txt`. Findings are matched by kind, present (one either way: the replay numbers
+its presents from the dump's `first-present`, as the recording did) and cell. `--rerun` adds a `rerun` of the logic
+and compares the two `report.txt` kind by kind. `FrameFindings` is the API every tool that measures a flicker from
+frames uses (one set of rules: the analyzer's). Tests: `CaptureVerifyTests` (rules, matching, files) and
+`CaptureVerifyRenderTests` (a synthetic scene with a HUD that disappears for one frame, recorded into a GPU dump and
+replayed on the software Vulkan device).
 
 ## Analyzer
 
