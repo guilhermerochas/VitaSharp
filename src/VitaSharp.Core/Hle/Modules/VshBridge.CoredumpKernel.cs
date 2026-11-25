@@ -204,23 +204,22 @@ public sealed partial class VshBridge
     }
 
     /// <summary>NID_A7D214A7(pid, arg, target, request): the application manager's dump of a process. The request is
-    /// checked as FW 3.74 checks it (<see cref="CoredumpRequestError"/>); a valid one would go to the dump thread,
-    /// which writes the process's .psp2dmp: the emulator keeps no core file, so it is refused as the module refuses it
-    /// on a retail unit without the QA flag that keeps them (0x80020008).</summary>
+    /// checked as FW 3.74 checks it (<see cref="CoredumpRequestError"/>); a valid one goes to the dump queue
+    /// (VshBridge.CoredumpQueue.cs), or is refused as on a retail unit (0x80020008) when no core folder is set.</summary>
     [Hle(Nid = 0xA7D214A7, Library = "SceCoredumpForDriver", Default = true)]
     int ksceCoredump_A7D214A7(int pid, uint arg, uint target, uint request)
     {
         int error = CoredumpRequestError(target, request);
-        return error != 0 ? error : SceError.ILLEGAL_PERMISSION;
+        return error != 0 ? error : QueueCoredump(pid);
     }
 
-    /// <summary>NID_D064F6DC(pid, arg, target, request): the same for a second dump kind (the same checks, then
-    /// 0x80020008).</summary>
+    /// <summary>NID_D064F6DC(pid, arg, target, request): the same for a second dump kind (the same checks and
+    /// queue).</summary>
     [Hle(Nid = 0xD064F6DC, Library = "SceCoredumpForDriver", Default = true)]
     int ksceCoredump_D064F6DC(int pid, uint arg, uint target, uint request)
     {
         int error = CoredumpRequestError(target, request);
-        return error != 0 ? error : SceError.ILLEGAL_PERMISSION;
+        return error != 0 ? error : QueueCoredump(pid);
     }
 
     /// <summary>NID_13EF8516(handler): the crash dump module opens its dump session (the system's "NPXS19998"

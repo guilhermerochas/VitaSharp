@@ -1,6 +1,7 @@
 using System.Text;
 using VitaSharp.Core.Hle;
 using VitaSharp.Core.Hle.Modules;
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Loader;
 using VitaSharp.Core.Memory;
 using Xunit;
@@ -262,6 +263,32 @@ public sealed class IoVfsMountTests(GuestMemoryFixture fixture) : IDisposable
         File.WriteAllText(image!, "IMG1");
         RegisterDriver();
         Assert.Equal(0, Call(Io, "vfsMount", MountParam("/tvfs", null, 1, 2)));
+    }
+
+    /// <summary>
+    /// FW 3.74 vfsMount: a mount that waits for its media (flags 0x20000) on a removable device class (the file system
+    /// type's +0x4E: 0x202 the memory card) gets the class's wait flag "SceIofileDevWaitForMC" (made once) behind its
+    /// extra block; NID_5B7E5AB8 on the mount point at that root sets it, waking the I/O calls waiting for the media.
+    /// A mount without the bit gets no flag. Before, the extra block pointed nowhere and nothing was woken.
+    /// </summary>
+    [Fact]
+    public void AMountThatWaitsForItsMediaGetsTheDeviceClassFlag()
+    {
+        _h.OnGuest(_ =>
+        {
+            string? image = _h.Emu.Vfs.Resolve("ux0:tvfs.img", true);
+            File.WriteAllText(image!, "IMG1");
+            RegisterDriver();
+            Assert.Equal(0, Call(Io, "vfsMount", MountParam("/ux/exfat", null, 0x02020001u, 2u | 0x20000u)));
+            EventFlag flag = Assert.Single(_h.Emu.Kernel.Objects.All<EventFlag>(), f => f.Name == "SceIofileDevWaitForMC");
+            Assert.Equal(0u, flag.Pattern);
+
+            Assert.Equal(0, Call(Io, "ksceIofilemgr_5B7E5AB8", 0x800u));    // ux0's mount point: the media is there
+            Assert.Equal(1u, flag.Pattern & 1);
+
+            Assert.Equal(0, Call(Io, "vfsMount", MountParam("/tvfs", null, 0x02020001u, 2u, assign: "tvfs1:")));
+            Assert.Single(_h.Emu.Kernel.Objects.All<EventFlag>(), f => f.Name == "SceIofileDevWaitForMC");
+        });
     }
 
     [Fact]
