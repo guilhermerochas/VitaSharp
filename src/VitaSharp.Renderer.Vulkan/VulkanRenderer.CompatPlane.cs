@@ -23,8 +23,44 @@ public sealed unsafe partial class VulkanRenderer
 {
     private RenderTarget? _compatComposite;
     private RenderTarget? _cpuFramebuffer16;
+    private RenderTarget? _blankScreen;
     /// <summary>The placement of the last present (the scanout's frames are placed the same way).</summary>
     private DisplayPlacement? _lastPlacement;
+
+    /// <summary>
+    /// The screen of a plane 0 without a framebuffer (<see cref="DisplayFrame.Address"/> 0: a sceDisplaySetFrameBuf or
+    /// sceDisplaySetFrameBufForCompat with null): black. FW 3.74 hands the plane's IFTU unit an input without a
+    /// framebuffer (format 0, the unit's blank output), and the shell's overlay is still merged over it. Made once.
+    /// </summary>
+    private RenderTarget BlankScreen()
+    {
+        if (_blankScreen is { } blank)
+        {
+            return blank;
+        }
+
+        (Image image, ImageView view, ImageMemoryPool.Allocation memory) = CreateImage(MemCat.RenderTarget, DisplayPlacement.ScreenWidth, DisplayPlacement.ScreenHeight, Format.R8G8B8A8Unorm,
+            ImageUsageFlags.SampledBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
+        blank = _blankScreen = new RenderTarget
+        {
+            Width = DisplayPlacement.ScreenWidth,
+            Height = DisplayPlacement.ScreenHeight,
+            Stride = DisplayPlacement.ScreenWidth,
+            Image = image,
+            View = view,
+            Mem = memory,
+            Format = Format.R8G8B8A8Unorm,
+        };
+        Barrier(image, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit,
+            PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
+        var black = new ClearColorValue(0, 0, 0, 1);
+        var range = new ImageSubresourceRange(ImageAspectFlags.ColorBit, 0, 1, 0, 1);
+        _vk.CmdClearColorImage(Cmd, image, ImageLayout.General, in black, 1, in range);
+        Barrier(image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
+            PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit | PipelineStageFlags.FragmentShaderBit,
+            AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit | AccessFlags.ShaderReadBit);
+        return blank;
+    }
 
     /// <summary>A placed picture was composed (the composite exists): never without a placement.</summary>
     public bool PlacementComposed => _compatComposite != null;

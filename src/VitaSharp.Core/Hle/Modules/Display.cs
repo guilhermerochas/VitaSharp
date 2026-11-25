@@ -171,16 +171,15 @@ public sealed partial class Display : HleModule
         Util.Developer.DevTrace.GuestFrame();
 #endif
 
+        // ksceDisplaySetFrameBufInternal (FW 3.74): sync is SCE_DISPLAY_SETBUF_IMMEDIATE (0) or NEXTFRAME (1)
+        if (sync > 1)
+        {
+            return ErrorInvalidUpdateTiming;
+        }
+
         if (pParam == 0)
         {
-            _base = 0;
-            _compatPlaced = false;
-            if (Emu.IsShell)
-            {
-                Emu.Vita.SetShellOverlay(null, VBlank.Count);
-            }
-
-            return 0;
+            return RemoveFrameBuf(sync);
         }
 
         uint size = GuestMemory.R32(pParam);
@@ -216,6 +215,32 @@ public sealed partial class Display : HleModule
         return 0;
     }
 
+    /// <summary>
+    /// sceDisplaySetFrameBuf(null, sync), as ksceDisplaySetFrameBufInternal (FW 3.74 display.skprx 0x16466675, study
+    /// only) does it: an IMMEDIATE removal of a plane that has had a framebuffer is refused (0x80290006: its record
+    /// keeps the pitch, so only a plane never set may go at once); otherwise the record loses its framebuffer and, when
+    /// the process owns the plane (it is in front), the plane's IFTU unit gets an input without a framebuffer at the next
+    /// vblank: the screen goes black, the shell's overlay still over it.
+    /// </summary>
+    int RemoveFrameBuf(uint sync)
+    {
+        if (sync == 0 && _pitch != 0)
+        {
+            return ErrorInvalidUpdateTiming;
+        }
+
+        _base = 0;
+        _compatPlaced = false;
+        _lastSetVcount = VBlank.Count;
+        if (Emu.IsShell)
+        {
+            Emu.Vita.SetShellOverlay(null, VBlank.Count);
+        }
+
+        PresentCurrent();
+        return 0;
+    }
+
     /// <summary>What the process set last (<see cref="Current"/>, placed by <see cref="CurrentPlacement"/>) goes to the
     /// screen when the process is in front.</summary>
     void PresentCurrent()
@@ -239,7 +264,8 @@ public sealed partial class Display : HleModule
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         var present = new PresentCommand
         {
-            Frame = new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format),
+            // no framebuffer (_base 0): the renderer shows a black screen
+            Frame = _base == 0 ? default : new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format),
             Placement = CurrentPlacement,
             Overlay = Emu.IsShell ? null : Emu.Vita.ShellOverlay(_lastSetVcount),
             Flip = FramesPresented,

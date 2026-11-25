@@ -21,6 +21,7 @@ public sealed partial class Display
     const int ErrorInvalidAddress = unchecked((int)0x80290002);
     const int ErrorInvalidPixelFormat = unchecked((int)0x80290003);
     const int ErrorNoFrameBuffer = unchecked((int)0x80290008);
+    const int ErrorInvalidUpdateTiming = unchecked((int)0x80290006);
     const int ErrorNotCallback = unchecked((int)0x800280A1);
 
     /// <summary>The enabled heads, a bit per head (head 0 from boot).</summary>

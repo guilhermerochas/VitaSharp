@@ -247,4 +247,50 @@ public sealed class DisplayCompatPlacementRenderTests(GuestMemoryFixture fixture
         Assert.False(renderer.PlacementComposed);
         Assert.All(shots, shot => Assert.Equal(((int)W, (int)H), (shot.Width, shot.Height)));
     }
+
+    /// <summary>A present without a framebuffer (sceDisplaySetFrameBuf(null)) shows a black screen, the shell's overlay
+    /// still over it, and stops the scanout of the CPU framebuffer shown before.</summary>
+    [SoftwareVulkanFact]
+    public void APresentWithoutAFramebufferShowsABlackScreenUnderTheOverlay()
+    {
+        using IDisposable driver = SoftwareVulkan.Use();
+        using var harness = new HleHarness(fixture, "compatblank");
+        uint data = harness.Alloc(W * H * 4);
+        Fill32(data, W, H, Red);
+        const uint ScreenW = 960, ScreenH = 544;
+        uint overlayData = harness.Alloc(ScreenW * ScreenH * 4);
+        for (uint y = 0; y < ScreenH; y++)
+        {
+            for (uint x = 0; x < ScreenW; x++)
+            {
+                GuestMemory.W32(overlayData + (y * ScreenW + x) * 4, y < ScreenH / 2 ? Blue : 0u);
+            }
+        }
+
+        var shots = new List<Shot>();
+        using VulkanRenderer renderer = NewRenderer(shots);
+        using var clock = ControlledGuestClock.Stop();
+        renderer.Execute(new PresentCommand { Frame = new DisplayFrame(data, W, W, H, DisplayPixelFormat.A8B8G8R8), Flip = 0 });
+        renderer.Execute(new PresentCommand { Frame = default, Flip = 1 });
+        Assert.False(renderer.CpuScanoutArmed); // nothing to scan out
+        renderer.Execute(new BeginSceneCommand { Width = ScreenW, Height = ScreenH, Color = new ColorSurfaceInfo(overlayData, ScreenW, ScreenH, ScreenW, 0, 0, false, 0), Pid = 1 });
+        renderer.Execute(new EndSceneCommand { Pid = 1 });
+        renderer.Execute(new PresentCommand
+        {
+            Frame = default,
+            Overlay = new DisplayFrame(overlayData, ScreenW, ScreenW, ScreenH, DisplayPixelFormat.A8B8G8R8),
+            Flip = 2,
+        });
+        Fill32(data, W, H, Green);
+        clock.Advance(VblankUs);
+        renderer.Idle();
+        renderer.Execute(new FinishCommand());
+
+        Assert.Equal(3, shots.Count); // the old framebuffer's change is not scanned out
+        Assert.Equal((480, 272), (shots[1].Width, shots[1].Height));
+        AssertColor(shots[1].AtScreen(480, 272), false, false, false, "the blank screen's centre");
+        AssertColor(shots[1].AtScreen(10, 10), false, false, false, "the blank screen's corner");
+        AssertColor(shots[2].AtScreen(480, 100), false, false, true, "the overlay's opaque half over the blank screen");
+        AssertColor(shots[2].AtScreen(480, 450), false, false, false, "black under the overlay's transparent half");
+    }
 }

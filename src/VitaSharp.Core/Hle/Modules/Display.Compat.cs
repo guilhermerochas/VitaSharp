@@ -20,10 +20,10 @@ namespace VitaSharp.Core.Hle.Modules;
 /// into the destination rectangle (x, y, width - 1, height - 1 in the descriptor) and writes the process's plane 0
 /// record, the one sceDisplaySetFrameBuf writes (ksceDisplaySetFrameBufInternal clears the record's rectangle): the
 /// last of the two calls is what the screen shows, sceDisplayGetFrameBuf reads it back, and null leaves the plane
-/// without a framebuffer. Bit 20 of the SceDisplayFrameBuf's flags is the IFTU's filter (bilinear; 0x100000 is what the
-/// driver uses without a pParam). With opt the IFTU writes the picture into the opt buffer instead of the screen and
-/// the plane is left as it was. The merge settings (ksceDisplaySetMergeConf) are plane 1's, the shell's overlay, drawn
-/// over this plane.
+/// without a framebuffer (a black screen, at once: the IFTU is programmed with an empty input). Bit 20 of the
+/// SceDisplayFrameBuf's flags is the IFTU's filter (bilinear; 0x100000 is what the driver uses without a pParam). With
+/// opt the IFTU writes the picture into the opt buffer instead of the screen and the plane is left as it was. The merge
+/// settings (ksceDisplaySetMergeConf) are plane 1's, the shell's overlay, drawn over this plane.
 /// </para>
 /// </summary>
 public sealed partial class Display
@@ -119,6 +119,8 @@ public sealed partial class Display
             _compatPitch = 0;
             _compatFormat = 0;
             _base = 0;
+            _lastSetVcount = VBlank.Count;
+            PresentCurrent(); // the IFTU unit's input without a framebuffer: black
             return 0;
         }
 
@@ -157,9 +159,9 @@ public sealed partial class Display
 
         if (opt != 0)
         {
-            // the IFTU converts the picture into the opt buffer (SceIftuForDriver_67E37EFC) and the screen is untouched
-            Log.WarnOnce("compatopt", "[display] sceDisplaySetFrameBufForCompat with opt: the conversion into memory is not done");
-            return 0;
+            // the IFTU converts the picture into the opt buffer and the screen is untouched
+            var placement = new DisplayPlacement(x, y, width, height, (flags & 0x1FFFFF) >> 20 != 0);
+            return ConvertCompatIntoMemory(new DisplayFrame(frameBase, pitch, frameWidth, frameHeight, (DisplayPixelFormat)format), placement, opt);
         }
 
         _compatX = x;
@@ -179,6 +181,53 @@ public sealed partial class Display
         _height = frameHeight;
         _lastSetVcount = VBlank.Count;
         PresentCurrent();
+        return 0;
+    }
+
+    /// <summary>
+    /// The conversion with opt (FUN_810023b8 into SceIftuForDriver_67E37EFC, FW 3.74, study only): opt is a
+    /// SceDisplayFrameBuf-like block, +4 the output's base (256-byte aligned, else 0x80290002), +8 its pitch, +0xC its
+    /// format (only A8B8G8R8, 0, else 0x80290003), +0x10 its width and +0x14 its height (pitch x height x 4 bytes, none
+    /// 0x80290001). The kernel waits for the unit; here the conversion runs in GPU order (rendered surfaces in the source
+    /// are written back first, what the GPU holds of the output is dropped) and the call waits for it.
+    /// </summary>
+    int ConvertCompatIntoMemory(DisplayFrame source, DisplayPlacement placement, uint opt)
+    {
+        uint outputBase = GuestMemory.R32(opt + 4);
+        uint outputPitch = GuestMemory.R32(opt + 8);
+        uint outputFormat = GuestMemory.R32(opt + 12);
+        uint outputWidth = GuestMemory.R32(opt + 16);
+        uint outputHeight = GuestMemory.R32(opt + 20);
+        if (outputBase == 0 || (outputBase & 0xFF) != 0)
+        {
+            return ErrorInvalidAddress;
+        }
+
+        if (outputFormat != 0)
+        {
+            return ErrorInvalidPixelFormat;
+        }
+
+        long outputBytes = (long)outputPitch * outputHeight * 4;
+        if (outputBytes == 0 || outputBytes > int.MaxValue || outputWidth > outputPitch)
+        {
+            return ErrorInvalidValue;
+        }
+
+        int sourceBytes = DisplayScanout.Bytes(source);
+        var convert = new CallbackCommand
+        {
+            Action = () =>
+            {
+                IftuMemoryConversion.Convert(GuestMemory.ReadSpan(source.Address, sourceBytes), (int)source.Pitch, (int)source.Width, (int)source.Height, source.Format,
+                    GuestMemory.Span(outputBase, (int)outputBytes), (int)outputPitch, (int)outputWidth, (int)outputHeight, placement);
+            },
+            ReadAddress = source.Address,
+            ReadSize = (uint)sourceBytes,
+            WriteAddress = outputBase,
+            WriteSize = (uint)outputBytes,
+        };
+        Emu.Gpu.WaitFor(Emu.Gpu.Submit(convert));
         return 0;
     }
 }

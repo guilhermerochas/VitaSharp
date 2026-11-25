@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.md sha256=031f9a6becef3647560914cecd0cdce531672688f5e8a75b3caece1426e05f38 -->
+<!-- pair: psp-compat.md sha256=5a8b0773ee357c5c437b2757c109369ae679b79ba0d4291ebc00d40be5b4bdd6 -->
 # Núcleo de compatibilidade PSP (SceCompat, ScePspemu, Allegrex)
 
 *English: [psp-compat.md](psp-compat.md).*
@@ -257,8 +257,12 @@ framebuffer do PSP na memória do PSP e escreve os pixels de volta, separado do 
   plano 0 do processo, o mesmo que o `ksceDisplaySetFrameBufInternal` grava (e cujo retângulo ele limpa). Então a
   última das duas chamadas é o que fica na tela, o `sceDisplayGetFrameBuf` a devolve, null deixa o plano 0 sem
   framebuffer, o resto da tela fica preto, o bit 20 das flags do SceDisplayFrameBuf é o filtro bilinear do IFTU (não
-  um número de plano), e com `opt` o IFTU converte para o buffer do `opt` em vez da tela (ainda não feito: a tela não
-  muda). O formato `0x50000000` é A1B5G5R5 de 16 bits (formato 4 do IFTU, o par do `0x10` do A8B8G8R8). O
+  um número de plano), e com `opt` o IFTU converte para o buffer do `opt` em vez da tela: largura x altura do opt em
+  A8B8G8R8 no pitch do opt, a imagem escalada para o retângulo e todo o resto 0, com a chamada esperando a unidade
+  (`IftuMemoryConversion`, na ordem da GPU). Um framebuffer null (aqui ou no `sceDisplaySetFrameBuf`) dá à unidade do
+  plano uma entrada sem framebuffer: tela preta com o overlay do shell por cima; o `sceDisplaySetFrameBuf(null,
+  IMMEDIATE)` é recusado (`0x80290006`) depois que o plano já teve um framebuffer (o registro guarda o pitch), e um
+  sync acima de 1 sempre é. O formato `0x50000000` é A1B5G5R5 de 16 bits (formato 4 do IFTU, o par do `0x10` do A8B8G8R8). O
   `ksceDisplaySetMergeConf(head, merge, alpha)` só age no **plano 1** (unidade IFTU `2h+1`, o overlay do shell): o
   `SceIftuForDriver_AF19FD85` e o `_357EAE24` só aceitam as unidades 1 e 3, então a chamada `alpha(2h, 0)` falha
   (`0x803F0700`) e não faz nada; o boot põe merge 4 e alpha `0xFF` só no head 1. O apresentador mostra o plano 0
