@@ -1993,6 +1993,12 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Custo com handler (laços `s_perfBlocks`): ARM64 +9..20% nos laços com memória (memcpy LDM/STM +42%, NEON +40%), 0%
   sem memória; x64 BenchmarkDotNet laço 2 acessos/6 instr +22%. Dead Space (kubridge, headless 60 s): fps igual (60,
   limitado por vsync), thread mais pesada 1,58 -> 1,98 ms/quadro em código gerado (+25%), CPU do processo +3%.
+  Cobertura ampliada (excp1, feat/excp1, sobre a exc2): `NativeJitTests.*DataAbortsMatchTheInterpreter` compara IL, x64 e ARM64 com o
+  interpretador em 23 formas (palavra/dupla/meia/byte, LDM/STM cruzando para página não mapeada, PUSH/POP, LDREX,
+  VLDR/VLDM/VLD1, condicionais executadas e puladas, Thumb 16/32); `DataAbortDeliveryTests` ganhou handler que conserta
+  a base e reexecuta (SUBS PC, LR, #8), ordem por prioridade e abort em Thumb (LR = instrução + 8, SPSR com T).
+  Corrigido, falta o usuário testar: com "Ativar Plugins do Kernel" e o kubridge, abrir um port que usa
+  kuKernelRegisterExceptionHandler (ou um jogo com kubridge, ex. Dead Space) e conferir que roda igual (fps e tela).
 - [ ] [P2][G] Data aborts com custo zero também com o handler registrado (o kubridge liga os guards em todo jogo com
   "Ativar Plugins do Kernel"): no lugar dos guards, falha do host em página protegida + tabela host-pc → instrução do
   guest com a receita de onde está cada registro do guest naquele ponto (Dolphin: backpatch do acesso para o caminho
