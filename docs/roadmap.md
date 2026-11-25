@@ -4629,6 +4629,12 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   abaixo sempre visíveis, sem piscar.
 
 ## Bugs em aberto
+- [ ] Renderizador passa do `maxStorageBufferRange` do dispositivo: o espelho da CDRAM dos slots mapeados
+  (`VulkanRenderer.Mapped.cs`: CDRAM 256 MB + 32 MB de rascunho) é ligado como um storage buffer de 288 MB, e o
+  limite é 128 MB no lavapipe do Mesa 22.3 (e em várias GPUs móveis). A camada de validação acusa
+  `VUID-VkWriteDescriptorSet-descriptorType-00333`, e o lavapipe 22.3 cai com SIGSEGV em
+  `RendererTextureTests.EveryTextureFormatAndLayoutSamplesAndTheDumpReplaysTheSame`. Ligar uma janela dentro do limite
+  (ou dividir o espelho) e testar com um dispositivo que declara 128 MB.
 - [x] [P1][M] Testes de hooks: interferência de memória compartilhada (23/11/2026, hookfix1/cifix17/hookmem1):
 - [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053) em 2x: textura da parede piscando e imagem embaçada (relato do
   usuário, 23/11/2026; captura `PCSE00053_20261123_134501_tudo`, build 793a9e96, resolução interna 2x por atalho no

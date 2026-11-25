@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=74a0a6970e9e006e5c98703a1cddb38cb64389c65d8f18791fce77e92b01ca31 -->
+<!-- pair: README.md sha256=c5b94dd6ba9556dcda73a4742676750a77f5e3d55e1ebb92297544d4ee0426f1 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -401,7 +401,15 @@ A linha de comando tem também `install`, `boot-shell`, `test <cenário>` (cená
 Android: [`docs/android/README.md`](docs/android/README.md). Pacotes prontos (zip, instalador, tar.gz, AppImage, .app,
 .dmg; ReadyToRun ou Native AOT): `build/publish.ps1` / `build/publish.sh`.
 
-Todo script vem em par `.ps1` + `.sh`, e o CI confere isso. Os textos da interface ficam em
+Todo script vem em par `.ps1` + `.sh`, conferido localmente pelo `build/prepush-check`. Antes de um push rode
+`build/prepush-check.ps1` (Windows) / `build/prepush-check.sh` (Linux, macOS, Git Bash): sobre exatamente o que está
+commitado ele roda a paridade dos scripts, o `--help` dos scripts, o ShellCheck, o estilo do código, um build com 0
+avisos e a suíte `Category!=Slow`, que falha quando um teste falha, quando o processo de testes caiu (execução
+abortada) ou quando rodaram menos testes do que o `dotnet test --list-tests` lista; só suba depois de
+"prepush-check: ok". No Windows ele também roda a suíte no Linux pelo WSL quando o WSL tem um .NET SDK em `~/.dotnet`
+(`dotnet-install.sh --channel 10.0 --install-dir ~/.dotnet`) e os requisitos de teste do Linux abaixo (o Debian 12
+precisa do Mesa mais novo do bookworm-backports). Nenhuma etapa grava despejo de memória (Linux: tamanho de core 0 e
+`coredump_filter` 0, porque o coletor de falhas do WSL ignora o limite de tamanho). Os textos da interface ficam em
 `src/VitaSharp.Core/Localization` (`Texts.resx` em inglês, `Texts.pt-BR.resx`); a documentação externa também vem nos
 dois idiomas (`README.md` + `README.pt-BR.md`, conferidos pelo `ExternalDocPairsTests`). Para contribuir com funções do
 sistema, veja as especificações em [`docs/hle`](docs/hle/README.md). `build/hle-abi-check.ps1` / `build/hle-abi-check.sh` lista as funções HLE cujos registradores de argumento diferem dos protótipos do [vita-headers](https://github.com/vitasdk/vita-headers) (precisa de `git` e rede para o clone, ou de um clone local).
@@ -503,7 +511,7 @@ O que o `dotnet test tests/VitaSharp.Tests` precisa em cada sistema; um teste se
 | | Windows | Linux | macOS |
 |---|---|---|---|
 | SDK | .NET 10 SDK | .NET 10 SDK | .NET 10 SDK |
-| Dispositivo Vulkan (testes do renderizador, dos dumps da GPU e dos jogos rodando) | o lavapipe do Mesa (Vulkan 1.4, o mesmo do CI do Linux): descompacte a pasta `x64` de uma versão do [mesa-dist-win](https://github.com/pal1000/mesa-dist-win/releases) (`vulkan_lvp.dll` + `lvp_icd.x86_64.json`) em `%LOCALAPPDATA%\VitaSharpTools\mesa\<versão>\x64`; sem ele, ou quando o carregador do sistema `vulkan-1.dll` não pode usá-lo, o SwiftShader que vem com o Microsoft Edge ou o Google Chrome (os dois achados sozinhos) | o lavapipe do Mesa: `sudo apt install mesa-vulkan-drivers libvulkan1` (Fedora: `mesa-vulkan-drivers vulkan-loader`) | o MoltenVK: o Vulkan SDK da LunarG, ou `brew install molten-vk vulkan-loader` |
+| Dispositivo Vulkan (testes do renderizador, dos dumps da GPU e dos jogos rodando) | o lavapipe do Mesa (Vulkan 1.4, o mesmo do CI do Linux): descompacte a pasta `x64` de uma versão do [mesa-dist-win](https://github.com/pal1000/mesa-dist-win/releases) (`vulkan_lvp.dll` + `lvp_icd.x86_64.json`) em `%LOCALAPPDATA%\VitaSharpTools\mesa\<versão>\x64`; sem ele, ou quando o carregador do sistema `vulkan-1.dll` não pode usá-lo, o SwiftShader que vem com o Microsoft Edge ou o Google Chrome (os dois achados sozinhos) | o lavapipe de um Mesa mais novo que o 22.3 (o CI tem o 25.2): `sudo apt install mesa-vulkan-drivers libvulkan1` (Fedora: `mesa-vulkan-drivers vulkan-loader`; Debian 12: `sudo apt install -t bookworm-backports mesa-vulkan-drivers`, o 22.3 dele derruba os testes de textura) | o MoltenVK: o Vulkan SDK da LunarG, ou `brew install molten-vk vulkan-loader` |
 | shaderc (testes do renderizador e de compilação de shaders; o renderizador também precisa dele) | vem do pacote Silk.NET.Shaderc.Native | vem do pacote (achado em `runtimes/linux-x64` também onde a busca do Silk.NET não acha, como no Ubuntu); quando essa cópia não carrega: `sudo apt install libshaderc-dev` (Fedora, Arch: `shaderc`; carregado como `libshaderc.so.1`) | vem do pacote, senão o `brew install shaderc` do Homebrew |
 | Uma janela do desktop (testes do overlay do jogo) | sempre | uma tela X11 ou Wayland; sem tela: `xvfb-run dotnet test tests/VitaSharp.Tests` (`sudo apt install xvfb`) | pulados: o AppKit só cria janelas na thread principal, e os testes rodam em threads de trabalho |
 | FFmpeg (testes de decodificação de vídeo e áudio) | baixado pelo primeiro build | baixado pelo primeiro build | o do sistema: `brew install ffmpeg` |
