@@ -257,3 +257,30 @@ shader that reads the framebuffer through `last_frag_in` (input attachment 0, pr
 and `colorAttachmentCount` 0. Adding the key's colour attachments to the fragment library and to the link did not
 remove it, so the call is not identified yet. The frames stay pixel-identical. This has to be fixed before the
 libraries can be turned on by default.
+
+## Dynamic blend, write mask and vertex input (perf/stut1, 25 November 2026): counted, not implemented
+`VK_EXT_extended_dynamic_state3` (colour blend enable/equation and write mask; polygon mode) and
+`VK_EXT_vertex_input_dynamic_state` would let one pipeline serve the variants of a shader pair that differ only in
+that state, as in Ryujinx and yuzu. Counted over the recorded pipelines of 70 titles (copies of their
+`pipelines.list`, 10,994 recipes, 10,973 distinct): the shaders, attachment format, samples, tile-word and fetch-pass
+flavour stay in the key, and the rest is collapsed.
+
+| state made dynamic | pipelines | fewer |
+|---|---|---|
+| none (today) | 10,973 | - |
+| blend + write mask | 10,240 | 6.7% |
+| + polygon mode | 10,240 | 6.7% |
+| vertex input only | 10,663 | 2.8% |
+| blend + mask + polygon + vertex input | 9,928 | 9.5% |
+| + topology class (points/lines/triangles) | 9,908 | 9.7% |
+
+- The share is in small 2D/UI-heavy sets (GTAVCECTY 57 -> 31, DEADSPACE 42 -> 29, the shell 343 -> 270). The 3D games
+  whose first session stutters keep almost all of theirs: PCSC00045 2,058 -> 2,034 (1.2%), PCSE00333 809 -> 794
+  (1.9%), PCSE00053 262 -> 254 (3.1%), PCSA00017 888 -> 888.
+- A variant of an existing pair is also the cheapest pipeline for the driver (its stages are already compiled), so
+  the time saved is below the count's share.
+- With compile-on-program-load (on by default) the cold replays of the dumps already build 0 pipelines on the GPU
+  thread and have 0 frames >= 4 ms stalled, so there is no slow frame for it to remove; the only effect left would be
+  a few percent less work while loading.
+- Not worth the second path (two pipeline key shapes, extension feature checks per driver, the Mali/Adreno path kept).
+  Revisit only if a title's recorded list shows a large share of same-pair variants.

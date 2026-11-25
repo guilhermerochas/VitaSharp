@@ -935,8 +935,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   atrasado, com os 2 workers ocupados e 17 jobs na fila: limite de vazão, alavanca da frente (3)), GTAVCECTY x2 e
   PSVAS1178 0 → 0; opção ligada: 0 → 0 em todos; `--compare` dos 8 dumps nos dois modos pixel-idêntico. O engasgo do
   1º quadro continua com a opção desligada (a thread da GPU passa a esperar os workers em vez de montar: 2,1-4,4 s no
-  PCSE00053 com a CPU da máquina a 83-96%), e é o que a opção ligada resolve. Próximas partes: (3) estado dinâmico EDS3/vertex input onde houver; (4) Android: medir no
-  Killzone o tempo de carregamento a mais e a queda de pipelines no thread da GPU
+  PCSE00053 com a CPU da máquina a 83-96%), e é o que a opção ligada resolve. Próxima parte: Android: medir no
+  Killzone o tempo de carregamento a mais e a queda de pipelines no thread da GPU.
+  Estado dinâmico (frente 2; perf/stut1, 25/11/2026): contado, não implementado. Nos 10.973 pipelines gravados de 70
+  títulos (cópias dos `pipelines.list`), blend e máscara dinâmicos (`VK_EXT_extended_dynamic_state3`) tiram 6,7%,
+  vertex input dinâmico 2,8%, tudo junto 9,5%, mas quase tudo nos conjuntos 2D pequenos (GTAVCECTY 57 → 31); os 3D
+  que engasgam ficam com quase todos: PCSC00045 2.058 → 2.034 (1,2%), PCSE00333 809 → 794 (1,9%), PCSE00053 262 →
+  254 (3,1%), PCSA00017 0%. Com a compilação ao carregar o programa os replays frios já têm 0 pipelines na thread da
+  GPU e 0 quadros >= 4 ms, então não há quadro lento para tirar; só sobraria pouco trabalho a menos no carregamento.
+  Fica fora (tabela e motivo em `docs/notes/pipeline-skip.md`).
   Entrega movida para "Corrigido, falta o usuário testar" (uber2/uber3/uber4, 22/11/2026); o resto segue aberto aqui.
   Junto aqui (triagem de 22/11/2026) o item das bibliotecas de pipeline, que já cai na frente (3): o próximo passo dele é medir mais workers.
   [P2][G] Engasgos da primeira vez: montar os pipelines que faltam com `VK_EXT_graphics_pipeline_library` (ligação
