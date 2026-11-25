@@ -993,10 +993,26 @@ public sealed partial class Compat : HleModule, IDisposable
     [Hle]
     int sceCompatDatRead(int kind, uint offset, uint buf, uint size)
     {
-        if (!Allowed) return ERR_PERM;
-        if (kind != 0) return ERR_DAT_KIND;
-        if (size > DatSize || offset >= DatSize || offset + size > DatSize) return ERR_LEN;
-        if (!Owner) return ERR_NOT_OWNER;
+        if (!Allowed)
+        {
+            return ERR_PERM;
+        }
+
+        if (kind != 0)
+        {
+            return ERR_DAT_KIND;
+        }
+
+        if (size > DatSize || offset >= DatSize || offset + size > DatSize)
+        {
+            return ERR_LEN;
+        }
+
+        if (!Owner)
+        {
+            return ERR_NOT_OWNER;
+        }
+
         _dat.AsSpan((int)offset, (int)size).CopyTo(GuestMemory.Span(buf, (int)size));
         return 0;
     }
@@ -1007,9 +1023,21 @@ public sealed partial class Compat : HleModule, IDisposable
     [Hle]
     int sceCompatFrameBufferInit(int uid)
     {
-        if (!Allowed) return ERR_PERM;
-        if (_fbUid != 0) return ERR_EXISTS;
-        if (K.Objects.Get<MemBlock>(uid) == null) return SceError.INVALID_UID;
+        if (!Allowed)
+        {
+            return ERR_PERM;
+        }
+
+        if (_fbUid != 0)
+        {
+            return ERR_EXISTS;
+        }
+
+        if (K.Objects.Get<MemBlock>(uid) == null)
+        {
+            return SceError.INVALID_UID;
+        }
+
         _fbUid = uid;
         return 0;
     }
@@ -1018,9 +1046,21 @@ public sealed partial class Compat : HleModule, IDisposable
     [Hle]
     int sceCompatSetDisplayConfig(int wide, uint sync)
     {
-        if (!Allowed) return ERR_PERM;
-        if (_fbUid <= 0 || K.Objects.Get<MemBlock>(_fbUid) is not { } fb) return ERR_NOT_STARTED;
-        if (_fbParam == 0) _fbParam = Mem.Alloc(0x20, "SceCompat framebuffer param");
+        if (!Allowed)
+        {
+            return ERR_PERM;
+        }
+
+        if (_fbUid <= 0 || K.Objects.Get<MemBlock>(_fbUid) is not { } fb)
+        {
+            return ERR_NOT_STARTED;
+        }
+
+        if (_fbParam == 0)
+        {
+            _fbParam = Mem.Alloc(0x20, "SceCompat framebuffer param");
+        }
+
         GuestMemory.W32(_fbParam, 0x1C);
         GuestMemory.W32(_fbParam + 4, fb.Address);
         GuestMemory.W32(_fbParam + 8, 0x200);
@@ -1035,8 +1075,16 @@ public sealed partial class Compat : HleModule, IDisposable
     [Hle]
     int sceCompatLCDCSync()
     {
-        if (!Allowed) return ERR_PERM;
-        if (!FrameRate.NoWaits) VBlank.WaitNext();
+        if (!Allowed)
+        {
+            return ERR_PERM;
+        }
+
+        if (!FrameRate.NoWaits)
+        {
+            VBlank.WaitNext();
+        }
+
         return 0;
     }
 
@@ -1060,7 +1108,11 @@ public sealed partial class Compat : HleModule, IDisposable
     [Hle]
     int sceCompatGetPeripheralState(int which)
     {
-        if (!Allowed) return ERR_PERM;
+        if (!Allowed)
+        {
+            return ERR_PERM;
+        }
+
         return which switch
         {
             1 => 0,
@@ -1075,8 +1127,16 @@ public sealed partial class Compat : HleModule, IDisposable
     [Hle]
     int sceCompatGetCurrentSecureTick(Ptr<ulong> tick)
     {
-        if (!Allowed) return ERR_PERM;
-        if (tick.IsNull) return SceError.INVALID_ARGUMENT;
+        if (!Allowed)
+        {
+            return ERR_PERM;
+        }
+
+        if (tick.IsNull)
+        {
+            return SceError.INVALID_ARGUMENT;
+        }
+
         tick.TrySet(Rtc.NowTick);
         return 0;
     }
@@ -1085,7 +1145,11 @@ public sealed partial class Compat : HleModule, IDisposable
     [Hle]
     int sceCompatGetUpdateState()
     {
-        if (!Allowed) return ERR_PERM;
+        if (!Allowed)
+        {
+            return ERR_PERM;
+        }
+
         return _updateTick == 0 || Rtc.NowTick > _updateTick ? 1 : 0;
     }
 
@@ -1093,7 +1157,11 @@ public sealed partial class Compat : HleModule, IDisposable
     [Hle]
     int sceCompatSetUpdateState()
     {
-        if (!Allowed) return ERR_PERM;
+        if (!Allowed)
+        {
+            return ERR_PERM;
+        }
+
         _updateTick = Rtc.NowTick + 86_400_000_000UL;
         return 0;
     }
@@ -1102,9 +1170,21 @@ public sealed partial class Compat : HleModule, IDisposable
     [Hle]
     int sceCompatSetSuspendSema(int suspend, int resume)
     {
-        if (!Allowed) return ERR_PERM;
-        if (suspend != 0 && K.Objects.Get<KernelObject>(suspend) == null) return SceError.INVALID_UID;
-        if (resume != 0 && K.Objects.Get<KernelObject>(resume) == null) return SceError.INVALID_UID;
+        if (!Allowed)
+        {
+            return ERR_PERM;
+        }
+
+        if (suspend != 0 && K.Objects.Get<KernelObject>(suspend) == null)
+        {
+            return SceError.INVALID_UID;
+        }
+
+        if (resume != 0 && K.Objects.Get<KernelObject>(resume) == null)
+        {
+            return SceError.INVALID_UID;
+        }
+
         return 0;
     }
 
@@ -1113,8 +1193,16 @@ public sealed partial class Compat : HleModule, IDisposable
     [Hle]
     int sceCompatSetRif(uint contentId)
     {
-        if (!Allowed) return ERR_PERM;
-        if (!Owner) return ERR_NOT_OWNER;
+        if (!Allowed)
+        {
+            return ERR_PERM;
+        }
+
+        if (!Owner)
+        {
+            return ERR_NOT_OWNER;
+        }
+
         var id = GuestMemory.ReadSpan(contentId, 0x24);
         _rif = id.IndexOf((byte)0) >= 0 ? "" : Io.FirmwareLayout.PspLicenses.Guest(System.Text.Encoding.ASCII.GetString(id) + ".rif");
         Log.Info($"SceCompat: rif {(_rif.Length == 0 ? "(none)" : _rif)}");
@@ -1127,15 +1215,35 @@ public sealed partial class Compat : HleModule, IDisposable
     [Hle("SceCompatForVsh_4915DEE7", Nid = 0x4915DEE7, Library = "SceCompatForVsh")]
     int sceCompatGetTitleList(uint buf, int size)
     {
-        if (!Allowed) return ERR_PERM;
-        if (size != 100) return unchecked((int)0x8002000B);
+        if (!Allowed)
+        {
+            return ERR_PERM;
+        }
+
+        if (size != 100)
+        {
+            return unchecked((int)0x8002000B);
+        }
+
         string? host = Emu.Vfs.Resolve("ur0:emu_list/title_list.bin");
-        if (host == null || !File.Exists(host)) return unchecked((int)0x80010002);
+        if (host == null || !File.Exists(host))
+        {
+            return unchecked((int)0x80010002);
+        }
+
         byte[] b = File.ReadAllBytes(host);
-        if (b.Length < 100) return unchecked((int)0x80010005);
+        if (b.Length < 100)
+        {
+            return unchecked((int)0x80010005);
+        }
+
         b.AsSpan(0, 100).CopyTo(GuestMemory.Span(buf, 100));
         int len = Array.IndexOf(b, (byte)0, 0, 100);
-        if ((len < 0 ? 100 : len) != 0x5F) return unchecked((int)0x80010002);
+        if ((len < 0 ? 100 : len) != 0x5F)
+        {
+            return unchecked((int)0x80010002);
+        }
+
         File.Delete(host);
         return 0;
     }
@@ -1145,11 +1253,27 @@ public sealed partial class Compat : HleModule, IDisposable
     [Hle]
     int sceCompatIdStorageLookup(int key, uint offset, uint buf, uint size)
     {
-        if (!Allowed) return ERR_PERM;
+        if (!Allowed)
+        {
+            return ERR_PERM;
+        }
+
         size = Math.Min(size, 0x200);
-        if (offset >= 0x200 || offset + size > 0x200) return ERR_LEN;
-        if (!Owner) return ERR_NOT_OWNER;
-        if ((ushort)(key - 0x100) > 0x3F) return ERR_IDSTORAGE_KEY;
+        if (offset >= 0x200 || offset + size > 0x200)
+        {
+            return ERR_LEN;
+        }
+
+        if (!Owner)
+        {
+            return ERR_NOT_OWNER;
+        }
+
+        if ((ushort)(key - 0x100) > 0x3F)
+        {
+            return ERR_IDSTORAGE_KEY;
+        }
+
         GuestMemory.Fill(buf, 0, size);
         return 0;
     }
@@ -1158,9 +1282,21 @@ public sealed partial class Compat : HleModule, IDisposable
     [Hle]
     int sceCompatGetDevInf(uint info)
     {
-        if (!Allowed) return ERR_PERM;
-        if (!Owner) return ERR_NOT_OWNER;
-        if (info == 0) return SceError.INVALID_ARGUMENT;
+        if (!Allowed)
+        {
+            return ERR_PERM;
+        }
+
+        if (!Owner)
+        {
+            return ERR_NOT_OWNER;
+        }
+
+        if (info == 0)
+        {
+            return SceError.INVALID_ARGUMENT;
+        }
+
         DeviceCapacity.WriteDevInfo(info, DeviceCapacity.DevInfoSize, Emu.Vfs.Resolve("ux0:"));
         return 0;
     }
@@ -1169,11 +1305,23 @@ public sealed partial class Compat : HleModule, IDisposable
     [Hle]
     int sceCompatCheckPocketStation()
     {
-        if (!Allowed) return ERR_PERM;
+        if (!Allowed)
+        {
+            return ERR_PERM;
+        }
+
         string? host = Emu.Vfs.Resolve(Io.FirmwareLayout.PspLicenses.Guest("JA0003-PCSC80018_00-POCKETSTATION001.rif"));
-        if (host == null || !File.Exists(host)) return 0;
+        if (host == null || !File.Exists(host))
+        {
+            return 0;
+        }
+
         byte[] b = File.ReadAllBytes(host);
-        if (b.Length is 0 or > 0x200) return 0;
+        if (b.Length is 0 or > 0x200)
+        {
+            return 0;
+        }
+
         return System.Text.Encoding.ASCII.GetString(b).Contains("JA0003-PCSC80018_00-POCKETSTATION001") ? 1 : 0;
     }
 
@@ -1183,8 +1331,16 @@ public sealed partial class Compat : HleModule, IDisposable
     [Hle("SceCompatForVsh_70997F92", Nid = 0x70997F92, Library = "SceCompatForVsh", Default = true)]
     int sceCompatIsPocketStationTitle(uint titleId)
     {
-        if (!Allowed) return ERR_PERM;
-        if (titleId == 0) return SceError.INVALID_ARGUMENT;
+        if (!Allowed)
+        {
+            return ERR_PERM;
+        }
+
+        if (titleId == 0)
+        {
+            return SceError.INVALID_ARGUMENT;
+        }
+
         return GuestMemory.Read<byte>(titleId + 9) != 0 ? unchecked((int)0x80010016) : 0;
     }
 }
