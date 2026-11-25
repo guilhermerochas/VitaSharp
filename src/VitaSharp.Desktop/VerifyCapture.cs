@@ -19,13 +19,16 @@ static class VerifyCapture
 {
     public static void PrintUsage()
     {
-        Console.WriteLine("  verify <capture folder|zip> [--out=<dir>] [--rerun] [replay options]  is the capture's problem still there with this build?");
+        Console.WriteLine("  verify <capture folder|zip> [--out=<dir>] [--rerun [--from=preroll|start|markN]] [--ab] [replay options]  is the capture's problem still there with this build?");
         Console.WriteLine("                           replays its GPU dump and compares the findings (flash, black frames, NaN/Inf) with the recording's:");
         Console.WriteLine("                           corrigido / ainda presente / mudou (exit 0 / 1 / 2; 3 nothing to check); --rerun also re-runs the logic");
         Console.WriteLine("                           (stalls, order, audio); replay options (--res-scale=, --env=K=V, --msaa=...) go to the replay");
+        Console.WriteLine("    --ab[=NAME,...]        replay again with each renderer switch (depth seed, MSAA, store writeback, scene breaks, fetch");
+        Console.WriteLine("                           passes, phone paths, poison, native scale) and say which one removes or changes the finding");
+        Console.WriteLine("    --ab-env=KEY=VALUE     one more switch to try (repeatable)");
     }
 
-    static readonly string[] s_ownOptions = ["--out=", "--rerun", "--keep-frames"];
+    static readonly string[] s_ownOptions = ["--out=", "--rerun", "--from=", "--keep-frames", "--ab"];
 
     public static int Run(string capture, string[] options)
     {
@@ -81,6 +84,10 @@ static class VerifyCapture
                 : ""));
             verdicts.Add(result.Verdict);
             Attribute(dump, outDir, result.Kept, replayOptions, report);
+            if (options.Any(o => o == "--ab" || o.StartsWith("--ab=", StringComparison.Ordinal) || o.StartsWith("--ab-env=", StringComparison.Ordinal)))
+            {
+                SwitchTest(dump, outDir, CaptureVerify.ReadFindings(Path.Combine(replayOut, CaptureVerify.FindingsFileName)), replayOptions, options, report);
+            }
         }
         else
         {
@@ -89,7 +96,8 @@ static class VerifyCapture
 
         if (options.Contains("--rerun"))
         {
-            CaptureVerify.Result rerun = Rerun(dir, outDir, replayOptions, report);
+            // the replay options are the replay's; the re-run takes the state to start from (--from=preroll|start|markN)
+            CaptureVerify.Result rerun = Rerun(dir, outDir, options.Where(o => o.StartsWith("--from=", StringComparison.Ordinal)).ToArray(), report);
             verdicts.Add(rerun.Verdict);
         }
 
@@ -139,6 +147,92 @@ static class VerifyCapture
 
         items.AddRange(CaptureVerify.NanEvents(Path.Combine(dir, "log.txt")));
         return items;
+    }
+
+    /// <summary>The switches of --ab (all, or the names given) and of every --ab-env=KEY=VALUE.</summary>
+    internal static List<CaptureVerify.Switch> Switches(string[] options)
+    {
+        var chosen = new List<CaptureVerify.Switch>();
+        if (options.Contains("--ab"))
+        {
+            chosen.AddRange(CaptureVerify.RendererSwitches);
+        }
+
+        foreach (string names in options.Where(o => o.StartsWith("--ab=", StringComparison.Ordinal)).Select(o => o["--ab=".Length..]))
+        {
+            foreach (string name in names.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (CaptureVerify.RendererSwitches.FirstOrDefault(s => s.Name == name) is { } known)
+                {
+                    chosen.Add(known);
+                }
+                else
+                {
+                    Console.Error.WriteLine($"verify --ab: no switch {name} (the switches: {string.Join(", ", CaptureVerify.RendererSwitches.Select(s => s.Name))})");
+                }
+            }
+        }
+
+        foreach (string env in options.Where(o => o.StartsWith("--ab-env=", StringComparison.Ordinal)).Select(o => o["--ab-env=".Length..]))
+        {
+            int eq = env.IndexOf('=');
+            if (eq > 0)
+            {
+                chosen.Add(new CaptureVerify.Switch(env, env[..eq], env[(eq + 1)..], "given with --ab-env"));
+            }
+        }
+
+        return chosen.DistinctBy(s => s.Env).ToList();
+    }
+
+    /// <summary>
+    /// --ab: the dump replayed once more per renderer switch (a child process each: the switches are read once per
+    /// process), up to two presents after the last picture finding, and its findings against the switch-free
+    /// replay's: which switch removes the finding (the class of the bug), changes it, or leaves it the same.
+    /// </summary>
+    static void SwitchTest(string dump, string outDir, (long First, long Last, List<CaptureVerify.Item> Items) baseline, string[] replayOptions, string[] options, StringBuilder report)
+    {
+        List<CaptureVerify.Switch> switches = Switches(options);
+        var findings = baseline.Items.Where(i => CaptureVerify.PictureKinds.Contains(i.Kind)).ToList();
+        report.AppendLine($"A/B dos interruptores do renderizador ({switches.Count}; o replay de cada um contra o replay sem eles):");
+        if (findings.Count == 0 || switches.Count == 0)
+        {
+            report.AppendLine(findings.Count == 0 ? "  nada para comparar: o replay deste build não mostra achado de imagem" : "  nenhum interruptor escolhido");
+            return;
+        }
+
+        long stop = findings.Max(i => i.Present) + 2;
+        var effects = new List<(CaptureVerify.Switch Switch, CaptureVerify.SwitchEffect Effect)>();
+        foreach (CaptureVerify.Switch sw in switches)
+        {
+            string dir = Path.Combine(outDir, "ab", string.Concat(sw.Name.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_')));
+            var args = replayOptions.Where(o => !o.StartsWith("--frame=", StringComparison.Ordinal)).Append($"--env={sw.Env}").Append($"--frame={stop}");
+            (int rc, (long First, long Last, List<CaptureVerify.Item> Items)? replayed) = Replay(dump, dir, args, keepFrames: false);
+            if (replayed is not { } r)
+            {
+                report.AppendLine($"  {sw.Name} ({sw.Env}): o replay falhou (código {rc}; {Path.Combine(dir, "log.txt")})");
+                continue;
+            }
+
+            long last = Math.Min(Math.Min(baseline.Last, r.Last), stop);
+            (CaptureVerify.SwitchEffect effect, CaptureVerify.Result result) = CaptureVerify.CompareSwitch(findings.Where(i => i.Present <= last).ToList(), r.Items, Math.Max(baseline.First, r.First), last);
+            effects.Add((sw, effect));
+            report.AppendLine($"  {sw.Name} ({sw.Env}: {sw.What}): {CaptureVerify.Word(effect)}");
+            if (effect == CaptureVerify.SwitchEffect.Changes)
+            {
+                foreach (string line in result.Lines.Where(l => !l.StartsWith("  por tipo", StringComparison.Ordinal) && !l.StartsWith("    ", StringComparison.Ordinal)).Take(3))
+                {
+                    report.AppendLine("    " + line.TrimStart());
+                }
+            }
+        }
+
+        var removing = effects.Where(e => e.Effect == CaptureVerify.SwitchEffect.Removes).ToList();
+        report.AppendLine(removing.Count > 0
+            ? $"  o achado some com: {string.Join(", ", removing.Select(e => e.Switch.Name))} (a classe do bug: {string.Join("; ", removing.Select(e => e.Switch.What))})"
+            : effects.Any(e => e.Effect == CaptureVerify.SwitchEffect.Changes)
+                ? $"  nenhum interruptor tira o achado; mudam: {string.Join(", ", effects.Where(e => e.Effect == CaptureVerify.SwitchEffect.Changes).Select(e => e.Switch.Name))}"
+                : "  nenhum interruptor muda o achado: a causa está nos comandos gravados ou num caminho do renderizador sem interruptor");
     }
 
     /// <summary>Most findings still present whose draws are probed (one replay each, up to their present).</summary>

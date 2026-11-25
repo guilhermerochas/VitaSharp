@@ -1,4 +1,4 @@
-<!-- pair: captures.pt-BR.md sha256=c9c26034e9c4be1436468f8084976dfd5669021672f63a73f0215d021e3c8297 -->
+<!-- pair: captures.pt-BR.md sha256=6a6bbef9fa77e01bc55275abf49f3aef676c2943c2cbb7401d78b7409a452167 -->
 # Analysing a Record everything capture without the game
 
 **English** | [Português](captures.pt-BR.md)
@@ -59,6 +59,9 @@ plugins), so two captures of the same version have the same hashes.
 back and the re-run is recorded and compared with the original (`reruns/<...>/compare.txt`: the pictures, and the
 first HLE call that differs). A path written in the capture is never opened: the re-run uses the data folder it is
 given (`--data=<folder>`). `--boot=title` boots the installed game instead and loads the state into it.
+`--from=preroll` (the default with a pre-roll: a state at most 5 s before it), `--from=start`, or `--from=markN`: the
+state of the moment the player marked the problem (Shift+F8 while recording, or the Android pause menu's "Mark the
+problem"; `state_mark_N.vss`, listed in `session.txt` and in the report).
 
 `hle_calls.tsv` has one line per HLE call of the recording (guest time, thread, function, library, r0-r3, result,
 return address); `hle_errors.txt` sums them by function with the error returns.
@@ -99,7 +102,9 @@ there): a finding is at the same present (one either way) and cell; *mudou* (cha
 a finding the recording did not have (*novo*). Findings before the dump (the pre-roll) or after it are listed as not
 checked. Exit code 0 fixed, 1 still there, 2 changed, 3 nothing to check, 4 the replay failed. Everything goes into
 `--out` (default `<capture>/verify`: `verify.txt`, the replay's `log.txt` and `findings.txt`); the capture itself is
-not changed. Replay options (`--res-scale=2`, `--env=KEY=VALUE`, `--msaa=...`) go to the replay.
+not changed. Replay options (`--res-scale=2`, `--env=KEY=VALUE`, `--msaa=...`) go to the replay; a dump recorded at
+a resolution scale carries its render targets at that scale, so its replay at the same scale starts from exactly
+the pixels the player saw.
 
 The replay executes the recorded commands: a finding still there in it is drawn by the renderer from those
 commands, or is already in them (the cause is before the GPU). `--rerun` also runs the game logic again from the
@@ -126,5 +131,34 @@ clipped or moved; the state fields and the depth/stencil under it that differ ar
 no draw into the shown surface differs, the cause is a surface drawn earlier and sampled, or which buffer was
 presented. The files: `probe_P/probe_P.txt` (every probed draw: present, draw number, target, programs, pixels of
 the region it changed, depth and stencil before, state) and `probe_P/attribution_P.txt`.
+
+### Which switch (A/B)
+
+`verify --ab` replays the dump once more for each of the renderer's switches that change how a picture is drawn
+(each in its own process, up to two presents after the last finding) and compares the findings with the
+switch-free replay's: *o achado some* (the finding goes away: the switch names the class of the bug), *muda*, or
+*igual*. The switches (`--ab=NAME,...` picks some; `--ab-env=KEY=VALUE` adds any other, repeatable):
+
+| Name | Variable | What it changes |
+|---|---|---|
+| `depth-seed-off` | `VITASHARP_DEPTH_SEED=0` | a loaded depth/stencil starts undefined instead of the surface's earlier image |
+| `msaa-off` / `msaa-ss` / `msaa-native` | `VITASHARP_MSAA` | MSAA scenes single-sampled, as 2x supersampling, multisampled |
+| `store-writeback-off` | `VITASHARP_GPU_STORE_WRITEBACK=0` | shader stores stay in the renderer's mirror |
+| `scene-breaks-strict` | `VITASHARP_SCENE_BREAKS=strict` | every upload or copy in a scene ends the rendering |
+| `fetch-pass-merge-*`, `fetch-large-*`, `fetch-pass-join-*`, `depth-feedback-*` | `VITASHARP_FETCH_PASS_MERGE`, `_FETCH_LARGE`, `_FETCH_PASS_JOIN`, `_DEPTH_FEEDBACK` (0 and 1) | the fetch passes of programmable blending and depth sampling |
+| `depth-ops-none-off` | `VITASHARP_DEPTH_OPS_NONE=0` | unused depth/stencil is still loaded and stored |
+| `gpu-profile-mali` | `VITASHARP_GPU_PROFILE=mali` | the tile-based (phone) renderer paths |
+| `gpu-poison` | `VITASHARP_GPU_POISON=1` | undefined contents get loud values: a read of something never drawn shows |
+| `res-scale-1` | `VITASHARP_RES_SCALE=1` | native resolution |
+
+```
+A/B dos interruptores do renderizador (18; o replay de cada um contra o replay sem eles):
+  depth-seed-off (VITASHARP_DEPTH_SEED=0: ...): igual
+  msaa-off (VITASHARP_MSAA=off: MSAA scenes drawn single-sampled): o achado some
+  ...
+  o achado some com: msaa-off (a classe do bug: MSAA scenes drawn single-sampled)
+```
+
+The replays go into `<out>/ab/<name>/`.
 
 Details for developers: [`docs/notes/session-capture.md`](notes/session-capture.md).

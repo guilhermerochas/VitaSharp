@@ -1,4 +1,4 @@
-<!-- pair: captures.md sha256=921093dc6c7b944e2fdfadea22ca7aebff4b988721023d0623d19c3a3cc308d8 -->
+<!-- pair: captures.md sha256=e789bf1d24a7bb1c6458e8b2e6eabbf1fc4648279168c5870e1399b5b42fc54b -->
 # Analisar uma gravação do Gravar tudo sem o jogo
 
 [English](captures.md) | **Português**
@@ -58,7 +58,10 @@ O `rerun` sobe o programa a partir do próprio estado salvo da gravação: todo 
 carregado (o jogo, os módulos do firmware, os plugins) é reconstruído da memória do estado; depois a entrada gravada
 é reproduzida e a reexecução é gravada e comparada com a original (`reruns/<...>/compare.txt`: as imagens e a
 primeira chamada HLE diferente). Um caminho escrito na gravação nunca é aberto: a reexecução usa a pasta de dados
-indicada (`--data=<pasta>`). `--boot=title` sobe o jogo instalado e carrega o estado nele.
+indicada (`--data=<pasta>`). `--boot=title` sobe o jogo instalado e carrega o estado nele. `--from=preroll` (o
+padrão com pré-gravação: um estado no máximo 5 s antes dela), `--from=start`, ou `--from=markN`: o estado do momento
+em que o jogador marcou o problema (Shift+F8 durante a gravação, ou "Marcar o problema" no menu de pausa do Android;
+`state_mark_N.vss`, listado no `session.txt` e no relatório).
 
 O `hle_calls.tsv` tem uma linha por chamada HLE da gravação (tempo do guest, thread, função, biblioteca, r0-r3,
 resultado, endereço de retorno); o `hle_errors.txt` soma por função, com os retornos de erro.
@@ -97,7 +100,9 @@ resultado: corrigido
 tinha (*novo*). Achados antes do dump (a pré-gravação) ou depois dele aparecem como não verificados. Código de saída
 0 corrigido, 1 ainda presente, 2 mudou, 3 nada a verificar, 4 o replay falhou. Tudo vai para `--out` (padrão
 `<gravação>/verify`: `verify.txt`, o `log.txt` e o `findings.txt` do replay); a gravação não é alterada. Opções do
-replay (`--res-scale=2`, `--env=CHAVE=VALOR`, `--msaa=...`) vão para o replay.
+replay (`--res-scale=2`, `--env=CHAVE=VALOR`, `--msaa=...`) vão para o replay; um dump gravado numa escala de
+resolução leva os alvos de renderização nessa escala, então o replay na mesma escala começa exatamente dos pixels que
+o jogador viu.
 
 O replay executa os comandos gravados: um achado que continua nele é desenhado pelo renderizador a partir desses
 comandos, ou já está neles (a causa vem antes da GPU). `--rerun` também roda de novo a lógica do jogo a partir do
@@ -125,5 +130,34 @@ diferente*. Quando nenhum draw na superfície mostrada difere, a causa é uma su
 ou qual buffer foi apresentado. Os arquivos: `probe_P/probe_P.txt` (cada draw sondado: present, número do draw,
 alvo, programas, pixels da região que mudou, profundidade e estêncil antes, estado) e
 `probe_P/attribution_P.txt`.
+
+### Qual interruptor (A/B)
+
+O `verify --ab` reproduz o dump mais uma vez para cada interruptor do renderizador que muda como a imagem é
+desenhada (cada um num processo próprio, até dois presents depois do último achado) e compara os achados com os do
+replay sem eles: *o achado some* (o interruptor aponta a classe do bug), *muda* ou *igual*. Os interruptores
+(`--ab=NOME,...` escolhe alguns; `--ab-env=CHAVE=VALOR` acrescenta qualquer outro, repetível):
+
+| Nome | Variável | O que muda |
+|---|---|---|
+| `depth-seed-off` | `VITASHARP_DEPTH_SEED=0` | profundidade/estêncil carregados começam indefinidos em vez da imagem anterior da superfície |
+| `msaa-off` / `msaa-ss` / `msaa-native` | `VITASHARP_MSAA` | cenas MSAA com uma amostra, como superamostragem 2x, multiamostradas |
+| `store-writeback-off` | `VITASHARP_GPU_STORE_WRITEBACK=0` | o que os shaders gravam fica no espelho do renderizador |
+| `scene-breaks-strict` | `VITASHARP_SCENE_BREAKS=strict` | todo envio ou cópia dentro de uma cena termina a renderização |
+| `fetch-pass-merge-*`, `fetch-large-*`, `fetch-pass-join-*`, `depth-feedback-*` | `VITASHARP_FETCH_PASS_MERGE`, `_FETCH_LARGE`, `_FETCH_PASS_JOIN`, `_DEPTH_FEEDBACK` (0 e 1) | os passes de fetch do blending programável e da leitura de profundidade |
+| `depth-ops-none-off` | `VITASHARP_DEPTH_OPS_NONE=0` | profundidade/estêncil sem uso continuam carregados e gravados |
+| `gpu-profile-mali` | `VITASHARP_GPU_PROFILE=mali` | os caminhos do renderizador para GPUs tile-based (celular) |
+| `gpu-poison` | `VITASHARP_GPU_POISON=1` | conteúdo indefinido ganha valores gritantes: a leitura de algo nunca desenhado aparece |
+| `res-scale-1` | `VITASHARP_RES_SCALE=1` | resolução nativa |
+
+```
+A/B dos interruptores do renderizador (18; o replay de cada um contra o replay sem eles):
+  depth-seed-off (VITASHARP_DEPTH_SEED=0: ...): igual
+  msaa-off (VITASHARP_MSAA=off: MSAA scenes drawn single-sampled): o achado some
+  ...
+  o achado some com: msaa-off (a classe do bug: MSAA scenes drawn single-sampled)
+```
+
+Os replays ficam em `<out>/ab/<nome>/`.
 
 Detalhes para desenvolvedores: [`docs/notes/session-capture.md`](notes/session-capture.md).

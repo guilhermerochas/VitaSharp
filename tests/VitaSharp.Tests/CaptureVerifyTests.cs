@@ -162,6 +162,24 @@ public sealed class CaptureVerifyTests : IDisposable
         Assert.Equal(CaptureVerify.Verdict.Fixed, CaptureVerify.Compare(nan, [], 1, 100).Verdict);
     }
 
+    /// <summary>A/B: a switch whose replay loses the finding removes it; the same findings are the same; a moved or new
+    /// one is a change. Every switch is one of the renderer's environment switches (EnvVars), named once.</summary>
+    [Fact]
+    public void ASwitchRemovesChangesOrKeepsTheFinding()
+    {
+        CaptureVerify.Item[] baseline = [Flash(101, 5), new CaptureVerify.Item("black-flash", 120, -2, 1, "x")];
+        Assert.Equal(CaptureVerify.SwitchEffect.Removes, CaptureVerify.CompareSwitch(baseline, [], 50, 200).Effect);
+        Assert.Equal(CaptureVerify.SwitchEffect.Same, CaptureVerify.CompareSwitch(baseline, baseline, 50, 200).Effect);
+        Assert.Equal(CaptureVerify.SwitchEffect.Changes, CaptureVerify.CompareSwitch(baseline, [Flash(101, 5)], 50, 200).Effect);
+        Assert.Equal(CaptureVerify.SwitchEffect.Changes, CaptureVerify.CompareSwitch(baseline, [.. baseline, Flash(150)], 50, 200).Effect);
+        Assert.Equal(CaptureVerify.SwitchEffect.Changes, CaptureVerify.CompareSwitch([Flash(101, 5)], [Flash(101, 9)], 50, 200).Effect);
+
+        var constants = typeof(VitaSharp.Core.Util.EnvVars).GetFields().Where(f => f.IsLiteral).Select(f => (string)f.GetRawConstantValue()!).ToHashSet();
+        Assert.All(CaptureVerify.RendererSwitches, s => Assert.Contains(s.Key, constants));
+        Assert.Equal(CaptureVerify.RendererSwitches.Length, CaptureVerify.RendererSwitches.Select(s => s.Name).Distinct().Count());
+        Assert.Equal(CaptureVerify.RendererSwitches.Length, CaptureVerify.RendererSwitches.Select(s => s.Env).Distinct().Count());
+    }
+
     /// <summary>A re-run is not deterministic: its report is compared kind by kind, with the audio's gaps and clicks.</summary>
     [Fact]
     public void ARerunsReportIsComparedKindByKind()

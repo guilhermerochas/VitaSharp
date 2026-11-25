@@ -257,6 +257,37 @@ public sealed class CaptureVerifyRenderTests(GuestMemoryFixture fx)
         Assert.Equal(before, Directory.GetFiles(capture));
     }
 
+    /// <summary>verify --ab: the replay with a switch that does not touch the scene keeps the flash ("igual"); one that
+    /// paints every pixel of the scene's fragment program one colour (a VITASHARP_DEBUG_FS override, given with
+    /// --ab-env) removes it, and the report names it.</summary>
+    [SoftwareVulkanFact]
+    public void VerifyAbNamesTheSwitchThatRemovesTheFlash()
+    {
+        using IDisposable driver = SoftwareVulkan.Use();
+        using var h = new HleHarness(fx, "verify4");
+        string capture = Path.Combine(h.Root, "PCSA00000_20261125_000001_tudo"), output = Path.Combine(h.Root, "verify-ab");
+        FlashScene.CaptureFolder(h, capture, Frames(6, FlashScene.Hud.Missing));
+        ulong fragmentHash = 0;
+        using (var reader = new GpuDumpReader(Path.Combine(capture, "gpu.vsgd")))
+        {
+            while (fragmentHash == 0 && reader.Next())
+            {
+                if (reader.Command is DrawCommand { FragmentProgram.Info: { } info })
+                {
+                    fragmentHash = info.Program.Hash;
+                }
+            }
+        }
+
+        Assert.NotEqual(0UL, fragmentHash);
+        string solid = $"{VitaSharp.Core.Util.EnvVars.DebugFs}={fragmentHash:X16}:vec4(0.0, 0.0, 1.0, 1.0)";
+        DesktopProcess.Result r = DesktopProcess.Run(h.Root, ["verify", capture, $"--out={output}", "--no-nan-scan", "--ab=depth-seed-off", $"--ab-env={solid}"], timeoutMs: 300_000);
+        Assert.True(r.ExitCode == 1, r.Output);
+        Assert.Contains("depth-seed-off (VITASHARP_DEPTH_SEED=0: ", r.Output, StringComparison.Ordinal);
+        Assert.Contains("): igual", r.Output, StringComparison.Ordinal);
+        Assert.Contains($"o achado some com: {solid}", r.Output, StringComparison.Ordinal);
+    }
+
     [SoftwareVulkanFact]
     public void AFlashTheCommandsDoNotDrawIsFixedAndANewOneIsAChange()
     {

@@ -224,6 +224,74 @@ public static class CaptureVerify
         return new Result(verdict, lines, inRange.Count, still, gone, moved, fresh) { Kept = kept };
     }
 
+    /// <summary>One renderer switch the A/B runs (<c>verify --ab</c>): a name, the environment variable and the value
+    /// set for the replay (<c>replay-gpu --env=KEY=VALUE</c>), and what it changes.</summary>
+    public sealed record Switch(string Name, string Key, string Value, string What)
+    {
+        public string Env => $"{Key}={Value}";
+    }
+
+    /// <summary>
+    /// The renderer's switches that change how a picture is drawn (EnvVars), each replayed on its own by
+    /// <c>verify --ab</c>: a finding that goes away with one of them names the class of the bug (the depth seed, MSAA,
+    /// the store writeback, the scene breaks, the fetch passes of programmable blending, the tile-based GPU paths,
+    /// undefined contents, the resolution scale). Both values of the switches whose default depends on the GPU.
+    /// </summary>
+    public static readonly Switch[] RendererSwitches =
+    [
+        new("depth-seed-off", Util.EnvVars.DepthSeed, "0", "a depth/stencil created for a scene that loads its surface starts undefined, not from the surface's earlier image"),
+        new("msaa-off", Util.EnvVars.Msaa, "off", "MSAA scenes drawn single-sampled"),
+        new("msaa-ss", Util.EnvVars.Msaa, "ss", "MSAA scenes drawn as 2x supersampling"),
+        new("msaa-native", Util.EnvVars.Msaa, "native", "MSAA scenes multisampled"),
+        new("store-writeback-off", Util.EnvVars.GpuStoreWriteback, "0", "what shader programs store stays in the renderer's mirror, not in guest memory"),
+        new("scene-breaks-strict", Util.EnvVars.SceneBreaks, "strict", "every texture upload or copy inside a scene ends the rendering"),
+        new("fetch-pass-merge-off", Util.EnvVars.FetchPassMerge, "0", "programmable-blending draws do not share one fetch pass"),
+        new("fetch-pass-merge-on", Util.EnvVars.FetchPassMerge, "1", "programmable-blending draws share one fetch pass"),
+        new("fetch-large-off", Util.EnvVars.FetchLarge, "0", "large programmable-blending draws read a copy of the surface"),
+        new("fetch-large-on", Util.EnvVars.FetchLarge, "1", "programmable-blending draws of any size render in the fetch pass"),
+        new("fetch-pass-join-off", Util.EnvVars.FetchPassJoin, "0", "other draws end an open fetch pass"),
+        new("fetch-pass-join-on", Util.EnvVars.FetchPassJoin, "1", "other draws keep rendering in an open fetch pass"),
+        new("depth-feedback-off", Util.EnvVars.DepthFeedback, "0", "draws that sample their depth buffer read a copy"),
+        new("depth-feedback-on", Util.EnvVars.DepthFeedback, "1", "draws that sample their depth buffer read it in place"),
+        new("depth-ops-none-off", Util.EnvVars.DepthOpsNone, "0", "depth/stencil no draw uses is still loaded and stored"),
+        new("gpu-profile-mali", Util.EnvVars.GpuProfile, "mali", "the tile-based (phone) renderer paths"),
+        new("gpu-poison", Util.EnvVars.GpuPoison, "1", "undefined contents get loud values (new targets magenta): a read of something never drawn shows"),
+        new("res-scale-1", Util.EnvVars.ResScale, "1", "native resolution"),
+    ];
+
+    /// <summary>What a switch does to the findings the replay showed without it.</summary>
+    public enum SwitchEffect
+    {
+        /// <summary>The same findings.</summary>
+        Same,
+        /// <summary>The findings go away and nothing new appears.</summary>
+        Removes,
+        /// <summary>Some go away or move, or new ones appear.</summary>
+        Changes,
+    }
+
+    public static string Word(SwitchEffect effect) => effect switch
+    {
+        SwitchEffect.Removes => "o achado some",
+        SwitchEffect.Changes => "muda",
+        _ => "igual",
+    };
+
+    /// <summary>The findings of a replay with one switch against the replay without it (<see cref="Compare"/>, the
+    /// switch-free replay standing for the recording) over the presents both showed.</summary>
+    public static (SwitchEffect Effect, Result Result) CompareSwitch(IReadOnlyList<Item> baseline, IReadOnlyList<Item> withSwitch, long first, long last)
+    {
+        Result r = Compare(baseline, withSwitch, first, last);
+        SwitchEffect effect = r.Verdict switch
+        {
+            Verdict.Fixed => SwitchEffect.Removes,
+            Verdict.StillPresent when r.Gone == 0 && r.Moved == 0 && r.New == 0 => SwitchEffect.Same,
+            Verdict.NothingToCheck => SwitchEffect.Same,
+            _ => SwitchEffect.Changes,
+        };
+        return (effect, r);
+    }
+
     /// <summary>The findings of a report.txt (<c>  [kind] present P ...</c> lines, (info) left out) by kind, and the
     /// audio's silent gaps and clicks summed over its files.</summary>
     public static SortedDictionary<string, int> ReportCounts(string reportPath)
