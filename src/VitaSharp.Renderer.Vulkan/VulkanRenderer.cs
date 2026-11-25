@@ -244,12 +244,19 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         }
         else
         {
-            options._handoff?.Core.Dispose();
+            if (options._handoff is { } unused)
+            {
+                GeVulkanRasterizerDevice.Withdraw(unused.Core);
+                unused.Core.Dispose();
+            }
+
             _core = new VkCore(options.Surface, options.Validation || Environment.GetEnvironmentVariable(EnvVars.VkValidation) is "1" or "sync", options.GpuProfile, options.GpuQuirks);
         }
         options._handoff = null;
         _vk = _core.Vk;
-        // the PSP compat core's GE draws on a device of its own, made at its first batch (GeVulkanRasterizerDevice)
+        // the PSP compat core's GE draws on this device's second queue (or a device of its own when there is none),
+        // made at its first batch (GeVulkanRasterizerDevice)
+        GeVulkanRasterizerDevice.Offer(_core);
         VitaSharp.Core.Compat.Ge.GeEngine.DefaultRasterizerFactory ??= GeVulkanRasterizerDevice.Create;
         _dev = _core.Device;
         _cmd = new VkCmd(_vk, _dev);
@@ -2116,7 +2123,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         {
             SubmitFrame(false, 0);
             DrainPresent();
-            _vk.DeviceWaitIdle(_dev);
+            _core.WaitIdle();
             WriteTraceSnapshots(Path.Combine(_options.ShaderCacheDir, "trace", "targets"));
             return;
         }
@@ -2364,7 +2371,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     private int DumpAllTargets(string dir, (RenderTarget Src, uint W, uint H, string Path)? shot = null)
     {
         DrainPresent();
-        _vk.DeviceWaitIdle(_dev);
+        _core.WaitIdle();
         Directory.CreateDirectory(dir);
         var stats = new System.Text.StringBuilder();
         var pci = new CommandPoolCreateInfo { SType = StructureType.CommandPoolCreateInfo, QueueFamilyIndex = _core.QueueFamily };
@@ -2585,7 +2592,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         StopShaderWorkers();
         CloseTitleCaches();
         StopPresentThread();
-        _vk.DeviceWaitIdle(_dev);
+        _core.WaitIdle();
         _retireWatcher?.Dispose();
         DestroyMirror();
         DestroyTransferImages();
@@ -2696,12 +2703,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             // the next renderer takes the device (VulkanRendererOptions.KeepDevice); a lost one is made again
             _core.Reclaim = null;
             _core.DescribeMemory = null;
-            _vk.DeviceWaitIdle(_dev);
+            _core.WaitIdle();
             _options._handoff = new VulkanRendererOptions.DeviceHandoff(_core, _swapchain, _options.Surface);
             _swapchain = default;
             return;
         }
         DestroySwapchain();
-        _core.Dispose();
+        GeVulkanRasterizerDevice.Withdraw(_core);
+        _core.Dispose(); // destroyed now, or when a GE still drawing on it is done (VkCore.AddUser)
     }
 }

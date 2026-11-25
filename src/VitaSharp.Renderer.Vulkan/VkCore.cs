@@ -92,6 +92,42 @@ public sealed unsafe class VkCore : IDisposable
     public Device Device;
     public Queue Queue;
     public uint QueueFamily;
+
+    /// <summary>The family's second queue (default when the family has one queue): the GE of the PSP compat core's.</summary>
+    public Queue SecondaryQueue;
+
+    /// <summary>Held around every submit on <see cref="SecondaryQueue"/> (the GE).</summary>
+    public readonly object SecondaryQueueLock = new();
+
+    /// <summary>The users of the device past its creator (<see cref="AddUser"/>): <see cref="Dispose"/> destroys it
+    /// once the last one is done.</summary>
+    private int _users = 1;
+
+    /// <summary>Tests: the last user disposed the device (it is destroyed).</summary>
+    internal bool Destroyed => Volatile.Read(ref _users) <= 0;
+
+    /// <summary>The device has a second queue (<see cref="SecondaryQueue"/>).</summary>
+    public bool HasSecondaryQueue => SecondaryQueue.Handle != 0;
+
+    /// <summary>One more user of the device (the GE sharing the renderer's): each user calls <see cref="Dispose"/>
+    /// once, and the device is destroyed at the last one.</summary>
+    public VkCore AddUser()
+    {
+        Interlocked.Increment(ref _users);
+        return this;
+    }
+
+    /// <summary>vkDeviceWaitIdle, which needs every queue of the device externally synchronized: holds the second
+    /// queue's lock (the GE may submit there from the compat core's thread meanwhile; the renderer's callers keep
+    /// their own queue quiet, as before).</summary>
+    public void WaitIdle()
+    {
+        lock (SecondaryQueueLock)
+        {
+            Vk.DeviceWaitIdle(Device);
+        }
+    }
+
     public KhrSurface? SurfaceExt;
     public KhrSwapchain? SwapchainExt;
     public SurfaceKHR Surface;
@@ -485,8 +521,11 @@ public sealed unsafe class VkCore : IDisposable
             throw new InvalidOperationException("No graphics queue");
         }
 
-        float prio = 1.0f;
-        var qci = new DeviceQueueCreateInfo { SType = StructureType.DeviceQueueCreateInfo, QueueFamilyIndex = QueueFamily, QueueCount = 1, PQueuePriorities = &prio };
+        // a second queue of the family when it has one: the GE of the PSP compat core submits there, never on the
+        // queue of the GXM renderer and its present thread (GeVulkanRasterizerDevice)
+        uint queueCount = Math.Min(2u, families[QueueFamily].QueueCount);
+        float* prio = stackalloc float[] { 1.0f, 1.0f };
+        var qci = new DeviceQueueCreateInfo { SType = StructureType.DeviceQueueCreateInfo, QueueFamilyIndex = QueueFamily, QueueCount = queueCount, PQueuePriorities = prio };
 
         HashSet<string> devExts = DeviceExtensions(Physical);
         bool portability = devExts.Contains(PortabilitySubset);
@@ -709,6 +748,10 @@ public sealed unsafe class VkCore : IDisposable
         Vk.CreateDevice(Physical, in dci, null, out Device).Ok("vkCreateDevice");
         SilkMarshal.Free((nint)extPtrs);
         Vk.GetDeviceQueue(Device, QueueFamily, 0, out Queue);
+        if (queueCount > 1)
+        {
+            Vk.GetDeviceQueue(Device, QueueFamily, 1, out SecondaryQueue);
+        }
         if (present)
         {
             Vk.TryGetDeviceExtension(Instance, Device, out KhrSwapchain khrSwapchain);
@@ -951,7 +994,9 @@ public sealed unsafe class VkCore : IDisposable
         return false;
     }
 
-    public (Buffer Buffer, DeviceMemory Memory, nint Mapped) CreateHostBuffer(ulong size, BufferUsageFlags usage, MemCat category)
+    /// <param name="reclaim">On out-of-memory the renderer may free memory and the allocation is retried (the
+    /// renderer's threads only: the GE of the compat core passes false).</param>
+    public (Buffer Buffer, DeviceMemory Memory, nint Mapped) CreateHostBuffer(ulong size, BufferUsageFlags usage, MemCat category, bool reclaim = true)
     {
         var bci = new BufferCreateInfo { SType = StructureType.BufferCreateInfo, Size = size, Usage = usage, SharingMode = SharingMode.Exclusive };
         Vk.CreateBuffer(Device, in bci, null, out Buffer buf).Ok("vkCreateBuffer");
@@ -967,7 +1012,7 @@ public sealed unsafe class VkCore : IDisposable
             {
                 type = FindMemoryType(req.MemoryTypeBits, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
             }
-            DeviceMemory mem = AllocateMemory(req.Size, type, category, "vkAllocateMemory(host buffer)");
+            DeviceMemory mem = AllocateMemory(req.Size, type, category, "vkAllocateMemory(host buffer)", reclaim);
             Vk.BindBufferMemory(Device, buf, mem, 0);
             void* p;
             Result r = Vk.MapMemory(Device, mem, 0, size, 0, &p);
@@ -1191,7 +1236,7 @@ public sealed unsafe class VkCore : IDisposable
 
     /// <summary>vkAllocateMemory for a whole buffer: on out-of-memory the renderer reclaims memory and it is retried;
     /// throws <see cref="VkOutOfMemoryException"/> when nothing helped.</summary>
-    public DeviceMemory AllocateMemory(ulong size, uint type, MemCat category, string what)
+    public DeviceMemory AllocateMemory(ulong size, uint type, MemCat category, string what, bool reclaim = true)
     {
         Result r = TryAllocateMemory(size, type, category, false, out DeviceMemory mem);
         if (r == Result.Success)
@@ -1204,7 +1249,7 @@ public sealed unsafe class VkCore : IDisposable
             throw new InvalidOperationException($"Vulkan {what} failed: {r}");
         }
 
-        for (int level = 0; level < ReclaimLevels && !ReclaimHopeless(size); level++)
+        for (int level = 0; reclaim && level < ReclaimLevels && !ReclaimHopeless(size); level++)
         {
             if (Reclaim?.Invoke(size, IsDeviceLocal(type), level) != true)
             {
@@ -1217,7 +1262,11 @@ public sealed unsafe class VkCore : IDisposable
                 return mem;
             }
         }
-        MarkHopeless(size);
+        if (reclaim)
+        {
+            MarkHopeless(size);
+        }
+
         throw OutOfMemory(r, what, size, category);
     }
 
@@ -1459,9 +1508,15 @@ public sealed unsafe class VkCore : IDisposable
         }
     }
 
+    /// <summary>The caller is done with the device: destroyed when it was the last user (<see cref="AddUser"/>).</summary>
     public void Dispose()
     {
-        Vk.DeviceWaitIdle(Device);
+        if (Interlocked.Decrement(ref _users) > 0)
+        {
+            return;
+        }
+
+        WaitIdle();
         Vk.DestroyDevice(Device, null);
         if (Surface.Handle != 0)
         {

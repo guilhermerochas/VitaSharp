@@ -114,6 +114,34 @@ uploads and copies that do not read the scene are recorded before the rendering 
 and printed in the `PERF gpu` line and info.txt, e.g.
 `load/store ops (tile-based, 2704 deferred renderings): colour load 2704/clear 0/dont-care 0, store 2704/dont-care 0; depth load 899/clear 1805/dont-care 0, store 899/dont-care 1805` (skullgirls_boot, adreno profile).
 
+## The PSP compat core's GE device
+
+The GE of the PSP compat core (pspemu) draws from the compat core's thread with `GeVulkanRasterizer`. It never submits
+on the GXM renderer's queue (the renderer's worker and present thread own it):
+
+- **the renderer's device has a second queue in its graphics family** (Adreno, Mali, NVIDIA, Intel): the GE shares the
+  device and submits on that queue (`VkCore.SecondaryQueue`), with its own command pool, fence and allocations
+  (counted in the renderer's memory budget, without the renderer's reclaim, which runs on the renderer's threads).
+  `vkDeviceWaitIdle` goes through `VkCore.WaitIdle`, which holds the second queue's lock; the GE's end waits for its
+  own queue only. The device lives until both are done with it (`VkCore.AddUser`);
+- **one graphics queue** (AMD desktop, the software drivers) or `VITASHARP_GE_DEVICE=own`: a device of its
+  own, as before.
+
+Measured on a GTX 1650 (`GeDeviceCostBenchmarkTests`, by hand: `dotnet test --filter
+FullyQualifiedName~GeDeviceCostBenchmarkTests`): a device of its own took 226-233 ms to make and +43-84 MB of private
+bytes, +3.0-3.5 MB of device-local heap; on the renderer's second queue 138-140 ms (the shader compiler and the
+rasterizer's buffers; no instance, no device) and +26 MB, +1.6 MB. Android drivers limit instances and devices per
+process and each device has its own driver memory, so the shared device matters more there; the phone's numbers are
+still to be measured.
+
+Parity with the phone, on the software device (`GeVulkanRasterizerAdrenoTests`, `GeVulkanRasterizerMaliTests`: the
+whole GE rasterizer suite with the `adreno` / `mali` profiles and `+TileBased`): the GE's render passes LOAD and
+STORE colour and depth/stencil on every device (the PSP's framebuffer and depth buffer are memory, the stencil its
+alpha); Adreno's profile has no logic op (the draw goes without it, logged once); the depth-stencil image is the first
+of D24S8 (Adreno, Mali), D32S8 (PowerVR, the software drivers), D16S8 the device draws into and copies, and the
+16-bit depth comes back unchanged from each (`GeVulkanDeviceTests`); the GE's push constants (96 bytes) fit Adreno's
+128.
+
 ## Custom drivers (Android)
 
 `VulkanLoader.DriverProvider` (`IVulkanDriverProvider`) replaces the system loader: `Open()` returns a library
