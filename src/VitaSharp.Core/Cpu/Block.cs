@@ -30,6 +30,9 @@ public sealed unsafe class Block
     public bool Ahead;
     /// <summary>The <see cref="CodePrecompiler.Priority"/> whose work translated the block ahead (statistics).</summary>
     public byte AheadPriority;
+    /// <summary>Translated ahead on a guess of the analysis (not because an earlier session ran it): it may be evicted
+    /// while it has not run (<see cref="Jit.EvictAhead"/>).</summary>
+    public bool Speculative;
     /// <summary>When the block's compiled code was first used (a process-wide sequence number; 0: not yet): the code
     /// cache keeps the blocks in this order, so the next boot translates what the game needs first, first.</summary>
     public long FirstUse;
@@ -352,6 +355,9 @@ public sealed unsafe class BlockCache
 
     public bool TryGet(uint pc, bool thumb, out Block? block) => _blocks.TryGetValue(Key(pc, thumb), out block);
 
+    /// <summary>Removes <paramref name="block"/> if it is still the cached block at its start (<see cref="Jit.EvictAhead"/>).</summary>
+    internal bool Remove(Block block) => _blocks.TryRemove(new KeyValuePair<ulong, Block>(Key(block.Start, block.Thumb), block));
+
     /// <summary><see cref="Get"/> from a thread that may work in another address space (a JIT worker decoding the
     /// targets of the block it compiles): decodes in <see cref="Space"/>.</summary>
     public Block GetFromAnyThread(uint pc, bool thumb)
@@ -471,9 +477,15 @@ public sealed unsafe class BlockCache
         _blocks.Clear();
     }
 
-    /// <summary>A block left the cache: native exits linked to it must go back through the dispatcher.</summary>
+    /// <summary>A block left the cache: native exits linked to it must go back through the dispatcher. A block
+    /// translated ahead that never ran gives its code back to the arena at once (it was never published).</summary>
     private static void Retire(Block b)
     {
+        if (b.JitState == Jit.AheadPending && Jit.EvictAhead(b))
+        {
+            return;
+        }
+
         if (b.NativeEntry != 0)
         {
             Native.NativeRuntime.Unlink(b);
@@ -492,4 +504,9 @@ public sealed unsafe class BlockCache
     /// <summary>Called once per block when its compiled code is first used (<see cref="Jit.ActivateAhead"/>, or the JIT
     /// compiled it because it got hot): the ARM code precompilation widens its frontier there.</summary>
     public Action<Block>? FirstUse;
+
+    /// <summary>Called when the interpreter runs a block for the first time (code no translation covered yet, which
+    /// may never get hot: an interpreted block calls and jumps to code that will): the precompilation widens its
+    /// frontier there too, without waiting for the block to be compiled.</summary>
+    public Action<Block>? FirstRun;
 }

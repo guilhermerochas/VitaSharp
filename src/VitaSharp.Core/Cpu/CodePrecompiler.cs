@@ -54,7 +54,7 @@ public sealed class CodePrecompiler
         doneUpTo || (waitFor == Priority.Cached && done >= BootCachedBlocks);
 
     /// <summary>Statistics so far.</summary>
-    public readonly record struct Result(int Translated, int Visited, int Found, bool Cancelled, bool ArenaLimit);
+    public readonly record struct Result(int Translated, int Visited, int Found, bool Cancelled, bool ArenaLimit, int Evicted = 0);
 
     private readonly BlockCache _cache;
     private readonly AddressSpace? _space;
@@ -62,13 +62,35 @@ public sealed class CodePrecompiler
     private readonly Func<uint, uint>? _functionStart;
     private readonly Action<uint, List<(uint Pc, bool Thumb)>>? _pointersOf;
     private readonly ConcurrentDictionary<uint, byte> _expandedFunctions = new();
+    private readonly HashSet<uint> _recordedFunctions = [];
     private readonly ConcurrentDictionary<ulong, byte> _seen = new();
-    private readonly ConcurrentQueue<(uint Pc, bool Thumb, int Depth)>[] _queues = [new(), new(), new(), new()];
-    private readonly ConcurrentQueue<Block> _executed = new();
+    /// <summary>The work of each priority. The cached blocks keep the order they first ran in and the flow is breadth
+    /// first (both queues); the work around running code (<see cref="Priority.Running"/>, <see cref="Priority.Frontier"/>)
+    /// is newest first (stacks), like Ryujinx's translator queue of rejit requests (a stack: the code the guest reached
+    /// last is the code it runs next). Measured in Killzone: Mercenary (first session): with a queue, 974 of the 1,102
+    /// blocks the JIT compiled while the game ran had been queued here, behind older work, when the game reached them.</summary>
+    private readonly IProducerConsumerCollection<(uint Pc, bool Thumb, int Depth)>[] _queues = NewQueues();
+
+    /// <summary>Whether the work of <paramref name="priority"/> is taken newest first (see <see cref="_queues"/>).</summary>
+    public static bool NewestFirst(Priority priority) => priority is Priority.Running or Priority.Frontier;
+
+    private static IProducerConsumerCollection<(uint Pc, bool Thumb, int Depth)>[] NewQueues()
+    {
+        var queues = new IProducerConsumerCollection<(uint Pc, bool Thumb, int Depth)>[Levels];
+        for (int i = 0; i < Levels; i++)
+        {
+            queues[i] = NewestFirst((Priority)i)
+                ? new ConcurrentStack<(uint Pc, bool Thumb, int Depth)>()
+                : new ConcurrentQueue<(uint Pc, bool Thumb, int Depth)>();
+        }
+
+        return queues;
+    }
+    private readonly ConcurrentQueue<(Block Block, bool Interpreted)> _executed = new();
     private readonly int[] _outstanding = new int[Levels + 1]; // queued or being worked on, per priority (+ executed blocks)
     private readonly SemaphoreSlim _work = new(0);
     private readonly CancellationTokenSource _stop = new();
-    private int _known, _done, _translated, _found, _arenaLimit, _foreground;
+    private int _known, _done, _translated, _found, _arenaLimit, _foreground, _evicted;
 
     /// <summary>Background threads that keep translating after <see cref="Run"/> returns.</summary>
     public static int BackgroundWorkers => Math.Clamp(Environment.ProcessorCount / 4, 1, 3);
@@ -84,7 +106,7 @@ public sealed class CodePrecompiler
     }
 
     public Result Statistics => new(Volatile.Read(ref _translated), Volatile.Read(ref _done), Volatile.Read(ref _found), _stop.IsCancellationRequested,
-        Volatile.Read(ref _arenaLimit) != 0);
+        Volatile.Read(ref _arenaLimit) != 0, Volatile.Read(ref _evicted));
 
     /// <summary>Whether every queue is empty and nothing is being worked on.</summary>
     public bool Finished
@@ -103,6 +125,10 @@ public sealed class CodePrecompiler
         }
     }
 
+    /// <summary>Whether the block at (<paramref name="pc"/>, <paramref name="thumb"/>) was queued by this run
+    /// (diagnostics: the analysis found it).</summary>
+    public bool Queued(uint pc, bool thumb) => _seen.ContainsKey(Key(pc, thumb)) || _seen.ContainsKey(Key(pc, thumb) | NarrowKey);
+
     /// <summary>Stops the background translation (process end); blocks already translated stay.</summary>
     public void Stop()
     {
@@ -110,23 +136,34 @@ public sealed class CodePrecompiler
         _work.Release(64);
     }
 
+    private static ulong Key(uint pc, bool thumb) => pc | (thumb ? 1ul << 32 : 0);
+
+    /// <summary>Marks work queued with <see cref="NoFollow"/> apart (<see cref="Add"/>): a narrow guess does not stop
+    /// the same block from being queued later to be followed (once the game compiles code next to it).</summary>
+    private const ulong NarrowKey = 1ul << 33;
+
     private bool Add((uint Pc, bool Thumb) target, Priority priority, int depth = 0)
     {
-        if (!_seen.TryAdd(target.Pc | (target.Thumb ? 1ul << 32 : 0), 0))
+        ulong key = Key(target.Pc, target.Thumb);
+        if (depth == NoFollow ? _seen.ContainsKey(key) || !_seen.TryAdd(key | NarrowKey, 0) : !_seen.TryAdd(key, 0))
         {
             return false;
         }
 
         Interlocked.Increment(ref _outstanding[(int)priority]);
         Interlocked.Increment(ref _known);
-        _queues[(int)priority].Enqueue((target.Pc, target.Thumb, depth));
+        _queues[(int)priority].TryAdd((target.Pc, target.Thumb, depth));
         _work.Release();
         return true;
     }
 
     /// <summary>The guest ran <paramref name="block"/> for the first time with compiled code (the JIT compiled it, or a
     /// precompiled block was reached): the code around it joins the frontier.</summary>
-    public void Expand(Block block)
+    public void Expand(Block block) => Expand(block, interpreted: false);
+
+    /// <summary><see cref="Expand(Block)"/>; <paramref name="interpreted"/>: the interpreter ran it for the first time
+    /// (it has no compiled code yet).</summary>
+    public void Expand(Block block, bool interpreted)
     {
         if (_follow == null || _stop.IsCancellationRequested)
         {
@@ -134,7 +171,7 @@ public sealed class CodePrecompiler
         }
 
         Interlocked.Increment(ref _outstanding[Levels]);
-        _executed.Enqueue(block);
+        _executed.Enqueue((block, interpreted));
         _work.Release();
     }
 
@@ -154,6 +191,14 @@ public sealed class CodePrecompiler
         Action<uint, List<(uint Pc, bool Thumb)>>? pointersOf = null)
     {
         var run = new CodePrecompiler(cache, space, follow, functionStart, pointersOf);
+        foreach (((uint Pc, bool Thumb) target, Priority priority) in seeds)
+        {
+            if (priority == Priority.Cached && functionStart?.Invoke(target.Pc) is { } function and not 0)
+            {
+                run._recordedFunctions.Add(function); // read-only once the threads start
+            }
+        }
+
         foreach (((uint Pc, bool Thumb) target, Priority priority) in seeds)
         {
             if (priority != Priority.Index)
@@ -234,17 +279,18 @@ public sealed class CodePrecompiler
         using AddressSpace.Activation activation = AddressSpace.Use(_space);
         var exits = new List<(uint Pc, bool Thumb)>();
         Jit.StaticExits = exits;
+        Jit.ReuseFreedCode = true;
         while (!_stop.IsCancellationRequested && (stays || Volatile.Read(ref _foreground) != 0))
         {
-            if (_executed.TryDequeue(out Block? executed))
+            if (_executed.TryDequeue(out (Block Block, bool Interpreted) executed))
             {
                 try
                 {
-                    ExpandNow(executed, exits);
+                    ExpandNow(executed.Block, executed.Interpreted, exits);
                 }
                 catch (Exception e)
                 {
-                    Console.Error.WriteLine($"[JIT] precompile frontier {executed.Start:X8}: {e.Message}");
+                    Console.Error.WriteLine($"[JIT] precompile frontier {executed.Block.Start:X8}: {e.Message}");
                 }
                 finally
                 {
@@ -276,13 +322,14 @@ public sealed class CodePrecompiler
         }
 
         Jit.StaticExits = null;
+        Jit.ReuseFreedCode = false;
     }
 
     private bool TryTake(out (uint Pc, bool Thumb, int Depth) target, out int level)
     {
         for (level = 0; level < Levels; level++)
         {
-            if (_queues[level].TryDequeue(out target))
+            if (_queues[level].TryTake(out target))
             {
                 return true;
             }
@@ -294,6 +341,8 @@ public sealed class CodePrecompiler
 
     private void Translate((uint Pc, bool Thumb, int Depth) target, int level, List<(uint Pc, bool Thumb)> exits)
     {
+        bool speculative = level != (int)Priority.Cached;
+        MakeRoom();
         if (!Jit.ArenaHasRoomForAhead())
         {
             Volatile.Write(ref _arenaLimit, 1);
@@ -302,18 +351,24 @@ public sealed class CodePrecompiler
 
         exits.Clear();
         Block block = _cache.Get(target.Pc, target.Thumb);
-        if (Jit.CompileAheadOne(block))
+        if (Jit.CompileAheadOne(block, (byte)level, speculative))
         {
-            block.AheadPriority = (byte)level;
             Interlocked.Increment(ref _translated);
+            if (speculative)
+            {
+                s_speculative[level].TryAdd((block, this));
+            }
         }
         else if (_follow != null)
         {
             StaticExitsOf(block, exits); // compiled already (an earlier priority, or the game): its exits still count
         }
 
-        if (_follow == null)
+        if (_follow == null || !speculative || target.Depth == NoFollow || InRecordedFunction(block, (Priority)level))
         {
+            // the code cache says which blocks of these functions ran (all of a function's paths are seldom taken: in
+            // Assassin's Creed III: Liberation the rest of the recorded functions was 140k blocks, of which 5% ran);
+            // the frontier only reaches past them from what this session runs (ExpandNow), one block at a time
             return;
         }
 
@@ -324,11 +379,22 @@ public sealed class CodePrecompiler
         Follow(block, exits, next, depth, (Priority)level);
     }
 
-    private void ExpandNow(Block block, List<(uint Pc, bool Thumb)> exits)
+    private void ExpandNow(Block block, bool interpreted, List<(uint Pc, bool Thumb)> exits)
     {
         exits.Clear();
         StaticExitsOf(block, exits);
+        // narrow, its successors only: in a function the code cache recorded (it says which blocks ran), and around
+        // code the game only interprets, which is mostly cold (the whole functions of interpreted code were 28k
+        // blocks of which 3.5% ran in Killzone: Mercenary with a code cache, and made the speculative budget churn
+        // in Assassin's Creed III: Liberation without one)
+        if (InRecordedFunction(block, Priority.Running) || interpreted)
+        {
+            AddSuccessors(block, exits);
+            return;
+        }
+
         Follow(block, exits, Priority.Frontier, 0, Priority.Running);
+
         // the rest of the function it is in (the exception index names the function starts)
         if (_functionStart?.Invoke(block.Start) is not { } start || start == 0)
         {
@@ -355,6 +421,94 @@ public sealed class CodePrecompiler
             }
         }
     }
+
+    /// <summary>Whether the code cache recorded blocks of the function <paramref name="block"/> is in (frontier work
+    /// only: the flow from the entry points is not narrowed).</summary>
+    private bool InRecordedFunction(Block block, Priority level) =>
+        level != Priority.Flow && _recordedFunctions.Count > 0 && _functionStart != null && _recordedFunctions.Contains(_functionStart(block.Start));
+
+    /// <summary>The speculative blocks every run translated so far (<see cref="MakeRoom"/>; the arena is one per
+    /// process, and so is its budget): the flow from the entry points, newest on top; the frontier (callees and
+    /// functions referenced by pointer) and the rest of running functions, each oldest first.</summary>
+    private static readonly IProducerConsumerCollection<(Block Block, CodePrecompiler Run)>[] s_speculative =
+    [
+        new ConcurrentQueue<(Block Block, CodePrecompiler Run)>(), // Cached: not speculative, never used
+        new ConcurrentQueue<(Block Block, CodePrecompiler Run)>(),
+        new ConcurrentQueue<(Block Block, CodePrecompiler Run)>(),
+        new ConcurrentStack<(Block Block, CodePrecompiler Run)>(),
+    ];
+
+    /// <summary>The order <see cref="MakeRoom"/> evicts speculative work in: the weakest guesses first.</summary>
+    public static readonly Priority[] EvictionOrder = [Priority.Flow, Priority.Frontier, Priority.Running];
+
+    /// <summary>
+    /// Keeps the speculative code waiting to run within <see cref="Jit.SpeculativeBudget"/> (and all the code
+    /// translated ahead within <see cref="Jit.AheadBudget"/>) by evicting speculative blocks the guest has not run;
+    /// what ran is never evicted (it is skipped: running publishes a block, which takes it out of the guesses). The
+    /// weakest guesses go first: the flow from the entry points, the deepest first (the code farthest from where the
+    /// game starts), then the frontier, then the rest of running functions, each the oldest first (code next to what
+    /// the game ran long ago and has not needed since; how an LRU cache evicts, without bookkeeping on every use). In
+    /// Assassin's Creed III: Liberation 17% of the flow ran, 32% of the frontier and 67% of the rest of running
+    /// functions; one queue for the last two evicted good guesses before the game reached them. An evicted block is not translated ahead again (the JIT compiles it if it gets hot):
+    /// translating it again whenever the frontier reached it made the eviction churn (Assassin's Creed III:
+    /// Liberation, first session: 1.2M translations, 927k evictions, for 174k blocks that ran).
+    /// </summary>
+    private static void MakeRoom()
+    {
+        while (Volatile.Read(ref Jit.SpeculativeBytes) > Jit.SpeculativeBudget || !Jit.ArenaHasRoomForAhead())
+        {
+            if (!TakeWeakestGuess(out (Block Block, CodePrecompiler Run) guess))
+            {
+                return;
+            }
+
+            if (Jit.EvictAhead(guess.Block))
+            {
+                Interlocked.Increment(ref guess.Run._evicted);
+            }
+        }
+    }
+
+    /// <summary>The next speculative block to evict, in <see cref="EvictionOrder"/>; false when none is left.</summary>
+    private static bool TakeWeakestGuess(out (Block Block, CodePrecompiler Run) guess)
+    {
+        foreach (Priority priority in EvictionOrder)
+        {
+            if (s_speculative[(int)priority].TryTake(out guess))
+            {
+                return true;
+            }
+        }
+
+        guess = default;
+        return false;
+    }
+
+    /// <summary>Queues the blocks right after <paramref name="block"/> (its static exits, the return point of a call,
+    /// the cases of a switch) to be translated without following them further (<see cref="NoFollow"/>).</summary>
+    private void AddSuccessors(Block block, List<(uint Pc, bool Thumb)> exits)
+    {
+        if (block.Insts.Length > 0 && ReturnsAfter(in block.Insts[^1]))
+        {
+            exits.Add((block.End, block.Thumb));
+        }
+
+        if (block.Insts.Length > 0)
+        {
+            JumpTableTargets(in block.Insts[^1], exits);
+        }
+
+        foreach ((uint Pc, bool Thumb) exit in exits)
+        {
+            if (_follow!(exit.Pc) && Add(exit, Priority.Running, NoFollow))
+            {
+                Interlocked.Increment(ref _found);
+            }
+        }
+    }
+
+    /// <summary>The depth of work whose exits are not followed (<see cref="AddSuccessors"/>).</summary>
+    private const int NoFollow = -1;
 
     private void Follow(Block block, List<(uint Pc, bool Thumb)> exits, Priority priority, int depth, Priority source)
     {
@@ -454,56 +608,161 @@ public sealed class CodePrecompiler
         }
     }
 
-    /// <summary>Entries of the table of a TBB/TBH at <paramref name="address"/> indexed by <paramref name="index"/>,
-    /// from the CMP + conditional branch before it; 0 when they are not there.</summary>
+    /// <summary>How many instructions the bound check of a table branch may be spread over: compilers schedule
+    /// independent loads, stores and VFP moves between the CMP, the conditional branch and the TBB/TBH.</summary>
+    public const int MaxTableBoundDistance = 8;
+
+    /// <summary>
+    /// Entries of the table of a TBB/TBH at <paramref name="address"/> indexed by <paramref name="index"/>, from the
+    /// CMP + conditional branch before it; 0 when they are not there. Going back from the table branch, instructions
+    /// that neither set the flags nor write the index (<see cref="Neutral"/>) may sit between it, the branch to the
+    /// default case and the CMP (in Killzone: Mercenary, CMP r3, #9; LDRB r2; LDRB r1; BHI; TBB [PC, r3]). This is
+    /// how RPCS3's PPU analyser finds a jump table's size: it follows the index register back through the block to the
+    /// compare that bounds it.
+    /// </summary>
     private static int TableBound(uint address, uint index)
     {
-        // the branch to the default case: B<c> (16 bits) or B<c>.W (32 bits)
-        uint condition;
-        uint compareEnd;
-        int branch = ReadHalf(address - 2);
-        int wideFirst = ReadHalf(address - 4);
-        if (branch >= 0 && (branch & 0xF000) == 0xD000)
+        uint at = address;
+        int condition = -1; // the branch to the default case, once found
+        for (int step = 0; step < MaxTableBoundDistance; step++)
         {
-            condition = (uint)(branch >> 8) & 0xF;
-            compareEnd = address - 2;
-        }
-        else if (wideFirst >= 0 && branch >= 0 && (wideFirst & 0xF800) == 0xF000 && (branch & 0xD000) == 0x8000)
-        {
-            condition = (uint)(wideFirst >> 6) & 0xF;
-            compareEnd = address - 4;
-        }
-        else
-        {
-            return 0;
+            if (!PreviousThumb(at, out uint previous, out int first, out int second))
+            {
+                return 0;
+            }
+
+            at = previous;
+            if (condition < 0)
+            {
+                // B<c> (16 bits) or B<c>.W (32 bits)
+                if (second < 0 && (first & 0xF000) == 0xD000 && (first & 0x0E00) != 0x0E00)
+                {
+                    condition = (first >> 8) & 0xF;
+                }
+                else if (second >= 0 && (first & 0xF800) == 0xF000 && (second & 0xD000) == 0x8000 && ((first >> 6) & 0xE) != 0xE)
+                {
+                    condition = (first >> 6) & 0xF;
+                }
+                else if (Neutral(first, second, index))
+                {
+                    continue;
+                }
+                else
+                {
+                    return 0;
+                }
+
+                if (condition is not (8 or 2))
+                {
+                    return 0; // HI (index > n) or HS/CS (index >= n)
+                }
+
+                continue;
+            }
+
+            // CMP Rm, #imm8 (16 bits) or CMP.W Rm, #imm8 (32 bits, an unrotated immediate)
+            int bound = -1;
+            if (second < 0 && (first & 0xF800) == 0x2800 && ((uint)(first >> 8) & 7) == index)
+            {
+                bound = first & 0xFF;
+            }
+            else if (second >= 0 && (first & 0xFBF0) == 0xF1B0 && (first & 0xF) == index
+                && (second & 0x8F00) == 0x0F00 && (second & 0x7000) == 0 && (first & 0x400) == 0)
+            {
+                bound = second & 0xFF;
+            }
+            else if (Neutral(first, second, index))
+            {
+                continue;
+            }
+
+            if (bound < 0)
+            {
+                return 0;
+            }
+
+            int count = condition == 8 ? bound + 1 : bound;
+            return Math.Min(count, MaxJumpTableEntries);
         }
 
-        if (condition is not (8 or 2))
+        return 0;
+    }
+
+    /// <summary>The Thumb instruction that ends at <paramref name="end"/>: 32 bits when the halfword 4 bytes back is a
+    /// 32-bit prefix (<paramref name="second"/> its second halfword), else 16 bits (<paramref name="second"/> -1).</summary>
+    private static bool PreviousThumb(uint end, out uint start, out int first, out int second)
+    {
+        int wide = ReadHalf(end - 4);
+        int last = ReadHalf(end - 2);
+        start = end - 2;
+        first = last;
+        second = -1;
+        if (last < 0)
         {
-            return 0; // HI (index > n) or HS/CS (index >= n)
+            return false;
         }
 
-        // CMP Rm, #imm8 (16 bits) or CMP.W Rm, #imm8 (32 bits, an unrotated immediate)
-        int bound = -1;
-        int compare = ReadHalf(compareEnd - 2);
-        int wideCompare = ReadHalf(compareEnd - 4);
-        if (compare >= 0 && (compare & 0xF800) == 0x2800 && ((uint)(compare >> 8) & 7) == index)
+        if (wide >= 0 && Decoder.IsThumb32((ushort)wide))
         {
-            bound = compare & 0xFF;
-        }
-        else if (wideCompare >= 0 && compare >= 0 && (wideCompare & 0xFBF0) == 0xF1B0 && (wideCompare & 0xF) == index
-            && (compare & 0x8F00) == 0x0F00 && (compare & 0x7000) == 0 && (wideCompare & 0x400) == 0)
-        {
-            bound = compare & 0xFF;
+            start = end - 4;
+            first = wide;
+            second = last;
         }
 
-        if (bound < 0)
+        return true;
+    }
+
+    /// <summary>
+    /// Whether a Thumb instruction can sit inside a table branch's bound check: it does not set the flags, does not
+    /// write the index register <paramref name="index"/> or PC, and does not branch. Accepted: loads and stores of
+    /// another register (16 bits: immediate, register and SP-relative forms, the literal load; 32 bits: single
+    /// loads and stores), the high-register ADD and MOV, ADR / ADD Rd, SP / ADD SP, and VFP/NEON instructions other
+    /// than a move into the index register or into the flags (VMRS APSR_nzcv). Anything else ends the search.
+    /// </summary>
+    public static bool Neutral(int first, int second, uint index)
+    {
+        if (second >= 0)
         {
-            return 0;
+            if ((first & 0xEC00) == 0xEC00)
+            {
+                // coprocessor (VFP/NEON): not a VLDM/VSTM writing back the index, not a VMOV/VMRS into the index or
+                // the flags (VMOV Rt, Sn / VMRS: Rt in the second halfword; VMOV Rt, Rt2, Dm: Rt2 in the first)
+                if ((first & 0xFE00) == 0xEC00 && (first & 0x0020) != 0 && (uint)(first & 0xF) == index)
+                {
+                    return false;
+                }
+
+                bool toCore = ((first & 0xFF10) == 0xEE10 && (second & 0x0F10) == 0x0A10) || (first & 0xFFF0) == 0xEC50;
+                bool pair = (first & 0xFFF0) == 0xEC50;
+                return !toCore || ((uint)(second >> 12) != index && (second >> 12) != 15 && (!pair || (uint)(first & 0xF) != index));
+            }
+
+            if ((first & 0xFE00) == 0xF800 && (first & 0x0060) != 0x0060)
+            {
+                // single data load/store (LDR/STR/LDRB/STRB/LDRH/STRH and signed loads), not writing back the index
+                bool writeBack = (first & 0x0080) == 0 && (second & 0x0900) == 0x0900;
+                return (uint)(second >> 12) != index && (second >> 12) != 15 && !(writeBack && (uint)(first & 0xF) == index);
+            }
+
+            return false;
         }
 
-        int count = condition == 8 ? bound + 1 : bound;
-        return Math.Min(count, MaxJumpTableEntries);
+        uint low = (uint)first & 7;
+        uint high = (uint)(first >> 8) & 7;
+        return (first & 0xF000) switch
+        {
+            0x5000 or 0x6000 or 0x7000 or 0x8000 => low != index, // LDR/STR (register, immediate, byte, halfword)
+            0x9000 => high != index, // LDR/STR Rt, [SP, #imm]
+            0x4000 => (first & 0x0F00) switch
+            {
+                0x0800 or 0x0900 or 0x0A00 or 0x0B00 or 0x0C00 or 0x0D00 or 0x0E00 or 0x0F00 => high != index, // LDR Rt, [PC, #imm]
+                0x0400 or 0x0600 => ((((uint)first >> 4) & 8) | low) is var rd && rd != index && rd != 15, // ADD / MOV (high registers)
+                _ => false,
+            },
+            0xA000 => high != index, // ADR / ADD Rd, SP, #imm
+            0xB000 => (first & 0x0F00) == 0x0000, // ADD/SUB SP, SP, #imm
+            _ => false,
+        };
     }
 
     private static int ReadHalf(uint address) => GuestMemory.IsMapped(address) && GuestMemory.IsMapped(address + 1) ? GuestMemory.Read<ushort>(address) : -1;

@@ -102,7 +102,7 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
             encode = Stopwatch.GetTimestamp() - e0;
             size = bytes.Length;
             return bytes;
-        });
+        }, Jit.ReuseFreedCode);
         Interlocked.Add(ref CodeBytes, size);
         rt.Register((nint)code, size, b);
         Stats.Phases!.Add(t1 - t0, t2 - t1, x64Emitter.AllocTicks, t3 - t2 - x64Emitter.AllocTicks, encode, Stopwatch.GetTimestamp() - t3 - encode);

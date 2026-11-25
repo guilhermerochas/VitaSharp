@@ -564,12 +564,254 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
             Assert.Contains(code + 0x410, translated);
             Assert.Contains(code + 0x500, translated);
             Assert.Equal(1, CodePrecompiler.MaxFrontierDepth);
-            Assert.Equal(VitaSharp.Core.Cpu.Native.ExecutableMemory.ReserveSize / 2, Jit.AheadBudget); // what runs of a large game fits
+            Assert.Equal(Jit.DefaultAheadBudget(OperatingSystem.IsAndroid()), Jit.AheadBudget); // what runs of a large game fits
             // not H, which only G calls: a function two calls away from running code seldom runs soon, and translating
             // it cost more arena than it saved (Assassin's Creed III: Liberation)
             Assert.DoesNotContain(code + 0x600, translated);
             codeCache.Stop();
         });
+    }
+
+    [Fact]
+    public void SpeculativeCodeStaysWithinItsBudgetEvictingTheDeepestGuessesAndNeverWhatRan()
+    {
+        if (!NativeHost)
+        {
+            return;
+        }
+
+        // main: r0 = 0; with r1 == 1 it runs a chain of 120 blocks that add 1 each, else it adds 5; then SVC #2. The flow
+        // from the entry point translates all of it before anything runs.
+        const int ChainBlocks = 120;
+        uint code = fixture.Memory.Alloc(0x1000, "codecache speculative budget");
+        GuestMemory.W32(code + 0x00, 0xE3A00000); // mov r0, #0
+        GuestMemory.W32(code + 0x04, 0xE3510001); // cmp r1, #1
+        GuestMemory.W32(code + 0x08, 0x0A00003C); // beq chain (code + 0x100)
+        GuestMemory.W32(code + 0x0C, 0xE2800005); // add r0, r0, #5
+        GuestMemory.W32(code + 0x10, 0xEF000002); // svc #2
+        for (uint i = 0; i < ChainBlocks; i++)
+        {
+            uint at = code + 0x100 + 8 * i;
+            GuestMemory.W32(at, 0xE2800001); //          add r0, r0, #1
+            GuestMemory.W32(at + 4, 0xEAFFFFFF); //      b at + 8
+        }
+
+        GuestMemory.W32(code + 0x100 + 8 * ChainBlocks, 0xEF000002); // svc #2
+        LoadedModule module = Module(code, 13);
+        module.Segments[0] = new SegmentInfo(code, 0x81000000, 0x1000);
+        module.SegmentFlags[0] = (5, 0x1000, 0x1000);
+        long oldBudget = Jit.SpeculativeBudget;
+        WithNative(() =>
+        {
+            try
+            {
+                // room for a few blocks beyond what earlier tests left waiting
+                const long Room = 2048;
+                Jit.SpeculativeBudget = Volatile.Read(ref Jit.SpeculativeBytes) + Room;
+                var cache = new BlockCache();
+                var codeCache = new CodeCache(null, cache);
+                codeCache.ModuleLoaded(module);
+                codeCache.PrecompilePending(null, CancellationToken.None, workers: 1);
+                CodePrecompiler run = Assert.Single(codeCache.Runs);
+                Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+                Assert.True(run.Statistics.Evicted > 0, $"nothing evicted ({run.Statistics})");
+                // over the budget by at most the last block translated (the room is made before each translation)
+                int largest = cache.Blocks.Max(b => b.Code?.Tag is NativeCodeInfo info ? info.Size : 0);
+                Assert.True(Volatile.Read(ref Jit.SpeculativeBytes) <= Jit.SpeculativeBudget + largest, $"{Jit.SpeculativeBytes} > {Jit.SpeculativeBudget} + {largest}");
+                // the deepest guesses went first: the start of the flow (main) is still translated, the end of the
+                // chain is not even cached any more, and its code went back to the arena
+                HashSet<uint> translated = Translated(cache);
+                Assert.Contains(code, translated);
+                Assert.Contains(code + 0x0C, translated);
+                Assert.False(cache.TryGet(code + 0x100 + 8 * (ChainBlocks - 1), false, out _));
+                Assert.True(Jit.EvictedBytes > 0);
+
+                using var core = new CpuCore(cache);
+                core.State->R[1] = 0;
+                Assert.Equal(5u, Run(core, code));
+                Assert.DoesNotContain(code, Compiled(cache)); // precompiled, kept
+                // what ran is never evicted
+                Block ran = cache.Get(code, false);
+                Assert.Equal(2, ran.JitState);
+                Assert.False(Jit.EvictAhead(ran));
+                Assert.Equal(2, ran.JitState);
+
+                // the evicted chain still runs right: decoded again, interpreted, then compiled while running
+                for (int i = 0; i < 2 * Jit.MinExecutions; i++)
+                {
+                    core.State->R[1] = 1;
+                    Assert.Equal((uint)ChainBlocks, Run(core, code));
+                }
+
+                Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)));
+                core.State->R[1] = 1;
+                Assert.Equal((uint)ChainBlocks, Run(core, code));
+                // an evicted guess is not translated ahead again when the frontier reaches it (that churned): at most
+                // one translation per block of the program
+                Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+                Assert.True(run.Statistics.Translated <= ChainBlocks + 8, $"{run.Statistics}");
+                codeCache.Stop();
+            }
+            finally
+            {
+                Jit.SpeculativeBudget = oldBudget;
+            }
+        });
+    }
+
+    [Fact]
+    public void WithACodeCacheTheFrontierStaysNarrowInRecordedFunctionsAndWholeInNewOnes()
+    {
+        if (!NativeHost)
+        {
+            return;
+        }
+
+        // main calls the function in r2. F and G: their first block runs (r0 == 0); the rest is a branch two blocks deep
+        // that never runs.
+        uint code = fixture.Memory.Alloc(0x1000, "codecache narrow frontier");
+        GuestMemory.W32(code + 0x00, 0xE3A00000); // mov r0, #0
+        GuestMemory.W32(code + 0x04, 0xE1A00000); // nop (r2 = F or G)
+        GuestMemory.W32(code + 0x08, 0xE12FFF32); // blx r2
+        GuestMemory.W32(code + 0x0C, 0xEF000002); // svc #2
+        GuestMemory.W32(code + 0x10, 0xE12FFF1E); // bx lr
+        foreach ((uint function, uint addend) in new[] { (0x400u, 5u), (0x500u, 7u), (0x600u, 3u) })
+        {
+            uint at = code + function;
+            GuestMemory.W32(at + 0x00, 0xE3500000); // cmp r0, #0
+            GuestMemory.W32(at + 0x04, 0x1A000001); // bne +0x10
+            GuestMemory.W32(at + 0x08, 0xE2800000 | addend); // add r0, r0, #addend
+            GuestMemory.W32(at + 0x0C, 0xE12FFF1E); // bx lr
+            GuestMemory.W32(at + 0x10, 0xE3500001); // cmp r0, #1
+            GuestMemory.W32(at + 0x14, 0x1A000001); // bne +0x20 (deep)
+            GuestMemory.W32(at + 0x18, 0xE12FFF1E); // bx lr
+            GuestMemory.W32(at + 0x20, 0xE2800009); // deep: add r0, r0, #9
+            GuestMemory.W32(at + 0x24, 0xE12FFF1E); // bx lr
+        }
+
+        LoadedModule Loaded() => ModuleWithData(code, fixture.Memory.Alloc(0x1000, "codecache narrow data"), 14, 0x000, 0x400, 0x500, 0x600);
+        WithNative(() =>
+        {
+            // session 1 runs F only: the frontier fills in all of F, and the cache records what ran
+            var cache1 = new BlockCache();
+            var codeCache1 = new CodeCache(_directory, cache1);
+            codeCache1.ModuleLoaded(Loaded());
+            codeCache1.PrecompilePending(null, CancellationToken.None, workers: 2);
+            CodePrecompiler run1 = Assert.Single(codeCache1.Runs);
+            Assert.True(run1.WaitFinished(TimeSpan.FromSeconds(60)));
+            using (var core1 = new CpuCore(cache1))
+            {
+                core1.State->R[2] = code + 0x400;
+                for (int i = 0; i < 2 * Jit.MinExecutions; i++)
+                {
+                    Assert.Equal(5u, Run(core1, code));
+                }
+            }
+
+            Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)));
+            Assert.True(run1.WaitFinished(TimeSpan.FromSeconds(60)));
+            Assert.Contains(code + 0x420, Translated(cache1));
+            codeCache1.Stop();
+            codeCache1.Save();
+
+            // session 2 runs F and G: F was recorded, so only what ran and the blocks right after it; G is new code,
+            // so all of it, as in a first session
+            var cache2 = new BlockCache();
+            var codeCache2 = new CodeCache(_directory, cache2);
+            codeCache2.ModuleLoaded(Loaded());
+            Assert.True(codeCache2.PendingCount > 0);
+            codeCache2.PrecompilePending(null, CancellationToken.None, workers: 2);
+            CodePrecompiler run2 = Assert.Single(codeCache2.Runs);
+            Assert.True(run2.WaitFinished(TimeSpan.FromSeconds(60)));
+            using (var core2 = new CpuCore(cache2))
+            {
+                for (int i = 0; i < 2 * Jit.MinExecutions; i++)
+                {
+                    core2.State->R[2] = code + 0x400;
+                    Assert.Equal(5u, Run(core2, code));
+                    core2.State->R[2] = code + 0x500;
+                    Assert.Equal(7u, Run(core2, code));
+                }
+
+                // H runs once, interpreted: in a session with a code cache only the blocks right after it
+                core2.State->R[2] = code + 0x600;
+                Assert.Equal(3u, Run(core2, code));
+            }
+
+            Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)));
+            Assert.True(run2.WaitFinished(TimeSpan.FromSeconds(60)));
+            HashSet<uint> translated = Translated(cache2);
+            Assert.Contains(code + 0x410, translated); // right after a block that ran
+            Assert.DoesNotContain(code + 0x420, translated); // two blocks away in a recorded function: not a guess worth its arena
+            Assert.Contains(code + 0x520, translated); // the whole of the new function
+            Assert.Contains(code + 0x610, translated);
+            Assert.DoesNotContain(code + 0x620, translated); // interpreted code is no stronger a guess than recorded code
+            codeCache2.Stop();
+        });
+    }
+
+    [Fact]
+    public void CodeTheGameRunsOnlyInterpretedStillOpensTheFrontier()
+    {
+        if (!NativeHost)
+        {
+            return;
+        }
+
+        // F runs once (interpreted: it never gets hot), reached through a register; the rest of F must still be
+        // translated before the game gets there, as when F is compiled
+        uint code = fixture.Memory.Alloc(0x1000, "codecache first run");
+        GuestMemory.W32(code + 0x00, 0xE3A00000); // mov r0, #0
+        GuestMemory.W32(code + 0x04, 0xE1A00000); // nop (r2 = F)
+        GuestMemory.W32(code + 0x08, 0xE12FFF32); // blx r2
+        GuestMemory.W32(code + 0x0C, 0xEF000002); // svc #2
+        GuestMemory.W32(code + 0x10, 0xE12FFF1E); // bx lr
+        GuestMemory.W32(code + 0x400, 0xE3500000); // F: cmp r0, #0
+        GuestMemory.W32(code + 0x404, 0x1A000001); //    bne rare
+        GuestMemory.W32(code + 0x408, 0xE2800005); //    add r0, r0, #5
+        GuestMemory.W32(code + 0x40C, 0xE12FFF1E); //    bx lr
+        GuestMemory.W32(code + 0x410, 0xE2800009); // rare: add r0, r0, #9
+        GuestMemory.W32(code + 0x414, 0xE12FFF1E); //    bx lr
+        LoadedModule module = ModuleWithData(code, fixture.Memory.Alloc(0x1000, "codecache first run data"), 15, 0x000, 0x400);
+        WithNative(() =>
+        {
+            var cache = new BlockCache();
+            var codeCache = new CodeCache(null, cache);
+            codeCache.ModuleLoaded(module);
+            codeCache.PrecompilePending(null, CancellationToken.None, workers: 2);
+            CodePrecompiler run = Assert.Single(codeCache.Runs);
+            Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+            Assert.DoesNotContain(code + 0x410, Translated(cache));
+            using var core = new CpuCore(cache);
+            core.State->R[2] = code + 0x400;
+            Assert.Equal(5u, Run(core, code));
+            Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+            Assert.True(cache.TryGet(code + 0x400, false, out Block? first) && first!.JitState != 2); // not compiled
+            Block rare = cache.Get(code + 0x410, false);
+            Assert.True(rare.Ahead);
+            Assert.Equal(Jit.AheadPending, rare.JitState);
+            codeCache.Stop();
+        });
+    }
+
+    [Fact]
+    public void WorkAroundRunningCodeIsTakenNewestFirst()
+    {
+        // the code the game reached last is the code it runs next (Ryujinx's translator queue is a stack for the same
+        // reason); the recorded blocks keep the order they first ran in, and the flow stays breadth first
+        Assert.True(CodePrecompiler.NewestFirst(CodePrecompiler.Priority.Running));
+        Assert.True(CodePrecompiler.NewestFirst(CodePrecompiler.Priority.Frontier));
+        Assert.False(CodePrecompiler.NewestFirst(CodePrecompiler.Priority.Cached));
+        Assert.False(CodePrecompiler.NewestFirst(CodePrecompiler.Priority.Flow));
+    }
+
+    [Fact]
+    public void TheWeakestGuessesAreEvictedFirst()
+    {
+        // the flow from the entry points ran least (17% in Assassin's Creed III: Liberation), then the frontier (32%),
+        // then the rest of the functions the game is running (67%); what the code cache recorded is never a guess
+        Assert.Equal([CodePrecompiler.Priority.Flow, CodePrecompiler.Priority.Frontier, CodePrecompiler.Priority.Running], CodePrecompiler.EvictionOrder);
+        Assert.DoesNotContain(CodePrecompiler.Priority.Cached, CodePrecompiler.EvictionOrder);
     }
 
     [Fact]
@@ -761,8 +1003,14 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
 
             // the game writes another addend into func (the emulator drops the translations of the written range)
             GuestMemory.W32(code + 0x20, 0xE2800007);
+            long speculative = Volatile.Read(ref Jit.SpeculativeBytes);
+            long evicted = Volatile.Read(ref Jit.EvictedBlocks);
             cache.Invalidate(code + 0x20, 4);
             Assert.True(func.Invalidated);
+            // never published: its code goes back to the arena and leaves the speculative budget at once
+            Assert.Null(func.Code);
+            Assert.True(Volatile.Read(ref Jit.SpeculativeBytes) < speculative);
+            Assert.True(Volatile.Read(ref Jit.EvictedBlocks) > evicted);
             using var core = new CpuCore(cache);
             Assert.Equal(700u, Run(core, code));
             codeCache.Stop();

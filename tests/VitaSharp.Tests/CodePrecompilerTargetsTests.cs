@@ -54,6 +54,58 @@ public sealed class CodePrecompilerTargetsTests(GuestMemoryFixture fixture)
     }
 
     [Fact]
+    public void TheBoundCheckMayBeSpreadOverScheduledInstructions()
+    {
+        // what a compiler schedules between the CMP, the branch to the default case and the table branch (the shapes
+        // seen in a game: loads of other registers, VFP moves, a high-register add)
+        uint code = fixture.Memory.Alloc(0x1000, "precompile tbb scheduled");
+        W16(code + 0x10, 0x2B09); // cmp r3, #9
+        W16(code + 0x12, 0x7A0A); // ldrb r2, [r1, #8]
+        W16(code + 0x14, 0x7A89); // ldrb r1, [r1, #10]
+        W16(code + 0x16, 0xD81E); // bhi default
+        W16(code + 0x18, 0xE8DF); // tbb [pc, r3]
+        W16(code + 0x1A, 0xF003);
+        Assert.Equal(10, TableTargets(code + 0x18).Count);
+
+        // CMP, then VFP and a high-register add, then the branch
+        W16(code + 0x20, 0x2B06); // cmp r3, #6
+        W16(code + 0x22, 0xEEBD); // vcvt.s32.f32 s0, s0
+        W16(code + 0x24, 0x0AC0);
+        W16(code + 0x26, 0xEE10); // vmov r0, s0
+        W16(code + 0x28, 0x0A10);
+        W16(code + 0x2A, 0x4406); // add r6, r0
+        W16(code + 0x2C, 0xD85C); // bhi default
+        W16(code + 0x2E, 0xE8DF); // tbb [pc, r3]
+        W16(code + 0x30, 0xF003);
+        Assert.Equal(7, TableTargets(code + 0x2E).Count);
+
+        // CMP.W, BHI, then stores and a load of other registers before a TBH on LR
+        W16(code + 0x60, 0xF1BE); // cmp.w lr, #38
+        W16(code + 0x62, 0x0F26);
+        W16(code + 0x64, 0xD8ED); // bhi default
+        W16(code + 0x66, 0x9119); // str r1, [sp, #100]
+        W16(code + 0x68, 0x9812); // ldr r0, [sp, #72]
+        W16(code + 0x6A, 0xE8DF); // tbh [pc, lr, lsl #1]
+        W16(code + 0x6C, 0xF01E);
+        Assert.Equal(39, TableTargets(code + 0x6A).Count);
+
+        // an instruction in between that writes the index, or sets the flags: the bound is not known
+        W16(code + 0x12, 0x7A0B); // ldrb r3, [r1, #8]
+        Assert.Empty(TableTargets(code + 0x18));
+        W16(code + 0x12, 0x3201); // adds r2, #1
+        Assert.Empty(TableTargets(code + 0x18));
+        W16(code + 0x2A, 0x4403); // add r3, r0
+        Assert.Empty(TableTargets(code + 0x2E));
+        W16(code + 0x26, 0xEE10); // vmov r3, s0
+        W16(code + 0x28, 0x3A10);
+        W16(code + 0x2A, 0x4406);
+        Assert.Empty(TableTargets(code + 0x2E));
+        W16(code + 0x66, 0xF85E); // ldr r1, [lr], #4: writes the index back
+        W16(code + 0x68, 0x1B04);
+        Assert.Empty(TableTargets(code + 0x6A));
+    }
+
+    [Fact]
     public void TbhWithWideCompareAndBranch()
     {
         uint code = fixture.Memory.Alloc(0x1000, "precompile tbh");

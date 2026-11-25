@@ -180,6 +180,7 @@ public sealed class CodeCache
         _code = code;
         _configurationKey = configurationKey ?? CodeCacheFile.ConfigurationKey;
         code.FirstUse = OnFirstUse;
+        code.FirstRun = OnFirstRun;
     }
 
     /// <summary>A block's compiled code ran for the first time: the runs widen their frontier around it.</summary>
@@ -188,6 +189,15 @@ public sealed class CodeCache
         foreach (CodePrecompiler run in Volatile.Read(ref _active))
         {
             run.Expand(block);
+        }
+    }
+
+    /// <summary>The interpreter ran a block for the first time: the runs widen their frontier around it too.</summary>
+    private void OnFirstRun(Block block)
+    {
+        foreach (CodePrecompiler run in Volatile.Read(ref _active))
+        {
+            run.Expand(block, interpreted: true);
         }
     }
 
@@ -407,6 +417,11 @@ public sealed class CodeCache
             _code.FirstUse = null;
         }
 
+        if (_code.FirstRun == OnFirstRun)
+        {
+            _code.FirstRun = null;
+        }
+
         foreach (CodePrecompiler run in runs)
         {
             run.Stop();
@@ -496,6 +511,17 @@ public sealed class CodeCache
         int used = 0;
         int unused = 0;
         int missed = 0;
+        int late = 0;
+        IReadOnlyList<CodePrecompiler> runs = Runs;
+        var unfoundAfter = new Dictionary<string, int>();
+        var unfoundKinds = new Dictionary<string, int>();
+        var unfoundMaps = new ModuleCodeMap[modules.Length];
+        for (int i = 0; i < modules.Length; i++)
+        {
+            unfoundMaps[i] = ModuleCodeMap.Build(modules[i]);
+        }
+
+        var unfoundLines = new List<string>();
         int levels = Enum.GetValues<CodePrecompiler.Priority>().Length;
         int[] aheadBy = new int[levels];
         int[] ranBy = new int[levels];
@@ -530,17 +556,41 @@ public sealed class CodeCache
             LoadedModule? owner = Array.Find(modules, m => CodePrecompiler.InCode(m, block.Start));
             string name = owner?.Name ?? $"(outside the modules: {OutsideName(block)})";
             byModule[name] = byModule.GetValueOrDefault(name) + 1;
+            // queued: the analysis found it, the game got there first; else no analysis reached it
+            bool queued = runs.Any(run => run.Queued(block.Start, block.Thumb));
+            string previous = PreviousInstruction(block);
+            if (queued)
+            {
+                late++;
+            }
+            else
+            {
+                unfoundAfter[previous] = unfoundAfter.GetValueOrDefault(previous) + 1;
+                string kind = UnfoundKind(Array.Find(unfoundMaps, map => map.InCode(block.Start)), block, previous);
+                unfoundKinds[kind] = unfoundKinds.GetValueOrDefault(kind) + 1;
+                if (unfoundLines.Count < samples)
+                {
+                    unfoundLines.Add($"{block.Start:X8} {(block.Thumb ? "T" : "A")} {kind}{TableContext(Array.Find(unfoundMaps, map => map.InCode(block.Start)), block, kind)}");
+                }
+            }
+
             if (lines.Count < samples)
             {
                 uint baseAddress = owner != null ? owner.Segments.Values.Where(s => block.Start >= s.Address && block.Start - s.Address < s.Size).Select(s => s.Address).FirstOrDefault() : 0;
-                lines.Add($"{name}+0x{block.Start - baseAddress:X} {(block.Thumb ? "T" : "A")} after {PreviousInstruction(block)}");
+                lines.Add($"{name}+0x{block.Start - baseAddress:X} {(block.Thumb ? "T" : "A")} after {previous}{(queued ? " (queued)" : "")}");
             }
         }
 
         double coverage = 100.0 * used / Math.Max(1, used + missed);
         return $"ARM code precompilation: {used} precompiled blocks ran, {missed} compiled while running ({coverage:F1}% of the run blocks were precompiled), "
-            + $"{unused} precompiled and not reached, {Jit.AheadBytes / (1024.0 * 1024):F1} MB of precompiled code in the arena (budget {Jit.AheadBudget >> 20} MB); while running: "
+            + $"{unused} precompiled and not reached, {Jit.AheadBytes / (1024.0 * 1024):F1} MB of precompiled code in the arena (budget {Jit.AheadBudget >> 20} MB), "
+            + $"{Jit.SpeculativeBytes / (1024.0 * 1024):F1} MB of it speculative and not run (budget {Jit.SpeculativeBudget >> 20} MB), "
+            + $"{Jit.EvictedBlocks} speculative blocks evicted ({Jit.EvictedBytes / (1024.0 * 1024):F1} MB), {ArenaUse()}; while running: "
             + string.Join(", ", byModule.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key} {kv.Value}")) + "; " + DescribeMissKinds(modules)
+            + $"; of those, {late} queued by the precompilation but reached first by the game, {missed - late} found by no analysis, after: "
+            + string.Join(", ", unfoundAfter.OrderByDescending(kv => kv.Value).Take(12).Select(kv => $"{kv.Key} {kv.Value}"))
+            + "; found by no analysis, by kind: " + string.Join(", ", unfoundKinds.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key} {kv.Value}"))
+            + " (" + string.Join("; ", unfoundLines) + ")"
             + "; precompiled by priority (translated/ran/MB): " + string.Join(", ", Enumerable.Range(0, levels).Where(i => aheadBy[i] > 0)
                 .Select(i => $"{(CodePrecompiler.Priority)i} {aheadBy[i]}/{ranBy[i]}/{bytesBy[i] / (1024.0 * 1024):F1}"))
             + "; samples: " + string.Join("; ", lines);
@@ -632,6 +682,167 @@ public sealed class CodeCache
         return $"compiled while running, by function: {partial} in functions with precompiled blocks, {notReached} in functions the precompilation never reached, "
             + $"{noFunction} in no indexed function, {outside} outside the modules; "
             + $"by tenth of the run order: {string.Join(" ", tenths)}";
+    }
+
+    /// <summary>
+    /// Why no analysis reached a block the game ran (diagnostics): it starts a function (reached by a call from code
+    /// never translated, or through a pointer), it is the return point of a call, or it follows another kind of
+    /// instruction; then, in the function it is in, the computed branches that could reach it (a table branch, a load
+    /// or move of a register into PC other than a return) or none ("direct branch").
+    /// </summary>
+    private static string UnfoundKind(ModuleCodeMap? map, Block block, string previous)
+    {
+        if (map == null)
+        {
+            return "outside";
+        }
+
+        uint function = map.FunctionContaining(block.Start);
+        if (function == block.Start)
+        {
+            return "function start";
+        }
+
+        if (previous.StartsWith("T32_Bl", StringComparison.Ordinal) || previous.StartsWith("A32_Bl", StringComparison.Ordinal))
+        {
+            return "return point"; // diagnostics only: the decoder's op names (fixed by this build)
+        }
+
+        if (function == 0)
+        {
+            return "no function";
+        }
+
+        using AddressSpace.Activation activation = AddressSpace.Use(block.Owner?.Space ?? AddressSpace.Current);
+        uint end = map.FunctionEnd(function);
+        string computed = ComputedBranchesIn(function, Math.Min(end, block.Start + 0x400), block.Thumb);
+        return computed.Length > 0 ? "after " + computed : "direct branch";
+    }
+
+    /// <summary>For a block after a table branch (diagnostics): the halfwords before the last TBB/TBH of its function
+    /// that precedes it, and the table branch itself, to see how the table's bound is set.</summary>
+    private static string TableContext(ModuleCodeMap? map, Block block, string kind)
+    {
+        if (map == null || !block.Thumb || !kind.Contains("TB", StringComparison.Ordinal))
+        {
+            return "";
+        }
+
+        using AddressSpace.Activation activation = AddressSpace.Use(block.Owner?.Space ?? AddressSpace.Current);
+        uint at = map.FunctionContaining(block.Start);
+        uint table = 0;
+        while (at + 4 <= block.Start && GuestMemory.IsMapped(at + 3))
+        {
+            ushort first = GuestMemory.Read<ushort>(at);
+            if (Decoder.IsThumb32(first))
+            {
+                if ((first & 0xFFF0) == 0xE8D0 && (GuestMemory.Read<ushort>(at + 2) & 0xFFE0) == 0xF000)
+                {
+                    table = at;
+                }
+
+                at += 4;
+                continue;
+            }
+
+            at += 2;
+        }
+
+        if (table == 0 || !GuestMemory.IsMapped(table - 24))
+        {
+            return "";
+        }
+
+        var words = new System.Text.StringBuilder(" [");
+        for (uint half = table - 24; half < table + 4; half += 2)
+        {
+            words.Append(GuestMemory.Read<ushort>(half).ToString("X4")).Append(half + 2 == table ? " | " : " ");
+        }
+
+        return words.Append($"at {table:X8}]").ToString();
+    }
+
+    /// <summary>The computed branches other than returns in [start, end) decoded linearly (diagnostics).</summary>
+    private static string ComputedBranchesIn(uint start, uint end, bool thumb)
+    {
+        var kinds = new SortedSet<string>(StringComparer.Ordinal);
+        uint at = start;
+        while (at + 4 <= end && GuestMemory.IsMapped(at) && GuestMemory.IsMapped(at + 3))
+        {
+            if (!thumb)
+            {
+                uint word = GuestMemory.R32(at);
+                if (((word & 0x0E50F000) == 0x0610F000 || (word & 0x0E50F000) == 0x0410F000) && ((word >> 16) & 0xF) != 13)
+                {
+                    kinds.Add("LDR PC"); // LDR PC, [Rn, ...] (register or immediate offset), not a POP
+                }
+                else if ((word & 0x0DE0F000) == 0x0080F000)
+                {
+                    kinds.Add("ADD PC");
+                }
+                else if ((word & 0x0FFFFFF0) == 0x012FFF10 && (word & 0xF) != 14)
+                {
+                    kinds.Add("BX Rm");
+                }
+
+                at += 4;
+                continue;
+            }
+
+            ushort first = GuestMemory.Read<ushort>(at);
+            if (Decoder.IsThumb32(first))
+            {
+                ushort second = GuestMemory.Read<ushort>(at + 2);
+                if ((first & 0xFFF0) == 0xE8D0 && (second & 0xFFE0) == 0xF000)
+                {
+                    kinds.Add((second & 0x10) != 0 ? "TBH" : "TBB");
+                }
+                else if ((first & 0xFFF0) == 0xF850 && (second & 0xF000) == 0xF000 && (first & 0xF) != 13)
+                {
+                    kinds.Add("LDR.W PC"); // not a POP (LDR PC, [SP], #4)
+                }
+                else if ((first & 0xFFF0) == 0xF8D0 && (second & 0xF000) == 0xF000)
+                {
+                    kinds.Add("LDR.W PC imm");
+                }
+
+                at += 4;
+                continue;
+            }
+
+            if ((first & 0xFF87) == 0x4487)
+            {
+                kinds.Add("ADD PC, Rm");
+            }
+            else if ((first & 0xFF87) == 0x4687)
+            {
+                kinds.Add("MOV PC, Rm");
+            }
+            else if ((first & 0xFF87) == 0x4700 && ((first >> 3) & 0xF) != 14)
+            {
+                kinds.Add("BX Rm");
+            }
+            else if ((first & 0xFF87) == 0x4780)
+            {
+                kinds.Add("BLX Rm");
+            }
+
+            at += 2;
+        }
+
+        return string.Join("+", kinds);
+    }
+
+    /// <summary>The native code arena's use (diagnostics): its end and the freed bytes not reused yet.</summary>
+    private static string ArenaUse()
+    {
+        if (!Native.NativeRuntime.IsCreated)
+        {
+            return "no native arena";
+        }
+
+        Native.ExecutableMemory arena = Native.NativeRuntime.Instance.Code;
+        return $"arena {arena.Used / (1024.0 * 1024):F1} MB used, {arena.FreeBytes / (1024.0 * 1024):F1} MB of it free for reuse";
     }
 
     /// <summary>The guest memory block holding code outside every module (diagnostics).</summary>
