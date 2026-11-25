@@ -102,6 +102,11 @@ the guest submitted them), and the guest memory the backend actually read.
 - **Render targets:** they live only on the GPU, so at the start the renderer reads back every colour target
   (`IGpuBackend.ExportDumpState`, `VulkanRenderer.GpuDump.cs`) and the replay recreates them with their contents
   before the first command. Without this, Killzone's menu text (glyphs rendered once into a target) was missing.
+  Since renderer state v2 (25/11/2026) each target is carried at its internal resolution with its image size and
+  scale: a dump taken at `VITASHARP_RES_SCALE=2` replays at 2x from exactly the recorded pixels, and at another scale
+  from them resampled (nearest, raw bits kept); v1 dumps (native targets) still load. Before, a dump taken at a scale
+  carried no target at all ("render targets are not carried in dumps taken at a resolution scale") and its replay
+  started from guest memory.
 - **Header:** title, build and commit, OS, CPU backend, GPU, renderer description (driver, MSAA mode, shader
   settings, cache), debug mode, command line, every `VITASHARP_*` variable, first present.
 
