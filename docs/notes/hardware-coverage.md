@@ -177,7 +177,11 @@ Impact: every PSP and PSone title, PSP homebrew, Adrenaline. The largest piece i
 
 - **Today:** with the option (`--bt-keyboard-mouse=on`, Settings > Emulation; Android: Ajustes) the host keyboard and
   mouse are the paired devices: `sceHid{Keyboard,Mouse}Enumerate/Read/Peek` as FW 3.74 (`Hle/Modules/Hid.cs`,
-  `Host/Hid.cs`). Missing: the hint callbacks' notifications, the shell's Bluetooth settings listing them.
+  `Host/Hid.cs`), with the hint callbacks notified; SceBt lists them (`sceBtGetRegisteredInfo`) and queues their
+  connections and disconnections as events 5 and 6 for `sceBtReadEvent` (`SystemServicesVsh.BluetoothEvents.cs`).
+  Consumer controls (`sceHidConsumerControl*`) answer as 3.74 with no such device paired; the controller calls answer
+  0x803B0004, as 3.74. Missing: a host source of consumer-control keys (media keys), the shell's Bluetooth settings
+  screen checked by hand.
 - **Impact:** typing in the browser, the IME and apps that read a keyboard directly; mouse in the browser.
 - **Size:** [M]. **First testable delivery:** the host keyboard offered as one paired keyboard (an option):
   `sceHidKeyboardEnumerate` returns one handle and `sceHidKeyboardRead` reports scripted key presses.

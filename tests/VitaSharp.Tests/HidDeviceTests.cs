@@ -162,6 +162,26 @@ public sealed class HidDeviceTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(unchecked((int)0x802F0109), Call(bt, "sceBtGetConnectingInfo", 0x12345678u, mac1));
     }
 
+    /// <summary>FW 3.74 SceHid: consumer controls follow the keyboard's checks (none is paired: Enumerate finds none,
+    /// Read knows no handle) and keep their hint callbacks. Before, the six were missing imports.</summary>
+    [Fact]
+    public void ConsumerControlsAnswerAsTheFirmware()
+    {
+        _harness.Emu.Host.HidKeyboard = new HidKeyboard();   // a paired keyboard is no consumer control
+        uint handles = _harness.Alloc(32);
+        uint reports = _harness.Alloc(0x10 * 16);
+        Assert.Equal(InvalidPointer, Call(Module, "sceHidConsumerControlEnumerate", 0u, 8));
+        Assert.Equal(0, Call(Module, "sceHidConsumerControlEnumerate", handles, 8));
+        Assert.Equal(InvalidHandle, Call(Module, "sceHidConsumerControlRead", 0, reports, 4));
+        Assert.Equal(InvalidPointer, Call(Module, "sceHidConsumerControlRead", 1, 0u, 4));
+        Assert.Equal(InvalidPointer, Call(Module, "sceHidConsumerControlRead", 1, reports, -1));
+        Assert.Equal(NotDevice, Call(Module, "sceHidConsumerControlRead", 1, reports, 4));
+        Assert.Equal(0, Call(Module, "sceHidConsumerControlRegisterEnumHintCallback", 5));
+        Assert.Equal(0, Call(Module, "sceHidConsumerControlRegisterReadHintCallback", 5));
+        Assert.Equal(0, Call(Module, "sceHidConsumerControlUnregisterEnumHintCallback", 5));
+        Assert.Equal(0, Call(Module, "sceHidConsumerControlUnregisterReadHintCallback", 5));
+    }
+
     /// <summary>A guest address for the callbacks' entry (they are counted, not run).</summary>
     private const uint SyntheticEntry = 0x81000001;
 

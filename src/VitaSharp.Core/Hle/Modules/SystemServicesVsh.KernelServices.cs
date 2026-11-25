@@ -108,9 +108,6 @@ public sealed partial class SystemServicesVsh
     const int BT_ERR_INVALID_ARG = unchecked((int)0x802F1202), BT_ERR_NO_DEVICE = unchecked((int)0x802F0109),
         BT_ERR_NOT_FOUND = unchecked((int)0x802F0C01);
 
-    /// <summary>(void *events, int max): the events queued for the caller: none.</summary>
-    [Hle(Default = true)] int sceBtReadEvent(uint events, int max) => 0;
-    [Hle(Default = true)] int sceBtUnregisterCallback(int cb) => 0;
     /// <summary>(void): the stack's last error, none.</summary>
     [Hle(Default = true)] int sceBtGetLastError() => 0;
     /// <summary>(int status 0..4): the AVRCP play status sent to a connected remote (none: only checked).</summary>

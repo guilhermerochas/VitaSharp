@@ -182,7 +182,11 @@ compatibilidade PSP". Impacto: todo título de PSP e PSone, homebrew de PSP, Adr
 
 - **Hoje:** com a opção (`--bt-keyboard-mouse=on`, Configurações > Emulação; Android: Ajustes) o teclado e o mouse
   do host são os dispositivos pareados: `sceHid{Keyboard,Mouse}Enumerate/Read/Peek` como o 3.74 (`Hle/Modules/Hid.cs`,
-  `Host/Hid.cs`). Falta: notificar os callbacks de dica, as configurações de Bluetooth do shell listarem os dispositivos.
+  `Host/Hid.cs`), com os callbacks de dica notificados; o SceBt os lista (`sceBtGetRegisteredInfo`) e enfileira as
+  conexões e desconexões como os eventos 5 e 6 do `sceBtReadEvent` (`SystemServicesVsh.BluetoothEvents.cs`). Os
+  controles de consumo (`sceHidConsumerControl*`) respondem como o 3.74 sem nenhum desses pareado; as chamadas de
+  controle (`sceHidController*`) respondem 0x803B0004, como o 3.74. Falta: uma fonte do host para as teclas de
+  consumo (teclas de mídia) e conferir à mão a tela de Bluetooth do shell.
 - **Impacto:** digitar no navegador, no IME e em apps que leem o teclado direto; mouse no navegador.
 - **Tamanho:** [M]. **Primeira entrega testável:** o teclado do host oferecido como um teclado pareado (uma opção):
   `sceHidKeyboardEnumerate` devolve um handle e `sceHidKeyboardRead` informa teclas roteirizadas.

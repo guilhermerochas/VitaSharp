@@ -343,6 +343,40 @@ public sealed partial class Hid : HleModule
         }
     }
 
+    // ------------------------------------------------------------------ consumer controls
+    // FW 3.74 SceHid keeps consumer-control devices (media keys of a Bluetooth keyboard or remote) like the keyboards:
+    // Enumerate (NULL list 0x803B0001, at most 8) copies the handles of the connected ones, Read checks the handle
+    // (below 1: 0x803B0002; NULL reports or a negative count: 0x803B0001; no device of that handle: 0x803B0003) and
+    // copies at most 16 reports of 0x10 bytes, and the hint callbacks go into lists of their own. No consumer-control
+    // device is ever paired here (the host's keyboard is paired as a keyboard only), so Enumerate finds none and Read
+    // knows no handle. (The controller calls, 0x803B0004 in 3.74, are in FirmwareConstantReturns.cs.)
+
+    /// <summary>The callbacks registered for consumer-control changes and reports (never notified: no device).</summary>
+    [SnapshotMissing]
+    private readonly HashSet<int> _consumerEnumHints = [], _consumerReadHints = [];
+
+    [Hle]
+    int sceHidConsumerControlEnumerate(uint handles, int count) => Enumerate(handles, count, 0);
+
+    [Hle]
+    int sceHidConsumerControlRead(int handle, uint reports, int count)
+    {
+        if (CheckRead(handle, reports, count) is var error and not 0)
+        {
+            return error;
+        }
+
+        return ERR_NOT_DEVICE;
+    }
+
+    [Hle] int sceHidConsumerControlRegisterEnumHintCallback(int callback) => RegisterHint(_consumerEnumHints, callback);
+
+    [Hle] int sceHidConsumerControlRegisterReadHintCallback(int callback) => RegisterHint(_consumerReadHints, callback);
+
+    [Hle] int sceHidConsumerControlUnregisterEnumHintCallback(int callback) => UnregisterHint(_consumerEnumHints, callback);
+
+    [Hle] int sceHidConsumerControlUnregisterReadHintCallback(int callback) => UnregisterHint(_consumerReadHints, callback);
+
     /// <summary>The guest time a host event gets (microseconds of the guest clock).</summary>
     public static ulong NowUs => (ulong)(GuestClock.Seconds * 1_000_000);
 }

@@ -61,8 +61,6 @@ public sealed partial class SystemServicesVsh : HleModule
 
     // ------------------------------------------------------------------ devices nothing is attached to
 
-    /// <summary>(SceUID cb, int, int, int): Bluetooth events. No device ever pairs or connects.</summary>
-    [Hle(Default = true)] int sceBtRegisterCallback(int cb, int a, int b, int c) => 0;
     /// <summary>The shell retries while this returns 0x802F1501 (stack not up); the emulated stack is up.</summary>
     [Hle(Default = true)] int sceBtGetConfiguration() => 0;
     /// <summary>(int config): Settings switches Bluetooth on or off; the emulated stack is up, so it is accepted.</summary>

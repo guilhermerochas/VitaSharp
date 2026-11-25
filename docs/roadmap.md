@@ -2414,7 +2414,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   campo); (3) o magnetômetro de um controle no PC (o SDL não expõe um).
 - [ ] [P3][M] Teclado e mouse Bluetooth, o que falta (o feito está em "Corrigido, falta o usuário testar"): conferir
   no Sistema do Vita que Configurações > Bluetooth lista os dois dispositivos (os registros do `SceBt` seguem o 3.74,
-  mas a tela não foi aberta); os eventos do `sceBtReadEvent` de conexão; o `ConsumerControl` e o `Controller` do SceHid.
+  mas a tela não foi aberta); uma fonte do host para os controles de consumo (teclas de mídia de um teclado), hoje
+  nenhum é pareado.
 - [ ] [P3][G] Processador de mídia Venezia (núcleos MeP + IVC2) para código MeP que não é do firmware (plugin
   VVNZRunner e o homebrew sobre ele; `docs/notes/hardware-coverage.md`): o `vnzimg.skprx` sai do `self2elf` em claro,
   sem chave. Primeira entrega: interpretador do núcleo MeP-c5 numa thread de guest com programa sintético no teste
@@ -3302,6 +3303,21 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (24/11/2026, falta testar) [P3][M] Eventos de conexão do Bluetooth e controles de consumo do SceHid
+  (fix/small2; `docs/notes/hardware-coverage.md`). No 3.74 o SceBt tem 8 vagas, uma por processo:
+  `sceBtRegisterCallback` (0xA23FB154) guarda o callback, a máscara de 64 bits dos tipos de evento e uma fila de 16;
+  cada evento (tipo, status, uma palavra, o endereço) entra nas vagas cuja máscara tem o bit do tipo (fila cheia: o
+  evento se perde e a próxima leitura dá 0x802F0C04 uma vez) e o callback é notificado; `sceBtReadEvent` (0x26BAC23D)
+  copia registros de 16 bytes, o mais antigo primeiro (sem vaga: 0x802F0C03); `sceBtUnregisterCallback` libera a
+  vaga. Antes a leitura dava sempre 0 e nada entrava na fila. Agora o teclado e o mouse pareados (a opção do emulador)
+  geram o evento 5 (conectado, status 0) ao entrar e o 6 (desconectado, motivo HCI 0x13) ao sair, com o endereço
+  deles (`SystemServicesVsh.BluetoothEvents.cs`). Os seis `sceHidConsumerControl*` faltavam: agora respondem como o
+  3.74 (mesmas conferências do teclado, até 8 dispositivos, relatórios de 0x10 bytes; nenhum controle de consumo é
+  pareado, então a enumeração não acha nenhum e a leitura não conhece o handle; os callbacks de dica ficam guardados).
+  Testes: `BluetoothEventTests` (três casos: fila e notificação, máscara, fila cheia; falham sem a mudança) e
+  `HidDeviceTests.ConsumerControlsAnswerAsTheFirmware`. Testar: com "Teclado e mouse Bluetooth" ligado, abrir o
+  Sistema do Vita e entrar em Configurações > Bluetooth: os dois aparecem, e ligar e desligar a opção com a tela
+  aberta atualiza a lista.
 - [ ] (24/11/2026, falta testar) [P3][M] Memória gravada por programas de shader (VLDST store) volta para a memória do
   guest (fix/small2, `VulkanRenderer.StoreWriteback.cs`). No Vita o USSE grava direto na memória onde o buffer está
   mapeado, e a CPU lê o que o programa gravou quando o trabalho da cena termina; aqui as gravações ficavam só no
