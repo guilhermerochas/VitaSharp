@@ -341,7 +341,9 @@ public sealed class CodePrecompiler
 
     private void Translate((uint Pc, bool Thumb, int Depth) target, int level, List<(uint Pc, bool Thumb)> exits)
     {
-        bool speculative = level != (int)Priority.Cached;
+        // what earlier sessions ran, and what this one reached first, is no guess: it never counts against the
+        // speculative budget and is never evicted
+        bool speculative = level != (int)Priority.Cached && target.Depth != Reached;
         MakeRoom();
         if (!Jit.ArenaHasRoomForAhead())
         {
@@ -364,7 +366,7 @@ public sealed class CodePrecompiler
             StaticExitsOf(block, exits); // compiled already (an earlier priority, or the game): its exits still count
         }
 
-        if (_follow == null || !speculative || target.Depth == NoFollow || InRecordedFunction(block, (Priority)level))
+        if (_follow == null || !speculative || target.Depth == NoFollow || target.Depth == Reached || InRecordedFunction(block, (Priority)level))
         {
             // the code cache says which blocks of these functions ran (all of a function's paths are seldom taken: in
             // Assassin's Creed III: Liberation the rest of the recorded functions was 140k blocks, of which 5% ran);
@@ -389,6 +391,11 @@ public sealed class CodePrecompiler
         // in Assassin's Creed III: Liberation without one)
         if (InRecordedFunction(block, Priority.Running) || interpreted)
         {
+            if (interpreted && block.JitState == 0)
+            {
+                TranslateNext(block);
+            }
+
             AddSuccessors(block, exits);
             return;
         }
@@ -507,8 +514,31 @@ public sealed class CodePrecompiler
         }
     }
 
+    /// <summary>
+    /// The game reached <paramref name="block"/> first (the interpreter ran it, with no compiled code): it goes on top
+    /// of the running work, whether or not it was queued already, like a rejit request on top of Ryujinx's translator
+    /// stack, instead of waiting in a lower priority or getting hot (<see cref="Jit.MinExecutions"/> runs) for the JIT;
+    /// translated (as code that ran, never evicted), it is published the next time the game runs it. Measured in Assassin's Creed III: Liberation (first
+    /// session, 4500 frames, 6 runs each): 94% of the blocks still compiled while the game ran had been reached by the
+    /// game before the precompilation got to them; with this, 3.1-3.9k blocks were compiled while running instead of
+    /// 12.5-13.8k (93% -> 98.5% precompiled). Running this work at the JIT workers' priority as well was measured and
+    /// dropped: no better, and once it took the cores from the game (87 slow frames in the first minute).
+    /// </summary>
+    private void TranslateNext(Block block)
+    {
+        _seen.TryAdd(Key(block.Start, block.Thumb) | NarrowKey, 0);
+        Interlocked.Increment(ref _outstanding[(int)Priority.Running]);
+        Interlocked.Increment(ref _known);
+        _queues[(int)Priority.Running].TryAdd((block.Start, block.Thumb, Reached));
+        _work.Release();
+    }
+
     /// <summary>The depth of work whose exits are not followed (<see cref="AddSuccessors"/>).</summary>
     private const int NoFollow = -1;
+
+    /// <summary>The depth of a block the game reached first (<see cref="TranslateNext"/>): not followed, and not a
+    /// guess (it ran), so not evicted either; a block evicted as a guess and then reached is translated once more.</summary>
+    private const int Reached = -2;
 
     private void Follow(Block block, List<(uint Pc, bool Thumb)> exits, Priority priority, int depth, Priority source)
     {

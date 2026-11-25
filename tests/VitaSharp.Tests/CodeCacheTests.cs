@@ -647,9 +647,10 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
                 core.State->R[1] = 1;
                 Assert.Equal((uint)ChainBlocks, Run(core, code));
                 // an evicted guess is not translated ahead again when the frontier reaches it (that churned): at most
-                // one translation per block of the program
+                // one translation per block as a guess, and one more for a block the game then reached first (it ran:
+                // no longer a guess, so it is never evicted again)
                 Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
-                Assert.True(run.Statistics.Translated <= ChainBlocks + 8, $"{run.Statistics}");
+                Assert.True(run.Statistics.Translated <= 2 * ChainBlocks + 8, $"{run.Statistics}");
                 codeCache.Stop();
             }
             finally
@@ -790,6 +791,57 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
             Block rare = cache.Get(code + 0x410, false);
             Assert.True(rare.Ahead);
             Assert.Equal(Jit.AheadPending, rare.JitState);
+            codeCache.Stop();
+        });
+    }
+
+    [Fact]
+    public void ABlockTheGameReachesFirstIsTranslatedAheadAtOnce()
+    {
+        if (!NativeHost)
+        {
+            return;
+        }
+
+        // F runs once, interpreted, before any analysis found it (reached through a register): the block itself is
+        // translated ahead right away, at the top of the running work, instead of waiting to get hot (64 runs) for the
+        // JIT. In Assassin's Creed III: Liberation 94% of the blocks still compiled while the game ran had been reached
+        // by the game before the precompilation got to them (12.8k of 13.6k in a first session)
+        uint code = fixture.Memory.Alloc(0x1000, "codecache reached first");
+        GuestMemory.W32(code + 0x00, 0xE3A00000); // mov r0, #0
+        GuestMemory.W32(code + 0x04, 0xE1A00000); // nop (r2 = F)
+        GuestMemory.W32(code + 0x08, 0xE12FFF32); // blx r2
+        GuestMemory.W32(code + 0x0C, 0xEF000002); // svc #2
+        GuestMemory.W32(code + 0x10, 0xE12FFF1E); // bx lr
+        GuestMemory.W32(code + 0x400, 0xE3500000); // F: cmp r0, #0
+        GuestMemory.W32(code + 0x404, 0x1A000001); //    bne rare
+        GuestMemory.W32(code + 0x408, 0xE2800005); //    add r0, r0, #5
+        GuestMemory.W32(code + 0x40C, 0xE12FFF1E); //    bx lr
+        GuestMemory.W32(code + 0x410, 0xE2800009); // rare: add r0, r0, #9
+        GuestMemory.W32(code + 0x414, 0xE12FFF1E); //    bx lr
+        LoadedModule module = ModuleWithData(code, fixture.Memory.Alloc(0x1000, "codecache reached first data"), 16, 0x000, 0x400);
+        WithNative(() =>
+        {
+            var cache = new BlockCache();
+            var codeCache = new CodeCache(null, cache);
+            codeCache.ModuleLoaded(module);
+            codeCache.PrecompilePending(null, CancellationToken.None, workers: 2);
+            CodePrecompiler run = Assert.Single(codeCache.Runs);
+            Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+            Assert.False(cache.TryGet(code + 0x400, false, out _)); // the analysis did not reach F
+            using var core = new CpuCore(cache);
+            core.State->R[2] = code + 0x400;
+            Assert.Equal(5u, Run(core, code));
+            Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+
+            Block entry = cache.Get(code + 0x400, false);
+            Assert.True(entry.Ahead);
+            Assert.Equal(Jit.AheadPending, entry.JitState);
+            Assert.False(entry.Speculative); // it ran: no guess for the speculative budget to evict
+            // the second run uses the translation: published, and counted as precompiled code that ran
+            Assert.Equal(5u, Run(core, code));
+            Assert.Equal(2, entry.JitState);
+            Assert.True(entry.FirstUse > 0);
             codeCache.Stop();
         });
     }
