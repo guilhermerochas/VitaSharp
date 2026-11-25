@@ -52,6 +52,7 @@ public class GpuDumpCompressBenchmarks
     [Params(1, 2, 3)] public int Quality;
 
     private byte[] _chunk = [];
+    private byte[]? _output; // the compressor's output buffer, kept as the recorder's compressors keep theirs
 
     [GlobalSetup]
     public void Setup()
@@ -61,7 +62,7 @@ public class GpuDumpCompressBenchmarks
     }
 
     [Benchmark]
-    public int CompressChunk() => GpuDumpCodec.EncodeChunk(GpuDumpFormat.ChunkRecords, _chunk, Quality).Length;
+    public int CompressChunk() => GpuDumpCodec.EncodeChunk(GpuDumpFormat.ChunkRecords, _chunk, Quality, ref _output).Length;
 }
 
 /// <summary>Reads a dump and writes every record again as the recorder does (commands through a fresh codec).</summary>

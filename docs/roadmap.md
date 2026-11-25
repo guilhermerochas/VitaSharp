@@ -4627,12 +4627,15 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   (~17 MB/quadro de lixo, 60 gen2 em 20 s); agora reaproveita os arrays dos blocos que saem da janela (por tamanho),
   um scratch do layout, um buffer de chunk do tamanho certo e os buffers do Brotli, e grava com qualidade 2 em vez de
   3 (benchmark `GpuDumpCompressBenchmarks`: 2,4x menos CPU, arquivo do mesmo tamanho). Medido headless gravando os
-  quadros 600-1200 (2 rodadas cada): gravador 19,2 -> 7,5 ms/quadro no GPU worker, fps 26-28 -> 28-30, alocação
-  17,6 -> 11,8 MB/quadro (o chunk novo do Brotli ainda não estava nessa medida), pausa de GC 8,5% -> 2,5%. Testar:
-  "Gravar tudo" no AC III em gameplay; o relatório da captura deve mostrar o "dump recorder" bem abaixo de 19 ms/quadro
-  e o fps da gravação perto de 30. Falta: os compressores (2 threads) ficam no limite com ~12 MB/quadro crus (+2,6
-  ms/quadro esperando o writer) e o worker lê mais memória por quadro quando não atrasa (1,7 -> 2,8 GB em 600
-  quadros); reduzir os bytes crus (deltas dos uniforms ~80% do tamanho) ou mais um compressor quando a CPU deixar.
+  quadros 600-1200 (2 rodadas cada): gravador 19,2 -> 7,3 ms/quadro no GPU worker, fps ~27,3 -> ~28,7, alocação
+  17,6 -> 3,9-4,6 MB/quadro, pausa de GC 8,5% -> 2,7%. A fila de chunks guarda no máximo compressores + 2 (era 16
+  chunks de buffers de 33-64 MB: com o worker mais rápido ela enchia e o processo ia de 2,1 a 3,4-4,0 GB); quando
+  os compressores não acompanham, o GPU worker espera por eles (o dump fica completo; nada é descartado) e o log do
+  dump mostra o máximo guardado ("at most N MB of chunks buffered", ~280 MB). Working set no fim gravando 2,15-2,25
+  GB (antes 2,06-2,07). Testar: "Gravar tudo" no AC III em gameplay; o relatório da captura deve mostrar o "dump
+  recorder" bem abaixo de 19 ms/quadro e o fps da gravação perto de 30. Falta: a compressão (2 threads, ~66-71 ms de
+  CPU por quadro) é o gargalo que sobra: o worker espera 3,6-9,3 ms/quadro por ela; reduzir os bytes crus (~12
+  MB/quadro, deltas dos uniforms ~80% do tamanho) ou mais um compressor quando a CPU deixar.
   (2) feito (fix/io1, 22/11/2026), ver "Corrigido, falta o usuário testar".
 - [x] (18/11/2026, usuário: corrigido; reabre se aparecer de novo) [P1][M] PSVitaAlive (PSVAS1178, homebrew vita2d), bug gráfico no teclado de busca (usuário, 17/11/2026; captura
   `captures/PSVAS1178_20261117_215911_tudo`, 41 achados [flash]): em quadros isolados faltam as teclas e parte do

@@ -414,6 +414,72 @@ public sealed class GpuDumpTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(recorded.Count, lookahead.Prefetched);
     }
 
+    /// <summary>
+    /// When the compressors fall behind the GPU worker, the recorder holds a bounded amount of chunks: the worker waits
+    /// for them once <see cref="GpuDumpRecorder.PendingChunks"/> wait, and the dump still has every draw (records are
+    /// never dropped: a replay needs all of them). With 16 pending chunks of 64 MB buffers a fast worker grew AC III
+    /// Liberation's process from 2.1 to 3.4-4.0 GB while it recorded. Here a compressor held back by the test plays a
+    /// slow one, with small chunks.
+    /// </summary>
+    [Fact]
+    public async Task ARecorderWhoseCompressorsFallBehindHoldsBoundedMemoryAndKeepsEveryDraw()
+    {
+        const int ChunkBytes = 16 << 10;
+        const int Draws = 400;
+        uint buf = fixture.Memory.Alloc(Draws * 0x1000, "gpudump bounded test");
+        GuestMemory.Fill(buf, 0x33, Draws * 0x1000);
+        using var queue = new GpuQueue();
+        queue.Backend = new FakeBackend();
+        Directory.CreateDirectory(_dir);
+        string path = Path.Combine(_dir, "bounded.vsgd");
+        using var compressors = new ManualResetEventSlim(false);
+        var rec = GpuDumpRecorder.Start(new GpuDumpOptions
+        {
+            Path = path,
+            MaxFrames = 1,
+            ChunkBytes = ChunkBytes,
+            BeforeCompress = () => compressors.Wait(),
+        });
+        Assert.NotNull(rec);
+        try
+        {
+            var present = new PresentCommand { Frame = new DisplayFrame(0x60000000, 960, 960, 544, 0) };
+            queue.Submit(present); // the recording starts after it
+            for (int i = 0; i < Draws; i++)
+            {
+                DrawCommand d = Draw([1, 2, 3], [], buf + (uint)(i * 0x1000));
+                d.IndexCount = 0x1000; // a new page per draw: ~4 KB of records each, a chunk every 4 draws
+                queue.Submit(d);
+            }
+            queue.Submit(new PresentCommand { Frame = present.Frame });
+
+            // the worker stops at the bound instead of buffering the ~100 chunks
+            Assert.True(SpinWait.SpinUntil(() => rec!.WaitingForWriter, TimeSpan.FromSeconds(30)), "the GPU worker never waited for the compressors");
+            long pendingLimit = (GpuDumpRecorder.PendingChunks + 2) * (GpuDumpRecorder.BufferBytesFor(ChunkBytes) + 16L);
+            Assert.True(rec!.BufferedBytes <= pendingLimit, $"{rec.BufferedBytes} bytes of chunks held while the compressors wait (limit {pendingLimit})");
+        }
+        finally
+        {
+            compressors.Set();
+        }
+
+        GpuDumpResult result = await rec.Completion.WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Null(result.Error);
+        Assert.Equal(Draws, result.Draws);
+        Assert.True(result.PeakBufferedBytes <= GpuDumpRecorder.MaxBufferedBytes(ChunkBytes),
+            $"at most {result.PeakBufferedBytes} bytes buffered (limit {GpuDumpRecorder.MaxBufferedBytes(ChunkBytes)})");
+        int draws = 0;
+        using var r = new GpuDumpReader(path);
+        while (r.Next())
+        {
+            if (r.Kind == GpuDumpRecord.Draw)
+            {
+                draws++;
+            }
+        }
+        Assert.Equal(Draws, draws);
+    }
+
     [Fact]
     public async Task RecorderStoresWhatTheBackendReadAndOnlyChangesLater()
     {
@@ -623,9 +689,10 @@ public sealed class GpuDumpTests(GuestMemoryFixture fixture) : IDisposable
     }
 
     /// <summary>
-    /// The recorder's compressor threads (<see cref="GpuDumpCodec.EncodeChunk"/>) reuse their ~33 MB output buffer
-    /// between chunks: a chunk costs its own array and nothing more (a new output buffer and a growing stream per chunk
-    /// were ~12 MB/frame of garbage while AC III Liberation recorded). The chunk still reads back as written.
+    /// The recorder's compressor threads (<see cref="GpuDumpCodec.EncodeChunk(byte, ReadOnlySpan{byte}, int, ref byte[])"/>)
+    /// reuse their ~33 MB output buffer between chunks: a chunk costs its own array and nothing more (a new output
+    /// buffer and a growing stream per chunk were ~12 MB/frame of garbage while AC III Liberation recorded). The chunk
+    /// still reads back as written.
     /// </summary>
     [Fact]
     public void EncodingAChunkAllocatesOnlyTheChunk()
@@ -636,17 +703,11 @@ public sealed class GpuDumpTests(GuestMemoryFixture fixture) : IDisposable
             raw[i] = (byte)(i >> 6); // compressible, as records are
         }
 
-        GpuDumpCodec.EncodeChunk(GpuDumpFormat.ChunkRecords, raw, 2); // the first chunk takes the output buffer
-        byte[] chunk = [];
-        long allocated = long.MaxValue;
-        // the buffers are shared by every thread: a dump test of another class compressing at the same moment can
-        // take this one's, so the least of a few chunks is what one chunk costs
-        for (int attempt = 0; attempt < 3; attempt++)
-        {
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            chunk = GpuDumpCodec.EncodeChunk(GpuDumpFormat.ChunkRecords, raw, 2);
-            allocated = Math.Min(allocated, GC.GetAllocatedBytesForCurrentThread() - before);
-        }
+        byte[]? output = null;
+        GpuDumpCodec.EncodeChunk(GpuDumpFormat.ChunkRecords, raw, 2, ref output); // the first chunk sizes the output buffer
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        byte[] chunk = GpuDumpCodec.EncodeChunk(GpuDumpFormat.ChunkRecords, raw, 2, ref output);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         Assert.True(allocated < chunk.Length + 4096, $"{allocated} bytes allocated for a chunk of {chunk.Length} bytes ({raw.Length} raw)");
 
         byte[] buffer = [];

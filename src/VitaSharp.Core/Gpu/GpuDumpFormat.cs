@@ -1041,19 +1041,20 @@ public sealed class GpuDumpCodec
     /// <summary>A whole encoded chunk (header and payload) as a new array (compressing on any thread).</summary>
     public static byte[] EncodeChunk(byte type, ReadOnlySpan<byte> raw, int quality)
     {
-        // the compressor's output buffer (~33 MB for a recorder chunk) is reused between chunks: one per compressor
-        // running at the same time; a new one per chunk was most of what a recording allocated
-        byte[]? scratch = s_chunkScratch.TryTake(out byte[]? kept) ? kept : null;
+        byte[]? scratch = null;
+        return EncodeChunk(type, raw, quality, ref scratch);
+    }
+
+    /// <summary><see cref="EncodeChunk(byte, ReadOnlySpan{byte}, int)"/> with the compressor's output buffer given
+    /// (grown when too small): the GPU dump recorder's compressors keep one each (~33 MB for a recorder chunk), so a
+    /// chunk costs only its own array.</summary>
+    public static byte[] EncodeChunk(byte type, ReadOnlySpan<byte> raw, int quality, [System.Diagnostics.CodeAnalysis.NotNull] ref byte[]? scratch)
+    {
         byte codec = CompressChunk(raw, quality, ref scratch, out int written);
         ReadOnlySpan<byte> payload = codec == GpuDumpFormat.CodecBrotli ? scratch.AsSpan(0, written) : raw;
         byte[] chunk = new byte[ChunkHeaderBytes + payload.Length];
         WriteChunkHeader(chunk, type, raw.Length, payload.Length, codec);
         payload.CopyTo(chunk.AsSpan(ChunkHeaderBytes));
-        if (s_chunkScratch.Count < 4)
-        {
-            s_chunkScratch.Add(scratch);
-        }
-
         return chunk;
     }
 
@@ -1085,8 +1086,6 @@ public sealed class GpuDumpCodec
         written = raw.Length;
         return GpuDumpFormat.CodecStored;
     }
-
-    private static readonly System.Collections.Concurrent.ConcurrentBag<byte[]> s_chunkScratch = new();
 
     /// <summary>Compresses <paramref name="raw"/> into a chunk (Brotli at <paramref name="quality"/>, stored when that does not help).</summary>
     public static void WriteChunk(Stream output, byte type, ReadOnlySpan<byte> raw, int quality, ref byte[]? scratch)
