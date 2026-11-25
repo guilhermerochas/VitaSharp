@@ -527,6 +527,41 @@ public sealed class UdpAdhocMedium : AdhocMedium
         _beacons = new Timer(_ => SendBeacon(), null, BeaconIntervalMs, BeaconIntervalMs);
     }
 
+    /// <summary>
+    /// The medium of the "Ad hoc pela rede local" option (--adhoc-lan=on): the LAN multicast group on
+    /// <see cref="DefaultPort"/>, plus the stations of <paramref name="stations"/> ("host[:port]" separated by commas or
+    /// spaces, --adhoc-peer=), with the user name as nickname; null with a warning when the port cannot be opened. Logs what the firewall must allow.
+    /// </summary>
+    public static UdpAdhocMedium? Start(string? stations)
+    {
+        UdpAdhocMedium medium;
+        try
+        {
+            medium = new UdpAdhocMedium(RandomMac(), Hle.Modules.AppUtil.UserName);
+        }
+        catch (SocketException e)
+        {
+            Log.Warn($"ad hoc LAN: cannot open UDP port {DefaultPort} ({e.SocketErrorCode}): ad hoc stays off");
+            return null;
+        }
+
+        foreach (string text in (stations ?? "").Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (ParseStation(text) is { } station)
+            {
+                medium.AddStation(station);
+            }
+            else
+            {
+                Log.Warn($"ad hoc LAN: '{text}' is not a host[:port]");
+            }
+        }
+
+        Log.Info($"ad hoc LAN on: UDP port {DefaultPort}, group {DefaultGroup} (the firewall must allow UDP {DefaultPort} in "
+            + "on the local network); other instances with the option on are found by their beacons");
+        return medium;
+    }
+
     /// <summary>The UDP port the medium listens on.</summary>
     public int LocalPort => _listening.LocalPort;
 

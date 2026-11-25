@@ -201,11 +201,13 @@ public sealed partial class Net : HleModule
 
     [Hle] int sceNetCtlAdhocUnregisterCallback(int cid) { lock (_inetCallbacks) _adhocCallbacks.Remove(cid); return 0; }
 
-    /// <summary>No ad hoc network to leave; libnetctl calls the system's stop hook (NID_326FEE96) first.</summary>
+    /// <summary>Leaves the ad hoc network joined (the PSP ad hoc group on the medium); libnetctl calls the system's stop
+    /// hook (NID_326FEE96) first.</summary>
     [Hle]
     int sceNetCtlAdhocDisconnect()
     {
         if (_stopHook != 0) ShellSvcIpc.CallHandler(_stopHook);
+        Emu?.Hle.Modules.OfType<NetAdhoc>().FirstOrDefault()?.LeaveGroup();
         return 0;
     }
 

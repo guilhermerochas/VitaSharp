@@ -2449,10 +2449,11 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   de sistema do PS TV), os dispositivos "dummy" (câmera, toque, movimento), light bar, HDMI como monitor que aceita os
   modos (AVConfig HDMI sem `0x803A0109`), USB host e Ethernet, e os controles do celular no Android. Também cobre os
   outros modelos (PCH-2000: LCD e cartão interno de 1 GB; PCH-1100: modem 3G ausente = fiel).
-- [ ] [P3][G] Wi-Fi ad hoc entre instâncias do emulador (`docs/notes/hardware-coverage.md`,
-  `docs/notes/online-features.md`): hoje `pspnet_adhoc`/Matching não acham nenhum par. Primeira entrega: duas pilhas
-  emuladas num teste sobre UDP de loopback, uma cria o grupo, a outra acha (`sceNetAdhocctlScan`), entra e troca um
-  datagrama PDP nos dois sentidos. Depois Matching e o canal WLAN do ScePspemu.
+- [ ] [P3][G] Wi-Fi ad hoc entre instâncias do emulador, o que falta (`docs/notes/hardware-coverage.md`,
+  `docs/notes/online-features.md`; a 1ª parte está em "Corrigido, falta o usuário testar"): PTP pelo meio ad hoc
+  (hoje só PDP), o Matching sobre o PDP, o modo ad hoc do próprio Vita (`ADHOC_CONN` do diálogo, `sceNetCtlAdhoc*`,
+  sockets P2P do SceNetPs), o cabeçalho PDP do PSP no ar (conferir numa captura, para falar com um PSP/Vita de verdade),
+  o canal WLAN do ScePspemu; só depois servidores de ad hoc da comunidade.
 - [ ] [P3][M] Localização (GPS) pelo host, o que falta (`docs/notes/hardware-coverage.md`; o feito está em
   "Corrigido, falta o usuário testar"): (1) o serviço de localização do próprio PC (Geolocation do Windows, GeoClue
   no Linux, Core Location no macOS) como fonte "system" no desktop; (2) o caminho do firmware: o liblocation.suprx
@@ -3387,6 +3388,21 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (25/11/2026, falta testar) [P3][G] Wi-Fi ad hoc entre instâncias do emulador, 1ª parte (fix/adr4 WIP terminado
+  em fix/small5): no FW 3.74 o `pspnet_adhoc` leva PDP/PTP num socket de enlace de EtherType 0x88C8, e o jogo cria ou
+  entra no grupo (a IBSS cujo SSID o NID_F87F9518 monta) pelos modos de ad hoc do PSP do diálogo de checagem de rede.
+  Agora, sobre o meio ad hoc do host (`Host/AdhocNetwork.cs`, UDP na rede local, sem servidor): os modos CONN/CREATE/
+  JOIN do diálogo criam ou entram no grupo (o JOIN espera o beacon até o tempo limite; um grupo que ninguém fez
+  termina como "cancelado pelo usuário"; JOIN sem nome de grupo é 0x80100C07), a lista de pares, as informações, as
+  buscas por nome/endereço e o parâmetro seguem o grupo, e os datagramas PDP vão e voltam (bloqueante e não
+  bloqueante; buffer pequeno dá NOT_ENOUGH_SPACE com o tamanho). Cada instância tem o seu MAC. Opção "Ad hoc pela
+  rede local" (`--adhoc-lan=on`, `--adhoc-peer=host[:porta]`) no launcher e nos Ajustes do Android (trava de
+  multicast), desligada por padrão. Testes: `AdhocLanTests` (duas instâncias no mesmo processo por loopback: grupo,
+  lista de pares, PDP nos dois sentidos; grupo inexistente) e `AdhocNetworkTests`, 50x verdes sob carga; sem a
+  mudança do diálogo o grupo não se forma (prova no relatório do small5). Testar: dois VitaSharp na mesma rede (ou
+  dois no mesmo PC com `--adhoc-peer=127.0.0.1:<porta>`), "Ad hoc pela rede local" ligado nos dois, um jogo de Vita
+  com multijogador ad hoc (o `pspnet_adhoc`): um cria a sala, o outro acha e entra, e jogam juntos.
 
 - [ ] (25/11/2026, falta testar) [P3][M] Testes de paridade de mídia entre o PC e o Android (fix/small5). O lado do
   decodificador já existia (`MediaParityTests`: H.264, AAC e MP3 sintéticos pela API do jogo, o FFmpeg do PC sempre,

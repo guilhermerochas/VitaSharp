@@ -7,6 +7,8 @@
   <!-- "Internet real" (opt-in) and RPCN; nothing is sent while it is off -->
   <uses-permission android:name="android.permission.INTERNET" />
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <!-- ad hoc between instances on the Wi-Fi (the "Ad hoc pela rede local" setting): receive the LAN multicast group -->
+  <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
   <uses-permission android:name="android.permission.VIBRATE" />
   <uses-permission android:name="android.permission.WAKE_LOCK" />
   <!-- SceCamera: the phone's cameras, asked at run time when a game first starts a camera (denied = grey frames) -->

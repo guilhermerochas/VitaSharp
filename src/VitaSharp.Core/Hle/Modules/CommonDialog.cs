@@ -759,17 +759,22 @@ public sealed partial class CommonDialog : HleModule
 
     // ------------------------------------------------------------------ NetCheckDialog
 
-    const int NetCheckErrInvalidMode = unchecked((int)0x80100C02);
-    // SceNetCheckDialogMode (psp2/netcheck_dialog.h): ADHOC_CONN 1, PSN 2, PSN_ONLINE 3, PS3_CONNECT 4, PSP_ADHOC_* 5..7
-    internal const int NetCheckModePsn = 2, NetCheckModePsnOnline = 3, NetCheckModePs3Connect = 4;
+    const int NetCheckErrInvalidMode = unchecked((int)0x80100C02), NetCheckErrInvalidPspAdhocParam = unchecked((int)0x80100C07);
+    // SceNetCheckDialogMode (psp2/netcheck_dialog.h): ADHOC_CONN 1, PSN 2, PSN_ONLINE 3, PS3_CONNECT 4, PSP_ADHOC_CONN 5,
+    // PSP_ADHOC_CREATE 6, PSP_ADHOC_JOIN 7
+    internal const int NetCheckModePsn = 2, NetCheckModePsnOnline = 3, NetCheckModePs3Connect = 4,
+        NetCheckModePspAdhocConn = 5, NetCheckModePspAdhocCreate = 6, NetCheckModePspAdhocJoin = 7;
     int _netCheckMode;
     bool _netCheckPsnSucceeded;
 
     /// <summary>
-    /// SceNetCheckDialogParam (0xE0): +0x50 mode (1..7), +0x54 npCommunicationId. The PSN modes (sign in, and sign in +
-    /// connect) finish OK with psnModeSucceeded when the emulated PSN account is signed in (<see cref="PsnAccount"/>, as
-    /// Vita3K does); otherwise, and for the ad hoc / PS3 modes (no peers), the user cancels. A successful PSN_ONLINE check
-    /// leaves the console connected, so the NP service state is ONLINE afterwards (<see cref="NpManager.ServiceState"/>).
+    /// SceNetCheckDialogParam (0xE0): +0x50 mode (1..7), +0x54 npCommunicationId, +0x64 groupName, +0x68 timeoutUs. The
+    /// PSN modes (sign in, and sign in + connect) finish OK with psnModeSucceeded when the emulated PSN account is signed
+    /// in (<see cref="PsnAccount"/>, as Vita3K does); otherwise the user cancels. A successful PSN_ONLINE check leaves the
+    /// console connected, so the NP service state is ONLINE afterwards (<see cref="NpManager.ServiceState"/>). The PSP ad
+    /// hoc modes create or join the group on the ad hoc medium (<see cref="NetAdhoc.ConnectGroup"/>): the dialog runs
+    /// until the group is made or found (JOIN without a group name is 0x80100C07); with ad hoc off nobody is found and
+    /// the user cancels. The Vita's own ad hoc mode (ADHOC_CONN) and PS3_CONNECT have no peers: canceled.
     /// </summary>
     [Hle]
     int sceNetCheckDialogInit(uint param)
@@ -777,9 +782,24 @@ public sealed partial class CommonDialog : HleModule
         if (param == 0) return CommonDialogError.NULL;
         int mode = (int)GuestMemory.R32(param + 0x50);
         if (mode is < 1 or > 7) return NetCheckErrInvalidMode;
+        uint groupName = GuestMemory.R32(param + 0x64);
+        if (mode is NetCheckModePspAdhocCreate or NetCheckModePspAdhocJoin && groupName == 0)
+        {
+            return NetCheckErrInvalidPspAdhocParam;
+        }
+
         int r = State.Begin(DialogType.NetCheck);
         if (r < 0) return r;
         _netCheckMode = mode;
+        if (mode >= NetCheckModePspAdhocConn)
+        {
+            _netCheckPsnSucceeded = false;
+            _netCheckFailed = false;
+            StartAdhocCheck(mode, groupName == 0 ? new byte[8] : GuestMemory.ReadSpan(groupName, 8).ToArray(),
+                GuestMemory.R32(param + 0x68));
+            return 0;
+        }
+
         var acct = PsnAccount.Current;
         _netCheckPsnSucceeded = acct.SignedIn && mode is NetCheckModePsn or NetCheckModePsnOnline;
         State.Finish(_netCheckPsnSucceeded ? ResultOk : ResultUserCanceled);
@@ -790,6 +810,32 @@ public sealed partial class CommonDialog : HleModule
         Log.Info(_netCheckPsnSucceeded ? $"NetCheckDialog mode {mode}: signed in to PSN as {acct.OnlineId}"
                                        : $"NetCheckDialog mode {mode}: {(acct.SignedIn ? "no peer" : "offline")}, canceled");
         return 0;
+    }
+
+    /// <summary>Runs a PSP ad hoc check on its own host thread (finding a group takes beacons) and finishes the dialog
+    /// with its result, unless the game aborted it first.</summary>
+    void StartAdhocCheck(int mode, byte[] groupName, uint timeoutUs)
+    {
+        NetAdhoc? adhoc = Emu?.Hle.Modules.OfType<NetAdhoc>().FirstOrDefault();
+        long timeout = timeoutUs == 0 ? NetAdhoc.DefaultJoinTimeoutUs : timeoutUs;
+        bool Aborted() => State.StatusOf(DialogType.NetCheck) != StatusRunning;
+        var thread = new Thread(() =>
+        {
+            int result = adhoc?.ConnectGroup(mode, groupName, timeout, Aborted) ?? ResultUserCanceled;
+            lock (State.Lock)
+            {
+                if (State.Type == DialogType.NetCheck && State.Status == StatusRunning)
+                {
+                    State.Finish(result);
+                    _netCheckFailed = result != ResultOk;
+                }
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "netcheck-adhoc",
+        };
+        thread.Start();
     }
 
     [Hle] int sceNetCheckDialogGetStatus() => State.StatusOf(DialogType.NetCheck);

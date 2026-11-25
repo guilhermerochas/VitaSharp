@@ -3348,6 +3348,15 @@
   <data name="MBluetoothKeyboardMouseDetail" xml:space="preserve">
     <value>Um teclado e um mouse conectados ao celular ficam pareados com o Vita, para jogos e apps que leem teclado ou mouse (o navegador, chat). Desligado por padrão. Vale ao iniciar um jogo</value>
   </data>
+  <data name="AdhocLan" xml:space="preserve">
+    <value>Ad hoc pela rede local</value>
+  </data>
+  <data name="AdhocLanDetail" xml:space="preserve">
+    <value>O Wi-Fi ad hoc do Vita (multijogador local) alcança outras instâncias do VitaSharp na mesma rede, sem servidor. O firewall precisa liberar a porta UDP 30860 na rede local. Desligado por padrão. Vale ao iniciar um jogo</value>
+  </data>
+  <data name="MAdhocLanDetail" xml:space="preserve">
+    <value>O Wi-Fi ad hoc do Vita (multijogador local) alcança outras instâncias do VitaSharp no mesmo Wi-Fi, sem servidor. Desligado por padrão. Vale ao iniciar um jogo</value>
+  </data>
   <data name="MOn" xml:space="preserve">
     <value>Ligado</value>
   </data>

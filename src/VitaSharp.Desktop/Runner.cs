@@ -524,6 +524,13 @@ public static class Runner
             emu.Host.HidMouse = window.HidMouse = new HidMouse();
             Log.Info("SceHid: the PC keyboard and mouse are paired with the Vita");
         }
+
+        // ad hoc: --adhoc-lan=on puts the Vita's ad hoc Wi-Fi on the LAN (other instances with it on), plus the stations
+        // of --adhoc-peer=host[:port],... (off by default)
+        if (OnOff(options, "--adhoc-lan") == true)
+        {
+            emu.Host.Adhoc = UdpAdhocMedium.Start(Opt(options, "--adhoc-peer"));
+        }
         VulkanRenderer? renderer = null;
         var clock = Stopwatch.StartNew();
         long lastFrames = 0, titleTicks = 0;

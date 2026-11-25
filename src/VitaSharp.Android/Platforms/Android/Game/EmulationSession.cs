@@ -306,7 +306,23 @@ public sealed partial class EmulationSession : IDisposable
             _emu.Host.HidKeyboard = HidKeyboard = new VitaSharp.Core.Host.HidKeyboard();
             _emu.Host.HidMouse = HidMouse = new VitaSharp.Core.Host.HidMouse();
         }
+
+        // ad hoc: the "Ad hoc pela rede local" setting; Android drops multicast unless a lock is held
+        if (prefs.AdhocLan && _emu.Host.Adhoc == null)
+        {
+            _emu.Host.Adhoc = VitaSharp.Core.Host.UdpAdhocMedium.Start(null);
+            if (_emu.Host.Adhoc != null
+                && global::Android.App.Application.Context.GetSystemService(global::Android.Content.Context.WifiService) is global::Android.Net.Wifi.WifiManager wifi)
+            {
+                _multicastLock = wifi.CreateMulticastLock("vitasharp-adhoc");
+                _multicastLock?.SetReferenceCounted(false);
+                _multicastLock?.Acquire();
+            }
+        }
     }
+
+    /// <summary>Held while ad hoc is on (Android delivers multicast to the app only then).</summary>
+    global::Android.Net.Wifi.WifiManager.MulticastLock? _multicastLock;
 
     /// <summary>The phone's keyboard as the Vita's paired keyboard (the setting), null = not paired.</summary>
     public VitaSharp.Core.Host.HidKeyboard? HidKeyboard { get; private set; }
@@ -649,6 +665,7 @@ public sealed partial class EmulationSession : IDisposable
                 _stats.WriteFinal(); // the desktop Runner's end-of-run lines (SessionReport)
             Performance.Dispose();
             _emu.Dispose();
+            _multicastLock?.Release();
             // the renderer the emulator disposed kept the window's device for a next one: there is none
             lock (_surfaceLock)
             {

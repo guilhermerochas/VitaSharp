@@ -87,6 +87,9 @@ public sealed class AppPreferences
     /// <summary>"Teclado e mouse Bluetooth": a keyboard and mouse connected to the phone are paired with the Vita (SceHid),
     /// as the desktop launcher's option of the same name (--bt-keyboard-mouse=on); off by default.</summary>
     public bool BluetoothKeyboardMouse { get; set; }
+    /// <summary>"Ad hoc pela rede local": the Vita's ad hoc Wi-Fi reaches other instances on the Wi-Fi network, as the
+    /// desktop launcher's option of the same name (--adhoc-lan=on); off by default.</summary>
+    public bool AdhocLan { get; set; }
     /// <summary>"Ao abrir o emulador": "library" (the default) or "system" (the shell boots when the app opens), the
     /// desktop launcher's option (<see cref="StartupViews"/>).</summary>
     public string StartupView { get; set; } = StartupViews.Library;

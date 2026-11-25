@@ -3348,6 +3348,15 @@
   <data name="MBluetoothKeyboardMouseDetail" xml:space="preserve">
     <value>A keyboard and mouse connected to the phone are paired with the Vita, for games and apps that read a keyboard or mouse (the browser, chat). Off by default. Takes effect when a game starts</value>
   </data>
+  <data name="AdhocLan" xml:space="preserve">
+    <value>Ad hoc over the local network</value>
+  </data>
+  <data name="AdhocLanDetail" xml:space="preserve">
+    <value>The Vita's ad hoc Wi-Fi (local multiplayer) reaches other VitaSharp instances on the same network, with no server. The firewall must allow UDP port 30860 on the local network. Off by default. Takes effect when a game starts</value>
+  </data>
+  <data name="MAdhocLanDetail" xml:space="preserve">
+    <value>The Vita's ad hoc Wi-Fi (local multiplayer) reaches other VitaSharp instances on the same Wi-Fi, with no server. Off by default. Takes effect when a game starts</value>
+  </data>
   <data name="MOn" xml:space="preserve">
     <value>On</value>
   </data>

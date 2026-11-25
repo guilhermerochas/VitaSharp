@@ -209,6 +209,13 @@ Desligado por padrão; as teclas continuam valendo como controle com ele ligado.
 (reproduzir/pausar, faixas, volume) também chegam ao Vita como seus controles de consumidor, no Windows, Linux (X11),
 macOS e Android.
 
+**Ad hoc (multijogador local).** **Configurações > Emulação > Ad hoc pela rede local** (ou `--adhoc-lan=on`; Android:
+Ajustes) põe o Wi-Fi ad hoc do Vita na rede local: outras instâncias do VitaSharp com a opção ligada, na mesma rede ou no
+mesmo PC, se acham sem servidor. O firewall precisa liberar a entrada da porta UDP 30860 na rede local (o Windows
+pergunta na primeira vez). Onde o multicast não passa (VPN, alguns roteadores), `--adhoc-peer=host[:porta],...` alcança
+os outros PCs pelo endereço. Desligado por padrão. Hoje: os grupos ad hoc do PSP (`pspnet_adhoc`: criar/entrar pelo
+diálogo de checagem de rede, lista de pares, datagramas PDP); PTP, Matching e o modo ad hoc do próprio Vita vêm depois.
+
 Os dados ficam em `%APPDATA%\VitaSharp` no Windows (`~/.local/share/VitaSharp` no Linux,
 `~/Library/Application Support/VitaSharp` no macOS; `--data=<pasta>` ou `VITASHARP_DATA` trocam a pasta): jogos em
 `fs/ux0/app`, firmware em `fs/os0`... , `logs/`, `savestates/`, `captures/` (Gravar tudo), `gpudumps/`,
