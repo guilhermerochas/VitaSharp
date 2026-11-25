@@ -2464,6 +2464,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Wi-Fi vistas (`scePosNetCtlInetGetScanInfo`) pelo `SceHttp`. Esse serviço não existe mais; dar uma posição ao Near
   pelo caminho do firmware é responder essa requisição com a posição do host (o `SceNetCtl` com redes vistas e uma
   resposta WPS), e isso é [G]: decidir com o usuário antes. Usa: Near, Mapas.
+  Achado (25/11/2026, small5, sem fechar): a parte (1) não cabe num [M] multiplataforma: cada sistema tem a sua
+  API e nenhuma tem ligação no projeto. Windows: `Windows.Devices.Geolocation.Geolocator` é WinRT (o Desktop não
+  usa a TFM `-windows`; sem o CsWinRT seria ativar pelo `RoGetActivationFactory` e chamar a vtable à mão, com a
+  operação assíncrona `IAsyncOperation<Geoposition>`), e a localização do Windows vem desligada por padrão para apps
+  de desktop; Linux: GeoClue2 é só D-Bus (o cliente precisa ficar conectado: `CreateClient`, `Start`, sinal
+  `LocationUpdated`), e o projeto não tem biblioteca de D-Bus; macOS: o Core Location só pede a permissão a um app
+  em bundle com `NSLocationUsageDescription` (o binário solto herda a do terminal). Proposta: virar [G] com três
+  entregas (uma por sistema, cada uma com o teste do `ILocationSource` por trás de uma fonte falsa e o skip claro sem
+  o serviço), decidir com o usuário a ordem.
 - [ ] [P3][M] Magnetômetro, o que falta (o feito está em "Corrigido, falta o usuário testar"): (1) o anel de
   registros brutos do driver (`sceMotionDevRead`/`ReadForMagnCalib` copiam os registros do leitor, modo 0x10005 do
   FUN_81004420; o formato do registro ainda não foi lido) e o `dataInfo`. Achado (25/11/2026, small4, estudo do
