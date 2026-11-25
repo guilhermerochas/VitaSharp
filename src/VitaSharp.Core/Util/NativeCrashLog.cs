@@ -202,9 +202,9 @@ public static unsafe partial class NativeCrashLog
 
     private static (string? Module, ulong Base) ModuleOf(ulong address)
     {
-        const uint fromAddress = 0x4;
-        const uint unchangedRefCount = 0x2;
-        if (!GetModuleHandleExW(fromAddress | unchangedRefCount, (void*)address, out nint module) || module == 0)
+        const uint FromAddress = 0x4;
+        const uint UnchangedRefCount = 0x2;
+        if (!GetModuleHandleExW(FromAddress | UnchangedRefCount, (void*)address, out nint module) || module == 0)
         {
             return (null, 0);
         }
@@ -216,8 +216,8 @@ public static unsafe partial class NativeCrashLog
 
     private static string? ThreadName(uint threadId)
     {
-        const uint queryLimitedInformation = 0x0800;
-        nint thread = OpenThread(queryLimitedInformation, false, threadId);
+        const uint QueryLimitedInformation = 0x0800;
+        nint thread = OpenThread(QueryLimitedInformation, false, threadId);
         if (thread == 0)
         {
             return null;
@@ -252,8 +252,8 @@ public static unsafe partial class NativeCrashLog
     {
         Log.Warn($"{EnvVars.DebugNativeCrash}={kind}: ending the process with a native crash (self-test)");
         Log.Flush();
-        const uint noFaultErrorBox = 0x0002;
-        SetErrorMode(noFaultErrorBox);
+        const uint NoFaultErrorBox = 0x0002;
+        SetErrorMode(NoFaultErrorBox);
         if (kind == "heap")
         {
             var thread = new Thread(() =>
