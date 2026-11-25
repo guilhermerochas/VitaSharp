@@ -15,9 +15,19 @@ namespace VitaSharp.Core.Capture;
 /// </summary>
 public static class CaptureAnalyzer
 {
-    public sealed record Finding(string Kind, int Index, int Count, string Detail);
+    /// <summary>One finding: its kind ("flash", "black-flash", "stall"...), the index of its frame in the frames given,
+    /// how many frames it spans and the report's text. <see cref="Present"/> is the frame's renderer present number;
+    /// <see cref="Cell"/> the cell of the 4x4 grid a part-picture flash is in (0-15, row by row), -1 for the whole
+    /// picture, -2 when the kind has no place in the picture.</summary>
+    public sealed record Finding(string Kind, int Index, int Count, string Detail)
+    {
+        public long Present { get; init; }
+        public int Cell { get; init; } = -2;
+        /// <summary>A finding the report marks "(info)": not a problem by itself.</summary>
+        public bool Info => Detail.StartsWith("(info)", StringComparison.Ordinal);
+    }
 
-    private sealed class FrameStat
+    internal sealed class FrameStat
     {
         public FramesFile.Frame F = null!;
         public double Luma, Dark;
@@ -25,7 +35,7 @@ public static class CaptureAnalyzer
         public byte[]? Thumb; // 96x54 RGBA
     }
 
-    private const int TW = VulkanThumbW, TH = VulkanThumbH;
+    internal const int TW = VulkanThumbW, TH = VulkanThumbH;
     private const int VulkanThumbW = 96, VulkanThumbH = 54;
 
     /// <param name="progress">fraction done (0-1) while it runs (the "saving NN%" badge)</param>
@@ -547,7 +557,7 @@ public static class CaptureAnalyzer
     }
 
     /// <summary>Mean luma (0-255) and the fraction of pixels darker than 16.</summary>
-    private static (double Luma, double Dark) Brightness(byte[] px)
+    internal static (double Luma, double Dark) Brightness(byte[] px)
     {
         long sum = 0, dark = 0, n = 0;
         for (int i = 0; i < px.Length; i += 8) // every other pixel
@@ -564,7 +574,7 @@ public static class CaptureAnalyzer
         return (n == 0 ? 0 : sum / (double)n, n == 0 ? 0 : dark / (double)n);
     }
 
-    private static byte[] Downscale(byte[] src, int w, int h, int tw, int th)
+    internal static byte[] Downscale(byte[] src, int w, int h, int tw, int th)
     {
         byte[] dst = new byte[tw * th * 4];
         for (int y = 0; y < th; y++)
@@ -612,9 +622,19 @@ public static class CaptureAnalyzer
         return s / (3.0 * a.Length / 4);
     }
 
-    private static bool IsBlack(FrameStat frameStat) => frameStat.Thumb != null && frameStat.Luma < 10 && frameStat.Dark > 0.97;
+    internal static bool IsBlack(FrameStat frameStat) => frameStat.Thumb != null && frameStat.Luma < 10 && frameStat.Dark > 0.97;
 
-    private static void FindFrames(List<FrameStat> frameStats, List<Finding> findings, double threshold, List<InputEvent> input)
+    internal static void FindFrames(List<FrameStat> frameStats, List<Finding> findings, double threshold, IReadOnlyList<InputEvent> input)
+    {
+        int first = findings.Count;
+        FindFramesCore(frameStats, findings, threshold, input);
+        for (int i = first; i < findings.Count; i++)
+        {
+            findings[i] = findings[i] with { Present = frameStats[findings[i].Index].F.Info.Present };
+        }
+    }
+
+    private static void FindFramesCore(List<FrameStat> frameStats, List<Finding> findings, double threshold, IReadOnlyList<InputEvent> input)
     {
         int n = frameStats.Count;
         // black frames: a run of 1-3 between normal frames is a black flash, a longer run a black screen
@@ -667,7 +687,7 @@ public static class CaptureAnalyzer
                     continue; // reported as a black flash
                 }
 
-                findings.Add(new Finding("flash", k, 1, $"differs from both neighbours, which match each other: {det.Describe(f).Replace($"frame {f.Frame}: ", "")}"));
+                findings.Add(new Finding("flash", k, 1, $"differs from both neighbours, which match each other: {det.Describe(f).Replace($"frame {f.Frame}: ", "")}") { Cell = f.Cell });
             }
         }
 
@@ -806,7 +826,7 @@ public static class CaptureAnalyzer
             + " the game's speed is the session log's FPS lines outside the recording, or a re-run without --rerun-gpu-dump";
     }
 
-    internal static long PausedNs(List<InputEvent> input, long fromNs, long toNs)
+    internal static long PausedNs(IReadOnlyList<InputEvent> input, long fromNs, long toNs)
     {
         long total = 0;
         long? pausedSince = null;
