@@ -21,6 +21,8 @@ public sealed class Watchdog : IDisposable
     long _lastFrames = -1, _lastCompleted = -1;
     DateTime _frameAt = DateTime.Now, _gpuAt = DateTime.Now;
     int _reportsThisStall;
+    // "it worked before" (Core.Util.GoodRuns): a session that stalled does not count as a good run
+    readonly GoodRunTracker _goodRuns;
     // debug mode periodic lines
     DateTime _perfAt = DateTime.Now, _summaryAt = DateTime.Now;
     DateTime _audioAt = DateTime.Now;
@@ -34,6 +36,7 @@ public sealed class Watchdog : IDisposable
         _emu = emu;
         _renderer = renderer;
         _perfCpu = System.Diagnostics.Process.GetCurrentProcess().TotalProcessorTime;
+        _goodRuns = new GoodRunTracker(Program.DataRoot, () => _emu.TitleId, Core.SaveState.SaveStateFile.EmulatorVersion);
         _timer = new Timer(_ => Tick(), null, 1000, 1000);
     }
 
@@ -67,6 +70,7 @@ public sealed class Watchdog : IDisposable
                 _lastCompleted = completed;
                 _gpuAt = now;
             }
+            _goodRuns.NoteFrames(frames);
             double frameStall = (now - _frameAt).TotalSeconds, gpuStall = (now - _gpuAt).TotalSeconds;
             // only once the game presents (boot and loading before the first frame can take long)
             double stall = Math.Max(frames > 0 ? frameStall : 0, gpuStall);
@@ -75,7 +79,7 @@ public sealed class Watchdog : IDisposable
             {
                 _reportsThisStall++;
                 string what = gpuStall >= stall ? $"GPU worker made no progress for {gpuStall:F0} s ({submitted - completed} commands pending)" : $"no frame presented for {frameStall:F0} s";
-                Log.Warn($"[watchdog] STALL: {what} (frame {frames})\n{DescribeState(_emu, _renderer())}");
+                Log.Warn($"[watchdog] STALL: {what} (frame {frames})\n{_goodRuns.NoteStall()}\n{DescribeState(_emu, _renderer())}");
                 Log.Flush();
             }
             // F9 turned debug mode on: the periodic audio lines count from now (AudioDiagnostics logged a snapshot)

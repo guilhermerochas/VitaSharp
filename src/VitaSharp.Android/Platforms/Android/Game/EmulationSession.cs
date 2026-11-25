@@ -48,6 +48,10 @@ public sealed partial class EmulationSession : IDisposable
     Thread? _boot;
     long _framesAtStart;
     bool _started, _disposed;
+    // "it worked before" (Core.Util.GoodRuns): Android has no watchdog, so this timer detects the stall as the
+    // desktop's does and logs the good-run line
+    GoodRunTracker? _goodRuns;
+    System.Threading.Timer? _goodRunTimer;
     volatile bool _emuStarted;
 
     /// <summary>Raised (on an emulator thread) when the game crashes or cannot start.</summary>
@@ -369,6 +373,8 @@ public sealed partial class EmulationSession : IDisposable
 
             _stats.Start();
             Performance.Start();
+            _goodRuns = new GoodRunTracker(AppServices.Data.Root, () => _emu.TitleId, SaveStateFile.EmulatorVersion);
+            _goodRunTimer = new System.Threading.Timer(_ => CheckGoodRun(), null, 1000, 1000);
         }
         catch (Exception e)
         {
@@ -590,6 +596,23 @@ public sealed partial class EmulationSession : IDisposable
 
 
     /// <summary>Stops the game and records the session in the game's statistics.</summary>
+    /// <summary>Once a second: the frames to the good-run tracker; a stall (no frame for 5 s once the game presents, a
+    /// pause not counted) logs the version that last ran the title without one, as the desktop watchdog's STALL does.</summary>
+    void CheckGoodRun()
+    {
+        try
+        {
+            if (_goodRuns?.Tick(VitaSharp.Core.Hle.Modules.Display.FramesPresented, DateTime.Now, EmulationPause.IsPaused) is { } stall)
+            {
+                Log.Warn("[session] " + stall);
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Log.WarnOnce("good-run-check", $"good runs: {e.Message}");
+        }
+    }
+
     public void Dispose()
     {
         lock (_surfaceLock)
@@ -600,6 +623,7 @@ public sealed partial class EmulationSession : IDisposable
         }
         TrophyNotifications.Unlocked -= OnTrophy;
         _stats.Stop();
+        _goodRunTimer?.Dispose();
         RecordStatistics();
         try
         {

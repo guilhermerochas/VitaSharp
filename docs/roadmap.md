@@ -27,9 +27,10 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
   - [x] **Tempo sem CPU por thread:** no STALL e no report, a maior lacuna de host entre duas chamadas HLE seguidas de cada
     thread, separando o sono do ritmo da CPU (pacing) da preempção do host.
     Feito (24/11/2026, feat/alg4-g; em "Corrigido, falta o usuário testar"): `GuestThread.HleGaps.cs`.
-  - **"Antes funcionava":** o VitaSharp guarda, por título, a última versão que chegou ao gameplay sem travar (junto
+  - [x] **"Antes funcionava":** o VitaSharp guarda, por título, a última versão que chegou ao gameplay sem travar (junto
     do `playtime.json`); o log de uma sessão que trava diz "PCSE00020 rodou sem travar na versão ebec3997" — é o
     ponto de partida de uma bisseção sem perguntar ao usuário.
+    Feito (24/11/2026, feat/alg4-g; em "Corrigido, falta o usuário testar"): `Core.Util.GoodRuns`, no PC e no Android.
   - **Executáveis guardados por merge na main**, para que uma bisseção só precise bootar, sem compilar.
 
 - [x] Gravar tudo (F8) diz o contexto no próprio report.txt (pedido do usuário, 10/11/2026; agente snd1,
@@ -3301,6 +3302,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (24/11/2026, falta testar) [P3][M] O STALL diz qual versão rodou o jogo sem travar (feat/alg4-g; item "O log e a
+  captura F8 dizem a causa de uma trava de cara" de Diagnóstico): por título, a última versão do VitaSharp que passou de
+  1800 quadros sem STALL fica em `<dados>/good-runs.json`, ao lado do `playtime.json` (`Core.Util.GoodRuns`). No PC o
+  `[watchdog] STALL` ganha a linha `good run: PCSE00020 ran without a stall on version X, data (this one is Y)`. O
+  Android não tinha watchdog: um timer da sessão detecta o mesmo travamento (nenhum quadro por 5 s depois do
+  primeiro, sem contar pausa) e grava `[session] STALL: ...` com a mesma linha. Testes: `GoodRunsTests` (o arquivo, a
+  linha, o rastreador com relógio controlado: registra uma vez, a sessão que travou não conta, pausa não é trava).
+  Testar: jogar um jogo mais de 1 minuto (o arquivo ganha o título com a versão); num jogo que trava, o STALL do log
+  (PC) ou do logcat (Android) diz a última versão que rodou sem travar.
 
 - [ ] (24/11/2026, falta testar) [P3][M] O STALL diz quanto tempo cada thread está sem chamar o HLE e por quê
   (feat/alg4-g; item "O log e a captura F8 dizem a causa de uma trava de cara" de Diagnóstico): cada thread guarda a
