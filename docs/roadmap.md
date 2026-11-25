@@ -2455,7 +2455,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `registro + i*0x24` (tempo em +0x18, bandeiras em +0x1E, o bit 0x8 = campo válido, o campo em +0x32/+0x34/+0x36
   como int16 << 2); o campo vem do magnetômetro no I2C 1, endereço 0x18, registro 0x11 (8 bytes, FUN_810003a4 e
   vizinhas); acelerômetro e giroscópio chegam pelo syscon (`SceSysconForDriver_40FF3898`, pacotes de movimento):
-  falta ler esse caminho para saber as unidades brutas antes de montar a fila a partir da amostra do host;
+  falta ler esse caminho para saber as unidades brutas antes de montar a fila a partir da amostra do host.
+  Lido (small4, 2ª rodada, timebox de 1 h sem fechar): o pacote de movimento do syscon (FUN_81000610 -> FUN_810027e4)
+  tem [0] = 2, [1] = tamanho, [4] -> registro +9, [5] (4 bits baixos = intervalo) -> +0xA, [6..7] = contador da
+  primeira amostra, [8..11] = um nibble de bandeiras por amostra (até 6) e os dados a partir de +0xC, cada grupo de
+  3 x u16 presente conforme o nibble. Na amostra: +0x18 = intervalo x contador, +0x1C = contador, +0x1E = bandeiras
+  (bit 0: +0x20/+0x22/+0x24; bit 2: +0x2C/+0x2E/+0x30; bit 3: o campo +0x32..; bit 1 do nibble: formato largo, com
+  +0x26..+0x2A e +0x38/+0x3A). O driver_us lê o grupo do bit 0 pelo FUN_8100a52c (escalado pelo tempo, provável
+  giroscópio) e o do bit 2 pelo FUN_8100a478 (provável acelerômetro), os dois sem sinal e corrigidos pela calibração
+  de fábrica (`DAT_81015214`, `DAT_810152ac`). Montar a fila a partir da amostra do host exige inverter essa
+  calibração (ler de onde ela vem: a calibração gravada do aparelho) e confirmar qual grupo é qual: [G];
   (2) a fusão do campo no `deviceQuat` como o driver_us faz (hoje só a matriz NED e a estabilidade usam o campo).
   Achado (small4, estudo do driver_us 3.74, timebox de 1 h sem fechar): na primeira amostra depois de um reset
   (o pedido pendente em `DAT_81010148` por leitor), com o magnetômetro desligado (`DAT_81015258` = 0, posto pelo
@@ -3357,15 +3366,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
-- [ ] (25/11/2026, falta testar) [P2][G] Fila de dump do SceCoredump e o arquivo de core (fix/small3,
-  `VshBridge.CoredumpQueue.cs`). No 3.74 um pedido conferido ocupa uma das duas vagas do módulo (as duas ocupadas:
-  0x8001000C, FUN_81006f10), recebe o próximo id de dump (de 1 até 0x7FFFFFFF) e vai para o thread de dump, que grava
-  `psp2core-<id>-0x<pid>-<título>.psp2dmp` (como .tmp, renomeado no fim) e libera a vaga. Um aparelho de varejo sem a
-  flag de QA não guarda arquivo de core; o VitaSharp só guarda quando pedido: `VITASHARP_COREDUMP_DIR` dá a pasta do
-  host (sem ela, como antes, 0x80020008). O arquivo é um ELF de core (ET_CORE, EM_ARM) com um PT_LOAD por bloco de
-  memória do processo e uma nota "VITASHARP" com o processo e as threads com os registradores; as notas da Sony
-  ainda não. Teste: `CoredumpKernelTests.DumpRequestsTakeTheTwoSlotsAndWriteTheCoreFile` (falha sem a mudança; 50x,
-  0 falhas). Testar: com `VITASHARP_COREDUMP_DIR=<pasta>`, um jogo que trava faz o sistema pedir o dump e o
 - [ ] (25/11/2026, falta testar) [P3][M] Entradas de import conferidas antes do link, como o modulemgr 3.74
   (fix/small4). Antes de ligar cada biblioteca que acha (FUN_81008aa0 -> FUN_81005100), num módulo de processo de
   usuário, o 3.74 exige que cada stub de função caiba inteiro (0x10 bytes) num segmento de permissão R+X exata (5,
@@ -3379,6 +3379,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   segmento de código R+X, como um módulo de verdade. Teste: `ImportEntryCheckTests` (falha sem a mudança). Testar:
   jogos, homebrew e plugins de usuário abrem como antes (todo módulo que o Vita aceita passa; um que o Vita recusa
   agora é recusado com 0x8002D01E no log).
+- [ ] (25/11/2026, falta testar) [P2][G] Fila de dump do SceCoredump e o arquivo de core (fix/small3,
+  `VshBridge.CoredumpQueue.cs`). No 3.74 um pedido conferido ocupa uma das duas vagas do módulo (as duas ocupadas:
+  0x8001000C, FUN_81006f10), recebe o próximo id de dump (de 1 até 0x7FFFFFFF) e vai para o thread de dump, que grava
+  `psp2core-<id>-0x<pid>-<título>.psp2dmp` (como .tmp, renomeado no fim) e libera a vaga. Um aparelho de varejo sem a
+  flag de QA não guarda arquivo de core; o VitaSharp só guarda quando pedido: `VITASHARP_COREDUMP_DIR` dá a pasta do
+  host (sem ela, como antes, 0x80020008). O arquivo é um ELF de core (ET_CORE, EM_ARM) com um PT_LOAD por bloco de
+  memória do processo e uma nota "VITASHARP" com o processo e as threads com os registradores; as notas da Sony
+  ainda não. Teste: `CoredumpKernelTests.DumpRequestsTakeTheTwoSlotsAndWriteTheCoreFile` (falha sem a mudança; 50x,
+  0 falhas). Testar: com `VITASHARP_COREDUMP_DIR=<pasta>`, um jogo que trava faz o sistema pedir o dump e o
   `psp2core-*.psp2dmp` aparece na pasta.
 - [ ] (25/11/2026, falta testar) [P2][G] Eventos de erro de E/S e aviso de troca de mídia do iofilemgr 3.74
   (fix/small3, `IoFileMgr.ErrorEvents.cs`). O módulo monta na partida uma tabela de 32 pontos de montagem (id, o
