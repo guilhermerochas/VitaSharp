@@ -17,7 +17,24 @@ public sealed class DeviceInfoReportTests(GuestMemoryFixture fixture) : IDisposa
 {
     private readonly HleHarness _harness = new(fixture, "devinfo");
 
-    public void Dispose() => _harness.Dispose();
+    /// <summary>A fixed host drive (12 GiB with 5 GiB and an odd 4 KiB free, under the 64 GiB cap): the reports are
+    /// compared with each other and with this value, never with a real drive whose free space other processes move
+    /// between two reads.</summary>
+    private static readonly (ulong Total, ulong Free) s_drive = (12UL << 30, (5UL << 30) + 0x1000);
+
+    private readonly bool _driveSet = SetDrive();
+
+    private static bool SetDrive()
+    {
+        DeviceCapacity.HostDriveSource = _ => s_drive;
+        return true;
+    }
+
+    public void Dispose()
+    {
+        DeviceCapacity.HostDriveSource = null;
+        _harness.Dispose();
+    }
 
     private (ulong Total, ulong Free) Served(string device)
     {
@@ -26,22 +43,13 @@ public sealed class DeviceInfoReportTests(GuestMemoryFixture fixture) : IDisposa
         return DeviceCapacity.Of(host);
     }
 
-    /// <summary>Runs <paramref name="report"/> until the host drive's free space is the same before and after it (other
-    /// processes write to the drive meanwhile), then checks the block against that value.</summary>
+    /// <summary>Runs <paramref name="report"/> and checks the block against the served drive (the fixed source).</summary>
     private void AssertReportsTheServedDrive(string device, Func<uint> report, Action<uint, (ulong Total, ulong Free)> check)
     {
-        const int Attempts = 8;
-        for (int attempt = 1; ; attempt++)
-        {
-            (ulong Total, ulong Free) before = Served(device);
-            uint info = report();
-            (ulong Total, ulong Free) after = Served(device);
-            if (before == after || attempt == Attempts)
-            {
-                check(info, after);
-                return;
-            }
-        }
+        Assert.True(_driveSet);
+        (ulong Total, ulong Free) served = Served(device);
+        Assert.Equal(s_drive, served);
+        check(report(), served);
     }
 
     private uint FilledBlock()
@@ -84,7 +92,17 @@ public sealed class DeviceInfoReportTests(GuestMemoryFixture fixture) : IDisposa
         Assert.Equal(0, Call(_harness.Module<AppMgr>(), "sceAppMgrGetDevInfo", dev, new Ptr<ulong>(sizes), new Ptr<ulong>(sizes + 8)));
         Assert.Equal(GuestMemory.Read<ulong>(sizes), GuestMemory.Read<ulong>(info));
         Assert.Equal(GuestMemory.Read<ulong>(sizes + 8), GuestMemory.Read<ulong>(info + 8));
-        Assert.True(GuestMemory.Read<ulong>(info) <= DeviceCapacity.MaxBytes);
+        Assert.Equal(s_drive.Total, GuestMemory.Read<ulong>(info));
+        Assert.Equal(s_drive.Free, GuestMemory.Read<ulong>(info + 8));
+    }
+
+    /// <summary>The 64 GiB cap of the largest memory card: a bigger host drive reports 64 GiB, and never more free
+    /// than that.</summary>
+    [Fact]
+    public void ABigHostDriveIsCappedAtTheLargestMemoryCard()
+    {
+        DeviceCapacity.HostDriveSource = _ => (2UL << 40, 1UL << 40);
+        Assert.Equal((DeviceCapacity.MaxBytes, DeviceCapacity.MaxBytes), DeviceCapacity.Of("x"));
     }
 
     [Fact]
