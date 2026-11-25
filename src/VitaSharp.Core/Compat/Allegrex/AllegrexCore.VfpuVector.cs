@@ -219,6 +219,7 @@ public sealed partial class AllegrexCore
     }
 
     /// <summary>The summing operations' NaN is always positive; a zero sum is +0 (pspautotests cpu/vfpu/signed_zero).</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     private static uint SumResult(uint bits)
     {
         return AllegrexVfpuMath.IsNaN(bits) ? AllegrexVfpuMath.PositiveNaN : bits;

@@ -147,54 +147,44 @@ public static class AllegrexVfpuMath
     /// </summary>
     public static uint Dot(ReadOnlySpan<uint> left, ReadOnlySpan<uint> right)
     {
-        const int ExtraBits = 2;
-        const uint ImplicitBit = 1u << 23;
-        Span<int> exponents = stackalloc int[4];
-        Span<uint> products = stackalloc uint[4];
-        Span<bool> negative = stackalloc bool[4];
-        int infinitySign = 0;
-        int highest = -2 * 127;
-        for (int i = 0; i < 4; i++)
+        return Dot4(left[0], left[1], left[2], left[3], right[0], right[1], right[2], right[3]);
+    }
+
+    private const int DotExtraBits = 2;
+    private const uint DotImplicitBit = 1u << 23;
+
+    /// <summary><see cref="Dot"/> of lanes given one by one (no spans: the IL tier calls it with its registers in
+    /// locals).</summary>
+    public static uint Dot4(uint x0, uint x1, uint x2, uint x3, uint y0, uint y1, uint y2, uint y3)
+    {
+        // no infinity or NaN among the operands (the common case): every lane is a plain product
+        if (!HasMaximumExponent(x0) && !HasMaximumExponent(x1) && !HasMaximumExponent(x2) && !HasMaximumExponent(x3)
+            && !HasMaximumExponent(y0) && !HasMaximumExponent(y1) && !HasMaximumExponent(y2) && !HasMaximumExponent(y3))
         {
-            uint x = left[i];
-            uint y = right[i];
-            int exponentX = (int)((x >> 23) & 0xFF);
-            int exponentY = (int)((y >> 23) & 0xFF);
-            uint mantissaX = x & (ImplicitBit - 1);
-            uint mantissaY = y & (ImplicitBit - 1);
-            if (exponentX == 255 || exponentY == 255)
-            {
-                bool nanOperand = (exponentX == 255 && mantissaX != 0) || (exponentY == 255 && mantissaY != 0);
-                bool infinityTimesZero = (exponentX == 255 && exponentY == 0) || (exponentY == 255 && exponentX == 0);
-                int sign = ((x ^ y) >> 31) != 0 ? -1 : 1;
-                if (nanOperand || infinityTimesZero || (infinitySign != 0 && infinitySign != sign))
-                {
-                    return PositiveNaN;
-                }
+            FiniteLane(x0, y0, out int f0, out uint q0);
+            FiniteLane(x1, y1, out int f1, out uint q1);
+            FiniteLane(x2, y2, out int f2, out uint q2);
+            FiniteLane(x3, y3, out int f3, out uint q3);
+            int top = Math.Max(Math.Max(f0, f1), Math.Max(f2, f3));
+            int total = DotTerm(q0, top - f0, ((x0 ^ y0) >> 31) != 0) + DotTerm(q1, top - f1, ((x1 ^ y1) >> 31) != 0)
+                + DotTerm(q2, top - f2, ((x2 ^ y2) >> 31) != 0) + DotTerm(q3, top - f3, ((x3 ^ y3) >> 31) != 0);
+            return DotRound(total, top);
+        }
 
-                infinitySign = sign;
-            }
+        return DotWithInfinities(x0, x1, x2, x3, y0, y1, y2, y3);
+    }
 
-            negative[i] = ((x ^ y) >> 31) != 0;
-            if (exponentX == 0 || exponentY == 0)
-            {
-                exponents[i] = -2 * 127;
-                products[i] = 0;
-            }
-            else
-            {
-                exponents[i] = exponentX + exponentY - (2 * 127);
-                ulong product = (ulong)(ImplicitBit + mantissaX) * (ImplicitBit + mantissaY);
-                uint kept = (uint)(product >> (23 - ExtraBits));
-                if ((product & ((1ul << (23 - ExtraBits)) - 1)) != 0)
-                {
-                    kept |= 1;
-                }
-
-                products[i] = kept;
-            }
-
-            highest = Math.Max(highest, exponents[i]);
+    /// <summary><see cref="Dot4"/> when an operand is an infinity or a NaN (kept out of the common path's code).</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static uint DotWithInfinities(uint x0, uint x1, uint x2, uint x3, uint y0, uint y1, uint y2, uint y3)
+    {
+        int infinitySign = 0;
+        if (!DotLane(x0, y0, ref infinitySign, out int e0, out uint p0, out bool n0)
+            || !DotLane(x1, y1, ref infinitySign, out int e1, out uint p1, out bool n1)
+            || !DotLane(x2, y2, ref infinitySign, out int e2, out uint p2, out bool n2)
+            || !DotLane(x3, y3, ref infinitySign, out int e3, out uint p3, out bool n3))
+        {
+            return PositiveNaN;
         }
 
         if (infinitySign != 0)
@@ -202,15 +192,38 @@ public static class AllegrexVfpuMath
             return infinitySign < 0 ? 0xFF800000u : 0x7F800000u;
         }
 
-        int sum = 0;
-        for (int i = 0; i < 4; i++)
-        {
-            int shift = Math.Min(highest - exponents[i], 28);
-            int term = (int)(products[i] >> shift);
-            sum += negative[i] ? -term : term;
-        }
+        int highest = Math.Max(Math.Max(Math.Max(-2 * 127, e0), Math.Max(e1, e2)), e3);
+        int sum = DotTerm(p0, highest - e0, n0) + DotTerm(p1, highest - e1, n1) + DotTerm(p2, highest - e2, n2) + DotTerm(p3, highest - e3, n3);
+        return DotRound(sum, highest);
+    }
 
-        uint magnitude = (uint)Math.Abs(sum) >> ExtraBits;
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private static bool HasMaximumExponent(uint bits)
+    {
+        return (bits & 0x7F800000) == 0x7F800000;
+    }
+
+    /// <summary>A lane of finite operands: as <see cref="DotLane"/>, without branches on the common path.</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private static void FiniteLane(uint x, uint y, out int exponent, out uint product)
+    {
+        int exponentX = (int)((x >> 23) & 0xFF);
+        int exponentY = (int)((y >> 23) & 0xFF);
+        ulong full = (ulong)(DotImplicitBit | (x & (DotImplicitBit - 1))) * (DotImplicitBit | (y & (DotImplicitBit - 1)));
+        uint kept = (uint)(full >> (23 - DotExtraBits)) | ((full & ((1ul << (23 - DotExtraBits)) - 1)) != 0 ? 1u : 0u);
+        bool zero = exponentX == 0 || exponentY == 0;
+        exponent = zero ? -2 * 127 : exponentX + exponentY - (2 * 127);
+        product = zero ? 0 : kept;
+    }
+
+    /// <summary>The integer sum of the aligned products to float bits: the extra bits truncated, nearest even to 24
+    /// bits, below FLT_MIN zero, a zero sum +0.</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private static uint DotRound(int sum, int highest)
+    {
+        // |sum| without the overflow check (four 26-bit terms cannot reach int.MinValue)
+        int signMask = sum >> 31;
+        uint magnitude = (uint)((sum ^ signMask) - signMask) >> DotExtraBits;
         int exponent = highest;
         if (magnitude != 0)
         {
@@ -222,7 +235,7 @@ public static class AllegrexVfpuMath
                 uint kept = magnitude >> normalize;
                 uint dropped = magnitude & ((2 * half) - 1);
                 magnitude = kept + ((dropped + (kept & 1)) > half ? 1u : 0u);
-                if (magnitude >= 2 * ImplicitBit)
+                if (magnitude >= 2 * DotImplicitBit)
                 {
                     magnitude >>= 1;
                     exponent++;
@@ -252,6 +265,57 @@ public static class AllegrexVfpuMath
 
         uint signBit = sum < 0 ? 0x80000000u : 0u;
         return signBit | ((uint)(exponent + 127) << 23) | (magnitude & 0x007FFFFF);
+    }
+
+    /// <summary>One lane of the dot product: false when it makes the result NaN (a NaN operand, inf * 0, or an
+    /// infinity of the other sign than an earlier one); else its exponent, its product with two extra bits (round to
+    /// odd) and its sign.</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private static bool DotLane(uint x, uint y, ref int infinitySign, out int exponent, out uint product, out bool negative)
+    {
+        int exponentX = (int)((x >> 23) & 0xFF);
+        int exponentY = (int)((y >> 23) & 0xFF);
+        uint mantissaX = x & (DotImplicitBit - 1);
+        uint mantissaY = y & (DotImplicitBit - 1);
+        negative = ((x ^ y) >> 31) != 0;
+        if (exponentX == 255 || exponentY == 255)
+        {
+            bool nanOperand = (exponentX == 255 && mantissaX != 0) || (exponentY == 255 && mantissaY != 0);
+            bool infinityTimesZero = (exponentX == 255 && exponentY == 0) || (exponentY == 255 && exponentX == 0);
+            int sign = negative ? -1 : 1;
+            if (nanOperand || infinityTimesZero || (infinitySign != 0 && infinitySign != sign))
+            {
+                exponent = 0;
+                product = 0;
+                return false;
+            }
+
+            infinitySign = sign;
+        }
+
+        if (exponentX == 0 || exponentY == 0)
+        {
+            exponent = -2 * 127;
+            product = 0;
+            return true;
+        }
+
+        exponent = exponentX + exponentY - (2 * 127);
+        ulong full = (ulong)(DotImplicitBit + mantissaX) * (DotImplicitBit + mantissaY);
+        product = (uint)(full >> (23 - DotExtraBits));
+        if ((full & ((1ul << (23 - DotExtraBits)) - 1)) != 0)
+        {
+            product |= 1;
+        }
+
+        return true;
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private static int DotTerm(uint product, int distance, bool negative)
+    {
+        int term = (int)(product >> Math.Min(distance, 28));
+        return negative ? -term : term;
     }
 
     /// <summary>

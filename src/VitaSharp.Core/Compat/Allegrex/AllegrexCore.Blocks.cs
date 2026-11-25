@@ -102,11 +102,12 @@ public sealed partial class AllegrexCore
         // the block that last followed this one
         public Block? Next;
 
-        // the IL tier: instructions run, whether a compile was tried, the compiled code, whether it ends in a branch
+        // the IL tier: instructions run, whether a compile was tried, the compiled region it heads, the heads of the
+        // regions it is part of
         public long Executed;
         public bool CompileTried;
         public BlockCode? Code;
-        public bool EndsInBranch;
+        public List<Block>? Dependents;
     }
 
     private readonly Block?[]?[] _pages = new Block?[]?[PageCount];
@@ -165,7 +166,25 @@ public sealed partial class AllegrexCore
         {
             foreach (Block? block in blocks)
             {
-                block?.Generation = -1;
+                if (block == null)
+                {
+                    continue;
+                }
+
+                block.Generation = -1;
+
+                // the compiled regions it is part of go too (their heads may compile again)
+                if (block.Dependents != null)
+                {
+                    foreach (Block head in block.Dependents)
+                    {
+                        head.Code = null;
+                        head.CompileTried = false;
+                        head.Executed = 0;
+                    }
+
+                    block.Dependents = null;
+                }
             }
         }
 
@@ -254,11 +273,12 @@ public sealed partial class AllegrexCore
 
     private Block BuildBlock(uint pc)
     {
-        Block block = new() { Generation = _generation, Start = pc, Instructions = new DecodedInstruction[MaxBlockInstructions] };
+        // a branch at the length limit still takes its delay slot: one more than the limit
+        Block block = new() { Generation = _generation, Start = pc, Instructions = new DecodedInstruction[_blockLimit + 1] };
         uint address = pc;
         bool delaySlotNext = false;
         int count = 0;
-        while (count < MaxBlockInstructions)
+        while (true)
         {
             uint word = _bus.Read32(address & PhysicalMask);
             block.Instructions[count] = DecodeForBlock(word, out bool ends, out bool branches);
@@ -276,7 +296,7 @@ public sealed partial class AllegrexCore
                 continue;
             }
 
-            if (ends || (address & ((1u << PageShift) - 1)) == 0)
+            if (ends || (address & ((1u << PageShift) - 1)) == 0 || count >= _blockLimit)
             {
                 break;
             }
@@ -289,7 +309,7 @@ public sealed partial class AllegrexCore
             _spillPages[lastPage] = true;
         }
 
-        if (count < MaxBlockInstructions)
+        if (count < block.Instructions.Length)
         {
             Array.Resize(ref block.Instructions, count);
         }
@@ -302,6 +322,7 @@ public sealed partial class AllegrexCore
     private const int ChainOther = 1;
     private const int ChainBranched = 2;
     private const int ChainStopped = 3;
+    private const int ChainFinal = 4;
 
     /// <summary>Where a run is: the block, its start and how many of its instructions the run may execute, the
     /// instruction reached, the instructions of the earlier blocks of the run, what the run may still execute after
@@ -347,6 +368,14 @@ public sealed partial class AllegrexCore
             {
                 stop = RunChain(ref r, ref c, _generation);
             }
+            if (stop == ChainFinal)
+            {
+                // compiled code ran: the PC fields are final (the next PC, or an exception's vector)
+                _executedInstructions = baseCount + c.Done;
+                entry = c.Block;
+                return c.Done;
+            }
+
             if (stop == ChainBranched)
             {
                 _pc = c.Target;
@@ -653,38 +682,33 @@ public sealed partial class AllegrexCore
 
             if (i == 0)
             {
-                // a block entry: count it for the IL tier, and run its compiled code when the whole block fits
+                // a block entry: count it for the IL tier, and run its compiled region when the budget holds the block
                 if (block.Code == null && !block.CompileTried)
                 {
                     NoteBlockRun(block);
                 }
 
                 BlockCode? code = block.Code;
-                if (code != null && count == block.Count)
+                if (code != null && limit >= block.Count && count == block.Count)
                 {
                     long exceptions = _exceptionsTaken;
-                    target = code(this, ref r, out int executed);
-                    if (executed < count || _endBlock)
+                    target = code(this, ref r, limit, out int executed);
+                    if (executed > 0 || _exceptionsTaken != exceptions)
                     {
-                        i = executed;
-                        stop = _endBlock ? ChainStopped : ChainOther;
-                        if (_exceptionsTaken != exceptions)
+                        done += executed;
+                        limit -= executed;
+                        if (_exceptionsTaken == exceptions)
                         {
-                            // an FPU/VFPU exception: the PC fields hold the vector
-                            c.Synced = i;
+                            _pc = target;
+                            _nextPc = target + 4;
                         }
 
+                        i = 0;
+                        stop = ChainFinal;
                         break;
                     }
 
-                    i = count;
-                    if (!block.EndsInBranch)
-                    {
-                        stop = ChainEnd;
-                        break;
-                    }
-
-                    goto Follow;
+                    // nothing ran (a misaligned access first, or prefixes not at rest): the interpreter takes it
                 }
             }
 
@@ -706,8 +730,6 @@ public sealed partial class AllegrexCore
             target = BranchTarget(ref r, ref d, op, start + (uint)(i * 4) + 4);
             ExecutePlain(ref r, ref Unsafe.Add(ref first, i + 1));
             i += 2;
-
-        Follow:
             done += i;
             limit -= i;
             Block? next = block.Next;

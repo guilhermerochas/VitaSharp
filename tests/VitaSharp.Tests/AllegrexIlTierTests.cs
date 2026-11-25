@@ -63,6 +63,67 @@ public sealed class AllegrexIlTierTests
         Assert.Equal(interpreted.Bus.Read32(Base + 0x3000), compiled.Bus.Read32(Base + 0x3000));
     }
 
+    /// <summary>
+    /// A two-block loop with FPU and VFPU arithmetic (one region: the blocks jump to each other in compiled code),
+    /// with the Count/Compare timer interrupt arriving inside it, and optionally the inexact exception enabled.
+    /// </summary>
+    private static AllegrexRig RunFloatLoop(long hotInstructions, bool trapInexact, out int compiled)
+    {
+        uint addS = 0x46000000u | (1u << 16) | (0u << 11) | (2u << 6);   // add.s f2, f0, f1
+        uint mulS = 0x46000002u | (1u << 16) | (2u << 11) | (0u << 6);   // mul.s f0, f2, f1
+        uint vadd = 0x60000000u | (2u << 16) | (1u << 8) | 0u | 0x8080u; // vadd.q C000, C010, C020
+        uint vmul = 0x64000000u | (2u << 16) | (0u << 8) | 1u | 0x8080u; // vmul.q C010, C000, C020
+        uint vdot = 0x64800000u | (1u << 16) | (0u << 8) | 3u | 0x8080u; // vdot.q S030, C000, C010
+        uint jump = (0x02u << 26) | ((Base >> 2) & 0x03FFFFFF);
+        using IDisposable tier = AllegrexCore.ForceIlTier(hotInstructions);
+        AllegrexRig rig = new(addS, vadd, Beq(T0, Zero, 3), Addiu(T1, T1, 1), Nop, Nop, mulS, vdot, jump, vmul);
+        rig.Core.Fpr[0] = BitConverter.SingleToUInt32Bits(1.5f);
+        rig.Core.Fpr[1] = BitConverter.SingleToUInt32Bits(1.0001f);
+        for (int i = 0; i < 128; i++)
+        {
+            rig.Core.WriteVfpuRegister(i, BitConverter.SingleToUInt32Bits(0.25f + (i * 0.125f)));
+        }
+
+        rig.Core.Fcr31 = trapInexact ? 0x80u : 0u;
+        rig.Core.Status = AllegrexCore.StatusIe | AllegrexCore.CauseTimerInterrupt;
+        rig.Core.WriteCop0(AllegrexCore.Cop0Compare, 1003);
+        rig.Core.Run(500);
+        rig.Core.Run(1000);
+        compiled = rig.Core.CompiledBlocks;
+        return rig;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AFloatLoopRegionEndsWithTheInterpretersState(bool trapInexact)
+    {
+        if (!AllegrexCore.IlTierSupported)
+        {
+            return;
+        }
+
+        AllegrexRig interpreted = RunFloatLoop(long.MaxValue, trapInexact, out _);
+        AllegrexRig compiled = RunFloatLoop(0, trapInexact, out int regions);
+        Assert.True(regions > 0);
+        for (int register = 0; register < 32; register++)
+        {
+            Assert.Equal(interpreted[register], compiled[register]);
+            Assert.Equal(interpreted.Core.Fpr[register], compiled.Core.Fpr[register]);
+        }
+
+        for (int register = 0; register < 128; register++)
+        {
+            Assert.Equal(interpreted.Core.ReadVfpuRegister(register), compiled.Core.ReadVfpuRegister(register));
+        }
+
+        Assert.Equal(interpreted.Core.Fcr31, compiled.Core.Fcr31);
+        Assert.Equal(interpreted.Core.Pc, compiled.Core.Pc);
+        Assert.Equal(interpreted.Core.Epc, compiled.Core.Epc);
+        Assert.Equal(interpreted.Core.Cause, compiled.Core.Cause);
+        Assert.Equal(interpreted.Core.ReadCop0(AllegrexCore.Cop0Count), compiled.Core.ReadCop0(AllegrexCore.Cop0Count));
+    }
+
     [Fact]
     public void AMisalignedLoadInCompiledCodeRaisesAtItsPc()
     {
@@ -128,7 +189,9 @@ public sealed class AllegrexIlTierTests
         }
 
         object? instance = method.IsStatic ? null : Activator.CreateInstance(type);
-        using IDisposable tier = AllegrexCore.ForceIlTier();
+
+        // single-instruction blocks: a test that runs one instruction runs it in compiled code
+        using IDisposable tier = AllegrexCore.ForceIlTier(0, 1);
         try
         {
             method.Invoke(instance, arguments);
