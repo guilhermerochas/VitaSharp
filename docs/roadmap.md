@@ -8,10 +8,10 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
 
 ## Diagnóstico
 
-- [ ] [P2][M] **Gravar tudo: o áudio que entra nos decodificadores e nas vozes NGS** (parte do antigo "Gravar tudo
-  sem o jogo, o que falta"; o feito está em "Corrigido, falta o usuário testar"): gravar os fluxos que entram nos
-  decodificadores (sceAudiodec, ATRAC/AT9, MP3/AAC) e nos buffers das vozes NGS durante a gravação, para o rerun sem o
-  jogo reproduzir buracos e erros de decodificação (hoje só a saída em WAV).
+- [ ] [P2][M] **Gravar tudo: o áudio que entra nas vozes NGS** (o dos decodificadores `sceAudiodec` está em
+  "Corrigido, falta o usuário testar"): gravar os buffers que as vozes NGS leem durante a gravação (por hash, os bytes
+  só no limite dos arquivos), para o rerun sem o jogo reproduzir buracos; o rerun repõe ou avisa como o
+  `CapturedAudioInputs` faz com os decodificadores. Também o libatrac, se ele não passar pelo `sceAudiodec`.
 
 - [ ] [P2][G] **Gravar tudo: estados de vários processos sobem sem os programas** (parte do antigo "Gravar tudo sem o
   jogo, o que falta"): o estado do shell com aplicativos abertos ainda não sobe sem os programas
@@ -3314,6 +3314,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (25/11/2026, falta testar) [P2][M] Gravar tudo: o áudio que entra nos decodificadores (fix/adr4). A captura
+  guardava só a saída (WAV); o rerun sem o jogo decodificava o que estivesse na memória do estado. Agora cada quadro
+  que um decodificador do `sceAudiodec` (ATRAC9, MP3, AAC, CELP) consome entra em `audio_inputs/frames.tsv`
+  (decodificador, codec, número, tamanho, SHA-256) e, dentro do mesmo limite dos arquivos
+  (`--capture-files-mb`/`VITASHARP_CAPTURE_FILES_MB`; padrão 0: só os hashes, o áudio é dado do jogo), os bytes em
+  `audio_inputs/blobs.bin`; o `session.txt` diz quantos ("audio-inputs:"). No rerun, antes de cada quadro, o que o
+  decodificador vai ler é conferido: diferente e com bytes gravados, eles são repostos; só com hash, o log diz qual
+  decodificador (uma vez) e o resumo do rerun conta ("audio inputs:"). Testes: `AudioInputCaptureTests`. Testar:
+  gravar (F8) com `--capture-files-mb=64` num jogo com música ou voz e rodar o rerun sem o jogo: o áudio sai igual.
 
 - [ ] (25/11/2026, falta testar) [P3][M] Tabelas de bibliotecas dos módulos com os tamanhos do modulemgr 3.74
   (fix/adr4). O modulemgr 3.74 confere a tabela antes de ligar: toda entrada de export tem 0x20 bytes (senão
