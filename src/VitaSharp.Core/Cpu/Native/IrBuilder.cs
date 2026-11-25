@@ -40,6 +40,21 @@ public sealed unsafe class IrBuilder
     /// </summary>
     public bool AbortGuards;
 
+    /// <summary>
+    /// With <see cref="AbortGuards"/>: the host's memory protection finds the aborting accesses instead of a test per
+    /// access (<see cref="HostFaultAborts"/>). An instruction with accesses gets no guard; its data abort exit is
+    /// emitted after it as a region the code never branches into (<see cref="FaultExitBranch"/>), which the emitter
+    /// lays out of line, and a <see cref="FaultMark"/> before its first access starts the host code range whose faults
+    /// enter that exit. The access's address and kind come from the host fault.
+    /// </summary>
+    public bool FaultExits;
+
+    /// <summary><see cref="IrOp.BranchIf"/> Imm of a fault exit: A is the constant 1, so the branch is always taken
+    /// (every pass sees an ordinary region); the body runs only when a host fault enters it.</summary>
+    public const uint FaultExitBranch = 2;
+
+    /// <summary><see cref="IrOp.Nop"/> Imm marking where the host code range of the next fault exit starts.</summary>
+    public const uint FaultMark = 1;
     // the cache at the start of the instruction being translated (MarkInstruction): what a data abort exit stores
     private readonly int[] _instVal = new int[Slots];
     private readonly bool[] _instDirty = new bool[Slots];
@@ -602,6 +617,16 @@ public sealed unsafe class IrBuilder
     /// </summary>
     public void FinishInstruction()
     {
+        if (AbortGuards && FaultExits)
+        {
+            if (_instAccesses > 0)
+            {
+                EmitFaultExit();
+            }
+
+            return;
+        }
+
         if (!AbortGuards || _instAccesses < 2)
         {
             return;
@@ -632,6 +657,12 @@ public sealed unsafe class IrBuilder
             return; // a later access of the same instruction: FinishInstruction guards the last one
         }
 
+        if (FaultExits)
+        {
+            Emit(new IrInst(IrOp.Nop) { Imm = FaultMark }); // the instruction's faults start here
+            return;
+        }
+
         EmitGuard(addr, addr, write);
     }
 
@@ -644,6 +675,34 @@ public sealed unsafe class IrBuilder
             _instLastAddr = addr;
             _instLastWrite = write;
         }
+    }
+
+    /// <summary>
+    /// <see cref="FaultExits"/>: after an instruction with accesses, its data abort exit as a region the code never
+    /// branches into (the branch over it is always taken): the state of the instruction's start, R15/SvcPc and the
+    /// exit; the host fault handler that enters it has stored the fault's address and status. Placed after the
+    /// instruction, the exit keeps the values it stores live through every access the instruction makes.
+    /// </summary>
+    private void EmitFaultExit()
+    {
+        int skip = NewLabel();
+        Emit(new IrInst(IrOp.BranchIf) { A = Const(1), Imm = FaultExitBranch, Imm2 = (uint)skip });
+        for (int s = 0; s < Slots; s++)
+        {
+            if (s != 15 && _instDirty[s])
+            {
+                Emit(Store(s, _instVal[s]));
+            }
+        }
+
+        int pc = Const(_instPc);
+        Emit(Store(15, pc));
+        Emit(new IrInst(IrOp.StoreState) { A = pc, Imm = s_svcPcOffset });
+        Emit(new IrInst(IrOp.StoreState) { A = Const((uint)ExitReason.DataAbort), Imm = s_exitOffset });
+        Emit(DynamicExitOperands
+            ? new IrInst(IrOp.ExitDynamic) { Imm = 1, A = pc, B = Const(Block.Thumb ? 1u : 0u) }
+            : new IrInst(IrOp.ExitDynamic) { Imm = 1 });
+        Emit(new IrInst(IrOp.Label) { Imm = (uint)skip });
     }
 
     /// <summary>The guard of an access at <paramref name="addr"/>: <paramref name="reported"/> is the fault address its

@@ -44,6 +44,11 @@ public sealed unsafe partial class ArmFrontend
     /// <summary>Indirect exits carry the target pc and Thumb temps (<see cref="IrBuilder.DynamicExitOperands"/>; ARM64).</summary>
     public bool DynamicExitOperands;
 
+    /// <summary>The target emitter lays fault exits out of line and registers their host fault sites
+    /// (<see cref="IrBuilder.FaultExits"/>, <see cref="HostFaultAborts"/>): blocks of a process whose data aborts the
+    /// host's memory protection finds get no access guards.</summary>
+    public bool HostFaultExits;
+
     private static readonly uint s_exitOffset = (uint)StateLayout.Of(nameof(CpuState.Exit));
     private static readonly uint s_svcImmOffset = (uint)StateLayout.Of(nameof(CpuState.SvcImm));
     private static readonly uint s_svcPcOffset = (uint)StateLayout.Of(nameof(CpuState.SvcPc));
@@ -100,6 +105,7 @@ public sealed unsafe partial class ArmFrontend
         _thumb = block.Thumb;
         _builder.DynamicExitOperands = DynamicExitOperands;
         _builder.AbortGuards = block.Owner?.DataAbortGuards == true;
+        _builder.FaultExits = _builder.AbortGuards && HostFaultExits && block.Owner?.HostFaultAborts == true;
         IrBlock ir = _builder.Block;
         int segments = chain?.Count ?? 1;
         long cycles = 0;

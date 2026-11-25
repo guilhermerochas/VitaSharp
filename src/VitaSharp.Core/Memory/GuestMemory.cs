@@ -181,6 +181,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
         if (!lazy)
         {
             HostVirtualMemory.InstallLazyCommitHandler(@base, ReserveSize);
+            Cpu.Native.HostFaultAborts.KeepInFront(); // data abort faults are seen before this space's lazy commit
         }
 
         var space = new AddressSpace(@base, parts, views);
@@ -575,6 +576,11 @@ public sealed unsafe partial class GuestMemory : IDisposable
     private uint Commit(AddressSpace space, uint addr, uint size, string name, MemoryRegion region)
     {
         bool shared = IsSharedRegion(region);
+        if (shared && SeparateSpaces)
+        {
+            ProtectShared(addr, size, accessible: true);
+        }
+
         ZeroWithoutTouching(space, addr, size, shared);
         if (shared && SeparateSpaces)
         {
@@ -710,6 +716,11 @@ public sealed unsafe partial class GuestMemory : IDisposable
 
             SetMapped(shared ? _sharedMapped : space._mappedPages, b.Address, b.Size, false);
             MarkPages(shared ? null : space, b.Address, b.Size, 0);
+            if (shared && SeparateSpaces)
+            {
+                ProtectShared(b.Address, b.Size, accessible: false);
+            }
+
             DirtyPages.MarkRange(space.Base, b.Address, b.Size);
             if (b.Region == MemoryRegion.Fixed)
             {
@@ -850,6 +861,104 @@ public sealed unsafe partial class GuestMemory : IDisposable
         }
     }
 
+    /// <summary>
+    /// Data aborts found by host faults (<see cref="Cpu.Native.HostFaultAborts"/>): every page of <paramref name="space"/>
+    /// no block maps becomes inaccessible on the host, so a native access to it faults. Private pages are decommitted
+    /// (one a stray host access touches later is committed again by the lazy commit handler, as before); the shared
+    /// regions are views of one memory that cannot be decommitted through a view, so their committed unmapped pages are
+    /// made inaccessible in this space's views, and from now on the pages of every freed shared block too
+    /// (<see cref="ProtectShared"/>). Done again at each call (a stray access may have committed pages since).
+    /// </summary>
+    public void ArmHostFaults(AddressSpace space)
+    {
+        lock (_lock)
+        {
+            space._hostFaults = true;
+            byte* table = MappedTable(space.Base);
+            uint page = 0;
+            const uint Pages = 1u << 20;
+            while (page < Pages)
+            {
+                if (table[page] != 0)
+                {
+                    page++;
+                    continue;
+                }
+
+                uint end = page + 1;
+                bool shared = InSharedRegion(page << 12);
+                while (end < Pages && table[end] == 0 && InSharedRegion(end << 12) == shared)
+                {
+                    end++;
+                }
+
+                byte* host = space.Base + ((ulong)page << 12);
+                nuint size = (nuint)(end - page) << 12;
+                if (shared && space.HasSharedViews)
+                {
+                    HostVirtualMemory.ProtectCommitted(host, size, accessible: false);
+                }
+                else
+                {
+                    DecommitPrivate(space, host, size);
+                }
+
+                page = end;
+            }
+        }
+    }
+
+    /// <summary>Decommits [<paramref name="host"/>, + <paramref name="size"/>) of a space, piece by piece of its host
+    /// reservation (a decommit cannot span two of them).</summary>
+    private static void DecommitPrivate(AddressSpace space, byte* host, nuint size)
+    {
+        ulong start = (ulong)host, end = start + size;
+        foreach ((nint address, nuint length, bool view) in space._parts)
+        {
+            ulong partStart = Math.Max(start, (ulong)address), partEnd = Math.Min(end, (ulong)address + length);
+            if (!view && partEnd > partStart)
+            {
+                HostVirtualMemory.Decommit((byte*)partStart, (nuint)(partEnd - partStart));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The pages of a shared block become accessible again (it is being mapped) or, freed, inaccessible in every space
+    /// that keeps unmapped pages inaccessible (<see cref="ArmHostFaults"/>); only whole pages no block maps any more are
+    /// made inaccessible. Called under the lock.
+    /// </summary>
+    private void ProtectShared(uint addr, uint size, bool accessible)
+    {
+        foreach (AddressSpace space in _spaces)
+        {
+            if (!space._hostFaults || !space.HasSharedViews)
+            {
+                continue;
+            }
+
+            byte* table = MappedTable(space.Base);
+            ulong p = addr / PageSize, end = ((ulong)addr + size + PageSize - 1) / PageSize;
+            while (p < end)
+            {
+                if (!accessible && table[p] != 0)
+                {
+                    p++;
+                    continue;
+                }
+
+                ulong run = p + 1;
+                while (run < end && (accessible || table[run] == 0))
+                {
+                    run++;
+                }
+
+                HostVirtualMemory.ProtectCommitted(space.Base + p * PageSize, (nuint)((run - p) * PageSize), accessible);
+                p = run;
+            }
+        }
+    }
+
     /// <summary>The mapping table of the space whose guest base is <paramref name="spaceBase"/>.</summary>
     internal static byte* MappedTable(byte* spaceBase) => spaceBase - MappedTableOffset;
 
@@ -902,6 +1011,12 @@ public sealed unsafe partial class GuestMemory : IDisposable
         if (*entry == 0)
         {
             *entry = PageTolerated;
+        }
+
+        if (InSharedRegion(addr) && Instance is { SeparateSpaces: true })
+        {
+            // a view kept inaccessible (host fault data aborts): the page is let through in this space
+            HostVirtualMemory.ProtectCommitted(spaceBase + (addr & ~(PageSize - 1)), PageSize, accessible: true);
         }
     }
 

@@ -309,15 +309,40 @@ public sealed unsafe class BlockCache
             return false;
         }
 
+        // where the host's memory protection can find the aborting accesses, native code needs no guards
+        // (HostFaultAborts): the space's unmapped pages are made inaccessible first
+        if (Native.HostFaultAborts.Supported && Memory.GuestMemory.Instance is { } memory)
+        {
+            memory.ArmHostFaults(Space ?? memory.Primary);
+            Native.HostFaultAborts.EnsureInstalled();
+            _hostFaultAborts = true;
+        }
+
         _dataAbortGuards = true;
         Invalidate(0, uint.MaxValue);
         return true;
+    }
+
+    private volatile bool _hostFaultAborts;
+
+    /// <summary>
+    /// With <see cref="DataAbortGuards"/>: the space's unmapped pages fault on the host and native code finds data
+    /// aborts through those faults (<see cref="Native.HostFaultAborts"/>) instead of a guard per access.
+    /// </summary>
+    public bool HostFaultAborts => _hostFaultAborts;
+
+    /// <summary>Tests: native code of this cache uses the guards even where host faults could replace them.</summary>
+    internal void UseGuardsForTests()
+    {
+        _hostFaultAborts = false;
+        Invalidate(0, uint.MaxValue);
     }
 
     /// <summary>Tests: the guards off again (the blocks translated with them are dropped).</summary>
     internal void DisarmDataAbortsForTests()
     {
         _dataAbortGuards = false;
+        _hostFaultAborts = false;
         Invalidate(0, uint.MaxValue);
     }
 

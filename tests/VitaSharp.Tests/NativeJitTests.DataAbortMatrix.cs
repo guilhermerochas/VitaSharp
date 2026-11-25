@@ -1,5 +1,6 @@
 using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Cpu.Backends;
+using VitaSharp.Core.Cpu.Native;
 using VitaSharp.Core.Memory;
 using Xunit;
 
@@ -59,7 +60,7 @@ public sealed unsafe partial class NativeJitTests
         _ => DataBase + (uint)offset,
     };
 
-    private static Block AbortMatrixBlock(bool thumb, string words)
+    private static Block AbortMatrixBlock(bool thumb, string words, bool guards = false)
     {
         var bytes = new List<byte>();
         foreach (string w in words.Split(','))
@@ -83,6 +84,11 @@ public sealed unsafe partial class NativeJitTests
         bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
         var cache = new BlockCache();
         cache.ArmDataAborts();
+        if (guards)
+        {
+            cache.UseGuardsForTests();
+        }
+
         return cache.Get(CodeBase, thumb);
     }
 
@@ -95,7 +101,7 @@ public sealed unsafe partial class NativeJitTests
         s->AbortGuard = 1;
     }
 
-    private void CheckAbortMatrix(string backend, BlockRunner run, bool thumb, string words, AbortBase r0, int r0Offset, AbortBase sp, int spOffset, int abortAt)
+    private void CheckAbortMatrix(string backend, BlockRunner run, bool thumb, string words, AbortBase r0, int r0Offset, AbortBase sp, int spOffset, int abortAt, bool guards = false)
     {
         EnsureGuestPages();
         Assert.Equal(0, GuestMemory.MappedTable(GuestMemory.Base)[AbortTestAddress >> 12]);
@@ -123,7 +129,7 @@ public sealed unsafe partial class NativeJitTests
             }
 
             AbortMatrixState(s, thumb, baseAddress, stack);
-            Block b = AbortMatrixBlock(thumb, words);
+            Block b = AbortMatrixBlock(thumb, words, guards);
             Snapshot other = Take(s, Guard(() => run(s, b)));
             if (abortAt >= 0)
             {
@@ -165,11 +171,72 @@ public sealed unsafe partial class NativeJitTests
     public void NativeX64DataAbortsMatchTheInterpreter(bool thumb, string words, AbortBase r0, int r0Offset, AbortBase sp, int spOffset, int abortAt) =>
         CheckAbortMatrix("x64", static (s, b) => RunNative(s, NativeX64Compiler.Instance.Compile(b)!.NativeEntry), thumb, words, r0, r0Offset, sp, spOffset, abortAt);
 
+    /// <summary>The x64 guards (the path where host faults are not used: Linux, macOS, VITASHARP_DATA_ABORT_FAULTS=0).</summary>
+    [NativeTheory]
+    [MemberData(nameof(AbortMatrixCases))]
+    public void NativeX64GuardedDataAbortsMatchTheInterpreter(bool thumb, string words, AbortBase r0, int r0Offset, AbortBase sp, int spOffset, int abortAt) =>
+        CheckAbortMatrix("x64 guards", static (s, b) => RunNative(s, NativeX64Compiler.Instance.Compile(b)!.NativeEntry), thumb, words, r0, r0Offset, sp, spOffset, abortAt, guards: true);
+
+    /// <summary>Windows x64: the aborts of the fault exits come from host faults (the counter moves once per abort), and
+    /// the code has no guard at all.</summary>
+    [NativeTheory]
+    [MemberData(nameof(AbortMatrixCases))]
+    public void NativeX64HostFaultDataAbortsEnterThroughTheFaultHandler(bool thumb, string words, AbortBase r0, int r0Offset, AbortBase sp, int spOffset, int abortAt)
+    {
+        if (!HostFaultAborts.Supported)
+        {
+            return; // the guards serve this host (NativeX64GuardedDataAbortsMatchTheInterpreter)
+        }
+
+        EnsureGuestPages();
+        Block b = AbortMatrixBlock(thumb, words);
+        Assert.True(b.Owner!.HostFaultAborts);
+        Assert.DoesNotContain(new ArmFrontend { HostFaultExits = true }.Translate(b).Insts, x => x.Op == IrOp.PageMapped);
+        long before = Interlocked.Read(ref HostFaultAborts.Entered);
+        CheckAbortMatrix("x64 host faults", static (s, b) => RunNative(s, NativeX64Compiler.Instance.Compile(b)!.NativeEntry), thumb, words, r0, r0Offset, sp, spOffset, abortAt);
+        if (abortAt >= 0)
+        {
+            Assert.True(Interlocked.Read(ref HostFaultAborts.Entered) > before, "the abort did not come through a host fault");
+        }
+    }
     [Arm64SandboxTheory]
     [MemberData(nameof(AbortMatrixCases))]
     public void NativeArm64DataAbortsMatchTheInterpreter(bool thumb, string words, AbortBase r0, int r0Offset, AbortBase sp, int spOffset, int abortAt)
     {
         using IArm64Runner sb = Arm64Runner.Create();
         CheckAbortMatrix("arm64", (s, b) => RunArm64(sb, s, NativeArm64Compiler.Instance.Compile(b, sb.Stubs)!.NativeEntry), thumb, words, r0, r0Offset, sp, spOffset, abortAt);
+    }
+
+    /// <summary>
+    /// A freed page of a shared region (kernel memory here; CDRAM is the same) aborts like a private one, with the guards
+    /// and with host faults: its view cannot be decommitted, so it is made inaccessible when freed. A stray host access
+    /// to it afterwards still works as before (the lazy commit handler gives the page back).
+    /// </summary>
+    [NativeFact]
+    public void AFreedSharedPageAbortsWithGuardsAndWithHostFaults()
+    {
+        EnsureGuestPages();
+        uint shared = fx.Memory.Alloc(GuestMemory.PageSize, "dabt:shared", MemoryRegion.Kernel);
+        GuestMemory.W32(shared, 0x1234);
+        fx.Memory.Free(shared);
+        CpuState* s = CpuState.Allocate();
+        try
+        {
+            foreach (bool guards in new[] { true, false })
+            {
+                Block b = AbortMatrixBlock(thumb: false, "E5901000,EAFFFFFE", guards); // ldr r1, [r0]
+                AbortMatrixState(s, thumb: false, shared, DataBase + 0x100);
+                RunNative(s, NativeX64Compiler.Instance.Compile(b)!.NativeEntry);
+                Assert.True(ExitReason.DataAbort == s->Exit, $"guards {guards}: exit {s->Exit}");
+                Assert.Equal(CodeBase, s->SvcPc);
+                Assert.Equal(shared, s->AbortAddr);
+            }
+
+            _ = GuestMemory.R32(shared); // a stray host read: no crash
+        }
+        finally
+        {
+            CpuState.Free(s);
+        }
     }
 }

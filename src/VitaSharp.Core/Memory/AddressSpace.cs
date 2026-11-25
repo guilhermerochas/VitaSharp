@@ -45,6 +45,10 @@ public sealed unsafe class AddressSpace
     /// <summary>One bit per 4 KB page of the private regions: set while the page belongs to a block of this space.</summary>
     internal readonly ulong[] _mappedPages = new ulong[(1 << 20) / 64];
 
+    /// <summary>The space's unmapped pages are kept inaccessible on the host, so native code finds data aborts through
+    /// host faults (<see cref="GuestMemory.ArmHostFaults"/>).</summary>
+    internal volatile bool _hostFaults;
+
     internal AddressSpace(byte* @base, (nint, nuint, bool)[] parts, bool sharedViews)
     {
         Base = @base;

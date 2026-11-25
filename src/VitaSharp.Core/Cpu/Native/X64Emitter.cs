@@ -143,8 +143,40 @@ public sealed unsafe partial class X64Emitter
             }
         }
         int exitIndex = 0;
-        foreach (IrInst x in ir.Insts)
+        _faultRegions.Clear();
+        _faultSites.Clear();
+        FaultSites.Clear();
+        int faultMark = -1;
+        List<IrInst> insts = ir.Insts;
+        for (int i = 0; i < insts.Count; i++)
         {
+            IrInst x = insts[i];
+            if (x.Op == IrOp.Nop && x.Imm == IrBuilder.FaultMark)
+            {
+                faultMark = Asm.Instructions.Count;
+                continue;
+            }
+
+            if (x.Op == IrOp.BranchIf && x.Imm == IrBuilder.FaultExitBranch)
+            {
+                // a data abort exit the code never branches into: laid out after the block, entered by a host fault
+                // in [the mark, here) (HostFaultAborts); the main path goes on at the region's label
+                int end = i + 1;
+                while (insts[end].Op != IrOp.Label || insts[end].Imm != x.Imm2)
+                {
+                    end++;
+                }
+
+                if (faultMark >= 0 && faultMark < Asm.Instructions.Count)
+                {
+                    _faultRegions.Add((faultMark, Asm.Instructions.Count, i + 1, end, _neonMxcsr));
+                }
+
+                faultMark = -1;
+                i = end; // the label: nothing branches to it
+                continue;
+            }
+
             Lower(x, rt, slotFor, ref exitIndex);
         }
         // shared path for callouts that threw: account the block and leave
@@ -159,23 +191,69 @@ public sealed unsafe partial class X64Emitter
             Asm.mov(State(s_offTierUp), 1);
             Asm.jmp(rt.Epilogue);
         }
+
+        // the data abort exits, out of line: the registers hold what they hold at the faulting access, which is what the
+        // exit's allocation (at the end of its instruction, the snapshot values live through the whole instruction) reads
+        foreach ((int start, int end, int irFrom, int irTo, bool neon) in _faultRegions)
+        {
+            bool mainNeon = _neonMxcsr;
+            _neonMxcsr = neon;
+            int stub = Asm.Instructions.Count;
+            for (int k = irFrom; k < irTo; k++)
+            {
+                Lower(insts[k], rt, slotFor, ref exitIndex);
+            }
+
+            _neonMxcsr = mainNeon;
+            _faultSites.Add((start, end, stub));
+        }
+
         return true;
     }
+
+    // data abort exits entered by host faults (IrBuilder.FaultExits): the ranges of instruction indices whose faults
+    // enter them, and the IR of each exit
+    private readonly List<(int Start, int End, int IrFrom, int IrTo, bool Neon)> _faultRegions = new();
+    private readonly List<(int Start, int End, int Stub)> _faultSites = new();
+
+    /// <summary>
+    /// After <see cref="Assemble"/>: the block's data abort fault sites as offsets from the code's start (a host fault
+    /// at an offset in [Start, End) enters the exit at Stub, <see cref="HostFaultAborts"/>). Empty without fault exits.
+    /// </summary>
+    public List<(uint Start, uint End, uint Stub)> FaultSites { get; } = new();
 
     /// <summary>Encodes the prepared code for execution at <paramref name="rip"/>.</summary>
     public byte[] Assemble(ulong rip)
     {
+        FaultSites.Clear();
         if (FastEncode)
         {
             if (TryFastAssemble(rip, out byte[]? fast))
             {
+                foreach ((int start, int end, int stub) in _faultSites)
+                {
+                    FaultSites.Add(((uint)(_fAddr[start] - rip), (uint)(_fAddr[end] - rip), (uint)(_fAddr[stub] - rip)));
+                }
+
                 return fast;
             }
 
             Interlocked.Increment(ref FastEncodeFallbacks);
         }
         _code.SetLength(0);
-        Asm.Assemble(_writer ??= new StreamCodeWriter(_code), rip);
+        if (_faultSites.Count == 0)
+        {
+            Asm.Assemble(_writer ??= new StreamCodeWriter(_code), rip);
+            return _code.ToArray();
+        }
+
+        AssemblerResult result = Asm.Assemble(_writer ??= new StreamCodeWriter(_code), rip, BlockEncoderOptions.ReturnNewInstructionOffsets);
+        uint[] offsets = result.Result[0].NewInstructionOffsets;
+        foreach ((int start, int end, int stub) in _faultSites)
+        {
+            FaultSites.Add((offsets[start], offsets[end], offsets[stub]));
+        }
+
         return _code.ToArray();
     }
 
@@ -2220,6 +2298,59 @@ public sealed unsafe partial class X64Emitter
     /// [lo, hi) (Windows x64: rcx = EXCEPTION_POINTERS*), else returns EXCEPTION_CONTINUE_SEARCH without touching
     /// managed code.
     /// </summary>
+    /// <summary>
+    /// The lazy commit vectored handler of a guest window [<paramref name="windowBase"/>, + <paramref name="size"/>)
+    /// (Windows x64: rcx = EXCEPTION_POINTERS*): an access violation there makes its page accessible and resumes. A
+    /// page already committed but made inaccessible (a shared view of an unmapped page, kept so for data aborts:
+    /// <see cref="HostFaultAborts"/>) gets read/write back (VirtualProtect); a page only reserved is committed
+    /// (VirtualAlloc). Pure machine code: it never enters the runtime, whatever mode the faulting thread is in.
+    /// </summary>
+    public static byte[] EmitLazyCommitHandler(ulong windowBase, ulong size, ulong virtualAlloc, ulong virtualProtect)
+    {
+        var a = new Assembler(64);
+        Label no = a.CreateLabel(), done = a.CreateLabel(), commit = a.CreateLabel();
+        a.sub(rsp, 0x38); // shadow space, the page at +0x20, the old protection at +0x28 (rsp 16-aligned)
+        a.mov(rax, __qword_ptr[rcx]);
+        a.cmp(__dword_ptr[rax], unchecked((int)0xC0000005));
+        a.jne(no);
+        a.mov(rdx, __qword_ptr[rax + 0x28]);
+        a.mov(r8, windowBase);
+        a.sub(rdx, r8);
+        a.mov(r9, size);
+        a.cmp(rdx, r9);
+        a.jae(no);
+        a.mov(rcx, __qword_ptr[rax + 0x28]);
+        a.and(rcx, -4096);
+        a.mov(__qword_ptr[rsp + 0x20], rcx);
+        a.mov(edx, 0x1000);
+        a.mov(r8d, 4); // PAGE_READWRITE
+        a.lea(r9, __qword_ptr[rsp + 0x28]);
+        a.mov(rax, virtualProtect);
+        a.call(rax);
+        a.test(eax, eax);
+        a.jnz(done); // it was committed: accessible again
+        a.Label(ref commit);
+        a.mov(rcx, __qword_ptr[rsp + 0x20]);
+        a.mov(edx, 0x1000);
+        a.mov(r8d, 0x1000); // MEM_COMMIT
+        a.mov(r9d, 4);      // PAGE_READWRITE
+        a.mov(rax, virtualAlloc);
+        a.call(rax);
+        a.test(rax, rax);
+        a.jz(no);
+        a.Label(ref done);
+        a.mov(eax, -1); // EXCEPTION_CONTINUE_EXECUTION
+        a.add(rsp, 0x38);
+        a.ret();
+        a.Label(ref no);
+        a.xor(eax, eax); // EXCEPTION_CONTINUE_SEARCH
+        a.add(rsp, 0x38);
+        a.ret();
+        using var ms = new MemoryStream();
+        a.Assemble(new StreamCodeWriter(ms), 0);
+        return ms.ToArray();
+    }
+
     public static byte[] EmitFaultFilter(ulong rip, ulong lo, ulong hi, ulong handler)
     {
         var a = new Assembler(64);
