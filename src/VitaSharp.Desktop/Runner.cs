@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using VitaSharp.Core;
+using VitaSharp.Core.Capture;
 using VitaSharp.Core.Firmware;
 using VitaSharp.Core.Hle;
 using VitaSharp.Core.Host;
@@ -14,7 +15,8 @@ namespace VitaSharp.Desktop;
 /// <summary>Boots a title in a window (default) or headless (--headless, for automated testing).</summary>
 public static class Runner
 {
-    static FlickerDetector? _flicker;
+    static FrameFindings? _flicker;
+    static double _flickerThreshold = 6;
 
     internal static string? Opt(string[] options, string name) =>
 
@@ -461,18 +463,15 @@ public static class Runner
             // --msaa=native|ss|off: MSAA scenes (VITASHARP_MSAA; F3 changes it while the game runs)
             Msaa = Opt(options, "--msaa"),
         };
-        // --flicker-check[=threshold]: every presented frame is read back small and checked for one-frame flashes and
-        // stale frames (FlickerDetector; test scenarios turn it on): FLICKER lines in the log and the report
+        // --flicker-check[=threshold]: every presented frame is read back small and run, at the end, through the capture
+        // report's picture rules (FrameFindings: [flash] of the whole picture or a 4x4 cell, black flashes, frozen
+        // pictures; test scenarios turn it on): FLICKER lines in the log and the report, and findings.txt
+        // (--findings-out=DIR, default the --dump-frames folder) in the format replay-gpu --findings and verify write
         if (options.Any(o => o == "--flicker-check" || o.StartsWith("--flicker-check=")))
         {
-            var det = _flicker = new FlickerDetector(double.TryParse(Opt(options, "--flicker-check"), System.Globalization.CultureInfo.InvariantCulture, out var ft) && ft > 0 ? ft : 6);
-            rendererOptions.FrameSink = (n, px, w, h) =>
-            {
-                if (det.Add(n, px, w, h) is { } f)
-                {
-                    Log.Warn($"FLICKER {det.Describe(f)}");
-                }
-            };
+            _flickerThreshold = double.TryParse(Opt(options, "--flicker-check"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var ft) && ft > 0 ? ft : 6;
+            FrameFindings findings = _flicker = new FrameFindings();
+            rendererOptions.FrameSink = (n, px, w, h) => findings.Add(FlickerFrame(n), px, w, h);
         }
         if (rendererOptions.ShaderOptimization is { } so && ShaderCompiler.ParseOptLevel(so) == null)
         {
@@ -1761,7 +1760,7 @@ public static class Runner
         Log.Info($"Run finished: {frames} frames in {wall.Elapsed.TotalSeconds:F1} s ({frames / Math.Max(wall.Elapsed.TotalSeconds, 0.001):F1} frames/s)");
         if (_flicker is { } flick)
         {
-            Log.Info(flick.Summary + (flick.Flagged.Count > 0 ? ": frames " + string.Join(" ", flick.Flagged.Take(20).Select(x => x.Frame)) : ""));
+            ReportFlicker(flick, _flickerThreshold, Opt(options, "--findings-out") ?? dumpDir);
         }
 
         if (dumpDir != null && thumbs != null)
@@ -1770,6 +1769,61 @@ public static class Runner
         }
 
         return 0;
+    }
+
+    /// <summary>--flicker-check: the picture of renderer present <paramref name="present"/> as the findings see it (no
+    /// guest flip number: the presentation-order rules need the recording's, so they stay out).</summary>
+    static PresentInfo FlickerFrame(long present) => new()
+    {
+        Present = present,
+        Flip = -1,
+        PresentNs = System.Diagnostics.Stopwatch.GetTimestamp() * (1_000_000_000L / System.Diagnostics.Stopwatch.Frequency),
+    };
+
+    /// <summary>--flicker-check at the end of the run: one FLICKER line per picture finding, the summary (the flashes
+    /// and the presents they are in) and, with <paramref name="outDir"/>, findings.txt.</summary>
+    internal static string ReportFlicker(FrameFindings findings, double threshold, string? outDir)
+    {
+        List<CaptureAnalyzer.Finding> all = findings.Findings(threshold);
+        var flashes = new List<long>();
+        int problems = 0;
+        foreach (CaptureAnalyzer.Finding finding in all)
+        {
+            if (finding.Info)
+            {
+                continue;
+            }
+
+            problems++;
+            Log.Warn($"FLICKER [{finding.Kind}] present {finding.Present}: {finding.Detail}");
+            if (finding.Kind == "flash")
+            {
+                flashes.Add(finding.Present);
+            }
+        }
+
+        string summary = FormattableString.Invariant($"FLICKER {findings.Count} frames: {flashes.Count} flash(es), {problems} picture finding(s) (threshold {threshold}, grid 4x4)")
+            + (flashes.Count > 0 ? ": presents " + string.Join(" ", flashes.Take(40)) : "");
+        Log.Info(summary);
+        if (outDir != null)
+        {
+            Directory.CreateDirectory(outDir);
+            (long first, long last) = findings.Presents;
+            var items = new List<CaptureVerify.Item>();
+            foreach (CaptureAnalyzer.Finding finding in all)
+            {
+                if (!finding.Info)
+                {
+                    items.Add(CaptureVerify.ToItem(finding));
+                }
+            }
+
+            string path = Path.Combine(outDir, CaptureVerify.FindingsFileName);
+            CaptureVerify.WriteFindings(path, first, last, items);
+            Log.Info($"FLICKER findings: {path}");
+        }
+
+        return summary;
     }
 
     readonly record struct AllocMark(long Frame, long Bytes, int Gen0, int Gen1, int Gen2);
