@@ -424,10 +424,14 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         _encoder = null;
     }
 
+    /// <summary>Wraps the host's input in this capture's recorder (already done: nothing). A recorder of another
+    /// capture on the same emulator (the re-run's own recording next to the window's F8 one) is replaced around the
+    /// host's real input: it used to be taken as this capture's own, and left it without a recorder (a
+    /// NullReferenceException in the constructor).</summary>
     private void InstallInput()
     {
         HostServices host = _emu.Host;
-        if (host.Input is InputRecorder && host.Motion is InputRecorder)
+        if (_input != null && ReferenceEquals(host.Input, _input) && ReferenceEquals(host.Motion, _input))
         {
             return;
         }
