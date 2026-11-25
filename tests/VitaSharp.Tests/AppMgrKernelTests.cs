@@ -50,6 +50,63 @@ public sealed class AppMgrKernelTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(0UL, GuestMemory.Read<ulong>(read));
     }
 
+    /// <summary>NID_1574E1A4 (SceAppMgr 3.74 0x810232ec): the caller's right to the id first (0x80800009), by the
+    /// caller's program authority ID for 0x6E-0x70, 0x12E-0x130, 500-505 and 900/901; only 900/901 mount (any other id
+    /// 0x80800001), with the overlay's path in the id's folders (else 0x8080000C).</summary>
+    [Fact]
+    public void TheMountByIdChecksTheCallersRightThenTheSource()
+    {
+        uint result = _harness.Alloc(0x10);
+        uint app = _harness.Str("ux0:/app/ABCD00001");
+        uint save = _harness.Str("ux0:/user/00/savedata/ABCD00001");
+        uint block = (uint)Invoke(_harness.Module<ProcessmgrKernel>(), "ksceKernelGetProcessKernelBuf", _harness.Emu.Pid)!;
+        ulong authority = GuestMemory.Read<ulong>(block + 0xB8);
+        int Mount(uint id, uint path, uint output)
+        {
+            int answer = 0;
+            _harness.OnGuest(_ => answer = Call(Manager, "ksceAppMgr_1574E1A4", id, path, 0u, output));
+            return answer;
+        }
+
+        try
+        {
+            // a game: the ids without a check pass to the id check, the others are refused
+            Assert.Equal(Argument, Mount(0x100, app, result));
+            Assert.Equal(Argument, Mount(0x6C, app, result));
+            Assert.Equal(Caller, Mount(900, app, result));
+            Assert.Equal(Caller, Mount(0x12E, app, result));
+            Assert.Equal(Caller, Mount(502, app, result));
+            Assert.Equal(Caller, Mount(0x6E, app, result));
+
+            // the shell's authority: its ids pass and are no mount; 900/901 are not its
+            GuestMemory.Write(block + 0xB8, 0x2800000000000001UL);
+            Assert.Equal(Argument, Mount(0x12E, app, result));
+            Assert.Equal(Argument, Mount(505, app, result));
+            Assert.Equal(Argument, Mount(0x6E, app, result));
+            Assert.Equal(Caller, Mount(900, app, result));
+            GuestMemory.Write(block + 0xB8, 0x280000000000002DUL);
+            Assert.Equal(Argument, Mount(0x6E, app, result));
+            Assert.Equal(Caller, Mount(0x12E, app, result));
+
+            // 0x2808000000000001 mounts by 900/901: NULL path or output, then the source folders
+            GuestMemory.Write(block + 0xB8, 0x2808000000000001UL);
+            Assert.Equal(Argument, Mount(900, 0u, result));
+            Assert.Equal(Argument, Mount(901, save, 0u));
+            Assert.Equal(unchecked((int)0x8080000C), Mount(900, _harness.Str("ux0:/data/ABCD00001"), result));
+            Assert.Equal(unchecked((int)0x8080000C), Mount(901, app, result));
+            Assert.Equal(unchecked((int)0x8080000C), Mount(900, save, result));
+            Assert.NotEqual(unchecked((int)0x8080000C), Mount(900, app, result));
+            Assert.NotEqual(unchecked((int)0x8080000C), Mount(900, _harness.Str("grw0:/patch/ABCD00001"), result));
+            Assert.NotEqual(unchecked((int)0x8080000C), Mount(901, save, result));
+            Assert.NotEqual(unchecked((int)0x8080000C), Mount(901, _harness.Str("ux0:/data/savedata/ABCD00001"), result));
+            Assert.Equal(Caller, Mount(0x12E, app, result));
+        }
+        finally
+        {
+            GuestMemory.Write(block + 0xB8, authority);
+        }
+    }
+
     [Fact]
     public void TheKernelSideChecksItsArguments()
     {
@@ -271,6 +328,7 @@ public sealed class AppMgrKernelTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(NoProcess, Call(Shell, "ksceAppMgr_29421DCD", 0x7FFF0001));
         Assert.Equal(unchecked((int)0x80802016), Call(Shell, "ksceAppMgr_21BE167A", 0x7FFF0001, 0u));
         Assert.Equal(NoProcess, Call(Shell, "ksceAppMgr_21BE167A", 0x7FFF0001, state));
-        Assert.Equal(unchecked((int)0x8080201A), Call(Shell, "ksceAppMgr_99AA37C1", _harness.Str("")));
+        // the kernel launch by name is the kernel process's (SceAppMgr 3.74 0x8100dc08)
+        Assert.Equal(unchecked((int)0x8080201F), Call(Shell, "ksceAppMgr_99AA37C1", _harness.Str("")));
     }
 }

@@ -2305,15 +2305,20 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   escrever o .psp2dmp do processo); SceAppMgrForDriver: 324DD34E, E8DB7942 e 504023C8 feitos em 23/11/2026
   (fix/quick3, em "Corrigido, falta o usuário testar"); C4924946 feito em 24/11/2026 (feat/alg4-g: num kit de
   desenvolvimento o ProcessmgrKernel NID_5A57766C com os 6 argumentos e a configuração de depuração GXM do registro,
-  `AppMgr.GxmDebugging`, que o 324DD34E agora também passa; num retail 0x80020012). Faltam dois, [G] cada:
-  1B6C2FED (SceAppMgr 3.74 0x8100da9c; num retail 0x80020012, que já é a resposta): num kit de desenvolvimento,
-  só do processo do kernel (senão 0x8080201F), cria o semáforo "SceAppMgr:semafordbg" (0 de 1) e o callback
-  "SceAppMgr:cbkfordbg" com ele, e, se a thread não é a que já está nesse lançamento, confere o caminho (NULL
-  0x80802016, vazio 0x8080201A) e lança pelo caminho geral do módulo (0x8100b748) com a flag 0x20000 e o semáforo;
-  depois espera o semáforo, que o callback sinaliza quando o app termina, e devolve o erro do lançamento ou 0;
-  1574E1A4 (0x810232ec): montagem por id, cada faixa com a sua checagem de permissão (0x6A/0x6B
-  SceSblACMgrForDriver C98D82EE/8612B243, 0xCD 456DA7AC, 600 4DB7F512, 500-505 e 0x6E-0x70/0x12E-0x130 outro caminho,
-  900/901 o caminho pelo SceFios2KernelForDriver 0F456345 num bloco de 0x124 bytes);
+  `AppMgr.GxmDebugging`, que o 324DD34E agora também passa; num retail 0x80020012). 1B6C2FED feito em 25/11/2026
+  (feat/kern9, em "Corrigido, falta o usuário testar": o pedido de lançamento por title id ao shell com a flag
+  0x20000 e o callback do módulo, que a segunda etapa notifica com o pid; a espera no semáforo com callbacks; junto,
+  o 99AA37C1, que só validava o nome, agora lança e recusa quem não é o processo do kernel). Falta um, [G]:
+  1574E1A4 (0x810232ec): feitas a checagem de permissão por id (0x6A/0x6B PSM ou sistema, 0xCD 456DA7AC, 600
+  4DB7F512, 0x6E-0x70/0x12E-0x130/500-505/900/901 pelo authority ID do chamador), 0x80800001 para os ids que não
+  montam, e o caminho do overlay (ksceFiosKernelOverlayResolveSync) nas pastas do id (900: ux0:/app/, ux0:/patch/,
+  gro0:/app/, grw0:/patch/; 901: ux0:/user/NN/savedata/, grw0:/savedata/, ux0:/data/savedata; senão 0x8080000C).
+  Falta a montagem em si: normaliza o caminho (FUN_81015a44, 0x124 bytes; o mesmo caminho já montado 0x80800003),
+  registro de 0x1D0 bytes numa lista do módulo, ponto de montagem "<prefixo do 0x81044c7c>" + 12 hex aleatórios
+  (SceSblSsMgrForDriver 4F9BFBE5) + "0:", 16 vagas de authority ID (a primeira livre recebe 0x2F00000000000001;
+  cheias 0x8080001E), kscePfsMount modo 10 (900) ou 9/7 (901, com a chave de FUN_81016ed4 e a keystone:
+  ksceSblPostSsMgrVerifyKeystone/WithPasscode com o passcode do 3º argumento), FUN_81016698 e FUN_8101807c, e
+  kscePfsApprove para 0x2800000000000001 e 0x2800000000007001; hoje devolve 0x80800007 (default);
   SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver: feito
   (feat/kernO, 21/11/2026, ver "Corrigido, falta o usuário testar").
   Entrega movida para "Corrigido, falta o usuário testar" (reboot do sistema, kernN, 22/11/2026); o resto segue aberto aqui.
@@ -3482,6 +3487,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Bluetooth" ligado, abrir o Sistema do Vita em Configurações > Bluetooth (os dois dispositivos listados); num Linux
   com Wayland, as teclas de mídia do teclado (tocar/pausar, volume, próxima) agem no jogo/app como no X11; num Mac, as
   teclas de mídia (o monitor do macOS ainda não rodou num Mac, só o mapeamento é testado).
+
+- [ ] (25/11/2026, falta testar) [P2][G] Lançamentos do kernel por title id do SceAppMgr 3.74 (feat/kern9, do item
+  "Kernel de software ainda em resposta padrão"). NID_1B6C2FED (0x8100da9c), o lançamento de depuração de um kit de
+  desenvolvimento: só do processo do kernel, cria o semáforo "SceAppMgr:semafordbg" e o callback "SceAppMgr:cbkfordbg",
+  pede o lançamento ao shell (evento 6) com a flag 0x20000 e o parâmetro, e espera, rodando callbacks, até a segunda
+  etapa do shell criar o processo e notificar o callback com o pid; devolve o erro do lançamento ou 0. NID_99AA37C1
+  (0x8100dc08) faz o mesmo pedido sem flags e volta logo (antes só validava o nome). A segunda etapa
+  (sceAppMgrLaunchAppByName2ndStage) passou a notificar o callback do pedido. O que testar: nada visível num retail
+  (só kits de desenvolvimento e depuradores usam essas entradas); conferir que abrir apps pelo shell continua igual.
 
 - [ ] (25/11/2026, falta testar) [P3][M] Entradas de import conferidas antes do link, como o modulemgr 3.74
   (fix/small4). Antes de ligar cada biblioteca que acha (FUN_81008aa0 -> FUN_81005100), num módulo de processo de

@@ -1,5 +1,6 @@
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
+using VitaSharp.Core.SaveState;
 
 namespace VitaSharp.Core.Hle.Modules;
 
@@ -344,25 +345,172 @@ public sealed partial class AppMgrShell
         return Emu.Vita.Foreground is { IsShell: false } foreground ? foreground.AppId : 0;
     }
 
-    /// <summary>NID_99AA37C1(name): the module's debug semaphore by name: NULL 0x80802016, empty 0x8080201A; 0.</summary>
+    /// <summary>The kernel entries' answer to a caller that is not the kernel process (0x8080201F).</summary>
+    const int KERNEL_ERR_NOT_KERNEL = unchecked((int)0x8080201F);
+
+    /// <summary>An empty title id (0x8080201A).</summary>
+    const int KERNEL_ERR_EMPTY_NAME = unchecked((int)0x8080201A);
+
+    /// <summary>The launch flags of the debug launch (NID_1B6C2FED).</summary>
+    const int DebugLaunchFlags = 0x20000;
+
+    /// <summary>
+    /// The kernel's launch request by title id (SceAppMgr 3.74 0x8100b748, the same as sceAppMgrLaunchAppByName's
+    /// 0x8100D89C): the application's entry with the flags, the parameter and the caller's <paramref name="callback"/>,
+    /// and shell event 6; the shell's second stage creates the process and notifies the callback with its ID. With no
+    /// shell up the application starts at once, as for the user call, and the callback gets the ID once it started. An
+    /// error, or 0.
+    /// </summary>
+    int KernelLaunchRequestByName(string titleId, string? param, int flags, int callback)
+    {
+        string? dir = Io.FirmwareLayout.FindApplication(guest => Emu.Vfs.Resolve(guest), titleId);
+        if (dir == null)
+        {
+            return unchecked((int)0x80800006);
+        }
+
+        if (Emu.Vita.Shell != null)
+        {
+            PendingLaunch pendingLaunch = Emu.Vita.RequestLaunchByName(Emu, titleId, dir, flags, param);
+            pendingLaunch.Callback = callback;
+            return 0;
+        }
+
+        ObjectTable objects = Emu.Kernel.Objects;
+        Emulator app;
+        try
+        {
+            app = Emu.SpawnProcess(dir, "eboot.bin", [], background: true, started: started => objects.Get<Callback>(callback)?.Notify(started.Pid));
+        }
+        catch (ProcessLoadException e)
+        {
+            return e.Error;
+        }
+
+        if (param != null)
+        {
+            app.Hle.Modules.OfType<AppMgr>().First().LaunchParam = param;
+        }
+
+        return 0;
+    }
+
+    /// <summary>NID_99AA37C1(name): the kernel's launch of an application by title id (SceAppMgr 3.74 0x8100dc08):
+    /// only from the kernel process (0x8080201F otherwise), NULL 0x80802016, empty 0x8080201A; then the launch request
+    /// with no flags, parameter or callback (<see cref="KernelLaunchRequestByName"/>): its error, or 0.</summary>
     [Hle(Nid = 0x99AA37C1, Library = "SceAppMgrForDriver")]
     int ksceAppMgr_99AA37C1(uint name)
     {
+        if (ProcessScope.CurrentPid != KernelSpace.KernelPid)
+        {
+            return KERNEL_ERR_NOT_KERNEL;
+        }
+
         if (name == 0)
         {
             return ERR_NULL;
         }
 
-        return GuestMemory.Read<byte>(name) == 0 ? unchecked((int)0x8080201A) : 0;
+        if (GuestMemory.Read<byte>(name) == 0)
+        {
+            return KERNEL_ERR_EMPTY_NAME;
+        }
+
+        int result = KernelLaunchRequestByName(GuestMemory.ReadCString(name, 0x20), null, 0, 0);
+        return result < 0 ? result : 0;
     }
 
-    /// <summary>NID_1B6C2FED(name, ?): creates the module's debug semaphore: only with the debug setting
-    /// (0x80020012 on a retail unit).</summary>
-    [Hle(Nid = 0x1B6C2FED, Library = "SceAppMgrForDriver", Default = true)]
-    int ksceAppMgr_1B6C2FED(uint name, uint flags)
+    /// <summary>
+    /// NID_1B6C2FED(name, param): a debugger's launch of an application by title id that returns once the process
+    /// exists (SceAppMgr 3.74 0x8100da9c). ksceSblACMgrIsDevelopmentMode first (a retail unit 0x80020012), then only
+    /// from the kernel process (0x8080201F). It creates the semaphore "SceAppMgr:semafordbg" (0 of 1) and the callback
+    /// "SceAppMgr:cbkfordbg", whose function signals it; NULL 0x80802016 and empty 0x8080201A are the launch's result,
+    /// otherwise the launch request with flags 0x20000, the parameter and that callback
+    /// (<see cref="KernelLaunchRequestByName"/>). Then, whatever the launch's result, it waits on the semaphore running
+    /// callbacks: the shell's second stage notifies the callback with the new process's ID, the callback signals the
+    /// semaphore; as on the console a launch that was not made is never signalled, and the call does not return. It
+    /// deletes the semaphore and the callback and returns the launch's error, or 0.
+    /// </summary>
+    [Hle(Nid = 0x1B6C2FED, Library = "SceAppMgrForDriver", Cost = HleCost.SchedulerWait)]
+    int ksceAppMgr_1B6C2FED(uint name, uint param)
     {
-        return unchecked((int)0x80020012);
+        if (Emu.Hle.Modules.OfType<SystemServicesVsh>().First().ksceSblACMgrIsDevelopmentMode() == 0)
+        {
+            return unchecked((int)0x80020012);
+        }
+
+        if (ProcessScope.CurrentPid != KernelSpace.KernelPid)
+        {
+            return KERNEL_ERR_NOT_KERNEL;
+        }
+
+        ThreadMgr threads = Emu.Hle.Modules.OfType<ThreadMgr>().First();
+        int semaphore = threads.sceKernelCreateSema("SceAppMgr:semafordbg", 0, 0, 1, 0);
+        if (semaphore < 0)
+        {
+            return semaphore;
+        }
+
+        // the firmware's callback (0x8100a918) gets the semaphore's UID through its argument and signals it
+        uint function = DebugLaunchStubs.Host("cbkfordbg", static context =>
+        {
+            ThreadMgr owner = context.Emu.Hle.Modules.OfType<ThreadMgr>().First();
+            owner.sceKernelSignalSema((int)context.Gpr(3), 1);
+            context.Return(0);
+        });
+        int callback = threads.sceKernelCreateCallback("SceAppMgr:cbkfordbg", 0, function, (uint)semaphore);
+        if (callback < 0)
+        {
+            threads.sceKernelDeleteSema(semaphore);
+            return callback;
+        }
+
+        int launch;
+        if (name == 0)
+        {
+            launch = ERR_NULL;
+        }
+        else if (GuestMemory.Read<byte>(name) == 0)
+        {
+            launch = KERNEL_ERR_EMPTY_NAME;
+        }
+        else
+        {
+            string? launchParam = param != 0 ? GuestMemory.ReadCString(param, 0x400) : null;
+            launch = KernelLaunchRequestByName(GuestMemory.ReadCString(name, 0x20), launchParam, DebugLaunchFlags, callback);
+        }
+
+        // SceThreadmgrForDriver F55E4D86, the semaphore wait that runs the thread's callbacks
+        GuestThread? self = GuestThread.Current;
+        bool callbackWait = self?.CallbackWait ?? false;
+        if (self != null)
+        {
+            self.CallbackWait = true;
+        }
+
+        try
+        {
+            threads.sceKernelWaitSema(semaphore, 1, default);
+        }
+        finally
+        {
+            if (self != null)
+            {
+                self.CallbackWait = callbackWait;
+            }
+        }
+
+        threads.sceKernelDeleteSema(semaphore);
+        threads.sceKernelDeleteCallback(callback);
+        return launch < 0 ? launch : 0;
     }
+
+    // rebuilt on first use after a restore (the stub block is guest memory the snapshot keeps)
+    [SnapshotIgnore]
+    HleGuestStubs? _debugLaunchStubs;
+
+    /// <summary>The guest address of the debug launch's callback function.</summary>
+    HleGuestStubs DebugLaunchStubs => _debugLaunchStubs ??= new HleGuestStubs(this, "SceAppMgrDebugLaunch");
 
     /// <summary>NID_C4924946(title ID, type, path, arg size, args, option): a development kit's process launch through
     /// the process manager (SceAppMgr 3.74 0x8100282c): ksceSblACMgrIsDevelopmentMode first (a retail unit

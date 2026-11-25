@@ -416,6 +416,12 @@ public sealed partial class AppMgrShell : HleModule
 
         app.LaunchFlags = flags; // before its code runs (the process loads on a task)
         if (pl.Param != null) app.Hle.Modules.OfType<AppMgr>().First().LaunchParam = pl.Param;
+        // SceAppMgr 3.74 (0x81002794's tail): once the process is created, the entry's callback gets its ID
+        if (pl.Callback > 0)
+        {
+            Emu.Kernel.Objects.Get<Kernel.Callback>(pl.Callback)?.Notify(app.Pid);
+        }
+
         Log.Info($"sceAppMgrLaunchAppByName2ndStage(0x{appId:X}, flags 0x{flags:X}): {pl.TitleId} as {app.Describe()}");
         if (launchParam != 0 && GuestMemory.R32(launchParam) >= 0x2C && GuestMemory.R32(launchParam + 0x28) is var status and not 0)
             WriteStatus(app, status);

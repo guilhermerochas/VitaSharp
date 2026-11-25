@@ -221,7 +221,7 @@ public sealed partial class ProcessmgrKernel
 
     /// <summary>ksceKernelGetProcessSelfAuthInfo(pid, SceSelfAuthInfo *info): copies the 0x90 bytes at +0xB8.</summary>
     [Hle(Nid = 0x324F2B20, Library = "SceProcessmgrForKernel")]
-    int ksceKernelGetProcessSelfAuthInfo(int pid, uint info)
+    internal int ksceKernelGetProcessSelfAuthInfo(int pid, uint info)
     {
         return WithProcess(pid, block =>
         {
