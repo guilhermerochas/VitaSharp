@@ -25,7 +25,7 @@ public sealed class GeDeviceCostBenchmarkTests(ITestOutputHelper output)
         GC.Collect();
         GC.WaitForPendingFinalizers();
         GC.Collect();
-        using Process process = Process.GetCurrentProcess();
+        using var process = Process.GetCurrentProcess();
         process.Refresh();
         return process.PrivateMemorySize64;
     }
@@ -65,7 +65,7 @@ public sealed class GeDeviceCostBenchmarkTests(ITestOutputHelper output)
     {
         long bytesBefore = PrivateBytes();
         ulong heapBefore = DeviceHeapUsage(renderer);
-        Stopwatch watch = Stopwatch.StartNew();
+        var watch = Stopwatch.StartNew();
         GeVulkanRasterizerDevice? device = make();
         double createMs = watch.Elapsed.TotalMilliseconds;
         if (device == null)

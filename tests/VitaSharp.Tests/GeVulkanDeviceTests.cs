@@ -94,7 +94,7 @@ public sealed class GeVulkanDeviceTests
     {
         using IDisposable driver = SoftwareVulkan.Use();
         VkCore renderer = new(null, false);
-        GeVulkanRasterizerDevice? ge = GeVulkanRasterizerDevice.CreateOn(renderer.AddUser(), renderer.Queue, renderer.SecondaryQueueLock);
+        var ge = GeVulkanRasterizerDevice.CreateOn(renderer.AddUser(), renderer.Queue, renderer.SecondaryQueueLock);
         Assert.NotNull(ge);
         try
         {
