@@ -498,6 +498,7 @@ public sealed partial class EmulationSession : IDisposable
     {
         _captureDump = GpuDumpRecorder.Start(new GpuDumpOptions
         {
+            Queue = _emu.Gpu,
             Path = Path.Combine(dir, $"{_game.TitleId}{GpuDumpFormat.Extension}"), Header = DumpHeader(),
             StartAfterPresent = _renderer?.PresentCount ?? 0, MaxFrames = 600,
             Finished = r => Log.Warn(r.Error != null ? $"[capture] dump failed: {r.Error}" : $"[capture] dump saved {r.Path} ({r.Frames} frames, {r.FileBytes / 1048576.0:F0} MB)"),
@@ -565,6 +566,7 @@ public sealed partial class EmulationSession : IDisposable
         var rec = GpuDumpRecorder.Start(new GpuDumpOptions
         {
             Path = path,
+            Queue = _emu.Gpu,
             Header = DumpHeader(),
             StartAfterPresent = f1 - 1,
             MaxFrames = f2 - f1 + 1,

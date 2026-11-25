@@ -480,6 +480,67 @@ public sealed class GpuDumpTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(Draws, draws);
     }
 
+    /// <summary>
+    /// A recording keeps to its emulator's queue while another queue in the process runs (the test suite runs
+    /// emulators side by side): the other queue's presents neither start nor end it, and its draws are not recorded.
+    /// Without the queue given, the first queue to present is the recorded one. The recorder is one per process and
+    /// every queue calls its hooks; the commands of another queue went into the dump, written from that queue's
+    /// worker at the same time as the recorded one's (a CI run under coverage read "unknown GPU dump record kind
+    /// 0x00" in two tests that record a dump).
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ARecordingKeepsToItsQueueWhileAnotherQueueRuns(bool queueGiven)
+    {
+        uint buf = fixture.Memory.Alloc(0x3000, "gpudump two queues");
+        GuestMemory.Fill(buf, 0x44, 0x3000);
+        using var mine = new GpuQueue();
+        mine.Backend = new FakeBackend();
+        using var other = new GpuQueue();
+        other.Backend = new FakeBackend();
+        Directory.CreateDirectory(_dir);
+        string path = Path.Combine(_dir, "two-queues.vsgd");
+        var frame = new DisplayFrame(0x60000000, 960, 960, 544, 0);
+        var rec = GpuDumpRecorder.Start(new GpuDumpOptions { Path = path, Queue = queueGiven ? mine : null, MaxFrames = 1 });
+        Assert.NotNull(rec);
+        void OtherFrame()
+        {
+            DrawCommand d = Draw([9, 9, 9], [], buf + 0x2000);
+            d.IndexCount = 0x40;
+            other.Submit(d);
+            other.Submit(new PresentCommand { Frame = frame });
+            other.WaitIdle();
+        }
+
+        if (queueGiven)
+        {
+            OtherFrame(); // before the recording: its present does not start it (without the queue given it would)
+            Assert.False(rec!.Recording);
+        }
+
+        mine.Submit(new PresentCommand { Frame = frame }); // the recording starts after it
+        mine.WaitIdle();
+        OtherFrame(); // while recording: neither its draw nor its present is this dump's
+        DrawCommand d1 = Draw([1, 2, 3], [], buf + 0x100);
+        d1.IndexCount = 0x40;
+        mine.Submit(d1);
+        mine.Submit(new PresentCommand { Frame = frame });
+        GpuDumpResult result = await rec!.Completion.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Null(result.Error);
+        Assert.Equal((1L, 1L), (result.Frames, result.Draws));
+        using var r = new GpuDumpReader(path);
+        var draws = new List<uint>();
+        while (r.Next())
+        {
+            if (r.Command is DrawCommand got)
+            {
+                draws.Add(got.IndexAddress);
+            }
+        }
+        Assert.Equal([buf + 0x100], draws);
+    }
+
     [Fact]
     public async Task RecorderStoresWhatTheBackendReadAndOnlyChangesLater()
     {
@@ -549,7 +610,7 @@ public sealed class GpuDumpTests(GuestMemoryFixture fixture) : IDisposable
             Assert.Equal((2L, 2L), (rec.Options.StartAfterPresent, rec.Options.MaxFrames));
             emu.TitleId = "VSTS00001"; // the title loads after the recorder is armed
 
-            using var queue = new GpuQueue();
+            GpuQueue queue = emu.Gpu; // the recording is of the emulator's queue
             queue.Backend = new FakeBackend();
             var frame = new DisplayFrame(0x60000000, 960, 960, 544, 0);
             for (int i = 0; i < 6; i++)
