@@ -2210,18 +2210,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   deflatePrime (encoder deflate próprio em nível de bit), ScePervasiveForDriver (palavras de identificação), ScePower
   SoftReset/0x3951AF53 e SceSyscon SetPowerMode e entradas (reboot do sistema emulado: SystemPower.Rebooted, o host
   boota de novo), SceIofilemgrForDriver vfsRmdev e NID_A39A9CA7 (vnodes de dispositivo de bloco dos mounts tipo 3 em
-  dev/tty/md). Falta: SceIofilemgrForDriver NID_5B7E5AB8 (id -> caminho pela tabela de 0x20 entradas de 0x38 bytes
-  em 0x81022b30, marca a palavra +8 do bloco extra do mount e acorda o event flag dele: aviso de troca de mídia; achar
-  quem preenche a tabela) e NID_DD46CD63 (para cada objeto de arquivo da classe do módulo com +0x38 == mount, flags
-  +0x40 & máscara e +0x44 == 0, envia o aviso e marca +0x44: precisa desses campos no objeto de arquivo). Estudo
-  (25/11/2026, fix/small2): a tabela de 0x81022b30 é dado estático do módulo (32 pontos de montagem: o id e o
-  caminho; o `FUN_810182e8` só a lê e liga a ela a montagem criada), então o 5B7E5AB8 resolve o caminho do id até a
-  montagem do guest e só faz efeito numa montagem com objeto de guest (as do `vfsMount`, `IoFileMgr.VfsMount.cs`); as
-  montagens por id do VitaSharp são pastas do host sem objeto, e para elas não há o que marcar. O DD46CD63 não
-  percorre objetos de arquivo: percorre os objetos de uma classe própria do módulo (pedidos de aviso: +0x38 a
-  montagem, +0x3C o processo, +0x40 a máscara de eventos, +0x44 já avisado, +0x48 o buffer do processo), copia um
-  registro de 0x1C bytes para o processo e acorda quem espera; falta achar a função que cria esses pedidos (a
-  inscrição no aviso de troca de mídia) antes de implementar os dois;
+  dev/tty/md). Falta: o event flag do aviso de troca de mídia em +0xC do bloco extra da montagem
+  do guest, que o vfsMount do 3.74 cria (os NIDs 5B7E5AB8/DD46CD63 estão em "Corrigido, falta o usuário testar");
   SceCoredumpForDriver NID_A7D214A7 / NID_D064F6DC / NID_EF20949F (a validação do pedido está feita, em "Corrigido,
   falta o usuário testar"; falta a fila do thread de dump, com duas vagas de pedido e 0x8001000C quando as duas estão
   ocupadas (FUN_81006f10), a suspensão do processo e escrever o .psp2dmp dele, o ELF de core com as notas da Sony); SceAppMgrForDriver 6 (1B6C2FED/C4924946 caminho de lançamento de debug atrás de
@@ -3340,6 +3330,19 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (25/11/2026, falta testar) [P2][G] Eventos de erro de E/S e aviso de troca de mídia do iofilemgr 3.74
+  (fix/small3, `IoFileMgr.ErrorEvents.cs`). O módulo monta na partida uma tabela de 32 pontos de montagem (id, o
+  caminho interno do sistema de arquivos e o dispositivo: 0x800 "/ux/exfat" ux0:, 0x200 os0:, ...).
+  `ksceIoCreateErrorEvent` (0x3C0343DB: id da montagem, tipo 1, registro de 0x1C bytes com as palavras reservadas
+  zeradas) cria um objeto da classe "SceUIDIoErrorEventClass" (um event flag) chamado "SceIoErrorEvent" + o
+  dispositivo ("SceIoErrorEventUx0") e guarda a montagem, o processo, a máscara 1, a marca de avisado e o registro.
+  O aviso de um driver (NID_DD46CD63: montagem, máscara, info) escreve no registro de cada evento daquela montagem e
+  máscara ainda não avisado { montagem, info +4, 0, 0, info +0x10, 0, 0 }, liga o event flag com a máscara e marca o
+  evento até o `ksceIoClearErrorEvent` (0x40B933C7); `ksceIoDeleteErrorEvent` (0xC6158F8D) o apaga. O NID_5B7E5AB8
+  (id) marca a mídia da montagem do guest na raiz do id como trocada (+8 do bloco extra, e o event flag do aviso em
+  +0xC); as montagens por id do VitaSharp são pastas do host, sem montagem do guest: 0x80010016. Antes o create
+  recebia um callback, o aviso dava 0x8001000C e nada era escrito. Teste: `IoErrorEventTests` (falha sem a
+  mudança). Testar: tirar o cartão de memória não se emula; nada muda na tela, os jogos de sempre continuam abrindo.
 - [ ] (25/11/2026, falta testar) [P2][G] Pedidos de dump do SceCoredump conferidos como no 3.74 (fix/small2):
   `NID_A7D214A7` e `NID_D064F6DC` (pid, arg, alvo, pedido) conferem o pedido antes de enfileirá-lo para o thread de
   dump, na ordem do módulo (0x81007100): pedido NULL ou palavra de tamanho (+0) até 3, 0x80010016; com 0x34 bytes ou
