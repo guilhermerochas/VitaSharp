@@ -60,6 +60,16 @@ public sealed partial class AllegrexCore
     private const byte OpLw = 29;
     private const byte OpSw = 30;
 
+    // through the decoder, but straight to their handler (AllegrexCore.FastPaths.cs)
+    private const byte OpCop1 = 31;
+    private const byte OpLwc1 = 32;
+    private const byte OpSwc1 = 33;
+    private const byte OpVfpu0 = 34;
+    private const byte OpVfpu1 = 35;
+    private const byte OpFpuArithmetic = 36;
+    private const byte OpVfpuLanes = 37;
+    private const byte OpVfpuDot = 38;
+
     private struct DecodedInstruction
     {
         public uint Word;
@@ -68,10 +78,16 @@ public sealed partial class AllegrexCore
         public uint Immediate;
         public byte Op;
 
-        // destination (rd, or rt for the immediate forms and loads), rs, rt
+        // destination (rd, or rt for the immediate forms and loads), rs, rt; fd, fs, ft for the FPU; the lane count
+        // for the VFPU
         public byte D;
         public byte S;
         public byte T;
+
+        // the VFPU register file indices of the S, T and D vectors' lanes, a byte each
+        public uint LanesS;
+        public uint LanesT;
+        public uint LanesD;
     }
 
     private sealed class Block
@@ -85,14 +101,27 @@ public sealed partial class AllegrexCore
 
         // the block that last followed this one
         public Block? Next;
+
+        // the IL tier: instructions run, whether a compile was tried, the compiled code, whether it ends in a branch
+        public long Executed;
+        public bool CompileTried;
+        public BlockCode? Code;
+        public bool EndsInBranch;
     }
 
     private readonly Block?[]?[] _pages = new Block?[]?[PageCount];
     private readonly bool[] _codePages = new bool[PageCount];
+
+    // pages a block of the page before runs into (a delay slot past its page end)
+    private readonly bool[] _spillPages = new bool[PageCount];
     private int _generation;
 
     // set by whatever must end the running block (control leaves the straight line, or an interrupt may be due)
     private bool _endBlock;
+
+    // exceptions taken so far: tells a direct handler's exception (the PC fields then hold the vector) from a store
+    // that only ended the run
+    private long _exceptionsTaken;
 
     /// <summary>Drops the decoded code of [physical, physical + length): for writes the core does not make (DMA, the ARM side).</summary>
     public void InvalidateCode(uint physical, int length)
@@ -116,9 +145,10 @@ public sealed partial class AllegrexCore
     {
         DropPage(page);
 
-        // a block of the page before may run into this one (a delay slot past the page end)
-        if (page > 0)
+        // a block of the page before that runs into this one (a delay slot past the page end)
+        if (_spillPages[page])
         {
+            _spillPages[page] = false;
             DropPage(page - 1);
         }
     }
@@ -162,12 +192,12 @@ public sealed partial class AllegrexCore
         NoteStore(physical);
     }
 
-    /// <summary>A store by the core: drops the decoded code of the written page (and of the page before, whose last
-    /// block may end in it).</summary>
+    /// <summary>A store by the core: drops the decoded code of the written page (and of the page before when one of
+    /// its blocks ends in it).</summary>
     private void NoteStore(uint physical)
     {
         uint page = (physical & PhysicalMask) >> PageShift;
-        if (_codePages[page] || (page > 0 && _codePages[page - 1]))
+        if (_codePages[page] || _spillPages[page])
         {
             InvalidatePage(page);
         }
@@ -253,6 +283,12 @@ public sealed partial class AllegrexCore
         }
 
         block.Count = count;
+        uint lastPage = ((address - 4) & PhysicalMask) >> PageShift;
+        if (lastPage != ((pc & PhysicalMask) >> PageShift))
+        {
+            _spillPages[lastPage] = true;
+        }
+
         if (count < MaxBlockInstructions)
         {
             Array.Resize(ref block.Instructions, count);
@@ -265,6 +301,7 @@ public sealed partial class AllegrexCore
     private const int ChainEnd = 0;
     private const int ChainOther = 1;
     private const int ChainBranched = 2;
+    private const int ChainStopped = 3;
 
     /// <summary>Where a run is: the block, its start and how many of its instructions the run may execute, the
     /// instruction reached, the instructions of the earlier blocks of the run, what the run may still execute after
@@ -306,7 +343,7 @@ public sealed partial class AllegrexCore
         {
             // an instruction that needs this method goes to it without the call
             int stop = ChainOther;
-            if (c.Index >= c.Count || !NeedsRunBlock(c.Block.Instructions[c.Index].Op))
+            if (c.Index == 0 || c.Index >= c.Count || !NeedsRunBlock(c.Block.Instructions[c.Index].Op))
             {
                 stop = RunChain(ref r, ref c, _generation);
             }
@@ -319,7 +356,7 @@ public sealed partial class AllegrexCore
                 return c.Done;
             }
 
-            if (stop == ChainEnd)
+            if (stop == ChainEnd || stop == ChainStopped)
             {
                 break;
             }
@@ -332,6 +369,41 @@ public sealed partial class AllegrexCore
                 // a branch whose delay slot goes through the decoder (or the next run): the core's state after it
                 uint slot = c.Start + (uint)(i * 4) + 4;
                 uint target = BranchTarget(ref r, ref d, op, slot);
+                if (i + 1 < c.Count && c.Block.Instructions[i + 1].Op >= OpCop1)
+                {
+                    // a delay slot that goes straight to its handler: only its exception PC is needed
+                    ref DecodedInstruction delaySlot = ref c.Block.Instructions[i + 1];
+                    _currentPc = slot;
+                    _currentInDelaySlot = true;
+                    long exceptions = _exceptionsTaken;
+                    ExecuteDirect(delaySlot.Op, ref delaySlot);
+                    _gpr[0] = 0;
+                    c.Index = i + 2;
+                    if (_exceptionsTaken != exceptions)
+                    {
+                        c.Synced = i + 2;
+                        break;
+                    }
+
+                    // on to the target, into its block when it is known and nothing ended the run
+                    if (!_endBlock && FollowBranch(ref c, target))
+                    {
+                        continue;
+                    }
+
+                    if (_endBlock)
+                    {
+                        c.Done += c.Index;
+                        c.Index = 0;
+                    }
+
+                    _pc = target;
+                    _nextPc = target + 4;
+                    _executedInstructions = baseCount + c.Done;
+                    entry = c.Block;
+                    return c.Done;
+                }
+
                 _currentPc = slot - 4;
                 _currentInDelaySlot = false;
                 _pc = slot;
@@ -380,6 +452,50 @@ public sealed partial class AllegrexCore
                 }
             }
 
+            if (op >= OpCop1)
+            {
+                // straight to the handler, and on through the ones that follow: these never branch nor read the PC
+                // or Count, so only an exception's PC is needed
+                DecodedInstruction[] instructions = c.Block.Instructions;
+                uint start = c.Start;
+                int count = c.Count;
+                bool ended = false;
+                while (true)
+                {
+                    _currentPc = start + (uint)(i * 4);
+                    _currentInDelaySlot = false;
+                    long exceptions = _exceptionsTaken;
+                    ExecuteDirect(op, ref instructions[i]);
+                    _gpr[0] = 0;
+                    i++;
+                    if (_endBlock)
+                    {
+                        if (_exceptionsTaken != exceptions)
+                        {
+                            c.Synced = i;
+                        }
+
+                        ended = true;
+                        break;
+                    }
+
+                    if (i >= count || instructions[i].Op < OpCop1)
+                    {
+                        break;
+                    }
+
+                    op = instructions[i].Op;
+                }
+
+                c.Index = i;
+                if (ended)
+                {
+                    break;
+                }
+
+                continue;
+            }
+
             // through the decoder, with the bookkeeping of Step
             if (c.Synced != i)
             {
@@ -425,6 +541,62 @@ public sealed partial class AllegrexCore
         return c.Done + c.Index;
     }
 
+    /// <summary>An instruction the block decoded far enough to go straight to its handler.</summary>
+    private void ExecuteDirect(byte op, ref DecodedInstruction d)
+    {
+        uint word = d.Word;
+        switch (op)
+        {
+            case OpFpuArithmetic:
+                FpuArithmeticDirect(ref d);
+                break;
+            case OpVfpuLanes:
+                VfpuLanesDirect(ref d);
+                break;
+            case OpVfpuDot:
+                VfpuDotDirect(ref d);
+                break;
+            case OpCop1:
+                ExecuteCop1Direct(word);
+                break;
+            case OpLwc1:
+                LoadWordToFpu(word);
+                break;
+            case OpSwc1:
+                StoreWordFromFpu(word);
+                break;
+            case OpVfpu0:
+                ExecuteVfpu0Direct(word);
+                break;
+            case OpVfpu1:
+                ExecuteVfpu1Direct(word);
+                break;
+            default:
+                Execute(word);
+                break;
+        }
+    }
+
+    /// <summary>After a branch and its delay slot: counts the block's instructions into the run and moves on into the
+    /// block at <paramref name="target"/> when it is the one the block last continued to and the run has budget left.</summary>
+    private bool FollowBranch(ref Chain c, uint target)
+    {
+        c.Done += c.Index;
+        c.Limit -= c.Index;
+        c.Index = 0;
+        Block? next = c.Block.Next;
+        if (c.Limit == 0 || next == null || next.Start != target || next.Generation != _generation)
+        {
+            return false;
+        }
+
+        c.Block = next;
+        c.Start = target;
+        c.Count = Math.Min(next.Count, c.Limit);
+        c.Synced = -1;
+        return true;
+    }
+
     /// <summary>The delay slot of a branch, through the decoder: after it the core goes to the branch target.</summary>
     private void RunDelaySlot(ref Chain c, long baseCount)
     {
@@ -436,7 +608,16 @@ public sealed partial class AllegrexCore
         CheckTimer();
         _pc = _nextPc;
         _nextPc += 4;
-        Execute(c.Block.Instructions[i].Word);
+        ref DecodedInstruction d = ref c.Block.Instructions[i];
+        if (d.Op >= OpCop1)
+        {
+            ExecuteDirect(d.Op, ref d);
+        }
+        else
+        {
+            Execute(d.Word);
+        }
+
         _gpr[0] = 0;
         c.Index = i + 1;
         c.Synced = i + 1;
@@ -444,13 +625,14 @@ public sealed partial class AllegrexCore
 
     /// <summary>
     /// The hot path of a run: plain instructions, and branches and jumps whose delay slot is plain, on into the block a
-    /// branch last continued to. Stops at the end of the block's share of the run (<see cref="ChainEnd"/>), at any
-    /// other instruction (<see cref="ChainOther"/>, <see cref="Chain.Index"/> at it), or after a branch it cannot
-    /// follow (<see cref="ChainBranched"/>, <see cref="Chain.Target"/>). A method of its own, with no calls, so that
-    /// its loop keeps everything in registers.
+    /// branch last continued to; a block the IL tier compiled runs as its compiled code. Stops at the end of the
+    /// block's share of the run (<see cref="ChainEnd"/>), at any other instruction (<see cref="ChainOther"/>,
+    /// <see cref="Chain.Index"/> at it), after a branch it cannot follow (<see cref="ChainBranched"/>,
+    /// <see cref="Chain.Target"/>), or after compiled code a store ended (<see cref="ChainStopped"/>). A method of its
+    /// own, so that its loop keeps everything in registers.
     /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
-    private static int RunChain(ref uint r, ref Chain c, int generation)
+    private int RunChain(ref uint r, ref Chain c, int generation)
     {
         Block block = c.Block;
         ref DecodedInstruction first = ref MemoryMarshal.GetArrayDataReference(block.Instructions);
@@ -460,12 +642,50 @@ public sealed partial class AllegrexCore
         int done = c.Done;
         int limit = c.Limit;
         int stop;
+        uint target;
         while (true)
         {
             if (i >= count)
             {
                 stop = ChainEnd;
                 break;
+            }
+
+            if (i == 0)
+            {
+                // a block entry: count it for the IL tier, and run its compiled code when the whole block fits
+                if (block.Code == null && !block.CompileTried)
+                {
+                    NoteBlockRun(block);
+                }
+
+                BlockCode? code = block.Code;
+                if (code != null && count == block.Count)
+                {
+                    long exceptions = _exceptionsTaken;
+                    target = code(this, ref r, out int executed);
+                    if (executed < count || _endBlock)
+                    {
+                        i = executed;
+                        stop = _endBlock ? ChainStopped : ChainOther;
+                        if (_exceptionsTaken != exceptions)
+                        {
+                            // an FPU/VFPU exception: the PC fields hold the vector
+                            c.Synced = i;
+                        }
+
+                        break;
+                    }
+
+                    i = count;
+                    if (!block.EndsInBranch)
+                    {
+                        stop = ChainEnd;
+                        break;
+                    }
+
+                    goto Follow;
+                }
             }
 
             ref DecodedInstruction d = ref Unsafe.Add(ref first, i);
@@ -483,9 +703,11 @@ public sealed partial class AllegrexCore
             }
 
             // the branch (its registers are read before the slot runs), then its plain delay slot
-            uint target = BranchTarget(ref r, ref d, op, start + (uint)(i * 4) + 4);
+            target = BranchTarget(ref r, ref d, op, start + (uint)(i * 4) + 4);
             ExecutePlain(ref r, ref Unsafe.Add(ref first, i + 1));
             i += 2;
+
+        Follow:
             done += i;
             limit -= i;
             Block? next = block.Next;
@@ -516,7 +738,7 @@ public sealed partial class AllegrexCore
 
     private static bool NeedsRunBlock(byte op)
     {
-        return op == OpGeneral || op == OpLw || op == OpSw;
+        return op == OpGeneral || op >= OpCop1;
     }
 
     private static bool IsPlain(byte op)
@@ -730,9 +952,43 @@ public sealed partial class AllegrexCore
                 ends = true;
                 return d;
             case 0x11:
-            case 0x12:
-                // bc1f/bc1t, bvf/bvt
+                // bc1f/bc1t branch; add.s/sub.s/mul.s decode fully; the rest of COP1 goes straight to its handler
                 branches = ((word >> 21) & 0x1F) == 0x08;
+                d.Op = branches ? OpGeneral : OpCop1;
+                if (((word >> 21) & 0x1F) == 0x10 && (word & 0x3F) <= 2)
+                {
+                    d.Op = OpFpuArithmetic;
+                    d.D = (byte)Fd(word);
+                    d.S = (byte)Fs(word);
+                    d.T = (byte)Ft(word);
+                    d.Immediate = word & 0x3F;
+                }
+
+                return d;
+            case 0x12:
+                // bvf/bvt
+                branches = ((word >> 21) & 0x1F) == 0x08;
+                return d;
+            case 0x18:
+                // vadd/vsub decode fully
+                d.Op = ((word >> 23) & 7) <= 1 ? OpVfpuLanes : OpVfpu0;
+                DecodeVfpuLanes(ref d, word);
+                return d;
+            case 0x19:
+                // vmul/vdot decode fully
+                d.Op = ((word >> 23) & 7) switch
+                {
+                    0 => OpVfpuLanes,
+                    1 => OpVfpuDot,
+                    _ => OpVfpu1,
+                };
+                DecodeVfpuLanes(ref d, word);
+                return d;
+            case 0x31:
+                d.Op = OpLwc1;
+                return d;
+            case 0x39:
+                d.Op = OpSwc1;
                 return d;
             case 0x23:
                 d.Op = OpLw;
@@ -751,6 +1007,40 @@ public sealed partial class AllegrexCore
         }
 
         return d;
+    }
+
+    /// <summary>The lanes of a three-vector VFPU instruction, as <see cref="ReadVector"/> walks them; the operation
+    /// (0 vadd, 1 vsub, 8 vmul) in the immediate.</summary>
+    private static void DecodeVfpuLanes(ref DecodedInstruction d, uint word)
+    {
+        int size = VfpuSize(word);
+        d.D = (byte)size;
+        d.Immediate = (word >> 26) == 0x19 ? 8u : (word >> 23) & 7;
+        d.LanesS = VectorLanes(VfpuS(word), size);
+        d.LanesT = VectorLanes(VfpuT(word), size);
+        d.LanesD = d.Op == OpVfpuDot ? (uint)VfpuIndex(VfpuD(word)) : VectorLanes(VfpuD(word), size);
+    }
+
+    private static uint VectorLanes(int register, int size)
+    {
+        if (size == 1)
+        {
+            return (uint)VfpuIndex(register);
+        }
+
+        int start = VectorStartLane(size, register);
+        int matrixBase = ((register >> 2) & 7) * 16;
+        int column = register & 3;
+        bool transposed = ((register >> 5) & 1) != 0;
+        uint lanes = 0;
+        for (int i = 0; i < size; i++)
+        {
+            int lane = (start + i) & 3;
+            int index = transposed ? matrixBase + column + (lane * 4) : matrixBase + (column * 4) + lane;
+            lanes |= (uint)index << (i * 8);
+        }
+
+        return lanes;
     }
 
     private static void DecodeSpecialForBlock(ref DecodedInstruction d, ref bool ends, ref bool branches)

@@ -169,6 +169,18 @@ public sealed class AllegrexBlockCacheTests
     }
 
     [Fact]
+    public void AnExceptionInADirectDelaySlotReportsTheBranchWithBd()
+    {
+        // beq zero, zero, +3; slot: swc1 f0, 2(t0), misaligned (an FPU store the block runs straight to its handler)
+        AllegrexRig rig = new(Beq(Zero, Zero, 3), IType(0x39, 0, T0, 2), Nop, Nop, Nop);
+        rig[T0] = Base + 0x3000;
+        rig.Core.Run(2);
+        Assert.Equal(AllegrexRig.ExceptionBase, rig.Core.Pc);
+        Assert.Equal(Base, rig.Core.Epc);
+        Assert.NotEqual(0u, rig.Core.Cause & AllegrexCore.CauseBranchDelay);
+    }
+
+    [Fact]
     public void ALongRunAllocatesNothing()
     {
         AllegrexRig rig = new(Addiu(T0, T0, 1), Bne(T0, Zero, -2), Addu(T1, T1, T0));

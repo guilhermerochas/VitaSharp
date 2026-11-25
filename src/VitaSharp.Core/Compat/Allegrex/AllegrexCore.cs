@@ -373,6 +373,7 @@ public sealed partial class AllegrexCore
     /// </summary>
     private void RaiseException(AllegrexExceptionCode code)
     {
+        _exceptionsTaken++;
         uint status = _cop0[Cop0Status];
         uint cause = _cop0[Cop0Cause] & ~(CauseExceptionCodeMask | CauseBranchDelay);
         cause |= (uint)code << 2;
@@ -400,4 +401,4 @@ public sealed partial class AllegrexCore
         _cop0[Cop0BadVAddr] = address;
         RaiseException(code);
     }
-}
+}

@@ -1,4 +1,5 @@
 using VitaSharp.Core.Compat.Allegrex;
+using VitaSharp.Core.SaveState;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Compat.Psp;
@@ -100,6 +101,7 @@ public sealed partial class PspDmac : IPspMmioDevice, IPspTimedDevice
 
     /// <summary>Called with (physical address, bytes) for every unit a transfer writes, so the core drops the decoded
     /// code it overwrote (<see cref="AllegrexCore.InvalidateCode"/>); on the core's thread, which runs the transfers.</summary>
+    [field: SnapshotIgnore]
     public Action<uint, int>? CodeWritten { get; set; }
 
     public uint Size => BlockSize;
