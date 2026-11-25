@@ -331,6 +331,16 @@ public sealed class Compat : HleModule, IDisposable
         }
 
         _core = core;
+        if (core is AllegrexCompatCore allegrex)
+        {
+            // DMA into code: the transfers write behind the interpreter's decoded blocks
+            Action<uint, int> invalidate = allegrex.Core.InvalidateCode;
+            foreach (PspDmac dmac in _hardware.Devices.OfType<PspDmac>())
+            {
+                dmac.CodeWritten = invalidate;
+            }
+        }
+
         _sram.Clear();
         _mailbox.Reset();
         return 0;

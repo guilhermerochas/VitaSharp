@@ -102,6 +102,18 @@ public sealed class PspDmacTests
     }
 
     [Fact]
+    public void EveryWrittenUnitIsReportedForTheDecodedCode()
+    {
+        Fixture fixture = new();
+        List<(uint Address, int Bytes)> written = [];
+        fixture.Dmac.CodeWritten = (address, bytes) => written.Add((address, bytes));
+        fixture.Fill(Source, 4, 0x1000);
+        fixture.Dmac.Write32(0x030, 1);
+        fixture.Program(2, Source, Destination, 0, 4 | WordToWord, StartChannel);
+        Assert.Equal([(Destination, 4), (Destination + 4, 4), (Destination + 8, 4), (Destination + 12, 4)], written);
+    }
+
+    [Fact]
     public void ItemWithoutTheInterruptBitRaisesNothing()
     {
         Fixture fixture = new();
