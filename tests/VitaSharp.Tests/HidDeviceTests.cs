@@ -275,6 +275,29 @@ public sealed class HidDeviceTests(GuestMemoryFixture fixture) : IDisposable
         }
     }
 
+    /// <summary>GLFW's scancode of the same key differs by platform (GLFW 3.4): Wayland passes the evdev code
+    /// (KEY_PLAYPAUSE 164), X11 the X keycode (172), Windows the set 1 code (0x122); each platform's code gives the
+    /// same usage, and the other platform's code for that key gives none of it.</summary>
+    [Fact]
+    public void MediaKeyScancodesFollowGlfwsPlatform()
+    {
+        Assert.Equal(ScancodeKind.Evdev, HidUsages.ScancodeKindOfGlfwPlatform(0x00060003));
+        Assert.Equal(ScancodeKind.X11Keycode, HidUsages.ScancodeKindOfGlfwPlatform(0x00060004));
+        Assert.Equal(ScancodeKind.WindowsSet1, HidUsages.ScancodeKindOfGlfwPlatform(0x00060001));
+        Assert.Equal(ScancodeKind.None, HidUsages.ScancodeKindOfGlfwPlatform(0x00060002));
+        Assert.Equal(PlayPause, HidUsages.ConsumerFromScancode(164, ScancodeKind.Evdev));
+        Assert.Equal(PlayPause, HidUsages.ConsumerFromScancode(172, ScancodeKind.X11Keycode));
+        Assert.Equal(PlayPause, HidUsages.ConsumerFromScancode(0x122, ScancodeKind.WindowsSet1));
+        Assert.Equal(Mute, HidUsages.ConsumerFromScancode(113, ScancodeKind.Evdev));          // KEY_MUTE
+        Assert.Equal(VolumeDown, HidUsages.ConsumerFromScancode(114, ScancodeKind.Evdev));    // KEY_VOLUMEDOWN
+        Assert.Equal(VolumeUp, HidUsages.ConsumerFromScancode(115, ScancodeKind.Evdev));      // KEY_VOLUMEUP
+        Assert.Equal(NextTrack, HidUsages.ConsumerFromScancode(163, ScancodeKind.Evdev));     // KEY_NEXTSONG
+        // on Wayland 172 is KEY_HOMEPAGE, 121 KEY_KPCOMMA: not the X11 keys of those numbers
+        Assert.NotEqual(PlayPause, HidUsages.ConsumerFromScancode(172, ScancodeKind.Evdev));
+        Assert.NotEqual(Mute, HidUsages.ConsumerFromScancode(121, ScancodeKind.Evdev));
+        Assert.Equal(0, HidUsages.ConsumerFromScancode(0x122, ScancodeKind.None));
+    }
+
     /// <summary>The PC's media keys, which GLFW reports with no key token: by the Windows scancode (set 1 with the
     /// extended bit) and the X11 keycode (evdev + 8); every one maps to a usage SceHid keeps, and the scancodes of
     /// ordinary keys (A: 0x1E on Windows, 38 on X11) map to none.</summary>

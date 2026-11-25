@@ -317,6 +317,29 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMu
         }
     }
 
+    /// <summary>What GLFW's key scancodes are on the platform it runs (Wayland's are evdev codes, X11's the X keycode),
+    /// for the media keys of the paired keyboard; known once GLFW is initialized.</summary>
+    ScancodeKind _scancodeKind = OperatingSystem.IsWindows() ? ScancodeKind.WindowsSet1 : ScancodeKind.None;
+
+    /// <summary>glfwGetPlatform (GLFW 3.4; Silk.NET does not bind it) after the window's glfwInit.</summary>
+    static unsafe ScancodeKind GlfwScancodeKind()
+    {
+        try
+        {
+            nint getPlatform = Silk.NET.GLFW.Glfw.GetApi().Context.GetProcAddress("glfwGetPlatform");
+            if (getPlatform != 0)
+            {
+                return HidUsages.ScancodeKindOfGlfwPlatform(((delegate* unmanaged[Cdecl]<int>)getPlatform)());
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Window: glfwGetPlatform failed: {e.Message}");
+        }
+
+        return OperatingSystem.IsWindows() ? ScancodeKind.WindowsSet1 : OperatingSystem.IsMacOS() ? ScancodeKind.None : ScancodeKind.X11Keycode;
+    }
+
     static bool CanLoad(string lib) => NativeProbe.CanLoad(lib);
 
     /// <summary>
@@ -592,6 +615,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMu
             // its window). Destroying the window first let the GPU worker present to a lost surface and the teardown
             // corrupt the native heap: the hidden-window test run exited with 0xC0000374 about once in 20 runs
             _window.Initialize();
+            _scancodeKind = GlfwScancodeKind();
             _window.Run(() =>
             {
                 _window.DoEvents();
@@ -771,7 +795,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMu
     /// device gets it by its scancode (<see cref="HidUsages.ConsumerFromScancode"/>); the other keys go on as usual.</summary>
     void OnKey(Key key, int scancode, bool down)
     {
-        if (key == Key.Unknown && HidKeyboard is { } mediaKeyboard && HidUsages.ConsumerFromScancode(scancode) is var usage and not 0)
+        if (key == Key.Unknown && HidKeyboard is { } mediaKeyboard && HidUsages.ConsumerFromScancode(scancode, _scancodeKind) is var usage and not 0)
         {
             mediaKeyboard.ConsumerControl.Key(usage, down, VitaSharp.Core.Hle.Modules.Hid.NowUs);
             return;

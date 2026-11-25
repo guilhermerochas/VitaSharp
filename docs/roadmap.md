@@ -2506,6 +2506,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Wi-Fi vistas (`scePosNetCtlInetGetScanInfo`) pelo `SceHttp`. Esse serviço não existe mais; dar uma posição ao Near
   pelo caminho do firmware é responder essa requisição com a posição do host (o `SceNetCtl` com redes vistas e uma
   resposta WPS), e isso é [G]: decidir com o usuário antes. Usa: Near, Mapas.
+  Achado (25/11/2026, small5, sem fechar): a parte (1) não cabe num [M] multiplataforma: cada sistema tem a sua
+  API e nenhuma tem ligação no projeto. Windows: `Windows.Devices.Geolocation.Geolocator` é WinRT (o Desktop não
+  usa a TFM `-windows`; sem o CsWinRT seria ativar pelo `RoGetActivationFactory` e chamar a vtable à mão, com a
+  operação assíncrona `IAsyncOperation<Geoposition>`), e a localização do Windows vem desligada por padrão para apps
+  de desktop; Linux: GeoClue2 é só D-Bus (o cliente precisa ficar conectado: `CreateClient`, `Start`, sinal
+  `LocationUpdated`), e o projeto não tem biblioteca de D-Bus; macOS: o Core Location só pede a permissão a um app
+  em bundle com `NSLocationUsageDescription` (o binário solto herda a do terminal). Proposta: virar [G] com três
+  entregas (uma por sistema, cada uma com o teste do `ILocationSource` por trás de uma fonte falsa e o skip claro sem
+  o serviço), decidir com o usuário a ordem.
 - [ ] [P3][M] Magnetômetro, o que falta (o feito está em "Corrigido, falta o usuário testar"): (1) o anel de
   registros brutos do driver (`sceMotionDevRead`/`ReadForMagnCalib` copiam os registros do leitor, modo 0x10005 do
   FUN_81004420; o formato do registro ainda não foi lido) e o `dataInfo`. Achado (25/11/2026, small4, estudo do
@@ -2537,10 +2546,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `param_1[0x10..]`) e se o campo corrige o yaw continuamente (os ramos com `DAT_81015258` em 0x810066xx); só então
   trocar o `MotionFusion.Reset` (hoje só a gravidade) com teste; (3) o magnetômetro de um controle no PC (o SDL não
   expõe um).
-- [ ] [P3][M] Teclado e mouse Bluetooth, o que falta (o feito está em "Corrigido, falta o usuário testar"): conferir
-  no Sistema do Vita que Configurações > Bluetooth lista os dois dispositivos (os registros do `SceBt` seguem o 3.74,
-  mas a tela não foi aberta); no Wayland, conferir se o scancode que o GLFW dá a uma tecla de mídia é o do evdev + 8
-  como no X11; o monitor de teclas de mídia do macOS ainda não rodou num Mac (só o mapeamento é testado).
 - [ ] [P3][G] Processador de mídia Venezia (núcleos MeP + IVC2) para código MeP que não é do firmware (plugin
   VVNZRunner e o homebrew sobre ele; `docs/notes/hardware-coverage.md`): o `vnzimg.skprx` sai do `self2elf` em claro,
   sem chave. Primeira entrega: interpretador do núcleo MeP-c5 numa thread de guest com programa sintético no teste
@@ -3285,19 +3290,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   menos que os dados (app_fps). Falta: linhas de 120 colunas como o resto do repositório (o guia pede 80; decidir com
   o usuário). O awk do `android-perf-run.sh` (era do GNU: `asort`, `match` com vetor) passou a POSIX (`match` com
   RSTART/RLENGTH, `split`, `sort -n`), mesma saída em dados de teste e aceito pelo `gawk --posix`.
-- [ ] [P3][M] Testes de paridade de mídia entre o PC e o Android (pedido do usuário, 13/11/2026). Hoje só há testes de cada
-  lado separado (`AndroidMediaDriverTests`: política do lado Android; `AudioFrameDecoderTests`: cabeçalhos de MP3 e
-  gancho do MP4); nada compara o que o jogo recebe nos dois. Um contrato único com um clipe H.264/MP4 e áudio AAC/MP3
-  sintéticos (gerados pelo teste, nada da Sony), passando pela API que o jogo usa: por quadro, o hash e o momento/ordem
-  em que o jogo recebe o "quadro pronto"; por porta de áudio, o PCM mixado e o tempo. Lado PC (FFmpeg + OpenAL) roda
-  sempre; lado Android (MediaCodec + AAudio) no emulador do Android (AVD x86_64, os codecs de software do Google, os
-  mesmos do celular para vídeos do tamanho do Vita) quando disponível, pulado com o motivo quando não. Vídeo: quadros
-  idênticos e mesma ordem/tempo; áudio: mesma contagem de amostras e tempo, PCM dentro de uma tolerância declarada
-  (arredondamento do decodificador). O hardware do celular (decodificador MediaTek, GPU Mali, modos do AAudio) segue
-  confirmado no aparelho. Documentar no README como rodar. Em andamento com o agente de bugs do Android (fix/android-video).
-  Junto aqui (triagem de 22/11/2026) o item "Mídia" da seção Testes de regressão:
-  [P3][M] **Mídia:** decodificação de vídeo e áudio pelo contrato do Vita no desktop e no Android (já existe a base em
-  `MediaContract`/`MediaParityTests`).
 - [ ] [P3][G] Cobertura de código mínima de 70% em tudo (pedido do usuário, 10/11/2026). Base de hoje (`build/coverage.ps1` /
   `.sh`, coverlet + ReportGenerator, `Category!=Slow`): geral 59,4% linhas / 42,5% ramos; VitaSharp.Core 65,8%;
   Mobile.Core 85,4%; Renderer.Vulkan 1,3%. Meta: cada projeto e cada namespace com pelo menos 70% de linhas, e manter
@@ -3439,6 +3431,31 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   (`UlobjKernelTests`: mutex com dono e esperas, condição pelo pool do mutex, semáforo, pool e pool de dados com as
   listas, tabela de entradas, estado da thread) passam sem mudança contra o kernO e entraram junto. O que testar:
   nada visível em jogo (só depuradores e o core dump usam); os jogos com libult rodam como antes.
+
+- [ ] (25/11/2026, falta testar) [P3][M] Testes de paridade de mídia entre o PC e o Android (fix/small5). O lado do
+  decodificador já existia (`MediaParityTests`: H.264, AAC e MP3 sintéticos pela API do jogo, o FFmpeg do PC sempre,
+  o rastro do Android pelo `build/android-media-parity.sh` num celular ou no Android Emulator). Faltava a porta de
+  áudio: agora `AudioPortParityTests` manda os mesmos grãos de uma porta (tom estéreo diferente em cada lado, volume
+  1, 0,5 e 0,25) pelo mixer do OpenAL Soft, lido de um dispositivo de loopback (`OpenAlAudio.TryCreateLoopback`,
+  `ALC_SOFT_loopback`, em float: sem placa de som, roda no CI dos três sistemas), e pelo `BufferedPcmStream` (o que o
+  Android faz antes do AAudio/AudioTrack: fila, volume, reamostragem) com um dispositivo que guarda o que recebe; o PCM
+  dos dois tem de ser o do jogo vezes o volume, quadro a quadro e na ordem, com tolerância declarada de um passo de 16
+  bits (o arredondamento do volume). Achado no caminho: a saída de 16 bits do OpenAL Soft tem dither (±1), por isso o
+  loopback lê em float. README: seção de testes. O hardware do celular (AAudio, decodificador do aparelho) segue
+  conferido no aparelho. Testar: nada no jogo; `dotnet test --filter AudioPortParityTests` passa no PC (Windows,
+  Linux, macOS).
+
+- [ ] (25/11/2026, falta testar) [P3][M] Teclado e mouse Bluetooth, o que faltava (fix/small5): no Wayland o GLFW
+  3.4 entrega à janela o código evdev da tecla, sem o +8 (o `keyboardHandleKey` do `wl_window.c` passa o código do
+  `wl_keyboard` direto ao `_glfwInputKey` e só soma 8 para o xkbcommon); no X11 é o keycode do X (evdev + 8). O
+  VitaSharp lia todo scancode do Linux como do X11, então no Wayland Play/Pause (KEY_PLAYPAUSE 164) não virava nada
+  e outras teclas podiam cair na tecla de mídia errada. Agora a janela pergunta a plataforma ao GLFW
+  (`glfwGetPlatform`) e lê o scancode como evdev, keycode do X ou set 1 do Windows
+  (`HidUsages.ConsumerFromScancode(scancode, ScancodeKind)`). Teste: `HidDeviceTests.MediaKeyScancodesFollowGlfwsPlatform`
+  (não compila sem a mudança; pela leitura antiga o 164 do Wayland dá 0, não Play/Pause). Testar: com "Teclado e mouse
+  Bluetooth" ligado, abrir o Sistema do Vita em Configurações > Bluetooth (os dois dispositivos listados); num Linux
+  com Wayland, as teclas de mídia do teclado (tocar/pausar, volume, próxima) agem no jogo/app como no X11; num Mac, as
+  teclas de mídia (o monitor do macOS ainda não rodou num Mac, só o mapeamento é testado).
 
 - [ ] (25/11/2026, falta testar) [P3][M] Entradas de import conferidas antes do link, como o modulemgr 3.74
   (fix/small4). Antes de ligar cada biblioteca que acha (FUN_81008aa0 -> FUN_81005100), num módulo de processo de
@@ -4649,12 +4666,12 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   execução contínua é aplicada no próximo quadro.
   Feito (fix/res1, 22/11/2026): a troca de resolução e de MSAA (F1/F3 no PC, MSAA no menu do Android) não segura mais as threads do guest; o worker da GPU troca o renderer sozinho na próxima fronteira entre cenas e o jogo segue rodando (`GpuQueueLiveReplaceTests`, `GraphicsHotkeysTests.AChangeIsAppliedWhileAGuestThreadRunsGuestCode`). O save state continua exigindo o ponto seguro. Testar: no shell (com a música/SceShellMusicCoreCacheIo ativa) e num jogo, F1 de 1x para 2x/3x/4x e de volta, e F3: a troca aparece no próximo quadro, sem "not applied" no log e sem queda de fps durante a troca.
 
-- [ ] [P2][M] IO assíncrono (`sceIoXxxAsync`) bloqueava quem chama pelo tempo do cartão: a requisição inteira, com a
+- [ ] (22/11/2026, falta testar) [P2][M] IO assíncrono (`sceIoXxxAsync`) bloqueava quem chama pelo tempo do cartão: a requisição inteira, com a
   espera do modelo do cartão (7 MB/s), rodava na thread do guest, e um jogo que lê assíncrono na thread principal
   travava o quadro. Correção (fix/io1, 22/11/2026): como no SceIofilemgr 3.74 (fila "SceIoScheduler"), a chamada volta
   na hora, o trabalho no arquivo roda numa thread do host em ordem de envio e a conclusão (param, bit do evento,
   `sceIoComplete`) chega quando o tempo do dispositivo acaba, no relógio do guest; save state guarda pedido em voo
-  (`IoAsyncSchedulerTests`). Teste: um jogo que usa `sceIoReadAsync` (ex.: o shell copiando o pic0 de um jogo para o
+  (`IoAsyncSchedulerTests`). Nada listado como falta (conferido em 25/11/2026, small5). Testar: um jogo que usa `sceIoReadAsync` (ex.: o shell copiando o pic0 de um jogo para o
   LiveArea, a Câmera salvando foto) continua funcionando, e carregamentos com leitura assíncrona não engasgam o quadro.
 
 - [ ] (22/11/2026, falta testar) [P3][P] `--capture-playback` (rerun): o fim do rerun derrubava o processo quando a pasta da captura não tem
@@ -4664,7 +4681,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   de fechar o processo (`SessionCaptureTests.Compare_skips_when_a_capture_has_no_frames_file`). Teste: rodar o rerun
   de uma captura sem quadros e ver a linha `compare: skipped` e o resumo PERF no fim.
 
-- [ ] [P1][M] The Amazing Spider-Man (PCSE00333), tela de pausa piscando (relato do usuário, 21/11/2026; captura
+- [ ] (22/11/2026, falta testar) [P1][M] The Amazing Spider-Man (PCSE00333), tela de pausa piscando (relato do usuário, 21/11/2026; captura
   `PCSE00333_20261121_232645_tudo`, 4,3 s a 60 fps, dump da GPU de 198 quadros): o menu de pausa ("RESUME" e as
   opções abaixo, sobre o fundo com a aranha) pisca; na folha de contatos as opções abaixo de "RESUME" quase não
   aparecem. Comparar quadros seguidos no replay do dump (texto/opções presentes em um quadro e ausentes no outro).
@@ -4679,6 +4696,10 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   achou WRITE_AFTER_READ entre a cópia de readback do quadro (`RecordReadback`, sem barreira quando o alvo não tem
   escala) e os draws do quadro seguinte no mesmo alvo, só sem swapchain (headless/replay); agora há barreiras antes e
   depois da cópia em todos os casos.
+  Conferido de novo no release/20261117 (ff8e4faa, 25/11/2026, small5; inclui o ajuste f883f0e4, saídas do
+  fragmento com o TileWord1): dois replays do dump, 198/198 quadros idênticos (`--compare`), RESUME, RESTART,
+  SETTINGS e QUIT TO MAIN MENU em todos os quadros; o `verify` da captura diz "nada a verificar" (as regras do
+  relatório não marcaram o pisca na gravação: o texto escuro das opções é pequeno demais para o [flash] da célula).
   Testar: The Amazing Spider-Man, abrir a pausa (e a folha de contatos) e ficar alguns segundos: RESUME e as opções
   abaixo sempre visíveis, sem piscar.
 

@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=472f22d3e8df9c4d97f216bffbda1288c84a5f6ac379c4bddbd9765fbebe9ee7 -->
+<!-- pair: README.md sha256=7dbee541f7141f6feb70f76c0943f4a81c9a7132a7a2cb6b38dd01b05560fdcb -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -552,6 +552,10 @@ O que o `dotnet test tests/VitaSharp.Tests` precisa em cada sistema; um teste se
   uma imagem x86_64 Google APIs e o build `android-x64`). `build/android-media-parity.sh` (ou `.ps1`) grava o traço no
   aparelho; `VITASHARP_ANDROID_MEDIA_TRACE=<traço> dotnet test tests/VitaSharp.Tests --filter MediaParityTests` compara
   com o do desktop (pulado sem a variável). `SYNC=0` (`-Sync 0`) grava com o tempo antigo do MediaCodec.
+- Paridade da porta de áudio (`AudioPortParityTests`): os grãos de uma porta, no volume da porta, pelo mixer do OpenAL
+  Soft (lido de um dispositivo `ALC_SOFT_loopback`, sem placa de som; o OpenAL Soft do pacote tem isso em todo
+  sistema) e pelo fluxo do Android (`BufferedPcmStream`, a fila e o volume antes do AAudio/AudioTrack) têm de dar o
+  mesmo PCM, com no máximo um passo de 16 bits de diferença. Pulado com o motivo quando o OpenAL Soft não carrega.
 - .NET 11 (opcional, para comparações; o padrão e o CI continuam no .NET 10): `-p:VitaSharpDotnet=net11.0` compila
   todos os projetos para o .NET 11 em qualquer sistema. Precisa do SDK do .NET 11 (e, no Android, do workload
   `maui-android` dele e da plataforma Android API 37; o .NET 11 não tem Mono, então só `VitaSharpAndroidRuntime=coreclr`

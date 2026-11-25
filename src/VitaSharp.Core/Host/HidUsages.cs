@@ -140,19 +140,28 @@ public static class HidUsages
 
     /// <summary>
     /// The consumer-page usage of a media key the PC's window library (GLFW) reports with no key token, by its
-    /// scancode: on Windows the PS/2 set 1 code with the extended bit (0x100) that the keyboard driver gives each media
-    /// key, on Linux (X11) the X keycode (the evdev code + 8). 0 = no media key or another system (macOS sends media
-    /// keys as system events the window never gets).
+    /// scancode, which depends on GLFW's platform: on Windows the PS/2 set 1 code with the extended bit (0x100) that the
+    /// keyboard driver gives each media key; on X11 the X keycode (the evdev code + 8); on Wayland the evdev code itself
+    /// (GLFW 3.4's keyboardHandleKey passes the wl_keyboard key unchanged and adds 8 only for xkbcommon). 0 = no media
+    /// key or a platform without media keys in the window (macOS sends them as system events the window never gets).
     /// </summary>
-    public static ushort ConsumerFromScancode(int scancode)
+    public static ushort ConsumerFromScancode(int scancode, ScancodeKind kind) => kind switch
     {
-        if (OperatingSystem.IsWindows())
-        {
-            return ConsumerFromWindowsScancode(scancode);
-        }
+        ScancodeKind.WindowsSet1 => ConsumerFromWindowsScancode(scancode),
+        ScancodeKind.X11Keycode => ConsumerFromX11Keycode(scancode),
+        ScancodeKind.Evdev => ConsumerFromX11Keycode(scancode + 8),
+        _ => 0,
+    };
 
-        return OperatingSystem.IsLinux() || OperatingSystem.IsFreeBSD() ? ConsumerFromX11Keycode(scancode) : (ushort)0;
-    }
+    /// <summary>What GLFW's scancodes are on the platform glfwGetPlatform answers (GLFW_PLATFORM_WIN32 0x60001,
+    /// COCOA 0x60002, WAYLAND 0x60003, X11 0x60004, NULL 0x60005).</summary>
+    public static ScancodeKind ScancodeKindOfGlfwPlatform(int platform) => platform switch
+    {
+        0x00060001 => ScancodeKind.WindowsSet1,
+        0x00060003 => ScancodeKind.Evdev,
+        0x00060004 => ScancodeKind.X11Keycode,
+        _ => ScancodeKind.None,
+    };
 
     /// <summary>Windows: the scancode (set 1, extended bit 0x100) of a media key.</summary>
     public static ushort ConsumerFromWindowsScancode(int scancode) => scancode switch
@@ -226,4 +235,20 @@ public static class HidUsages
         225 => 0x221,                                          // KEY_SEARCH: AC Search
         _ => 0,
     };
+}
+
+/// <summary>What the window library's key scancodes are (<see cref="HidUsages.ConsumerFromScancode"/>).</summary>
+public enum ScancodeKind
+{
+    /// <summary>No media keys through the window (macOS, GLFW's null platform).</summary>
+    None,
+
+    /// <summary>Windows: PS/2 set 1, extended keys with 0x100.</summary>
+    WindowsSet1,
+
+    /// <summary>X11: the X keycode (evdev + 8).</summary>
+    X11Keycode,
+
+    /// <summary>Wayland: the Linux evdev KEY_* code.</summary>
+    Evdev,
 }
