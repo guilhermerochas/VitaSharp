@@ -388,6 +388,92 @@ internal static class AdhocWire
     }
 }
 
+/// <summary>A datagram a link received: its length in the buffer and the address it came from.</summary>
+internal readonly record struct AdhocDatagram(int Length, IPEndPoint From);
+
+/// <summary>
+/// One UDP endpoint of <see cref="UdpAdhocMedium"/>. A receive ends when a datagram arrives or when the token is
+/// cancelled: closing the endpoint is not a way to stop it, because a UDP receive blocked in the kernel is not woken by
+/// closing its socket on every host (macOS: .NET's SafeSocketHandle then spins in Dispose until the receive returns,
+/// which for UDP is never).
+/// </summary>
+internal interface IAdhocLink : IDisposable
+{
+    /// <summary>The local UDP port.</summary>
+    int LocalPort { get; }
+
+    /// <summary>Waits for the next datagram into <paramref name="buffer"/>; throws <see cref="OperationCanceledException"/>
+    /// when <paramref name="cancel"/> is cancelled first.</summary>
+    ValueTask<AdhocDatagram> ReceiveAsync(Memory<byte> buffer, CancellationToken cancel);
+
+    /// <summary>Sends <paramref name="datagram"/> to <paramref name="target"/>.</summary>
+    void SendTo(byte[] datagram, IPEndPoint target);
+}
+
+/// <summary>An <see cref="IAdhocLink"/> on a host UDP socket (receives through the socket's asynchronous path, which
+/// every host can cancel).</summary>
+internal sealed class SocketAdhocLink : IAdhocLink
+{
+    private static readonly IPEndPoint s_anySender = new(IPAddress.Any, 0);
+
+    private readonly Socket _socket;
+
+    private SocketAdhocLink(Socket socket)
+    {
+        _socket = socket;
+    }
+
+    public int LocalPort => ((IPEndPoint)_socket.LocalEndPoint!).Port;
+
+    /// <summary>The medium's listening socket on <paramref name="port"/> (shared by the instances of one PC), in the LAN
+    /// multicast group when <paramref name="multicast"/>.</summary>
+    public static SocketAdhocLink Listening(int port, bool multicast)
+    {
+        var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        // several instances on one PC share the port: each one receives the group's datagrams
+        socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+        socket.Bind(new IPEndPoint(IPAddress.Any, port));
+        if (multicast)
+        {
+            socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.AddMembership, new MulticastOption(UdpAdhocMedium.DefaultGroup));
+            socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastTimeToLive, 1);
+            socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastLoopback, true);
+        }
+
+        return new SocketAdhocLink(socket);
+    }
+
+    /// <summary>The instance's own socket on a free port (what it sends from, so its address is unique).</summary>
+    public static SocketAdhocLink Own(bool multicast)
+    {
+        var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        socket.Bind(new IPEndPoint(IPAddress.Any, 0));
+        if (multicast)
+        {
+            socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastTimeToLive, 1);
+            socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastLoopback, true);
+        }
+
+        return new SocketAdhocLink(socket);
+    }
+
+    public async ValueTask<AdhocDatagram> ReceiveAsync(Memory<byte> buffer, CancellationToken cancel)
+    {
+        SocketReceiveFromResult result = await _socket.ReceiveFromAsync(buffer, SocketFlags.None, s_anySender, cancel).ConfigureAwait(false);
+        return new AdhocDatagram(result.ReceivedBytes, (IPEndPoint)result.RemoteEndPoint);
+    }
+
+    public void SendTo(byte[] datagram, IPEndPoint target)
+    {
+        _socket.SendTo(datagram, target);
+    }
+
+    public void Dispose()
+    {
+        _socket.Dispose();
+    }
+}
+
 /// <summary>
 /// The ad hoc medium over the host's LAN: UDP datagrams to a multicast group of the local network (TTL 1, never
 /// routed) and to the stations given by address (a VPN, or another PC where multicast is filtered); every instance on
@@ -395,6 +481,8 @@ internal static class AdhocWire
 /// rede local" setting, --adhoc-lan); the host firewall must let the port in (UDP, <see cref="DefaultPort"/>).
 /// Each instance sends from its own socket (a free port), so a station's address is unique even when instances on one
 /// PC share the listening port; unicast frames go to the address the destination station was last heard from.
+/// The receives wait for a datagram or for <see cref="Dispose"/>, which cancels them (as the Vita's ad hoc receive ends
+/// on its timeout or when the socket is deleted), and only then closes the sockets.
 /// </summary>
 public sealed class UdpAdhocMedium : AdhocMedium
 {
@@ -404,14 +492,15 @@ public sealed class UdpAdhocMedium : AdhocMedium
     /// <summary>The multicast group (organisation-local scope, 239.255.0.0/16).</summary>
     public static readonly IPAddress DefaultGroup = IPAddress.Parse("239.255.86.83");
 
-    private readonly Socket _socket;
-    private readonly Socket _own;
+    private readonly IAdhocLink _listening;
+    private readonly IAdhocLink _own;
     private readonly IPEndPoint? _group;
     private readonly List<IPEndPoint> _stations = new();
     private readonly Dictionary<string, IPEndPoint> _heardFrom = new();
     private readonly object _addressLock = new();
-    private readonly Thread _receiver;
-    private readonly Thread _ownReceiver;
+    private readonly CancellationTokenSource _stop = new();
+    private readonly Task _receiver;
+    private readonly Task _ownReceiver;
     private readonly Timer _beacons;
     private volatile bool _disposed;
 
@@ -420,37 +509,26 @@ public sealed class UdpAdhocMedium : AdhocMedium
     /// <param name="port">The UDP port (0 = any free one, for tests: <see cref="LocalPort"/> tells which).</param>
     /// <param name="multicast">Whether to use the LAN multicast group (off: only the stations added by address).</param>
     public UdpAdhocMedium(byte[] mac, string nickname, int port = DefaultPort, bool multicast = true)
+        : this(mac, nickname, SocketAdhocLink.Listening(port, multicast), SocketAdhocLink.Own(multicast),
+            multicast ? new IPEndPoint(DefaultGroup, port) : null)
+    {
+    }
+
+    /// <summary>The medium on the given links (tests give links that model a host's sockets).</summary>
+    internal UdpAdhocMedium(byte[] mac, string nickname, IAdhocLink listening, IAdhocLink own, IPEndPoint? group)
         : base(mac, nickname)
     {
-        _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-        // several instances on one PC share the port: each one receives the group's datagrams
-        _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-        _socket.Bind(new IPEndPoint(IPAddress.Any, port));
-        if (multicast)
-        {
-            _group = new IPEndPoint(DefaultGroup, port);
-            _socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.AddMembership, new MulticastOption(DefaultGroup));
-            _socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastTimeToLive, 1);
-            _socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastLoopback, true);
-        }
-
-        _own = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-        _own.Bind(new IPEndPoint(IPAddress.Any, 0));
-        if (multicast)
-        {
-            _own.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastTimeToLive, 1);
-            _own.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastLoopback, true);
-        }
-
-        _receiver = new Thread(() => ReceiveLoop(_socket)) { IsBackground = true, Name = "adhoc-lan" };
-        _receiver.Start();
-        _ownReceiver = new Thread(() => ReceiveLoop(_own)) { IsBackground = true, Name = "adhoc-lan-own" };
-        _ownReceiver.Start();
+        _listening = listening;
+        _own = own;
+        _group = group;
+        CancellationToken stop = _stop.Token;
+        _receiver = Task.Run(() => ReceiveLoop(_listening, stop));
+        _ownReceiver = Task.Run(() => ReceiveLoop(_own, stop));
         _beacons = new Timer(_ => SendBeacon(), null, BeaconIntervalMs, BeaconIntervalMs);
     }
 
     /// <summary>The UDP port the medium listens on.</summary>
-    public int LocalPort => ((IPEndPoint)_socket.LocalEndPoint!).Port;
+    public int LocalPort => _listening.LocalPort;
 
     /// <summary>Adds a station by address (datagrams go there too, besides the multicast group).</summary>
     public void AddStation(IPEndPoint address)
@@ -538,23 +616,27 @@ public sealed class UdpAdhocMedium : AdhocMedium
         }
     }
 
-    private void ReceiveLoop(Socket socket)
+    private async Task ReceiveLoop(IAdhocLink link, CancellationToken stop)
     {
         byte[] buffer = new byte[4096];
-        EndPoint from = new IPEndPoint(IPAddress.Any, 0);
-        while (!_disposed)
+        while (!stop.IsCancellationRequested)
         {
-            int length;
+            AdhocDatagram datagram;
             try
             {
-                length = socket.ReceiveFrom(buffer, ref from);
+                datagram = await link.ReceiveAsync(buffer, stop).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
             }
             catch (SocketException e) when (e.SocketErrorCode == SocketError.ConnectionReset)
             {
                 continue; // Windows reports an earlier send to a closed port here
             }
-            catch (SocketException)
+            catch (SocketException e)
             {
+                Log.WarnOnce("adhoc-lan-receive", $"ad hoc LAN: receive stopped: {e.SocketErrorCode}");
                 return;
             }
             catch (ObjectDisposedException)
@@ -562,17 +644,19 @@ public sealed class UdpAdhocMedium : AdhocMedium
                 return;
             }
 
-            byte[]? source = Receive(buffer.AsSpan(0, length));
+            byte[]? source = Receive(buffer.AsSpan(0, datagram.Length));
             if (source != null)
             {
                 lock (_addressLock)
                 {
-                    _heardFrom[Convert.ToHexString(source)] = (IPEndPoint)from;
+                    _heardFrom[Convert.ToHexString(source)] = datagram.From;
                 }
             }
         }
     }
 
+    /// <summary>Stops the beacons, cancels the receives and waits for them to end, then closes the sockets (closing a
+    /// socket with a receive still pending would wait for that receive on macOS).</summary>
     public override void Dispose()
     {
         if (_disposed)
@@ -582,10 +666,19 @@ public sealed class UdpAdhocMedium : AdhocMedium
 
         _disposed = true;
         _beacons.Dispose();
-        _socket.Dispose();
+        _stop.Cancel();
+        try
+        {
+            Task.WaitAll(_receiver, _ownReceiver);
+        }
+        catch (AggregateException e)
+        {
+            Log.Warn($"ad hoc LAN: a receive ended with {e.InnerException?.GetType().Name}: {e.InnerException?.Message}");
+        }
+
+        _listening.Dispose();
         _own.Dispose();
-        _receiver.Join(1000);
-        _ownReceiver.Join(1000);
+        _stop.Dispose();
         base.Dispose();
     }
 }
