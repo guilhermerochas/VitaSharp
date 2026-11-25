@@ -4471,13 +4471,13 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   (`_prefetchActive` + `StopShaderWorkers` no início do `Dispose`); faltava a barreira completa entre gravar o flag
   e ler a contagem (no ARM64 a saída do lock é só release). Feito, contrato descrito no `IGpuBackend.Prefetch` e
   coberto por `RendererPrefetchDisposeTests`.
-  Revisão (24/11/2026, fix/small2, sem reprodução nova): outro caminho nativo que sobrevive ao `Dispose` é o
-  `RetireWatcher` (só com `VITASHARP_RETIRE_WAKE=1`/`measure`, ligado nos testes `RetireWake*`): o `Dispose` faz
-  `_thread.Join(1000)` e destrói as fences e depois o device mesmo se a thread ainda estiver no `vkWaitForFences`
-  (espera de até 50 ms por volta); com a máquina sobrecarregada a 1 s de folga pode não bastar e o AV cairia nessa
-  thread. A thread sai sozinha em até ~50 ms depois do `_stop`, então um `Join()` sem prazo é seguro; fica para quem
-  tiver um teste que force a thread a ficar presa (hoje a classe é privada). O resto continua: guardar o log do
-  testhost na próxima queda para ver a pilha.
+  Corrigido (24/11/2026, fix/small2): outro caminho nativo que sobrevivia ao `Dispose` era o watcher de fences
+  (`FenceRetireWatcher`, só com `VITASHARP_RETIRE_WAKE=1`/`measure`, ligado nos testes `RetireWake*`): o `Dispose`
+  fazia `Join(1000)` e destruía as fences, e o renderer o device logo depois, mesmo com a thread ainda dentro do
+  `vkWaitForFences` (uma thread sem CPU numa máquina sobrecarregada passa de 1 s). Agora o `Dispose` espera a thread
+  sair, sem prazo; ela confere o pedido de parada depois de cada espera (no máximo 50 ms). Teste:
+  `FenceRetireWatcherTests` (fences falsas com a espera presa; falha sem a correção). O resto continua: guardar o log
+  do testhost na próxima queda para ver a pilha.
 - [x] Minecraft (PCSE00491) no Android fica mais lento com o tempo: duplicado (15/11/2026), junto no item "Minecraft
   (PCSE00491) fica lento jogando no celular" da seção Android. Nota que só estava aqui: no desktop o UC passou 18 s em
   sceAvcdecDeleteDecoder na tela de título com o main num PC só (f1567), a conferir

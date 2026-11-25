@@ -10,6 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="VitaSharp.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\VitaSharp.Core\VitaSharp.Core.csproj" />
   </ItemGroup>
 
