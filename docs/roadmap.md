@@ -4452,7 +4452,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   forma genérica (comparar com o Vita3K no mesmo ponto; estudar a interpolação de profundidade do PowerVR).
   Também aberto: com `--dump-frames --dump-every=1`, 6 de 8 execuções desse comando morreram em silêncio logo depois do
   load (sem exceção .NET, sem minidump, código 127/139 no Git Bash; uma coincidiu com um TDR do driver, LiveKernelEvent
-  141); sem `--dump-frames` passaram. Investigar (leitura de quadros depois da troca do backend no load).
+  141); sem `--dump-frames`, 1 de 3 morreu igual. Investigar (leitura de quadros depois da troca do backend no load).
 - [ ] [P1][G] PSM em Unity não abre (relato do usuário, 22/11/2026; log de 19:33, NPOA00239): o título traz o próprio
   runtime (`ux0:psm/<título>/runtime/eboot.bin`, PCSI00010 "Unity Runtime for PlayStation Mobile", mais mono_prx e
   bridge_prx), que está cifrado com a chave do conteúdo, e o carregador o lê como SELF comum: `InvalidDataException: Not
