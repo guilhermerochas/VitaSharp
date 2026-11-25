@@ -2190,7 +2190,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   dev/tty/md). Falta: SceIofilemgrForDriver NID_5B7E5AB8 (id -> caminho pela tabela de 0x20 entradas de 0x38 bytes
   em 0x81022b30, marca a palavra +8 do bloco extra do mount e acorda o event flag dele: aviso de troca de mídia; achar
   quem preenche a tabela) e NID_DD46CD63 (para cada objeto de arquivo da classe do módulo com +0x38 == mount, flags
-  +0x40 & máscara e +0x44 == 0, envia o aviso e marca +0x44: precisa desses campos no objeto de arquivo);
+  +0x40 & máscara e +0x44 == 0, envia o aviso e marca +0x44: precisa desses campos no objeto de arquivo). Estudo
+  (25/11/2026, fix/small2): a tabela de 0x81022b30 é dado estático do módulo (32 pontos de montagem: o id e o
+  caminho; o `FUN_810182e8` só a lê e liga a ela a montagem criada), então o 5B7E5AB8 resolve o caminho do id até a
+  montagem do guest e só faz efeito numa montagem com objeto de guest (as do `vfsMount`, `IoFileMgr.VfsMount.cs`); as
+  montagens por id do VitaSharp são pastas do host sem objeto, e para elas não há o que marcar. O DD46CD63 não
+  percorre objetos de arquivo: percorre os objetos de uma classe própria do módulo (pedidos de aviso: +0x38 a
+  montagem, +0x3C o processo, +0x40 a máscara de eventos, +0x44 já avisado, +0x48 o buffer do processo), copia um
+  registro de 0x1C bytes para o processo e acorda quem espera; falta achar a função que cria esses pedidos (a
+  inscrição no aviso de troca de mídia) antes de implementar os dois;
   SceCoredumpForDriver NID_A7D214A7 / NID_D064F6DC / NID_EF20949F (a validação do pedido está feita, em "Corrigido,
   falta o usuário testar"; falta a fila do thread de dump, com duas vagas de pedido e 0x8001000C quando as duas estão
   ocupadas (FUN_81006f10), a suspensão do processo e escrever o .psp2dmp dele, o ELF de core com as notas da Sony); SceAppMgrForDriver 6 (1B6C2FED/C4924946 caminho de lançamento de debug atrás de
