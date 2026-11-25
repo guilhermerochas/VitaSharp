@@ -40,6 +40,29 @@ public static class DebugMode
 
     private static readonly ConcurrentDictionary<(string, uint), int> s_hleErrors = new();
     private static readonly ConcurrentDictionary<string, int> s_unimplemented = new();
+    private static readonly ConcurrentDictionary<uint, string> s_unlinked = new();
+
+    /// <summary>
+    /// A call of an import that no loaded module exports and FW 3.74 does not have (its NID is not in the firmware's
+    /// NID list): on a Vita 3.74 the module manager writes the "not linked" stub there (sub r12, pc, #8; mov pc, #0)
+    /// and the call jumps to address 0. VitaSharp keeps returning 0 (the NID list may miss a real function); the first
+    /// call of each NID is logged as a warning and listed in <see cref="HleSummary"/> (the F8 capture's
+    /// hle_errors.txt, the session report), so a report already names the cause. Returns whether it is the first.
+    /// </summary>
+    public static bool UnlinkedImport(uint nid, string library, uint lr)
+    {
+        if (!s_unlinked.TryAdd(nid, library))
+        {
+            return false;
+        }
+
+        Log.Warn($"import sem quem exporte: NID 0x{nid:X8}, biblioteca {(string.IsNullOrEmpty(library) ? "?" : library)} (chamado de 0x{lr:X8}); "
+            + "no Vita 3.74 este stub saltaria para 0 (sub r12, pc, #8; mov pc, #0); o VitaSharp devolve 0");
+        return true;
+    }
+
+    /// <summary>The imports without an exporter called so far: NID and library.</summary>
+    public static IReadOnlyDictionary<uint, string> UnlinkedImports => s_unlinked;
 
     /// <summary>The n-th occurrence of something repetitive is logged when n is 1-3 or a power of ten.</summary>
     public static bool ShouldLog(int n) => n <= 3 || n is 10 or 100 or 1000 or 10000 or 100000 or 1000000;
@@ -78,6 +101,11 @@ public static class DebugMode
         foreach (KeyValuePair<string, int> kv in s_unimplemented.OrderByDescending(k => k.Value).Take(40))
         {
             yield return $"[dbg] HLE-UNIMPL summary: {kv.Key} x{kv.Value}";
+        }
+
+        foreach (KeyValuePair<uint, string> kv in s_unlinked.OrderBy(k => k.Key))
+        {
+            yield return $"[dbg] UNLINKED import: NID 0x{kv.Key:X8}, library {(string.IsNullOrEmpty(kv.Value) ? "?" : kv.Value)}: no module exports it and FW 3.74 has no such function; on a Vita 3.74 its stub jumps to 0 (sub r12, pc, #8; mov pc, #0), VitaSharp returns 0";
         }
     }
 }

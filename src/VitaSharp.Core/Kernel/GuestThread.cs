@@ -713,6 +713,12 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
             if (!hleFunction.WarnedUnimplemented)
             {
                 hleFunction.WarnedUnimplemented = true;
+                // a NID the firmware does not have either: on a Vita 3.74 the stub would not be linked at all
+                if (VitaSharp.Core.Hle.NidDatabase.Lookup(hleFunction.Nid) == null)
+                {
+                    DebugMode.UnlinkedImport(hleFunction.Nid, hleFunction.Library, s->R[14]);
+                }
+
                 Log.WarnOnce($"nid{hleFunction.Nid}", $"Unimplemented HLE function {hleFunction.Library}::{hleFunction.Name} (NID 0x{hleFunction.Nid:X8}) called from 0x{s->R[14]:X8}");
             }
             if (dbg || DebugMode.CollectHleErrors)

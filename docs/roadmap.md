@@ -363,8 +363,18 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Em andamento (23/11/2026, quick3): patches por origem já cobertos por `UpdateModelTests` (pasta da atualização por
   origem, app0 com a atualização por cima); achado e corrigido na revalidação: a listagem de pasta do app0 com
   atualização (`App0UpdateListingTests`, em "Corrigido, falta o usuário testar"). Montagens somente leitura (24/11/2026,
-  adr4): achado e corrigido, em "Corrigido, falta o usuário testar" (`ReadOnlyMountTests`). Falta: NIDs,
-  imports/exports e permissões de módulos de sistema.
+  adr4): achado e corrigido, em "Corrigido, falta o usuário testar" (`ReadOnlyMountTests`). Imports sem quem
+  exporte (24/11/2026, adr4): agora nomeados no log e no F8/report (em "Corrigido, falta o usuário testar"). Falta:
+  permissões de módulos de sistema.
+- [ ] [P3][M] (opção futura, decisão do lead: não agora) Import sem quem exporte com o stub do 3.74: no modulemgr 3.74
+  (decomp, só estudo) um NID que a biblioteca não exporta ("Library function entry not found ... (ignored)") ou de uma
+  biblioteca ainda não carregada fica com o stub "não ligado" `sub r12, pc, #8; mov pc, #0` (0xE24FC008, 0xE3A0F000):
+  a chamada salta para 0 e o processo cai (r12 = o stub); o stub original só é aceito se for 0xE24FC008, 0xE3E00000
+  (`mvn r0, #0`) ou `movw r12` (senão 0x8002D00A), e é religado quando a biblioteca carrega. Proposta: escrever esse
+  stub para um NID que nenhum módulo carregado exporta e que não está no `nids.txt` (o censo do 3.74), mantendo o
+  retorno 0 para NIDs do firmware que o HLE não implementa; teste com módulo sintético (cai em 0; NID do firmware sem
+  HLE devolve 0; biblioteca carregada depois religa). Risco que adiou: um NID real do 3.74 ausente do `nids.txt` faria
+  um jogo cair onde hoje recebe 0.
 - [x] [P3][M] **Save states:** ida e volta de cada módulo HLE e do escalonador com threads em espera. Feito
   (16/11/2026, rm1, test/savestate-waiting-thread): os módulos HLE já eram cobertos por
   `ModuleSnapshotTests.EveryModuleStateRoundTrips` (cada módulo salvo, carregado noutro emulador e salvo de novo, byte
@@ -3302,6 +3312,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (24/11/2026, falta testar) [P3][M] Import sem quem exporte nomeado no log e no F8/report (fix/adr4). No Vita
+  3.74 a chamada de um import que nenhum módulo exporta (um NID que o firmware não tem) salta para 0 pelo stub "não
+  ligado" do modulemgr (`sub r12, pc, #8; mov pc, #0`). O VitaSharp devolve 0 (o contrato continua: o `nids.txt` pode
+  não ter uma função real) e só dizia "Unimplemented". Agora a primeira chamada de cada NID dá o aviso "import sem
+  quem exporte: NID ..., biblioteca ...; no Vita 3.74 este stub saltaria para 0" e a lista entra no resumo de HLE que
+  o `hle_errors.txt` da captura F8 e o relatório da sessão trazem ("UNLINKED import"). Testes:
+  `UnlinkedImportTests`. Testar: num homebrew que importa de um plugin não instalado, o log e a captura F8 dizem qual
+  import ficou sem quem exporte.
 
 - [ ] (24/11/2026, falta testar) [P3][M] Montagens somente leitura como o 3.74 (fix/adr4). O iofilemgr 3.74 guarda
   no ponto de montagem a marca de somente leitura (0x1000) e responde EROFS (0x8001001E) a abrir para escrita, criar,
