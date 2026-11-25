@@ -213,6 +213,38 @@ Android build on a phone. The user's F5 state of Jak 1 hangs intermittently righ
 `DMAPut`, F3DPlaybackThread on `F3DRecordingMessagePipe`): 2 of 3 runs with the pre-roll, 1 of 4 without in the bug
 agent's runs; the hang starts before the pre-roll's next save state.
 
+## Verify (is the problem still there?)
+
+`VitaSharp.Desktop verify <capture>` (`src/VitaSharp.Desktop/VerifyCapture.cs`, `Core/Capture/CaptureVerify.cs`):
+the capture's findings (the report's rules over `frames.vsfr` through `FrameFindings`, and the `[anomaly] ... nan:`
+lines of `log.txt`) against those of a replay of `gpu.vsgd` by the running build. The replay runs in a child process
+(`replay-gpu --findings`: the renderer's switches are static, read once per process) with `FrameFindings` as its
+present tap, so it sees each frame as a recording does (the debug-mode replay ring's downscale), and debug mode on for
+the NaN/Inf scan; it writes `findings.txt`. Findings are matched by kind, present (one either way: the replay numbers
+its presents from the dump's `first-present`, as the recording did) and cell. `--rerun` adds a `rerun` of the logic
+and compares the two `report.txt` kind by kind. `FrameFindings` is the API every tool that measures a flicker from
+frames uses (one set of rules: the analyzer's). Tests: `CaptureVerifyTests` (rules, matching, files) and
+`CaptureVerifyRenderTests` (a synthetic scene with a HUD that disappears for one frame, recorded into a GPU dump and
+replayed on the software Vulkan device).
+
+### A flicker from a save state, without playing
+
+A save state taken at the spot of a report (F5 / quick.vss, or the `state_*.vss` of a capture) is enough to see a
+flicker and to confirm its fix, with no input:
+
+```
+VitaSharp.Desktop run <TITLEID> --data=<data folder> --load-state=<state.vss> --headless --vulkan --frames=300 \
+    --flicker-check --dump-frames=<out> --dump-every=1
+```
+
+The state loads after 120 presents (`--load-state=PATH@fN` for another frame; a state saved with "Ativar Plugins do
+Kernel" on needs `--kernel-plugins=on`, as the session it came from); `--flicker-check[=threshold]` runs the frames
+through `FrameFindings` at the end: one `FLICKER [flash] present N: ...` line per finding, the summary
+`FLICKER <frames> frames: <n> flash(es), ...: presents ...` and `findings.txt` (the format of `replay-gpu --findings`
+and `verify`) in `--findings-out=DIR` (default: the `--dump-frames` folder). The number of flashes before and after a
+change is the measure; the PNGs show where. The data folder is a copy (junctions to the game and the firmware, copied
+saves and states): the run writes to it.
+
 ## Analyzer
 
 ```
