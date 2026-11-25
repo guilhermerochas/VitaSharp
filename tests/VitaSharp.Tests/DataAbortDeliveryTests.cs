@@ -18,14 +18,14 @@ namespace VitaSharp.Tests;
 public sealed class DataAbortDeliveryTests(GuestMemoryFixture fixture) : IDisposable
 {
     /// <summary>Pages no block maps (a different one per scenario: a page let through stays readable).</summary>
-    private const uint Unmapped = 0xFFE0_0000, UnmappedThrough = 0xFFE1_0000, UnmappedIt = 0xFFE2_0000;
+    private const uint Unmapped = 0xFFE0_0000, UnmappedThrough = 0xFFE1_0000, UnmappedIt = 0xFFE2_0000, UnmappedRetry = 0xFFE3_0000;
 
     private readonly HleHarness _harness = new(fixture, "dabt");
 
     public unsafe void Dispose()
     {
         _harness.Dispose();
-        foreach (uint page in new[] { Unmapped, UnmappedThrough, UnmappedIt })
+        foreach (uint page in new[] { Unmapped, UnmappedThrough, UnmappedIt, UnmappedRetry })
         {
             GuestMemory.MappedTable(GuestMemory.Base)[page >> 12] = 0; // the next run sees the pages unmapped again
         }
@@ -46,9 +46,10 @@ public sealed class DataAbortDeliveryTests(GuestMemoryFixture fixture) : IDispos
 
     /// <summary>
     /// An abort-mode handler that records DFAR, DFSR, LR, SPSR and the interrupted r4 at <paramref name="record"/>, sets
-    /// r0 = 0x55 and returns past the faulting ARM instruction (SUBS PC, LR, #4: LR is the instruction + 8).
+    /// r0 = 0x55 and returns past the faulting instruction (SUBS PC, LR, #<paramref name="skip"/>: LR is the instruction + 8,
+    /// so 4 skips an ARM instruction and 6 a 16-bit Thumb one).
     /// </summary>
-    private uint RecordingHandler(uint record) => Code(0, 0,
+    private uint RecordingHandler(uint record, uint skip = 4) => Code(0, 0,
         0xEE161F10,  // mrc p15, 0, r1, c6, c0, 0   (DFAR)
         0xEE152F10,  // mrc p15, 0, r2, c5, c0, 0   (DFSR)
         0xE14F3000,  // mrs r3, spsr
@@ -59,7 +60,7 @@ public sealed class DataAbortDeliveryTests(GuestMemoryFixture fixture) : IDispos
         0xE58C300C,  // str r3, [r12, #12]
         0xE58C4010,  // str r4, [r12, #16]
         0xE3A00055,  // mov r0, #0x55
-        0xE25EF004,  // subs pc, lr, #4
+        0xE25EF000 | skip,  // subs pc, lr, #skip
         record);
 
     /// <summary>A handler that passes the exception on to its next handler (+8), the way kubridge chains.</summary>
@@ -160,5 +161,49 @@ public sealed class DataAbortDeliveryTests(GuestMemoryFixture fixture) : IDispos
             0xBF004770,  // bx lr; nop
             UnmappedIt);
         _harness.OnGuest(thread => Assert.Equal(7u, thread.CallGuest(user | 1)));
+    }
+
+    /// <summary>The handler repairs the fault (points the base at mapped memory) and restarts the instruction with
+    /// SUBS PC, LR, #8: the instruction runs again from its own registers and loads from there.</summary>
+    [Fact]
+    public void AHandlerThatRepairsTheBaseRestartsTheInstruction()
+    {
+        uint good = _harness.Word(0x1234_5678);
+        uint handler = Code(0, 0,
+            0xE59F4000,  // ldr r4, [pc, #0]   (the mapped word)
+            0xE25EF008,  // subs pc, lr, #8    (restart the instruction)
+            good);
+        Assert.Equal(0, Call(Procmgr, "sceKernelRegisterExceptionHandler", GuestThread.ExceptionDataAbort, 0u, handler));
+        uint user = UserCode(0xE5940000, UnmappedRetry); // ldr r0, [r4]
+        _harness.OnGuest(thread => Assert.Equal(0x1234_5678u, thread.CallGuest(user)));
+    }
+
+    /// <summary>The chain is entered in priority order: a handler of priority 0 that passes the abort on comes before
+    /// the one of priority 1 that takes it.</summary>
+    [Fact]
+    public void HandlersAreEnteredInPriorityOrder()
+    {
+        uint record = _harness.Alloc(32);
+        Assert.Equal(0, Call(Procmgr, "sceKernelRegisterExceptionHandler", GuestThread.ExceptionDataAbort, 1u, RecordingHandler(record)));
+        Assert.Equal(0, Call(Procmgr, "sceKernelRegisterExceptionHandler", GuestThread.ExceptionDataAbort, 0u, PassingHandler()));
+        uint user = UserCode(Store, Unmapped);
+        _harness.OnGuest(thread => Assert.Equal(0x55u, thread.CallGuest(user)));
+        Assert.Equal(Unmapped, GuestMemory.R32(record));
+    }
+
+    /// <summary>In Thumb state LR is also the faulting instruction + 8, and the SPSR brings Thumb back.</summary>
+    [Fact]
+    public void AThumbAbortHasLrAtTheInstructionPlusEight()
+    {
+        uint record = _harness.Alloc(32);
+        Assert.Equal(0, Call(Procmgr, "sceKernelRegisterExceptionHandler", GuestThread.ExceptionDataAbort, 0u, RecordingHandler(record, skip: 6)));
+        uint user = Code(
+            0x68204C01,  // ldr r4, [pc, #4]; ldr r0, [r4]   (the second aborts)
+            0xBF004770,  // bx lr; nop
+            Unmapped);
+        _harness.OnGuest(thread => Assert.Equal(0x55u, thread.CallGuest(user | 1)));
+        Assert.Equal(Unmapped, GuestMemory.R32(record));
+        Assert.Equal(user + 2 + 8, GuestMemory.R32(record + 8));
+        Assert.Equal(0x30u, GuestMemory.R32(record + 12) & 0x3F); // SPSR: user mode, Thumb
     }
 }
