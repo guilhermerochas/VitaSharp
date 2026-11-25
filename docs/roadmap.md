@@ -8,14 +8,14 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
 
 ## Diagnóstico
 
-- [ ] [P2][M] **Gravar tudo sem o jogo, o que falta** (o resto em "Corrigido, falta o usuário testar", feat/capself1):
-  - Entradas do áudio: gravar os fluxos que entram nos decodificadores (sceAudiodec, ATRAC/AT9, MP3/AAC) e nos
-    buffers das vozes NGS durante a gravação, para o rerun sem o jogo reproduzir buracos e erros de decodificação
-    (hoje só a saída em WAV).
-  - Estados de vários processos (o shell com aplicativos abertos) ainda não sobem sem os programas
-    (`SaveStates.BootFromState` recusa). (O `state_start.vss` que faltava quando uma thread do shell estava em código
-    do guest está em "Corrigido, falta o usuário testar".)
-  - Módulos de firmware carregados pela primeira vez durante a gravação vêm do firmware de quem analisa.
+- [ ] [P2][M] **Gravar tudo: o áudio que entra nos decodificadores e nas vozes NGS** (parte do antigo "Gravar tudo
+  sem o jogo, o que falta"; o feito está em "Corrigido, falta o usuário testar"): gravar os fluxos que entram nos
+  decodificadores (sceAudiodec, ATRAC/AT9, MP3/AAC) e nos buffers das vozes NGS durante a gravação, para o rerun sem o
+  jogo reproduzir buracos e erros de decodificação (hoje só a saída em WAV).
+
+- [ ] [P2][G] **Gravar tudo: estados de vários processos sobem sem os programas** (parte do antigo "Gravar tudo sem o
+  jogo, o que falta"): o estado do shell com aplicativos abertos ainda não sobe sem os programas
+  (`SaveStates.BootFromState` recusa estados de mais de um processo); falta guardar e subir a imagem de cada processo.
 
 - [ ] [P3][G] **O log e a captura F8 dizem a causa de uma trava de cara:**
   - **Histórico de cada objeto de sincronização** (event flag, semáforo, mutex, cond, msgpipe): um anel barato com as
@@ -3301,6 +3301,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (24/11/2026, falta testar) [P2][M] Gravar tudo: os módulos de firmware carregados durante a gravação saem com o
+  hash (fix/adr4). Um módulo do firmware (os0, vs0, sa0, pd0) carregado pela primeira vez durante a gravação vem, no
+  rerun, do firmware de quem analisa; se esse for outro (outra versão, um módulo modificado), o rerun rodava outro
+  código sem aviso. Agora a captura lista cada um com o SHA-256 da imagem (`fwmodule` no `files/files.tsv`, sem os
+  bytes: o firmware não é do jogo para ir junto), o rerun não põe nada por cima do firmware e, ao carregar um módulo
+  diferente do gravado, o log diz qual (uma vez por módulo) e o resumo do rerun conta quantos diferem. Testes:
+  `CaptureFilesTests.FirmwareModulesLeaveWithTheirHashAndTheRerunSaysWhenTheyDiffer`. Testar: gravar (F8) num jogo que
+  abre um diálogo ou a rede pela primeira vez durante a gravação; o `files/files.tsv` tem linhas `fwmodule`; o rerun
+  num PC com outro firmware avisa "the firmware module ... is not the recording's".
 
 - [ ] (24/11/2026, falta testar) [P2][M] Gravar tudo: o `state_start.vss` sai também quando o começo não é um ponto
   seguro (fix/adr4). A gravação do shell (ou de um jogo com uma thread presa em código do guest) tentava o estado do

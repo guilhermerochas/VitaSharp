@@ -118,6 +118,36 @@ public sealed class CaptureFilesTests : IDisposable
         Assert.Equal("NEW!", File.ReadAllText(Path.Combine(capture, CaptureFileRecorder.Folder, CaptureFileRecorder.BlobFile)));
     }
 
+    /// <summary>A firmware module loaded for the first time while recording comes, in a re-run, from the analyst's
+    /// firmware: the capture lists it with its hash only (no bytes: the firmware is not the game's to share), the
+    /// re-run puts nothing back for it and says when the module it loads is not the recording's. Before, nothing was
+    /// listed and a re-run on another firmware ran other code without a word.</summary>
+    [Fact]
+    public void FirmwareModulesLeaveWithTheirHashAndTheRerunSaysWhenTheyDiffer()
+    {
+        var recorder = new CaptureFileRecorder(1 << 20);
+        byte[] libnet = Bytes("libnet image of 3.74"), libhttp = Bytes("libhttp image of 3.74");
+        recorder.ModuleLoaded(null!, "vs0:/sys/external/libnet.suprx", libnet);
+        recorder.ModuleLoaded(null!, "vs0:sys/external/libhttp.suprx", libhttp);
+        string capture = Capture("firmware");
+        recorder.Write(capture, long.MinValue);
+
+        Assert.Equal(0, BlobLength(capture));
+        Assert.Contains($"{CaptureFileRecorder.FirmwareModuleKind}	-	vs0:sys/external/libnet.suprx	-	{libnet.Length}	{ChunkHash.Of(libnet)}	-	-", Index(capture));
+        CapturedFiles files = CapturedFiles.Materialize(capture, Path.Combine(_root, "out"))!;
+        Assert.Equal(0, files.Skipped);
+        Assert.Equal(2, files.FirmwareModules);
+        Assert.Empty(files.Layers); // nothing goes over the firmware's devices
+
+        files.ModuleLoaded(null!, "vs0:sys/external/libnet.suprx", libnet);       // the same image
+        Assert.Equal(0, files.FirmwareMismatches);
+        files.ModuleLoaded(null!, "vs0:sys/external/libhttp.suprx", Bytes("libhttp image of 3.60"));
+        files.ModuleLoaded(null!, "vs0:sys/external/libhttp.suprx", Bytes("libhttp image of 3.60"));
+        Assert.Equal(1, files.FirmwareMismatches);                                 // once per module
+        files.ModuleLoaded(null!, "vs0:sys/external/libssl.suprx", Bytes("not recorded"));
+        Assert.Equal(1, files.FirmwareMismatches);
+    }
+
     [Fact]
     public void ARerunGetsTheFilesBackAtTheirSizeWithTheBytesWhereTheyWereRead()
     {
