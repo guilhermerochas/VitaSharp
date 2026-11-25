@@ -43,6 +43,48 @@ public sealed class SamplerTests
     }
 
     [Fact]
+    public void StartupCountsOnlyTheFirstMinuteAndTheSlowFramesWithJit()
+    {
+        // 30 fps for 50 s, then a 120 ms frame with 8 ms of JIT, a 60 ms frame without, then 30 fps past the minute
+        // and one more slow frame after it, which is not counted
+        var intervals = new List<double>();
+        var jit = new List<double>();
+        for (int i = 0; i < 1500; i++)
+        {
+            intervals.Add(1000.0 / 30);
+            jit.Add(0);
+        }
+
+        intervals.Add(120);
+        jit.Add(8);
+        intervals.Add(60);
+        jit.Add(0.5);
+        for (int i = 0; i < 400; i++)
+        {
+            intervals.Add(1000.0 / 30);
+            jit.Add(0);
+        }
+
+        intervals.Add(500);
+        jit.Add(50);
+
+        string line = Sampler.StartupReport(12.34, intervals, jit);
+
+        // 50 s + 0.18 s, then 295 frames of 33.3 ms reach 60 s
+        Assert.Equal($"PROFILE startup: first frame {12.3:F1} s after the process started; first 60 s: 1797 frames, 2 over 50 ms "
+            + $"(1 over 100 ms, {120 - 1000.0 / 30 + 60 - 1000.0 / 30:F0} ms above 33.3 ms), 2 of them with JIT compilation over 5 ms, JIT compiling {8.5:F0} ms", line);
+    }
+
+    [Fact]
+    public void StartupWithoutTheLedgerCountsNoJit()
+    {
+        string line = Sampler.StartupReport(1, [200, 20], []);
+
+        Assert.Contains("2 frames, 1 over 50 ms (1 over 100 ms", line, StringComparison.Ordinal);
+        Assert.Contains("0 of them with JIT compilation over 5 ms, JIT compiling 0 ms", line, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void LongRunReportsEveryWindow()
     {
         var intervals = Enumerable.Repeat(1000.0 / 30, 120).ToList();
