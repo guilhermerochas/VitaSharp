@@ -559,6 +559,6 @@ public sealed partial class AllegrexCore
             return;
         }
 
-        _bus.Write32(address & PhysicalMask, _fpr[Ft(instruction)]);
+        Store32(address & PhysicalMask, _fpr[Ft(instruction)]);
     }
 }

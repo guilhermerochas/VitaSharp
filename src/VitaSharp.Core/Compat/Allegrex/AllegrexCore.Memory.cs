@@ -73,7 +73,7 @@ public sealed partial class AllegrexCore
         switch (instruction >> 26)
         {
             case 0x28:
-                _bus.Write8(address & PhysicalMask, (byte)value);
+                Store8(address & PhysicalMask, (byte)value);
                 break;
             case 0x29:
                 if ((address & 1) != 0)
@@ -82,7 +82,7 @@ public sealed partial class AllegrexCore
                     return;
                 }
 
-                _bus.Write16(address & PhysicalMask, (ushort)value);
+                Store16(address & PhysicalMask, (ushort)value);
                 break;
             case 0x2B:
                 if ((address & 3) != 0)
@@ -91,7 +91,7 @@ public sealed partial class AllegrexCore
                     return;
                 }
 
-                _bus.Write32(address & PhysicalMask, value);
+                Store32(address & PhysicalMask, value);
                 break;
             case 0x38:
                 StoreConditional(address, rt, value);
@@ -116,7 +116,7 @@ public sealed partial class AllegrexCore
 
         if (_linkBit)
         {
-            _bus.Write32(address & PhysicalMask, value);
+            Store32(address & PhysicalMask, value);
             _gpr[rt] = 1;
         }
         else
@@ -146,7 +146,7 @@ public sealed partial class AllegrexCore
         uint aligned = address & PhysicalMask & ~3u;
         int shift = (int)(address & 3) * 8;
         uint word = _bus.Read32(aligned);
-        _bus.Write32(aligned, (value >> (24 - shift)) | (word & ~(0xFFFFFFFFu >> (24 - shift))));
+        Store32(aligned, (value >> (24 - shift)) | (word & ~(0xFFFFFFFFu >> (24 - shift))));
     }
 
     private void StoreWordRight(uint address, uint value)
@@ -154,6 +154,6 @@ public sealed partial class AllegrexCore
         uint aligned = address & PhysicalMask & ~3u;
         int shift = (int)(address & 3) * 8;
         uint word = _bus.Read32(aligned);
-        _bus.Write32(aligned, (value << shift) | (word & ~(0xFFFFFFFFu << shift)));
+        Store32(aligned, (value << shift) | (word & ~(0xFFFFFFFFu << shift)));
     }
 }

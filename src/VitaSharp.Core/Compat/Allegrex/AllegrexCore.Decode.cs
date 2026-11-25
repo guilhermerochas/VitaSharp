@@ -148,7 +148,8 @@ public sealed partial class AllegrexCore
                 ExecuteSpecial3(instruction);
                 break;
             case 0x2F:
-                // cache: caches are not modelled
+                // cache: no cache is modelled, but the decoded code follows the I-cache operations
+                CacheOperation(instruction);
                 break;
             case 0x20:
             case 0x21:

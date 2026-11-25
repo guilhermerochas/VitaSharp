@@ -25,8 +25,10 @@ public sealed partial class AllegrexCore
         }
         else
         {
+            // the delay slot is annulled: the straight line of the block ends here
             _pc = _nextPc;
             _nextPc += 4;
+            _endBlock = true;
         }
     }
 
