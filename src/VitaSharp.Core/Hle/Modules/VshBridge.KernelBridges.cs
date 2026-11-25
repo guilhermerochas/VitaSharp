@@ -349,6 +349,8 @@ public sealed partial class VshBridge
             return ERR_TOO_BIG;
         }
 
+        // os0/vs0 mounted again read-write (permission 2: VitaRW, VitaShell's tools) take writes from then on
+        IoFileMgr.NoteMount(Emu, (uint)id, permission);
         return 0;
     }
 

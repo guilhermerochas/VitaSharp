@@ -61,7 +61,13 @@ public sealed partial class IoFileMgr
     [Hle(Nid = 0xD070BC48, Library = "SceIofilemgrForDriver")]
     int ksceIoMount(uint id, uint path, uint permission, uint unused, uint reserved0, uint reserved1)
     {
-        return id == 0 || reserved0 != 0 || reserved1 != 0 ? VFS_ERR_INVAL : 0;
+        if (id == 0 || reserved0 != 0 || reserved1 != 0)
+        {
+            return VFS_ERR_INVAL;
+        }
+
+        NoteMount(Emu, id, (int)permission);
+        return 0;
     }
 
     /// <summary>ksceIoUmount(id, force, ?, ?): id 0 0x80010016; the device stays served: 0.</summary>

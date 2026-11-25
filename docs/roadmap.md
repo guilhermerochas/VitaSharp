@@ -362,7 +362,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   de módulos de sistema.
   Em andamento (23/11/2026, quick3): patches por origem já cobertos por `UpdateModelTests` (pasta da atualização por
   origem, app0 com a atualização por cima); achado e corrigido na revalidação: a listagem de pasta do app0 com
-  atualização (`App0UpdateListingTests`, em "Corrigido, falta o usuário testar"). Falta: montagens, NIDs,
+  atualização (`App0UpdateListingTests`, em "Corrigido, falta o usuário testar"). Montagens somente leitura (24/11/2026,
+  adr4): achado e corrigido, em "Corrigido, falta o usuário testar" (`ReadOnlyMountTests`). Falta: NIDs,
   imports/exports e permissões de módulos de sistema.
 - [x] [P3][M] **Save states:** ida e volta de cada módulo HLE e do escalonador com threads em espera. Feito
   (16/11/2026, rm1, test/savestate-waiting-thread): os módulos HLE já eram cobertos por
@@ -3301,6 +3302,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (24/11/2026, falta testar) [P3][M] Montagens somente leitura como o 3.74 (fix/adr4). O iofilemgr 3.74 guarda
+  no ponto de montagem a marca de somente leitura (0x1000) e responde EROFS (0x8001001E) a abrir para escrita, criar,
+  apagar, mkdir, rmdir e renomear no app0 (a imagem do aplicativo) e nas partições do sistema os0 e vs0. O VitaSharp
+  só recusava o chstat: um jogo ou homebrew podia mudar os arquivos do jogo instalado ou do firmware no PC. Agora as
+  mesmas operações dão EROFS ali; uma partição montada de novo com permissão de leitura e escrita (2, como o VitaRW e
+  as ferramentas do VitaShell fazem pelo `_vshIoMount`/`ksceIoMount`) aceita escrita até ser montada de novo com outra
+  permissão. Testes: `ReadOnlyMountTests`. Testar: os jogos e homebrews de sempre continuam salvando (ux0, savedata0);
+  no VitaShell, mexer no vs0 só depois de montá-lo em leitura e escrita.
 
 - [ ] (24/11/2026, falta testar) [P2][M] Gravar tudo: os módulos de firmware carregados durante a gravação saem com o
   hash (fix/adr4). Um módulo do firmware (os0, vs0, sa0, pd0) carregado pela primeira vez durante a gravação vem, no

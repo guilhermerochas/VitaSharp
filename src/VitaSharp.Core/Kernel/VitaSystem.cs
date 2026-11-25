@@ -468,6 +468,11 @@ public sealed class VitaSystem
     /// sceAppMgrTrophyMount(300, pid) mounts this application instead of the program's own.</summary>
     public readonly System.Collections.Concurrent.ConcurrentDictionary<int, string> TrophyApps = new();
 
+    /// <summary>The read-only system partitions (os0 0x200, vs0 0x300) mounted again with read-write permission (2) by
+    /// _vshIoMount / ksceIoMount: writes to them work until a mount with another permission (FW 3.74 iofilemgr keeps
+    /// the read-only flag, 0x1000, in the mount point; VitaShell and VitaRW remount this way).</summary>
+    public readonly System.Collections.Concurrent.ConcurrentDictionary<uint, bool> WritableMounts = new();
+
     /// <summary>SceAppMgr's global state block (0x80 bytes, _sceAppMgrGetAppMgrState copies it whole): +0 prioritize
     /// system chat, +4 system impose state, +8 initialised to -1, +0xC audio routing, +0x10 recommended screen
     /// orientation, +0x14 system impose state 2.</summary>
