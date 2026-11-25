@@ -1,4 +1,4 @@
-<!-- pair: captures.md sha256=755ec992845e8b4c3961f6552170416a944bfd8140877cdc7e3c5638a68e767b -->
+<!-- pair: captures.md sha256=07be4372258e5c19a44c7b86548c27144eacc32b3c47f8760343f96fa4cd6db9 -->
 # Analisar uma gravação do Gravar tudo sem o jogo
 
 [English](captures.md) | **Português**
@@ -71,5 +71,37 @@ reexecução lê zeros ali). O `report.txt` lista o que foi lido e se os bytes s
 O que ainda precisa do jogo: os bytes de uma gravação feita sem `--capture-files-mb`, módulos do firmware
 que o jogo carrega pela primeira vez durante a gravação (vêm do firmware de quem analisa), e gravações do shell do
 sistema com aplicativos abertos (vários processos; subir esses a partir do estado ainda não é suportado).
+
+## Conferir uma correção
+
+```
+VitaSharp.Desktop verify <pasta ou zip da gravação> [--out=<dir>] [--rerun] [opções do replay]
+```
+
+Diz se o problema que a gravação registrou ainda está lá com o build que roda o comando, sem o jogo e sem ninguém
+jogar. Ele reproduz o dump da GPU da gravação com este build (`replay-gpu --findings`, num processo próprio), aplica
+as regras de imagem do relatório aos quadros reproduzidos (os mesmos quadros que uma gravação vê, até 480x272:
+quadros pretos, `[flash]` da imagem inteira ou de uma célula da grade 4x4, imagens fora de ordem) e a varredura de
+NaN/Inf dos alvos de ponto flutuante, e compara cada achado da gravação dentro do dump com eles:
+
+```
+  [flash] present 1587 cell 1,1: ainda presente (replay: present 1587 cell 1,1: ...)
+  [black-flash] present 1600: corrigido (replay: nada nos presents 1599-1601)
+  por tipo (gravação -> replay):
+    flash: 20 -> 0 (corrigido)
+resultado: corrigido
+```
+
+*corrigido*: todo achado da gravação sumiu e nada novo apareceu; *ainda presente*: um achado está no mesmo present
+(um a mais ou a menos) e na mesma célula; *mudou*: ele se deslocou, ou o replay mostra um achado que a gravação não
+tinha (*novo*). Achados antes do dump (a pré-gravação) ou depois dele aparecem como não verificados. Código de saída
+0 corrigido, 1 ainda presente, 2 mudou, 3 nada a verificar, 4 o replay falhou. Tudo vai para `--out` (padrão
+`<gravação>/verify`: `verify.txt`, o `log.txt` e o `findings.txt` do replay); a gravação não é alterada. Opções do
+replay (`--res-scale=2`, `--env=CHAVE=VALOR`, `--msaa=...`) vão para o replay.
+
+O replay executa os comandos gravados: um achado que continua nele é desenhado pelo renderizador a partir desses
+comandos, ou já está neles (a causa vem antes da GPU). `--rerun` também roda de novo a lógica do jogo a partir do
+estado da gravação (`rerun`) e compara os dois relatórios tipo por tipo (travadas, ordem de apresentação, buracos e
+estalos do áudio); uma reexecução não é determinística, então só as contagens são comparadas.
 
 Detalhes para desenvolvedores: [`docs/notes/session-capture.md`](notes/session-capture.md).

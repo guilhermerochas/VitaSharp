@@ -1,4 +1,4 @@
-<!-- pair: captures.pt-BR.md sha256=9cc9de2c11258c7d70566befcf0ca021e1d7998ead979f9c6ef74202adefa7c3 -->
+<!-- pair: captures.pt-BR.md sha256=ded487b73b6e872e18f16f9f66ab8f8571b244d0905ffd4327813d8c9ed14686 -->
 # Analysing a Record everything capture without the game
 
 **English** | [Português](captures.pt-BR.md)
@@ -72,5 +72,38 @@ capture.
 What still needs the game: the bytes of a recording made without `--capture-files-mb`, firmware modules the game
 loads for the first time during the recording (they come from the analyst's firmware), and captures of the system
 shell with applications open (several processes; booting them from the state is not supported yet).
+
+## Checking a fix
+
+```
+VitaSharp.Desktop verify <capture folder or zip> [--out=<dir>] [--rerun] [replay options]
+```
+
+Says whether the problem the capture recorded is still there with the build that runs it, without the game and
+without anyone playing. It replays the capture's GPU dump with this build (`replay-gpu --findings`, in a process of
+its own), runs the report's picture rules over the replayed frames (the same frames a recording sees, at most
+480x272: black flashes and screens, `[flash]` of the whole picture or of one cell of the 4x4 grid, pictures out of
+order) and the NaN/Inf scan of the float render targets, and sets every finding of the recording inside the dump
+against them:
+
+```
+  [flash] present 1587 cell 1,1: ainda presente (replay: present 1587 cell 1,1: ...)
+  [black-flash] present 1600: corrigido (replay: nada nos presents 1599-1601)
+  por tipo (gravação -> replay):
+    flash: 20 -> 0 (corrigido)
+resultado: corrigido
+```
+
+*corrigido* (fixed): every finding of the recording is gone and nothing new appeared; *ainda presente* (still
+there): a finding is at the same present (one either way) and cell; *mudou* (changed): it moved, or the replay shows
+a finding the recording did not have (*novo*). Findings before the dump (the pre-roll) or after it are listed as not
+checked. Exit code 0 fixed, 1 still there, 2 changed, 3 nothing to check, 4 the replay failed. Everything goes into
+`--out` (default `<capture>/verify`: `verify.txt`, the replay's `log.txt` and `findings.txt`); the capture itself is
+not changed. Replay options (`--res-scale=2`, `--env=KEY=VALUE`, `--msaa=...`) go to the replay.
+
+The replay executes the recorded commands: a finding still there in it is drawn by the renderer from those
+commands, or is already in them (the cause is before the GPU). `--rerun` also runs the game logic again from the
+capture's state (`rerun`) and compares the two reports kind by kind (stalls, presentation order, audio gaps and
+clicks); a re-run is not deterministic, so only the counts are compared.
 
 Details for developers: [`docs/notes/session-capture.md`](notes/session-capture.md).

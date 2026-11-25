@@ -286,6 +286,8 @@ public static class Program
                 return 0;
             case "replay-gpu" when args.Length >= 2:
                 return ReplayGpu.Run(args[1], args.Skip(2).ToArray());
+            case "verify" when args.Length >= 2:
+                return VerifyCapture.Run(args[1], args.Skip(2).ToArray());
             case "rerun" when args.Length >= 2:
                 return SessionCaptureControl.Rerun(args[1], args.Skip(2).ToArray());
             case "boot-shell":
@@ -1002,6 +1004,7 @@ public static class Program
         Console.WriteLine("  --data=<folder>                      use another data folder (default: " + DataPaths.DefaultRoot() + ")");
         Console.WriteLine("  test <scenario.txt> [options]        run an automated scenario (frames, contact sheet, report); run options given here win over the scenario's args=");
         ReplayGpu.PrintUsage();
+        VerifyCapture.PrintUsage();
         Console.WriteLine("  run options: --gpu-dump-at=F1:F2[:file]  record frames F1..F2 as a GPU dump (Ctrl+F8 in the window starts/stops one)");
         Console.WriteLine("  run options: --capture-preroll[=S] --capture-at=A:B  Gravar tudo (F8): keep the last S s / record guest frames A..B");
         Console.WriteLine("  run options: --capture-files-mb=MB --capture-savedata  Gravar tudo: keep up to MB of the bytes the game read (default 0: hashes only) / keep the save data's bytes too");

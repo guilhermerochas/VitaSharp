@@ -213,6 +213,20 @@ Android build on a phone. The user's F5 state of Jak 1 hangs intermittently righ
 `DMAPut`, F3DPlaybackThread on `F3DRecordingMessagePipe`): 2 of 3 runs with the pre-roll, 1 of 4 without in the bug
 agent's runs; the hang starts before the pre-roll's next save state.
 
+## Verify (is the problem still there?)
+
+`VitaSharp.Desktop verify <capture>` (`src/VitaSharp.Desktop/VerifyCapture.cs`, `Core/Capture/CaptureVerify.cs`):
+the capture's findings (the report's rules over `frames.vsfr` through `FrameFindings`, and the `[anomaly] ... nan:`
+lines of `log.txt`) against those of a replay of `gpu.vsgd` by the running build. The replay runs in a child process
+(`replay-gpu --findings`: the renderer's switches are static, read once per process) with `FrameFindings` as its
+present tap, so it sees each frame as a recording does (the debug-mode replay ring's downscale), and debug mode on for
+the NaN/Inf scan; it writes `findings.txt`. Findings are matched by kind, present (one either way: the replay numbers
+its presents from the dump's `first-present`, as the recording did) and cell. `--rerun` adds a `rerun` of the logic
+and compares the two `report.txt` kind by kind. `FrameFindings` is the API every tool that measures a flicker from
+frames uses (one set of rules: the analyzer's). Tests: `CaptureVerifyTests` (rules, matching, files) and
+`CaptureVerifyRenderTests` (a synthetic scene with a HUD that disappears for one frame, recorded into a GPU dump and
+replayed on the software Vulkan device).
+
 ## Analyzer
 
 ```

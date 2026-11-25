@@ -32,6 +32,8 @@ static class ReplayGpu
         Console.WriteLine("    --env=KEY=VALUE        any renderer/shader environment switch (repeatable); --no-recorded-env ignores the recorded ones");
         Console.WriteLine("    --res-scale=2|3|4|0.75|0.5  internal resolution (VITASHARP_RES_SCALE), as in run/test");
         Console.WriteLine("    --compare=<dir>        compare the written frames with frame_N.png of another run (compare.txt, diff_N.png)");
+        Console.WriteLine("    --findings             run the capture report's picture rules over the replayed frames (as a recording sees them) and the");
+        Console.WriteLine("                           NaN/Inf scan: <out>/findings.txt (what verify compares with the recording's findings)");
         Console.WriteLine("    --window [--hold] [--speed=X|--fast]  show it in a window at the recorded pace (X times), keep it open at the end");
         Console.WriteLine("    --shader-cache=<dir>   the shader cache to read and write (default: a new temporary one, deleted at the end;");
         Console.WriteLine("                           the user's own cache is used only when its folder is given here)");
@@ -308,6 +310,16 @@ static class ReplayGpu
             AsyncPipelines = Opt(options, "--async-shaders") is "on" or "1" or "true",
             FirstPresent = firstPresent,
         };
+        // --findings: the frames as a recording's present tap sees them, through the capture report's rules (verify)
+        Core.Capture.FrameFindings? findings = options.Contains("--findings") ? new Core.Capture.FrameFindings() : null;
+        if (findings != null)
+        {
+            ro.PresentTap = findings;
+            if (!options.Contains("--no-nan-scan"))
+            {
+                DebugMode.Enable(); // the NaN/Inf scan of every float target (VulkanRenderer.NanCheck.cs)
+            }
+        }
         s.LoadShaderCache = Runner.LoadShaderCacheChoice(options) == true;
         if (temporaryCache)
         {
@@ -375,6 +387,10 @@ static class ReplayGpu
         }
 
         Log.Flush();
+        if (findings != null)
+        {
+            WriteFindings(s.Out, findings);
+        }
         if (temporaryCache)
         {
             DeleteTemporaryCache(ro.ShaderCacheDir!);
@@ -417,6 +433,18 @@ static class ReplayGpu
     }
 
     static VulkanRenderer? _renderer;
+
+    /// <summary>--findings: <out>/findings.txt with the report's picture findings of the replayed frames and the
+    /// NaN/Inf anomalies of the replay's log.</summary>
+    static void WriteFindings(string outDir, Core.Capture.FrameFindings findings)
+    {
+        (long first, long last) = findings.Presents;
+        var items = findings.Findings().Where(f => !f.Info).Select(Core.Capture.CaptureVerify.ToItem).ToList();
+        items.AddRange(Core.Capture.CaptureVerify.NanEvents(Path.Combine(outDir, "log.txt")));
+        string path = Path.Combine(outDir, Core.Capture.CaptureVerify.FindingsFileName);
+        Core.Capture.CaptureVerify.WriteFindings(path, first, last, items);
+        Console.WriteLine($"findings: {items.Count} in presents {first}-{last} ({findings.Count} frames) -> {path}");
+    }
 
     /// <summary>
     /// --compile-on-program-load: the replay's stand-in for a game creating its programs while it loads. Every vertex
