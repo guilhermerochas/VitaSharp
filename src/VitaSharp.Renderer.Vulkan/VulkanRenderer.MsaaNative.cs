@@ -1,4 +1,5 @@
 using Silk.NET.Vulkan;
+using System.Collections.Concurrent;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Util;
 
@@ -743,23 +744,86 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
     }
 
     /// <summary>Layout of the built-in full-screen passes (one combined image sampler) and their shared shaders.</summary>
+    /// <summary>Guards the lazy creation of the load layout and shaders: a shader worker may build an MSAA load pipeline
+    /// ahead of the GPU thread (<see cref="PrebuildMsaaLoad"/>).</summary>
+    private readonly object _msLoadLock = new();
+
     private DescriptorSetLayout EnsureLoadLayout()
     {
-        if (_msLoadLayout.Handle != 0)
+        lock (_msLoadLock)
         {
+            if (_msLoadLayout.Handle != 0)
+            {
+                return _msLoadSetLayout;
+            }
+
+            var b = new DescriptorSetLayoutBinding(0, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit);
+            var ci = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = 1, PBindings = &b };
+            _vk.CreateDescriptorSetLayout(_dev, in ci, null, out _msLoadSetLayout).Ok("load set layout");
+            DescriptorSetLayout descriptorSetLayout = _msLoadSetLayout;
+            var pli = new PipelineLayoutCreateInfo { SType = StructureType.PipelineLayoutCreateInfo, SetLayoutCount = 1, PSetLayouts = &descriptorSetLayout };
+            _msLoadVs = CompileBuiltin(LoadVs, true);
+            _msLoadFsFloat = CompileBuiltin(LoadFsFloat, false);
+            _msLoadFsUint = CompileBuiltin(LoadFsUint, false);
+            // the layout last: it is what the check above reads
+            _vk.CreatePipelineLayout(_dev, in pli, null, out _msLoadLayout).Ok("load pipeline layout");
             return _msLoadSetLayout;
         }
+    }
 
-        var b = new DescriptorSetLayoutBinding(0, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit);
-        var ci = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = 1, PBindings = &b };
-        _vk.CreateDescriptorSetLayout(_dev, in ci, null, out _msLoadSetLayout).Ok("load set layout");
-        DescriptorSetLayout descriptorSetLayout = _msLoadSetLayout;
-        var pli = new PipelineLayoutCreateInfo { SType = StructureType.PipelineLayoutCreateInfo, SetLayoutCount = 1, PSetLayouts = &descriptorSetLayout };
-        _vk.CreatePipelineLayout(_dev, in pli, null, out _msLoadLayout).Ok("load pipeline layout");
-        _msLoadVs = CompileBuiltin(LoadVs, true);
-        _msLoadFsFloat = CompileBuiltin(LoadFsFloat, false);
-        _msLoadFsUint = CompileBuiltin(LoadFsUint, false);
-        return _msLoadSetLayout;
+    /// <summary>MSAA load pipelines a shader worker built before the GPU thread needed them (<see cref="PrebuildMsaaLoad"/>).</summary>
+    private readonly ConcurrentDictionary<(Format, SampleCountFlags, bool), Pipeline> _msLoadPrebuilt = new();
+    /// <summary>MSAA load pipelines queued to the shader workers (each once per renderer).</summary>
+    private readonly ConcurrentDictionary<(Format, SampleCountFlags, bool), byte> _msLoadQueued = new();
+    private readonly ConcurrentQueue<(Format, SampleCountFlags, bool)> _msLoadJobs = new();
+    private int _statMsLoadPrebuilt, _statMsLoadPrebuiltUsed;
+
+    /// <summary>
+    /// A multisampled scene is predicted (a scene the prefetch sees, a surface the game makes known): the pipeline of
+    /// its scene-start load (<see cref="RecordMsaaLoad"/>) is built on a shader worker, so the first such scene does not
+    /// build it on the GPU thread. It was the only pipeline left there in the cold replays of 4 of the 13 dumps (12-27 ms,
+    /// one frame each). Only the colour attachment format and the sample count decide it; the tile-word and
+    /// integer-view renderings, which the prediction cannot see, keep building theirs on first use.
+    /// </summary>
+    private void PrebuildMsaaLoad(PredictedScene scene)
+    {
+        if (!scene.HasColor || scene.Samples == SampleCountFlags.Count1Bit || !_asyncShaders)
+        {
+            return;
+        }
+
+        (Format, SampleCountFlags, bool) key = (scene.Attach, scene.Samples, false);
+        if (_msLoadQueued.ContainsKey(key) || !_msLoadQueued.TryAdd(key, 0) || !EnsureShaderWorkers())
+        {
+            return;
+        }
+
+        _msLoadJobs.Enqueue(key);
+        _workAvailable.Release();
+    }
+
+    /// <summary>Worker: builds one queued MSAA load pipeline (false when none is queued).</summary>
+    private bool RunMsaaLoadJob()
+    {
+        if (!_msLoadJobs.TryDequeue(out (Format Format, SampleCountFlags Samples, bool TileWord1) key))
+        {
+            return false;
+        }
+
+        if (_stopShaderJobs || _deviceLost)
+        {
+            return true;
+        }
+
+        Pipeline pipeline = CreateMsaaLoadPipeline(key.Format, key.Samples, key.TileWord1);
+        if (!_msLoadPrebuilt.TryAdd(key, pipeline))
+        {
+            _vk.DestroyPipeline(_dev, pipeline, null);
+            return true;
+        }
+
+        Interlocked.Increment(ref _statMsLoadPrebuilt);
+        return true;
     }
 
     /// <param name="tileWord1">for a render pass with the tile-word attachment (left unwritten)</param>
@@ -770,6 +834,21 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
             return p;
         }
 
+        if (_msLoadPrebuilt.TryRemove((format, samples, tileWord1), out p))
+        {
+            _statMsLoadPrebuiltUsed++;
+            return _msLoadPipelines[(format, samples, tileWord1)] = p;
+        }
+
+        long builtinStart = System.Diagnostics.Stopwatch.GetTimestamp();
+        p = CreateMsaaLoadPipeline(format, samples, tileWord1);
+        NoteBuiltinPipeline(builtinStart, "MSAA load");
+        return _msLoadPipelines[(format, samples, tileWord1)] = p;
+    }
+
+    /// <summary>Builds an MSAA load pipeline (GPU thread or shader worker: the layout and render pass caches lock).</summary>
+    private Pipeline CreateMsaaLoadPipeline(Format format, SampleCountFlags samples, bool tileWord1)
+    {
         EnsureLoadLayout();
         byte* entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
         PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
@@ -806,8 +885,8 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
             PDynamicState = &dsi,
             Layout = _msLoadLayout,
         };
-        _vk.CreateGraphicsPipelines(_dev, _vkPipelineCache, 1, in gci, null, out p).Ok("MSAA load pipeline");
-        return _msLoadPipelines[(format, samples, tileWord1)] = p;
+        _vk.CreateGraphicsPipelines(_dev, _vkPipelineCache, 1, in gci, null, out Pipeline pipeline).Ok("MSAA load pipeline");
+        return pipeline;
     }
 
     /// <summary>
@@ -1065,6 +1144,13 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         }
 
         _msLoadPipelines.Clear();
+        // built ahead by a worker and never used (the workers stopped before this)
+        foreach (Pipeline p in _msLoadPrebuilt.Values)
+        {
+            _vk.DestroyPipeline(_dev, p, null);
+        }
+
+        _msLoadPrebuilt.Clear();
         for (int i = 0; i < _depthUnpackPipelines.Length; i++)
         {
             if (_depthUnpackPipelines[i].Handle != 0)

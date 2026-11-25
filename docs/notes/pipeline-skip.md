@@ -318,3 +318,20 @@ one more stands for the 8-CPU change (4 -> 6). Runs alternated:
   programs compiled before the first command) went from 8.1 s to 7.0-7.4 s with 3 workers (PCSE00333: 0.93-1.03 s to
   0.86 s). 4 workers on the 4 pinned CPUs were slower (9.3 s): with the GPU thread, more threads than cores.
 - Load-time numbers taken while three other heavy jobs ran (9-89 s per run) were discarded.
+
+## Built-in pipelines (perf/stut1, 25 November 2026)
+The renderer's own full-screen passes (scene-start MSAA load, depth unpack/pack/resample, memory order, shell
+overlay) have fixed GLSL and were built on first use on the GPU thread, outside every counter. They are now counted
+(session line: "built-in pipelines on the GPU thread: N (ms, worst)", one "built-in <kind> pipeline built on the GPU
+thread" log line each) and their time is frame stall like a draw's.
+
+Counted on cold replays of all 13 dumps (compile-on-program-load on, async shaders): 1 per dump in 4 of them, always
+the MSAA load, 12-27 ms in one frame (GTAVCECTY x2: 12 and 27 ms, shell x2: 13 and 22 ms), and in those dumps they
+were the only frames stalled (1 frame >= 4 ms each, 2 of them >= 16.7 ms). 0 in the other 9 (PCSE00053 x5, PCSE00333,
+PCSE01023, PSVAS1178, one shell dump).
+
+Done: a predicted multisampled scene (the draw prefetch's BeginScene, a surface made known at program load) queues
+its MSAA load pipeline (attachment format and sample count) to the shader workers, ahead of every other job; the GPU
+thread takes it from there (`PrebuildMsaaLoad`, `VulkanRenderer.MsaaNative.cs`; the load layout and shaders are
+created under a lock). The tile-word and integer-view renderings, which the prediction cannot see, still build theirs
+on first use. The other built-in kinds did not appear in any dump.

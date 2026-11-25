@@ -957,6 +957,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   opção ligada (padrão) 0 quadros lentos nos dois e espera do carregamento 8,1 → 7,0-7,4 s (PCSE00333 0,93-1,03 →
   0,86 s); 4 workers em 4 CPUs pioram (9,3 s). `--compare` dos 13 dumps contra a base: pixel-idênticos. Falta:
   medir em gameplay no PC de 8 CPUs sem fixação (o efeito da prioridade baixa quando o jogo ocupa a CPU).
+  Pipelines internos (frente 5; perf/stut1, 25/11/2026, feito): agora contados (linha da sessão "built-in pipelines on
+  the GPU thread", uma linha de log por montagem) e somados à espera do quadro. Replay frio dos 13 dumps com a
+  compilação ao carregar ligada: 1 em 4 dumps, sempre o de carga de MSAA, 12-27 ms num quadro (GTAVCECTY x2, shell x2)
+  e era o único quadro lento deles (1 quadro >= 4 ms cada, 2 >= 16,7 ms); 0 nos outros 9; os de depth, ordem de
+  memória e overlay não apareceram. Uma cena multisample prevista (BeginScene do prefetch, superfície conhecida na
+  criação do programa) monta o pipeline de carga dela num worker, antes de qualquer outro job (`PrebuildMsaaLoad`,
+  `VulkanRenderer.MsaaNative.cs`; layout e shaders da carga criados sob lock). Nos 4 dumps: 1 → 0 montado na thread
+  da GPU, quadros >= 4 ms 1 → 0. Teste `RendererPathsTests.FirstMultisampledSceneFindsItsLoadPipelineBuiltByAWorker`
+  (2x e 4x, com e sem a criação do programa; sem a correção: (1, 0) em vez de (0, 1)). Ficam no 1º uso as variantes
+  tile-word e integer view da carga, que a previsão não vê.
   Entrega movida para "Corrigido, falta o usuário testar" (uber2/uber3/uber4, 22/11/2026); o resto segue aberto aqui.
   Junto aqui (triagem de 22/11/2026) o item das bibliotecas de pipeline, que já cai na frente (3): mais workers feito (acima).
   [P2][G] Engasgos da primeira vez: montar os pipelines que faltam com `VK_EXT_graphics_pipeline_library` (ligação

@@ -321,6 +321,7 @@ public sealed unsafe partial class VulkanRenderer
             }
         }
         _prefetchScene = new PredictedScene(true, f, attach, samples);
+        PrebuildMsaaLoad(_prefetchScene);
     }
 
     private void PrefetchPipeline(DrawCommand d, ulong vk, ulong fk, uint colorFormat)
@@ -656,6 +657,13 @@ public sealed unsafe partial class VulkanRenderer
         while (true)
         {
             TestWorkerGate?.Wait();
+            // the scene-start load of a predicted multisampled scene first: one small pipeline per surface format, needed
+            // before the scene's first draw (VulkanRenderer.MsaaNative.cs, PrebuildMsaaLoad)
+            if (RunMsaaLoadJob())
+            {
+                continue;
+            }
+
             // shader jobs first: pipeline jobs need their modules; but a pipeline whose shaders are no longer pending goes
             // ahead of the shader jobs queued after it, so the work finishes in the order it was submitted, as the GPU
             // thread needs it (a cold replay of a dump: a first frame with 127 new shaders and 40 pipelines left every

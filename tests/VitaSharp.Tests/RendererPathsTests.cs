@@ -847,6 +847,67 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
         }
     }
 
+    /// <summary>
+    /// A multisampled scene starts with a full-screen draw that loads the surface into every sample (the MSAA load
+    /// pipeline, a built-in one with its own GLSL). Its pipeline is built on a shader worker as soon as the scene is
+    /// predicted (the draw prefetch's BeginScene, a surface made known at program load), so the first multisampled scene
+    /// does not build it on the GPU thread: in the cold replays of 4 of the 13 dumps it was the only pipeline left there
+    /// (12-27 ms in one frame each). Covered with the program-load prediction on and off, 2x and 4x.
+    /// </summary>
+    [SoftwareVulkanTheory]
+    [InlineData((ushort)2, false)]
+    [InlineData((ushort)2, true)]
+    [InlineData((ushort)1, false)]
+    public void FirstMultisampledSceneFindsItsLoadPipelineBuiltByAWorker(ushort multisample, bool programLoad)
+    {
+        using IDisposable driver = SoftwareVulkan.Use();
+        string cache = Path.Combine(Path.GetTempPath(), "vitasharp-msload-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var r = new VulkanRenderer(new VulkanRendererOptions
+            {
+                VSync = false,
+                AsyncShaders = true,
+                AsyncPipelines = true,
+                CompileOnProgramLoad = programLoad,
+                ShaderCacheDir = cache,
+                Msaa = "native",
+            });
+            int builtOnGpuThread = -1, used = -1;
+            long scenes = -1;
+            using var h = new HleHarness(fx, "msload");
+            try
+            {
+                h.Emu.Gpu.Backend = new PrefetchedFirstBackend(r);
+                r.BeginTitle("PCSA00084");
+                var w = new RendererTextureTests.Workload(h, multisample, 0, scaleMode: 1);
+                w.Run(1);
+                h.Emu.Gpu.WaitIdle();
+                (builtOnGpuThread, used) = (Stat(r, "_statBuiltinPipelines"), Stat(r, "_statMsLoadPrebuiltUsed"));
+                scenes = (long)typeof(VulkanRenderer).GetField("_statMsScenes", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(r)!;
+                w.Terminate();
+            }
+            finally
+            {
+                h.Emu.Gpu.WaitIdle();
+                h.Emu.Gpu.Backend = null;
+                r.Dispose();
+            }
+
+            Assert.True(scenes >= 1, $"{scenes} multisampled scenes (the device must support native MSAA)");
+            Assert.Equal((0, 1), (builtOnGpuThread, used));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(cache, true);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
     private const byte ParamTypeU32 = (byte)Core.Gxm.Shader.ParamType.U32;
     private const byte ParamTypeS32 = (byte)Core.Gxm.Shader.ParamType.S32;
 
