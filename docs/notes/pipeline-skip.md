@@ -303,6 +303,14 @@ the slow and the fast cores by the hot threads' load, and the phone's power budg
 `--shader-workers=N` / `VITASHARP_SHADER_WORKERS=N` still set the exact pool (no spare workers);
 `VITASHARP_SHADER_SPARE_WORKERS=N` sets the spare ones (A/B).
 
+Joined to the CPU budget (fix/recover1, 25 November 2026): `AutoShaderWorkers` and the CPU budget of the next section
+(`ShaderWorkerBudget`, perf/uber5-uber6) sized the same pool with two rules. There is one now: the pool is the
+budget's `Stall` workers; the `Steady` share runs at normal priority, and the workers above it (`Spare`) are these
+spare workers, at below-normal priority, which run only while a thread waits for the workers (from the GPU thread's
+first wait in a frame to its present, and during the shader cache load). `VITASHARP_SHADER_SPARE_WORKERS=N` gives N
+spare workers above the same steady share. The measurements below were taken before the join, with the spare workers
+also running outside the waits.
+
 Measured on a cold replay (fresh emulator shader cache and NVIDIA driver cache per run) of the PCSE00053 capture of
 18 November 2026 (140 MB, 150 frames), pinned to 4 CPUs at BelowNormal, so 2 workers is the automatic value there and
 one more stands for the 8-CPU change (4 -> 6). Runs alternated:
@@ -335,3 +343,20 @@ its MSAA load pipeline (attachment format and sample count) to the shader worker
 thread takes it from there (`PrebuildMsaaLoad`, `VulkanRenderer.MsaaNative.cs`; the load layout and shaders are
 created under a lock). The tile-word and integer-view renderings, which the prediction cannot see, still build theirs
 on first use. The other built-in kinds did not appear in any dump.
+## Shader workers by the CPU budget (perf/uber5, 21 November 2026)
+- `ShaderWorkerBudget`: at most 90% of the logical processors; while the GPU thread works, 2 of them stay with the guest
+  CPU thread and the GPU thread (8: 5 workers, 4 pinned: 2); from the GPU thread's first wait in a frame until that
+  frame's present, and while the game waits for the shader cache load, the whole budget runs (8: 7, 4: 3). Phones: 2
+  steady and 4 in a stall, on the LITTLE cores (slowest cpufreq cluster). `--shader-workers` / `VITASHARP_SHADER_WORKERS`
+  still fix the count.
+- References: yuzu/Eden (hardware threads - 1, low priority, `ThreadPlacement::Background`), Dolphin
+  (`clamp(cores - 3, 1, 4)`), RPCS3 (8 threads: 2, 12: 4, 16: 8, 24: 12, priority -1). All three share one
+  VkPipelineCache between the workers.
+- No global lock: shaderc locks only around glslang's process init (`GlslangInitializer`); each thread has its own
+  compiler. First frame of the PCSE00053 dump, cold, program load off, 4 pinned CPUs, quiet machine, fixed workers
+  1/2/3: 4,435/2,948/1,632 ms; without the shared VkPipelineCache 3 workers gave 1,769-1,901 ms (same within noise).
+- A pool that shrank back to the steady share after each wait of the same frame left the extra worker idle (first
+  frame 2,250 ms against 1,632 ms fixed): the stall budget is now held until the present.
+- Replays that ran 53-166 s instead of 12 s were CPU starvation (BelowNormal, pinned, other jobs at Normal; run time
+  followed the machine load in both builds; dotnet-stack showed the replay thread computing). Measure with the load
+  sampled during the run.

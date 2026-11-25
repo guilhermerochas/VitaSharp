@@ -18,7 +18,8 @@ namespace VitaSharp.Renderer.Vulkan;
 /// Configured by <see cref="VulkanRendererOptions.AsyncShaders"/> / <see cref="VulkanRendererOptions.AsyncPipelines"/> /
 /// <see cref="VulkanRendererOptions.ShaderWorkers"/> (launcher "Compilar shaders e pipelines em segundo plano",
 /// --async-shaders=, --shader-workers=); VITASHARP_ASYNC_SHADERS=0|1, VITASHARP_ASYNC_PIPELINES=0|1 and
-/// VITASHARP_SHADER_WORKERS=N override them.
+/// VITASHARP_SHADER_WORKERS=N override them. The number of workers that run at once follows the CPU budget
+/// (<see cref="ShaderWorkerBudget"/>): the steady share while the GPU thread works, the whole pool while it waits.
 /// <para>Threading: workers only create shader modules and pipelines (vkCreateShaderModule / vkCreateGraphicsPipelines
 /// need no external synchronisation; <see cref="_vkPipelineCache"/> is created without
 /// VK_PIPELINE_CACHE_CREATE_EXTERNALLY_SYNCHRONIZED_BIT, so the driver synchronises concurrent pipeline creation and
@@ -48,56 +49,108 @@ public sealed unsafe partial class VulkanRenderer
         _asyncShaders = Flag(EnvVars.AsyncShaders) ?? vulkanRendererOptions.AsyncShaders;
         _asyncPipelines = _asyncShaders && (Flag(EnvVars.AsyncPipelines) ?? vulkanRendererOptions.AsyncPipelines);
         int workers = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.ShaderWorkers), out int n) && n > 0 ? n : vulkanRendererOptions.ShaderWorkers;
-        if (workers > 0)
-        {
-            _shaderWorkerCount = Math.Min(workers, 64);
-            _spareShaderWorkerCount = 0;
-        }
-        else
-        {
-            (_shaderWorkerCount, _spareShaderWorkerCount) = AutoShaderWorkers(Environment.ProcessorCount, OperatingSystem.IsAndroid());
-        }
-
+        _workerBudget = workers > 0 ? ShaderWorkerBudget.Fixed(workers) : vulkanRendererOptions.WorkerBudget ?? ShaderWorkerBudget.ForHost();
+        // A/B: the spare (below-normal) workers above the steady share, instead of the budget's
         if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.ShaderSpareWorkers), out int spareWorkers) && spareWorkers >= 0)
         {
-            _spareShaderWorkerCount = Math.Min(spareWorkers, 64);
+            _workerBudget = _workerBudget.WithSpare(spareWorkers);
         }
 
-        string spare = _spareShaderWorkerCount > 0 ? $" + {_spareShaderWorkerCount} at below-normal priority" : "";
+        _shaderWorkerCount = _workerBudget.Stall;
         Log.Info($"[gpu] shaders: shaderc optimisation {_compiler.OptLevel}, background compilation "
-            + (_asyncShaders ? $"on ({_shaderWorkerCount} workers{spare}, pipelines {(_asyncPipelines ? "on" : "off")})" : "off"));
+            + (_asyncShaders
+                ? $"on ({_workerBudget.Steady} workers, {_workerBudget.Stall} while the GPU thread waits for them, the {_workerBudget.Spare} above {_workerBudget.Steady} at below-normal priority; {Environment.ProcessorCount} logical processors; pipelines {(_asyncPipelines ? "on" : "off")})"
+                : "off"));
     }
 
-    /// <summary>Spare-time shader workers: started after the <see cref="_shaderWorkerCount"/> ones, at below-normal
-    /// priority, so they only take the CPU time the guest threads, the GPU thread and the other workers leave idle.</summary>
-    private int _spareShaderWorkerCount;
+    /// <summary>How many workers may run now (<see cref="ShaderWorkerBudget"/>); the pool has <see cref="ShaderWorkerBudget.Stall"/>.</summary>
+    private ShaderWorkerBudget _workerBudget = new(1, 1);
 
-    /// <summary>All shader worker threads (normal and spare-time).</summary>
-    private int TotalShaderWorkers => _shaderWorkerCount + _spareShaderWorkerCount;
+    /// <summary>Workers running a job (or looking for one), and workers held back by the budget.</summary>
+    private int _workersRunning, _workersParked;
 
-    /// <summary>
-    /// The automatic number of shader workers for <paramref name="processors"/> logical processors: half of them (1-6)
-    /// at normal priority, as before, plus spare-time workers at below-normal priority up to the CPU budget, 90% of the
-    /// processors less one for the GPU thread (at most 8 in all). The references size their pools by the cores: yuzu
-    /// and its forks run hardware_concurrency - 1 pipeline workers on desktop, Ryujinx translates its disk cache on 8
-    /// threads with min(ProcessorCount, 8) backend compiles, Dolphin compiles on clamp(cores - 3, 1, 4) threads. A burst
-    /// of new pipelines is the frame waiting for the driver (60-90 ms per pipeline with a cold driver cache), so idle
-    /// cores are better spent on it; the lower priority keeps a burst in the background from slowing the game when the
-    /// CPU is full (the Windows scheduler runs a below-normal thread only on a core no normal one wants).
-    /// <para>Android: no spare-time workers. The thread placement (VitaSharp.Mobile.Core ThreadPlacement) puts the
-    /// shader workers on the slow cores while the hot threads fill the fast ones, the phone's power and thermal budget
-    /// is shared with the game, and the yuzu forks leave 3 cores free there.</para>
-    /// </summary>
-    internal static (int Normal, int Spare) AutoShaderWorkers(int processors, bool mobile)
+    /// <summary>Threads outside the pool (the GPU thread, the shader cache load) waiting for the workers' work: while
+    /// any waits, the whole pool may run.</summary>
+    private int _workWaiters;
+
+    /// <summary>Set while <see cref="_workWaiters"/> is not 0: wakes the workers held back by the budget.</summary>
+    private readonly ManualResetEventSlim _stallBoost = new(false);
+
+    /// <summary>Jobs that ran beyond the steady share, while a thread waited for the workers.</summary>
+    private int _statJobsInStall;
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static bool t_shaderWorker;
+
+    /// <summary>A thread outside the pool starts waiting for the workers: the rest of the pool may run (the frame
+    /// cannot go on, so the GPU thread's core and the guest's go to the compiles).</summary>
+    private void BeginWaitForWorkers()
     {
-        int normal = Math.Clamp(processors / 2, 1, 6);
-        if (mobile)
+        if (t_shaderWorker)
         {
-            return (normal, 0);
+            return;
         }
 
-        int budget = Math.Min(processors * 9 / 10 - 1, 8);
-        return (normal, Math.Max(budget - normal, 0));
+        if (Interlocked.Increment(ref _workWaiters) == 1)
+        {
+            _stallBoost.Set();
+        }
+    }
+
+    private void EndWaitForWorkers()
+    {
+        if (t_shaderWorker)
+        {
+            return;
+        }
+
+        if (Interlocked.Decrement(ref _workWaiters) == 0)
+        {
+            _stallBoost.Reset();
+            // another wait may have begun between the decrement and the reset
+            if (Volatile.Read(ref _workWaiters) != 0)
+            {
+                _stallBoost.Set();
+            }
+        }
+    }
+
+    /// <summary>1 while the frame the GPU thread is executing has waited for the workers.</summary>
+    private int _frameStallHeld;
+
+    /// <summary>The GPU thread waits for a worker's shader or pipeline: the frame is late already, so the whole pool runs
+    /// until it is presented (<see cref="ReleaseFrameStall"/>), not only during each wait. A frame of new draws waits
+    /// many times with short draws in between, and a pool shrinking to the steady share in each gap left the extra
+    /// workers idle (cold replay of a dump: first frame 2,250 ms against 1,632 ms with the same pool fixed).</summary>
+    private void HoldStallForFrame()
+    {
+        if (!t_shaderWorker && Interlocked.Exchange(ref _frameStallHeld, 1) == 0)
+        {
+            BeginWaitForWorkers();
+        }
+    }
+
+    /// <summary>GPU thread, at each present: a frame that waited for the workers gives the extra workers back.</summary>
+    private void ReleaseFrameStall()
+    {
+        if (Interlocked.Exchange(ref _frameStallHeld, 0) == 1)
+        {
+            EndWaitForWorkers();
+        }
+    }
+
+    /// <summary>Worker: whether it may run a job now (the CPU budget): one of the <see cref="ShaderWorkerBudget.Steady"/>
+    /// workers always; a spare one (above the steady share, at below-normal priority) only while a thread waits for the
+    /// workers.</summary>
+    private bool TryEnterWorkerSlot(bool spare)
+    {
+        if (spare && Volatile.Read(ref _workWaiters) == 0)
+        {
+            return false;
+        }
+
+        Interlocked.Increment(ref _workersRunning);
+        return true;
     }
 
     /// <param name="rebuild">queued by the boot rebuild (<see cref="RebuildFromRecipes"/>) rather than by a draw</param>
@@ -121,8 +174,13 @@ public sealed unsafe partial class VulkanRenderer
 
                 Run(r);
             }
+            else if (!byGame || Volatile.Read(ref _state) == 2)
+            {
+                _done.Wait(); // the boot rebuild's own thread waits within the steady share
+            }
             else
             {
+                r.HoldStallForFrame();
                 _done.Wait();
             }
 
@@ -137,6 +195,7 @@ public sealed unsafe partial class VulkanRenderer
                 return false;
             }
 
+            r.TestJobStarted?.Invoke();
             Run(r);
             return true;
         }
@@ -569,6 +628,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         long t0 = FrameLedger.Now();
+        HoldStallForFrame();
         manualResetEventSlim.Wait();
         long dt = FrameLedger.Now() - t0;
         FrameLedger.Add(FrameLedger.Cat.ShaderWait, dt);
@@ -624,15 +684,18 @@ public sealed unsafe partial class VulkanRenderer
                 return true;
             }
 
-            var workers = new Thread[TotalShaderWorkers];
+            var workers = new Thread[_shaderWorkerCount];
             for (int i = 0; i < workers.Length; i++)
             {
-                bool spare = i >= _shaderWorkerCount;
+                // the workers above the steady share are the spare ones, at below-normal priority: they only take the
+                // cores the guest threads, the GPU thread and the steady workers leave idle
+                bool spare = i >= _workerBudget.Steady;
                 // the "Shader worker" prefix is how the Android thread placement recognises them (ThreadPlacement.Classify)
                 workers[i] = new Thread(() =>
                 {
                     NativeThread.Register("Shader worker");
-                    WorkerLoop();
+                    t_shaderWorker = true;
+                    WorkerLoop(spare);
                 })
                 {
                     IsBackground = true,
@@ -652,75 +715,46 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Tests: when set, the workers wait for it before taking each job (null otherwise).</summary>
     private ManualResetEventSlim? TestWorkerGate { get; set; }
 
-    private void WorkerLoop()
+    /// <summary>Tests: called on a worker when it starts a shader job, before the job runs (null otherwise).</summary>
+    private Action? TestJobStarted { get; set; }
+
+    /// <param name="spare">a worker above the steady share (<see cref="ShaderWorkerBudget.Spare"/>)</param>
+    private void WorkerLoop(bool spare)
     {
         while (true)
         {
             TestWorkerGate?.Wait();
-            // the scene-start load of a predicted multisampled scene first: one small pipeline per surface format, needed
-            // before the scene's first draw (VulkanRenderer.MsaaNative.cs, PrebuildMsaaLoad)
-            if (RunMsaaLoadJob())
+            // the CPU budget: a spare worker runs only while a thread waits for the workers
+            if (!TryEnterWorkerSlot(spare))
             {
-                continue;
-            }
-
-            // shader jobs first: pipeline jobs need their modules; but a pipeline whose shaders are no longer pending goes
-            // ahead of the shader jobs queued after it, so the work finishes in the order it was submitted, as the GPU
-            // thread needs it (a cold replay of a dump: a first frame with 127 new shaders and 40 pipelines left every
-            // pipeline queued behind all the shaders, and the GPU thread built the 8-13 it reached first itself)
-            if (PipelineJobReadyFirst())
-            {
-                bool shadersQueued = !_shaderJobs.IsEmpty;
-                if (TryRunPipelineJob())
+                if (_stopShaderJobs)
                 {
-                    if (shadersQueued)
-                    {
-                        Interlocked.Increment(ref _statPipelinesAheadOfShaders);
-                    }
-
-                    continue;
-                }
-            }
-
-            if (_shaderJobs.TryDequeue(out ShaderJob? shaderJob))
-            {
-                if (_stopShaderJobs || _deviceLost)
-                {
-                    shaderJob.Cancel(this);
-                }
-                else
-                {
-                    shaderJob.TryRun(this);
+                    return;
                 }
 
+                Interlocked.Increment(ref _workersParked);
+                _stallBoost.Wait(50);
+                Interlocked.Decrement(ref _workersParked);
                 continue;
             }
-            if (TryRunPipelineJob())
-            {
-                continue;
-            }
-            // the boot rebuild comes last: whatever the running game asks for goes first
-            if (_rebuildJobs.TryDequeue(out object? rj))
-            {
-                RunRebuildItem(rj);
-                continue;
-            }
-            // then the recorded pipelines of the prewarm (VulkanRenderer.Cache.cs, Prewarm)
-            if (RunPrewarmItem())
-            {
-                continue;
-            }
-            // last, the optimised pipelines that replace linked ones (VulkanRenderer.PipelineLibrary.cs)
+
+            bool ran;
             try
             {
-                if (RunOptimizeJob())
-                {
-                    continue;
-                }
+                ran = RunNextJob();
             }
-            catch (Exception e)
+            finally
             {
-                Log.WarnOnce("pipeline-optimize", $"[shader worker] optimised pipeline failed: {e.Message}");
+                Interlocked.Decrement(ref _workersRunning);
+            }
+
+            if (ran)
+            {
+                if (spare)
+                {
+                    Interlocked.Increment(ref _statJobsInStall);
+                }
+
                 continue;
             }
 
@@ -730,6 +764,78 @@ public sealed unsafe partial class VulkanRenderer
             }
 
             _workAvailable.Wait(50);
+        }
+    }
+
+    /// <summary>Worker: runs the next job, in priority order (false when there is none).</summary>
+    private bool RunNextJob()
+    {
+        // the scene-start load of a predicted multisampled scene first: one small pipeline per surface format, needed
+        // before the scene's first draw (VulkanRenderer.MsaaNative.cs, PrebuildMsaaLoad)
+        if (RunMsaaLoadJob())
+        {
+            return true;
+        }
+
+        // shader jobs first: pipeline jobs need their modules; but a pipeline whose shaders are no longer pending goes
+        // ahead of the shader jobs queued after it, so the work finishes in the order it was submitted, as the GPU
+        // thread needs it (a cold replay of a dump: a first frame with 127 new shaders and 40 pipelines left every
+        // pipeline queued behind all the shaders, and the GPU thread built the 8-13 it reached first itself)
+        if (PipelineJobReadyFirst())
+        {
+            bool shadersQueued = !_shaderJobs.IsEmpty;
+            if (TryRunPipelineJob())
+            {
+                if (shadersQueued)
+                {
+                    Interlocked.Increment(ref _statPipelinesAheadOfShaders);
+                }
+
+                return true;
+            }
+        }
+
+        if (_shaderJobs.TryDequeue(out ShaderJob? shaderJob))
+        {
+            if (_stopShaderJobs || _deviceLost)
+            {
+                shaderJob.Cancel(this);
+            }
+            else
+            {
+                shaderJob.TryRun(this);
+            }
+
+            return true;
+        }
+
+        if (TryRunPipelineJob())
+        {
+            return true;
+        }
+
+        // the boot rebuild comes last: whatever the running game asks for goes first
+        if (_rebuildJobs.TryDequeue(out object? rebuildItem))
+        {
+            RunRebuildItem(rebuildItem);
+            return true;
+        }
+
+        // then the recorded pipelines of the prewarm (VulkanRenderer.Cache.cs, Prewarm)
+        if (RunPrewarmItem())
+        {
+            return true;
+        }
+
+        // last, the optimised pipelines that replace linked ones (VulkanRenderer.PipelineLibrary.cs)
+        try
+        {
+            return RunOptimizeJob();
+        }
+        catch (Exception e)
+        {
+            Log.WarnOnce("pipeline-optimize", $"[shader worker] optimised pipeline failed: {e.Message}");
+            return true;
         }
     }
 
@@ -797,6 +903,7 @@ public sealed unsafe partial class VulkanRenderer
 
         if (_shaderWorkers != null)
         {
+            _stallBoost.Set(); // the workers held back by the budget see the stop too
             _workAvailable.Release(_shaderWorkers.Length);
             foreach (Thread t in _shaderWorkers)
             {

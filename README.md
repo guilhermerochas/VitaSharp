@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=95c4c3eca324cdb72dddbba4dfdf3f5aef10b1c506a48ca3ca4fd421c91d4c57 -->
+<!-- pair: README.pt-BR.md sha256=61eb53be9d83d5576da9d8d5a0c711db967173d8a889788555665006fac17442 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -476,6 +476,14 @@ Shell scripts follow the Google Shell Style Guide and must pass ShellCheck (CI j
   or integer outputs) are also built for each of them, with their fetch-pass and integer-view pipelines. The session's `[shadercache] session` line ends
   with what was queued and used ("at program load: ..."); `replay-gpu --compile-on-program-load=on` announces the
   dump's programs before its first command. Nothing extra to install, every OS.
+- Shader workers (`--shader-workers=N` fixes the count, `VITASHARP_SHADER_WORKERS=N` overrides it): by default the
+  count follows the CPU budget, at most 90% of the logical processors the process may use. While the GPU thread works,
+  two of them stay with the guest CPU thread and the GPU thread (8 processors: 5 workers). While it waits for a shader
+  or pipeline, or the game waits for the shader cache load, the whole budget compiles (8 processors: 7): the workers
+  above the steady share are spare ones at below-normal priority, so they only take idle cores
+  (`VITASHARP_SHADER_SPARE_WORKERS=N` sets how many, A/B). On Android fewer run, on the LITTLE cores (2 big + 6 LITTLE:
+  2, 4 while waiting). The renderer's start line (`[gpu] shaders: ...`) gives the numbers. Nothing extra to install,
+  every OS.
 - "Precompilar código ARM" / "Precompile ARM code" (launcher: Configurações, after the shader cache option, and each
   game's page; `--precompile-code=on|off`, default on): before a game starts, the native JIT translates its ARM code
   on every free core, behind its own progress bar in the launcher's status bar ("Cancelar" = the line

@@ -944,14 +944,26 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   254 (3,1%), PCSA00017 0%. Com a compilação ao carregar o programa os replays frios já têm 0 pipelines na thread da
   GPU e 0 quadros >= 4 ms, então não há quadro lento para tirar; só sobraria pouco trabalho a menos no carregamento.
   Fica fora (tabela e motivo em `docs/notes/pipeline-skip.md`).
-  Mais workers (frente 3; perf/stut1, 25/11/2026, feito): além dos workers de sempre (metade das CPUs, 1-6, prioridade
-  normal), workers de folga em prioridade abaixo do normal até 90% das CPUs menos 1 (a thread da GPU), no máximo 8 ao
-  todo: 8 CPUs 4 + 2, 6 CPUs 3 + 1, 12 ou mais 6 + 2, 4 ou menos sem mudança; Android sem mudança (a `ThreadPlacement`
-  já move os workers entre núcleos lentos e rápidos). Referências: yuzu e forks `hardware_concurrency - 1` no desktop
-  (forks Android: 3 núcleos livres ou 2-8 escolhido), Ryujinx 8 threads de tradução e `min(ProcessorCount, 8)`
-  compilações, Dolphin `clamp(núcleos - 3, 1, 4)`; o pedido do draw atual já vai primeiro (a thread da GPU roda ela
-  mesma o job que ainda não começou). `VulkanRenderer.AutoShaderWorkers`, `VITASHARP_SHADER_SPARE_WORKERS` (A/B),
-  teste `ShaderWorkerCountTests`. Replay frio do PCSE00053 (140 MB), fixado em 4 CPUs (2 workers lá; +1 equivale ao
+  Workers pelo orçamento de CPU (frente 3; perf/uber5-uber6, 21/11/2026, feito): `ShaderWorkerBudget` deixa o
+  processo em no máximo 90% dos processadores lógicos, com 2 núcleos para a CPU emulada e a thread da GPU enquanto ela
+  trabalha (8 CPUs: 5 workers; fixado em 4: 2) e o orçamento inteiro quando ela espera um shader/pipeline, da 1ª
+  espera até o present daquele quadro, ou quando o jogo espera o carregamento do cache (8: 7; 4: 3). Android: 2 e 4
+  nos núcleos LITTLE (2 big + 6 LITTLE; antes 4 fixos). Referências: yuzu/Eden (todos os processadores menos 1,
+  prioridade baixa), Dolphin (núcleos - 3, 1-4), RPCS3 (tabela, 8 threads: 2), os três com um VkPipelineCache
+  compartilhado. Replay frio, opção desligada, base → orçamento (4 CPUs): 1º quadro PCSE00053 2.475-2.543 →
+  1.761-2.183 ms, 2º dump 2.431-2.828 → 1.770-2.057 ms; ligada: 0 → 0 em todos (números e escala em
+  `docs/notes/pipeline-skip.md`). Testes `RendererPathsTests.ShaderWorkersRunTheWholePoolFromAWaitUntilTheFrameIsPresented`
+  e `ShaderWorkerBudgetTests`. Falta: medir em 8 CPUs livres e no Android (Killzone).
+  Mais workers de folga (frente 3; perf/stut1, 25/11/2026, feito; juntado ao orçamento em fix/recover1, 25/11/2026):
+  a regra própria do stut1 (metade das CPUs em prioridade normal + folga abaixo do normal até 90% - 1, no máximo 8)
+  virou parte do `ShaderWorkerBudget`, para não haver duas regras de tamanho: os `Steady` workers rodam em prioridade
+  normal e os acima deles (`Spare`) são a folga, em prioridade abaixo do normal, e só rodam enquanto uma thread espera
+  os workers (8 CPUs: 5 + 2; 4: 2 + 1; 16: 8 + 4); `VITASHARP_SHADER_SPARE_WORKERS=N` (A/B) troca o número de folga
+  sobre o mesmo `Steady`. Referências: yuzu e forks `hardware_concurrency - 1` no desktop (forks Android: 3 núcleos
+  livres ou 2-8 escolhido), Ryujinx 8 threads de tradução e `min(ProcessorCount, 8)` compilações, Dolphin
+  `clamp(núcleos - 3, 1, 4)`; o pedido do draw atual já vai primeiro (a thread da GPU roda ela mesma o job que ainda
+  não começou). Teste `ShaderWorkerCountTests`. Medida do stut1 (antes da junção, com a folga rodando também fora
+  das esperas): replay frio do PCSE00053 (140 MB), fixado em 4 CPUs (2 workers lá; +1 equivale ao
   4 → 6 de 8 CPUs), compilação ao carregar desligada, 2x alternado: esperas de pipeline 2.432/3.243 → 1.824/1.419 ms,
   shaders esperados 21/12 → 4/5, pior quadro 2.326/3.550 → 1.788/2.120 ms (com 3 workers normais: o mesmo); com a
   opção ligada (padrão) 0 quadros lentos nos dois e espera do carregamento 8,1 → 7,0-7,4 s (PCSE00333 0,93-1,03 →
