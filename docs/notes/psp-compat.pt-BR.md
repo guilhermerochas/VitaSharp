@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.md sha256=6a198fe0e46eec36990a64244424cbc63f41521da54d919bb84fbe04701b197d -->
+<!-- pair: psp-compat.md sha256=345d5b9b930c119b6f6df558fac050813fa6e30ffa756b4123ebdf6251fcaf1e -->
 # Núcleo de compatibilidade PSP (SceCompat, ScePspemu, Allegrex)
 
 *English: [psp-compat.md](psp-compat.md).*
@@ -303,22 +303,24 @@ tomam um caminho curto enquanto os prefixos S, T e D estão em repouso. Todo o r
 **Tier IL (feito).** O `AllegrexCore.Il.cs`, no mesmo padrão do `Backends/IlJitCompiler.cs` da CPU ARM:
 
 1. Calor: o bloco conta as instruções a cada entrada; passado o `AllegrexCore.IlHotInstructions` (200 000 por
-   padrão) ele é compilado uma vez, na thread do núcleo (cerca de um milissegundo).
-2. Código: um `DynamicMethod` por bloco. Os registradores do guest que ele usa ficam em locais, carregados na entrada e
-   gravados de volta em toda saída, então o RyuJIT os mantém em registradores do host. Compila as instruções simples
-   da ALU, lw/sw, add.s/sub.s/mul.s e vadd/vsub/vmul/vdot (chamadas aos tratadores com os campos decodificados como
-   constantes), e um desvio ou salto final cujo delay slot é um desses. Qualquer outro bloco fica no cache de blocos.
-3. Saídas: o código devolve o próximo PC; a execução segue para o bloco em que continuou da última vez (a ligação do
-   cache de blocos), compilado ou não.
-4. Exatidão: o orçamento, o limite do Count/Compare e a checagem de interrupções ficam nas fronteiras de bloco; um
-   lw/sw desalinhado sai antes da instrução, e o interpretador gera o erro de endereço no PC exato; uma escrita que
-   encerra a execução, ou uma exceção da FPU/VFPU (com o PC e o flag de delay slot gravados antes da chamada), sai
-   depois dela.
-5. Invalidação: o código mora no bloco, então descartar os blocos de uma página descarta o código junto.
-6. O Native AOT (Android) não tem Reflection.Emit: lá o `IlTierSupported` é falso e o cache de blocos é o caminho
-   rápido; um tier nativo ARM64 (o padrão do `NativeArm64Compiler` da CPU ARM) é o passo seguinte.
-7. Testes: o `AllegrexIlTierTests` roda de novo todos os outros testes do Allegrex com o tier forçado (todo bloco
-   compilável compilado na primeira execução).
+   padrão) a região dele é compilada uma vez, na thread do núcleo.
+2. Regiões: o bloco quente e até 15 blocos decodificados que os desvios dele alcançam (destinos tomado e não tomado,
+   saltos) vão para um `DynamicMethod` só. Um desvio, ou um jr, para um bloco da região é um salto dentro dele, então
+   um laço fica no código compilado; cada bloco só entra quando o orçamento de instruções cabe nele inteiro.
+3. Código: os registradores gerais, da FPU e da VFPU e o FCR31 que ele usa ficam em locais (os da FPU como float, com
+   conversão de bits nas bordas), carregados na entrada e gravados de volta em toda saída. Compila as instruções
+   simples da ALU, lw/sw, add.s/sub.s/mul.s inline (a operação float do host, com a causa inexact e a faixa conferidas
+   ao lado; a região só entra em arredondamento ao mais próximo sem exceção da FPU habilitada), vadd/vsub/vmul nas
+   lanes em locais e vdot por um `Dot4` escalar (a região só entra com os prefixos em repouso), e o desvio final.
+4. Exatidão: um lw/sw desalinhado sai antes da instrução, e o interpretador gera o erro de endereço no PC exato; uma
+   escrita que encerra a execução, ou uma exceção da FPU (do tratador completo para onde cai um caso fora do caminho
+   rápido), sai depois dela.
+5. Invalidação: cada bloco membro lista a cabeça da região; descartar qualquer membro descarta a região.
+6. O Native AOT (Android) não tem Reflection.Emit: lá o `IlTierSupported` é falso, os blocos nunca pedem compilação e
+   o cache de blocos é o caminho rápido (medido num PC com build Native AOT: cerca de 1,6 ns por instrução inteira,
+   10 ns por add.s/mul.s, 19 ns por vadd.q/vmul.q).
+7. Testes: o `AllegrexIlTierTests` roda de novo todos os outros testes do Allegrex com o tier forçado e blocos de uma
+   instrução, então até um teste que roda uma instrução só a roda compilada.
 
 ### O que exige chaves e o que não exige
 
