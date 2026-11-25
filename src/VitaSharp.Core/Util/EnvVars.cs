@@ -412,6 +412,9 @@ public static class EnvVars
     /// <summary>1: log every raw sector access of the memory card and the eMMC (op, sectors, caller, result); without
     /// it only the first access of each caller and operation is logged.</summary>
     public const string TraceSectors = "VITASHARP_TRACE_SECTORS";
+    /// <summary>A host folder where SceCoredump's process dumps are written (psp2core-*.psp2dmp, ELF cores), as a
+    /// unit with the QA flag keeps them. Unset (the default) = none kept: the requests are refused as on a retail unit.</summary>
+    public const string CoredumpDir = "VITASHARP_COREDUMP_DIR";
 
     /// <summary>Android: =off turns off both the pinning of the hot threads (guest main thread, GPU worker) to the
     /// fast cores and the Performance Hint (ADPF) session, to compare with them on (docs/android/README.md).</summary>

@@ -193,27 +193,6 @@ public sealed partial class IoFileMgr
         }
     }
 
-    /// <summary>ksceIoCreateErrorEvent(callback, arg, ?): an id for the handler of I/O errors (NULL 0x80010016).</summary>
-    [Hle(Nid = 0x3C0343DB, Library = "SceIofilemgrForDriver", ReturnsValue = true)]
-    int ksceIoCreateErrorEvent(uint callback, uint argument, uint flags)
-    {
-        return AddIoEvent(callback);
-    }
-
-    /// <summary>ksceIoDeleteErrorEvent(id): unknown 0x80028002.</summary>
-    [Hle(Nid = 0xC6158F8D, Library = "SceIofilemgrForDriver")]
-    int ksceIoDeleteErrorEvent(int id)
-    {
-        return RemoveIoEvent(id);
-    }
-
-    /// <summary>ksceIoClearErrorEvent(id): the handler's pending errors cleared: none; 0.</summary>
-    [Hle(Nid = 0x40B933C7, Library = "SceIofilemgrForDriver")]
-    int ksceIoClearErrorEvent(int id)
-    {
-        return 0;
-    }
-
     /// <summary>ksceIoCreateMountEvent(callback, mask): an id for the handler of mounts and unmounts (NULL 0x80010016).</summary>
     [Hle(Nid = 0x2DFA192F, Library = "SceIofilemgrForDriver", ReturnsValue = true)]
     int ksceIoCreateMountEvent(uint callback, uint mask)
@@ -353,13 +332,6 @@ public sealed partial class IoFileMgr
         return 0;
     }
 
-    /// <summary>NID_5B7E5AB8(): the SD storage's mount lookup: no guest mount (0x80010016).</summary>
-    [Hle(Nid = 0x5B7E5AB8, Library = "SceIofilemgrForDriver", Default = true)]
-    int ksceIofilemgr_5B7E5AB8()
-    {
-        return VFS_ERR_INVAL;
-    }
-
     /// <summary>NID_A39A9CA7(path, ?, 0, 0): vfsRmdev of <paramref name="path"/> with flags 1 (iofilemgr 3.74
     /// 0x81019440 builds { path, 1 }); a third or fourth argument that is not 0 is 0x80010016.</summary>
     [Hle(Nid = 0xA39A9CA7, Library = "SceIofilemgrForDriver")]
@@ -381,12 +353,5 @@ public sealed partial class IoFileMgr
         {
             Emu.Memory.Free(param);
         }
-    }
-
-    /// <summary>NID_DD46CD63(mount, ?, ?): the exFAT driver's mount lookup: no guest mount (0x8001000C).</summary>
-    [Hle(Nid = 0xDD46CD63, Library = "SceIofilemgrForDriver", Default = true)]
-    int ksceIofilemgr_DD46CD63(uint mount, uint first, uint second)
-    {
-        return unchecked((int)0x8001000C);
     }
 }
