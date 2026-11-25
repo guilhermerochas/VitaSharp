@@ -274,10 +274,10 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
     [Fact]
     public void CaListBlocks()
     {
-        var pem1 = "-----BEGIN CERTIFICATE-----\r\nAAAA\r\n-----END CERTIFICATE-----\r\n";
-        var pem2 = "-----BEGIN CERTIFICATE-----\r\nBBBBBB\r\n-----END CERTIFICATE-----";
-        var file = Encoding.ASCII.GetBytes("#Root A  \r\n" + pem1 + "\r\n##Group\r\n#Root B\r\n" + pem2);
-        var certs = Ssl.ParseCaList(file);
+        string pem1 = "-----BEGIN CERTIFICATE-----\r\nAAAA\r\n-----END CERTIFICATE-----\r\n";
+        string pem2 = "-----BEGIN CERTIFICATE-----\r\nBBBBBB\r\n-----END CERTIFICATE-----";
+        byte[] file = Encoding.ASCII.GetBytes("#Root A  \r\n" + pem1 + "\r\n##Group\r\n#Root B\r\n" + pem2);
+        byte[][] certs = Ssl.ParseCaList(file);
         Assert.Equal(2, certs.Length);
         Assert.Equal(pem1, Encoding.ASCII.GetString(certs[0]));
         Assert.Equal(pem2, Encoding.ASCII.GetString(certs[1]));

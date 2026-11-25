@@ -22,7 +22,7 @@ public sealed class ShaderWorkerCountTests
     [InlineData(64, 4)]
     public void TheSpareWorkersAreTheBudgetAboveTheSteadyShare(int processors, int spare)
     {
-        ShaderWorkerBudget budget = ShaderWorkerBudget.For(processors, mobile: false, littleCores: 0);
+        var budget = ShaderWorkerBudget.For(processors, mobile: false, littleCores: 0);
 
         Assert.Equal(spare, budget.Spare);
         Assert.Equal(budget.Stall, budget.Steady + budget.Spare);

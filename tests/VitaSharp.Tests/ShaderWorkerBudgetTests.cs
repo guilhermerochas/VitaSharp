@@ -21,7 +21,7 @@ public sealed class ShaderWorkerBudgetTests
     [InlineData(64, 8, 12)]
     public void DesktopWorkersFollowTheCpuBudget(int processors, int steady, int stall)
     {
-        ShaderWorkerBudget budget = ShaderWorkerBudget.For(processors, mobile: false, littleCores: 0);
+        var budget = ShaderWorkerBudget.For(processors, mobile: false, littleCores: 0);
 
         Assert.Equal(new ShaderWorkerBudget(steady, stall), budget);
         // the whole pool never takes more than 90% of the processors (one at least)
@@ -36,7 +36,7 @@ public sealed class ShaderWorkerBudgetTests
     [InlineData(10, 8, 2, 4)]
     public void PhoneWorkersRunOnTheLittleCoresAndFewerThanOnADesktop(int processors, int littleCores, int steady, int stall)
     {
-        ShaderWorkerBudget budget = ShaderWorkerBudget.For(processors, mobile: true, littleCores);
+        var budget = ShaderWorkerBudget.For(processors, mobile: true, littleCores);
 
         Assert.Equal(new ShaderWorkerBudget(steady, stall), budget);
         Assert.True(budget.Stall <= ShaderWorkerBudget.For(processors, mobile: false, littleCores: 0).Stall);

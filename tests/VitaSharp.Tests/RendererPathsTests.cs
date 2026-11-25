@@ -760,7 +760,7 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
                 h.Emu.Gpu.Backend = new HeldPresentBackend(r, gpuHeld, presentHeld, atPresent);
                 r.BeginTitle("PCSA00085");
                 var w = new RendererTextureTests.Workload(h);
-                List<uint> plain = Enumerable.Range(0, w.Textures.Count).Where(i => !w.CubeTextures.Contains(w.Textures[i]))
+                var plain = Enumerable.Range(0, w.Textures.Count).Where(i => !w.CubeTextures.Contains(w.Textures[i]))
                     .GroupBy(i => w.TextureFormats[i]).Select(g => w.Textures[g.First()]).ToList();
                 Assert.True(plain.Count >= 7, $"{plain.Count} texture formats");
 
