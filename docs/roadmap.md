@@ -2474,10 +2474,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   expõe um).
 - [ ] [P3][M] Teclado e mouse Bluetooth, o que falta (o feito está em "Corrigido, falta o usuário testar"): conferir
   no Sistema do Vita que Configurações > Bluetooth lista os dois dispositivos (os registros do `SceBt` seguem o 3.74,
-  mas a tela não foi aberta); as teclas de mídia no macOS (lá elas chegam como eventos de sistema `NSSystemDefined`,
-  subtipo 8, que a janela do GLFW não recebe; plano: um monitor local de eventos `NSEvent` pelo runtime do Objective-C,
-  `addLocalMonitorForEventsMatchingMask:` com o código da tecla em `data1 >> 16`, NX_KEYTYPE_PLAY/NEXT/PREVIOUS/
-  SOUND_UP/SOUND_DOWN/MUTE para os usos de consumo; no Wayland conferir se o scancode do GLFW é o do evdev + 8).
+  mas a tela não foi aberta); no Wayland, conferir se o scancode que o GLFW dá a uma tecla de mídia é o do evdev + 8
+  como no X11; o monitor de teclas de mídia do macOS ainda não rodou num Mac (só o mapeamento é testado).
 - [ ] [P3][G] Processador de mídia Venezia (núcleos MeP + IVC2) para código MeP que não é do firmware (plugin
   VVNZRunner e o homebrew sobre ele; `docs/notes/hardware-coverage.md`): o `vnzimg.skprx` sai do `self2elf` em claro,
   sem chave. Primeira entrega: interpretador do núcleo MeP-c5 numa thread de guest com programa sintético no teste
@@ -3546,9 +3544,11 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   cada relatório); no Android as teclas de mídia do teclado (tocar/pausar, faixas, volume, mudo...) vão para ele e
   continuam indo para o celular. No PC (Windows e Linux X11) a tecla de mídia que o GLFW informa sem nome (Unknown)
   vai pelo scancode: conjunto 1 com o bit estendido no Windows (0x122 tocar/pausar...), o keycode do X11 (evdev + 8)
-  no Linux (`HidUsages.ConsumerFromScancode`); no macOS ainda não (ver o item aberto). Antes nenhum controle de
-  consumo era pareado. Testes: `HidDeviceTests.APairedKeyboardsMediaKeysAreItsConsumerControl` (falha sem a mudança)
-  e `PcMediaKeysHaveTheirConsumerUsages`. Testar: com "Teclado e mouse Bluetooth" ligado (PC: Configurações >
+  no Linux (`HidUsages.ConsumerFromScancode`); no macOS, onde as teclas de mídia são eventos `NSSystemDefined` que a
+  janela do GLFW não recebe, um monitor local de `NSEvent` instalado pelo runtime do Objective-C (subtipo 8, a tecla
+  em `data1 >> 16`, 0x0A/0x0B apertada/solta; `MacMediaKeys`). Antes nenhum controle de consumo era pareado.
+  Testes: `HidDeviceTests.APairedKeyboardsMediaKeysAreItsConsumerControl` (falha sem a mudança),
+  `PcMediaKeysHaveTheirConsumerUsages` e `MacMediaKeyEventsHaveTheirConsumerUsages`. Testar: com "Teclado e mouse Bluetooth" ligado (PC: Configurações >
   Emulação ou `--bt-keyboard-mouse=on`; Android: Ajustes) e um teclado com teclas de mídia, um app ou jogo que leia o
   controle de consumo (`sceHidConsumerControlRead`) reage a tocar/pausar e às faixas; as teclas de volume continuam
   mudando o volume do celular/PC.

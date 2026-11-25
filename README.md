@@ -202,8 +202,7 @@ emulated yet.
 **Bluetooth keyboard and mouse.** **Settings > Emulation > Bluetooth keyboard and mouse** (or `--bt-keyboard-mouse=on`)
 pairs the PC keyboard and mouse with the Vita, for games and apps that read a keyboard or mouse (SceHid: the browser,
 chat). Off by default; the keys still work as the controller while it is on. The keyboard's media keys (play/pause,
-tracks, volume) also reach the Vita as its consumer controls on Windows, Linux (X11) and Android; not yet on macOS,
-where media keys are system events the window does not get.
+tracks, volume) also reach the Vita as its consumer controls, on Windows, Linux (X11), macOS and Android.
 
 Data lives in `%APPDATA%\VitaSharp` on Windows (`~/.local/share/VitaSharp` on Linux,
 `~/Library/Application Support/VitaSharp` on macOS; `--data=<folder>` or `VITASHARP_DATA` change the folder): games in

@@ -172,6 +172,40 @@ public static class HidUsages
         _ => 0,
     };
 
+    /// <summary>
+    /// macOS: a media key arrives as an NSSystemDefined event of subtype 8 (NX_SUBTYPE_AUX_CONTROL_BUTTONS) whose
+    /// data1 holds the key (bits 16..31, NX_KEYTYPE_*) and its state (bits 8..15: 0x0A down, 0x0B up). The usage, and
+    /// whether the key went down; 0 for another event or key.
+    /// </summary>
+    public static ushort ConsumerFromMacSystemEvent(short subtype, long data1, out bool down)
+    {
+        down = false;
+        if (subtype != 8)
+        {
+            return 0;
+        }
+
+        int state = (int)((data1 >> 8) & 0xFF);
+        if (state != 0x0A && state != 0x0B)
+        {
+            return 0;
+        }
+
+        down = state == 0x0A;
+        return ((data1 >> 16) & 0xFFFF) switch
+        {
+            0 => 0xE9,                                         // NX_KEYTYPE_SOUND_UP: Volume Increment
+            1 => 0xEA,                                         // NX_KEYTYPE_SOUND_DOWN: Volume Decrement
+            7 => 0xE2,                                         // NX_KEYTYPE_MUTE: Mute
+            16 => 0xCD,                                        // NX_KEYTYPE_PLAY: Play/Pause
+            17 => 0xB5,                                        // NX_KEYTYPE_NEXT: Scan Next Track
+            18 => 0xB6,                                        // NX_KEYTYPE_PREVIOUS: Scan Previous Track
+            19 => 0xB3,                                        // NX_KEYTYPE_FAST: Fast Forward
+            20 => 0xB4,                                        // NX_KEYTYPE_REWIND: Rewind
+            _ => 0,
+        };
+    }
+
     /// <summary>Linux (X11): the X keycode (evdev KEY_* + 8) of a media key.</summary>
     public static ushort ConsumerFromX11Keycode(int keycode) => keycode switch
     {

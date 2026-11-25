@@ -365,6 +365,11 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMu
             k.KeyUp += (_, key, scancode) => OnKey(key, scancode, false);
             k.KeyChar += (_, c) => TextCapture?.OnChar(c);
         }
+
+        // macOS: the media keys are system events the window never gets as keys; a local event monitor takes them
+        MacMediaKeys.Target = (usage, down) => HidKeyboard?.ConsumerControl.Key(usage, down, VitaSharp.Core.Hle.Modules.Hid.NowUs);
+        MacMediaKeys.Install();
+
         foreach (var m in _input.Mice)
         {
             _mouseDevice ??= m;

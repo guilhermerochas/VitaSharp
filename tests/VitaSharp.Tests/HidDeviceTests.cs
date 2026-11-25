@@ -298,6 +298,31 @@ public sealed class HidDeviceTests(GuestMemoryFixture fixture) : IDisposable
         }
     }
 
+    /// <summary>macOS media keys: NSSystemDefined events of subtype 8, the key in data1 bits 16..31 (NX_KEYTYPE_*) and
+    /// its state in bits 8..15 (0x0A down, 0x0B up); another subtype, state or key is none.</summary>
+    [Fact]
+    public void MacMediaKeyEventsHaveTheirConsumerUsages()
+    {
+        static long Data1(int key, int state) => ((long)key << 16) | ((long)state << 8);
+
+        Assert.Equal(PlayPause, HidUsages.ConsumerFromMacSystemEvent(8, Data1(16, 0x0A), out bool down));
+        Assert.True(down);
+        Assert.Equal(PlayPause, HidUsages.ConsumerFromMacSystemEvent(8, Data1(16, 0x0B), out down));
+        Assert.False(down);
+        Assert.Equal(VolumeUp, HidUsages.ConsumerFromMacSystemEvent(8, Data1(0, 0x0A), out _));
+        Assert.Equal(VolumeDown, HidUsages.ConsumerFromMacSystemEvent(8, Data1(1, 0x0A), out _));
+        Assert.Equal(Mute, HidUsages.ConsumerFromMacSystemEvent(8, Data1(7, 0x0A), out _));
+        Assert.Equal(NextTrack, HidUsages.ConsumerFromMacSystemEvent(8, Data1(17, 0x0A), out _));
+        Assert.Equal(0, HidUsages.ConsumerFromMacSystemEvent(7, Data1(16, 0x0A), out _));   // another subtype
+        Assert.Equal(0, HidUsages.ConsumerFromMacSystemEvent(8, Data1(16, 0x01), out _));   // not a key state
+        Assert.Equal(0, HidUsages.ConsumerFromMacSystemEvent(8, Data1(2, 0x0A), out _));    // brightness: no consumer key here
+        for (int key = 0; key < 32; key++)
+        {
+            ushort usage = HidUsages.ConsumerFromMacSystemEvent(8, Data1(key, 0x0A), out _);
+            Assert.True(usage == 0 || HidConsumerControl.IsKept(usage), $"NX key {key} maps to a usage SceHid drops");
+        }
+    }
+
     /// <summary>The module's checks: a handle below 1, a NULL report list or a negative count, a handle of no device;
     /// at most 16 reports per call; the intercept switch.</summary>
     [Fact]
