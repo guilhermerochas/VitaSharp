@@ -1,3 +1,4 @@
+using VitaSharp.Core.Capture;
 using VitaSharp.Core.Hle.Audio.Atrac9;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.SaveState;
@@ -292,6 +293,7 @@ public sealed partial class AtracStream
                 {
                     if (Filled < SfBytes) return ERR_DATA_SHORTAGE_IN_BUFFER;
                     ReadRing(_staging);
+                    RecordInput();
                     _consume += SfBytes;
                     _decoder.Decode(_staging, _pcm);
                     _nextStreamBlock++;
@@ -312,8 +314,25 @@ public sealed partial class AtracStream
     void DecodeAt(int block)
     {
         GuestMemory.Span(Info.DataOffset + Buffer + (uint)block * (uint)SfBytes, SfBytes).CopyTo(_staging);
+        RecordInput();
         _decoder.Decode(_staging, _pcm);
         _lastDecoded = block;
+    }
+
+    /// <summary>Gravar tudo: the superframe just read into the staging buffer, which the decoder reads. A recording
+    /// keeps it (hash, bytes within the files limit); a re-run puts the recording's back there first or counts the
+    /// difference (libatrac decodes on its own, not through sceAudiodec). The stream is named by its buffer's guest
+    /// address, which a save state keeps. Off (one read) without a capture.</summary>
+    void RecordInput()
+    {
+        IAudioInputHook? inputs = CaptureHooks.AudioInputs;
+        if (inputs == null)
+        {
+            return;
+        }
+
+        inputs.Decoding(AudioInputSource.Atrac, Buffer, AudioInputCodec.Atrac9, _staging);
+        inputs.Decoded(AudioInputSource.Atrac, Buffer, AudioInputCodec.Atrac9, _staging);
     }
 
     void ReadRing(Span<byte> dst)

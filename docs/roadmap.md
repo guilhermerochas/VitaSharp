@@ -8,14 +8,14 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
 
 ## Diagnóstico
 
-- [ ] [P2][M] **Gravar tudo: o áudio que entra nos decodificadores e nas vozes NGS** (parte do antigo "Gravar tudo
-  sem o jogo, o que falta"; o feito está em "Corrigido, falta o usuário testar"): gravar os fluxos que entram nos
-  decodificadores (sceAudiodec, ATRAC/AT9, MP3/AAC) e nos buffers das vozes NGS durante a gravação, para o rerun sem o
-  jogo reproduzir buracos e erros de decodificação (hoje só a saída em WAV).
-
-- [ ] [P2][G] **Gravar tudo: estados de vários processos sobem sem os programas** (parte do antigo "Gravar tudo sem o
-  jogo, o que falta"): o estado do shell com aplicativos abertos ainda não sobe sem os programas
-  (`SaveStates.BootFromState` recusa estados de mais de um processo); falta guardar e subir a imagem de cada processo.
+- [ ] [P2][G] **Gravar tudo: estados de vários processos sobem sem os programas, o que falta** (a 1ª entrega, cada
+  processo com a sua seção `process<N>/boot`, está em "Corrigido, falta o usuário testar"):
+  - o load confere os pids: o primeiro processo do estado precisa ter o pid que o primeiro processo do boot recebe
+    (o mesmo numa sessão que começou pelo shell ou pelo jogo); falta o caso de um primeiro processo com outro pid;
+  - os lançamentos pendentes do appmgr (`PendingLaunch`, pedidos feitos e ainda não atendidos pelo shell) e os
+    processos que ainda estavam subindo no momento do estado não são guardados nem refeitos;
+  - conferir num rerun de uma captura real do shell LLE (shell.self + um jogo aberto pela LiveArea) que o shell volta
+    a receber os eventos do aplicativo (o `IsShell` agora vem da imagem) e que a tela certa fica na frente.
 
 - [ ] [P3][G] **O log e a captura F8 dizem a causa de uma trava de cara:**
   - **Histórico de cada objeto de sincronização** (event flag, semáforo, mutex, cond, msgpipe): um anel barato com as
@@ -358,15 +358,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   (falha sem a correção). O renderizador não lê esses campos (o decodificador YUV usa as matrizes fixas, CSC1 = BT.601
   full), então a imagem não muda; usar o perfil do contexto no decodificador é parte do item de GXM acima.
   Feito (23/11/2026, fix/quick3): o decodificador usa o perfil da cena (item em "Corrigido, falta o usuário testar").
-- [ ] [P3][M] **Sistema de arquivos, carregador e módulos:** montagens, patches por origem, NIDs, imports/exports, permissões
+- [x] [P3][M] **Sistema de arquivos, carregador e módulos:** montagens, patches por origem, NIDs, imports/exports, permissões
   de módulos de sistema.
   Em andamento (23/11/2026, quick3): patches por origem já cobertos por `UpdateModelTests` (pasta da atualização por
   origem, app0 com a atualização por cima); achado e corrigido na revalidação: a listagem de pasta do app0 com
   atualização (`App0UpdateListingTests`, em "Corrigido, falta o usuário testar"). Montagens somente leitura (24/11/2026,
   adr4): achado e corrigido, em "Corrigido, falta o usuário testar" (`ReadOnlyMountTests`). Imports sem quem
   exporte (24/11/2026, adr4): agora nomeados no log e no F8/report (em "Corrigido, falta o usuário testar").
-  Permissões (25/11/2026, adr4): biblioteca de syscall só do kernel, em "Corrigido, falta o usuário testar". Falta:
-  NIDs (conferir as outras checagens da tabela de exports e imports do modulemgr 3.74).
+  Permissões (25/11/2026, adr4): biblioteca de syscall só do kernel, em "Corrigido, falta o usuário testar". NIDs e
+  tabelas (25/11/2026, adr4): tamanhos das entradas de exports/imports como o modulemgr 3.74, em "Corrigido, falta o
+  usuário testar". Fechado (25/11/2026, adr4); o que ficou de fora é a opção futura do stub do 3.74 logo abaixo.
 - [ ] [P3][M] (opção futura, decisão do lead: não agora) Import sem quem exporte com o stub do 3.74: no modulemgr 3.74
   (decomp, só estudo) um NID que a biblioteca não exporta ("Library function entry not found ... (ignored)") ou de uma
   biblioteca ainda não carregada fica com o stub "não ligado" `sub r12, pc, #8; mov pc, #0` (0xE24FC008, 0xE3A0F000):
@@ -3443,6 +3444,49 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   lê esses dados na CPU (Croixleur Sigma e Jak and Daxter só desenham com eles). Testar: Croixleur Sigma
   (PCSG00537) na seleção de personagem e nos diálogos, e Jak and Daxter Collection (PCSA00080) nas sombras do chão:
   tudo igual a antes, sem queda de fps (a linha "program stores" no resumo da sessão mostra quanto é devolvido).
+- [ ] (25/11/2026, falta testar) [P2][G] Gravar tudo: estados de vários processos sobem sem os programas, 1ª entrega
+  (fix/cap4). `SaveStates.BootFromState` recusava todo estado de mais de um processo (o shell com aplicativos
+  abertos), então um rerun de captura feita sob o shell só rodava com os mesmos programas instalados. Agora cada
+  processo além do primeiro grava a sua seção `process<N>/boot` (os seus módulos como carregados: caminho, segmentos,
+  hash da imagem; nenhum binário além da memória que o estado já tem) e o boot cria esses processos ao lado do
+  primeiro, com o pid e o id de aplicativo que tinham, antes de repor a memória no espaço de cada um; os módulos
+  voltam da memória de cada processo e o load traz as threads. A imagem de boot (versão 2) também guarda se o
+  processo era o shell, o título do lançamento e se era serviço de fundo. Estado antigo sem essas seções: o boot
+  recusa com a mensagem do processo que falta. Testes:
+  `SaveStateBootFromStateTests.AStateOfTheShellAndAnApplicationBootsWithoutTheirPrograms`. Testar: com o shell do
+  Vita e um jogo aberto, gravar (F8) e rodar o rerun numa pasta de dados sem o jogo: o estado sobe com os dois
+  processos e o jogo segue rodando.
+
+- [ ] (25/11/2026, falta testar) [P2][M] Gravar tudo: o áudio que entra nas vozes NGS e no libatrac (fix/cap4). O
+  rerun sem o jogo tocava o que estivesse na memória do estado nos buffers das vozes NGS e nos handles do libatrac
+  (que decodifica sozinho, sem o `sceAudiodec`). Agora cada trecho que o módulo de fonte de uma voz NGS lê dos buffers
+  do jogo (player PCM16 ou HEVAG, ATRAC9) e cada superquadro que um handle do libatrac decodifica entram no mesmo
+  `audio_inputs/frames.tsv` (nova coluna `source`: `audiodec`, `ngs`, `atrac`; capturas antigas leem como
+  `audiodec`), por hash, com os bytes só dentro do limite dos arquivos (`--capture-files-mb`). No rerun o trecho que
+  a voz ou o handle vai ler é conferido: diferente e com bytes, eles são repostos; só com hash, o log diz qual voz ou
+  handle (uma vez) e o resumo do rerun conta, separado por tipo ("audio inputs: N frames recorded (a sceAudiodec
+  decoders, b NGS voices, c libatrac streams), ..."). Sem captura o gancho custa uma leitura. Testes:
+  `NgsHleTests.AVoicesInputIsRecordedAndARerunPutsItBackOrSaysItDiffers`,
+  `AtracHleTests.AHandlesInputIsRecordedAndARerunPutsItBackOrSaysItDiffers`. Testar: gravar (F8) com
+  `--capture-files-mb=64` num jogo com música ou vozes por NGS ou libatrac e rodar o rerun sem o jogo: a música e as
+  vozes saem iguais, e o resumo do rerun mostra as vozes NGS com "put back".
+
+- [ ] (25/11/2026, falta testar) [P2][M] Gravar tudo: o áudio que entra nos decodificadores (fix/adr4). A captura
+  guardava só a saída (WAV); o rerun sem o jogo decodificava o que estivesse na memória do estado. Agora cada quadro
+  que um decodificador do `sceAudiodec` (ATRAC9, MP3, AAC, CELP) consome entra em `audio_inputs/frames.tsv`
+  (decodificador, codec, número, tamanho, SHA-256) e, dentro do mesmo limite dos arquivos
+  (`--capture-files-mb`/`VITASHARP_CAPTURE_FILES_MB`; padrão 0: só os hashes, o áudio é dado do jogo), os bytes em
+  `audio_inputs/blobs.bin`; o `session.txt` diz quantos ("audio-inputs:"). No rerun, antes de cada quadro, o que o
+  decodificador vai ler é conferido: diferente e com bytes gravados, eles são repostos; só com hash, o log diz qual
+  decodificador (uma vez) e o resumo do rerun conta ("audio inputs:"). Testes: `AudioInputCaptureTests`. Testar:
+  gravar (F8) com `--capture-files-mb=64` num jogo com música ou voz e rodar o rerun sem o jogo: o áudio sai igual.
+
+- [ ] (25/11/2026, falta testar) [P3][M] Tabelas de bibliotecas dos módulos com os tamanhos do modulemgr 3.74
+  (fix/adr4). O modulemgr 3.74 confere a tabela antes de ligar: toda entrada de export tem 0x20 bytes (senão
+  0x8002D009) e as de import são todas de 0x24 ou todas de 0x34 bytes, os dois formatos (senão 0x8002D00A). O
+  VitaSharp percorria tabelas de qualquer tamanho de entrada. Testes: `ModuleTableChecksTests`. Testar: jogos,
+  homebrews e plugins de sempre continuam carregando (um módulo com tabela malformada agora recebe o erro do Vita).
+
 - [ ] (25/11/2026, falta testar) [P3][M] Biblioteca de syscall só do kernel, como o modulemgr 3.74 (fix/adr4). O
   modulemgr 3.74 confere a tabela de exports antes de ligar o módulo: uma biblioteca de syscall (atributo 0x4000, as
   funções que o código de usuário alcança pelo kernel) só pode ser exportada por um módulo do kernel e sem variáveis;

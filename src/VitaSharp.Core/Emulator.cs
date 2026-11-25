@@ -215,6 +215,14 @@ public sealed partial class Emulator : IDisposable
     /// (CDRAM, kernel), GPU, host devices and kernel object table of <paramref name="parent"/>, with its own address
     /// space, kernel state, HLE modules and mounts.</summary>
     private Emulator(Emulator parent, AppObject? reservedApp = null)
+        : this(parent, reservedApp, 0, 0)
+    {
+    }
+
+    /// <summary>A process next to <paramref name="parent"/>. <paramref name="statePid"/> and
+    /// <paramref name="stateAppId"/> (not 0): the ids the process had in a save state booted without its programs
+    /// (<see cref="AddProcessFromState"/>).</summary>
+    private Emulator(Emulator parent, AppObject? reservedApp, int statePid, int stateAppId)
     {
         Parent = parent;
         Options = parent.Options;
@@ -231,8 +239,16 @@ public sealed partial class Emulator : IDisposable
         TraceHleThreads = parent.TraceHleThreads;
         TraceHleExclude = parent.TraceHleExclude;
         BacktraceHle = parent.BacktraceHle;
-        Pid = Vita.Register(this);
-        AppId = reservedApp != null ? Vita.ClaimApp(reservedApp, this) : Vita.RegisterApp(this);
+        Pid = statePid != 0 ? Vita.RegisterAs(this, statePid) : Vita.Register(this);
+        if (stateAppId != 0)
+        {
+            AppId = Vita.RegisterAppAs(this, stateAppId);
+        }
+        else
+        {
+            AppId = reservedApp != null ? Vita.ClaimApp(reservedApp, this) : Vita.RegisterApp(this);
+        }
+
         Vfs = new Vfs(Options.FsRoot);
         InitProcess();
     }
@@ -732,6 +748,9 @@ public sealed partial class Emulator : IDisposable
     /// the memory back anyway (a thread stuck in a host call that never returns).</summary>
     private const int ThreadExitWaitMs = 10_000, ThreadExitWaitRounds = 6;
     private bool _background, _endedInFront;
+
+    /// <summary>A background service (launched without the screen): the shell is not told about its end.</summary>
+    internal bool IsBackgroundProcess => _background;
 
     /// <summary>The process ends by itself (sceKernelExitProcess): the handlers hear exit, not kill.</summary>
     private bool _exiting;

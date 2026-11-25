@@ -93,6 +93,7 @@ Folder `<data>/captures/<TITLEID>_<yyyyMMdd_HHmmss>_tudo/` and its zip:
 | `threads_start.txt`, `threads_stop.txt` | guest threads (wait state, backtrace, recent HLE calls in debug mode), held mutexes, GPU queue |
 | `hle_errors.txt` | HLE error returns and unimplemented calls by count (counted while recording, as debug mode does), and the calls of `hle_calls.tsv` by function |
 | `hle_calls.tsv` | every HLE call of the recording: guest µs, thread, function, library, r0-r3, result (`-`: still inside it at the stop), return address (`HleCallTrace`: per-thread chunks of 4096 calls, nothing allocated per call, at most 1,000,000 calls kept); `#state` lines say how many calls each thread had made when a save state was taken (the re-run, whose trace starts when its state is put back, is compared from there; a thread blocked in a call at the state makes it again in the re-run; every thread of the state has its line, also one with no call yet, and `in-call` when it was inside a call: one blocked since before the recording began makes in the re-run a call the capture's trace does not hold) |
+| `audio_inputs/frames.tsv`, `audio_inputs/blobs.bin` | every frame of the game's audio a reader consumed while recording: an `sceAudiodec` decoder (ATRAC9, MP3, AAC, CELP; `source` `audiodec`, the decoder's handle), the source module of an NGS voice (player PCM16 `0x0` or HEVAG `0x1`, ATRAC9 `0x1003`; `ngs`, the voice handle) and a libatrac handle, which decodes on its own (`atrac`, its buffer's guest address): guest µs, stream, codec, its number on that stream, length, SHA-256, blob offset, source (a capture without the column is `audiodec`); the bytes only within the files limit (`--capture-files-mb`, default 0: hashes only, the audio is the game's data) (`AudioInputRecorder`); a re-run puts the bytes back where the stream reads, or logs and counts a frame that differs (`CapturedAudioInputs`, "audio inputs:" line of the re-run's summary, by kind of stream) |
 | `files/files.tsv`, `files/blobs.bin` | what the guest touched on its title's own mounts (app0, savedata0, addcont0, a PFS or game data mount; `Vfs.IsTitleDevice`; never ux0, os0, vs0): every file opened or whose status was read (its size), every folder listed (its entries), every read from the start of the recording (or of the pre-roll) on (path, offset, length, SHA-256, guest µs) and the decrypted image of every module loaded from them; `blobs.bin` holds each distinct content once, up to `VITASHARP_CAPTURE_FILES_MB` / `--capture-files-mb` (default 0: no bytes, every read listed with its hash only; a capture goes to public reports), the rest is listed with its hash (`CaptureFileRecorder`); the save data mounts (`Vfs.IsSaveDataDevice`) only with their hashes (`hashdir`/`hashfile`/`hashread` lines, never put back by a re-run) unless `--capture-savedata` / `VITASHARP_CAPTURE_SAVEDATA=1`; `report.txt` notes when the capture holds the game's data |
 | `log.txt` | the session log up to the stop |
 
@@ -166,8 +167,11 @@ installed; a module it loads from them is the recorded decrypted image (no licen
 recording did not make is logged with its path and counted ("files:" line of the re-run's summary), and so is a read
 whose bytes the recording kept as a hash only (the default: the re-run reads zeros there). A received
 capture is untrusted: a line whose path would leave `.files/` (a drive or root path, `..`, a device that is not a
-plain name) or does not parse is skipped. States of several
-processes (the shell with applications) are refused. `--boot=title` boots the installed game instead and loads the
+plain name) or does not parse is skipped. A state of several
+processes (the shell with applications it opened) brings each process up the same way, from its own boot
+section (`process<N>/boot`: its modules as loaded, with the pid and application id it had); its programs are not
+needed either (a state of an earlier build without those sections loads only into a system running the same
+applications). `--boot=title` boots the installed game instead and loads the
 state after 120 frames (states of earlier builds, without the boot section, need it).
 
 With the capture's run options (Jak 1's `--cpu-mhz=0` comes along), from `state_preroll.vss` (default when present)

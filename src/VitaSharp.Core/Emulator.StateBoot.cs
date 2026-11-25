@@ -38,6 +38,8 @@ public sealed partial class Emulator
         Capture.CapturedFiles.Active?.Apply(this);
         IsSystemProgram = image.IsSystemProgram;
         RunsOnSystemCore = image.RunsOnSystemCore;
+        IsShell = image.IsShell;
+        LaunchedTitleId = image.LaunchedTitleId.Length > 0 ? image.LaunchedTitleId : null;
         ProgramAuthorityId = image.AuthorityId;
         Access = ProgramAccess.Of(image.AuthorityId, image.IsSystemProgram, image.RetailApplication);
         try
@@ -50,6 +52,31 @@ public sealed partial class Emulator
         }
 
         Log.Info($"Boot from a save state: {TitleId} \"{Title}\" ({image.Modules.Count} modules from the state's memory, app0 at {guest})");
+    }
+
+    /// <summary>
+    /// Another process of a state of several processes (an application the shell had opened), brought up next to this
+    /// one without reading its program: it takes the pid and application id it had (the state's memory and kernel
+    /// objects name them), its identity and mounts from its own boot image (<see cref="PrepareStateBoot"/>), and its
+    /// address space; its modules follow once the state's memory is in place (<see cref="AddModuleFromState"/>). As
+    /// for the first process, nothing runs: the state's load brings its threads. The system was told about it when it
+    /// was created (the shell's events are in the state).
+    /// </summary>
+    internal Emulator AddProcessFromState(int pid, int appId, StateBootImage image, bool suspended)
+    {
+        Gpu.SharedByProcesses = true; // GPU scenes are arbitrated between the processes, as after a launch
+        var child = new Emulator(this, null, pid, appId) { _background = image.Background };
+        _children.Add(child);
+        child.Running = true;
+        child.PrepareStateBoot(image);
+        if (!ReferenceEquals(child.Space, Space))
+        {
+            child.Space.Label = child.Describe();
+        }
+
+        child._announced = true;
+        child.Suspended = suspended;
+        return child;
     }
 
     /// <summary>A module of the state, in the process that holds it (a kernel module: the kernel process), rebuilt from

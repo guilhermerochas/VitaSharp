@@ -140,6 +140,74 @@ public sealed class SaveStateBootFromStateTests
         }
     }
 
+    /// <summary>A state of several processes (the shell and an application it opened) boots where neither program is
+    /// installed: the application process comes back next to the first one with the pid, application id and title it
+    /// had, its modules rebuilt from its own address space, and after the load both processes' threads count on from
+    /// the saved values. Before, the boot refused every state of more than one process.</summary>
+    [Fact]
+    public void AStateOfTheShellAndAnApplicationBootsWithoutTheirPrograms()
+    {
+        string statePath = Path.Combine(Path.GetTempPath(), $"vitasharp-bootstate-{Guid.NewGuid():N}.vss");
+        uint shellCounter, appCounter;
+        int appPid, appAppId;
+        string[] appModules;
+        try
+        {
+            using (var recorded = new HleHarness(_fixture, "bootstate-multirec"))
+            {
+                Emulator shell = recorded.Emu;
+                shell.LoadTitle(SyntheticTitle.Install(recorded.Root, "VSTS00001"));
+                shell.Start();
+                using var started = new ManualResetEventSlim();
+                Emulator app = shell.SpawnProcess(SyntheticTitle.Install(recorded.Root, "VSTS00002"), "eboot.bin", [], started: _ => started.Set());
+                Assert.True(started.Wait(60_000), "the application did not start");
+                HleHarness.Until(() => app.MainModule != null && app.Kernel.Threads.Any(), "the application's main thread");
+                shellCounter = StartCounter(shell, "VsTestBootShellCounter");
+                appCounter = StartCounter(app, "VsTestBootAppCounter");
+                using (AddressSpace.Use(app.Space))
+                {
+                    GuestMemory.W32(MarkerAddress, 0xA990_0002);
+                }
+
+                HleHarness.Until(() => Read(shell, shellCounter) > 5 && Read(app, appCounter) > 5, "the first counts of both threads");
+                SaveStates.Save(shell, statePath, timeoutMs: 60_000);
+                appPid = app.Pid;
+                appAppId = app.AppId;
+                appModules = app.Kernel.Modules.Values.OrderBy(m => m.Uid).Select(m => $"{m.Name} {m.Path} {m.Segments[0].Address:X8}").ToArray();
+                app.Stop();
+                shell.Stop();
+            }
+
+            using var analyst = new HleHarness(_fixture, "bootstate-multirun");
+            Emulator again = analyst.Emu;
+            Assert.False(Directory.Exists(Path.Combine(analyst.Root, "ux0", "app", "VSTS00002")));
+            SaveStates.BootFromState(again, statePath);
+            Assert.Equal(2, again.Vita.Processes.Count);
+            Emulator restoredApp = Assert.Single(again.Vita.Processes, p => !ReferenceEquals(p, again));
+            Assert.Equal(appPid, restoredApp.Pid);
+            Assert.Equal(appAppId, restoredApp.AppId);
+            Assert.Equal("VSTS00002", restoredApp.TitleId);
+            Assert.Equal("VitaSharpSynthetic", restoredApp.MainModule?.Name);
+            Assert.Equal(appModules, restoredApp.Kernel.Modules.Values.OrderBy(m => m.Uid).Select(m => $"{m.Name} {m.Path} {m.Segments[0].Address:X8}").ToArray());
+            Assert.NotSame(again.Space, restoredApp.Space);
+
+            SaveStates.Load(again, statePath);
+            Assert.Equal(0xA990_0002u, Read(restoredApp, MarkerAddress));
+            uint shellLoaded = Read(again, shellCounter);
+            uint appLoaded = Read(restoredApp, appCounter);
+            Assert.Single(again.Kernel.Threads, t => t.Name == "VsTestBootShellCounter");
+            Assert.Single(restoredApp.Kernel.Threads, t => t.Name == "VsTestBootAppCounter");
+            HleHarness.Until(() => Read(again, shellCounter) > shellLoaded + 5 && Read(restoredApp, appCounter) > appLoaded + 5,
+                "counts of both processes after the boot from the state");
+            restoredApp.Stop();
+            again.Stop();
+        }
+        finally
+        {
+            File.Delete(statePath);
+        }
+    }
+
     /// <summary>A state saved with a kernel plugin loaded (the recording user's ur0:tai) boots where the plugin is
     /// not installed and the plugin option is off: the plugin module comes back from the state's memory, in the kernel
     /// process, at its address, with its export.</summary>

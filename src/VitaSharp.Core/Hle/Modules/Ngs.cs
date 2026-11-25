@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using VitaSharp.Core.Capture;
 using VitaSharp.Core.Hle.Audio;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
@@ -1108,6 +1109,7 @@ public sealed partial class Ngs : HleModule
                     // into noise (Batman: Arkham Origins Blackgate's music); keep it and complete it (Vita3K).
                     if (st.Staging.Length < frameBytes) Array.Resize(ref st.Staging, frameBytes);
                     consumed = Math.Min(frameBytes - st.StagingLen, bytes - pos);
+                    RecordInput(v, AudioInputCodec.Hevag, buf, pos, bytes, consumed);
                     GuestMemory.Span(buf + (uint)pos, consumed).CopyTo(st.Staging.AsSpan(st.StagingLen));
                     st.StagingLen += consumed;
                     decodedLen = 0;
@@ -1122,6 +1124,7 @@ public sealed partial class Ngs : HleModule
                     int frames = Math.Max(1, (needFrames + 27) / 28);
                     consumed = Math.Min(frames * frameBytes, bytes - pos);
                     consumed -= consumed % frameBytes;
+                    RecordInput(v, AudioInputCodec.Hevag, buf, pos, bytes, consumed);
                     decodedLen = DecodeHevag(GuestMemory.Ptr(buf + (uint)pos), consumed, channels, st);
                 }
             }
@@ -1130,6 +1133,7 @@ public sealed partial class Ngs : HleModule
                 consumed = Math.Min(needFrames * channels * 2, bytes - pos);
                 consumed -= consumed % (channels * 2);
                 if (consumed <= 0) { SetState(m, 0, bytes); continue; }
+                RecordInput(v, AudioInputCodec.Pcm16, buf, pos, bytes, consumed);
                 var src = GuestMemory.Span<short>(buf + (uint)pos, consumed / 2);
                 int n = consumed / 2 / channels;
                 var decoded = st.DecodeBuffer(n * 2);
@@ -1151,6 +1155,22 @@ public sealed partial class Ngs : HleModule
         SetState(m, 8, GetState(m, 8) + produced * channels);
         SetState(m, 16, GetState(m, 16) + produced * channels);
         return finished;
+    }
+
+    /// <summary>Gravar tudo: the voice is about to read <paramref name="consumed"/> bytes at <paramref name="pos"/> of
+    /// its buffer <paramref name="buf"/> (<paramref name="bytes"/> long). A recording keeps them (hash, bytes within
+    /// the files limit); a re-run puts the recording's back first or counts the difference. Off (one read) without a
+    /// capture.</summary>
+    static void RecordInput(NgsVoice v, uint codec, uint buf, int pos, int bytes, int consumed)
+    {
+        IAudioInputHook? inputs = CaptureHooks.AudioInputs;
+        if (inputs == null || consumed <= 0)
+        {
+            return;
+        }
+
+        inputs.Decoding(AudioInputSource.NgsVoice, v.Handle, codec, GuestMemory.Span(buf + (uint)pos, bytes - pos));
+        inputs.Decoded(AudioInputSource.NgsVoice, v.Handle, codec, GuestMemory.Span(buf + (uint)pos, consumed));
     }
 
     static bool ValidPlayerBuffer(NgsModuleData m, PlayerParamLayout pl, int index) =>
@@ -1281,6 +1301,7 @@ public sealed partial class Ngs : HleModule
                 continue;
             }
             int take = Math.Min(sfBytes - st.StagingLen, bytes - pos);
+            RecordInput(v, AudioInputCodec.Atrac9, buf, pos, bytes, take);
             GuestMemory.Span(buf + (uint)pos, take).CopyTo(st.Staging.AsSpan(st.StagingLen));
             st.StagingLen += take;
             SetState(m, 0, pos + take);

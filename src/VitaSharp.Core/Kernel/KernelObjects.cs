@@ -287,6 +287,10 @@ public static class SceError
     /// <summary>A module whose export table the module manager refuses (a syscall library outside the kernel, or
     /// one with variables).</summary>
     public const int MODULEMGR_ILLEGAL_EXPORT = unchecked((int)0x8002D01E);
+    /// <summary>An export table whose entries are not all 0x20 bytes.</summary>
+    public const int MODULEMGR_ILLEGAL_EXPORT_TABLE = unchecked((int)0x8002D009);
+    /// <summary>An import table whose entries are not all 0x24 or all 0x34 bytes.</summary>
+    public const int MODULEMGR_ILLEGAL_IMPORT_TABLE = unchecked((int)0x8002D00A);
     public const int LIBRARYDB_NO_MOD = unchecked((int)0x8002D082);
     public const int ERRNO_ENOSYS = unchecked((int)0x80010058);
 

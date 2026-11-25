@@ -39,8 +39,9 @@ public static partial class SaveStates
     /// user's kernel plugins) is rebuilt from it in load order (<see cref="ModuleLoader.FromMemory"/>). No thread runs:
     /// <see cref="Load"/> with the same file follows and brings the state's threads, kernel objects and HLE state, as a
     /// load into the running game does. A capture re-runs this way on a computer that has neither the game nor the
-    /// plugins (docs/notes/session-capture.md). States of several processes (the shell with applications) are not
-    /// supported yet.
+    /// plugins (docs/notes/session-capture.md). A state of several processes (the shell and the applications it had
+    /// opened) brings each other process up the same way (<see cref="Emulator.AddProcessFromState"/>, from its own boot
+    /// section), with the pid and application id it had, before the memory is put back in each process's space.
     /// </summary>
     public static void BootFromState(Emulator emu, string path)
     {
@@ -65,11 +66,7 @@ public static partial class SaveStates
         byte[] boot = sections.FirstOrDefault(s => s.Name == BootSection).Data
             ?? throw new SnapshotException("the state has no boot section (saved by an earlier build): it loads only into the running game");
         var image = StateBootImage.Read(boot);
-        if (sections.FirstOrDefault(s => s.Name == ProcessesSection).Data is { } processes && new SnapshotReader(processes).ReadInt32() > 1)
-        {
-            throw new SnapshotException("the state holds several processes (the shell and the applications it opened): booting it without their programs is not supported yet");
-        }
-
+        List<SavedProcess> others = OtherProcesses(sections);
         emu.PrepareStateBoot(image);
         if (SaveStateFile.Incompatibility(header, emu.TitleId) is { } why)
         {
@@ -81,22 +78,43 @@ public static partial class SaveStates
             emu.Vita.KernelProcessFor(emu);
         }
 
-        LoadedModule? main = null;
+        // the other processes exist before the memory goes back: their blocks are put in their own address spaces
+        var processes = new List<(Emulator Process, StateBootImage Image)> { (emu, image) };
+        // the objects made from here on (the processes' own, the modules) keep clear of the ids the state gives them
+        // (the state's load puts its own object table in place)
+        int highest = others.Count == 0 ? 0 : others.Max(other => Math.Max(other.Pid, other.AppId));
+        if (emu.Vita.Objects.NextUid < highest)
+        {
+            emu.Vita.Objects.NextUid = highest;
+        }
+
+        foreach (SavedProcess other in others)
+        {
+            processes.Add((emu.AddProcessFromState(other.Pid, other.AppId, other.Image, other.Suspended), other.Image));
+        }
+
+        var mains = new LoadedModule?[processes.Count];
         var shells = new List<LoadedModule>();
+        int modules = 0;
         lock (s_gate)
         {
             RestoreMemory(emu, sections);
-            foreach (StateBootImage.ModuleEntry entry in image.Modules)
+            for (int index = 0; index < processes.Count; index++)
             {
-                LoadedModule module = emu.AddModuleFromState(entry);
-                if (entry.Uid == image.MainModuleUid && !entry.Kernel)
+                (Emulator process, StateBootImage processImage) = processes[index];
+                foreach (StateBootImage.ModuleEntry entry in processImage.Modules)
                 {
-                    main = module;
-                }
+                    LoadedModule module = process.AddModuleFromState(entry);
+                    modules++;
+                    if (entry.Uid == processImage.MainModuleUid && !entry.Kernel)
+                    {
+                        mains[index] = module;
+                    }
 
-                if (entry.FirmwareShell)
-                {
-                    shells.Add(module);
+                    if (entry.FirmwareShell)
+                    {
+                        shells.Add(module);
+                    }
                 }
             }
         }
@@ -106,7 +124,57 @@ public static partial class SaveStates
             kernel.FirmwareKernel.AdoptFromState(shells);
         }
 
-        emu.FinishStateBoot(image, main ?? throw new SnapshotException($"the state's main module (uid 0x{image.MainModuleUid:X}) is not in its module list"));
-        Log.Info($"Boot from a save state: {path}: {image.Modules.Count} modules rebuilt from its memory in {sw.ElapsedMilliseconds} ms (no file of the program read); loading the state");
+        for (int index = 0; index < processes.Count; index++)
+        {
+            (Emulator process, StateBootImage processImage) = processes[index];
+            LoadedModule main = mains[index]
+                ?? throw new SnapshotException($"the main module (uid 0x{processImage.MainModuleUid:X}) of {process.Describe()} is not in its module list");
+            process.FinishStateBoot(processImage, main);
+        }
+
+        SavedProcess? onScreen = others.FirstOrDefault(other => other.Foreground);
+        if (onScreen != null)
+        {
+            emu.Vita.SetForegroundFromState(processes[others.IndexOf(onScreen) + 1].Process);
+        }
+
+        Log.Info($"Boot from a save state: {path}: {processes.Count} processes, {modules} modules rebuilt from its memory in {sw.ElapsedMilliseconds} ms (no file of the program read); loading the state");
+    }
+
+    /// <summary>A process of the state besides the first: its ids, its state at the save and its boot image.</summary>
+    private sealed record SavedProcess(int Pid, int AppId, string TitleId, bool Suspended, bool Foreground, StateBootImage Image);
+
+    /// <summary>The processes after the first one of the state's process list, each with its boot section; a state of
+    /// one process (or without a list) has none. A state of several processes from a build that did not write their
+    /// boot sections cannot be brought up without their programs.</summary>
+    private static List<SavedProcess> OtherProcesses(List<(string Name, byte[] Data)> sections)
+    {
+        var others = new List<SavedProcess>();
+        byte[]? list = sections.FirstOrDefault(s => s.Name == ProcessesSection).Data;
+        if (list == null)
+        {
+            return others;
+        }
+
+        var reader = new SnapshotReader(list);
+        int count = reader.ReadInt32();
+        for (int index = 0; index < count; index++)
+        {
+            int pid = reader.ReadInt32();
+            int appId = reader.ReadInt32();
+            string titleId = reader.ReadStringNotNull();
+            bool suspended = reader.ReadBool();
+            bool foreground = reader.ReadBool();
+            if (index == 0)
+            {
+                continue;
+            }
+
+            byte[] boot = sections.FirstOrDefault(s => s.Name == ProcessPrefix(index) + BootSection).Data
+                ?? throw new SnapshotException($"the state's process {titleId} (pid 0x{pid:X}) has no boot section (saved by an earlier build): the state loads only into a system running the same applications");
+            others.Add(new SavedProcess(pid, appId, titleId, suspended, foreground, StateBootImage.Read(boot)));
+        }
+
+        return others;
     }
 }

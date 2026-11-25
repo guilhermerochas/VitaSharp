@@ -301,6 +301,9 @@ sealed class SessionCaptureControl : IDisposable
             CapturedFiles? files = CapturedFiles.Materialize(dir, filesDir);
             CapturedFiles.Active = files;
             CaptureHooks.Files = files;
+            // the audio the recording's decoders and NGS voices consumed: put back or checked frame by frame
+            CapturedAudioInputs? audioInputs = CapturedAudioInputs.Load(dir, fromUs);
+            CaptureHooks.AudioInputs = audioInputs;
             Log.Info(files != null
                 ? $"[capture] re-run: {files.Files} files and {files.Reads} reads of the recording put back over the title's mounts ({files.MissingContents} reads without their contents: over the recording's limit)"
                 : "[capture] re-run: the capture has no files/ (recorded by an earlier build): the game's files are this data folder's");
@@ -341,6 +344,11 @@ sealed class SessionCaptureControl : IDisposable
                         // A broken or partial frames file must not take the process down before the PERF summary.
                         cmp = $"compare: failed ({ex.Message})";
                     }
+                    if (audioInputs != null)
+                    {
+                        cmp += "\n" + audioInputs.Describe();
+                    }
+
                     if (files != null)
                     {
                         cmp += files.ReadsOutside == 0

@@ -114,6 +114,8 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     private bool _disposed;
     /// <summary>The title's file reads (on while armed or recording, as the tap).</summary>
     private CaptureFileRecorder? _files;
+    /// <summary>The audio the game hands to its decoders (on with the file reads).</summary>
+    private AudioInputRecorder? _audioInputs;
 
     // pre-roll
     private double _preRollSeconds;
@@ -156,6 +158,8 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         public bool OwnsAudio;
         public CaptureFileRecorder? Files;
         public string? FilesSummary;
+        public AudioInputRecorder? AudioInputs;
+        public string? AudioInputsSummary;
         public GpuDumpRecorder? Dump;
         public GpuDumpResult? DumpResult;
         public readonly ManualResetEventSlim DumpDone = new(true);
@@ -359,6 +363,8 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         {
             _files = new CaptureFileRecorder(_options.MaxFileBytes, _options.KeepSaveData);
             CaptureHooks.Files ??= _files;
+            _audioInputs = new AudioInputRecorder(_options.MaxFileBytes);
+            CaptureHooks.AudioInputs ??= _audioInputs;
         }
     }
 
@@ -371,6 +377,12 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         }
 
         _files = null;
+        if (_audioInputs != null && ReferenceEquals(CaptureHooks.AudioInputs, _audioInputs))
+        {
+            CaptureHooks.AudioInputs = null;
+        }
+
+        _audioInputs = null;
         if (_disposed)
         {
             UninstallInput();
@@ -541,6 +553,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         if (_states.Count > 0)
         {
             _files?.Trim(_states[0].StartNs);
+            _audioInputs?.Trim(_states[0].StartNs);
         }
     }
 
@@ -877,6 +890,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             _ringInput.Clear();
             r.Before = _recent.ToList();
             r.Files = _files;
+            r.AudioInputs = _audioInputs;
             _recent.Clear();
             r.Input.Add(InputEvent.Now("mark", $"start {reason}"));
             r.Input.Add(InputEvent.Now("ctx", where));
@@ -1195,6 +1209,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                 r.FilesSummary = r.Files.Write(dir, r.PreRoll?.StartNs ?? r.StartNs).ToString();
             }
         });
+        Step(r, AudioInputRecorder.Folder + "/", () => r.AudioInputsSummary = r.AudioInputs?.Write(dir, r.PreRoll?.StartNs ?? r.StartNs));
         Step(r, "hle_errors.txt", () => File.WriteAllLines(Path.Combine(dir, "hle_errors.txt"), DebugMode.HleSummary().DefaultIfEmpty("(no HLE error returns or unimplemented calls recorded)").Concat(callSummary)));
         if (wavs.Count > 0)
         {
@@ -1336,6 +1351,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         sb.AppendLine(FormattableString.Invariant($"frames: {r.Frames.Count} presented ({pre} from the pre-roll), {r.FrameBytes / 1048576.0:F1} MB of pictures (QOI key pictures + deltas), {r.Frames.Count(f => (f.Flags & FramesFile.FlagNoPicture) != 0)} without a picture (the encoder fell behind)"));
         sb.AppendLine($"input: {r.Input.Count} events, {r.RandomCalls} random-number results");
         sb.AppendLine($"files: {r.FilesSummary ?? "none recorded"}");
+        sb.AppendLine($"audio-inputs: {r.AudioInputsSummary ?? "none recorded"}");
         lock (_stateStopMs)
         {
             if (_stateStopMs.Count > 0)

@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Reflection;
+using VitaSharp.Core.Capture;
 using VitaSharp.Core.Hle.Audio;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Memory;
@@ -565,5 +566,66 @@ public sealed class AtracHleTests(GuestMemoryFixture fixture)
         }
 
         return got;
+    }
+
+    /// <summary>
+    /// libatrac decodes on its own (not through sceAudiodec): "Gravar tudo" keeps each superframe a handle decodes (by
+    /// hash, the bytes only within the files limit), and a re-run without the game puts them back where the decoder
+    /// reads or counts what differs.
+    /// </summary>
+    [Theory]
+    [InlineData(1 << 20)]
+    [InlineData(0)]
+    public void AHandlesInputIsRecordedAndARerunPutsItBackOrSaysItDiffers(long maxBytes)
+    {
+        string capture = Path.Combine(Path.GetTempPath(), "vitasharp-atracinputs-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Atrac a = NewModule();
+            byte[] file = BuildAt9(2, 3000, 0, 3);
+            uint buf = Upload(file, 0x4000, file.Length);
+            int h = Call(a, "sceAtracSetDataAndAcquireHandle", buf, (uint)file.Length, 0x4000u);
+            var recorder = new AudioInputRecorder(maxBytes);
+            CaptureHooks.AudioInputs = recorder;
+            List<int> recorded = DecodeAll(a, h);
+            CaptureHooks.AudioInputs = null;
+            Assert.Equal(0, Call(a, "sceAtracReleaseHandle", h));
+            string? summary = recorder.Write(capture, long.MinValue);
+            Assert.NotNull(summary);
+            Assert.StartsWith("3 frames (0 sceAudiodec decoders, 0 NGS voices, 1 libatrac streams)", summary);
+            string[] lines = File.ReadAllLines(Path.Combine(capture, AudioInputRecorder.Folder, AudioInputRecorder.IndexFile));
+            Assert.Equal(4, lines.Length);
+            Assert.All(lines.Skip(1), l => Assert.EndsWith("\tatrac", l));
+            Assert.Contains($"\t{buf}\t0x1003\t0\t{SfBytes}\t", lines[1]);
+
+            // the re-run: the handle's data is not the game's (no game here)
+            CapturedAudioInputs replay = CapturedAudioInputs.Load(capture, long.MinValue)!;
+            Assert.Equal(3, replay.Frames);
+            Assert.Equal(At9ParseResult.Ok, At9Container.Parse(file, out At9Info? info));
+            GuestMemory.Fill(buf + info.DataOffset, 0xFF, info.DataSize);
+            h = Call(a, "sceAtracSetDataAndAcquireHandle", buf, (uint)file.Length, 0x4000u);
+            CaptureHooks.AudioInputs = replay;
+            List<int> rerun = DecodeAll(a, h);
+            CaptureHooks.AudioInputs = null;
+            if (maxBytes > 0)
+            {
+                Assert.Equal(3, replay.Restored);
+                Assert.Equal(recorded, rerun);
+            }
+            else
+            {
+                Assert.Equal(0, replay.Restored);
+                Assert.Equal(3, replay.Differ);
+                Assert.NotEqual(recorded, rerun);
+            }
+        }
+        finally
+        {
+            CaptureHooks.AudioInputs = null;
+            if (Directory.Exists(capture))
+            {
+                Directory.Delete(capture, true);
+            }
+        }
     }
 }

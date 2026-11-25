@@ -636,5 +636,15 @@ public sealed partial class ObjectTable
     /// <summary>Puts <paramref name="kernelObject"/> in the table under the UID it already has (save state load).</summary>
     internal void Put(KernelObject kernelObject) => _objects[kernelObject.Uid] = kernelObject;
 
+    /// <summary>Registers <paramref name="kernelObject"/> under <paramref name="uid"/>, the UID a save state gave it (a
+    /// process of a state booted without its programs takes the pid and application id it had: the state's memory and
+    /// objects name them). False when another object holds that UID.</summary>
+    internal bool TryRegisterAs(KernelObject kernelObject, int uid)
+    {
+        kernelObject.Uid = uid;
+        kernelObject.OwnerPid = kernelObject is ProcessObject ? uid : ProcessScope.CurrentPid;
+        return _objects.TryAdd(uid, kernelObject);
+    }
+
     internal void Clear() => _objects.Clear();
 }

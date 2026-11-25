@@ -31,4 +31,5 @@ public static class CaptureHooks
 {
     public static IRandomHook? Random;
     public static IFileHook? Files;
+    public static IAudioInputHook? AudioInputs;
 }
