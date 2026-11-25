@@ -30,9 +30,9 @@ public sealed class GpuDumpOptions
     // MB, q1 117 ms -> 11.9 MB; at ~16 MB of records per frame q3 took ~165 ms of CPU per recorded frame, q2 ~70.
     public int Quality = 2;
     /// <summary>Uncompressed record bytes per chunk (tests record with small chunks).</summary>
-    internal int ChunkBytes = 32 << 20;
+    internal int ChunkBytes { get; init; } = 32 << 20;
     /// <summary>Tests: runs on a compressor before each chunk (a compressor slower than the worker).</summary>
-    internal Action? BeforeCompress;
+    internal Action? BeforeCompress { get; init; }
     /// <summary>Called once the file is complete (on the writer thread), also when recording failed.</summary>
     public Action<GpuDumpResult>? Finished;
     /// <summary>Called on the GPU worker when recording actually starts.</summary>
@@ -101,11 +101,11 @@ public sealed unsafe class GpuDumpRecorder
     /// <summary>Chunks being compressed (in file order): up to <see cref="Compressors"/> at once on the thread pool,
     /// the writer thread writes them in order. At most <see cref="PendingChunks"/> wait; then the GPU worker waits.</summary>
     private readonly BlockingCollection<Task<byte[]>> _out = new(boundedCapacity: PendingChunks);
-    internal static readonly int Compressors = Math.Clamp(Environment.ProcessorCount / 4, 1, 4);
+    internal static int Compressors { get; } = Math.Clamp(Environment.ProcessorCount / 4, 1, 4);
     /// <summary>Chunks handed over and not written yet before the GPU worker waits: one per compressor plus two, so
     /// the compressors always have the next chunk while the writer writes. It was 16 (~1 GB of 64 MB buffers): with
     /// a faster worker the queue filled and AC III Liberation's process grew from 2.1 to 3.4-4.0 GB while recording.</summary>
-    internal static readonly int PendingChunks = Compressors + 2;
+    internal static int PendingChunks { get; } = Compressors + 2;
     /// <summary>Records buffers the compressors give back for the worker's next chunks (more are dropped).</summary>
     internal const int MaxSpares = 2;
     private readonly SemaphoreSlim _compressSlots = new(Compressors);
