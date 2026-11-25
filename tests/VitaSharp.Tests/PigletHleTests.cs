@@ -892,19 +892,28 @@ internal sealed class PigletHarness : IDisposable
     }
 }
 
-/// <summary>The runtime compiler: ur0:data/libshacccg.suprx of the VitaSharp or Vita3K data folder (read only: copied
-/// into each test's own file system).</summary>
+/// <summary>The runtime compiler: ur0:data/libshacccg.suprx of the installed data folder named by
+/// VITASHARP_TEST_INSTALLED_DATA, else of Vita3K's data folder (read only: copied into each test's own file system);
+/// never the user's own VitaSharp data folder.</summary>
 internal static class PigletCompiler
 {
+    public const string Missing = "libshacccg.suprx not found in ur0:data of " + VitaSharp.Core.Util.EnvVars.TestInstalledData + " (a VitaSharp data folder) or of the Vita3K data folder";
+
     private static readonly Lazy<string?> s_path = new(() =>
     {
-        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        if (string.IsNullOrEmpty(appData))
+        var candidates = new List<string>();
+        if (TestDataIsolation.InstalledFsRoot is { } fsRoot)
         {
-            return null;
+            candidates.Add(System.IO.Path.Combine(fsRoot, "ur0", "data", "libshacccg.suprx"));
         }
 
-        foreach (string p in new[] { System.IO.Path.Combine(appData, "VitaSharp", "fs", "ur0", "data", "libshacccg.suprx"), System.IO.Path.Combine(appData, "Vita3K", "Vita3K", "ur0", "data", "libshacccg.suprx") })
+        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        if (!string.IsNullOrEmpty(appData))
+        {
+            candidates.Add(System.IO.Path.Combine(appData, "Vita3K", "Vita3K", "ur0", "data", "libshacccg.suprx"));
+        }
+
+        foreach (string p in candidates)
         {
             if (File.Exists(p))
             {
@@ -923,7 +932,7 @@ public sealed class PigletCompilerFactAttribute : FactAttribute
     {
         if (PigletCompiler.Path == null)
         {
-            Skip = "libshacccg.suprx not found in ur0:data of the VitaSharp or Vita3K data folder";
+            Skip = PigletCompiler.Missing;
         }
     }
 }
@@ -934,7 +943,7 @@ public sealed class PigletRenderFactAttribute : FactAttribute
     {
         if (PigletCompiler.Path == null)
         {
-            Skip = "libshacccg.suprx not found in ur0:data of the VitaSharp or Vita3K data folder";
+            Skip = PigletCompiler.Missing;
         }
     }
 }

@@ -14,22 +14,45 @@ namespace VitaSharp.Tests;
 
 /// <summary>
 /// The libraries the coverage counts as "LLE" (<see cref="LleLibraries"/>): the real module the program brings loads
-/// under VitaSharp, exports the library's functions and one of them runs. The modules come from the installed data
-/// (read only: VITASHARP_DATA or %APPDATA%\VitaSharp): a game that ships libsmart/libface (decrypted with its
-/// work.bin or licence) and the firmware's livespace_db; without them the test is skipped and says what is missing.
+/// under VitaSharp, exports the library's functions and one of them runs. The modules come from an installed data
+/// folder named by VITASHARP_TEST_INSTALLED_DATA (read only, never the user's own data folder by default): a game that
+/// ships libsmart/libface (decrypted with its work.bin or licence) and the firmware's livespace_db, which can also come
+/// from the test firmware (<see cref="JsonFirmware"/>); without them the tests are skipped and say what is missing.
 /// </summary>
 [Collection("guest")]
 public sealed class LleLibrariesTests(GuestMemoryFixture fixture, ITestOutputHelper output)
 {
-    private static string FsRoot => Path.Combine(Environment.GetEnvironmentVariable(EnvVars.Data) is { Length: > 0 } d ? d
-        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VitaSharp"), "fs");
+    /// <summary>Where the modules are looked for, for the messages: the installed data folder, else the test firmware.</summary>
+    private static string Sources => TestDataIsolation.InstalledFsRoot ?? FirmwareFsRoot ?? "(none)";
 
-    /// <summary>The module file and the key to decrypt it (null for a module that needs none).</summary>
-    /// <summary>The first installed module that really exports <paramref name="library"/> (a game's app0:sce_module copy
-    /// or the firmware module), found the way the coverage scan finds them.</summary>
+    /// <summary>The file-system root (the folder holding vs0/) of the test firmware, or null.</summary>
+    internal static string? FirmwareFsRoot
+    {
+        get
+        {
+            // <root>/vs0/sys/external/libSceJson.suprx
+            string? external = JsonFirmware.ModulePath is { } json ? Path.GetDirectoryName(json) : null;
+            DirectoryInfo? vs0 = external != null ? Directory.GetParent(external)?.Parent : null;
+            return vs0 != null && vs0.Name.Equals("vs0", StringComparison.OrdinalIgnoreCase) ? vs0.Parent?.FullName : null;
+        }
+    }
+
+    /// <summary>The module file and the key to decrypt it (null for a module that needs none): the first installed
+    /// module that really exports <paramref name="library"/> (a game's app0:sce_module copy or the firmware module of
+    /// the installed data folder, else the test firmware's), found the way the coverage scan finds them.</summary>
     internal static (string Path, string VitaPath, byte[]? Klicensee)? Find(string library)
     {
-        IEnumerable<LleLibraries.InstalledModule> modules = LleLibraries.GameModules(FsRoot).Concat(LleLibraries.DataModules(FsRoot)).Concat(LleLibraries.FirmwareModules(FsRoot, l => l == library));
+        IEnumerable<LleLibraries.InstalledModule> modules = [];
+        if (TestDataIsolation.InstalledFsRoot is { } fsRoot)
+        {
+            modules = LleLibraries.GameModules(fsRoot).Concat(LleLibraries.DataModules(fsRoot)).Concat(LleLibraries.FirmwareModules(fsRoot, l => l == library));
+        }
+
+        if (FirmwareFsRoot is { } firmware)
+        {
+            modules = modules.Concat(LleLibraries.FirmwareModules(firmware, l => l == library));
+        }
+
         foreach ((LleLibraries.InstalledModule? m, string _, IReadOnlyList<uint> _) in LleLibraries.Exports(modules, (_, l) => l == library))
         {
             return (m.HostPath, m.VitaPath, m.Klicensee);
@@ -38,7 +61,7 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fixture, ITestOutputHel
         return null;
     }
 
-    [Theory]
+    [InstalledDataTheory]
     [InlineData("SceSmart", "sceSmartRelease")]
     [InlineData("SceFace", "sceFaceDetectionGetWorkingMemorySize")]
     [InlineData("SceShaccCg", "sceShaccCgGetVersionString")]
@@ -48,7 +71,7 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fixture, ITestOutputHel
         (string Path, string VitaPath, byte[]? Klicensee)? found = Find(library);
         if (found == null)
         {
-            output.WriteLine($"{library}: no installed module exporting it under {FsRoot}; nothing to check");
+            output.WriteLine($"{library}: no installed module exporting it under {Sources}; nothing to check");
             return;
         }
         string root = Path.Combine(Path.GetTempPath(), "vitasharp-lle-" + Guid.NewGuid().ToString("N"));
@@ -110,13 +133,13 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fixture, ITestOutputHel
 
     /// <summary>A program that is not the shell importing SceLsdb gets the firmware's livespace_db.suprx through the
     /// firmware dependency resolution (although the HLE has some of the library), and its imports bind to the module.</summary>
-    [Fact]
+    [InstalledFirmwareFact]
     public void FirmwareLleLibraryLoadsForAnyImporter()
     {
         (string Path, string VitaPath, byte[]? Klicensee)? found = Find("SceLsdb");
         if (found == null)
         {
-            output.WriteLine($"livespace_db.suprx not installed under {FsRoot}; nothing to check");
+            output.WriteLine($"livespace_db.suprx not installed under {Sources}; nothing to check");
             return;
         }
         string root = Path.Combine(Path.GetTempPath(), "vitasharp-lle-" + Guid.NewGuid().ToString("N"));
@@ -154,6 +177,31 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fixture, ITestOutputHel
                 Directory.Delete(root, true);
             }
             catch (IOException) { }
+        }
+    }
+}
+
+/// <summary>Skipped without <see cref="EnvVars.TestInstalledData"/>: the tests of modules that games ship need an
+/// installed data folder, which the suite never takes from the user's own.</summary>
+public sealed class InstalledDataTheoryAttribute : TheoryAttribute
+{
+    public InstalledDataTheoryAttribute()
+    {
+        if (TestDataIsolation.InstalledData == null)
+        {
+            Skip = $"no installed data folder (set {EnvVars.TestInstalledData} to a VitaSharp data folder with installed games, read only)";
+        }
+    }
+}
+
+/// <summary>Skipped without an installed data folder and without the test firmware.</summary>
+public sealed class InstalledFirmwareFactAttribute : FactAttribute
+{
+    public InstalledFirmwareFactAttribute()
+    {
+        if (TestDataIsolation.InstalledData == null && LleLibrariesTests.FirmwareFsRoot == null)
+        {
+            Skip = $"no firmware (set {EnvVars.TestInstalledData} to a VitaSharp data folder, or {EnvVars.FirmwareDir} to a Vita3K data folder or vs0, or {EnvVars.FirmwarePup})";
         }
     }
 }

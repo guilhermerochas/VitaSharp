@@ -503,14 +503,21 @@ What `dotnet test tests/VitaSharp.Tests` needs per system; a test whose requirem
 - `RendererPipelineLibraryTests` checks the linked pipelines where the software device has the extension with fast
   linking (SwiftShader, Mesa lavapipe) and the whole-pipeline fallback everywhere else.
 - Firmware: without it the tests of the real firmware modules (`libSceJson`, `libSceXml`, `libpaf`, the update file
-  install) are skipped. `VITASHARP_FIRMWARE_PUP` names a `PSVUPDAT.PUP`, `VITASHARP_FIRMWARE_DIR` a `vs0` or Vita3K
-  data folder; the Piglet compiler tests need `libshacccg.suprx` in `ur0:data`.
+  install; `dbutil` then runs the HLE side only) are skipped. `VITASHARP_FIRMWARE_PUP` names a
+  `PSVUPDAT.PUP`, `VITASHARP_FIRMWARE_DIR` a `vs0` or Vita3K data folder; the Piglet compiler tests need `libshacccg.suprx` in `ur0:data` of Vita3K's data folder or of the
+  folder named by `VITASHARP_TEST_INSTALLED_DATA`.
+- `VITASHARP_TEST_INSTALLED_DATA` (optional, read only): a VitaSharp data folder with installed games and firmware for
+  the tests of real installed modules (`LleLibrariesTests`, the Piglet compiler); unset, they are skipped.
 - The microphone tests (`MicrophoneTests`) use a scripted tone on a clock the test moves: no capture device, no
   permission and no sound card are needed on any system.
 - The location tests (`LocationSourceTests`) use a fixed position and a source the test moves: no location service
   and no permission are needed on any system.
-- The tests never use your data folder: each one makes a scratch folder (`VITASHARP_DATA` for the child processes);
-  the game-run tests boot a small executable the tests write themselves.
+- The tests never use your data folder: the test assembly points `VITASHARP_DATA` at a new temporary folder of the
+  run before any test starts (also over a value set in your shell), so `input.json`, `launcher.json`, logs, shader
+  cache and save states are the run's own; tests that need a folder of their own make one, and the child processes
+  get `--data=`. The launcher's Vita3K detection finds nothing in the tests. `TestDataIsolationTests` fails if a test
+  resolves or builds the path of your data folder. The game-run tests boot a small executable the tests write
+  themselves.
 - Optional: the LunarG Vulkan SDK's validation layers run the renderer workloads under validation with
   `dotnet test tests/VitaSharp.Tests --filter Category=Slow` (`RendererValidationTests`; skipped without the layer).
 - The window test runs a hidden window (`VITASHARP_HIDDEN_WINDOW=1`): on Linux it needs a display (`DISPLAY`), on

@@ -312,6 +312,10 @@ public static class EnvVars
     public const string SnapFs = "VITASHARP_SNAP_FS";
     public const string Swz1 = "VITASHARP_SWZ1";
     public const string SyscallLatencyUs = "VITASHARP_SYSCALL_LATENCY_US";
+    /// <summary>Tests: a VitaSharp data folder (with fs/) holding installed games and firmware, read only, that the
+    /// tests of real installed modules take them from (LleLibrariesTests, the Piglet compiler tests). Unset: those
+    /// tests are skipped. The suite itself always runs on a temporary data folder of its own (TestDataIsolation).</summary>
+    public const string TestInstalledData = "VITASHARP_TEST_INSTALLED_DATA";
     public const string TestTrace = "VITASHARP_TEST_TRACE";
     /// <summary>=1 (developer builds, Android): Perfetto/ATrace markers (Core/Util/Developer/DevTrace.cs, build/android-trace.*).</summary>
     public const string Trace = "VITASHARP_TRACE";
