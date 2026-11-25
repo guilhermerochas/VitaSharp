@@ -224,6 +224,11 @@ The game process places its hot threads itself (`Platforms/Android/Game/GamePerf
   that are not hot (a game's job, audio and file threads) run on every core while the hot threads leave at least half a
   fast core idle (the shader workers' rule), and sends them back to the slow cores once the hot threads fill the fast
   ones. For games whose main thread waits for its job threads.
+- **GXM scene recorder on the fast cores** (A/B, off by default): `VITASHARP_ANDROID_GXM_THREAD=big` moves the guest
+  thread that began the last GXM scene (often a game's render job thread, not its main thread) to the fast cluster as
+  soon as it changes, and the previous one back; the log says `GXM scenes recorded on thread N: moved to ...`.
+- **Debug mode from `config/env.txt`**: `VITASHARP_DEBUG_MODE=1` turns debug mode on as the setting does (as
+  `--debug-mode` / the variable on desktop).
 - **Where the guest threads wait** (any platform): `VITASHARP_PERF_HLE_TIME=1` times every HLE call (wall clock, two
   timestamps per call) and adds `PERF hle time` lines to each periodic summary: per busy guest thread, its time in HLE
   calls per frame since the previous summary and the functions it went to (notification, display queue, lwcond,
