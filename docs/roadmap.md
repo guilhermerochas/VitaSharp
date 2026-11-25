@@ -2452,7 +2452,12 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   resposta WPS), e isso é [G]: decidir com o usuário antes. Usa: Near, Mapas.
 - [ ] [P3][M] Magnetômetro, o que falta (o feito está em "Corrigido, falta o usuário testar"): (1) o anel de
   registros brutos do driver (`sceMotionDevRead`/`ReadForMagnCalib` copiam os registros do leitor, modo 0x10005 do
-  FUN_81004420; o formato do registro ainda não foi lido) e o `dataInfo`; (2) a fusão do campo no `deviceQuat` como o driver_us faz (hoje só a matriz NED e a estabilidade usam o
+  FUN_81004420; o formato do registro ainda não foi lido) e o `dataInfo`. Achado (25/11/2026, small4, estudo do
+  SceMotionDev 3.74): cada registro tem 0xF0 bytes copiados inteiros da fila do driver (até 64, a fila escolhida pelo
+  leitor entre 16); +0xA (4 bits baixos) e +0xB (quantas amostras) no cabeçalho, as amostras de 0x24 bytes a partir
+  de +0xC com o contador de tempo em +0x18 de cada uma (o driver desconta a volta do contador, 0xFFFF por unidade de
+  +0xA); +8 ganha o bit 0x40 quando o registro é de outro leitor. Falta ler o conteúdo de cada amostra (acelerômetro,
+  giroscópio e campo em unidades brutas do sensor); (2) a fusão do campo no `deviceQuat` como o driver_us faz (hoje só a matriz NED e a estabilidade usam o
   campo); (3) o magnetômetro de um controle no PC (o SDL não expõe um).
 - [ ] [P3][M] Teclado e mouse Bluetooth, o que falta (o feito está em "Corrigido, falta o usuário testar"): conferir
   no Sistema do Vita que Configurações > Bluetooth lista os dois dispositivos (os registros do `SceBt` seguem o 3.74,
