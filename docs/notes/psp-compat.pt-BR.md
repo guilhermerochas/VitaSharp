@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.md sha256=5a8b0773ee357c5c437b2757c109369ae679b79ba0d4291ebc00d40be5b4bdd6 -->
+<!-- pair: psp-compat.md sha256=6a198fe0e46eec36990a64244424cbc63f41521da54d919bb84fbe04701b197d -->
 # Núcleo de compatibilidade PSP (SceCompat, ScePspemu, Allegrex)
 
 *English: [psp-compat.md](psp-compat.md).*
@@ -268,6 +268,57 @@ framebuffer do PSP na memória do PSP e escreve os pixels de volta, separado do 
   (`0x803F0700`) e não faz nada; o boot põe merge 4 e alpha `0xFF` só no head 1. O apresentador mostra o plano 0
   posicionado (`PresentCommand.Placement`, `VulkanRenderer.CompatPlane.cs`; fora dos dumps da GPU) com o overlay do
   shell por cima, como o plano 1 é mesclado sobre o plano 0.
+
+### Velocidade do Allegrex: o cache de blocos e o tier IL planejado
+
+O núcleo do PSP roda a 333 MHz, então o interpretador precisa sustentar centenas de milhões de instruções por segundo
+para os jogos rodarem na taxa nativa. A medida é `build/bench.sh --filter '*AllegrexBenchmarks*'`
+(tests/VitaSharp.Benchmarks/AllegrexBenchmarks.cs: laços de inteiros, FPU, VFPU e chamadas/memória, o tempo por
+instrução).
+
+**Cache de blocos (feito).** O `AllegrexCore.Blocks.cs` decodifica uma vez os trechos em linha reta (até um desvio e
+seu delay slot, uma instrução de sistema ou o fim da página) num vetor de registros pequenos: um código de operação
+com os números de registrador e o imediato estendido já extraídos. Uma tabela de saltos executa inline as instruções
+inteiras comuns (ALU, beq/bne, j/jal, jr/jalr, lw/sw); o resto passa pelo decodificador completo. As instruções inline
+pulam a contabilidade de PC e Count por instrução, que é atualizada antes de qualquer outra instrução, antes de uma
+exceção e no fim da execução, então tudo o que pode observá-la vê os valores do núcleo de uma instrução por vez. Um
+bloco lembra o bloco em que continuou da última vez, e um desvio cujo delay slot é simples entra direto nele, sem
+busca. As interrupções são conferidas entre execuções; tudo o que pode deixar uma pendente encerra a execução
+(RaiseInterrupt/ClearInterrupt, instruções do COP0 e do controle de interrupção, eret, exceções, halt, Stop, uma
+escrita que um dispositivo responde com interrupção), e a execução para na instrução em que o Count chega ao Compare,
+então os eventos mantêm a ordem de instrução por instrução. Os blocos ficam por endereço físico em páginas de 4 KB; as
+escritas do próprio núcleo descartam os blocos da página escrita, a instrução cache descarta uma página (operações hit
+do I-cache) ou tudo (operações index), os controladores de DMA informam o que escrevem (`PspDmac.CodeWritten`), e
+outros escritores de fora do núcleo chamam `AllegrexCore.InvalidateCode` na thread do núcleo. Isso é mais estrito que
+o PSP, cujo I-cache não vê escrita nenhuma. O `sync` continua sem efeito: ele ordena acessos à memória e não mexe no
+I-cache.
+
+**FPU e VFPU no bloco (feito).** COP1, lwc1/swc1 e os opcodes 0x18/0x19 vão direto ao tratador, sem passar pelos
+switches do decodificador, só com o PC de exceção gravado. add.s/sub.s/mul.s são decodificados por inteiro e tomam um
+caminho curto quando os dois operandos são normais ou zero, o arredondamento é ao mais próximo e o resultado é normal
+ou zero (o resultado e a causa inexact como o `Arithmetic` dá); vadd/vsub/vmul/vdot decodificam as lanes uma vez e
+tomam um caminho curto enquanto os prefixos S, T e D estão em repouso. Todo o resto usa o tratador completo
+(`AllegrexCore.FastPaths.cs`).
+
+**Tier IL (feito).** O `AllegrexCore.Il.cs`, no mesmo padrão do `Backends/IlJitCompiler.cs` da CPU ARM:
+
+1. Calor: o bloco conta as instruções a cada entrada; passado o `AllegrexCore.IlHotInstructions` (200 000 por
+   padrão) ele é compilado uma vez, na thread do núcleo (cerca de um milissegundo).
+2. Código: um `DynamicMethod` por bloco. Os registradores do guest que ele usa ficam em locais, carregados na entrada e
+   gravados de volta em toda saída, então o RyuJIT os mantém em registradores do host. Compila as instruções simples
+   da ALU, lw/sw, add.s/sub.s/mul.s e vadd/vsub/vmul/vdot (chamadas aos tratadores com os campos decodificados como
+   constantes), e um desvio ou salto final cujo delay slot é um desses. Qualquer outro bloco fica no cache de blocos.
+3. Saídas: o código devolve o próximo PC; a execução segue para o bloco em que continuou da última vez (a ligação do
+   cache de blocos), compilado ou não.
+4. Exatidão: o orçamento, o limite do Count/Compare e a checagem de interrupções ficam nas fronteiras de bloco; um
+   lw/sw desalinhado sai antes da instrução, e o interpretador gera o erro de endereço no PC exato; uma escrita que
+   encerra a execução, ou uma exceção da FPU/VFPU (com o PC e o flag de delay slot gravados antes da chamada), sai
+   depois dela.
+5. Invalidação: o código mora no bloco, então descartar os blocos de uma página descarta o código junto.
+6. O Native AOT (Android) não tem Reflection.Emit: lá o `IlTierSupported` é falso e o cache de blocos é o caminho
+   rápido; um tier nativo ARM64 (o padrão do `NativeArm64Compiler` da CPU ARM) é o passo seguinte.
+7. Testes: o `AllegrexIlTierTests` roda de novo todos os outros testes do Allegrex com o tier forçado (todo bloco
+   compilável compilado na primeira execução).
 
 ### O que exige chaves e o que não exige
 

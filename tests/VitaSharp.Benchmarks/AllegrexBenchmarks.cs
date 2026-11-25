@@ -103,13 +103,13 @@ public class AllegrexBenchmarks
             R(0x25, 14, 13, 8),      // or t6, t5, t0 (slot)
         ]);
 
-        // f2 = f0 + f1; f3 = f2 * f1; f0 = f3 - f2 ...
+        // f2 = f0 + f1; f3 = f2 * f1; f0 = f3 - f2 ... (f1 = 1: the values stay finite and normal)
         uint addS = 0x46000000u | (1u << 16) | (0u << 11) | (2u << 6);
         uint mulS = 0x46000002u | (1u << 16) | (2u << 11) | (3u << 6);
         uint subS = 0x46000001u | (2u << 16) | (3u << 11) | (0u << 6);
         _fpu = Make([addS, mulS, subS, addS, I(0x04, 0, 0, -5), mulS]);
         _fpu.Fpr[0] = BitConverter.SingleToUInt32Bits(1.5f);
-        _fpu.Fpr[1] = BitConverter.SingleToUInt32Bits(1.0001f);
+        _fpu.Fpr[1] = BitConverter.SingleToUInt32Bits(1.0f);
 
         // vadd.q C000, C010, C020; vmul.q C010, C000, C020; vdot.q S030, C000, C010
         uint vadd = 0x60000000u | (2u << 16) | (1u << 8) | 0u | 0x8080u;

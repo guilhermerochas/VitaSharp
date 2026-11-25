@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.pt-BR.md sha256=ead6778429e0dff3830771ddc2ad0c4dcb5ae435ec2eef193b277caeb4edf009 -->
+<!-- pair: psp-compat.pt-BR.md sha256=ab4fca501e6ebaa193b0fcd4253e3a21b1971c47a92ec1784893f8889366af26 -->
 # PSP compatibility core (SceCompat, ScePspemu, Allegrex)
 
 *Português: [psp-compat.pt-BR.md](psp-compat.pt-BR.md).*
@@ -258,6 +258,54 @@ framebuffer in PSP memory and writes the pixels back, apart from the GXM rendere
   `0xFF` on head 1 only. The presenter shows the placed plane 0 (`PresentCommand.Placement`,
   `VulkanRenderer.CompatPlane.cs`; not part of GPU dumps) with the shell's overlay over it, as plane 1 is merged over
   plane 0.
+
+### Allegrex speed: the block cache and the planned IL tier
+
+The PSP core runs at 333 MHz, so the interpreter has to sustain hundreds of millions of instructions per second
+for games to run at their native rate. Measure with `build/bench.sh --filter '*AllegrexBenchmarks*'`
+(tests/VitaSharp.Benchmarks/AllegrexBenchmarks.cs: integer, FPU, VFPU and call/memory loops, the time per
+instruction).
+
+**Block cache (done).** `AllegrexCore.Blocks.cs` decodes straight-line runs once (to a branch and its delay slot, a
+system instruction or a page end) into an array of small records: an operation code with the register numbers and the
+extended immediate already extracted. A jump table runs the common integer instructions inline (ALU, beq/bne, j/jal,
+jr/jalr, lw/sw); everything else goes through the full decoder. The inline instructions skip the per-instruction PC
+and Count bookkeeping, which is brought up to date before any other instruction, before an exception and at the end of
+a run, so whatever can observe it sees the values of the one-at-a-time core. A block remembers the block it last
+continued to, and a branch whose delay slot is plain goes straight into it without a lookup. Interrupts are checked
+between runs; whatever can make one pending ends the run (RaiseInterrupt/ClearInterrupt, COP0 and interrupt-control
+instructions, eret, exceptions, halt, Stop, a store a device answers with an interrupt), and a run stops at the
+instruction where Count reaches Compare, so events keep the per-instruction order. Blocks are keyed by physical
+address in 4 KB pages; the core's own stores drop the written page's blocks, the cache instruction drops a page
+(I-cache hit operations) or everything (index operations), the DMA controllers report what they write
+(`PspDmac.CodeWritten`), and other writers outside the core call `AllegrexCore.InvalidateCode` on the core's thread.
+That is stricter than the PSP, whose I-cache does not see stores at all. `sync` stays a no-op: it orders memory
+accesses and does not touch the I-cache.
+
+**FPU and VFPU in the block (done).** COP1, lwc1/swc1 and opcodes 0x18/0x19 go straight to their handler, past the
+decoder's switches, with only the exception PC set. add.s/sub.s/mul.s decode fully and take a short path when both
+operands are normal or zero, the rounding mode is nearest and the result is normal or zero (the result and the
+inexact cause as `Arithmetic` gives them); vadd/vsub/vmul/vdot decode their lanes once and take a short path while the
+S, T and D prefixes are at rest. Anything else takes the full handler (`AllegrexCore.FastPaths.cs`).
+
+**IL tier (done).** `AllegrexCore.Il.cs`, the same pattern as the ARM CPU's `Backends/IlJitCompiler.cs`:
+
+1. Hotness: a block counts its instructions at each entry; past `AllegrexCore.IlHotInstructions` (200 000 by default)
+   it is compiled once, on the core's thread (about a millisecond).
+2. Code: one `DynamicMethod` per block. The guest registers it touches live in locals, loaded at entry and written
+   back at every exit, so RyuJIT keeps them in host registers. It compiles the plain ALU instructions, lw/sw,
+   add.s/sub.s/mul.s and vadd/vsub/vmul/vdot (calls to their handlers with the decoded fields as constants), and a
+   closing branch or jump whose delay slot is one of those. Any other block stays in the block cache.
+3. Exits: the code returns the next PC; the run then goes on into the block it last continued to (the block cache's
+   link), compiled or not.
+4. Exactness: the budget, the Count/Compare cap and the interrupt checks stay at block boundaries; a misaligned lw/sw
+   leaves before the instruction, so the interpreter raises the address error at the exact PC; a store that ends the
+   run, or an FPU/VFPU exception (its PC and delay-slot flag stored before the call), leaves after it.
+5. Invalidation: the code lives in its block, so dropping a page's blocks drops their code too.
+6. Native AOT (Android) has no Reflection.Emit: `IlTierSupported` is false there and the block cache is the fast path;
+   a native ARM64 tier (the ARM CPU's `NativeArm64Compiler` pattern) is the step after.
+7. Tests: `AllegrexIlTierTests` runs every other Allegrex test again with the tier forced on (every compilable block
+   compiled at its first run).
 
 ### What needs keys and what does not
 

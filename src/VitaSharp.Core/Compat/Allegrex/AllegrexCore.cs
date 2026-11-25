@@ -109,6 +109,7 @@ public sealed partial class AllegrexCore
             _pc = value;
             _nextPc = value + 4;
             _nextIsDelaySlot = false;
+            _endBlock = true;
         }
     }
 
@@ -180,6 +181,7 @@ public sealed partial class AllegrexCore
         _stopped = false;
         _executedInstructions = 0;
         _gpr[0] = 0;
+        _generation++;
         Pc = pc;
     }
 
@@ -187,6 +189,7 @@ public sealed partial class AllegrexCore
     public void Stop()
     {
         _stopped = true;
+        _endBlock = true;
     }
 
     /// <summary>Drives Cause.IP[<paramref name="line"/>] high (2..7: hardware lines; 0 and 1 set the software bits).</summary>
@@ -203,6 +206,8 @@ public sealed partial class AllegrexCore
         {
             _hardwareLines |= bit;
         }
+
+        _endBlock = true;
     }
 
     /// <summary>Drives Cause.IP[<paramref name="line"/>] low again.</summary>
@@ -219,6 +224,8 @@ public sealed partial class AllegrexCore
         {
             _hardwareLines &= ~bit;
         }
+
+        _endBlock = true;
     }
 
     /// <summary>Reads a COP0 register as mfc0 does.</summary>
@@ -277,9 +284,13 @@ public sealed partial class AllegrexCore
     public int Run(int cycles)
     {
         int executed = 0;
+        Block? previous = null;
+
+        // an interrupt can only become due through something that ends a block (or before the run)
+        bool check = true;
         while (executed < cycles && !_stopped)
         {
-            if (((Cause & _cop0[Cop0Status]) & CauseInterruptPending) != 0)
+            if (check && ((Cause & _cop0[Cop0Status]) & CauseInterruptPending) != 0)
             {
                 _halted = false;
                 if (InterruptsAccepted())
@@ -295,8 +306,29 @@ public sealed partial class AllegrexCore
                 break;
             }
 
-            Step();
-            executed++;
+            if ((_pc & 3) != 0 || _nextIsDelaySlot || _nextPc != _pc + 4)
+            {
+                // a misaligned fetch (the address error), or a stop between a branch and its delay slot: one
+                // instruction through the one-at-a-time path
+                Step();
+                previous = null;
+                check = true;
+                executed++;
+                continue;
+            }
+
+            int limit = cycles - executed;
+            uint toCompare = InstructionsToCompare();
+            if (toCompare != 0 && toCompare < (uint)limit)
+            {
+                limit = (int)toCompare;
+            }
+
+            Block block = GetBlock(_pc, previous);
+            executed += RunBlock(ref block, limit);
+            CheckTimer();
+            previous = block;
+            check = _endBlock || _timerInterrupt;
         }
 
         return executed;
@@ -341,6 +373,7 @@ public sealed partial class AllegrexCore
     /// </summary>
     private void RaiseException(AllegrexExceptionCode code)
     {
+        _exceptionsTaken++;
         uint status = _cop0[Cop0Status];
         uint cause = _cop0[Cop0Cause] & ~(CauseExceptionCodeMask | CauseBranchDelay);
         cause |= (uint)code << 2;
@@ -368,4 +401,4 @@ public sealed partial class AllegrexCore
         _cop0[Cop0BadVAddr] = address;
         RaiseException(code);
     }
-}
+}

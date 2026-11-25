@@ -503,7 +503,7 @@ public sealed partial class AllegrexCore
 
             if (store)
             {
-                _bus.Write32(address & PhysicalMask, _vfpr[VfpuIndex(single)]);
+                Store32(address & PhysicalMask, _vfpr[VfpuIndex(single)]);
             }
             else
             {
@@ -532,7 +532,7 @@ public sealed partial class AllegrexCore
             {
                 if (store)
                 {
-                    _bus.Write32(physical + (uint)(i * 4), lanes[i]);
+                    Store32(physical + (uint)(i * 4), lanes[i]);
                 }
                 else
                 {
@@ -547,7 +547,7 @@ public sealed partial class AllegrexCore
             {
                 if (store)
                 {
-                    _bus.Write32(physical - (uint)(i * 4), lanes[3 - i]);
+                    Store32(physical - (uint)(i * 4), lanes[3 - i]);
                 }
                 else
                 {
@@ -562,7 +562,7 @@ public sealed partial class AllegrexCore
             {
                 if (store)
                 {
-                    _bus.Write32(physical + (uint)(i * 4), lanes[i]);
+                    Store32(physical + (uint)(i * 4), lanes[i]);
                 }
                 else
                 {
