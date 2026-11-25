@@ -2457,8 +2457,21 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   leitor entre 16); +0xA (4 bits baixos) e +0xB (quantas amostras) no cabeçalho, as amostras de 0x24 bytes a partir
   de +0xC com o contador de tempo em +0x18 de cada uma (o driver desconta a volta do contador, 0xFFFF por unidade de
   +0xA); +8 ganha o bit 0x40 quando o registro é de outro leitor. Falta ler o conteúdo de cada amostra (acelerômetro,
-  giroscópio e campo em unidades brutas do sensor); (2) a fusão do campo no `deviceQuat` como o driver_us faz (hoje só a matriz NED e a estabilidade usam o
-  campo); (3) o magnetômetro de um controle no PC (o SDL não expõe um).
+  giroscópio e campo em unidades brutas do sensor). Mais (small4, timebox de 1 h sem fechar): a amostra i começa em
+  `registro + i*0x24` (tempo em +0x18, bandeiras em +0x1E, o bit 0x8 = campo válido, o campo em +0x32/+0x34/+0x36
+  como int16 << 2); o campo vem do magnetômetro no I2C 1, endereço 0x18, registro 0x11 (8 bytes, FUN_810003a4 e
+  vizinhas); acelerômetro e giroscópio chegam pelo syscon (`SceSysconForDriver_40FF3898`, pacotes de movimento):
+  falta ler esse caminho para saber as unidades brutas antes de montar a fila a partir da amostra do host;
+  (2) a fusão do campo no `deviceQuat` como o driver_us faz (hoje só a matriz NED e a estabilidade usam o campo).
+  Achado (small4, estudo do driver_us 3.74, timebox de 1 h sem fechar): na primeira amostra depois de um reset
+  (o pedido pendente em `DAT_81010148` por leitor), com o magnetômetro desligado (`DAT_81015258` = 0, posto pelo
+  `sceMotionMagnetometerOn`) a referência do mundo é a constante (0,1,0), (1,0,0), (0,0,1) (dados em 0x81004DE0);
+  com ele ligado o FUN_8100b380 monta a referência dos vetores normalizados da gravidade e do campo (produtos
+  vetoriais, TRIAD) e a orientação passa a ter o norte; a cada amostra o FUN_8100a5fc filtra o campo bruto (+0x32 da
+  amostra) para o campo usado. Falta: ler em que eixo do mundo o norte cai (a matriz que o FUN_8100b380 grava em
+  `param_1[0x10..]`) e se o campo corrige o yaw continuamente (os ramos com `DAT_81015258` em 0x810066xx); só então
+  trocar o `MotionFusion.Reset` (hoje só a gravidade) com teste; (3) o magnetômetro de um controle no PC (o SDL não
+  expõe um).
 - [ ] [P3][M] Teclado e mouse Bluetooth, o que falta (o feito está em "Corrigido, falta o usuário testar"): conferir
   no Sistema do Vita que Configurações > Bluetooth lista os dois dispositivos (os registros do `SceBt` seguem o 3.74,
   mas a tela não foi aberta); as teclas de mídia no macOS (lá elas chegam como eventos de sistema `NSSystemDefined`,
