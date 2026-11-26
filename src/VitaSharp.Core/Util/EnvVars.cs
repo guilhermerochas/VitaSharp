@@ -46,6 +46,9 @@ public static class EnvVars
     /// <summary>A/B switch: =1 records the hot vkCmd* calls through device-level function pointers loaded once with
     /// vkGetDeviceProcAddr (no Silk.NET dispatch, no GC transition); default 0 (Silk.NET).</summary>
     public const string VkDirect = "VITASHARP_VK_DIRECT";
+    /// <summary>=0: every draw binds its vertex/index buffers, descriptor set 0 and push constants again; default on (a
+    /// call that would bind what the command buffer has bound is skipped, the index buffer rebased by the first index).</summary>
+    public const string DrawDedup = "VITASHARP_DRAW_DEDUP";
     /// <summary>Android: =0 tries the hardware H.264 decoders first even for pictures up to 960x544 (default: Android's own first there), =1 always Android's own first.</summary>
     public const string MediaCodecSoftware = "VITASHARP_MEDIACODEC_SOFTWARE";
     /// <summary>Android: MediaCodec H.264 output timing (Mobile.Core/Media/MediaCodecSupport.cs, SynchronousOutput).

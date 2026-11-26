@@ -1408,12 +1408,14 @@ public sealed unsafe partial class VulkanRenderer
         // ---- geometry upload
         int indexSize = d.Index32 ? 4 : 2;
         (uint minIndex, uint maxIndex) = MinMaxIndex(d.IndexAddress, d.IndexCount, d.Index32);
+        ProfMark(ProfPhase.GeoMinMax);
         // per-vertex streams are uploaded from the lowest index used, the draw rebased with vertexOffset (meshes drawn in
         // pieces out of one big vertex buffer uploaded it whole for every piece: F1 2011's races copied tens of MB per
         // frame); not when the program reads the vertex index itself (gl_VertexIndex includes the offset)
         uint firstVertex = minIndex > 0 && (d.VertexProgram.Info.Program.Flags & Core.Gxm.Shader.GxpProgram.FlagIndexUsed) == 0 ? minIndex : 0;
         int vertexOffset = -(int)firstVertex;
         (Buffer ib, ulong ibOff) = UploadRange(d.IndexAddress, d.IndexCount * (uint)indexSize);
+        ProfMark(ProfPhase.GeoIndex);
         Buffer* vbufs = stackalloc Buffer[17];
         ulong* voffs = stackalloc ulong[17];
         GxmVertexProgram gxmVertexProgram = d.VertexProgram;
@@ -1475,7 +1477,7 @@ public sealed unsafe partial class VulkanRenderer
             voffs[s] = off;
         }
 
-        ProfMark(ProfPhase.Geometry);
+        ProfMark(ProfPhase.GeoStreams);
         // ---- uniforms
         DescriptorBufferInfo* bufInfos = stackalloc DescriptorBufferInfo[8];
         bufInfos[2] = ResolveMappedSlots(d.VertexProgram.Info.UniformSlots, d.VertexUniformSpan, d.VertexUniformAddrs, vs.Gen?.WritesMemory == true);
@@ -1558,6 +1560,8 @@ public sealed unsafe partial class VulkanRenderer
                 _statPipelineBinds++;
                 _boundPipeline = pipeline;
             }
+
+            ProfMark(ProfPhase.RecPipeline);
             sets[3] = fbSet;
             // set 0 is bound for every draw (its dynamic offsets); sets 1-3 only from the first one that changed
             uint setCount = 1;
@@ -1570,13 +1574,27 @@ public sealed unsafe partial class VulkanRenderer
                 }
             }
 
-            _cmd.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _pipelineLayout, 0, setCount, sets, (uint)DynamicUniformBindings, dynOffsets);
-            for (int i = 1; i < 4; i++)
+            // set 0 with the same dynamic offsets as the last draw's, and sets 1-3 unchanged: nothing to bind
+            // (Dolphin's StateTracker binds descriptor sets only when one of them or the uniform offsets changed)
+            bool sameSets = s_drawDedup && setCount == 1 && _dyn.SetsBound && sets[0].Handle == _dyn.Sets[0] && SameOffsets(dynOffsets, DynamicUniformBindings);
+            if (!sameSets)
+            {
+                _cmd.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _pipelineLayout, 0, setCount, sets, (uint)DynamicUniformBindings, dynOffsets);
+                _statSetBinds++;
+            }
+
+            for (int i = 0; i < 4; i++)
             {
                 _dyn.Sets[i] = sets[i].Handle;
             }
 
+            for (int i = 0; i < DynamicUniformBindings; i++)
+            {
+                _dyn.Offsets[i] = dynOffsets[i];
+            }
+
             _dyn.SetsBound = true;
+            ProfMark(ProfPhase.RecSets);
             // one call for every stream (the bindings between them get the dummy buffer): each vkCmd* costs driver CPU
             if (vs.StreamMask != 0)
             {
@@ -1590,16 +1608,42 @@ public sealed unsafe partial class VulkanRenderer
                     }
                 }
 
-                _cmd.CmdBindVertexBuffers(cmd, (uint)lo, (uint)(hi - lo + 1), &vbufs[lo], &voffs[lo]);
+                if (!s_drawDedup || !SameVertexBuffers(lo, hi, vbufs, voffs))
+                {
+                    _cmd.CmdBindVertexBuffers(cmd, (uint)lo, (uint)(hi - lo + 1), &vbufs[lo], &voffs[lo]);
+                    _statVertexBinds++;
+                    NoteVertexBuffers(lo, hi, vbufs, voffs);
+                }
             }
-            if (vs.DummyBinding)
+            if (vs.DummyBinding && (!s_drawDedup || !_dyn.DummyBound))
             {
                 Buffer db = _dummyBuffer;
                 ulong dz = 0;
                 _cmd.CmdBindVertexBuffers(cmd, 16, 1, &db, &dz);
+                _dyn.DummyBound = true;
             }
-            _cmd.CmdBindIndexBuffer(cmd, ib, ibOff, d.Index32 ? IndexType.Uint32 : IndexType.Uint16);
+            // the index buffer the last draw bound serves again when this draw's indices are in the same buffer at or
+            // after its offset: the draw starts at the index the offset difference gives (uploads are 4-byte aligned)
+            IndexType indexType = d.Index32 ? IndexType.Uint32 : IndexType.Uint16;
+            uint firstIndex = 0;
+            if (s_drawDedup && _dyn.IndexBound && ib.Handle == _dyn.IndexBuffer && indexType == _dyn.IndexType && ibOff >= _dyn.IndexOffset
+                && (ibOff - _dyn.IndexOffset) % (ulong)indexSize == 0 && (ibOff - _dyn.IndexOffset) / (ulong)indexSize <= int.MaxValue)
+            {
+                firstIndex = (uint)((ibOff - _dyn.IndexOffset) / (ulong)indexSize);
+            }
+            else
+            {
+                _cmd.CmdBindIndexBuffer(cmd, ib, ibOff, indexType);
+                _statIndexBinds++;
+                _dyn.IndexBuffer = ib.Handle;
+                _dyn.IndexOffset = ibOff;
+                _dyn.IndexType = indexType;
+                _dyn.IndexBound = true;
+            }
+
+            ProfMark(ProfPhase.RecBuffers);
             SetDynamicState(cmd, drawState, topology);
+            ProfMark(ProfPhase.RecDynamic);
             // Programmable blending reads the attachment behind a barrier placed before the draw, but on hardware every
             // fragment reads what earlier primitives of the same draw wrote. Small draws (glyph quads of a text string
             // blending over each other, strips of particle quads) are drawn piece by piece with a barrier in between.
@@ -1610,7 +1654,7 @@ public sealed unsafe partial class VulkanRenderer
             // (copySplit). The pieces of a singleFetch / copySplit draw were built when it was chosen (_fetchPieces).
             if (copySplit)
             {
-                _cmd.CmdDrawIndexed(cmd, _fetchPieces[piece].Count, 1, _fetchPieces[piece].First, vertexOffset, 0);
+                _cmd.CmdDrawIndexed(cmd, _fetchPieces[piece].Count, 1, firstIndex + _fetchPieces[piece].First, vertexOffset, 0);
             }
             else if ((singleFetch || inputFetch && FetchSplitDraw(d, topology)) && !_core.RasterizationOrderColor)
             {
@@ -1621,14 +1665,14 @@ public sealed unsafe partial class VulkanRenderer
                         InputFetchBarrier(cmd);
                     }
 
-                    _cmd.CmdDrawIndexed(cmd, _fetchPieces[c].Count, 1, _fetchPieces[c].First, vertexOffset, 0);
+                    _cmd.CmdDrawIndexed(cmd, _fetchPieces[c].Count, 1, firstIndex + _fetchPieces[c].First, vertexOffset, 0);
                 }
                 _statFetchSplitDraws++;
             }
             else
             {
                 bool visQuery = BeginVisibilityQuery(cmd, d, out uint query);
-                _cmd.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, 0, vertexOffset, 0);
+                _cmd.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, firstIndex, vertexOffset, 0);
                 _statDraws++;
                 if (visQuery)
                 {
@@ -1642,7 +1686,7 @@ public sealed unsafe partial class VulkanRenderer
                 EndSingleFetchPass();
             }
         }
-        ProfMark(ProfPhase.Record);
+        ProfMark(ProfPhase.RecDraw);
         if (ShaderGenerator.NanDraws)
         {
             NanNoteDraw(d, vs, fs);
@@ -1717,7 +1761,7 @@ public sealed unsafe partial class VulkanRenderer
             ResMultiplier = SceneScale,
             ZOffset = 0,
             ZScale = 1,
-            DrawId = _drawSerial,
+            DrawId = ShaderGenerator.ReadsDrawId || !s_drawDedup ? _drawSerial : 0,
             FbSamples = _multisampled ? (_msSamples == SampleCountFlags.Count4Bit ? 4 : 2) : 1,
             FaceCull = drawState.CullMode != 0 ? 1 : 0
         };
@@ -1785,7 +1829,14 @@ public sealed unsafe partial class VulkanRenderer
             _cmd.CmdSetScissor(cmd, 0, 1, in scissor);
             _dyn.Scissor = scissor;
         }
-        _cmd.CmdPushConstants(cmd, _pipelineLayout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, 0, (uint)sizeof(PushConstants), &pc);
+        // push constants hold across draws (and pipeline binds) of the command buffer: equal ones are not pushed again
+        if (!s_drawDedup || !_dyn.PushSet || !SamePush(in pc, in _dyn.Push))
+        {
+            _cmd.CmdPushConstants(cmd, _pipelineLayout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, 0, (uint)sizeof(PushConstants), &pc);
+            _statPushes++;
+            _dyn.Push = pc;
+            _dyn.PushSet = true;
+        }
 
         // extended dynamic state, unless a driver quirk baked it into the pipeline (VulkanRenderer.StaticState.cs)
         bool staticEds = StaticEds;
@@ -1900,8 +1951,18 @@ public sealed unsafe partial class VulkanRenderer
     {
         public nint Cmd;
         public bool Valid, DepthTest, DepthWrite, Stencil, StencilSet, Bias, BiasSet, SetsBound;
-        /// <summary>Descriptor sets 1-3 bound by the last draw.</summary>
+        /// <summary>Descriptor sets 0-3 bound by the last draw, and set 0's dynamic offsets.</summary>
         public SetHandles Sets;
+        public OffsetWords Offsets;
+        /// <summary>VITASHARP_DRAW_DEDUP: the vertex buffers (bindings 0-15) and index buffer the last draws bound, the
+        /// last push constants.</summary>
+        public BufferHandles VertexBuffers;
+        public BufferOffsets VertexOffsets;
+        public uint VertexBound;
+        public bool DummyBound, IndexBound, PushSet;
+        public ulong IndexBuffer, IndexOffset;
+        public IndexType IndexType;
+        public PushConstants Push;
         public Viewport Vp;
         public Rect2D Scissor;
         public PrimitiveTopology Topology;
@@ -1911,6 +1972,71 @@ public sealed unsafe partial class VulkanRenderer
         public StencilState Front, Back;
     }
     private DynShadow _dyn;
+
+    /// <summary>VITASHARP_DRAW_DEDUP=0 binds the vertex/index buffers, set 0 and the push constants for every draw again;
+    /// default on: a vkCmd* call is skipped when it would bind what is bound (Dolphin's StateTracker, yuzu's dirty
+    /// flags). The index buffer is rebased with the draw's first index instead of bound at the new offset.</summary>
+    private static readonly bool s_drawDedup = Environment.GetEnvironmentVariable(EnvVars.DrawDedup)?.Trim() != "0";
+    private long _statSetBinds, _statVertexBinds, _statIndexBinds, _statPushes;
+
+    [System.Runtime.CompilerServices.InlineArray(6)]
+    private struct OffsetWords
+    {
+        private uint _element0;
+    }
+
+    [System.Runtime.CompilerServices.InlineArray(16)]
+    private struct BufferHandles
+    {
+        private ulong _element0;
+    }
+
+    [System.Runtime.CompilerServices.InlineArray(16)]
+    private struct BufferOffsets
+    {
+        private ulong _element0;
+    }
+
+    private bool SameOffsets(uint* offsets, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            if (offsets[i] != _dyn.Offsets[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Bindings <paramref name="lo"/>-<paramref name="hi"/> (below 16) hold these buffers and offsets already.</summary>
+    private bool SameVertexBuffers(int lo, int hi, Buffer* buffers, ulong* offsets)
+    {
+        for (int s = lo; s <= hi; s++)
+        {
+            if ((_dyn.VertexBound & (1u << s)) == 0 || _dyn.VertexBuffers[s] != buffers[s].Handle || _dyn.VertexOffsets[s] != offsets[s])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private void NoteVertexBuffers(int lo, int hi, Buffer* buffers, ulong* offsets)
+    {
+        for (int s = lo; s <= hi; s++)
+        {
+            _dyn.VertexBuffers[s] = buffers[s].Handle;
+            _dyn.VertexOffsets[s] = offsets[s];
+            _dyn.VertexBound |= 1u << s;
+        }
+    }
+
+    private static bool SamePush(in PushConstants a, in PushConstants b) => a.ViewportFlag == b.ViewportFlag && a.ScreenWidth == b.ScreenWidth
+        && a.ScreenHeight == b.ScreenHeight && a.ZOffset == b.ZOffset && a.ZScale == b.ZScale && a.ResMultiplier == b.ResMultiplier
+        && a.DrawId == b.DrawId && a.FbSamples == b.FbSamples && a.FaceCull == b.FaceCull;
 
     [System.Runtime.CompilerServices.InlineArray(4)]
     private struct SetHandles

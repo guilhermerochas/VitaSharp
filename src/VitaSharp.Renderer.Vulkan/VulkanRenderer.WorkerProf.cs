@@ -22,6 +22,9 @@ public sealed unsafe partial class VulkanRenderer
         PresBegin, PresPrep, PresAcquire, PresBlit, PresSubmit, PresRetire,
         // inside BeginScene: retire poll, frame begin, rendering end, colour target lookup, depth target lookup
         BsPoll, BsFrame, BsEnd, BsTarget, BsDepth,
+        // inside Geometry: index min/max scan, index upload, vertex streams; inside Record: pipeline bind, descriptor
+        // sets, vertex/index buffer binds, dynamic state + push constants, the draw call
+        GeoMinMax, GeoIndex, GeoStreams, RecPipeline, RecSets, RecBuffers, RecDynamic, RecDraw,
         Count,
     }
 
@@ -31,6 +34,9 @@ public sealed unsafe partial class VulkanRenderer
     private static readonly bool s_workerProf = false;
 #endif
     private readonly long[] _profTicks = new long[(int)ProfPhase.Count];
+    /// <summary>Managed bytes allocated per phase (same marks as <see cref="_profTicks"/>).</summary>
+    private readonly long[] _profPhaseAlloc = new long[(int)ProfPhase.Count];
+    private long _profA;
     /// <summary>Texture units resolved: memory, colour target, other.</summary>
     private readonly long[] _profUnits = new long[4];
 
@@ -60,6 +66,7 @@ public sealed unsafe partial class VulkanRenderer
         if (s_workerProf)
         {
             _profT = Stopwatch.GetTimestamp();
+            _profA = GC.GetAllocatedBytesForCurrentThread();
         }
     }
 
@@ -75,13 +82,25 @@ public sealed unsafe partial class VulkanRenderer
         long now = Stopwatch.GetTimestamp();
         _profTicks[(int)profPhase] += now - _profT;
         _profT = now;
+        long allocated = GC.GetAllocatedBytesForCurrentThread();
+        _profPhaseAlloc[(int)profPhase] += allocated - _profA;
+        _profA = allocated;
     }
 
     private void ExecuteProfiled(GpuCommand command)
     {
         long t0 = Stopwatch.GetTimestamp();
+        long cpu0 = ThreadCpu();
+        long alloc0 = GC.GetAllocatedBytesForCurrentThread();
         long fence0 = Core.Util.FrameLedger.Total(Core.Util.FrameLedger.Cat.FenceWait);
         ExecuteCommand(command);
+        _profCpu += ThreadCpu() - cpu0;
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - alloc0;
+        _profAlloc += allocated;
+        if (command is DrawCommand)
+        {
+            _profDrawAlloc += allocated;
+        }
         long dt = Stopwatch.GetTimestamp() - t0 - (Core.Util.FrameLedger.Total(Core.Util.FrameLedger.Cat.FenceWait) - fence0);
         _profExecTicks += dt;
         if (command is DrawCommand)
@@ -96,11 +115,63 @@ public sealed unsafe partial class VulkanRenderer
         // the first frames compile shaders and pipelines: the steady state is measured after them
         if (command is PresentCommand && _workFrames == s_profWarmup)
         {
+            _profCpu = 0;
+            _profAlloc = _profDrawAlloc = 0;
             _profExecTicks = _profDrawTicks = 0;
             Array.Clear(_profTicks);
+            Array.Clear(_profPhaseAlloc);
             Array.Clear(_profUnits);
             _profByType.Clear();
             _profQueueSubmitTicks = _profQueuePresentTicks = 0;
+        }
+    }
+
+    /// <summary>The worker thread's own CPU spent in Execute since the warmup (<see cref="ThreadCpu"/> units): unlike the
+    /// Execute ticks it leaves out the time the thread was preempted (a busy desktop) and the blocking waits.</summary>
+    private long _profCpu;
+    /// <summary>Managed bytes the worker allocated in Execute since the warmup, all commands and draws only.</summary>
+    private long _profAlloc, _profDrawAlloc;
+
+    [System.Runtime.InteropServices.DllImport("kernel32")]
+    private static extern nint GetCurrentThread();
+
+    [System.Runtime.InteropServices.DllImport("kernel32")]
+    private static extern int QueryThreadCycleTime(nint thread, out ulong cycles);
+
+    [System.Runtime.InteropServices.DllImport("libc", EntryPoint = "clock_gettime")]
+    private static extern int ClockGetTime(int clock, out TimeSpec time);
+
+    private struct TimeSpec
+    {
+        public nint Seconds;
+        public nint Nanoseconds;
+    }
+
+    private static bool s_threadCpuMissing;
+
+    /// <summary>The calling thread's own CPU so far: Windows CPU cycles (QueryThreadCycleTime: precise, unlike its 15.6 ms
+    /// thread times), elsewhere ns (CLOCK_THREAD_CPUTIME_ID); 0 when neither is available.</summary>
+    private static long ThreadCpu()
+    {
+        if (s_threadCpuMissing)
+        {
+            return 0;
+        }
+
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return QueryThreadCycleTime(GetCurrentThread(), out ulong cycles) != 0 ? (long)cycles : 0;
+            }
+
+            int clock = OperatingSystem.IsMacOS() || OperatingSystem.IsIOS() ? 16 : 3;
+            return ClockGetTime(clock, out TimeSpec time) == 0 ? (long)time.Seconds * 1_000_000_000 + time.Nanoseconds : 0;
+        }
+        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException)
+        {
+            s_threadCpuMissing = true;
+            return 0;
         }
     }
 
@@ -112,7 +183,8 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         double f = Math.Max(1, _workFrames - s_profWarmup);
-        var sb = new System.Text.StringBuilder($"\nPERF worker: {Ms(_profExecTicks) / f:F3} ms/frame in Execute without fence waits (after {s_profWarmup} frames), draws {Ms(_profDrawTicks) / f:F3} (");
+        string cpu = OperatingSystem.IsWindows() ? $"{_profCpu / 1e6 / f:F3} M cycles" : $"{_profCpu / 1e6 / f:F3} ms";
+        var sb = new System.Text.StringBuilder($"\nPERF worker: {Ms(_profExecTicks) / f:F3} ms/frame in Execute without fence waits (after {s_profWarmup} frames), thread CPU {cpu}/frame, allocated {_profAlloc / 1024.0 / f:F1} KB/frame (draws {_profDrawAlloc / 1024.0 / f:F1}), draws {Ms(_profDrawTicks) / f:F3} (");
         for (int i = 0; i < (int)ProfPhase.Record + 1; i++)
         {
             sb.Append($"{(i > 0 ? " " : "")}{(ProfPhase)i} {Ms(_profTicks[i]) / f:F3}");
@@ -131,6 +203,15 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         sb.Append($" vkQueueSubmit {Ms(_profQueueSubmitTicks) / f:F3} vkQueuePresent {Ms(_profQueuePresentTicks) / f:F3}");
+        sb.Append("; KB allocated/frame by phase:");
+        for (int i = 0; i < (int)ProfPhase.Count; i++)
+        {
+            if (_profPhaseAlloc[i] / f >= 102.4)
+            {
+                sb.Append($" {(ProfPhase)i} {_profPhaseAlloc[i] / 1024.0 / f:F1}");
+            }
+        }
+
         sb.Append($"; units/frame mem {_profUnits[0] / f:F0} rt {_profUnits[1] / f:F0} other {_profUnits[2] / f:F0} memo {_profUnits[3] / f:F0}");
         return sb.ToString();
     }
