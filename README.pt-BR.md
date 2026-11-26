@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=c76e1c11694b43c7baf2e553b9e89b79c5bcc26223f7a3cb8999d34bcd97a2f0 -->
+<!-- pair: README.md sha256=232aa5ed8e6629983089c7762b82af8d1ccec949c7c561132d62dbfab2b84cf9 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -135,12 +135,12 @@ cor de quantas estão implementadas.</sub>
 <a href="docs/compat/progress.pt-BR.md">
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/status/progress-map-compat-light.svg">
-  <img src="docs/assets/status/progress-map-compat.svg" alt="Mapa do hardware Compat: uma célula por bloco emulado do núcleo de compatibilidade do Vita e uma por módulo do firmware 6.61 dele, com a cor do pior bloco que cada módulo usa" width="100%">
+  <img src="docs/assets/status/progress-map-compat.svg" alt="Mapa do hardware Compat: uma célula por bloco emulado do núcleo de compatibilidade do Vita e uma por módulo do firmware 6.61 dele, cada um com a porcentagem medida dos itens de contrato implementados" width="100%">
 </picture>
 </a>
 <br><sub><b>Compat</b> (o núcleo de compatibilidade Allegrex, SceCompat): o VitaSharp roda o firmware 6.61 real dele, então
 este mapa mede o hardware emulado que esse firmware usa:
-uma célula por bloco e por módulo do firmware, com a cor do pior bloco de que o módulo precisa.</sub>
+uma célula por bloco e por módulo do firmware, cada uma com a porcentagem de itens de contrato implementados.</sub>
 </td>
 </tr>
 </table>
@@ -158,7 +158,10 @@ carregando e rodando o módulo real que o programa traz (a libsmart/libface do p
 usuário extrai do console, o módulo do firmware de uma biblioteca que o emulador carrega para todo importador; também
 contadas, mostradas à parte; lista em [`docs/hle/progress.md`](docs/hle/progress.md)). "Exports de kernel": as funções
 que os módulos de kernel exportam para outro código de kernel (o que um plugin de kernel pode importar), do censo em
-[`docs/hle/kernel-exports.md`](docs/hle/kernel-exports.md). Atualizado com `build/hle-status.ps1`.</sub>
+[`docs/hle/kernel-exports.md`](docs/hle/kernel-exports.md). Compat: os itens de contrato (registradores, grupos de
+instruções, caminhos de pedidos kermit) que o firmware 6.61 usa em cada bloco emulado, contados como implementados
+só enquanto a sonda deles está no código do bloco; a porcentagem de um módulo é sobre os itens dos blocos que ele
+usa ([`docs/compat/progress.pt-BR.md`](docs/compat/progress.pt-BR.md)). Atualizado com `build/hle-status.ps1`.</sub>
 
 </details>
 

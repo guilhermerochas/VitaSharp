@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=ac05a3aa88770ad4aceec53eb5b28051a27cd9605b8488188c640f4983281a6c -->
+<!-- pair: README.pt-BR.md sha256=a262a1a8f83a84af15b8c4498df60dd30f70e30913d562b011937d04824d57c0 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -135,12 +135,12 @@ many are implemented.</sub>
 <a href="docs/compat/progress.md">
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/status/progress-map-compat-light.svg">
-  <img src="docs/assets/status/progress-map-compat.svg" alt="Compat hardware map: one cell per emulated block of the Vita's compatibility core and one per module of its firmware 6.61, coloured by the state of the worst block each module uses" width="100%">
+  <img src="docs/assets/status/progress-map-compat.svg" alt="Compat hardware map: one cell per emulated block of the Vita's compatibility core and one per module of its firmware 6.61, each with the measured percentage of its contract items implemented" width="100%">
 </picture>
 </a>
 <br><sub><b>Compat</b> (the Allegrex compatibility core, SceCompat): VitaSharp runs its real firmware 6.61, so this map
 measures the emulated hardware that firmware uses:
-one cell per block and per firmware module, coloured by the worst block the module needs.</sub>
+one cell per block and per firmware module, each with its percentage of contract items implemented.</sub>
 </td>
 </tr>
 </table>
@@ -158,7 +158,10 @@ apart). "LLE": functions of libraries the emulator provides by loading and runni
 library the emulator loads for every importer; also counted, shown apart;
 list in [`docs/hle/progress.md`](docs/hle/progress.md)). "Kernel exports": the functions the kernel modules export to
 other kernel code (what a kernel plugin can import), from the census in
-[`docs/hle/kernel-exports.md`](docs/hle/kernel-exports.md). Refreshed with `build/hle-status.ps1`.</sub>
+[`docs/hle/kernel-exports.md`](docs/hle/kernel-exports.md). Compat: the contract items (registers, instruction
+groups, kermit request paths) the firmware 6.61 drives on each emulated block, counted as implemented only while
+their probe is in the block's code; a module's percentage is over the items of the blocks it uses
+([`docs/compat/progress.md`](docs/compat/progress.md)). Refreshed with `build/hle-status.ps1`.</sub>
 
 </details>
 
