@@ -36,7 +36,7 @@ public static class HostTimeoutTimer
     private static bool s_started, s_failed;
 
     /// <summary>Tests and A/B: false makes every wait use the millisecond rounding again.</summary>
-    internal static bool Enabled = Environment.GetEnvironmentVariable(EnvVars.PreciseTimeouts) is not ("0" or "off");
+    internal static bool Enabled { get; } = Environment.GetEnvironmentVariable(EnvVars.PreciseTimeouts) is not ("0" or "off");
 
     /// <summary>Statistics: monitors pulsed at their deadline.</summary>
     public static long Fired;
