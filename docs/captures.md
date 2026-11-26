@@ -43,7 +43,12 @@ option's value.
 `content-id`, the `firmware` version, `kernel-plugins` on or off, the system language, the emulator options in effect
 (`options:` and every `VITASHARP_*` variable set, `env:`), the build, the renderer and GPU, and every loaded module
 (`module:` lines: name, guest path, address and image hash, the game's executable, the firmware modules and the
-plugins), so two captures of the same version have the same hashes.
+plugins), so two captures of the same version have the same hashes. Its `touch:` line counts the touch path since the
+emulator started: the raw host touch events by kind (down, pointer down/up, move, up, cancel), the historical points
+and the most fingers at once, then per panel the reads, buffers handed over, samples the driver took (one per vblank
+from the host's touch history, plus the read itself), samples with contacts, new contacts and a hash of every report
+(id and panel position): counts and a hash, no positions. Android also writes it to `last.log` every 30 s (`[perf]
+touch:`) with the view size and where the image sits (`Touch: view ...`).
 
 ## Analysing it
 

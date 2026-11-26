@@ -1557,6 +1557,8 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         int pre = r.Frames.Count(f => (f.Flags & FramesFile.FlagPreRoll) != 0);
         sb.AppendLine(FormattableString.Invariant($"frames: {r.Frames.Count} presented ({pre} from the pre-roll), {r.FrameBytes / 1048576.0:F1} MB of pictures (QOI key pictures + deltas), {r.Frames.Count(f => (f.Flags & FramesFile.FlagNoPicture) != 0)} without a picture (the encoder fell behind)"));
         sb.AppendLine($"input: {r.Input.Count} events, {r.RandomCalls} random-number results");
+        // the touch path since the emulator started: raw host events and what the touch driver handed the guest
+        sb.AppendLine(Input.TouchDiagnostics.Describe());
         sb.AppendLine($"files: {r.FilesSummary ?? "none recorded"}");
         sb.AppendLine($"audio-inputs: {r.AudioInputsSummary ?? "none recorded"}");
         lock (_stateStopMs)

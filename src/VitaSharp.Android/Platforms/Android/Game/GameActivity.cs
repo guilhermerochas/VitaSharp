@@ -292,6 +292,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         _surface = null;
     }
 
+    (int, int) _touchLayoutLogged;
+
     /// <summary>The 960x544 image is scaled to the view's height and centred (the renderer letterboxes the same way):
     /// the pad needs its rectangle to turn image touches into front-touch points.</summary>
     void UpdateImageRect()
@@ -301,6 +303,12 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         float scale = Math.Min(v.Width / 960f, v.Height / 544f);
         float iw = 960 * scale / v.Width, ih = 544 * scale / v.Height;
         _pad.Image = ((1 - iw) / 2, (1 - ih) / 2, iw, ih);
+        // the touch mapping for the log, once per layout change: view size, density and where the image sits
+        if (_touchLayoutLogged != (v.Width, v.Height))
+        {
+            _touchLayoutLogged = (v.Width, v.Height);
+            Log.Info(FormattableString.Invariant($"Touch: view {v.Width}x{v.Height}, density {Resources?.DisplayMetrics?.Density ?? 0:F2}, image at x {(1 - iw) / 2:F4} y {(1 - ih) / 2:F4} size {iw:F4}x{ih:F4}"));
+        }
         ApplySurfaceSize(v);
     }
 
@@ -625,6 +633,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
             if (Core.Cpu.Jit.Enabled)
                 Log.Info($"[perf] {Core.Cpu.Jit.Describe()}");
             Log.Info($"[perf] audio: {_session.AudioSummary}");
+            // the touch path (raw MotionEvents, the driver's samples and reads, a hash of the reports): counts only
+            Log.Info($"[perf] {Core.Input.TouchDiagnostics.Describe()}");
             _framesAtLog = frames;
         }
         _fps.Visibility = _session.Settings.ShowFps || _session.Paused ? ViewStates.Visible : ViewStates.Invisible;

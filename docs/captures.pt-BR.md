@@ -43,7 +43,13 @@ O `session.txt` identifica o título e a versão sem o jogo: `title-id`, `app-gu
 `content-id`, a versão do `firmware`, `kernel-plugins` ligado ou não, o idioma do sistema, as opções do emulador em
 vigor (`options:` e toda variável `VITASHARP_*` definida, `env:`), o build, o renderizador e a GPU, e todo módulo
 carregado (linhas `module:`: nome, caminho no guest, endereço e hash da imagem, do executável do jogo, dos módulos do
-firmware e dos plugins), então duas gravações da mesma versão têm os mesmos hashes.
+firmware e dos plugins), então duas gravações da mesma versão têm os mesmos hashes. A linha `touch:` conta o caminho
+do toque desde o início do emulador: os eventos de toque brutos do host por tipo (down, pointer down/up, move, up,
+cancel), os pontos históricos e o máximo de dedos ao mesmo tempo, e por painel as leituras, os buffers entregues, as
+amostras do driver (uma por vblank do histórico de toque do host, mais a da própria leitura), as amostras com contato,
+os contatos novos e um hash de todos os relatórios (id e posição no painel): contagens e um hash, sem posições. O
+Android também a grava no `last.log` a cada 30 s (`[perf] touch:`), com o tamanho da view e onde a imagem fica
+(`Touch: view ...`).
 
 ## Analisar
 
