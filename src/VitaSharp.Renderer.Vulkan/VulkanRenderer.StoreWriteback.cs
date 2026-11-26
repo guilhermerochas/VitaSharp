@@ -119,6 +119,7 @@ public sealed unsafe partial class VulkanRenderer
             stored.Stamp = stamp;
             stored.Space = AddressSpace.Current;
             var region = new BufferCopy(offset, 0, bytes);
+            CostCopyBytes((long)region.Size * 2);
             _vk.CmdCopyBuffer(Cmd, _mirror, stored.Buffer, 1, in region);
             F.StoreWritebacks.Add(stored);
         }

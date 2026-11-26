@@ -19,6 +19,54 @@ public struct DrawCostRecord
     /// <summary>Samples per pixel of the rendering (1 single-sampled).</summary>
     public int SampleCount;
     public uint RtW, RtH;
+    /// <summary>The GXM scene the draw belongs to (renderer scene serial) and its colour surface address.</summary>
+    public long Scene;
+    public uint RtAddress;
+}
+
+/// <summary>One scene rendering (render pass) for the mobile GPU cost estimate: its tile load/store/resolve bytes.</summary>
+public struct PassCostRecord
+{
+    public long Present, Scene;
+    /// <summary>Recording order among the passes and copies.</summary>
+    public long Order;
+    /// <summary>Where it was begun (the renderer method: FlushChain, BeginSingleFetchPass, EndMsaaRendering...).</summary>
+    public string Site;
+    public uint Width, Height, RtAddress;
+    public Format ColorFormat;
+    public int Samples;
+    public bool HasColor, ColorLoad, ColorStore, DepthLoad, DepthStore, Resolve;
+    public long LoadBytes, StoreBytes, ResolveBytes;
+
+    /// <summary>
+    /// Tile traffic of a rendering of <paramref name="width"/> x <paramref name="height"/> pixels: colour at its format's
+    /// size and depth/stencil at 4 bytes (D24S8), each times the samples per pixel when loaded or stored; a resolve writes
+    /// one colour value per pixel. Pure, unit-tested (MaliPassCostTests).
+    /// </summary>
+    public static (long Load, long Store, long Resolve) Bytes(long width, long height, double colorBpp, int samples,
+        bool hasColor, bool colorLoad, bool colorStore, bool depthLoad, bool depthStore, bool resolve)
+    {
+        long px = width * height;
+        long sampled = px * Math.Max(1, samples);
+        long colorBytes = hasColor ? (long)(sampled * colorBpp) : 0;
+        long depthBytes = sampled * 4;
+        long load = (colorLoad ? colorBytes : 0) + (depthLoad ? depthBytes : 0);
+        long store = (colorStore ? colorBytes : 0) + (depthStore ? depthBytes : 0);
+        long res = hasColor && resolve ? (long)(px * colorBpp) : 0;
+        return (load, store, res);
+    }
+}
+
+/// <summary>One transfer outside the renderings (copy, blit, upload, readback) for the mobile GPU cost estimate.</summary>
+public struct CopyCostRecord
+{
+    public long Present, Scene;
+    /// <summary>Recording order among the passes and copies.</summary>
+    public long Order;
+    /// <summary>The renderer method that recorded it (MirrorRenderTarget, UploadTexture, ...).</summary>
+    public string Site;
+    /// <summary>Bytes read plus bytes written.</summary>
+    public long Bytes;
 }
 
 /// <summary>
@@ -44,6 +92,9 @@ public sealed unsafe partial class VulkanRenderer
     private Action<IReadOnlyList<DrawCostRecord>>? CostSink => _options.DrawCostSink;
     private readonly Dictionary<(ulong Hash, ulong Hint, bool Vertex), string> _costGlsl = new();
     private readonly Dictionary<long, (long LoadBytes, long StoreBytes)> _costTileBytes = new();
+    private readonly List<PassCostRecord> _costPasses = new();
+    private readonly List<CopyCostRecord> _costCopies = new();
+    private long _costOrder;
     private int _costDrawFirst = -1, _costDrawCount, _costVis = -1;
     private uint _costOpen = uint.MaxValue;
 
@@ -54,6 +105,53 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Tile load/store bytes per present (scene renderings; colour 4 B and depth/stencil 4 B per pixel).</summary>
     public IReadOnlyDictionary<long, (long LoadBytes, long StoreBytes)> DrawCostTileBytes => _costTileBytes;
+
+    /// <summary>Every scene rendering recorded while the cost sink was set (recording order).</summary>
+    public IReadOnlyList<PassCostRecord> DrawCostPasses => _costPasses;
+
+    /// <summary>Every transfer recorded while the cost sink was set (recording order).</summary>
+    public IReadOnlyList<CopyCostRecord> DrawCostCopies => _costCopies;
+
+    /// <summary>Bytes per texel of a host format (block formats: the block bytes over its texels).</summary>
+    internal static double CostBytesPerTexel(Format f) => f switch
+    {
+        Format.R8Unorm or Format.R8SNorm or Format.R8Uint or Format.S8Uint => 1,
+        Format.R8G8Unorm or Format.R8G8SNorm or Format.R16Unorm or Format.R16SNorm or Format.R16Sfloat or Format.R16Uint
+            or Format.R5G6B5UnormPack16 or Format.B5G6R5UnormPack16 or Format.A1R5G5B5UnormPack16 or Format.R5G5B5A1UnormPack16
+            or Format.R4G4B4A4UnormPack16 or Format.B4G4R4A4UnormPack16 or Format.D16Unorm => 2,
+        Format.R16G16B16A16Sfloat or Format.R16G16B16A16Unorm or Format.R32G32Sfloat or Format.R32G32Uint => 8,
+        Format.R32G32B32A32Sfloat or Format.R32G32B32A32Uint => 16,
+        Format.BC1RgbUnormBlock or Format.BC1RgbaUnormBlock or Format.BC1RgbSrgbBlock or Format.BC1RgbaSrgbBlock
+            or Format.BC4UnormBlock or Format.BC4SNormBlock or Format.Etc2R8G8B8UnormBlock or Format.EacR11UnormBlock => 0.5,
+        Format.BC2UnormBlock or Format.BC3UnormBlock or Format.BC5UnormBlock or Format.BC5SNormBlock or Format.BC2SrgbBlock
+            or Format.BC3SrgbBlock or Format.Astc4x4UnormBlock or Format.Astc4x4SrgbBlock or Format.Etc2R8G8B8A8UnormBlock => 1,
+        _ => 4,
+    };
+
+    /// <summary>A transfer of <paramref name="texels"/> texels of <paramref name="format"/>, read once and written once.</summary>
+    private void CostCopy(long texels, Format format, [System.Runtime.CompilerServices.CallerMemberName] string site = "")
+    {
+        if (!CostOn)
+        {
+            return;
+        }
+
+        CostCopyBytes((long)(texels * CostBytesPerTexel(format) * 2), site);
+    }
+
+    private void CostCopy(in Extent3D extent, Format format, [System.Runtime.CompilerServices.CallerMemberName] string site = "") =>
+        CostCopy((long)extent.Width * extent.Height * Math.Max(1u, extent.Depth), format, site);
+
+    /// <summary>A buffer-to-buffer copy (or any transfer already in bytes read + written).</summary>
+    private void CostCopyBytes(long bytes, [System.Runtime.CompilerServices.CallerMemberName] string site = "")
+    {
+        if (!CostOn)
+        {
+            return;
+        }
+
+        _costCopies.Add(new CopyCostRecord { Present = _presentCount + 1, Scene = _sceneSerial, Order = _costOrder++, Site = site, Bytes = bytes });
+    }
 
     private CostFrame CostOf(Frame f)
     {
@@ -143,6 +241,8 @@ public sealed unsafe partial class VulkanRenderer
             SampleCount = (int)SceneSamples,
             RtW = _renderTarget?.Width ?? _depth?.Width ?? 0,
             RtH = _renderTarget?.Height ?? _depth?.Height ?? 0,
+            Scene = _sceneSerial,
+            RtAddress = _renderTarget?.Address ?? 0,
         });
         costFrame.Queries.Add((_costDrawFirst, _costDrawCount, _costVis));
         _costDrawFirst = -1;
@@ -173,41 +273,44 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Tile bytes of one scene rendering (called with the load/store counters).</summary>
-    private void CostNoteOps(bool color, AttachmentLoadOp colorLoad, AttachmentStoreOp colorStore, bool depth, AttachmentLoadOp depthLoad, AttachmentStoreOp depthStore, Extent2D area)
+    private void CostNoteOps(bool color, AttachmentLoadOp colorLoad, AttachmentStoreOp colorStore, bool depth, AttachmentLoadOp depthLoad, AttachmentStoreOp depthStore, Extent2D area,
+        Format colorFormat, int samples, bool resolve, string site)
     {
         if (!CostOn)
         {
             return;
         }
 
-        long px = area.Width != 0 ? (long)area.Width * area.Height : (long)(_renderTarget?.Width ?? _depth?.Width ?? 0) * (_renderTarget?.Height ?? _depth?.Height ?? 0);
-        long load = 0, store = 0;
-        if (color)
+        uint width = area.Width != 0 ? area.Width : _renderTarget?.Width ?? _depth?.Width ?? 0;
+        uint height = area.Width != 0 ? area.Height : _renderTarget?.Height ?? _depth?.Height ?? 0;
+        if (colorFormat == Format.Undefined)
         {
-            if (colorLoad == AttachmentLoadOp.Load)
-            {
-                load += px * 4;
-            }
-
-            if (colorStore == AttachmentStoreOp.Store)
-            {
-                store += px * 4;
-            }
+            colorFormat = _renderTarget?.Format ?? Format.R8G8B8A8Unorm;
         }
-        if (depth)
+
+        var pass = new PassCostRecord
         {
-            if (depthLoad == AttachmentLoadOp.Load)
-            {
-                load += px * 4;
-            }
-
-            if (depthStore == AttachmentStoreOp.Store)
-            {
-                store += px * 4;
-            }
-        }
+            Present = _presentCount + 1,
+            Scene = _sceneSerial,
+            Order = _costOrder++,
+            Site = site,
+            Width = width,
+            Height = height,
+            RtAddress = _renderTarget?.Address ?? 0,
+            ColorFormat = colorFormat,
+            Samples = Math.Max(1, samples),
+            HasColor = color,
+            ColorLoad = color && colorLoad == AttachmentLoadOp.Load,
+            ColorStore = color && colorStore == AttachmentStoreOp.Store,
+            DepthLoad = depth && depthLoad == AttachmentLoadOp.Load,
+            DepthStore = depth && depthStore == AttachmentStoreOp.Store,
+            Resolve = resolve,
+        };
+        (pass.LoadBytes, pass.StoreBytes, pass.ResolveBytes) = PassCostRecord.Bytes(width, height, CostBytesPerTexel(colorFormat), pass.Samples,
+            color, pass.ColorLoad, pass.ColorStore, pass.DepthLoad, pass.DepthStore, resolve);
+        _costPasses.Add(pass);
         (long LoadBytes, long StoreBytes) cur = _costTileBytes.GetValueOrDefault(_presentCount + 1);
-        _costTileBytes[_presentCount + 1] = (cur.LoadBytes + load, cur.StoreBytes + store);
+        _costTileBytes[_presentCount + 1] = (cur.LoadBytes + pass.LoadBytes, cur.StoreBytes + pass.StoreBytes + pass.ResolveBytes);
     }
 
     /// <summary>After the frame's fence (and its visibility results): sample counts into the records, then the sink.</summary>

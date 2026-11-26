@@ -589,6 +589,7 @@ public sealed unsafe partial class VulkanRenderer
             Extent = extent,
         };
         DevStampOp();
+        CostCopy(copy.Extent, Format.Undefined);
         _vk.CmdCopyImage(Cmd, src, ImageLayout.General, _fbCopy, ImageLayout.General, 1, in copy);
         Barrier(_fbCopy, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit,
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
@@ -1421,6 +1422,7 @@ public sealed unsafe partial class VulkanRenderer
             Extent = new Extent3D(Math.Min(sw, rt.ImgW - sx), Math.Min(sh, rt.ImgH - sy), 1),
         };
         DevStampOp();
+        CostCopy(copy.Extent, rt.Format);
         _vk.CmdCopyImage(Cmd, rt.Image, ImageLayout.General, r.Image, ImageLayout.TransferDstOptimal, 1, in copy);
         Barrier(r.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
@@ -1554,6 +1556,7 @@ public sealed unsafe partial class VulkanRenderer
             ImageExtent = new Extent3D(geo?.CopyW ?? w, geo?.CopyH ?? h, 1),
         };
         DevStampOp();
+        CostCopy(region.ImageExtent, rt.Format);
         _vk.CmdCopyBufferToImage(Cmd, src, rtAlias.Image, ImageLayout.TransferDstOptimal, 1, in region);
         Barrier(rtAlias.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
@@ -1695,6 +1698,7 @@ public sealed unsafe partial class VulkanRenderer
                 };
                 // every region may live in a different overflow buffer: submit one copy per region
                 DevStampOp();
+                CostCopy(r.ImageExtent, IsAstc(info) ? Format.Astc4x4UnormBlock : info.Format);
                 _vk.CmdCopyBufferToImage(Cmd, buf, tex.Image, ImageLayout.TransferDstOptimal, 1, in r);
             }
         }

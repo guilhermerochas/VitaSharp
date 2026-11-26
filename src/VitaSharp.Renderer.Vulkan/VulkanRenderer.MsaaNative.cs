@@ -493,7 +493,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         MsaaPass msaaPass = _msPass;
         MsaaRenderingBarriers(msaaPass);
-        CountOps(true, msaaPass.ColorLoad, AttachmentStoreOp.Store, true, msaaPass.DepthLoad, AttachmentStoreOp.Store);
+        CountOps(true, msaaPass.ColorLoad, AttachmentStoreOp.Store, true, msaaPass.DepthLoad, AttachmentStoreOp.Store, msaaPass.Area, msaaPass.Format, (int)_msSamples);
         RenderPass pass = MsaaRenderPass(new MsaaPassKey(msaaPass.Format, _msSamples, msaaPass.ColorLoad, AttachmentStoreOp.Store,
             msaaPass.DepthLoad, AttachmentStoreOp.Store, false, msaaPass.Word.Handle != 0));
         Framebuffer fb = MsaaFramebuffer(msaaPass.Image, pass, msaaPass.Color, msaaPass.Depth, default, msaaPass.Word);
@@ -608,7 +608,7 @@ public sealed unsafe partial class VulkanRenderer
         }
         AttachmentStoreOp colorStore = final && !after ? AttachmentStoreOp.DontCare : AttachmentStoreOp.Store;
         AttachmentStoreOp depthStore = keepDepth ? AttachmentStoreOp.Store : AttachmentStoreOp.DontCare;
-        CountOps(true, msaaPass.ColorLoad, colorStore, true, msaaPass.DepthLoad, depthStore);
+        CountOps(true, msaaPass.ColorLoad, colorStore, true, msaaPass.DepthLoad, depthStore, msaaPass.Area, msaaPass.Format, (int)_msSamples, inline);
         RenderPass pass = MsaaRenderPass(new MsaaPassKey(msaaPass.Format, _msSamples, msaaPass.ColorLoad,
             colorStore,
             msaaPass.DepthLoad, depthStore, inline, msaaPass.Word.Handle != 0));
@@ -680,7 +680,7 @@ public sealed unsafe partial class VulkanRenderer
             ColorAttachmentCount = 1,
             PColorAttachments = &color,
         };
-        CountOps(true, color.LoadOp, color.StoreOp, false, default, default);
+        CountOps(true, color.LoadOp, color.StoreOp, false, default, default, SceneArea, _msSceneRaw ? _rawFormat : _rtAttachFormat, (int)_msSamples, true);
         if (UseRenderPasses)
         {
             // Vulkan 1.1 path: an empty MSAA render pass whose resolve attachment is the surface (integer views of
@@ -1048,6 +1048,7 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
             DstOffset = offset,
             Extent = extent,
         };
+        CostCopy((long)region.Extent.Width * region.Extent.Height * (int)_msSamples, Format.Undefined);
         _vk.CmdCopyImage(Cmd, msaaImage.Image, ImageLayout.General, copy.Image, ImageLayout.General, 1, in region);
         Barrier(copy.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit,
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);

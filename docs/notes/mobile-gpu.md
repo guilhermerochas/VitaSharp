@@ -325,6 +325,14 @@ dotnet build tools/VitaSharp.PerfTools -c Release -m:2 -o <dir>
   tile ms, Mali ms, the fp16 what-if), the average, the total tile bytes, the 10 most expensive draws of the worst frame
   (draw number, share, shader hashes, the stage and unit that bound it, fragment cycles A/LS/V/T), and the shaders that
   spill or run below 100% occupancy, weighted by their ms per frame.
+- **Per surface and per pass** (since perf/andgpu1): every scene rendering is recorded with its area, colour format,
+  samples and load/store/resolve ops (`PassCostRecord`: colour at its format's size, depth/stencil 4 bytes, both times
+  the samples when loaded or stored; a resolve writes one colour value per pixel), and every transfer (copy, blit,
+  upload, readback) with its bytes read + written and the renderer method that recorded it (`CopyCostRecord`). The
+  report adds the scenes grouped by colour surface (address, size, format, samples) in ms per frame (vertex,
+  fragment, tile bytes, transfers during those scenes, renderings, draws, overdraw), the transfers and the renderings
+  by renderer site, and one frame's renderings and transfers in recording order. Not modelled: AFBC compression of the
+  attachments, texture fetch bandwidth, the fixed cost of a render pass on the tiler.
 - **fp16 what-if** (`--fp16-whatif`; the real generator is unchanged): `half` recompiles each shader with mediump on
   what the GXP holds in half registers: the translator's `unpackHalf2x16` temporaries, fragment inputs whose every use
   is a copy into such a temporary (varyings the GXP loads as F16; varyings used as F32 texture coordinates stay highp)

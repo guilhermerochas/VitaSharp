@@ -387,6 +387,7 @@ public sealed unsafe partial class VulkanRenderer
             ImageExtent = new Extent3D(w, h, 1),
         };
         DevStampOp();
+        CostCopy(region.ImageExtent, rt.Format);
         _vk.CmdCopyImageToBuffer(Cmd, NativeRectOf(rt, x, y, w, h), ImageLayout.General, rtWriteback.Buffer, 1, in region); // guest pixels (VulkanRenderer.ResScale.cs)
         F.Writebacks.Add(rtWriteback);
     }

@@ -1211,6 +1211,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             Extent = new Extent3D(Math.Min(rt.ImgW, old.ImgW), Math.Min(rt.ImgH, old.ImgH), 1),
         };
         DevStampOp();
+        CostCopy(copy.Extent, rt.Format);
         _vk.CmdCopyImage(Cmd, old.Image, ImageLayout.General, rt.Image, ImageLayout.General, 1, in copy);
         Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.TransferBit,
@@ -1265,6 +1266,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             };
             DevStampOp();
             // a scaled target: uploaded at guest size, then blitted down (VulkanRenderer.ResScale.cs)
+            CostCopy(region.ImageExtent, rt.Format);
             _vk.CmdCopyBufferToImage(Cmd, buf, UploadImageOf(rt), ImageLayout.General, 1, in region);
             NativeToScaled(rt);
         }
@@ -1597,6 +1599,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 DstSubresource = new ImageSubresourceLayers(DepthStencilAspect, 0, 0, 1),
                 Extent = new Extent3D(Math.Min(src.Width, dt.Width), Math.Min(src.Height, dt.Height), 1),
             };
+            CostCopy(copy.Extent, Format.D24UnormS8Uint);
             _vk.CmdCopyImage(Cmd, src.Image, ImageLayout.TransferSrcOptimal, dt.Image, ImageLayout.TransferDstOptimal, 1, in copy);
             Barrier(src.Image, ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal, DepthStencilAspect, PipelineStageFlags.TransferBit, tests,
                 AccessFlags.TransferReadBit, attRw);
@@ -1782,7 +1785,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 PDepthAttachment = &depth,
                 PStencilAttachment = &depth,
             };
-            CountOps(_renderTarget != null, color.LoadOp, color.StoreOp, true, depth.LoadOp, depth.StoreOp);
+            CountOps(_renderTarget != null, color.LoadOp, color.StoreOp, true, depth.LoadOp, depth.StoreOp, SceneArea, _renderRaw ? _rawFormat : _rtAttachFormat);
             CommandBuffer cmd = Cmd;
             Image colorImage = _renderTarget != null ? SingleFetchImage() : default, wordImage = word ? _tileWord1!.Image : default;
             SyncAttachmentsBeforeRendering(cmd, colorImage, _depth.Image, wordImage);
@@ -1975,6 +1978,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 Extent = new Extent3D(width, rows, 1),
             };
             DevStampOp();
+            CostCopy(copy.Extent, rt.Format);
             _vk.CmdCopyImage(Cmd, NativeImageOf(rt), ImageLayout.General, renderTarget.Image, ImageLayout.General, 1, in copy);
             // the copy must finish before the target is rendered again
             Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit,

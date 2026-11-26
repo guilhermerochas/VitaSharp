@@ -179,6 +179,7 @@ public sealed unsafe partial class VulkanRenderer
         };
         blit.SrcOffsets[1] = new Offset3D((int)sw, (int)sh, 1);
         blit.DstOffsets[1] = new Offset3D((int)dw, (int)dh, 1);
+        CostCopy((long)sw * sh + (long)dw * dh, Format.Undefined);
         _vk.CmdBlitImage(Cmd, src, ImageLayout.General, dst, ImageLayout.General, 1, in blit, filter);
     }
 }

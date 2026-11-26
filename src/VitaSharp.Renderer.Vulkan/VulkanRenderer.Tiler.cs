@@ -60,9 +60,13 @@ public sealed unsafe partial class VulkanRenderer
 
     private static int LoadIndex(AttachmentLoadOp op) => op switch { AttachmentLoadOp.Load => 0, AttachmentLoadOp.Clear => 1, _ => 2 };
 
-    private void CountOps(bool color, AttachmentLoadOp colorLoad, AttachmentStoreOp colorStore, bool depth, AttachmentLoadOp depthLoad, AttachmentStoreOp depthStore, Extent2D area = default)
+    /// <param name="colorFormat">the colour attachment's format (cost estimate; Undefined = the surface's)</param>
+    /// <param name="samples">samples per pixel of the attachments (cost estimate)</param>
+    /// <param name="resolve">the rendering resolves its samples into the surface (cost estimate)</param>
+    private void CountOps(bool color, AttachmentLoadOp colorLoad, AttachmentStoreOp colorStore, bool depth, AttachmentLoadOp depthLoad, AttachmentStoreOp depthStore, Extent2D area = default,
+        Format colorFormat = Format.Undefined, int samples = 1, bool resolve = false, [System.Runtime.CompilerServices.CallerMemberName] string site = "")
     {
-        CostNoteOps(color, colorLoad, colorStore, depth, depthLoad, depthStore, area);
+        CostNoteOps(color, colorLoad, colorStore, depth, depthLoad, depthStore, area, colorFormat, samples, resolve, site);
         if (color)
         {
             _colorLoads[LoadIndex(colorLoad)]++;
@@ -249,7 +253,7 @@ public sealed unsafe partial class VulkanRenderer
             PDepthAttachment = &depth,
             PStencilAttachment = &depth,
         };
-        CountOps(tilePass.HasColor, AttachmentLoadOp.Load, AttachmentStoreOp.Store, true, tilePass.DepthLoad, depthStore, area.Extent);
+        CountOps(tilePass.HasColor, AttachmentLoadOp.Load, AttachmentStoreOp.Store, true, tilePass.DepthLoad, depthStore, area.Extent, tilePass.ColorFormat);
         CommandBuffer cmd = F.Cmd;
         CommandBuffer* cbs = stackalloc CommandBuffer[_chain.Count];
         for (int i = 0; i < _chain.Count; i++)

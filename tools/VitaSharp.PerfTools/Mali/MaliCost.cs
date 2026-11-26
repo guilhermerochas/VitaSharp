@@ -37,6 +37,8 @@ internal sealed class MaliCost(MaliCost.Settings s)
     private readonly List<DrawCostRecord> _draws = new();
     private IReadOnlyDictionary<(ulong Hash, ulong Hint, bool Vertex), string> _glsl = new Dictionary<(ulong, ulong, bool), string>();
     private IReadOnlyDictionary<long, (long LoadBytes, long StoreBytes)> _tile = new Dictionary<long, (long, long)>();
+    private IReadOnlyList<PassCostRecord> _passes = [];
+    private IReadOnlyList<CopyCostRecord> _copies = [];
 
     public static string? FindMalioc(string? opt)
     {
@@ -92,6 +94,8 @@ internal sealed class MaliCost(MaliCost.Settings s)
     {
         _glsl = new Dictionary<(ulong, ulong, bool), string>(r.DrawCostShaders);
         _tile = new Dictionary<long, (long, long)>(r.DrawCostTileBytes);
+        _passes = r.DrawCostPasses.Where(p => p.Present >= s.FirstFrame && p.Present <= s.LastFrame).ToList();
+        _copies = r.DrawCostCopies.Where(c => c.Present >= s.FirstFrame && c.Present <= s.LastFrame).ToList();
     }
 
     // =========================================================== GLSL variants (what-if)
@@ -367,12 +371,134 @@ internal sealed class MaliCost(MaliCost.Settings s)
             sb.AppendLine(s_inv, $"  {k.Item1:x16}/{k.Item2:x16} {(k.Item3 ? "vert" : "frag")}: {(st.Spills ? "spills, " : "")}occupancy {st.Occupancy}%, {st.WorkRegisters} work registers, {share.GetValueOrDefault(k) / totals.Count:F3} ms per frame");
         }
 
+        ReportScenes(sb, draws.Select(d => Cost(d, "")).ToList(), totals.Count);
+
         if (s.Fp16WhatIf)
         {
             sb.AppendLine($"fp16 what-if: {keys.Count(k => S(k.Item1, k.Item2, k.Item3, "half").Fp16 > S(k.Item1, k.Item2, k.Item3, "").Fp16)} of {keys.Count} shaders gain 16-bit arithmetic from the half-register relaxation");
         }
 
         Write(sb);
+    }
+
+    private sealed class SurfaceRow(string name)
+    {
+        public readonly string Name = name;
+        public long Scenes, Renderings, Draws, LoadBytes, StoreBytes, ResolveBytes, CopyBytes;
+        public double VertexMs, FragmentMs, Fragments, Pixels;
+    }
+
+    /// <summary>The colour surface a scene renders to (address, size, format, samples), the key that groups scenes across frames.</summary>
+    private static string SurfaceName(List<DrawCost> sceneDraws, List<PassCostRecord> scenePasses)
+    {
+        PassCostRecord? pass = null;
+        foreach (PassCostRecord p in scenePasses)
+        {
+            if (p.HasColor)
+            {
+                pass = p;
+                break;
+            }
+        }
+
+        uint width = sceneDraws.Count > 0 ? sceneDraws[0].D.RtW : pass?.Width ?? 0;
+        uint height = sceneDraws.Count > 0 ? sceneDraws[0].D.RtH : pass?.Height ?? 0;
+        if (pass is not { } colorPass)
+        {
+            return $"depth-only {width}x{height}";
+        }
+
+        return $"0x{colorPass.RtAddress:X8} {width}x{height} {colorPass.ColorFormat} {colorPass.Samples}x";
+    }
+
+    /// <summary>
+    /// Where the estimate goes: scenes grouped by colour surface and averaged per frame (draws, overdraw, tile load /
+    /// store / resolve bytes, transfers recorded during the scene), the most expensive first, then the transfers by the
+    /// renderer method that recorded them.
+    /// </summary>
+    private void ReportScenes(StringBuilder sb, List<DrawCost> costs, int frameCount)
+    {
+        double bytesPerMs = s.Gbps * 1e6;
+        double frames = Math.Max(1, frameCount);
+        var drawsByScene = costs.GroupBy(c => (c.D.Present, c.D.Scene)).ToDictionary(g => g.Key, g => g.ToList());
+        var passesByScene = _passes.GroupBy(p => (p.Present, p.Scene)).ToDictionary(g => g.Key, g => g.ToList());
+        var copiesByScene = _copies.GroupBy(c => (c.Present, c.Scene)).ToDictionary(g => g.Key, g => g.Sum(c => c.Bytes));
+        var rows = new Dictionary<string, SurfaceRow>();
+        foreach ((long Present, long Scene) key in drawsByScene.Keys.Union(passesByScene.Keys).Union(copiesByScene.Keys))
+        {
+            List<DrawCost> sceneDraws = drawsByScene.GetValueOrDefault(key) ?? [];
+            List<PassCostRecord> scenePasses = passesByScene.GetValueOrDefault(key) ?? [];
+            string name = sceneDraws.Count == 0 && scenePasses.Count == 0 ? "transfers outside scenes" : SurfaceName(sceneDraws, scenePasses);
+            if (!rows.TryGetValue(name, out SurfaceRow? row))
+            {
+                row = new SurfaceRow(name);
+                rows[name] = row;
+            }
+
+            row.Scenes++;
+            row.Renderings += scenePasses.Count;
+            row.Draws += sceneDraws.Count;
+            double pixels = 0;
+            foreach (DrawCost c in sceneDraws)
+            {
+                row.VertexMs += c.VsMs;
+                row.FragmentMs += c.FsMs;
+                row.Fragments += c.D.Samples < 0 ? (double)c.D.RtW * c.D.RtH * 0.25 : (double)c.D.Samples / Math.Max(1, c.D.SampleCount);
+                pixels = Math.Max(pixels, (double)c.D.RtW * c.D.RtH);
+            }
+
+            foreach (PassCostRecord p in scenePasses)
+            {
+                row.LoadBytes += p.LoadBytes;
+                row.StoreBytes += p.StoreBytes;
+                row.ResolveBytes += p.ResolveBytes;
+            }
+
+            row.Pixels += pixels;
+            row.CopyBytes += copiesByScene.GetValueOrDefault(key);
+        }
+
+        double Total(SurfaceRow r) => r.VertexMs + r.FragmentMs + (r.LoadBytes + r.StoreBytes + r.ResolveBytes + r.CopyBytes) / bytesPerMs;
+        var ordered = rows.Values.OrderByDescending(Total).ToList();
+        double all = ordered.Sum(Total) / frames;
+        sb.AppendLine();
+        sb.AppendLine(s_inv, $"per surface, ms per frame (scenes grouped by colour surface; tile = load + store + resolve at {s.Gbps} GB/s; copies = transfers recorded during those scenes); frame with transfers {all:F2} ms:");
+        sb.AppendLine("  rank  ms/frame    %  vertex  fragment  tile(L/S/R MB)        copies MB  scenes renderings draws  overdraw  surface");
+        int rank = 0;
+        foreach (SurfaceRow r in ordered.Take(15))
+        {
+            rank++;
+            double ms = Total(r) / frames;
+            double overdraw = r.Pixels > 0 ? r.Fragments / r.Pixels : 0;
+            sb.AppendLine(s_inv, $"  {rank,4} {ms,9:F2} {ms / Math.Max(all, 1e-9) * 100,4:F0} {r.VertexMs / frames,7:F2} {r.FragmentMs / frames,9:F2}  {r.LoadBytes / frames / 1048576.0,5:F1}/{r.StoreBytes / frames / 1048576.0,5:F1}/{r.ResolveBytes / frames / 1048576.0,5:F1} {(r.LoadBytes + r.StoreBytes + r.ResolveBytes) / frames / bytesPerMs,6:F2} ms {r.CopyBytes / frames / 1048576.0,8:F1} {r.Scenes / frames,7:F1} {r.Renderings / frames,10:F1} {r.Draws / frames,5:F0} {overdraw,9:F2}  {r.Name}");
+        }
+
+        // one frame in recording order: what each scene rendering and transfer moves
+        long sample = _passes.Count > 0 ? _passes[_passes.Count / 2].Present : 0;
+        sb.AppendLine();
+        sb.AppendLine(s_inv, $"renderings and transfers of frame {sample} in recording order (scene, site, area, format x samples, colour L/S, depth L/S, resolve, MB):");
+        IOrderedEnumerable<(long Order, string Text)> events = _passes.Where(p => p.Present == sample).Select(p => (p.Order, Text: string.Create(s_inv, $"  s{p.Scene,-6} pass {p.Site,-22} 0x{p.RtAddress:X8} {p.Width}x{p.Height} {p.ColorFormat} x{p.Samples} colour {(p.ColorLoad ? "L" : "-")}{(p.ColorStore ? "S" : "-")} depth {(p.DepthLoad ? "L" : "-")}{(p.DepthStore ? "S" : "-")}{(p.Resolve ? " resolve" : "")} {(p.LoadBytes + p.StoreBytes + p.ResolveBytes) / 1048576.0:F2} MB")))
+            .Concat(_copies.Where(c => c.Present == sample).Select(c => (c.Order, Text: string.Create(s_inv, $"  s{c.Scene,-6} copy {c.Site,-22} {c.Bytes / 1048576.0:F2} MB")))).OrderBy(e => e.Order);
+        foreach ((long Order, string Text) e in events)
+        {
+            sb.AppendLine(e.Text);
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("transfers by renderer site, per frame:");
+        foreach (IGrouping<string, CopyCostRecord> g in _copies.GroupBy(c => c.Site).OrderByDescending(g => g.Sum(c => c.Bytes)))
+        {
+            long bytes = g.Sum(c => c.Bytes);
+            sb.AppendLine(s_inv, $"  {g.Key,-36} {g.Count() / frames,7:F1} copies {bytes / frames / 1048576.0,8:F2} MB {bytes / frames / bytesPerMs,7:F2} ms");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("renderings by renderer site, per frame:");
+        foreach (IGrouping<string, PassCostRecord> g in _passes.GroupBy(p => p.Site).OrderByDescending(g => g.Sum(p => p.LoadBytes + p.StoreBytes + p.ResolveBytes)))
+        {
+            long bytes = g.Sum(p => p.LoadBytes + p.StoreBytes + p.ResolveBytes);
+            sb.AppendLine(s_inv, $"  {g.Key,-36} {g.Count() / frames,7:F1} renderings {bytes / frames / 1048576.0,8:F2} MB {bytes / frames / bytesPerMs,7:F2} ms");
+        }
     }
 
     private void Write(StringBuilder sb)

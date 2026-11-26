@@ -136,6 +136,7 @@ public sealed unsafe partial class VulkanRenderer
                 Extent = new Extent3D(w, h, 1),
             };
             DevStampOp();
+            CostCopy(copy.Extent, rt.Format);
             _vk.CmdCopyImage(Cmd, NativeImageOf(rt), ImageLayout.General, rtMipTexture.Image, ImageLayout.TransferDstOptimal, 1, in copy); // guest size (VulkanRenderer.ResScale.cs)
         }
         if (uploadUpper)
@@ -153,6 +154,7 @@ public sealed unsafe partial class VulkanRenderer
                         Extent = new Extent3D(mipLayout.Width, mipLayout.Height, 1),
                     };
                     DevStampOp();
+                    CostCopy(levelCopy.Extent, rt.Format);
                     _vk.CmdCopyImage(Cmd, levelImage.Image, ImageLayout.General, rtMipTexture.Image, ImageLayout.TransferDstOptimal, 1, in levelCopy);
                     continue;
                 }
@@ -168,6 +170,7 @@ public sealed unsafe partial class VulkanRenderer
                     ImageExtent = new Extent3D(mipLayout.Width, mipLayout.Height, 1),
                 };
                 DevStampOp();
+                CostCopy(region.ImageExtent, rt.Format);
                 _vk.CmdCopyBufferToImage(Cmd, buf, rtMipTexture.Image, ImageLayout.TransferDstOptimal, 1, in region);
             }
         }
