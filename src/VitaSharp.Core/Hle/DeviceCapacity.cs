@@ -37,11 +37,8 @@ public static class DeviceCapacity
         return (total, free);
     }
 
-    private static (ulong Total, ulong Free) RealDrive(string hostFolder)
-    {
-        var drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(hostFolder))!);
-        return ((ulong)drive.TotalSize, (ulong)drive.AvailableFreeSpace);
-    }
+    /// <summary>The file system that holds the folder (<see cref="Util.HostDisk"/>), not the root of its path.</summary>
+    private static (ulong Total, ulong Free) RealDrive(string hostFolder) => Util.HostDisk.Of(hostFolder);
 
     /// <summary>The SceIoDevInfo block of devctl 0x3001: u64 capacity, u64 free bytes, u32 cluster size, u32 0
     /// (SceAppMgr 3.74 reads the capacity at +0 and the free bytes at +8 for sceAppMgrGetDevInfo, and the cluster size
