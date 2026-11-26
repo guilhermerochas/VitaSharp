@@ -3557,6 +3557,19 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- [ ] (26/11/2026, falta testar) [P1][M] Toque do shell no Android: o driver de toque amostra o painel a cada vblank,
+  como o SceTouch do Vita (fix/andtouch1). O libpaf 3.74 lê o toque por `sceTouchPeekRegion`(`Ext`) com 16 buffers a
+  cada quadro e processa cada amostra mais nova que a última vista (press/move/release pelo id do relatório). O HLE
+  entregava uma amostra só, com o estado do host no momento da leitura: um toque mais curto que um quadro do shell se
+  perdia, e dois toques rápidos com o mesmo pointer id do Android (todo primeiro dedo é o id 0) viravam um arrasto de
+  um lugar para o outro. Agora o host guarda o histórico dos dedos (`TouchSampler`: cada MotionEvent e os pontos
+  históricos dele, com o horário; no desktop, o mouse) com um id novo por contato, o `Touch` guarda um anel de 64
+  amostras por painel (uma por vblank desde a leitura anterior, mais a da leitura), `sceTouchPeek*` devolve as N mais
+  novas e `sceTouchRead*` as que ainda não leu. Diagnóstico: linha `touch:` no `session.txt` e no `[perf]` do Android
+  (eventos brutos por tipo, pontos históricos, leituras, amostras, contatos novos, hash dos relatórios) e
+  `Touch: view ...` no log. Testes: `AndroidTouchPathTests`. A re-execução de uma gravação entrega só a amostra da
+  leitura (as intermediárias não entram no `input.tsv`). Testar no celular: Sistema do Vita, tocar rápido em ícones,
+  rolar a tela inicial com arrasto lento e com "flick", arrastar e soltar fora da imagem, digitar rápido no teclado.
 - [ ] (25/11/2026, falta testar) [P2][G] SceUlobjMgrForDriver lê os objetos da libult na memória do processo como o
   SceUlobjMgr 3.74 (feat/kernO, trazido em fix/recover1). Duas implementações da mesma biblioteca existiam
   (feat/kernO e feat/kern9); ficou a do kernO, conferida contra o descompilado do 3.74 (só estudo): faz as 14

@@ -90,22 +90,59 @@ public sealed class OnScreenControlsView : View
     public override bool OnTouchEvent(MotionEvent? e)
     {
         if (e == null || Width == 0 || Height == 0)
+        {
             return false;
+        }
+
         int n = e.PointerCount;
-        var action = e.ActionMasked;
+        MotionEventActions action = e.ActionMasked;
         int lifted = action is MotionEventActions.Up or MotionEventActions.PointerUp or MotionEventActions.Cancel ? e.ActionIndex : -1;
+        int historical = e.HistorySize;
+        TouchDiagnostics.Raw(RawKind(action), n, historical);
+        // event times are SystemClock.uptimeMillis(): moved onto the pad's clock (the touch history's time base)
+        long offsetUs = _pad.NowUs - SystemClock.UptimeMillis() * 1000;
         Span<(int Id, float X, float Y)> fingers = stackalloc (int, float, float)[Math.Min(n, 10)];
-        int count = 0;
-        for (int i = 0; i < n && count < fingers.Length; i++)
+        // a move batches the points since the previous frame (MotionEvent history): each one goes to the touch
+        // history at its own time, so the driver's per-vblank samples see the path between frames
+        if (action == MotionEventActions.Move)
+        {
+            for (int h = 0; h < historical; h++)
+            {
+                int count = 0;
+                for (int i = 0; i < n && count < fingers.Length; i++)
+                {
+                    fingers[count++] = (e.GetPointerId(i), e.GetHistoricalX(i, h) / Width, e.GetHistoricalY(i, h) / Height);
+                }
+
+                _pad.Update(fingers[..count], e.GetHistoricalEventTime(h) * 1000 + offsetUs);
+            }
+        }
+
+        int current = 0;
+        for (int i = 0; i < n && current < fingers.Length; i++)
         {
             if (i == lifted || action == MotionEventActions.Cancel)
+            {
                 continue;
-            fingers[count++] = (e.GetPointerId(i), e.GetX(i) / Width, e.GetY(i) / Height);
+            }
+
+            fingers[current++] = (e.GetPointerId(i), e.GetX(i) / Width, e.GetY(i) / Height);
         }
-        _pad.Update(fingers[..count]); // newly pressed controls vibrate through OnScreenHaptics
+
+        _pad.Update(fingers[..current], e.EventTime * 1000 + offsetUs); // newly pressed controls vibrate through OnScreenHaptics
         Invalidate();
         return true;
     }
+
+    static TouchDiagnostics.RawKind RawKind(MotionEventActions action) => action switch
+    {
+        MotionEventActions.Down => TouchDiagnostics.RawKind.Down,
+        MotionEventActions.PointerDown => TouchDiagnostics.RawKind.PointerDown,
+        MotionEventActions.PointerUp => TouchDiagnostics.RawKind.PointerUp,
+        MotionEventActions.Up => TouchDiagnostics.RawKind.Up,
+        MotionEventActions.Cancel => TouchDiagnostics.RawKind.Cancel,
+        _ => TouchDiagnostics.RawKind.Move,
+    };
 
     protected override void OnDraw(Canvas canvas)
     {

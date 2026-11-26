@@ -55,8 +55,12 @@ public static class CaptureMarks
 /// guest reads (buttons, sticks, touches) and every motion sample it receives goes to the capture. The values pass
 /// through unchanged; the check is a compare per poll.
 /// </summary>
-public sealed class InputRecorder(IInputBackend? inner, IMotionSource? innerMotion, Action<InputEvent> sink) : IInputBackend, IMotionSource, IGuestReadInput
+public sealed class InputRecorder(IInputBackend? inner, IMotionSource? innerMotion, Action<InputEvent> sink) : IInputBackend, IMotionSource, IGuestReadInput, ITouchHistory
 {
+    /// <summary>The touch history of the wrapped input, so the driver samples it at the panel's rate while recording as
+    /// it does without (the recording keeps what each read saw at its own moment; a re-run hands over those).</summary>
+    public int TouchesAgo(bool back, long ageUs, Span<TouchPoint> dest) => Inner is ITouchHistory history ? history.TouchesAgo(back, ageUs, dest) : -1;
+
     /// <summary>The token a pad or touch event carries when the guest's read saw the change: "read=N", the N-th read of
     /// that port or panel by the process (<see cref="IGuestReadInput"/>).</summary>
     public const string ReadToken = "read=";

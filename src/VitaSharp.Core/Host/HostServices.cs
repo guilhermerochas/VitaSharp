@@ -77,6 +77,19 @@ public interface IGuestReadInput
     int GetTouches(bool back, Span<TouchPoint> dest, long guestRead);
 }
 
+/// <summary>
+/// An input source that keeps its recent touches (<see cref="Input.TouchSampler"/>): the touch driver samples it at
+/// every vblank since its previous read, as the Vita's driver fills its ring of reports, instead of seeing only the
+/// fingers down at the moment of the read.
+/// </summary>
+public interface ITouchHistory
+{
+    /// <summary>The contacts of a panel <paramref name="ageUs"/> microseconds ago (host time), with the ids
+    /// <see cref="IInputBackend.GetTouches(bool, Span{TouchPoint})"/> gives; -1 when the history no longer reaches
+    /// back that far.</summary>
+    int TouchesAgo(bool back, long ageUs, Span<TouchPoint> dest);
+}
+
 /// <summary>An audio output stream fed with interleaved signed 16-bit samples.</summary>
 public interface IAudioStream : IDisposable
 {

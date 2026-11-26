@@ -26,7 +26,7 @@ public interface ITextCapture
 }
 
 /// <summary>Desktop window: Vulkan surface, keyboard/gamepad/mouse input.</summary>
-public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMultiControllerInput, IDisposable
+public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMultiControllerInput, ITouchHistory, IDisposable
 {
     readonly IWindow _window;
     // windowed size/position to restore when F11 leaves fullscreen (no position when the window started fullscreen)
@@ -41,9 +41,10 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMu
     readonly HostInput _hostInput = new(Program.DataRoot);
     readonly PadSnapshot _fallbackPad = new();
     long _lastFallbackPoll;
-    readonly List<TouchPoint> _touches = new();
+    // the mouse's touches over the last moments, sampled by the touch driver at the panel's rate (TouchSampler)
+    readonly TouchSampler _touches = new();
     // rear touch panel: right mouse button (the Vita's back panel has no screen, so the window maps onto its full area)
-    readonly List<TouchPoint> _backTouches = new();
+    readonly TouchSampler _backTouches = new();
 
     public event Action? Loaded;
     public event Action? Closing;
@@ -1060,11 +1061,14 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMu
         float x = (pos.X - ox) / (960 * scale), y = (pos.Y - oy) / (544 * scale);
         lock (_inputLock)
         {
-            var list = back ? _backTouches : _touches;
-            list.Clear();
+            TouchSampler sampler = back ? _backTouches : _touches;
             if (down && x is >= 0 and <= 1 && y is >= 0 and <= 1)
             {
-                list.Add(new TouchPoint(back ? 2 : 1, x, y));
+                sampler.Record([new TouchPoint(back ? 2 : 1, x, y)]);
+            }
+            else
+            {
+                sampler.Record([]);
             }
         }
     }
@@ -1164,17 +1168,21 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMu
 
     public int GetTouches(bool back, Span<TouchPoint> dest)
     {
-        int n;
-        lock (_inputLock)
-        {
-            var list = back ? _backTouches : _touches;
-            n = Math.Min(list.Count, dest.Length);
-            for (int i = 0; i < n; i++)
-            {
-                dest[i] = list[i];
-            }
-        }
+        int n = (back ? _backTouches : _touches).Current(dest);
         // touch pad fingers and buttons mapped to a touch point
+        var m = _hostInput.Poll();
+        return n + m.CopyTouches(back, dest[n..]);
+    }
+
+    /// <summary>The mouse's touches of <paramref name="ageUs"/> microseconds ago and the controllers' of now.</summary>
+    public int TouchesAgo(bool back, long ageUs, Span<TouchPoint> dest)
+    {
+        int n = (back ? _backTouches : _touches).At(ageUs, dest);
+        if (n < 0)
+        {
+            return -1;
+        }
+
         var m = _hostInput.Poll();
         return n + m.CopyTouches(back, dest[n..]);
     }

@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Input;
 using VitaSharp.Core.Localization;
@@ -89,12 +90,27 @@ public sealed class OnScreenPad : IInputBackend
 
     private readonly object _lock = new();
     private ControllerState _state = ControllerState.Neutral;
-    private TouchPoint[] _front = [], _back = [];
+    // the image touches over the last moments, sampled by the touch driver at the panel's rate (TouchSampler)
+    private readonly TouchSampler _front, _back;
     private bool _rear;
     // what each finger started on: a control, or null for the image / nothing
     private readonly Dictionary<int, OnScreenControl?> _captured = new();
     private readonly HashSet<OnScreenControl> _pressed = new();
     private readonly Dictionary<OnScreenControl, (float X, float Y)> _knobs = new();
+
+    /// <summary>A pad whose touch history runs on the host's monotonic clock, or on <paramref name="clockUs"/>
+    /// (tests).</summary>
+    public OnScreenPad(Func<long>? clockUs = null)
+    {
+        _front = new TouchSampler(clockUs);
+        _back = new TouchSampler(clockUs);
+    }
+
+    /// <summary>Now on the clock of the touch history (µs): the time base of <see cref="Update"/>'s event times.</summary>
+    public long NowUs => _front.NowUs;
+
+    /// <summary>Changes of the image touches recorded so far (the touch diagnostics).</summary>
+    public long TouchChanges => _front.Changes + _back.Changes;
 
     /// <summary>Controls held right now, and TRAS while it is on (drawn in the accent colour).</summary>
     public bool IsPressed(OnScreenControl onScreenControl)
@@ -114,8 +130,10 @@ public sealed class OnScreenPad : IInputBackend
         }
     }
 
-    /// <summary>Feeds the current fingers (MotionEvent pointers, in fractions of the screen) from the UI thread.</summary>
-    public void Update(ReadOnlySpan<(int Id, float X, float Y)> fingers)
+    /// <summary>Feeds the fingers (MotionEvent pointers, in fractions of the screen) from the UI thread, as of
+    /// <paramref name="timeUs"/> on <see cref="NowUs"/>'s clock (the event's time; null: now). A MotionEvent's
+    /// historical points come first, each with its own time, so the touch history keeps them.</summary>
+    public void Update(ReadOnlySpan<(int Id, float X, float Y)> fingers, long? timeUs = null)
     {
         ControllerState controllerState = ControllerState.Neutral;
         var image = new List<TouchPoint>();
@@ -182,15 +200,13 @@ public sealed class OnScreenPad : IInputBackend
             }
             psNow = (controllerState.Buttons & VitaButtons.PsButton) != 0;
             _state = controllerState;
-            if (_rear)
+            Span<TouchPoint> none = stackalloc TouchPoint[1];
+            TouchSampler active = _rear ? _back : _front, inactive = _rear ? _front : _back;
+            active.Record(CollectionsMarshal.AsSpan(image), timeUs);
+            // the other panel only when a finger was on it (TRAS switched with a finger on the image)
+            if (inactive.Current(none) > 0)
             {
-                _back = [.. image];
-                _front = [];
-            }
-            else
-            {
-                _front = [.. image];
-                _back = [];
+                inactive.Record([], timeUs);
             }
         }
         foreach (OnScreenControl c in newlyPressed)
@@ -242,11 +258,16 @@ public sealed class OnScreenPad : IInputBackend
 
     public IReadOnlyList<TouchPoint> GetTouches(bool back)
     {
-        lock (_lock)
-        {
-            return back ? _back : _front;
-        }
+        Span<TouchPoint> touches = stackalloc TouchPoint[TouchSampler.MaxContacts];
+        int n = CopyTouches(back, touches);
+        return touches[..n].ToArray();
     }
+
+    /// <summary>The image touches of a panel now, without allocating.</summary>
+    public int CopyTouches(bool back, Span<TouchPoint> dest) => (back ? _back : _front).Current(dest);
+
+    /// <summary>The image touches of a panel <paramref name="ageUs"/> microseconds ago (<see cref="TouchSampler.At"/>).</summary>
+    public int TouchesAgo(bool back, long ageUs, Span<TouchPoint> dest) => (back ? _back : _front).At(ageUs, dest);
 
     // dp of the 844x390 reference screen to a fraction (axis 0 = x, 1 = y)
     private static float DpFraction(float dp, int axis) => dp / (axis == 0 ? 844f : 390f);
