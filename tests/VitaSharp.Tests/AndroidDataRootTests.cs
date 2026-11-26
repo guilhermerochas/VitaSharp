@@ -221,7 +221,7 @@ public sealed class AndroidDataRootTests : IDisposable
     }
 
     [Fact]
-    public void AFileTheTargetAlreadyHasIsKeptBesideTheMovedOne()
+    public void AFileTheTargetAlreadyHasStaysAndTheMovedOneGoesBesideIt()
     {
         Dictionary<string, string> before = WriteOldData();
         Directory.CreateDirectory(Path.Combine(Visible, "config"));
@@ -231,10 +231,178 @@ public sealed class AndroidDataRootTests : IDisposable
         File.WriteAllText(Path.Combine(Visible, "logs", "last.log"), before["logs/last.log"]);
         MigrationResult result = new DataMigration(Old, Visible).Run();
         Assert.Equal(MigrationStatus.Done, result.Status);
-        Assert.Equal("VITASHARP_USER_EDIT=1", File.ReadAllText(Path.Combine(Visible, "config", "env.txt" + DataMigration.KeptSuffix)));
+        // the visible folder's own file is never replaced (it may be the user's save or settings)
+        Assert.Equal("VITASHARP_USER_EDIT=1", File.ReadAllText(Path.Combine(Visible, "config", "env.txt")));
+        Assert.Equal(before["config/env.txt"], File.ReadAllText(Path.Combine(Visible, "config", "env.txt" + DataMigration.KeptSuffix)));
         Dictionary<string, string> after = Snapshot(Visible);
         after.Remove("config/env.txt" + DataMigration.KeptSuffix);
+        after["config/env.txt"] = before["config/env.txt"];
         Assert.Equal(before, after);
+    }
+
+    // ---------------------------------------------------------------- after a reinstall
+
+    [Fact]
+    public void AfterAReinstallWithoutThePermissionTheAppSaysWhereTheDataIsInsteadOfStartingEmpty()
+    {
+        WriteVisibleData();
+        Directory.CreateDirectory(Old); // the new install's empty app-specific folder
+        DataRootPlan plan = DataRoot.Resolve(new DataRootInputs(Old, Internal, Shared, HasRoot: false, HasAllFilesAccess: false));
+        Assert.Equal(StorageQuestion.GrantForSharedData, plan.Question);
+        Assert.True(plan.NeedsPermission);
+        Assert.Equal(Old, plan.Root);
+        Assert.Equal(Visible, plan.VisibleRoot);
+    }
+
+    [Fact]
+    public void OnlyFoldersMarkTheVisibleDataSoItIsSeenWithoutThePermission()
+    {
+        // Android 11+ without "All files access" shows the folders of another install but not its files
+        Directory.CreateDirectory(Path.Combine(Visible, "fs", "ux0", "app", "PCSB00001"));
+        Assert.True(DataInventory.LooksLikeData(Visible));
+        Assert.Equal(StorageQuestion.GrantForSharedData,
+            DataRoot.Resolve(new DataRootInputs(Old, Internal, Shared, false, false)).Question);
+    }
+
+    [Fact]
+    public void WithoutVisibleDataTheFirstStartOnlyAsksForThePermission()
+    {
+        Directory.CreateDirectory(Visible); // an empty folder (or another app's) is not VitaSharp data
+        DataRootPlan plan = DataRoot.Resolve(new DataRootInputs(Old, Internal, Shared, false, false));
+        Assert.Equal(StorageQuestion.None, plan.Question);
+        Assert.True(plan.NeedsPermission);
+        Assert.False(DataInventory.LooksLikeData(Path.Combine(_root, "never-created")));
+    }
+
+    [Fact]
+    public void GrantedAfterAReinstallTheOldFolderIsUsedAgainWithNothingReplaced()
+    {
+        Dictionary<string, string> visible = WriteVisibleData();
+        // what the new install wrote by itself before the permission: the layout's empty folders and its log
+        Directory.CreateDirectory(Path.Combine(Old, "fs", "ux0", "app"));
+        Directory.CreateDirectory(Path.Combine(Old, "config", "games"));
+        Directory.CreateDirectory(Path.Combine(Old, "logs"));
+        File.WriteAllText(Path.Combine(Old, "logs", "app.log"), "new install log");
+        Assert.False(DataInventory.HasUserData(Old));
+        DataRootPlan plan = DataRoot.Resolve(new DataRootInputs(Old, Internal, Shared, false, true));
+        Assert.Equal(StorageQuestion.None, plan.Question);
+        Assert.Equal(Old, plan.MigrateFrom);
+        MigrationResult result = new DataMigration(plan.MigrateFrom!, plan.VisibleRoot!).Run();
+        Assert.Equal(MigrationStatus.Done, result.Status);
+        Dictionary<string, string> after = Snapshot(Visible);
+        Assert.Equal("new install log", after["logs/app.log" + DataMigration.KeptSuffix]);
+        after.Remove("logs/app.log" + DataMigration.KeptSuffix);
+        Assert.Equal(visible, after);
+        Assert.Equal(Visible, DataRoot.Resolve(new DataRootInputs(Old, Internal, Shared, false, true)).Root);
+    }
+
+    [Fact]
+    public void WithTheUsersDataInBothFoldersNothingMovesUntilTheUserPicks()
+    {
+        Dictionary<string, string> visible = WriteVisibleData();
+        Dictionary<string, string> old = WriteOldData();
+        DataRootPlan plan = DataRoot.Resolve(new DataRootInputs(Old, Internal, Shared, false, true));
+        Assert.Equal(StorageQuestion.ChooseBetweenFolders, plan.Question);
+        Assert.False(plan.NeedsMigration);
+        Assert.Equal(Old, plan.Root);
+        Assert.Equal(visible, Snapshot(Visible));
+        Assert.Equal(old, Snapshot(Old));
+    }
+
+    [Fact]
+    public void TheMergeOfTwoUsedFoldersOverwritesNothing()
+    {
+        Dictionary<string, string> visible = WriteVisibleData();
+        Dictionary<string, string> old = WriteOldData();
+        // the same save in both, with other content: both stay
+        File.WriteAllText(Path.Combine(Old, "fs", "ux0", "user", "00", "savedata", "PCSB00001", "SAVEDATA.BIN"), "newer save");
+        old["fs/ux0/user/00/savedata/PCSB00001/SAVEDATA.BIN"] = "newer save";
+        MigrationResult result = new ScriptedMigration(Old, Visible) { RenameWorks = false }.Run();
+        Assert.Equal(MigrationStatus.Done, result.Status);
+        Dictionary<string, string> after = Snapshot(Visible);
+        foreach (KeyValuePair<string, string> file in visible)
+        {
+            Assert.Equal(file.Value, after[file.Key]); // every file of the visible folder as it was
+        }
+
+        foreach (KeyValuePair<string, string> file in old)
+        {
+            bool same = after.TryGetValue(file.Key, out string? there) && there == file.Value;
+            bool beside = after.TryGetValue(file.Key + DataMigration.KeptSuffix, out string? kept) && kept == file.Value;
+            Assert.True(same || beside, $"{file.Key} of the app folder lost");
+        }
+
+        Assert.False(Directory.Exists(Old));
+    }
+
+    [Fact]
+    public void AMergeStoppedAfterTheTargetKeptItsFileFinishesWithoutAFalseProblem()
+    {
+        WriteVisibleData();
+        WriteOldData();
+        File.WriteAllText(Path.Combine(Visible, "config", "app.json"), "{\"user\":true}");
+        // the first run stops at a copy after some files went beside the target's ones
+        MigrationResult first = new ScriptedMigration(Old, Visible) { RenameWorks = false, FailCopyNumber = 4 }.Run();
+        Assert.Equal(MigrationStatus.Failed, first.Status);
+        DataRootPlan plan = DataRoot.Resolve(new DataRootInputs(Old, Internal, Shared, false, true));
+        Assert.Equal(Old, plan.MigrateFrom); // an interrupted run resumes, whatever the folders hold
+        MigrationResult second = new ScriptedMigration(Old, Visible) { RenameWorks = false }.Run();
+        Assert.Equal(MigrationStatus.Done, second.Status);
+        Assert.Equal("{\"user\":true}", File.ReadAllText(Path.Combine(Visible, "config", "app.json")));
+        Assert.Equal("{}", File.ReadAllText(Path.Combine(Visible, "config", "app.json" + DataMigration.KeptSuffix)));
+    }
+
+    [Fact]
+    public void ThePickedFolderIsUsedAndTheOtherLeftAsItIs()
+    {
+        Dictionary<string, string> visible = WriteVisibleData();
+        Dictionary<string, string> old = WriteOldData();
+        DataRootPlan shared = DataRoot.Resolve(new DataRootInputs(Old, Internal, Shared, false, true, StorageChoice.SharedFolder));
+        Assert.Equal(Visible, shared.Root);
+        Assert.False(shared.NeedsMigration);
+        Assert.Equal(StorageQuestion.None, shared.Question);
+        DataRootPlan app = DataRoot.Resolve(new DataRootInputs(Old, Internal, Shared, false, true, StorageChoice.AppFolder));
+        Assert.Equal(Old, app.Root);
+        Assert.True(app.SharedDataUnused);
+        Assert.False(app.NeedsMigration);
+        // without the permission the app-folder choice asks nothing either
+        DataRootPlan denied = DataRoot.Resolve(new DataRootInputs(Old, Internal, Shared, false, false, StorageChoice.AppFolder));
+        Assert.Equal(StorageQuestion.None, denied.Question);
+        Assert.False(denied.NeedsPermission);
+        Assert.Equal(visible, Snapshot(Visible));
+        Assert.Equal(old, Snapshot(Old));
+        // the visible-folder choice cannot be used without the permission: the warning comes back
+        Assert.Equal(StorageQuestion.GrantForSharedData,
+            DataRoot.Resolve(new DataRootInputs(Old, Internal, Shared, false, false, StorageChoice.SharedFolder)).Question);
+    }
+
+    [Fact]
+    public void TheSummaryShowsWhatEachFolderHolds()
+    {
+        WriteVisibleData();
+        Directory.CreateDirectory(Path.Combine(Visible, "fs", "ux0", "app", "PCSB00002"));
+        DataSummary summary = DataInventory.Summarize(Visible);
+        Assert.Equal(2, summary.Games);
+        Assert.Equal(1, summary.Saves);
+        Assert.Equal(1, summary.SaveStateTitles);
+        Assert.Equal(5, summary.Files);
+        Assert.True(summary.Bytes > 0);
+        DataSummary none = DataInventory.Summarize(Path.Combine(_root, "never-created"));
+        Assert.Equal(0, none.Files);
+        Assert.Null(none.FirmwareVersion);
+    }
+
+    [Fact]
+    public void ThePointerForTheScriptsIsBesideTheAppSpecificFolder()
+    {
+        Directory.CreateDirectory(Old);
+        Assert.True(DataRootPointer.Write(Old, Visible));
+        string pointer = Path.Combine(Path.GetDirectoryName(Old)!, DataRootPointer.FileName);
+        Assert.Equal(pointer, DataRootPointer.PathFor(Old));
+        Assert.Equal(Path.GetFullPath(Visible).Replace('\\', '/'), File.ReadAllText(pointer).Trim());
+        // outside the data folder: it never makes the app-specific folder look like data to move
+        Assert.False(DataMigration.IsPending(Old, Visible));
+        Assert.Null(DataRootPointer.PathFor(null));
     }
 
     [Fact]
@@ -293,6 +461,27 @@ public sealed class AndroidDataRootTests : IDisposable
         }
 
         Directory.CreateDirectory(Path.Combine(Old, "fs", "ux0", "data", "empty"));
+        return files;
+    }
+
+    /// <summary>The visible folder of an earlier install: a game, a save, a save state, settings, a log.</summary>
+    private Dictionary<string, string> WriteVisibleData()
+    {
+        Dictionary<string, string> files = new()
+        {
+            ["fs/ux0/app/PCSB00001/eboot.bin"] = new string('v', 1500),
+            ["fs/ux0/user/00/savedata/PCSB00001/SAVEDATA.BIN"] = "the user's save",
+            ["savestates/PCSB00001/slot1.vss"] = "state",
+            ["config/app.json"] = "{\"language\":\"pt-BR\"}",
+            ["logs/app.log"] = "earlier log",
+        };
+        foreach (KeyValuePair<string, string> file in files)
+        {
+            string path = Path.Combine(Visible, file.Key.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, file.Value);
+        }
+
         return files;
     }
 

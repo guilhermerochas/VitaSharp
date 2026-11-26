@@ -3411,6 +3411,51 @@
   <data name="MStorageMovingProgress" xml:space="preserve">
     <value>{0} of {1} files · {2} of {3} MB</value>
   </data>
+  <data name="MStorageSharedFoundTitle" xml:space="preserve">
+    <value>Your VitaSharp data is in .vitasharp</value>
+  </data>
+  <data name="MStorageSharedFoundExplain" xml:space="preserve">
+    <value>Your VitaSharp data (games, firmware, saves) is in {0}. Grant "All files access" to use it: the app goes back to that folder. Android turns the permission off when the app is reinstalled. Without it the app can only start in its own internal folder, empty, and {0} stays as it is.</value>
+  </data>
+  <data name="MStorageGrantAccess" xml:space="preserve">
+    <value>Grant access</value>
+  </data>
+  <data name="MStorageUseAppFolder" xml:space="preserve">
+    <value>Use the internal folder</value>
+  </data>
+  <data name="MStorageSharedWaitingDetail" xml:space="preserve">
+    <value>Tap to grant "All files access" and use your data in {0}</value>
+  </data>
+  <data name="MStorageSharedUnused" xml:space="preserve">
+    <value>Data in .vitasharp not in use</value>
+  </data>
+  <data name="MStorageSharedUnusedDetail" xml:space="preserve">
+    <value>You chose the internal folder; {0} still holds data. Tap to choose again</value>
+  </data>
+  <data name="MStorageBothTitle" xml:space="preserve">
+    <value>Data in two folders</value>
+  </data>
+  <data name="MStorageBothCounting" xml:space="preserve">
+    <value>There is VitaSharp data in both folders. Nothing was moved or deleted. Counting what each one holds...</value>
+  </data>
+  <data name="MStorageBothExplain" xml:space="preserve">
+    <value>There is VitaSharp data in both folders. Nothing was moved or deleted.&#10;&#10;{0}&#10;&#10;{1}&#10;&#10;Merge brings everything into .vitasharp without overwriting: a file that exists in both stays as it is in .vitasharp and the internal folder's one is kept beside it, its name ending in {2}.</value>
+  </data>
+  <data name="MStorageUseShared" xml:space="preserve">
+    <value>Use .vitasharp</value>
+  </data>
+  <data name="MStorageMerge" xml:space="preserve">
+    <value>Merge</value>
+  </data>
+  <data name="MStorageSummary" xml:space="preserve">
+    <value>{0}: {1} games, firmware {2}, saves of {3} games, save states of {4} games, {5} files, {6} MB</value>
+  </data>
+  <data name="MStorageNoFirmware" xml:space="preserve">
+    <value>not installed</value>
+  </data>
+  <data name="MStorageFirmwareInstalled" xml:space="preserve">
+    <value>installed</value>
+  </data>
   <data name="SystemLanguage" xml:space="preserve">
     <value>System language</value>
   </data>

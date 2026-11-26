@@ -518,9 +518,25 @@ granted, the old app-specific folder is **moved** to `.vitasharp` with a progres
 layout. Each top-level folder is renamed when both folders are on the same mount; otherwise each file is copied to
 `name.part`, its size checked, renamed and only then deleted from the old folder. The list of every file
 (`.vitasharp/.migration-journal`) is written first, so a move stopped anywhere (app killed, phone off, full disk, I/O
-error) continues on the next start and the final check (count and size of every listed file) covers all of them; a
-file `.vitasharp` already had is kept as `name.before-migration`. The move waits while a game process is running, and
-the app restarts on the new folder when it ends.
+error) continues on the next start and the final check (count and size of every listed file) covers all of them. A
+file `.vitasharp` already has is **never replaced**: the same content just drops the old copy, other content keeps the
+`.vitasharp` one in place and puts the app folder's one beside it as `name.from-app-folder`. The move waits while a
+game process is running, and the app restarts on the new folder when it ends.
+
+**After a reinstall** Android resets "All files access" (`appops` back to `default`), while `.vitasharp` keeps the
+games, firmware and saves. The app does not start empty in silence then:
+
+| Situation at start | What the app does |
+|---|---|
+| no permission, `.vitasharp` holds VitaSharp data (one of its `fs/`, `config/`, `savestates/` folders, or a move journal) | a dialog says the data is in `/storage/emulated/0/.vitasharp`, with **Conceder acesso** (the permission screen; the app goes back to that folder when it comes back granted) and **Usar a pasta interna**; it comes back on every return to the screens until one is chosen, and the library card says the same |
+| permission granted, the app folder holds only what the app wrote by itself (empty folders, `logs/`) | merged into `.vitasharp` (nothing replaced) and `.vitasharp` used again |
+| permission granted, **both** folders hold the user's data | nothing moves: a dialog shows what each holds (games, firmware, saves, save states, files, MB) and offers **Usar .vitasharp** (the app folder stays untouched), **Mesclar** (the move above, which overwrites nothing) or **Usar a pasta interna** (`.vitasharp` untouched; the library card lets the user choose again) |
+| a move or merge was interrupted (`.migration-journal` in `.vitasharp`) | it resumes |
+
+The choice is kept in the app's private preferences until it is uninstalled (`StorageChoice`, `DataRoot.Resolve`;
+tests in `AndroidDataRootTests`). The detection only looks for folders on purpose: without the permission Android 11+
+still answers whether a folder exists in the shared storage, but hides the files another install wrote. On Android
+8-10 without the storage permission nothing of the shared storage is visible, so the dialog cannot appear there.
 
 The layout is the desktop's (`fs/ux0/app` games, `fs/ux0/user/00/savedata` saves, `fs/vs0`... firmware, `logs`,
 `shadercache`, `np`, `config/app.json`, `config/games/TITLEID.json`, `config/input.json`, `gpu_driver.json`;
@@ -531,12 +547,18 @@ picked with `ACTION_OPEN_DOCUMENT` and read in place through `ContentResolver.Op
 streams, such as a cloud drive, is copied into the cache first). `MANAGE_EXTERNAL_STORAGE` needs a Play policy
 exception, so a Play build would keep the app-specific folder.
 
-**Scripts and agents using adb:** the data folder on the phone is `/sdcard/.vitasharp` when it exists without a
-`.migration-journal` inside, else `/sdcard/Android/data/io.github.vitasharp/files`. The `build/android-*.ps1`/`.sh`
-scripts resolve it this way on their own (`DATA_ROOT`/`$dataRoot`); in commands below, `<data>` is that folder:
+**Scripts and agents using adb:** ask the app instead of guessing from what exists. Every app process writes the
+folder it opened to `/sdcard/Android/data/io.github.vitasharp/data-root.txt` (`DataRootPointer`, beside the app folder,
+so it is never part of the data; it goes away with an uninstall). The phone-side command in
+`tools/dev/android-data-root.txt` prints that folder, except that a `.vitasharp` answer without "All files access"
+(`appops get io.github.vitasharp MANAGE_EXTERNAL_STORAGE` not `allow`: the permission was taken away and the app falls
+back at its next start) gives the app folder; with no answer yet (the app has not started since the install) it is
+`/sdcard/.vitasharp` only when the permission is granted and no move is pending, else the app folder. The
+`build/android-*.ps1`/`.sh` scripts all run it (`DATA_ROOT`/`$dataRoot`); in commands below, `<data>` is that folder:
 
 ```
-adb shell 'if [ -d /sdcard/.vitasharp ] && [ ! -f /sdcard/.vitasharp/.migration-journal ]; then echo /sdcard/.vitasharp; else echo /sdcard/Android/data/io.github.vitasharp/files; fi'
+adb shell "$(cat tools/dev/android-data-root.txt)"                                  # Linux/macOS (bash)
+adb shell (Get-Content -Raw tools\dev\android-data-root.txt).Trim()                   # Windows PowerShell
 ```
 
 ## Audio, video and GPU drivers

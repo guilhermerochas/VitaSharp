@@ -3411,6 +3411,51 @@
   <data name="MStorageMovingProgress" xml:space="preserve">
     <value>{0} de {1} arquivos · {2} de {3} MB</value>
   </data>
+  <data name="MStorageSharedFoundTitle" xml:space="preserve">
+    <value>Seus dados do VitaSharp estão em .vitasharp</value>
+  </data>
+  <data name="MStorageSharedFoundExplain" xml:space="preserve">
+    <value>Seus dados do VitaSharp (jogos, firmware, saves) estão em {0}. Conceda "Acesso a todos os arquivos" para usá-los: o app volta para essa pasta. O Android desliga a permissão quando o app é reinstalado. Sem ela o app só pode começar na pasta interna dele, vazia, e {0} fica como está.</value>
+  </data>
+  <data name="MStorageGrantAccess" xml:space="preserve">
+    <value>Conceder acesso</value>
+  </data>
+  <data name="MStorageUseAppFolder" xml:space="preserve">
+    <value>Usar a pasta interna</value>
+  </data>
+  <data name="MStorageSharedWaitingDetail" xml:space="preserve">
+    <value>Toque para conceder "Acesso a todos os arquivos" e usar seus dados em {0}</value>
+  </data>
+  <data name="MStorageSharedUnused" xml:space="preserve">
+    <value>Dados em .vitasharp fora de uso</value>
+  </data>
+  <data name="MStorageSharedUnusedDetail" xml:space="preserve">
+    <value>Você escolheu a pasta interna; {0} ainda tem dados. Toque para escolher de novo</value>
+  </data>
+  <data name="MStorageBothTitle" xml:space="preserve">
+    <value>Dados em duas pastas</value>
+  </data>
+  <data name="MStorageBothCounting" xml:space="preserve">
+    <value>Há dados do VitaSharp nas duas pastas. Nada foi movido nem apagado. Contando o que cada uma tem...</value>
+  </data>
+  <data name="MStorageBothExplain" xml:space="preserve">
+    <value>Há dados do VitaSharp nas duas pastas. Nada foi movido nem apagado.&#10;&#10;{0}&#10;&#10;{1}&#10;&#10;Mesclar junta tudo na .vitasharp sem sobrescrever: um arquivo que existe nas duas fica como está na .vitasharp e o da pasta interna é guardado ao lado, com o nome terminado em {2}.</value>
+  </data>
+  <data name="MStorageUseShared" xml:space="preserve">
+    <value>Usar .vitasharp</value>
+  </data>
+  <data name="MStorageMerge" xml:space="preserve">
+    <value>Mesclar</value>
+  </data>
+  <data name="MStorageSummary" xml:space="preserve">
+    <value>{0}: {1} jogos, firmware {2}, saves de {3} jogos, save states de {4} jogos, {5} arquivos, {6} MB</value>
+  </data>
+  <data name="MStorageNoFirmware" xml:space="preserve">
+    <value>não instalado</value>
+  </data>
+  <data name="MStorageFirmwareInstalled" xml:space="preserve">
+    <value>instalado</value>
+  </data>
   <data name="SystemLanguage" xml:space="preserve">
     <value>Idioma do sistema</value>
   </data>

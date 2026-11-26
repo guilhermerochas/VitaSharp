@@ -121,6 +121,8 @@ public static class AppServices
                 Data = new DataLayout(context.FilesDir!.AbsolutePath);
                 Data.EnsureCreated();
             }
+            // the adb scripts ask the app which folder it uses (Android/data/<package>/data-root.txt), not guess it
+            DataRootPointer.Write(context.GetExternalFilesDir(null)?.AbsolutePath, Data.Root);
             // config/env.txt: the desktop's VITASHARP_* switches, set before anything below reads them
             List<KeyValuePair<string, string>> env = [];
             try

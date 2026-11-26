@@ -17,15 +17,20 @@ namespace VitaSharp.Android.Services;
 /// flow of the screens' process (docs/android/README.md, "Storage"): without root it asks once for "All files access"
 /// (Android 11+: the system's ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION screen; Android 8-10: the storage
 /// permission), then moves the old app-specific folder to /storage/emulated/0/.vitasharp with a progress dialog
-/// (<see cref="DataMigration"/>) and restarts the app on the new folder.
+/// (<see cref="DataMigration"/>) and restarts the app on the new folder. When the visible folder already holds data and
+/// the permission is missing (a reinstall resets it), it says where the data is and offers the permission or the
+/// app-specific folder; when both folders hold the user's data, it shows what each holds and lets the user pick one or
+/// merge them without overwriting (<see cref="StorageQuestion"/>).
 /// </summary>
 public static class StorageSetup
 {
     const int PermissionRequestCode = 0x5700;
     const string StateFile = "storage_setup";
     const string AskedKey = "all_files_asked";
+    const string ChoiceKey = "data_folder_choice";
 
     static bool _migrating;
+    static AlertDialog? _question;
 
     /// <summary>What <see cref="DataRoot.Resolve"/> sees on this device now.</summary>
     public static DataRootInputs Inputs(Context context)
@@ -37,7 +42,29 @@ public static class StorageSetup
         }
 
         return new DataRootInputs(context.GetExternalFilesDir(null)?.AbsolutePath, context.FilesDir!.AbsolutePath, shared,
-            RootDetector.HasSu(), HasAllFilesAccess(context));
+            RootDetector.HasSu(), HasAllFilesAccess(context), ReadChoice(context));
+    }
+
+    /// <summary>The folder the user picked (<see cref="StorageChoice"/>), kept in the app's private preferences until
+    /// the app is uninstalled (allowBackup is off, so a reinstall starts with none).</summary>
+    public static StorageChoice ReadChoice(Context context)
+    {
+        string? value = context.GetSharedPreferences(StateFile, FileCreationMode.Private)?.GetString(ChoiceKey, null);
+        return Enum.TryParse(value, out StorageChoice choice) ? choice : StorageChoice.None;
+    }
+
+    static void SaveChoice(Context context, StorageChoice choice)
+    {
+        Log.Info($"Storage: data folder choice {choice}");
+        // Commit, not Apply: the restart that may follow kills the process
+        context.GetSharedPreferences(StateFile, FileCreationMode.Private)?.Edit()?.PutString(ChoiceKey, choice.ToString())?.Commit();
+    }
+
+    /// <summary>The library's card after "use the app folder": forgets the choice and asks again.</summary>
+    public static void ChooseAgain(Activity activity)
+    {
+        SaveChoice(activity, StorageChoice.None);
+        Check(activity);
     }
 
     /// <summary>"All files access" (Android 11+) or the storage permission (Android 8-10).</summary>
@@ -90,15 +117,7 @@ public static class StorageSetup
         AppServices.StoragePlan = plan;
         if (plan.NeedsMigration)
         {
-            if (GameProcessMarker.Read(AppServices.Data.GameProcessFile, GameProcessMarker.IsGameProcess) is { } running)
-            {
-                // the game process writes into the old folder: the move waits until it closed
-                Log.Info($"Storage: the data move waits for the game process ({running.TitleId}) to close");
-                Toast.MakeText(activity, Loc.Get("MStorageMoveWaitsGame"), ToastLength.Long)?.Show();
-                return;
-            }
-
-            Migrate(activity, plan);
+            StartMigration(activity, plan);
             return;
         }
 
@@ -106,6 +125,27 @@ public static class StorageSetup
         {
             Log.Info($"Storage: the data folder is now {plan.Root}: restarting");
             Restart(activity);
+            return;
+        }
+
+        if (_question != null)
+        {
+            return;
+        }
+
+        if (plan.Question == StorageQuestion.GrantForSharedData)
+        {
+            // a reinstall resets "All files access": the user's data is still in the visible folder, so say it
+            // (every time the screens come back without the permission) instead of starting empty in silence
+            Log.Warn($"Storage: VitaSharp data found in {plan.VisibleRoot} without All files access: asking");
+            AskForSharedData(activity, plan);
+            return;
+        }
+
+        if (plan.Question == StorageQuestion.ChooseBetweenFolders)
+        {
+            Log.Warn($"Storage: data in both {plan.Root} and {plan.VisibleRoot}: nothing is moved until the user picks");
+            AskWhichFolder(activity, plan);
             return;
         }
 
@@ -128,6 +168,92 @@ public static class StorageSetup
             .SetPositiveButton(Loc.Get("MStorageAccessAllow"), (_, _) => RequestAllFilesAccess(activity))!
             .SetNegativeButton(Loc.Get("MLater"), (_, _) => { })!
             .Show();
+    }
+
+    /// <summary>The move or merge, once no game process writes into the old folder.</summary>
+    static void StartMigration(Activity activity, DataRootPlan plan)
+    {
+        if (GameProcessMarker.Read(AppServices.Data.GameProcessFile, GameProcessMarker.IsGameProcess) is { } running)
+        {
+            // the game process writes into the old folder: the move waits until it closed
+            Log.Info($"Storage: the data move waits for the game process ({running.TitleId}) to close");
+            Toast.MakeText(activity, Loc.Get("MStorageMoveWaitsGame"), ToastLength.Long)?.Show();
+            return;
+        }
+
+        Migrate(activity, plan);
+    }
+
+    /// <summary>No permission, data in the visible folder: grant (and come back to that folder) or use the app folder.</summary>
+    static void AskForSharedData(Activity activity, DataRootPlan plan)
+    {
+        AlertDialog dialog = new AlertDialog.Builder(activity)
+            .SetTitle(Loc.Get("MStorageSharedFoundTitle"))!
+            .SetMessage(Loc.Format("MStorageSharedFoundExplain", plan.VisibleRoot ?? ""))!
+            .SetPositiveButton(Loc.Get("MStorageGrantAccess"), (_, _) => RequestAllFilesAccess(activity))!
+            .SetNegativeButton(Loc.Get("MStorageUseAppFolder"), (_, _) =>
+            {
+                SaveChoice(activity, StorageChoice.AppFolder);
+                AppServices.StoragePlan = DataRoot.Resolve(Inputs(activity));
+            })!
+            .SetCancelable(false)!
+            .Create()!;
+        ShowQuestion(dialog);
+    }
+
+    /// <summary>Data in both folders: what each holds, and the visible one, the merge (overwrites nothing) or the app one.</summary>
+    static void AskWhichFolder(Activity activity, DataRootPlan plan)
+    {
+        string visible = plan.VisibleRoot!;
+        string old = plan.Root;
+        AlertDialog dialog = new AlertDialog.Builder(activity)
+            .SetTitle(Loc.Get("MStorageBothTitle"))!
+            .SetMessage(Loc.Get("MStorageBothCounting"))!
+            .SetPositiveButton(Loc.Get("MStorageUseShared"), (_, _) =>
+            {
+                SaveChoice(activity, StorageChoice.SharedFolder);
+                Restart(activity);
+            })!
+            .SetNeutralButton(Loc.Get("MStorageMerge"), (_, _) =>
+            {
+                SaveChoice(activity, StorageChoice.None);
+                StartMigration(activity, plan with { MigrateFrom = old });
+            })!
+            .SetNegativeButton(Loc.Get("MStorageUseAppFolder"), (_, _) =>
+            {
+                SaveChoice(activity, StorageChoice.AppFolder);
+                AppServices.StoragePlan = DataRoot.Resolve(Inputs(activity));
+            })!
+            .SetCancelable(false)!
+            .Create()!;
+        ShowQuestion(dialog);
+        // the counts walk both folders (thousands of files): off the UI thread
+        Task.Run(() => (DataInventory.Summarize(visible), DataInventory.Summarize(old))).ContinueWith(task =>
+        {
+            (DataSummary shared, DataSummary app) = task.Result;
+            activity.RunOnUiThread(() => dialog.SetMessage(Loc.Format("MStorageBothExplain", Describe(shared), Describe(app),
+                DataMigration.KeptSuffix)));
+        }, TaskContinuationOptions.OnlyOnRanToCompletion);
+    }
+
+    /// <summary>One storage question on screen at a time (Check runs on every resume).</summary>
+    static void ShowQuestion(AlertDialog dialog)
+    {
+        _question = dialog;
+        dialog.DismissEvent += (_, _) => _question = null;
+        dialog.Show();
+    }
+
+    static string Describe(DataSummary summary)
+    {
+        string firmware = summary.FirmwareVersion switch
+        {
+            null => Loc.Get("MStorageNoFirmware"),
+            "" => Loc.Get("MStorageFirmwareInstalled"),
+            string version => version,
+        };
+        return Loc.Format("MStorageSummary", summary.Folder, summary.Games, firmware, summary.Saves, summary.SaveStateTitles,
+            summary.Files, summary.Bytes >> 20);
     }
 
     static void Migrate(Activity activity, DataRootPlan plan)

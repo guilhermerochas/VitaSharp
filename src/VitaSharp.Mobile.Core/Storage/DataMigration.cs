@@ -34,9 +34,11 @@ public readonly record struct MigrationResult(MigrationStatus Status, string Mes
 /// <item>each top-level entry the target does not have yet is renamed at once (atomic, when both folders are on the same
 /// mount); otherwise each file is renamed, or copied to <c>name.part</c>, its size checked, renamed to its name, and only
 /// then deleted from the source; a copy error or a full disk stops the run with the source file in place;</item>
-/// <item>a file the target already has is kept: the same content drops the source copy (a resumed run), other content
-/// keeps the target's as <c>name.before-migration</c>;</item>
-/// <item>at the end every journal entry must be in the target with the size it had when it moved (count and bytes);
+/// <item>a file the target already has is never replaced: the same content drops the source copy (a resumed run);
+/// other content (both folders were used, e.g. after a reinstall) keeps the target's in place and puts the source's
+/// beside it as <c>name.from-app-folder</c> (<see cref="KeptSuffix"/>), so a merge overwrites nothing;</item>
+/// <item>at the end every journal entry must be in the target with the size it had when it moved, under its name or
+/// beside it (count and bytes);
 /// only the empty source folders are deleted then. A listed file that is in neither folder is reported in
 /// <see cref="ProblemsFileName"/> (there is nothing left to move).</item>
 /// </list>
@@ -49,7 +51,8 @@ public class DataMigration(string source, string target)
     public const string ProblemsFileName = "migration-problems.txt";
     private const string MovedTag = "m";
     public const string PartSuffix = ".part";
-    public const string KeptSuffix = ".before-migration";
+    /// <summary>The source's copy of a file the target already had with other content, next to the target's.</summary>
+    public const string KeptSuffix = ".from-app-folder";
 
     /// <summary>Room left free in the target beyond the file being copied.</summary>
     public const long SpaceMargin = 16L << 20;
@@ -68,6 +71,12 @@ public class DataMigration(string source, string target)
         }
 
         return Directory.Exists(source) && Directory.EnumerateFileSystemEntries(source).Any();
+    }
+
+    /// <summary>A run stopped before it ended (its journal is still in the target): the next one resumes it.</summary>
+    public static bool IsInterrupted(string target)
+    {
+        return File.Exists(Path.Combine(target, JournalFileName));
     }
 
     public MigrationResult Run(IProgress<MigrationProgress>? progress = null, CancellationToken cancel = default)
@@ -99,15 +108,22 @@ public class DataMigration(string source, string target)
                 cancel.ThrowIfCancellationRequested();
                 string relative = Relative(sourceFile);
                 long size = new FileInfo(sourceFile).Length;
-                MigrationResult? stop = MoveOne(sourceFile, TargetPath(relative), size);
+                MigrationResult? stop = MoveOne(sourceFile, TargetPath(relative), size, out string landed);
                 if (stop is { } failed)
                 {
                     return failed with { Files = doneFiles, Bytes = doneBytes };
                 }
 
                 totalBytes += size - files.GetValueOrDefault(relative);
-                files[relative] = size;
-                moves.Write($"{MovedTag}\t{size}\t{relative}\n");
+                string landedRelative = Path.GetRelativePath(Target, landed).Replace(Path.DirectorySeparatorChar, '/');
+                if (landedRelative != relative)
+                {
+                    // the target kept its own file under this name: the check looks for the source's beside it
+                    files.Remove(relative);
+                }
+
+                files[landedRelative] = size;
+                moves.Write($"{MovedTag}\t{size}\t{landedRelative}\n");
                 moves.Flush();
                 doneFiles++;
                 doneBytes += size;
@@ -140,14 +156,14 @@ public class DataMigration(string source, string target)
             }
 
             long size = new FileInfo(moved).Length;
-            if (size != file.Value)
+            if (size != file.Value && !KeptBeside(moved, file.Value))
             {
                 problems.Add($"{file.Key}: {size} bytes in the target, {file.Value} listed");
                 continue;
             }
 
             verifiedFiles++;
-            verifiedBytes += size;
+            verifiedBytes += file.Value;
         }
 
         // only empty folders are left in the source here: deleting them loses nothing
@@ -219,9 +235,11 @@ public class DataMigration(string source, string target)
         }
     }
 
-    /// <summary>Moves one file; null when it is in the target, else why the run stops (the source file is kept).</summary>
-    private MigrationResult? MoveOne(string sourceFile, string targetFile, long size)
+    /// <summary>Moves one file; null when it is in the target (at <paramref name="landed"/>: its name, or beside the
+    /// target's own file of that name), else why the run stops (the source file is kept).</summary>
+    private MigrationResult? MoveOne(string sourceFile, string targetFile, long size, out string landed)
     {
+        landed = targetFile;
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(targetFile)!);
@@ -233,7 +251,9 @@ public class DataMigration(string source, string target)
                     return null;
                 }
 
-                File.Move(targetFile, FreeName(targetFile + KeptSuffix), false);
+                // the target's file stays where it is (it may be the user's save or settings): the source's goes beside it
+                targetFile = FreeName(targetFile + KeptSuffix);
+                landed = targetFile;
             }
 
             if (TryRename(sourceFile, targetFile, false))
@@ -318,6 +338,25 @@ public class DataMigration(string source, string target)
                 return true;
             }
         }
+    }
+
+    /// <summary>The source's copy of <paramref name="targetFile"/> with <paramref name="size"/> bytes is beside it
+    /// (<see cref="KeptSuffix"/>: a run stopped before its journal line was written).</summary>
+    private static bool KeptBeside(string targetFile, long size)
+    {
+        string candidate = targetFile + KeptSuffix;
+        int n = 1;
+        while (File.Exists(candidate))
+        {
+            if (new FileInfo(candidate).Length == size)
+            {
+                return true;
+            }
+
+            candidate = $"{targetFile}{KeptSuffix}.{n++}";
+        }
+
+        return false;
     }
 
     private static string FreeName(string path)

@@ -17,7 +17,8 @@ dotnet build tools/VitaSharp.PerfTools -c Release -p:VitaSharpDeveloper=true -m:
   package id `io.github.vitasharp`, so `adb install -r` keeps the user's data.
 - Fixtures contain game data, so they never go into git. On the phone they live in
   `<data>/bench/` (`<data>`: `/sdcard/.vitasharp`, or `/sdcard/Android/data/io.github.vitasharp/files` on a rooted
-  phone or before "All files access" is given; docs/android/README.md, "Storage"); on the PC, in any folder with the same layout:
+  phone or without "All files access"; the folder in use is what `adb shell "$(cat tools/dev/android-data-root.txt)"`
+  prints, docs/android/README.md, "Storage"); on the PC, in any folder with the same layout:
 
 ```
 bench/fixtures/NAME.vsgd           GPU fixtures (vitasharp-perf bench cut)
