@@ -1455,6 +1455,11 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
     quadros idênticos no replay (perfil mali). Medir no celular; próximos, por ganho no modelo: MSAA com
     `VK_EXT_multisampled_render_to_single_sampled` (a Mali-G57 tem: tira a cópia de início de cena de 8 MB, o draw de
     carga e a imagem MSAA de cor; ~1,1 ms) e "texture viewport" do Vita3K para regiões de outras superfícies (sem cópia)
+    Feito atrás de chave, desligado: `VITASHARP_MSAA_RTSS=1` (VulkanRenderer.MsaaRtss.cs). Cena principal: tráfego de
+    tile + cópia 19,9 -> 15,9 MB por quadro (cópia de início de cena 8 MB e resolve 4 MB saem; entra a carga 1x de 4 MB),
+    384x192: 0,8 -> 0,6 MB; no modelo -0,56 ms, mais o draw de carga das amostras em tela cheia e a leitura de 4 MB da
+    cópia, que o modelo não conta. Nenhuma GPU do PC tem a extensão: no PC vale o caminho atual (replay --compare
+    idêntico com a chave ligada); fidelidade e tempo só no celular (bench do dump com imagem comparada)
   - [x] Feitos até 31/10/2026 (detalhes em `docs/android/README.md` e `docs/notes/native-jit.md`): threads do jogo e
     da GPU nos núcleos rápidos + sessão ADPF, logcat só com avisos, `Surface.setFrameRate` com o fps do jogo, ajuste
     do JIT nativo ARM64, AOT do código gerenciado (hoje o Release é NativeAOT, desde 09/11/2026)

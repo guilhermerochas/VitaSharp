@@ -18,6 +18,8 @@ public sealed unsafe partial class VulkanRenderer
         public RenderTarget Shadow = null!;
         public ImageMemoryPool.Allocation Mem;
         public bool Valid;
+        /// <summary>A draw sampled the surface while rendering it (the copy serves textures, not only the MSAA load).</summary>
+        public bool SelfSampled;
         /// <summary>Views in other formats (sRGB, raw integer) for the MSAA scene-start load.</summary>
         public readonly Dictionary<Format, ImageView> Views = new();
     }
@@ -71,11 +73,13 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (_sceneStartCopies.TryGetValue(rt, out SceneStartCopy? sceneStartCopy))
         {
+            sceneStartCopy.SelfSampled = true;
             return sceneStartCopy.Valid ? sceneStartCopy.Shadow : rt;
         }
 
         Log.WarnOnce($"selfsample-{rt.Address:X8}", $"[gpu] render target 0x{rt.Address:X8} {rt.Width}x{rt.Height} is sampled while it is rendered: textures read its content from the start of the scene");
         CreateSceneStartCopy(rt);
+        _sceneStartCopies[rt].SelfSampled = true;
         // usable from the next scene of this surface on
         return rt;
     }
@@ -151,6 +155,14 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (!_sceneStartCopies.TryGetValue(rt, out SceneStartCopy? sceneStartCopy))
         {
+            return;
+        }
+
+        // a render-to-single-sampled MSAA scene loads its samples from the surface itself: the copy is only for
+        // textures that sample the surface, refreshed when one did
+        if (_multisampled && _msRtss && !sceneStartCopy.SelfSampled)
+        {
+            sceneStartCopy.Valid = false;
             return;
         }
 

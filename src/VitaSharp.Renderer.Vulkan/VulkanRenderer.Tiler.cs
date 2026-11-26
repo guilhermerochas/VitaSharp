@@ -63,10 +63,11 @@ public sealed unsafe partial class VulkanRenderer
     /// <param name="colorFormat">the colour attachment's format (cost estimate; Undefined = the surface's)</param>
     /// <param name="samples">samples per pixel of the attachments (cost estimate)</param>
     /// <param name="resolve">the rendering resolves its samples into the surface (cost estimate)</param>
+    /// <param name="colorSamples">samples per pixel of the colour attachment when it differs (render to single-sampled: 1)</param>
     private void CountOps(bool color, AttachmentLoadOp colorLoad, AttachmentStoreOp colorStore, bool depth, AttachmentLoadOp depthLoad, AttachmentStoreOp depthStore, Extent2D area = default,
-        Format colorFormat = Format.Undefined, int samples = 1, bool resolve = false, [System.Runtime.CompilerServices.CallerMemberName] string site = "")
+        Format colorFormat = Format.Undefined, int samples = 1, bool resolve = false, int colorSamples = 0, [System.Runtime.CompilerServices.CallerMemberName] string site = "")
     {
-        CostNoteOps(color, colorLoad, colorStore, depth, depthLoad, depthStore, area, colorFormat, samples, resolve, site);
+        CostNoteOps(color, colorLoad, colorStore, depth, depthLoad, depthStore, area, colorFormat, samples, resolve, colorSamples, site);
         if (color)
         {
             _colorLoads[LoadIndex(colorLoad)]++;

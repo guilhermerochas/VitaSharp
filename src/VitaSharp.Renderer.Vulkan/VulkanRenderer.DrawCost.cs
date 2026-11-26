@@ -41,14 +41,16 @@ public struct PassCostRecord
     /// <summary>
     /// Tile traffic of a rendering of <paramref name="width"/> x <paramref name="height"/> pixels: colour at its format's
     /// size and depth/stencil at 4 bytes (D24S8), each times the samples per pixel when loaded or stored; a resolve writes
-    /// one colour value per pixel. Pure, unit-tested (MaliPassCostTests).
+    /// one colour value per pixel; <paramref name="colorSamples"/> (0 = <paramref name="samples"/>) is the colour
+    /// attachment's own count (render to single-sampled: 1, its samples never leave the tile memory). Pure, unit-tested
+    /// (MaliPassCostTests).
     /// </summary>
     public static (long Load, long Store, long Resolve) Bytes(long width, long height, double colorBpp, int samples,
-        bool hasColor, bool colorLoad, bool colorStore, bool depthLoad, bool depthStore, bool resolve)
+        bool hasColor, bool colorLoad, bool colorStore, bool depthLoad, bool depthStore, bool resolve, int colorSamples = 0)
     {
         long px = width * height;
         long sampled = px * Math.Max(1, samples);
-        long colorBytes = hasColor ? (long)(sampled * colorBpp) : 0;
+        long colorBytes = hasColor ? (long)(px * Math.Max(1, colorSamples > 0 ? colorSamples : samples) * colorBpp) : 0;
         long depthBytes = sampled * 4;
         long load = (colorLoad ? colorBytes : 0) + (depthLoad ? depthBytes : 0);
         long store = (colorStore ? colorBytes : 0) + (depthStore ? depthBytes : 0);
@@ -274,7 +276,7 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Tile bytes of one scene rendering (called with the load/store counters).</summary>
     private void CostNoteOps(bool color, AttachmentLoadOp colorLoad, AttachmentStoreOp colorStore, bool depth, AttachmentLoadOp depthLoad, AttachmentStoreOp depthStore, Extent2D area,
-        Format colorFormat, int samples, bool resolve, string site)
+        Format colorFormat, int samples, bool resolve, int colorSamples, string site)
     {
         if (!CostOn)
         {
@@ -307,7 +309,7 @@ public sealed unsafe partial class VulkanRenderer
             Resolve = resolve,
         };
         (pass.LoadBytes, pass.StoreBytes, pass.ResolveBytes) = PassCostRecord.Bytes(width, height, CostBytesPerTexel(colorFormat), pass.Samples,
-            color, pass.ColorLoad, pass.ColorStore, pass.DepthLoad, pass.DepthStore, resolve);
+            color, pass.ColorLoad, pass.ColorStore, pass.DepthLoad, pass.DepthStore, resolve, colorSamples);
         _costPasses.Add(pass);
         (long LoadBytes, long StoreBytes) cur = _costTileBytes.GetValueOrDefault(_presentCount + 1);
         _costTileBytes[_presentCount + 1] = (cur.LoadBytes + pass.LoadBytes, cur.StoreBytes + pass.StoreBytes + pass.ResolveBytes);

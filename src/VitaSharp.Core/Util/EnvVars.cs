@@ -308,6 +308,11 @@ public static class EnvVars
     /// memory holds the surface as it was before the scene until the scene stores it (VulkanRenderer.Mapped.cs); every
     /// such read used to end the rendering. 0 (the default for now): refreshed each time.</summary>
     public const string MappedSceneStart = "VITASHARP_MAPPED_SCENE_START";
+    /// <summary>1: native MSAA scenes render with VK_EXT_multisampled_render_to_single_sampled where the device has it:
+    /// the samples live in tile memory only, the surface itself is loaded into every sample and resolved on store, with
+    /// no multisampled colour image, scene-start copy or sample-load draw (VulkanRenderer.MsaaNative.cs). Off by default;
+    /// without the extension the current path.</summary>
+    public const string MsaaRtss = "VITASHARP_MSAA_RTSS";
     /// <summary>1: logs, per render-target format, the framebuffer compression the driver applied (Mali AFBC) through
     /// VK_EXT_image_compression_control, where the device has it.</summary>
     public const string AfbcLog = "VITASHARP_AFBC_LOG";

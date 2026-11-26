@@ -94,15 +94,15 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <param name="TileWord1">the scene's tile-word attachment (VulkanRenderer.TileWord1.cs) is colour/input attachment 1</param>
     private readonly record struct MsaaPassKey(Format Format, SampleCountFlags Samples, AttachmentLoadOp ColorLoad, AttachmentStoreOp ColorStore,
-        AttachmentLoadOp DepthLoad, AttachmentStoreOp DepthStore, bool Resolve, bool TileWord1 = false, bool DepthReadOnly = false);
+        AttachmentLoadOp DepthLoad, AttachmentStoreOp DepthStore, bool Resolve, bool TileWord1 = false, bool DepthReadOnly = false, bool Rtss = false);
 
     /// <summary>Render passes of multisampled renderings (shared with the pipeline prewarm thread, hence the lock).</summary>
     private readonly Dictionary<MsaaPassKey, RenderPass> _msRenderPasses = new();
 
     /// <summary>The render pass multisampled pipelines and secondary command buffers are created against: one
     /// subpass, so any pass of the same format/sample count is compatible whatever its load/store ops and resolve.</summary>
-    private RenderPass MsaaCompatPass(Format format, SampleCountFlags samples, bool tileWord1 = false) =>
-        MsaaRenderPass(new MsaaPassKey(format, samples, AttachmentLoadOp.Load, AttachmentStoreOp.Store, AttachmentLoadOp.Load, AttachmentStoreOp.Store, false, tileWord1));
+    private RenderPass MsaaCompatPass(Format format, SampleCountFlags samples, bool tileWord1 = false, bool rtss = false) =>
+        MsaaRenderPass(new MsaaPassKey(format, samples, AttachmentLoadOp.Load, AttachmentStoreOp.Store, AttachmentLoadOp.Load, AttachmentStoreOp.Store, false, tileWord1, Rtss: rtss));
 
     /// <summary>
     /// One subpass: attachment 0 = the samples (colour AND input attachment, GENERAL layout, self-dependency for
@@ -116,6 +116,11 @@ public sealed unsafe partial class VulkanRenderer
             if (_msRenderPasses.TryGetValue(k, out RenderPass renderPass))
             {
                 return renderPass;
+            }
+
+            if (k.Rtss)
+            {
+                return _msRenderPasses[k] = CreateRtssRenderPass(k);
             }
 
             AttachmentDescription* att = stackalloc AttachmentDescription[4];
@@ -340,6 +345,7 @@ public sealed unsafe partial class VulkanRenderer
 
     private void DestroyMsaaLater(RenderTarget rt, bool now = false)
     {
+        DestroyRtssLater(rt, now);
         if (!_msImages.Remove(rt, out MsaaImage? msaaImage))
         {
             return;
@@ -374,7 +380,7 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Scene start: decides how an MSAA scene is emulated (real multisampling, supersampling or one sample).</summary>
     private void ChooseMsaaPath(BeginSceneCommand beginSceneCommand)
     {
-        _multisampled = _supersampled = _msaaNoDownscale = false;
+        _multisampled = _supersampled = _msaaNoDownscale = _msRtss = false;
         if (_renderTarget == null || beginSceneCommand.Multisample == 0)
         {
             return;
@@ -399,7 +405,15 @@ public sealed unsafe partial class VulkanRenderer
             _msNeedsLoad = true;
             _msUnresolved = _msSceneRaw = false;
             _statMsScenes++;
-            EnsureSceneStartCopy(_renderTarget);
+            _msRtss = RtssPossible && !_rtssBlocked.Contains(_renderTarget);
+            if (_msRtss)
+            {
+                _statRtssScenes++;
+            }
+            else
+            {
+                EnsureSceneStartCopy(_renderTarget);
+            }
             if (_msLogged.Add((_renderTarget.Address, samples)))
             {
                 Log.Info($"[gpu] render target 0x{_renderTarget.Address:X8} {_renderTarget.Width}x{_renderTarget.Height} fmt 0x{_renderTarget.ColorFormat:X8}: MSAA downscale scene, rendering with {(samples == SampleCountFlags.Count4Bit ? 4 : 2)} samples and resolving into the surface");
@@ -430,6 +444,12 @@ public sealed unsafe partial class VulkanRenderer
 
     private void BeginMsaaRendering()
     {
+        if (_msRtss)
+        {
+            BeginRtssRendering();
+            return;
+        }
+
         RenderTarget rt = _renderTarget!;
         MsaaImage msaaImage = GetMsaaImage(rt, _msSamples);
         Format format = _renderRaw ? _rawFormat : _rtAttachFormat;
@@ -547,6 +567,12 @@ public sealed unsafe partial class VulkanRenderer
     /// resolves (programmable-blending copies, integer-view switches)</param>
     private void EndMsaaRendering(bool final, bool resolve)
     {
+        if (_msRtss)
+        {
+            EndRtssRendering(final);
+            return;
+        }
+
         if (_msDirect)
         {
             _vk.CmdEndRenderPass(F.Cmd);
@@ -1112,10 +1138,11 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         MsaaEmulation.Supersample => "supersampled (VITASHARP_MSAA=ss)",
         MsaaEmulation.Off => "off (VITASHARP_MSAA=off)",
         _ => $"native: {_statMsScenes} scenes, {_statMsPasses} renderings ({_statMsDiscards} discarding their samples at scene end), {_statMsResolves} resolves, {_statMsInputFetches} input-attachment fetches, {_statMsFetchCopies} multisampled framebuffer-fetch copies",
-    }) + $"; framebuffer-fetch copies moved {_statFetchPixels / 1e6:F1} M of {_statFetchFullPixels / 1e6:F1} M pixels; {_statFetchSplitDraws} programmable-blending draws split into pieces";
+    }) + $"; framebuffer-fetch copies moved {_statFetchPixels / 1e6:F1} M of {_statFetchFullPixels / 1e6:F1} M pixels; {_statFetchSplitDraws} programmable-blending draws split into pieces" + RtssReport();
 
     private void DestroyMsaa()
     {
+        DestroyRtss();
         foreach (MsaaImage msaaImage in _msImages.Values)
         {
             DestroyMsaaImage(msaaImage);

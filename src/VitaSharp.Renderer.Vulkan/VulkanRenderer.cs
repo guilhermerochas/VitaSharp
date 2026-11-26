@@ -888,7 +888,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     private (Image, ImageView, ImageMemoryPool.Allocation) CreateImage(MemCat category, uint w, uint h, Format format, ImageUsageFlags usage, ImageAspectFlags aspect,
         uint mips = 1, uint layers = 1, bool mutable = false, bool cube = false, ComponentMapping? swizzle = null, SampleCountFlags samples = SampleCountFlags.Count1Bit,
-        Format[]? viewFormats = null)
+        Format[]? viewFormats = null, bool renderToSingleSampled = false)
     {
         Format[] vf = viewFormats ?? Array.Empty<Format>();
         fixed (Format* pvf = vf)
@@ -908,7 +908,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 Usage = usage,
                 SharingMode = SharingMode.Exclusive,
                 InitialLayout = ImageLayout.Undefined,
-                Flags = (mutable ? ImageCreateFlags.CreateMutableFormatBit : 0) | (cube ? ImageCreateFlags.CreateCubeCompatibleBit : 0),
+                Flags = (mutable ? ImageCreateFlags.CreateMutableFormatBit : 0) | (cube ? ImageCreateFlags.CreateCubeCompatibleBit : 0)
+                    | (renderToSingleSampled ? ImageCreateFlags.CreateMultisampledRenderToSingleSampledBitExt : 0),
             };
             _vk.CreateImage(_dev, in ici, null, out Image image).Ok("vkCreateImage");
             _vk.GetImageMemoryRequirements(_dev, image, out MemoryRequirements req);
@@ -1081,7 +1082,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         Format[]? views = RenderTargetViewFormats(format);
         (Image img, ImageView view, ImageMemoryPool.Allocation mem) = CreateImage(MemCat.RenderTarget, ScaleDim(colorSurfaceInfo.Width, scale), ScaleDim(colorSurfaceInfo.Height, scale), format,
             ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.InputAttachmentBit,
-            ImageAspectFlags.ColorBit, mutable: views is not { Length: 1 }, viewFormats: views is { Length: > 1 } ? views : null);
+            ImageAspectFlags.ColorBit, mutable: views is not { Length: 1 }, viewFormats: views is { Length: > 1 } ? views : null,
+            renderToSingleSampled: _core.MultisampledRenderToSingleSampled);
         rt = new RenderTarget { ViewFormats = views, Address = colorSurfaceInfo.Data, Width = colorSurfaceInfo.Width, Height = colorSurfaceInfo.Height, ColorFormat = colorSurfaceInfo.ColorFormat, Stride = colorSurfaceInfo.StrideInPixels, Format = format, Image = img, View = view, Mem = mem, LastTouchedFrame = FrameCount, Scale = scale };
         // start from the guest memory content (games often fill the surface with the CPU first)
         UploadSurfaceFromGuest(rt);
