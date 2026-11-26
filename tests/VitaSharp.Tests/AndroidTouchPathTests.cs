@@ -234,6 +234,42 @@ public sealed class AndroidTouchPathTests : IDisposable
     }
 
     [Fact]
+    public void ThePanelsReportSixContactsOnTheFrontAndFourOnTheRear()
+    {
+        // SceTouch 3.74 configures the front panel for 6 contacts and the rear one for 4
+        (int, float, float)[] fingers = [.. Enumerable.Range(0, 7).Select(i => Finger(i, 0.1f + i * 0.1f, 0.5f))];
+        _pad.Update(fingers, _hostUs);
+        Assert.Equal(1, Call(_touch, "sceTouchPeek", 0, _data, 1u));
+        Assert.Equal(6u, GuestMemory.R32(_data + 12));
+        _pad.Update([], _hostUs);
+        _pad.RearTouch = true;
+        _pad.Update(fingers[..5], _hostUs);
+        Assert.Equal(0, Call(_touch, "sceTouchSetSamplingState", 1, 1u));
+        Assert.Equal(1, Call(_touch, "sceTouchPeek", 1, _data, 1u));
+        Assert.Equal(4u, GuestMemory.R32(_data + 12));
+        Assert.Equal(1, Call(_touch, "sceTouchPeek", 0, _data, 1u));
+        Assert.Equal(0u, GuestMemory.R32(_data + 12));
+    }
+
+    private sealed class EightFingers : IInputBackend
+    {
+        public ControllerState GetController(int port) => ControllerState.Neutral;
+
+        public IReadOnlyList<TouchPoint> GetTouches(bool back) => [.. Enumerable.Range(1, 8).Select(i => new TouchPoint(i, i / 10f, 0.5f))];
+    }
+
+    [Fact]
+    public void TheDriverReportsNoMoreContactsThanThePanelWhateverTheHostGives()
+    {
+        _harness.Emu.Host.Input = new EightFingers();
+        Assert.Equal(1, Call(_touch, "sceTouchPeek", 0, _data, 1u));
+        Assert.Equal(6u, GuestMemory.R32(_data + 12));
+        Assert.Equal(0, Call(_touch, "sceTouchSetSamplingState", 1, 1u));
+        Assert.Equal(1, Call(_touch, "sceTouchPeek", 1, _data, 1u));
+        Assert.Equal(4u, GuestMemory.R32(_data + 12));
+    }
+
+    [Fact]
     public void TheSamplerGivesEachContactItsOwnIdAndForgetsTheOldest()
     {
         long now = 0;

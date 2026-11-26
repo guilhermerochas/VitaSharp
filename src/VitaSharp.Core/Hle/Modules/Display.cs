@@ -950,9 +950,11 @@ public sealed partial class Touch : HleModule
     }
 
     /// <summary>Adds a sample to the panel's ring: report ids for its contacts (a new contact gets the next id, one
-    /// no longer present frees its own) and panel coordinates.</summary>
+    /// no longer present frees its own) and panel coordinates, up to the panel's contacts.</summary>
     void Push(int port, ReadOnlySpan<TouchPoint> touches, ulong stamp)
     {
+        // the panel reports as many contacts as SceTouch configures it for: 6 on the front, 4 on the rear
+        touches = touches[..Math.Min(touches.Length, port == 0 ? MappedInput.MaxFrontContacts : MappedInput.MaxBackContacts)];
         SampleRing ring = _rings[port];
         int slot = (int)(ring.Written % SampleRing.Size);
         int presses = 0;
