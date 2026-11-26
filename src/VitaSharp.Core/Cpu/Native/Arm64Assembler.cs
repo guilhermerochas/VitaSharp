@@ -75,11 +75,26 @@ public sealed class Arm64Assembler
     }
 
     /// <summary>Resolves labels and literals and returns the little-endian machine code.</summary>
-    public byte[] Finish()
+    public byte[] Finish() => FinishSpan().ToArray();
+
+    private readonly List<uint> _words = new(256);
+    private int[] _litPos = new int[16];
+    private byte[] _bytes = new byte[1024];
+
+    /// <summary><see cref="Finish"/> into this assembler's buffers, without allocating: the bytes stay valid until the
+    /// next call (the JIT encodes one block at a time per thread, and copies the bytes into the arena at once).</summary>
+    public ReadOnlySpan<byte> FinishSpan()
     {
         // literal pool: 128-bit entries first (16-byte aligned), then 64-bit ones
-        var words = new List<uint>(_code);
-        int[] litPos = new int[_literals.Count];
+        List<uint> words = _words;
+        words.Clear();
+        words.AddRange(_code);
+        if (_litPos.Length < _literals.Count)
+        {
+            _litPos = new int[Math.Max(_literals.Count, 2 * _litPos.Length)];
+        }
+
+        int[] litPos = _litPos;
         if (_literals.Count > 0)
         {
             while ((words.Count & 3) != 0)
@@ -121,13 +136,19 @@ public sealed class Arm64Assembler
             words[at] = Patch(words[at], litPos[lit] - at, Fix.Imm19);
         }
 
-        byte[] bytes = new byte[words.Count * 4];
+        int length = words.Count * 4;
+        if (_bytes.Length < length)
+        {
+            _bytes = new byte[Math.Max(length, 2 * _bytes.Length)];
+        }
+
+        byte[] bytes = _bytes;
         for (int i = 0; i < words.Count; i++)
         {
             BitConverter.TryWriteBytes(bytes.AsSpan(i * 4), words[i]);
         }
 
-        return bytes;
+        return bytes.AsSpan(0, length);
     }
 
     private static void Add128(List<uint> w, ulong lo, ulong hi)

@@ -119,7 +119,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
                 *(int*)tierUp = (int)Math.Clamp(IlJitCompiler.Instance.HotInstructions / Math.Max(1, b.Insts.Length), 64, int.MaxValue);
             }
         }
-        if (!arm64Emitter.Prepare(ir, stubs, k => (nint)(slots + k * stride), tierUp))
+        if (!arm64Emitter.PrepareWithSlots(ir, stubs, slots, stride, tierUp))
         {
             BackendStats.RejectReason = "register allocation out of spill slots";
             return null;
@@ -127,10 +127,10 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         long t3 = Stopwatch.GetTimestamp();
         // the ARM64 encoding does not depend on where the code goes (absolute targets come from the literal pool):
         // encoded before the arena lock, which then only covers the allocation
-        byte[] bytes = arm64Emitter.Assemble(0);
+        ReadOnlySpan<byte> bytes = arm64Emitter.AssembleSpan(); // the emitter's buffer: no code array per block
         long encode = Stopwatch.GetTimestamp() - t3;
         int size = bytes.Length;
-        byte* code = rt.Code.Place(bytes);
+        byte* code = rt.Code.Place(bytes, Jit.ReuseFreedCode);
         Interlocked.Add(ref NativeX64Compiler.CodeBytes, size); // one counter for both native backends (Report)
         if (stubs.PatchLinks)
         {

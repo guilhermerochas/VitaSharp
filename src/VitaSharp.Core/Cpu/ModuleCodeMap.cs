@@ -74,6 +74,18 @@ public sealed class ModuleCodeMap
     /// <summary>The start of the function containing <paramref name="address"/> (exception index), or 0.</summary>
     public uint FunctionContaining(uint address) => CodePrecompiler.FunctionContaining(_functionStarts, address);
 
+    /// <summary>Where the function starting at <paramref name="function"/> ends: the next function start (or 64 KiB on).</summary>
+    public uint FunctionEnd(uint function)
+    {
+        int at = Array.BinarySearch(_functionStarts, function);
+        if (at < 0)
+        {
+            at = ~at - 1;
+        }
+
+        return at + 1 < _functionStarts.Length && at + 1 >= 0 ? _functionStarts[at + 1] : function + 0x10000;
+    }
+
     /// <summary>
     /// Whether a pointer value names a function of the module: in its code, and either bit 0 set (Thumb) at a known
     /// function start or a function prologue (the code segment also holds read-only data, and a pointer to a string

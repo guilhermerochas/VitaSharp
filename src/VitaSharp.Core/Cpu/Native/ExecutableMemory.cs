@@ -130,13 +130,20 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
     /// <see cref="PlaceSlack"/>) is reserved and the code is encoded again for it, so the lock only ever covers the
     /// bump of the allocation pointer. <paramref name="assemble"/> may therefore run more than once.
     /// </summary>
-    public byte* Place(Func<ulong, byte[]> assemble)
+    public byte* Place(Func<ulong, byte[]> assemble) => Place(new CodeEncoder(rip => assemble(rip)), reuseFreed: false);
+
+    /// <summary>Encodes code for execution at the given address into a buffer of the encoder's that stays valid until
+    /// its next call (the JIT's emitters reuse one per thread: nothing is allocated per block).</summary>
+    public delegate ReadOnlySpan<byte> CodeEncoder(ulong rip);
+
+    /// <summary><see cref="Place(Func{ulong, byte[]})"/> with an encoder that returns its own buffer.</summary>
+    public byte* Place(CodeEncoder assemble)
     {
         int start = (Volatile.Read(ref _used) + 15) & ~15;
         int reserved = 0; // 0: nothing reserved yet, the encoding is for a guessed address
         while (true)
         {
-            byte[] code = assemble((ulong)(_exec + start));
+            ReadOnlySpan<byte> code = assemble((ulong)(_exec + start));
             if (reserved != 0 && code.Length <= reserved)
             {
                 Write(_exec + start, code);
@@ -172,17 +179,190 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
     }
 
     /// <summary>Places code that does not depend on its address (copied in, no encoding under the lock).</summary>
-    public byte* Place(ReadOnlySpan<byte> code)
+    public byte* Place(ReadOnlySpan<byte> code) => Place(code, reuseFreed: false);
+
+    /// <summary>
+    /// <see cref="Place(ReadOnlySpan{byte})"/>; with <paramref name="reuseFreed"/> the code first goes into a range
+    /// given back with <see cref="Free"/> (the code translated ahead that never ran), so the arena only grows when no
+    /// freed range fits.
+    /// </summary>
+    public byte* Place(ReadOnlySpan<byte> code, bool reuseFreed)
     {
         int start;
         lock (_lock)
         {
-            start = (_used + 15) & ~15;
-            Claim(start, code.Length);
+            start = reuseFreed ? TakeFreed(code.Length) : -1;
+            if (start < 0)
+            {
+                start = (_used + 15) & ~15;
+                Claim(start, code.Length);
+            }
         }
 
         Write(_exec + start, code);
         return _exec + start;
+    }
+
+    /// <summary>
+    /// <see cref="Place(Func{ulong, byte[]})"/>, first trying a freed range (<see cref="Free"/>) with
+    /// <paramref name="reuseFreed"/>: the code is encoded once for the next address to learn its length, and again for
+    /// a freed range that holds that length (freed ranges are the sizes of evicted blocks, so a slack would rarely
+    /// fit); an x64 encoding that grows at the new address (a short branch out of reach) gives the range back and is
+    /// placed at the end. Meant for work that is not waited for (the precompilation's background threads): the second
+    /// encoding costs time, and only when a range was freed.
+    /// </summary>
+    public byte* Place(Func<ulong, byte[]> assemble, bool reuseFreed) => Place(new CodeEncoder(rip => assemble(rip)), reuseFreed);
+
+    /// <summary><see cref="Place(Func{ulong, byte[]}, bool)"/> with an encoder that returns its own buffer.</summary>
+    public byte* Place(CodeEncoder assemble, bool reuseFreed)
+    {
+        if (!reuseFreed || Volatile.Read(ref _freeCount) == 0)
+        {
+            return Place(assemble);
+        }
+
+        int guessLength = assemble((ulong)(_exec + ((Volatile.Read(ref _used) + 15) & ~15))).Length;
+        int reserved = (guessLength + 15) & ~15; // most encodings keep their length at another address
+        int start;
+        lock (_lock)
+        {
+            start = TakeFreed(reserved);
+        }
+
+        if (start < 0)
+        {
+            return Place(assemble);
+        }
+
+        ReadOnlySpan<byte> code = assemble((ulong)(_exec + start));
+        if (code.Length > reserved)
+        {
+            Free(_exec + start, reserved);
+            return Place(assemble);
+        }
+
+        Write(_exec + start, code);
+        int used = (code.Length + 15) & ~15;
+        if (reserved - used >= MinFreeRange)
+        {
+            Free(_exec + start + used, reserved - used);
+        }
+
+        return _exec + start;
+    }
+
+    /// <summary>Freed ranges smaller than this are not kept (no block is that small).</summary>
+    public const int MinFreeRange = 32;
+
+    /// <summary>Freed ranges of up to this many bytes are kept by size, in 16-byte classes; larger ones in one list.</summary>
+    private const int SmallFreeLimit = 4096;
+
+    private readonly Stack<int>[] _freeBySize = new Stack<int>[SmallFreeLimit / 16 + 1];
+    private readonly List<(int Start, int Size)> _freeLarge = [];
+    private int _freeCount;
+    private long _freeBytes;
+
+    /// <summary>Bytes of the arena given back with <see cref="Free"/> and not reused yet.</summary>
+    public long FreeBytes => Interlocked.Read(ref _freeBytes);
+
+    /// <summary>
+    /// Gives back [<paramref name="execAddr"/>, + <paramref name="size"/>), code that nothing can run any more and no
+    /// thread is inside (a block translated ahead that was never published): later placements with reuse may take it.
+    /// The range stays committed (its pages are reused, not returned).
+    /// </summary>
+    public void Free(byte* execAddr, int size)
+    {
+        long offset = execAddr - _exec;
+        if (offset < 0 || offset + size > _used || (offset & 15) != 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(execAddr));
+        }
+
+        if (size < MinFreeRange)
+        {
+            return;
+        }
+
+        size &= ~15;
+        lock (_lock)
+        {
+            if (size <= SmallFreeLimit)
+            {
+                (_freeBySize[size / 16] ??= new Stack<int>()).Push((int)offset);
+            }
+            else
+            {
+                _freeLarge.Add(((int)offset, size));
+            }
+
+            _freeCount++;
+            _freeBytes += size;
+        }
+    }
+
+    /// <summary>The start of a freed range that holds <paramref name="size"/> bytes (the smallest such class first),
+    /// its rest freed again; -1 when none (under the lock).</summary>
+    private int TakeFreed(int size)
+    {
+        if (_freeCount == 0)
+        {
+            return -1;
+        }
+
+        int need = (size + 15) & ~15;
+        int start = -1;
+        int found = 0;
+        if (need <= SmallFreeLimit)
+        {
+            for (int sizeClass = need / 16; sizeClass < _freeBySize.Length; sizeClass++)
+            {
+                if (_freeBySize[sizeClass] is { Count: > 0 } ranges)
+                {
+                    start = ranges.Pop();
+                    found = sizeClass * 16;
+                    break;
+                }
+            }
+        }
+
+        if (start < 0)
+        {
+            for (int i = 0; i < _freeLarge.Count; i++)
+            {
+                if (_freeLarge[i].Size >= need)
+                {
+                    (start, found) = _freeLarge[i];
+                    _freeLarge[i] = _freeLarge[^1];
+                    _freeLarge.RemoveAt(_freeLarge.Count - 1);
+                    break;
+                }
+            }
+        }
+
+        if (start < 0)
+        {
+            return -1;
+        }
+
+        _freeCount--;
+        _freeBytes -= found;
+        int rest = found - need;
+        if (rest >= MinFreeRange)
+        {
+            if (rest <= SmallFreeLimit)
+            {
+                (_freeBySize[rest / 16] ??= new Stack<int>()).Push(start + need);
+            }
+            else
+            {
+                _freeLarge.Add((start + need, rest));
+            }
+
+            _freeCount++;
+            _freeBytes += rest;
+        }
+
+        return start;
     }
 
     /// <summary>Moves the end of the used range past [start, start + size), committing what it needs (under the lock).</summary>
@@ -264,6 +444,14 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
         lock (_lock)
         {
             _used = keepBytes;
+            foreach (Stack<int>? ranges in _freeBySize)
+            {
+                ranges?.Clear();
+            }
+
+            _freeLarge.Clear();
+            _freeCount = 0;
+            _freeBytes = 0;
         }
     }
 

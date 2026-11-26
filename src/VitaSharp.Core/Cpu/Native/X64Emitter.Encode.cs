@@ -40,13 +40,15 @@ public sealed unsafe partial class X64Emitter
     private ulong[] _fAddr = new ulong[256];
     private bool[] _fShort = new bool[256];
     private readonly Dictionary<ulong, int> _labelAt = new();
+    /// <summary>The last fast encoding (<see cref="AssembleSpan"/> returns a view of it).</summary>
+    private byte[] _fCode = new byte[1024];
 
     private const int NotBranch = -2, AbsoluteTarget = -1;
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
-    private bool TryFastAssemble(ulong rip, out byte[] code)
+    private bool TryFastAssemble(ulong rip, out int length)
     {
-        code = [];
+        length = 0;
         IReadOnlyList<Instruction> list = Asm.Instructions;
         int n = list.Count;
         if (_fOff.Length < n + 1)
@@ -186,11 +188,16 @@ public sealed unsafe partial class X64Emitter
 
             _fOff[i] = at;
         }
-        code = new byte[(int)(end - rip)];
+        length = (int)(end - rip);
+        if (_fCode.Length < length)
+        {
+            _fCode = new byte[Math.Max(length, 2 * _fCode.Length)];
+        }
+
         int p = 0;
         for (int i = 0; i < n; i++)
         {
-            Buffer.BlockCopy(byteWriter.Buf, _fOff[i], code, p, _fLen[i]);
+            Buffer.BlockCopy(byteWriter.Buf, _fOff[i], _fCode, p, _fLen[i]);
             p += _fLen[i];
         }
         return true;

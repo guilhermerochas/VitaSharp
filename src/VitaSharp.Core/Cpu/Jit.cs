@@ -214,26 +214,60 @@ public static unsafe class Jit
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic] sink, set per precompile worker")]
     [ThreadStatic] public static List<(uint Pc, bool Thumb)>? StaticExits;
 
-    /// <summary>Native code bytes translated ahead of execution (<see cref="CompileAheadOne"/>).</summary>
+    /// <summary>Native code bytes translated ahead of execution (<see cref="CompileAheadOne"/>) in the arena now (the
+    /// evicted ones, <see cref="EvictAhead"/>, no longer count).</summary>
     public static long AheadBytes;
 
-    /// <summary>The most native code the ahead-of-time translation may place in the arena: half of it, the rest is for
-    /// the code the game compiles while it runs (a full arena would leave every later block interpreted). A quarter was
-    /// too little for a large game: Assassin's Creed III: Liberation runs ~150k distinct blocks (~48 MiB) in its first
-    /// minutes; with 64 MiB the precompilation stopped early and 48k blocks were compiled while it ran, with 128 MiB 13k.</summary>
-    public const long AheadBudget = Native.ExecutableMemory.ReserveSize / 2;
+    /// <summary>Of <see cref="AheadBytes"/>, the speculative code that has not run yet: blocks translated because the
+    /// analysis guessed they might run (<see cref="CompileAheadOne"/> with speculative set), not because an earlier
+    /// session ran them. Once such a block runs its bytes leave this count.</summary>
+    public static long SpeculativeBytes;
+
+    /// <summary>Blocks and bytes given back by <see cref="EvictAhead"/> (statistics).</summary>
+    public static long EvictedBlocks, EvictedBytes;
+
+    /// <summary>
+    /// The most native code the ahead-of-time translation may keep in the arena (what ran and what waits to run), the
+    /// rest being for the code the game compiles while it runs (a full arena would leave every later block
+    /// interpreted): 128 MiB on a desktop (Assassin's Creed III: Liberation runs ~150k distinct blocks, ~48 MiB, in its
+    /// first minutes), 64 MiB on Android, where memory is shorter.
+    /// </summary>
+    public static readonly long AheadBudget = DefaultAheadBudget(OperatingSystem.IsAndroid());
+
+    /// <summary>The most speculative code waiting to run (<see cref="SpeculativeBytes"/>): beyond it the
+    /// precompilation evicts its oldest speculative blocks that never ran (<see cref="CodePrecompiler"/>), so the arena
+    /// holds what runs plus a bounded guess. Half of <see cref="AheadBudget"/>, 64 MiB on a desktop, 24 MiB on Android
+    /// (memory first there): the whole flow from a large game's entry points (Assassin's Creed III: Liberation 24 MiB,
+    /// Killzone: Mercenary 18 MiB) fits, so the boot step keeps what the game runs first; with 32 and 48 MiB the
+    /// frontier of Assassin's Creed III: Liberation evicted guesses the game reached later (24.8k and 18.1k blocks
+    /// compiled while its first session ran, 9.5k with no budget of its own). Tests may lower it.</summary>
+    public static long SpeculativeBudget = DefaultSpeculativeBudget(OperatingSystem.IsAndroid());
+
+    public static long DefaultAheadBudget(bool android) => android ? 64L << 20 : 128L << 20;
+
+    public static long DefaultSpeculativeBudget(bool android) => android ? 24L << 20 : 64L << 20;
 
     /// <summary>Whether ahead-of-time translation may still use the native code arena (<see cref="AheadBudget"/>).</summary>
     public static bool ArenaHasRoomForAhead() => Volatile.Read(ref AheadBytes) < AheadBudget;
+
+    /// <summary>Whether the native backends place the code compiled on this thread in ranges freed by
+    /// <see cref="EvictAhead"/> first (the precompilation's threads: an x64 placement then encodes twice).</summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic] flag, set per precompile worker")]
+    [ThreadStatic] public static bool ReuseFreedCode;
+
     /// <summary>Compiles a block that has not been queued yet with the first backend, on the calling thread; false when
-    /// it is already queued or compiled, or no backend takes it.</summary>
-    public static bool CompileAheadOne(Block b)
+    /// it is already queued or compiled, or no backend takes it. <paramref name="priority"/> is recorded in
+    /// <see cref="Block.AheadPriority"/>; a <paramref name="speculative"/> block counts in <see cref="SpeculativeBytes"/>
+    /// until it runs.</summary>
+    public static bool CompileAheadOne(Block b, byte priority = 0, bool speculative = false)
     {
         if (!Enabled || b.Tier != 0 || Interlocked.CompareExchange(ref b.JitState, 1, 0) != 0)
         {
             return false;
         }
 
+        b.AheadPriority = priority;
+        b.Speculative = speculative;
         Interlocked.Increment(ref s_inFlight);
         try
         {
@@ -252,6 +286,43 @@ public static unsafe class Jit
         return b.JitState is 2 or AheadPending;
     }
 
+    /// <summary>Native code bytes of a block's translation (0 when it has none).</summary>
+    private static int CodeSize(Block b) => b.Code?.Tag is Backends.NativeCodeInfo info ? info.Size : 0;
+
+    /// <summary>
+    /// Drops a block translated ahead that the guest has not reached (<see cref="AheadPending"/>): its code goes back
+    /// to the arena (<see cref="Native.NativeRuntime.Release"/>; it was never published, so nothing runs it) and the
+    /// block leaves its cache, so the guest reaching it later decodes it again and interprets or compiles it as usual.
+    /// False when it ran (or is being published) meanwhile: then it stays.
+    /// </summary>
+    public static bool EvictAhead(Block b)
+    {
+        if (Interlocked.CompareExchange(ref b.JitState, 3, AheadPending) != AheadPending)
+        {
+            return false;
+        }
+
+        b.Invalidated = true; // a core that looked it up just before interprets it once, then decodes it again
+        b.Owner?.Remove(b);
+        Backends.CompiledBlock? code = b.Code;
+        int size = CodeSize(b);
+        b.Code = null;
+        if (b.Speculative)
+        {
+            Interlocked.Add(ref SpeculativeBytes, -size);
+        }
+
+        Interlocked.Add(ref AheadBytes, -size);
+        Interlocked.Increment(ref EvictedBlocks);
+        Interlocked.Add(ref EvictedBytes, size);
+        if (code != null && code.NativeEntry != 0 && size > 0)
+        {
+            Native.NativeRuntime.Instance.Release(code.NativeEntry, size);
+        }
+
+        return true;
+    }
+
     /// <summary><see cref="Block.JitState"/> of a block translated ahead that the guest has not reached yet.</summary>
     public const int AheadPending = 4;
 
@@ -264,6 +335,11 @@ public static unsafe class Jit
         if (b.Invalidated || Interlocked.CompareExchange(ref b.JitState, 2, AheadPending) != AheadPending)
         {
             return;
+        }
+
+        if (b.Speculative)
+        {
+            Interlocked.Add(ref SpeculativeBytes, -CodeSize(b)); // it ran: no longer a guess
         }
 
         b.FirstUse = Interlocked.Increment(ref s_uses);
@@ -321,13 +397,17 @@ public static unsafe class Jit
             // code cache learns which precompiled blocks the game really runs, and in which order
             b.Code = cb;
             b.Ahead = true;
-            b.JitState = AheadPending;
             Interlocked.Increment(ref AheadBlocks);
             if (cb.Tag is Backends.NativeCodeInfo info)
             {
                 Interlocked.Add(ref AheadBytes, info.Size);
+                if (b.Speculative)
+                {
+                    Interlocked.Add(ref SpeculativeBytes, info.Size);
+                }
             }
 
+            b.JitState = AheadPending; // last: from here the guest may publish it, or the precompilation evict it
             return;
         }
 
