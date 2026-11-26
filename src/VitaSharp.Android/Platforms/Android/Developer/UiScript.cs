@@ -12,8 +12,10 @@ namespace VitaSharp.Android.Developer;
 /// game screen polls "&lt;path&gt;.game", the app's screens "&lt;path&gt;", since they run in two processes), so it also
 /// works while the game is paused and the scripted pad is not polled. Each line is injected into that activity through
 /// the activity's own dispatch (see <see cref="Inject"/>): "key:dpad_down" / "key:button_a" (any
-/// KEYCODE_ name, sent as a gamepad key; "key:back" is the system back) or "touch:x:y" (a tap at x, y in 0..1 of the
-/// window). The file is deleted once read. Device checks of the pause menu and of the screens use it on phones that
+/// KEYCODE_ name, sent as a gamepad key; "key:back" is the system back), "touch:x:y" (a tap at x, y in 0..1 of the
+/// window, held 80 ms so the touch driver samples it at a vblank) or "drag:x1:y1:x2:y2:ms" (a finger moved from the
+/// first point to the second in that many milliseconds, a move every 16 ms: page scrolls, the lock screen's peel). The
+/// file is deleted once read. Device checks of the pause menu and of the screens use it on phones that
 /// refuse <c>adb shell input</c>.
 /// </summary>
 public static class UiScript
@@ -55,6 +57,21 @@ public static class UiScript
         {
             var p = raw.Trim().Split(':');
             if (p[0].Length == 0) continue;
+            if (p[0] is "touch" or "drag")
+            {
+                string? gestureError = Gesture(activity, p, width, height, inv);
+                if (gestureError != null)
+                {
+                    Log.Warn($"{EnvVars.AndroidUiInput}: '{raw}': {gestureError}");
+                }
+                else
+                {
+                    Log.Info($"{EnvVars.AndroidUiInput}: {raw}");
+                }
+
+                Thread.Sleep(200);
+                continue;
+            }
             using var done = new ManualResetEventSlim();
             string? error = null;
             activity.RunOnUiThread(() =>
@@ -114,15 +131,59 @@ public static class UiScript
             if (!taken && dir is { } d && activity.CurrentFocus is { } focus) focus.FocusSearch(d)?.RequestFocus(d);
             return null;
         }
-        if (p[0] == "touch" && p.Length > 2)
-        {
-            float x = float.Parse(p[1], inv) * width, y = float.Parse(p[2], inv) * height;
-            long down = SystemClock.UptimeMillis();
-            using (var e = MotionEvent.Obtain(down, down, MotionEventActions.Down, x, y, 0)!) activity.DispatchTouchEvent(e);
-            using (var e = MotionEvent.Obtain(down, down + 60, MotionEventActions.Up, x, y, 0)!) activity.DispatchTouchEvent(e);
-            return null;
-        }
         return "unknown line";
+    }
+
+    /// <summary>Off the UI thread: a tap ("touch:x:y", held 80 ms) or a drag ("drag:x1:y1:x2:y2:ms", a move every
+    /// 16 ms), each event dispatched on the UI thread at its time, so the touch driver sees the finger down over
+    /// several vblanks as with a real finger. Null when done, else the reason.</summary>
+    static string? Gesture(Activity activity, string[] p, int width, int height, IFormatProvider inv)
+    {
+        bool drag = p[0] == "drag";
+        if ((drag && p.Length < 6) || (!drag && p.Length < 3))
+        {
+            return "missing coordinates";
+        }
+
+        float x1 = float.Parse(p[1], inv) * width;
+        float y1 = float.Parse(p[2], inv) * height;
+        float x2 = drag ? float.Parse(p[3], inv) * width : x1;
+        float y2 = drag ? float.Parse(p[4], inv) * height : y1;
+        int duration = drag ? Math.Max(16, int.Parse(p[5], inv)) : 80;
+        long down = SystemClock.UptimeMillis();
+        Send(activity, down, MotionEventActions.Down, x1, y1);
+        int steps = Math.Max(1, duration / 16);
+        for (int i = 1; i <= steps; i++)
+        {
+            Thread.Sleep(duration / steps);
+            if (drag)
+            {
+                float t = (float)i / steps;
+                Send(activity, down, MotionEventActions.Move, x1 + ((x2 - x1) * t), y1 + ((y2 - y1) * t));
+            }
+        }
+
+        Send(activity, down, MotionEventActions.Up, x2, y2);
+        return null;
+    }
+
+    /// <summary>One touch event, dispatched on the UI thread and waited for.</summary>
+    static void Send(Activity activity, long downTime, MotionEventActions action, float x, float y)
+    {
+        using var done = new ManualResetEventSlim();
+        activity.RunOnUiThread(() =>
+        {
+            try
+            {
+                using MotionEvent motion = MotionEvent.Obtain(downTime, SystemClock.UptimeMillis(), action, x, y, 0)!;
+                activity.DispatchTouchEvent(motion);
+            }
+            finally
+            {
+                done.Set();
+            }
+        });
+        done.Wait(2000);
     }
 }
 #endif
