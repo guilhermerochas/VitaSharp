@@ -1,4 +1,4 @@
-<!-- pair: development.pt-BR.md sha256=ca04d087989f4d91e483eddd8e4303905488f6913e1e49000fd127a802997924 -->
+<!-- pair: development.pt-BR.md sha256=247ca9773825293f1438db51fa4af31c8afccfb8dbb546e6cba08dfa1455ac55 -->
 # Development
 
 **English** | [Português](development.pt-BR.md)
@@ -35,7 +35,8 @@ checked by `ExternalDocPairsTests`: the first line of each holds the SHA-256 of 
 lines to write). To contribute system functions, see the specifications in [`docs/hle`](hle/README.md).
 `build/hle-abi-check.ps1` / `build/hle-abi-check.sh` lists the HLE functions whose argument registers differ from the
 [vita-headers](https://github.com/vitasdk/vita-headers) prototypes (needs `git` and network for the clone, or a local
-checkout). `build/hle-status.ps1` / `.sh` regenerates the README's progress badges and maps.
+checkout). `build/hle-status.ps1` / `.sh` regenerates the README's progress badges and maps; `-CompatOnly` / `--compat-only`
+redoes only the Compat map, from `docs/compat/coverage.json`, without the firmware and games.
 
 ## Before a push
 

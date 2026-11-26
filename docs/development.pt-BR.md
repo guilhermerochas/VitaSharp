@@ -1,4 +1,4 @@
-<!-- pair: development.md sha256=eb146a5e7c7db4aba51768a45fd9e0be2b1d5a2bb7c9fd187256d3f0dc9fad11 -->
+<!-- pair: development.md sha256=83ea323504dfd4c8bab8fa96a016b919c82e542031bae0d7b09755c842421e93 -->
 # Desenvolvimento
 
 [English](development.md) | **Português**
@@ -37,7 +37,8 @@ falha mostra as linhas a escrever). Para contribuir com funções do sistema, ve
 [`docs/hle`](hle/README.md). `build/hle-abi-check.ps1` / `build/hle-abi-check.sh` lista as funções HLE cujos
 registradores de argumento diferem dos protótipos do [vita-headers](https://github.com/vitasdk/vita-headers) (precisa
 de `git` e rede para o clone, ou de um clone local). `build/hle-status.ps1` / `.sh` gera de novo os selos e os mapas de
-progresso do README.
+progresso do README; `-CompatOnly` / `--compat-only` refaz só o mapa do Compat, a partir de `docs/compat/coverage.json`, sem o
+firmware e os jogos.
 
 ## Antes de um push
 

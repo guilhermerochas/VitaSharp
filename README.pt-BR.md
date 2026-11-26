@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=b4a406387c26ba47ea8f1fd31727cabafea7e415d256727dd49d3606c33ee622 -->
+<!-- pair: README.md sha256=c76e1c11694b43c7baf2e553b9e89b79c5bcc26223f7a3cb8999d34bcd97a2f0 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -117,21 +117,31 @@ e dos jogos de teste ([progresso por biblioteca](docs/hle/progress.md)).
 [![funções do VitaSDK](docs/assets/status/badge-vitasdk.svg)](docs/hle/progress.md)
 [![exports do firmware 3.74](docs/assets/status/badge-overall.svg)](docs/hle/progress.md)
 [![exports de kernel do firmware 3.74](docs/assets/status/badge-kernel.svg)](docs/hle/progress.md)
-<!-- selo do PSP: entra aqui, ao lado dos outros -->
+[![Compat 6.61](docs/assets/status/badge-compat.svg)](docs/compat/progress.pt-BR.md)
 
 <table>
 <tr>
-<td width="100%" valign="top" align="center">
+<td width="50%" valign="top" align="center">
 <a href="docs/hle/progress.md">
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/status/progress-map-light.svg">
-  <img src="docs/assets/status/progress-map.svg" alt="Mapa de progresso do HLE: uma célula por biblioteca do firmware, bibliotecas de usuário e de kernel em regiões separadas, do tamanho das funções exportadas e com a cor de quantas estão implementadas" width="760">
+  <img src="docs/assets/status/progress-map.svg" alt="Mapa de progresso do HLE: uma célula por biblioteca do firmware, bibliotecas de usuário e de kernel em regiões separadas, do tamanho das funções exportadas e com a cor de quantas estão implementadas" width="100%">
 </picture>
 </a>
 <br><sub><b>PS Vita:</b> uma célula por biblioteca do firmware (usuário e kernel), do tamanho das suas funções e com a
 cor de quantas estão implementadas.</sub>
 </td>
-<!-- mapa do PSP: um segundo <td> aqui (progress-map-psp.svg + a versão light, largura 50% cada), com uma linha dizendo o que ele mostra -->
+<td width="50%" valign="top" align="center">
+<a href="docs/compat/progress.pt-BR.md">
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/status/progress-map-compat-light.svg">
+  <img src="docs/assets/status/progress-map-compat.svg" alt="Mapa do hardware Compat: uma célula por bloco emulado do núcleo de compatibilidade do Vita e uma por módulo do firmware 6.61 dele, com a cor do pior bloco que cada módulo usa" width="100%">
+</picture>
+</a>
+<br><sub><b>Compat</b> (o núcleo de compatibilidade Allegrex, SceCompat): o VitaSharp roda o firmware 6.61 real dele, então
+este mapa mede o hardware emulado que esse firmware usa:
+uma célula por bloco e por módulo do firmware, com a cor do pior bloco de que o módulo precisa.</sub>
+</td>
 </tr>
 </table>
 
