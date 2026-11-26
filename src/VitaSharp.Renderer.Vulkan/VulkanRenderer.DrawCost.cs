@@ -1,6 +1,7 @@
 using Silk.NET.Vulkan;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm.Shader;
+using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Renderer.Vulkan;
@@ -22,6 +23,58 @@ public struct DrawCostRecord
     /// <summary>The GXM scene the draw belongs to (renderer scene serial) and its colour surface address.</summary>
     public long Scene;
     public uint RtAddress;
+    /// <summary>GXM primitive type (0 triangles, 1 lines, 2 points, 3 strip, 4 fan, 5 triangle edges) and index size.</summary>
+    public byte PrimitiveType;
+    public bool Index32;
+    /// <summary>Distinct indices of the draw, the index range (max - min + 1) and the vertex-shader invocations a
+    /// 32-entry FIFO post-transform cache would leave (<see cref="IndexStats"/>).</summary>
+    public long UniqueVertices, IndexRange, CacheMisses32;
+
+    /// <summary>
+    /// Index statistics of one draw: distinct indices, the index range, and the misses of a FIFO post-transform cache
+    /// of <paramref name="cacheSize"/> entries (each miss is one vertex shader invocation on a GPU that shades
+    /// through such a cache). Pure, unit-tested (MaliPassCostTests).
+    /// </summary>
+    public static (long Unique, long Range, long Misses) IndexStats(ReadOnlySpan<byte> raw, bool index32, int cacheSize = 32)
+    {
+        int count = raw.Length / (index32 ? 4 : 2);
+        if (count == 0)
+        {
+            return (0, 0, 0);
+        }
+
+        var seen = new HashSet<uint>();
+        Span<uint> fifo = stackalloc uint[Math.Clamp(cacheSize, 1, 64)];
+        int fifoLen = 0, fifoNext = 0;
+        long misses = 0;
+        uint min = uint.MaxValue, max = 0;
+        for (int i = 0; i < count; i++)
+        {
+            uint v = index32 ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(raw[(i * 4)..]) : System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(raw[(i * 2)..]);
+            seen.Add(v);
+            min = Math.Min(min, v);
+            max = Math.Max(max, v);
+            bool hit = false;
+            for (int k = 0; k < fifoLen; k++)
+            {
+                if (fifo[k] == v)
+                {
+                    hit = true;
+                    break;
+                }
+            }
+
+            if (!hit)
+            {
+                misses++;
+                fifo[fifoNext] = v;
+                fifoNext = (fifoNext + 1) % fifo.Length;
+                fifoLen = Math.Min(fifoLen + 1, fifo.Length);
+            }
+        }
+
+        return (seen.Count, (long)max - min + 1, misses);
+    }
 }
 
 /// <summary>One scene rendering (render pass) for the mobile GPU cost estimate: its tile load/store/resolve bytes.</summary>
@@ -245,7 +298,17 @@ public sealed unsafe partial class VulkanRenderer
             RtH = _renderTarget?.Height ?? _depth?.Height ?? 0,
             Scene = _sceneSerial,
             RtAddress = _renderTarget?.Address ?? 0,
+            PrimitiveType = d.PrimitiveType,
+            Index32 = d.Index32,
         });
+        if (d.IndexAddress != 0 && d.IndexCount is > 0 and <= 1u << 20)
+        {
+            (long unique, long range, long misses) = DrawCostRecord.IndexStats(GuestMemory.ReadSpan(d.IndexAddress, (int)(d.IndexCount * (d.Index32 ? 4u : 2u))), d.Index32);
+            Span<DrawCostRecord> added = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(costFrame.Draws);
+            added[^1].UniqueVertices = unique;
+            added[^1].IndexRange = range;
+            added[^1].CacheMisses32 = misses;
+        }
         costFrame.Queries.Add((_costDrawFirst, _costDrawCount, _costVis));
         _costDrawFirst = -1;
         _costDrawCount = 0;
