@@ -1,5 +1,6 @@
 using System.Globalization;
 using VitaSharp.Core.Host;
+using VitaSharp.Core.Input;
 using VitaSharp.Core.Util;
 using VitaSharp.Renderer.Vulkan;
 
@@ -28,7 +29,7 @@ namespace VitaSharp.Desktop;
 /// With <c>--nav-live</c> the end of the file is not the end of the script: the file is polled for appended lines
 /// (an interactive session: append commands, read the shots). Every executed command is logged as "NAV ...".
 /// </summary>
-sealed class NavScript : IInputBackend
+sealed class NavScript : IInputBackend, ITouchHistory
 {
     readonly string _file;
     readonly bool _live;
@@ -40,6 +41,9 @@ sealed class NavScript : IInputBackend
     byte _lx = 128, _ly = 128, _rx = 128, _ry = 128; // sticks held by lstick/rstick (0..255, 128 = centre)
     (float X0, float Y0, float X1, float Y1, long Start, long Frames)? _touch;
     bool _touchBack; // the touch above is on the rear pad (btap)
+    // the scripted finger over the last moments, as a phone's or the mouse's (TouchSampler): the touch driver samples
+    // it at every vblank between reads, so a swipe reaches the guest with its points and speed as a real one does
+    readonly TouchSampler _front, _back;
     long _actionEnd = -1;
 
     // last frame picture (sink) and when it last changed
@@ -49,8 +53,12 @@ sealed class NavScript : IInputBackend
 
     public volatile bool Quit;
 
-    public NavScript(string file, bool live, string outDir, VulkanRendererOptions ro)
+    /// <summary>A script run from <paramref name="file"/>; its finger's history on the host's clock, or on
+    /// <paramref name="clockUs"/> (tests).</summary>
+    public NavScript(string file, bool live, string outDir, VulkanRendererOptions ro, Func<long>? clockUs = null)
     {
+        _front = new TouchSampler(clockUs);
+        _back = new TouchSampler(clockUs);
         _file = file;
         _live = live;
         _outDir = outDir;
@@ -67,6 +75,7 @@ sealed class NavScript : IInputBackend
         lock (_lock)
         {
             _sinkFrames++;
+            RecordTouch();
             if (_lastPicture != null && Similar(_lastPicture, px))
             {
                 return;
@@ -271,12 +280,14 @@ sealed class NavScript : IInputBackend
             _touchBack = back;
             _touch = touch is var (x0, y0, x1, y1) ? (x0, y0, x1, y1, start, Math.Max(1, frames)) : null;
             _actionEnd = start + Math.Max(1, frames);
+            RecordTouch();
         }
         WaitFrames(_actionEnd);
         lock (_lock)
         {
             _buttons = VitaButtons.None;
             _touch = null;
+            RecordTouch();
         }
         WaitFrames(Frames + 2); // a release the guest can see before the next press
     }
@@ -375,14 +386,51 @@ sealed class NavScript : IInputBackend
 
         lock (_lock)
         {
-            if (_touch is not { } t || back != _touchBack)
-            {
-                return 0;
-            }
+            RecordTouch();
+            return (back ? _back : _front).Current(dest);
+        }
+    }
 
+    /// <summary>The scripted finger of <paramref name="ageUs"/> microseconds ago (<see cref="TouchSampler.At"/>).</summary>
+    public int TouchesAgo(bool back, long ageUs, long guestRead, Span<TouchPoint> dest)
+    {
+        lock (_lock)
+        {
+            return (back ? _back : _front).At(ageUs, dest);
+        }
+    }
+
+    /// <summary>Puts the finger of now (its place along the swipe by the frames presented) into the history of its
+    /// panel, and none into the other. Under <see cref="_lock"/>.</summary>
+    void RecordTouch()
+    {
+        Span<TouchPoint> finger = stackalloc TouchPoint[1];
+        int n = 0;
+        if (_touch is { } t)
+        {
             float k = Math.Clamp((Frames - t.Start) / (float)t.Frames, 0, 1);
-            dest[0] = new TouchPoint(1, t.X0 + (t.X1 - t.X0) * k, t.Y0 + (t.Y1 - t.Y0) * k);
-            return 1;
+            finger[0] = new TouchPoint(1, t.X0 + (t.X1 - t.X0) * k, t.Y0 + (t.Y1 - t.Y0) * k);
+            n = 1;
+        }
+
+        RecordIfChanged(_touchBack ? _back : _front, finger[..n]);
+        RecordIfChanged(_touchBack ? _front : _back, []);
+    }
+
+    /// <summary>A change of the finger only: the history keeps its time span for the driver's samples.</summary>
+    static void RecordIfChanged(TouchSampler sampler, ReadOnlySpan<TouchPoint> fingers)
+    {
+        Span<TouchPoint> now = stackalloc TouchPoint[TouchSampler.MaxContacts];
+        int n = sampler.Current(now);
+        bool same = n == fingers.Length && sampler.Changes > 0;
+        for (int i = 0; same && i < n; i++)
+        {
+            same = now[i].X == fingers[i].X && now[i].Y == fingers[i].Y;
+        }
+
+        if (!same)
+        {
+            sampler.Record(fingers);
         }
     }
 }
