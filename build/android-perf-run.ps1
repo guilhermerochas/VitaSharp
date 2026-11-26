@@ -37,11 +37,12 @@ param(
 $ErrorActionPreference = 'Stop'
 $pkg = 'io.github.vitasharp'
 # the app's data folder (docs/android/README.md, "Storage"): /sdcard/.vitasharp once the app moved its data there
-# (no root, "All files access"), else the app-specific folder
+# (no root, "All files access") and still started from there (its logs/app.log is the newer one: a reinstall
+# without the permission starts again in the app-specific folder and leaves the old one), else the app-specific folder
 $dataRoot = ''
 try
 {
-    $dataRoot = (adb shell "if [ -d /sdcard/.vitasharp ] && [ ! -f /sdcard/.vitasharp/.migration-journal ]; then echo /sdcard/.vitasharp; else echo /sdcard/Android/data/io.github.vitasharp/files; fi" 2>$null | Out-String).Trim()
+    $dataRoot = (adb shell "if [ -f /sdcard/.vitasharp/logs/app.log ] && { [ ! -f /sdcard/Android/data/io.github.vitasharp/files/logs/app.log ] || [ /sdcard/.vitasharp/logs/app.log -nt /sdcard/Android/data/io.github.vitasharp/files/logs/app.log ]; } && [ ! -f /sdcard/.vitasharp/.migration-journal ]; then echo /sdcard/.vitasharp; else echo /sdcard/Android/data/io.github.vitasharp/files; fi" 2>$null | Out-String).Trim()
 }
 catch
 {
