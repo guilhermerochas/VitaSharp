@@ -1,11 +1,11 @@
-<!-- pair: progress.md sha256=b09f56a76b947ca2d8ab6aa21422e86b7ba50d15eb82b9a49ab957a6571062bf -->
+<!-- pair: progress.md sha256=5880444942571e79b881c71fd4af86621efcb6d0c2f49e6a974177545733f88b -->
 # Cobertura do hardware do PSP
 
 *English: [progress.md](progress.md).*
 
 <!-- Gerado por build/hle-status (VitaSharp.Desktop compat-coverage --status) a partir de docs/compat/coverage.json; não edite à mão. -->
 
-O que o firmware do Compat (o núcleo de compatibilidade do Vita: o Allegrex dentro do SoC, que o firmware chama de SceCompat) precisa do hardware emulado. O VitaSharp não reimplementa os módulos que rodam nele (não há HLE deste lado): como um Vita, ele roda o firmware 6.61 que vem no `pcff` (o flash0 kermit em `vs0:app/NPXS10028`) nesse núcleo ([psp-compat.pt-BR.md](../notes/psp-compat.pt-BR.md)). Por isso esta página mede o hardware: uma linha por bloco emulado com o estado dele no VitaSharp e uma linha por módulo do firmware com os blocos que ele usa; a cor do módulo é a do pior bloco.
+O que o firmware do Compat (o núcleo de compatibilidade do Vita: o Allegrex dentro do SoC, que o firmware chama de SceCompat) precisa do hardware emulado. O VitaSharp não reimplementa os módulos que rodam nele (não há HLE deste lado): como um Vita, ele roda o firmware 6.61 que vem no `pcff` (o flash0 kermit que vem no app de sistema do emulador de PSP) nesse núcleo ([psp-compat.pt-BR.md](../notes/psp-compat.pt-BR.md)). Por isso esta página mede o hardware: uma linha por bloco emulado com o estado dele no VitaSharp e uma linha por módulo do firmware com os blocos que ele usa; a cor do módulo é a do pior bloco.
 
 - Os blocos que o Vita atende do lado ARM (Memory Stick, flash, áudio, Media Engine, Wi-Fi, USB, syscon, utilitários) chegam ao ScePspemu real como pedidos kermit; ficam parciais até esse caminho rodar de ponta a ponta.
 - Todo módulo do flash0 é cifrado (`~PSP`) e carregado pelo `memlmd`, que precisa do KIRK: não emulado por política, mostrado nos módulos que o chamam (memlmd e os de DRM) em vez de repetido em todos.
