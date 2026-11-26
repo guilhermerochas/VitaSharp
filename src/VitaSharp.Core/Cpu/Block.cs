@@ -46,6 +46,20 @@ public sealed unsafe class Block
     /// <summary>Guest code ranges [start, end) other than the block's own that its compiled code depends on (the
     /// successors whose <see cref="_deadIn"/> let it drop state stores): rewriting them drops this block too.</summary>
     internal uint[]? _deps;
+    /// <summary>The block is in its <see cref="Owner"/>'s cache (set when it went in, cleared when it left): the
+    /// cache's page index drops the entries of blocks that left it.</summary>
+    internal volatile bool _inCache;
+
+    /// <summary>Sets <see cref="_deps"/>: the owner's page index learns the new ranges, so rewriting one of them finds
+    /// this block without scanning the whole cache.</summary>
+    internal void SetDependencies(uint[]? deps)
+    {
+        _deps = deps;
+        if (deps != null)
+        {
+            Owner?.IndexRanges(this, deps);
+        }
+    }
 
     /// <summary>Whether the block's code or a range it depends on overlaps [addr, addr + size).</summary>
     internal bool Overlaps(uint addr, uint size)
@@ -301,6 +315,28 @@ public static unsafe class BlockBuilder
 public sealed unsafe class BlockCache
 {
     private readonly ConcurrentDictionary<ulong, Block> _blocks = new();
+
+    /// <summary>
+    /// The cached blocks by the guest pages (<see cref="PageShift"/>) their code and dependency ranges touch, so that
+    /// <see cref="Invalidate"/> of a small range looks only at the blocks of its pages. Scanning every block for each
+    /// rewritten import stub cost seconds once the ARM code precompilation filled the cache with ~300,000 blocks: every
+    /// firmware module the shell loads rebinds hundreds of stubs (Linker.RegisterExports), 5 s for livespace_db alone,
+    /// on the shell's single core (Dolphin's JitBaseBlockCache keeps the same kind of per-page block map, Ryujinx a range
+    /// list). Entries of blocks that left the cache are dropped when their page is looked at (<see cref="Block._inCache"/>).
+    /// Guarded by <see cref="_pagesLock"/>.
+    /// </summary>
+    private readonly Dictionary<uint, List<Block>> _blocksByPage = new();
+    private readonly object _pagesLock = new();
+
+    /// <summary>Statistics and tests: the block entries <see cref="Invalidate"/> looked at (the cost of finding what a
+    /// rewrite drops).</summary>
+    internal long InvalidateExamined => Interlocked.Read(ref _invalidateExamined);
+
+    private long _invalidateExamined;
+
+    /// <summary>log2 of the page size of <see cref="_blocksByPage"/> (4 KB).</summary>
+    internal const int PageShift = 12;
+
     private nint _dispatch;
     private volatile bool _dataAbortGuards;
 
@@ -395,9 +431,14 @@ public sealed unsafe class BlockCache
             built.Owner = this;
             AfterDecode?.Invoke(built);
             b = _blocks.GetOrAdd(key, built);
+            if (ReferenceEquals(b, built))
+            {
+                built._inCache = true;
+                IndexRange(built, built.Start, built.End);
+            }
 
-            // the block is in the cache before the count is read again: an invalidation counted after this read finds
-            // it in its scan; one counted between the two reads may have scanned before it was there
+            // the block is in the cache (and its pages) before the count is read again: an invalidation counted after
+            // this read finds it in its scan; one counted between the two reads may have scanned before it was there
             Interlocked.MemoryBarrier();
             if (Volatile.Read(ref _invalidations) == generation)
             {
@@ -411,9 +452,125 @@ public sealed unsafe class BlockCache
 
             if (_blocks.TryRemove(new KeyValuePair<ulong, Block>(key, b)))
             {
+                b._inCache = false;
                 Retire(b);
             }
         }
+    }
+
+    /// <summary>Puts <paramref name="b"/> in the page index for the ranges [start, end) of <paramref name="ranges"/>
+    /// (its dependency ranges, <see cref="Block.SetDependencies"/>).</summary>
+    internal void IndexRanges(Block b, uint[] ranges)
+    {
+        for (int i = 0; i + 1 < ranges.Length; i += 2)
+        {
+            IndexRange(b, ranges[i], ranges[i + 1]);
+        }
+    }
+
+    /// <summary>Puts <paramref name="b"/> in the page index for every page [start, end) touches (the page of
+    /// <paramref name="start"/> for an empty range).</summary>
+    private void IndexRange(Block b, uint start, uint end)
+    {
+        uint first = start >> PageShift;
+        uint last = end > start ? (end - 1) >> PageShift : first;
+        lock (_pagesLock)
+        {
+            for (uint page = first; ; page++)
+            {
+                if (!_blocksByPage.TryGetValue(page, out List<Block>? list))
+                {
+                    list = new List<Block>(4);
+                    _blocksByPage[page] = list;
+                }
+
+                if (list.Count == 0 || !ReferenceEquals(list[^1], b))
+                {
+                    list.Add(b);
+                }
+
+                if (page == last)
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The cached blocks that overlap [addr, addr + size) (<see cref="Block.Overlaps"/>), from the page index: the pages
+    /// of the range, or every indexed page when the range has more pages than the index. Entries of blocks that left the
+    /// cache are dropped on the way, and so are those of the blocks returned (the caller takes them out of the cache).
+    /// </summary>
+    private HashSet<Block> TakeOverlapping(uint addr, uint size)
+    {
+        var found = new HashSet<Block>(ReferenceEqualityComparer.Instance);
+        uint first = addr >> PageShift;
+        uint last = size == 0 ? first : (uint)(((ulong)addr + size - 1) >> PageShift);
+        lock (_pagesLock)
+        {
+            if ((ulong)last - first + 1 > (ulong)_blocksByPage.Count)
+            {
+                List<uint>? emptied = null;
+                foreach (KeyValuePair<uint, List<Block>> entry in _blocksByPage)
+                {
+                    if (entry.Key >= first && entry.Key <= last && TakeOverlappingOfPage(entry.Value, addr, size, found, ref _invalidateExamined))
+                    {
+                        emptied ??= new List<uint>();
+                        emptied.Add(entry.Key);
+                    }
+                }
+
+                if (emptied != null)
+                {
+                    foreach (uint page in emptied)
+                    {
+                        _blocksByPage.Remove(page);
+                    }
+                }
+            }
+            else
+            {
+                for (uint page = first; ; page++)
+                {
+                    if (_blocksByPage.TryGetValue(page, out List<Block>? list) && TakeOverlappingOfPage(list, addr, size, found, ref _invalidateExamined))
+                    {
+                        _blocksByPage.Remove(page);
+                    }
+
+                    if (page == last)
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>Moves the blocks of one page's list that overlap the range into <paramref name="found"/> and drops the
+    /// entries of blocks no longer cached; true when the list is left empty.</summary>
+    private static bool TakeOverlappingOfPage(List<Block> list, uint addr, uint size, HashSet<Block> found, ref long examined)
+    {
+        examined += list.Count;
+        for (int i = list.Count - 1; i >= 0; i--)
+        {
+            Block b = list[i];
+            bool overlaps = b._inCache && b.Overlaps(addr, size);
+            if (!b._inCache || overlaps)
+            {
+                list[i] = list[^1];
+                list.RemoveAt(list.Count - 1);
+            }
+
+            if (overlaps)
+            {
+                found.Add(b);
+            }
+        }
+
+        return list.Count == 0;
     }
 
     /// <summary>The native backend's indirect-exit table of this process (<see cref="Native.NativeRuntime.Publish"/>),
@@ -448,7 +605,17 @@ public sealed unsafe class BlockCache
     public bool TryGet(uint pc, bool thumb, out Block? block) => _blocks.TryGetValue(Key(pc, thumb), out block);
 
     /// <summary>Removes <paramref name="block"/> if it is still the cached block at its start (<see cref="Jit.EvictAhead"/>).</summary>
-    internal bool Remove(Block block) => _blocks.TryRemove(new KeyValuePair<ulong, Block>(Key(block.Start, block.Thumb), block));
+    internal bool Remove(Block block)
+    {
+        if (!_blocks.TryRemove(new KeyValuePair<ulong, Block>(Key(block.Start, block.Thumb), block)))
+        {
+            return false;
+        }
+
+        // its page index entries go when their pages are next looked at
+        block._inCache = false;
+        return true;
+    }
 
     /// <summary><see cref="Get"/> from a thread that may work in another address space (a JIT worker decoding the
     /// targets of the block it compiles): decodes in <see cref="Space"/>.</summary>
@@ -470,11 +637,11 @@ public sealed unsafe class BlockCache
     {
         Interlocked.Increment(ref _invalidations);
         Interlocked.Increment(ref s_codeChanges);
-        foreach (KeyValuePair<ulong, Block> kv in _blocks)
+        foreach (Block b in TakeOverlapping(addr, size))
         {
-            Block b = kv.Value;
-            if (b.Overlaps(addr, size) && _blocks.TryRemove(kv.Key, out _))
+            if (_blocks.TryRemove(new KeyValuePair<ulong, Block>(Key(b.Start, b.Thumb), b)))
             {
+                b._inCache = false;
                 Retire(b);
             }
         }
@@ -528,6 +695,7 @@ public sealed unsafe class BlockCache
         {
             if (_blocks.TryRemove(kv.Key, out _))
             {
+                kv.Value._inCache = false;
                 Retire(kv.Value);
                 dropped++;
             }
@@ -563,10 +731,15 @@ public sealed unsafe class BlockCache
         Interlocked.Increment(ref s_codeChanges);
         foreach (KeyValuePair<ulong, Block> kv in _blocks)
         {
+            kv.Value._inCache = false;
             Retire(kv.Value);
         }
 
         _blocks.Clear();
+        lock (_pagesLock)
+        {
+            _blocksByPage.Clear();
+        }
     }
 
     /// <summary>A block left the cache: native exits linked to it must go back through the dispatcher. A block
