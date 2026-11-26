@@ -72,13 +72,9 @@ public static class AppServices
         try
         {
             string id = Java.Util.TimeZone.Default?.ID ?? "UTC";
-            VitaSharp.Core.Firmware.SystemTimeZone.Platform = (id, utc =>
-            {
-                long milliseconds = (long)(utc - DateTime.UnixEpoch).TotalMilliseconds;
-                return (Java.Util.TimeZone.Default?.GetOffset(milliseconds) ?? 0) / 60_000;
-            });
+            VitaSharp.Core.Firmware.SystemTimeZone.Platform = (id, PhoneOffsetMinutes);
             DateTime now = DateTime.UtcNow;
-            Log.Info($"Time zone: phone {id} UTC{VitaSharp.Core.Firmware.SystemTimeZone.Platform.Value.UtcOffsetMinutes(now) / 60.0:+0.##;-0.##}, "
+            Log.Info($"Time zone: phone {id} UTC{PhoneOffsetMinutes(now) / 60.0:+0.##;-0.##}, "
                 + $"runtime {TimeZoneInfo.Local.Id} UTC{TimeZoneInfo.Local.GetUtcOffset(now).TotalHours:+0.##;-0.##}; "
                 + $"Vita zone {VitaSharp.Core.Firmware.SystemTimeZone.Host}, summer time {VitaSharp.Core.Firmware.SystemTimeZone.HostSummerTime}");
         }
@@ -86,6 +82,13 @@ public static class AppServices
         {
             Log.Warn($"Time zone of the phone not read ({e.Message}): the runtime's is used");
         }
+    }
+
+    /// <summary>The phone's offset from UTC at <paramref name="utc"/>, in minutes, summer time included.</summary>
+    static int PhoneOffsetMinutes(DateTime utc)
+    {
+        long milliseconds = (long)(utc - DateTime.UnixEpoch).TotalMilliseconds;
+        return (Java.Util.TimeZone.Default?.GetOffset(milliseconds) ?? 0) / 60_000;
     }
 
     public static void Initialize(Context context, bool gameProcess)
