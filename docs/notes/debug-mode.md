@@ -228,7 +228,7 @@ in `context.txt` (`screen:`) and `report.txt` has a "Screen state" section (the 
 recorded frame, each line with its box and centre (`Capture/ScreenText.cs`; the same as
 `VitaSharp.Desktop screen-text <capture folder>`). The OCR is Windows.Media.Ocr on Windows and the `tesseract` command
 on Linux/macOS (docs/development.md "Test requirements"); without one the section says `(no OCR: ...)`. What to do on
-a known screen: `docs/games/screens.json` (docs/agents/screens.md).
+a known screen: `docs/games/screens.json` (docs/notes/screens.md).
 
 ## Debug mode ("Modo de depuração")
 

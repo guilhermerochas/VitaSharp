@@ -287,6 +287,8 @@ public static class Program
                 return MemDiff.Run(args[1], args[2], args.Length > 3 ? float.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture) : 10f);
             case "screen-text":
                 return ScreenTextCommand.ScreenTextMain(args.Skip(1).ToArray());
+            case "screens":
+                return ScreenTextCommand.ScreensMain(args.Skip(1).ToArray());
             case "png-diff" when args.Length >= 3:
                 ReplayGpu.Compare(args[1], args[2], args.Length > 3 ? args[3] : "*.png");
                 return 0;

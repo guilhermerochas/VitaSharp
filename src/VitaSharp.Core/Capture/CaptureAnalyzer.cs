@@ -1027,7 +1027,7 @@ public static class CaptureAnalyzer
     /// <summary>
     /// "Screen state": whether the game waits for the player (and which input it reads), loads or is busy, at the stop
     /// of the recording (context.txt "screen:") and the detector's last changes (log.txt "[input-wait]"), so a still
-    /// picture is not taken for a loading screen (docs/agents/screens.md).
+    /// picture is not taken for a loading screen (docs/notes/screens.md).
     /// </summary>
     internal static List<string> ScreenStateSection(string dir, List<string> ctxStop)
     {

@@ -27,14 +27,58 @@ public static class InputWaitMonitor
     public static bool Active => s_env || DebugMode.Enabled || Volatile.Read(ref s_capturing) > 0;
 
     /// <summary>A "Gravar tudo" capture started recording (its pre-roll included).</summary>
-    public static void CaptureStarted() => Interlocked.Increment(ref s_capturing);
+    public static void CaptureStarted() => Retain();
 
     /// <summary>The capture stopped recording.</summary>
-    public static void CaptureStopped()
+    public static void CaptureStopped() => Release();
+
+    /// <summary>Someone needs the detector (a capture, a navigation script's <c>waitinput</c>): it runs until the
+    /// matching <see cref="Release"/>.</summary>
+    public static void Retain() => Interlocked.Increment(ref s_capturing);
+
+    /// <summary>The end of a <see cref="Retain"/>.</summary>
+    public static void Release()
     {
         if (Interlocked.Decrement(ref s_capturing) < 0)
         {
             Interlocked.Exchange(ref s_capturing, 0);
+        }
+    }
+
+    /// <summary>The title ID of the process in front ("" when unknown): the key of the screen knowledge base.</summary>
+    public static string TitleId()
+    {
+        if (s_emu != null && s_emu.TryGetTarget(out Emulator? emu))
+        {
+            return (emu.Vita.Foreground ?? emu).TitleId;
+        }
+
+        return "";
+    }
+
+    /// <summary>Blocks until the state is <paramref name="wanted"/> or <paramref name="timeout"/> passes (host time:
+    /// navigation scripts only); the detector runs meanwhile. True when it got there.</summary>
+    public static bool WaitFor(ScreenActivity wanted, TimeSpan timeout, Func<bool>? cancelled = null)
+    {
+        Retain();
+        try
+        {
+            DateTime deadline = DateTime.UtcNow + timeout;
+            while (DateTime.UtcNow < deadline && cancelled?.Invoke() != true)
+            {
+                if (State == wanted)
+                {
+                    return true;
+                }
+
+                Thread.Sleep(100);
+            }
+
+            return State == wanted;
+        }
+        finally
+        {
+            Release();
         }
     }
 
@@ -68,13 +112,16 @@ public static class InputWaitMonitor
     }
 
     /// <summary>One presented frame (RGBA8; the renderer's GPU worker, after the frame retired).</summary>
-    public static void OnFrame(long present, long guestFrame, ReadOnlySpan<byte> rgba, int width, int height, long shaderCompiles)
+    public static void OnFrame(long present, long guestFrame, ReadOnlySpan<byte> rgba, int width, int height, long shaderCompiles) =>
+        OnFrame(present, guestFrame, rgba, width, height, Counters(shaderCompiles), GuestClock.Microseconds);
+
+    /// <summary>One presented frame with its counters and guest time given (tests).</summary>
+    internal static void OnFrame(long present, long guestFrame, ReadOnlySpan<byte> rgba, int width, int height, in ActivityCounters counters, long timeUs)
     {
-        ActivityCounters counters = Counters(shaderCompiles);
         string? line = null;
         lock (s_lock)
         {
-            if (s_detector.Feed(present, guestFrame, GuestClock.Microseconds, rgba, width, height, counters))
+            if (s_detector.Feed(present, guestFrame, timeUs, rgba, width, height, counters))
             {
                 line = s_detector.Line(Title());
                 s_lastLine = line;

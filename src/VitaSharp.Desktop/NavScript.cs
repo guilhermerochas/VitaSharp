@@ -1,4 +1,5 @@
 using System.Globalization;
+using VitaSharp.Core.Capture;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Input;
 using VitaSharp.Core.Util;
@@ -24,6 +25,11 @@ namespace VitaSharp.Desktop;
 ///   stable [SECONDS] [TIMEOUT]      until the picture has not changed for SECONDS (default 1.5; give up after TIMEOUT,
 ///                                   default 60, with a NAV warning)
 ///   shot NAME                       the next presented frame, full size, as &lt;out&gt;/NAME.png
+///   waitinput [TIMEOUT]             until the game waits for the player ("[input-wait] WAITING FOR INPUT": a still
+///                                   picture, input read every frame, nothing loading; default 120 s)
+///   answer [TIMEOUT]                waitinput, then read the screen's text (OCR of a full-size shot) and do what the
+///                                   screen knowledge base (docs/games/screens.json) says for that screen of the title
+///                                   in front; an unknown screen is a NAV warning with the text read
 ///   log TEXT                        a NAV line in the log (marks a step of the sweep)
 ///   quit                            end the run
 /// With <c>--nav-live</c> the end of the file is not the end of the script: the file is polled for appended lines
@@ -260,6 +266,12 @@ sealed class NavScript : IInputBackend, ITouchHistory
             case "shot":
                 Shot(p.Length > 1 ? p[1] : $"f{Frames}");
                 break;
+            case "waitinput":
+                WaitInput(p.Length > 1 ? double.Parse(p[1], inv) : 120);
+                break;
+            case "answer":
+                Answer(p.Length > 1 ? double.Parse(p[1], inv) : 120);
+                break;
             case "log":
                 break; // the NAV line itself is the log entry
             case "quit":
@@ -332,6 +344,61 @@ sealed class NavScript : IInputBackend, ITouchHistory
                 return;
             }
             Thread.Sleep(50);
+        }
+    }
+
+    bool WaitInput(double timeout)
+    {
+        bool waiting = InputWaitMonitor.WaitFor(ScreenActivity.WaitingForInput, TimeSpan.FromSeconds(timeout), () => Quit);
+        if (waiting)
+        {
+            Log.Info($"NAV f{Frames}: {InputWaitMonitor.Describe()}");
+        }
+        else
+        {
+            Log.Warn($"NAV f{Frames}: not waiting for input after {timeout} s: {InputWaitMonitor.Describe()}");
+        }
+
+        return waiting;
+    }
+
+    /// <summary>The <c>answer</c> command: the known screen on display and its action, from the knowledge base.</summary>
+    void Answer(double timeout)
+    {
+        if (!WaitInput(timeout))
+        {
+            return;
+        }
+
+        string name = $"answer_f{Frames}";
+        Shot(name);
+        string path = Path.Combine(_outDir, name + ".png");
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        (byte[] rgba, int width, int height, _) = ScreenText.LoadFrame(path);
+        ScreenTextResult text = ScreenText.Recognize(rgba, width, height);
+        foreach (string l in ScreenText.Format(text))
+        {
+            Log.Info($"NAV f{Frames}: screen text {l.Trim()}");
+        }
+
+        string? file = ScreenKnowledge.Find();
+        string title = InputWaitMonitor.TitleId();
+        KnownScreen? known = file != null && File.Exists(file) ? ScreenKnowledge.Load(file).Match(title, text.Lines.Select(l => l.Text)) : null;
+        if (known?.Action is not { Kind: not "none" } action)
+        {
+            Log.Warn($"NAV f{Frames}: no known answer for this screen of {title} ({(known != null ? $"'{known.Screen}' is {known.Status}" : file == null ? "no docs/games/screens.json found" : "not in the knowledge base")})");
+            return;
+        }
+
+        Log.Info($"NAV f{Frames}: known screen {title} '{known.Screen}': {known.Expects}");
+        foreach (string command in action.ToNav())
+        {
+            Log.Info($"NAV f{Frames}: {command}");
+            Execute(command);
         }
     }
 

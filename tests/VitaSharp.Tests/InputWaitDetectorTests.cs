@@ -228,6 +228,35 @@ public sealed class InputWaitDetectorTests(GuestMemoryFixture fixture) : IDispos
         }
     }
 
+    /// <summary>The process-wide monitor: its frames make the state a navigation script waits for (waitinput) and the
+    /// line it logs; <see cref="InputWaitMonitor.WaitFor"/> returns at once when the state is already there.</summary>
+    [Fact]
+    public void TheMonitorReportsTheStateScriptsWaitFor()
+    {
+        InputWaitMonitor.Reset(16);
+        InputWaitMonitor.Retain();
+        try
+        {
+            byte[] still = Picture(40, boxX: 20);
+            var counters = default(ActivityCounters);
+            for (int i = 0; i < 40; i++)
+            {
+                counters = counters with { FrontTouchReads = counters.FrontTouchReads + 1 };
+                InputWaitMonitor.OnFrame(i, i, still, W, H, counters, i * FrameUs);
+            }
+
+            Assert.Equal(ScreenActivity.WaitingForInput, InputWaitMonitor.State);
+            Assert.True(InputWaitMonitor.WaitFor(ScreenActivity.WaitingForInput, TimeSpan.Zero));
+            Assert.StartsWith("WAITING FOR INPUT: ", InputWaitMonitor.LastLine);
+            Assert.Contains("reads front touch 60/s", InputWaitMonitor.Describe());
+        }
+        finally
+        {
+            InputWaitMonitor.Release();
+            InputWaitMonitor.Reset();
+        }
+    }
+
     /// <summary>Off (no debug mode, no capture, no VITASHARP_INPUT_WAIT) the hooks count nothing.</summary>
     [Fact]
     public void OffTheHooksCountNothing()

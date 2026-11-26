@@ -447,6 +447,9 @@ public static class EnvVars
     public const string InputWait = "VITASHARP_INPUT_WAIT";
     /// <summary>Presented frames the "waiting for input" detector decides over (default 60).</summary>
     public const string InputWaitFrames = "VITASHARP_INPUT_WAIT_FRAMES";
+    /// <summary>The screen knowledge base the agents' tools read (Capture/ScreenKnowledge.cs; default
+    /// docs/games/screens.json above the working folder or the program).</summary>
+    public const string Screens = "VITASHARP_SCREENS";
     /// <summary>H.264 decoding: auto (default, software), off/sw, hw (the platform's FFmpeg hwaccel) or a device type name.</summary>
     public const string VideoHw = "VITASHARP_VIDEO_HW";
     public const string VisForce = "VITASHARP_VIS_FORCE";

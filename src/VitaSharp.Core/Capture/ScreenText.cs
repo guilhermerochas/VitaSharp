@@ -26,7 +26,7 @@ public sealed record ScreenTextResult(string Backend, IReadOnlyList<ScreenTextLi
 }
 
 /// <summary>
-/// Reads the text on a presented frame for agents and the F8 report ("SECURITY SCAN", "TAP to open Drake's Journal",
+/// Reads the text on a presented frame for navigation scripts, developers and the F8 report ("SECURITY SCAN", "TAP to open Drake's Journal",
 /// "Press X"), so a screen is named by what it says instead of guessed from the picture. No new dependency: on Windows
 /// the system OCR (Windows.Media.Ocr, through Windows PowerShell 5.1's WinRT projection), on Linux/macOS the
 /// <c>tesseract</c> command when it is installed (<c>apt install tesseract-ocr</c>, <c>brew install tesseract</c>);
