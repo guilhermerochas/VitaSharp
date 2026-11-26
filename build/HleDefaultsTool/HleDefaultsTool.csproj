@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The list of every HLE function that answers a default value (the [Hle(..., Default = true)] bindings, the census's
+    "default" rows of docs/hle/data/vitasharp-implemented.tsv): library, NID, name, the value it returns and why
+    (the comment in the code, else the category). Markdown and HTML out; build/hle-defaults.ps1 and .sh run it and make
+    the PDF. Not part of VitaSharp.sln: a developer tool. Reads text only (no firmware, no emulator).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>

@@ -34,6 +34,7 @@ Fonte da comparação (2026-10-18):
 | [user-exports.md](user-exports.md) | Exportações de usuário do FW 3.74 (syscalls, `os0:us`, bibliotecas de `vs0:` servidas pelo HLE): censo dos buracos e ordem dos lotes |
 | [H-psm.md](H-psm.md) | PlayStation Mobile: censo dos imports dos runtimes (PCSI00011) e quem fornece cada função |
 | [data/](data/) | TSVs brutos: funções do VitaSDK com status, implementadas no VitaSharp, faltantes por jogo e por grupo do status (`missing-by-group.tsv`: games/system/general/vitasdk; gerado com o status por `build/hle-status.ps1`) |
+| [build/hle-defaults](../../build/hle-defaults.ps1) | Lista de TODAS as funções que respondem valor padrão (`Default = true`): biblioteca, NID, nome, valor devolvido e motivo, por biblioteca com contagem, em Markdown e PDF. Regenerar a cada lote: `build/hle-defaults.ps1` (ou `.sh`; saída em `%USERPROFILE%\VitaSharpReports`, fora do git; PDF via Edge/Chrome headless). Lê o censo `data/vitasharp-implemented.tsv` (rode `build/hle-status` antes se mudou) e os comentários do código |
 
 ## Comece por aqui: achados que atravessam pacotes
 
