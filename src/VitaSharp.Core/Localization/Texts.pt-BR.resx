@@ -822,12 +822,6 @@
   <data name="DataFolder" xml:space="preserve">
     <value>Pasta de dados</value>
   </data>
-  <data name="DebugMode" xml:space="preserve">
-    <value>Modo de depuração</value>
-  </data>
-  <data name="DebugModeDetail" xml:space="preserve">
-    <value>Logs detalhados e diagnóstico automático quando a imagem parece corrompida; custa alguns por cento de desempenho</value>
-  </data>
   <data name="Delete" xml:space="preserve">
     <value>Apagar</value>
   </data>
@@ -842,15 +836,6 @@
   </data>
   <data name="DiagFailed" xml:space="preserve">
     <value>Falha ao salvar o diagnóstico (veja o log)</value>
-  </data>
-  <data name="DiagnosticBadge" xml:space="preserve">
-    <value>Diagnóstico</value>
-  </data>
-  <data name="DiagnosticsChip" xml:space="preserve">
-    <value>Diagnósticos F10 · {0}</value>
-  </data>
-  <data name="DiagnosticsFolder" xml:space="preserve">
-    <value>Pasta de diagnósticos</value>
   </data>
   <data name="DiagSaved" xml:space="preserve">
     <value>Diagnóstico salvo: {0}</value>
@@ -868,7 +853,7 @@
     <value>Falha ao gravar o dump da GPU: {0}</value>
   </data>
   <data name="DumpRecording" xml:space="preserve">
-    <value>Gravando dump da GPU (Ctrl+F8 para parar)</value>
+    <value>Gravando um dump da GPU</value>
   </data>
   <data name="DumpSaved" xml:space="preserve">
     <value>Dump da GPU salvo: {0} ({1} quadros, {2:F0} MB)</value>
@@ -1017,12 +1002,6 @@
   <data name="GameClickDetail" xml:space="preserve">
     <value>O botão em destaque na capa, o duplo clique e Enter; o outro fica ao lado</value>
   </data>
-  <data name="GameDebugOff" xml:space="preserve">
-    <value>Modo de depuração desligado</value>
-  </data>
-  <data name="GameDebugOn" xml:space="preserve">
-    <value>Modo de depuração ligado (F9 desliga, F10 captura, F8 grava tudo com os últimos 10 s, Ctrl+F8 grava dump da GPU)</value>
-  </data>
   <data name="GameDeviceLost" xml:space="preserve">
     <value>A GPU parou de responder (driver reiniciado): carregue um estado (F7) ou reinicie o jogo</value>
   </data>
@@ -1064,15 +1043,6 @@
   </data>
   <data name="GameTrophyUnlocked" xml:space="preserve">
     <value>Troféu desbloqueado: {0} ({1})</value>
-  </data>
-  <data name="GpuDumpBadge" xml:space="preserve">
-    <value>Dump da GPU</value>
-  </data>
-  <data name="GpuDumps" xml:space="preserve">
-    <value>Dumps da GPU · {0}</value>
-  </data>
-  <data name="GpuDumpsFolder" xml:space="preserve">
-    <value>Dumps da GPU (gpudumps)</value>
   </data>
   <data name="GradeBronze" xml:space="preserve">
     <value>Bronze</value>
@@ -1333,10 +1303,10 @@
     <value>Não</value>
   </data>
   <data name="NoCaptures" xml:space="preserve">
-    <value>Nada aqui. No jogo: F8 inicia e para "Gravar tudo", Ctrl+F8 grava só o dump da GPU, F10 salva um diagnóstico.</value>
+    <value>Nada aqui. No jogo: F8 inicia e para "Gravar tudo" (Shift+F8 marca o problema durante a gravação).</value>
   </data>
   <data name="NoGameCaptures" xml:space="preserve">
-    <value>Nenhuma gravação ou dump deste jogo. No jogo: F8 grava tudo, Ctrl+F8 só o dump da GPU, F10 um diagnóstico.</value>
+    <value>Nenhuma gravação deste jogo. No jogo: F8 grava tudo, Shift+F8 marca o problema.</value>
   </data>
   <data name="NoMatch" xml:space="preserve">
     <value>Nenhum jogo corresponde à busca ou aos filtros.</value>
@@ -1648,7 +1618,7 @@
     <value>Atalhos no jogo</value>
   </data>
   <data name="ShortcutsText" xml:space="preserve">
-    <value>F11 tela cheia · P pausa (Controles &gt; Atalhos do emulador) · F5 / F7 salvar e carregar o estado rápido, F6 escolhe o slot · F8 "Gravar tudo" (estado, controles, imagens, áudio e dump da GPU num .zip em captures) · Shift+F8 marca o problema durante a gravação · Ctrl+F8 só o dump da GPU · F9 liga e desliga o modo de depuração · F10 diagnóstico (.zip na pasta de diagnósticos) · Mouse: botão esquerdo = tela frontal, botão direito = touchpad traseiro.</value>
+    <value>F11 tela cheia · P pausa (Controles &gt; Atalhos do emulador) · F5 / F7 salvar e carregar o estado rápido, F6 escolhe o slot · F8 "Gravar tudo" (estado, controles, imagens, áudio, log detalhado e dump da GPU num .zip em captures) · Shift+F8 marca o problema durante a gravação · Mouse: botão esquerdo = tela frontal, botão direito = touchpad traseiro.</value>
   </data>
   <data name="ShowInFolder" xml:space="preserve">
     <value>Mostrar na pasta</value>
@@ -2786,12 +2756,6 @@
   </data>
   <data name="MKernelPluginsDetail" xml:space="preserve">
     <value>Carrega os plugins do ur0:kernel_plugins/config.txt no próximo jogo. Desligada: firmware puro</value>
-  </data>
-  <data name="MDebugMode" xml:space="preserve">
-    <value>Modo de depuração</value>
-  </data>
-  <data name="MDebugModeDetail" xml:space="preserve">
-    <value>Log detalhado no próximo jogo (logcat: VitaSharp, VitaSharp-Guest)</value>
   </data>
   <data name="MShareLog" xml:space="preserve">
     <value>Compartilhar log</value>

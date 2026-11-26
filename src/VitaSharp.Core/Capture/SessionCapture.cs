@@ -257,7 +257,8 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         }
     }
 
-    /// <summary>This capture turned the "waiting for input" detector on (<see cref="Input.InputWaitMonitor"/>).</summary>
+    /// <summary>This capture turned the "waiting for input" detector (<see cref="Input.InputWaitMonitor"/>) and the detailed
+    /// log (<see cref="DebugMode"/>) on.</summary>
     private bool _monitoring;
 
     private string SafeDescribe(string when)
@@ -443,6 +444,8 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         {
             _monitoring = true;
             Input.InputWaitMonitor.CaptureStarted();
+            // the detailed log is part of the capture: on while it records or keeps its pre-roll (its log.txt)
+            DebugMode.CaptureStarted();
         }
 
         if (_options.Files && _files == null)
@@ -461,6 +464,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         {
             _monitoring = false;
             Input.InputWaitMonitor.CaptureStopped();
+            DebugMode.CaptureStopped();
         }
 
         if (_files != null && ReferenceEquals(CaptureHooks.Files, _files))
