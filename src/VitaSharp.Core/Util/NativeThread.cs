@@ -59,7 +59,9 @@ public static class NativeThread
     /// fast cores: docs/android/README.md, "CPU cores and ADPF").</summary>
     public enum Role
     {
-        Other, Guest, Gpu, JitWorker
+        Other, Guest, Gpu, JitWorker,
+        /// <summary>Work nothing waits for right now (texture transcoding): never on a phone's fast cores.</summary>
+        Background
     }
 
     /// <summary>OS thread id to role, for the threads registered with <see cref="Register(string, Role)"/>. Entries

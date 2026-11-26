@@ -1360,6 +1360,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Android
 
+- [ ] [P1][M] (falta medir no celular) Desempenho do Android, perf/andperf1: travadas de texUpload e núcleos pequenos
+  disputados (captura do Uncharted de 25/11: 37 s de BC para ASTC no GPU worker, quadros de 1-2 s). Feito no PC: as
+  threads de fundo (pré-compilação ARM depois do boot, workers de shader reserva, prewarm, transcodificadores) baixam
+  o próprio nice no Linux/Android (o `Thread.Priority` do .NET não faz nada lá; `VITASHARP_BG_NICE=0` para comparar);
+  a codificação ASTC sai do GPU worker para 2 threads fixas nos núcleos lentos em blocos de 4 linhas, com o draw
+  esperando a textura exata (`VITASHARP_ASTC_ASYNC=0|wait|placeholder`, padrão `wait` no Android); BC1 vira ASTC bloco a
+  bloco sem busca (`VITASHARP_ASTC_BC1_DIRECT=0`); o cache em disco é indexado uma vez por título. Falta: a série A B B A
+  no celular (Uncharted 1º minuto a frio e 2ª sessão, Killzone gameplay) com as chaves acima no env.txt; metas: quadros
+  > 50 ms do 1º minuto do Uncharted -30%, 0 travadas de texUpload > 100 ms na 2ª sessão e -50% na 1ª. Depois: pré-carregar
+  as texturas na carga do nível (a fila dos transcodificadores antes do primeiro draw).
 - [x] App Android, tela da biblioteca: tirar a palavra "VitaSharp" em cima do título da biblioteca, o botão de instalar e o botão de Ajustes ao lado do texto da biblioteca. Feito (feat/andpar): o cabeçalho é só o título; instalar continua no botão flutuante e em Ajustes > Instalar jogo (`AndroidNarrowLayoutTests`). **Falta validar no aparelho.**
 - [ ] [P2][M] (precisa do usuário/aparelho) Dead Space (port, DEADSPACE) no Android sem som e engasgando (relato do usuário, 15/11/2026, APK build-1f8c024, com "Ativar Plugins do Kernel" e kubridge + fd_fix; no PC roda com som). Logs do celular guardados pelo lead (`<scratchpad>ds_android`). Ler o log primeiro: áudio (saída aberta? grãos/s), fps e tiers da CPU, threads em espera; comparar com o PC na mesma cena.
 - [x] Paridade de opções PC/Android: toda opção do launcher do desktop também no app Android, com o mesmo nome, padrão

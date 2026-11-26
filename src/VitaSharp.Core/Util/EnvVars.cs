@@ -84,6 +84,19 @@ public static class EnvVars
     public const string Astc = "VITASHARP_ASTC";
     /// <summary>Size limit in MB of a title's ASTC transcode disk cache (default 512).</summary>
     public const string AstcCacheMb = "VITASHARP_ASTC_CACHE_MB";
+    /// <summary>Where a BC/PVRTC level missing from the ASTC caches is encoded: =0 (gpu) on the GPU thread (desktop
+    /// default), =wait by the texture transcoder threads while the GPU thread waits (Android default: exact textures),
+    /// =placeholder by the transcoder threads while the texture shows a coarse placeholder and is uploaded again when
+    /// ready (opt-in, not the console's behaviour) (Renderer.Vulkan AstcTranscoder.cs).</summary>
+    public const string AstcAsync = "VITASHARP_ASTC_ASYNC";
+    /// <summary>Texture transcoder threads of the wait/placeholder modes (default: a quarter of the processors, 1-2).</summary>
+    public const string AstcWorkers = "VITASHARP_ASTC_WORKERS";
+    /// <summary>=0: in the wait mode the GPU thread only waits for the texture transcoders instead of running their
+    /// queued row jobs too (Renderer.Vulkan AstcTranscoder.Help).</summary>
+    public const string AstcHelp = "VITASHARP_ASTC_HELP";
+    /// <summary>=0: BC1 levels go through the ASTC encoder's search like the other formats instead of the direct
+    /// block mapping (A/B; Renderer.Vulkan AstcTranscoder.Bc1Direct).</summary>
+    public const string AstcBc1Direct = "VITASHARP_ASTC_BC1_DIRECT";
     public const string AsyncPipelines = "VITASHARP_ASYNC_PIPELINES";
     public const string AsyncShaders = "VITASHARP_ASYNC_SHADERS";
     public const string AudioDevice = "VITASHARP_AUDIO_DEVICE";

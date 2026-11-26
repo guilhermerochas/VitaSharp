@@ -69,6 +69,144 @@ public static class AstcEncoder
         }
     }
 
+    /// <summary>
+    /// A coarse stand-in for <see cref="Encode"/>: every block is the void-extent block of its texels' mean (the image
+    /// box-filtered to a quarter of its size). It costs a pass over the texels, and is what a texture shows while its
+    /// real encode runs in the background (Renderer.Vulkan AstcTranscoder.Async).
+    /// </summary>
+    public static void EncodeCoarse(ReadOnlySpan<byte> rgba, int w, int h, Span<byte> blocks, AstcChannels channels)
+    {
+        int bw = (w + 3) / 4, bh = (h + 3) / 4;
+        if (blocks.Length < bw * bh * BlockBytes)
+        {
+            throw new ArgumentException("block buffer too small");
+        }
+
+        for (int by = 0; by < bh; by++)
+        {
+            for (int bx = 0; bx < bw; bx++)
+            {
+                int r = 0, g = 0, b = 0, a = 0, n = 0;
+                for (int y = by * 4; y < Math.Min(by * 4 + 4, h); y++)
+                {
+                    for (int x = bx * 4; x < Math.Min(bx * 4 + 4, w); x++)
+                    {
+                        int o = (y * w + x) * 4;
+                        r += rgba[o];
+                        g += rgba[o + 1];
+                        b += rgba[o + 2];
+                        a += rgba[o + 3];
+                        n++;
+                    }
+                }
+
+                WriteMean(blocks.Slice((by * bw + bx) * BlockBytes, BlockBytes), channels, (byte)((r + n / 2) / n), (byte)((g + n / 2) / n), (byte)((b + n / 2) / n), (byte)((a + n / 2) / n));
+            }
+        }
+    }
+
+    /// <summary>
+    /// BC1 straight to ASTC, block by block, without the texel search: a four-colour BC1 block (c0 &gt; c1) is its two
+    /// RGB565 endpoints and the two thirds between them, which is exactly an ASTC RGB-direct block (CEM 8) with 8-bit
+    /// endpoints and 4 weight levels (0, 21, 43, 64 of 64: within one level of BC1's thirds after the decoder's
+    /// rounding). Blocks in BC1's three-colour mode (c0 &lt;= c1: a half-way colour and transparent black) have no
+    /// such equivalent: they are left to <see cref="EncodeBlock"/> and flagged in <paramref name="fallback"/>.
+    /// Returns how many blocks were flagged.
+    /// </summary>
+    public static int EncodeFromBc1(ReadOnlySpan<byte> bc1, int w, int h, Span<byte> blocks, Span<bool> fallback)
+    {
+        int count = ((w + 3) / 4) * ((h + 3) / 4);
+        if (bc1.Length < count * 8 || blocks.Length < count * BlockBytes || fallback.Length < count)
+        {
+            throw new ArgumentException("buffer too small");
+        }
+
+        Config cfg = s_rgbConfigs[2]; // CEM 8, 4 weight levels
+        Ise.EndpointTable eq = cfg.Eq;
+        Span<int> q0 = stackalloc int[3], q1 = stackalloc int[3];
+        Span<int> weights = stackalloc int[16];
+        int flagged = 0;
+        for (int i = 0; i < count; i++)
+        {
+            ReadOnlySpan<byte> b = bc1.Slice(i * 8, 8);
+            int c0 = b[0] | b[1] << 8, c1 = b[2] | b[3] << 8;
+            if (c0 <= c1 || cfg.EndpointLevels < 256)
+            {
+                fallback[i] = true;
+                flagged++;
+                continue;
+            }
+
+            fallback[i] = false;
+            q0[0] = eq.Quantize[Expand5(c0 >> 11)];
+            q0[1] = eq.Quantize[Expand6((c0 >> 5) & 63)];
+            q0[2] = eq.Quantize[Expand5(c0 & 31)];
+            q1[0] = eq.Quantize[Expand5(c1 >> 11)];
+            q1[1] = eq.Quantize[Expand6((c1 >> 5) & 63)];
+            q1[2] = eq.Quantize[Expand5(c1 & 31)];
+            // RGB direct: e1 must not sum below e0 (blue contraction): swap the endpoints and mirror the weights
+            bool swap = eq.Unquant[q1[0]] + eq.Unquant[q1[1]] + eq.Unquant[q1[2]] < eq.Unquant[q0[0]] + eq.Unquant[q0[1]] + eq.Unquant[q0[2]];
+            if (swap)
+            {
+                for (int c = 0; c < 3; c++)
+                {
+                    (q0[c], q1[c]) = (q1[c], q0[c]);
+                }
+            }
+
+            uint indices = (uint)(b[4] | b[5] << 8 | b[6] << 16 | b[7] << 24);
+            for (int t = 0; t < 16; t++)
+            {
+                // BC1 index 0 = c0, 1 = c1, 2 = 1/3 of the way, 3 = 2/3: weights 0, 3, 1, 2 of 3
+                int weight = ((indices >> (t * 2)) & 3) switch
+                {
+                    0 => 0,
+                    1 => 3,
+                    2 => 1,
+                    _ => 2,
+                };
+                weights[t] = swap ? 3 - weight : weight;
+            }
+
+            Pack(blocks.Slice(i * BlockBytes, BlockBytes), cfg, 3, false, cfg.WeightBits, cfg.EndpointLevels, q0, q1, weights);
+        }
+
+        return flagged;
+    }
+
+    /// <summary>Encodes the block at (<paramref name="bx"/>, <paramref name="by"/>) of a w x h RGBA8 image, as
+    /// <see cref="Encode"/> does for each block.</summary>
+    public static void EncodeBlockAt(ReadOnlySpan<byte> rgba, int w, int h, int bx, int by, Span<byte> block, AstcChannels channels)
+    {
+        Span<byte> texels = stackalloc byte[64];
+        for (int y = 0; y < 4; y++)
+        {
+            for (int x = 0; x < 4; x++)
+            {
+                int sx = Math.Min(bx * 4 + x, w - 1), sy = Math.Min(by * 4 + y, h - 1);
+                rgba.Slice((sy * w + sx) * 4, 4).CopyTo(texels.Slice((y * 4 + x) * 4, 4));
+            }
+        }
+
+        EncodeBlock(texels, block, channels);
+    }
+
+    private static int Expand5(int value) => (value << 3) | (value >> 2);
+
+    private static int Expand6(int value) => (value << 2) | (value >> 4);
+
+    /// <summary>One void-extent block of the colour (<paramref name="r"/>, <paramref name="g"/>, <paramref name="b"/>,
+    /// <paramref name="a"/>), laid out for <paramref name="channels"/> like <see cref="EncodeBlock"/>'s.</summary>
+    public static void WriteMean(Span<byte> block, AstcChannels channels, byte r, byte g, byte b, byte a)
+    {
+        Span<byte> texel = stackalloc byte[4];
+        texel[0] = r;
+        texel[1] = g;
+        texel[2] = b;
+        texel[3] = a;
+        WriteVoidExtent(block, channels, texel);
+    }
+
     /// <summary>Rows of blocks encoded in parallel (large textures).</summary>
     public static void EncodeParallel(ReadOnlySpan<byte> rgba, int w, int h, byte[] blocks, AstcChannels channels, int maxThreads)
     {

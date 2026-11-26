@@ -20,6 +20,9 @@ public sealed class TranscodeDiskCache
     private readonly object _lock = new();
     private long _bytes = -1;
     public long Hits, Misses, Writes, Evictions;
+    /// <summary>The keys on disk (null until the folder was listed once, on a background thread).</summary>
+    private HashSet<ulong>? _index;
+    private int _indexing;
 
     public string Directory => _dir;
     public long Limit => _limit;
@@ -31,6 +34,62 @@ public sealed class TranscodeDiskCache
     }
 
     private string PathOf(ulong key) => Path.Combine(_dir, $"{key:x16}.astc");
+
+    /// <summary>
+    /// Whether an entry for <paramref name="key"/> is on disk, from an index of the folder listed once (no file
+    /// system call per lookup: on Android's shared storage every call goes through FUSE). Null while the index is not
+    /// built yet; the first call starts building it on a thread-pool thread.
+    /// </summary>
+    public bool? Contains(ulong key)
+    {
+        lock (_lock)
+        {
+            if (_index != null)
+            {
+                return _index.Contains(key);
+            }
+        }
+
+        if (Interlocked.Exchange(ref _indexing, 1) == 0)
+        {
+            ThreadPool.UnsafeQueueUserWorkItem(_ => BuildIndex(), null);
+        }
+
+        return null;
+    }
+
+    /// <summary>Lists the folder into the index (tests call it directly).</summary>
+    public void BuildIndex()
+    {
+        var keys = new HashSet<ulong>();
+        try
+        {
+            if (System.IO.Directory.Exists(_dir))
+            {
+                foreach (string file in System.IO.Directory.EnumerateFiles(_dir, "*.astc"))
+                {
+                    if (ulong.TryParse(Path.GetFileNameWithoutExtension(file), System.Globalization.NumberStyles.HexNumber, null, out ulong key))
+                    {
+                        keys.Add(key);
+                    }
+                }
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Log.WarnOnce("astc-cache-index", $"[texcache] cannot list {_dir}: {e.Message}");
+        }
+        lock (_lock)
+        {
+            // entries written while the folder was listed are in both
+            if (_index != null)
+            {
+                keys.UnionWith(_index);
+            }
+
+            _index = keys;
+        }
+    }
 
     /// <summary>The cached payload of <paramref name="key"/> when it exists, has the expected <paramref name="tag"/>
     /// (format and size of what was transcoded) and length; null otherwise.</summary>
@@ -64,6 +123,7 @@ public sealed class TranscodeDiskCache
                     {
                         File.Delete(p);
                         _bytes = -1;
+                        _index?.Remove(key);
                     }
                     catch (IOException) { }
                 }
@@ -113,6 +173,7 @@ public sealed class TranscodeDiskCache
                 File.WriteAllBytes(p, data);
                 _bytes += data.Length;
                 Writes++;
+                _index?.Add(key);
                 if (_bytes > _limit)
                 {
                     Trim();
@@ -155,6 +216,10 @@ public sealed class TranscodeDiskCache
                 f.Delete();
                 total -= length;
                 Evictions++;
+                if (ulong.TryParse(Path.GetFileNameWithoutExtension(f.Name), System.Globalization.NumberStyles.HexNumber, null, out ulong evicted))
+                {
+                    _index?.Remove(evicted);
+                }
             }
             catch (IOException) { }
         }

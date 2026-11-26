@@ -5,7 +5,7 @@ namespace VitaSharp.Mobile.Core.Performance;
 /// <summary>The kinds of threads the placement knows (from <c>NativeThread.Roles</c> and names).</summary>
 public enum ThreadKind
 {
-    Guest, Gpu, JitWorker, ShaderWorker, Other
+    Guest, Gpu, JitWorker, ShaderWorker, Background, Other
 }
 
 /// <summary>One thread at a placement step: its CPU use over the last window (1.0 = one core all the time) and the
@@ -47,6 +47,8 @@ public sealed record PlacementPlan(IReadOnlyDictionary<int, Placement> Placement
 /// <item>shader compile workers run on the other cores while the hot threads keep the fast cores busy, and on every
 /// core while they leave at least half a fast core idle (the GPU thread waiting for a shader, a loading screen): a
 /// compile the frame waits for then runs at full speed, and one in the background does not slow the game;</item>
+/// <item>background threads (<see cref="NativeThread.Role.Background"/>: the texture transcoders) always run on the
+/// other cores, idle fast cores or not: their work is never what the frame waits for;</item>
 /// <item>any other thread (the UI thread, the driver's and the runtime's) is left alone.</item>
 /// <item>with <see cref="SpareFastCoresForGuests"/> (<c>VITASHARP_ANDROID_HELPERS=spare</c>, A/B) the other guest
 /// threads follow the shader workers' rule: every core while the hot threads leave at least half a fast core idle, so
@@ -176,7 +178,7 @@ public sealed class ThreadPlacementPlanner
 
         foreach (ThreadSample t in threads)
         {
-            if (t.Kind == ThreadKind.JitWorker)
+            if (t.Kind is ThreadKind.JitWorker or ThreadKind.Background)
             {
                 placements[t.Tid] = Placement.NotBig;
             }
@@ -195,6 +197,7 @@ public sealed class ThreadPlacementPlanner
         NativeThread.Role.Guest => ThreadKind.Guest,
         NativeThread.Role.Gpu => ThreadKind.Gpu,
         NativeThread.Role.JitWorker => ThreadKind.JitWorker,
+        NativeThread.Role.Background => ThreadKind.Background,
         _ => name.StartsWith("Shader worker", StringComparison.Ordinal) || name.StartsWith("Shader prewarm", StringComparison.Ordinal)
              || name.StartsWith("Shader rebuild", StringComparison.Ordinal) ? ThreadKind.ShaderWorker
            : name.StartsWith("JIT worker", StringComparison.Ordinal) ? ThreadKind.JitWorker

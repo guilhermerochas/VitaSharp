@@ -203,7 +203,34 @@ The game process places its hot threads itself (`Platforms/Android/Game/GamePerf
     every core once they leave half a fast core idle (hysteresis): when the GPU thread waits for a shader, or during a
     load, the compile it waits for runs on a fast core; a background compile during gameplay does not take time from
     the game;
+  - **background threads** (`NativeThread.Role.Background`: the texture transcoders, see below): always the other
+    cores, idle fast cores or not;
   - anything else (UI thread, runtime, driver threads) is left to the system.
+- **Background priority** (Linux and Android, `HostThreads.LowerCurrent`): .NET's `Thread.Priority` does nothing on
+  Linux (CoreCLR's PAL and NativeAOT leave every thread at nice 0), so the "lowest" speculative JIT precompile threads
+  and the "below normal" spare shader workers used to compete as equals with the game's guest threads on the A55
+  cores. They now lower their own nice value (`setpriority`, no privilege needed to lower): JIT precompile after the
+  boot step nice 10 (Android's `THREAD_PRIORITY_BACKGROUND`), spare shader workers, the shader prewarm and the texture
+  transcoders nice 5. Under the Linux scheduler a nice-0 guest thread sharing a core with a nice-5 one gets ~75% of
+  it, with a nice-10 one ~90%. `VITASHARP_BG_NICE=0` in `config/env.txt` keeps them at nice 0 (A/B).
+- **ASTC encodes off the GPU worker** (`AstcTranscoder.Mode`, `VITASHARP_ASTC_ASYNC=0|wait|placeholder`): the first
+  session of Uncharted spent 37 s encoding BC/PVRTC levels on the GPU worker (frames with 1-2 s of `texUpload`), plus
+  the encode's .NET thread-pool threads, which were never placed and ran on every core. On Android (`wait`, the
+  default) a level that is in neither ASTC cache goes to the **texture transcoder threads** (`VITASHARP_ASTC_WORKERS`,
+  default 2 on 8 cores; registered as background threads: slow cores only, nice 5) in jobs of 4 block rows, and the
+  GPU worker waits for the whole level, so every draw samples the exact texture, as on the console; while it waits it
+  runs queued row jobs itself (`VITASHARP_ASTC_HELP=0`: it only waits), so it is never idle. `=0` encodes on
+  the GPU worker as before (the desktop default); `=placeholder` (opt-in, not the console's behaviour) does not wait:
+  the texture shows a coarse placeholder (each 4x4 block's mean colour as an ASTC void-extent block, `BcBlockMeans`)
+  and is uploaded again once its levels are done.
+- **BC1 mapped straight to ASTC** (`AstcEncoder.EncodeFromBc1`, `VITASHARP_ASTC_BC1_DIRECT=0` to compare): a
+  four-colour BC1 block (its two RGB565 endpoints and the thirds between them) is exactly an ASTC RGB-direct block with
+  8-bit endpoints and 4 weight levels, so it is written without the encoder's search; only BC1's three-colour blocks
+  (half-way colour and transparent black) are searched.
+- **ASTC disk cache index**: the title's folder (`shadercache/titles/<TITLEID>/astc`) is listed once per title on a
+  thread-pool thread; afterwards a level that is not on disk costs no file system call (on Android's shared storage
+  each one goes through FUSE). The `PERF mobile` line says the mode, what the transcoder threads encoded and how long
+  the GPU worker waited for them.
 - **Timer slack**: guest threads and the GPU worker set a 1 µs timer slack (`PR_SET_TIMERSLACK`; Linux's default is
   50 µs), so their short sleeps end on time: nothing spins on a phone (`HostTuning.AvoidBusyWaits`, below).
 - **ADPF** (API 31+, `PerformanceHintManager` through the Java API): one hint session for the hot threads (main guest
