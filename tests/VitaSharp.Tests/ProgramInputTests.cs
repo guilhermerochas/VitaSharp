@@ -4,7 +4,7 @@ using VitaSharp.Core.Gxm.Shader;
 namespace VitaSharp.Tests;
 
 /// <summary>GXP parameter/container parsing into program inputs (<see cref="ProgramInput"/>).</summary>
-[Collection("shadergen")]
+[Collection("guest")]
 public class ProgramInputTests
 {
     /// <summary>A fragment GXP with one UNIFORM_BUFFER parameter (buffer <paramref name="buffer"/>, 4 bytes) and,

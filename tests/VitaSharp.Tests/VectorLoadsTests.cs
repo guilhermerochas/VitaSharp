@@ -13,7 +13,7 @@ namespace VitaSharp.Tests;
 /// keeps the word loads. The instruction is the load Killzone's vertex programs use (VLDST, four F32 words through
 /// the pointer in sa[5].z), in a synthetic program with one uniform buffer.
 /// </summary>
-[Collection("shadergen")]
+[Collection("guest")]
 public sealed class VectorLoadsTests
 {
     private const ulong FourWordLoad = 0xE8833084A3C58000;

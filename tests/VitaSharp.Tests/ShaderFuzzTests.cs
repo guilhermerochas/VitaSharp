@@ -9,7 +9,7 @@ namespace VitaSharp.Tests;
 /// game can hand the GPU any program, so the translation must never throw (a throw on the GPU worker drops the
 /// draw), and the GLSL it writes must compile with shaderc, which the renderer feeds it to.
 /// </summary>
-[Collection("shadergen")]
+[Collection("guest")]
 public sealed class ShaderFuzzTests
 {
     private static GxpProgram Program(ulong[] code, bool fragment)

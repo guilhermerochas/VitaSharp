@@ -12,7 +12,7 @@ namespace VitaSharp.Tests;
 /// (GpuQuirk.FarPlaneDiscard: a varying plus a fragment discard; the desktop GLSL unchanged), the raw AAC frame lengths
 /// SceMp4 hands out (MediaCodec reports no bytes consumed), and the scripted pad of unattended device runs.
 /// </summary>
-[Collection("shadergen")]
+[Collection("guest")]
 public class MaliDeviceTests
 {
     // a vertex program (position is always an output) and an empty fragment program
