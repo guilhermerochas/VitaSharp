@@ -415,6 +415,21 @@ public static class SessionReport
 
         yield return "PERF delays (per frame: 0 / <=100us / <=1ms / <=5ms / longer; host sleeps, asked and late on average):" + string.Concat(VitaSharp.Core.Kernel.Wait.Delays.OrderByDescending(kv => kv.Value.Sum()).Take(8).Select(kv => $" {kv.Key} {kv.Value[0] / (double)frames:F1}/{kv.Value[1] / (double)frames:F1}/{kv.Value[2] / (double)frames:F1}/{kv.Value[3] / (double)frames:F1}/{kv.Value[4] / (double)frames:F1} slept {kv.Value[5] / (double)frames:F1} (asked {kv.Value[6] / Math.Max(1.0, kv.Value[5]):F0} us, late {kv.Value[7] / Math.Max(1.0, kv.Value[5]):F0} us);"));
         yield return $"PERF sched: core acquires that waited {VitaSharp.Core.Kernel.Scheduler.AcquireBlocked / (double)frames:F1}/frame, re-waits after a wake without a core {VitaSharp.Core.Kernel.Scheduler.AcquireRewaits / (double)frames:F1}/frame; blocking syscall host waits {VitaSharp.Core.Kernel.Wait.BlockingWaits / (double)frames:F1}/frame, wake-up latencies {VitaSharp.Core.Kernel.Wait.Latencies / (double)frames:F1}/frame; calls that waited for their waker {VitaSharp.Core.Kernel.GuestThread.WakerWaits / (double)frames:F1}/frame ({VitaSharp.Core.Kernel.GuestThread.WakerWaitTimeouts} hit the limit)";
-        yield return $"PERF allocated {GC.GetTotalAllocatedBytes() / 1048576.0:F0} MB total ({GC.GetTotalAllocatedBytes() / 1024.0 / frames:F0} KB/frame), GC gen0 {GC.CollectionCount(0)} gen1 {GC.CollectionCount(1)} gen2 {GC.CollectionCount(2)}, pause {gcInfo.PauseTimePercentage:F1}%, heap {gcInfo.HeapSizeBytes / 1048576.0:F0} MB, working set {Environment.WorkingSet / 1048576.0:F0} MB";
+        yield return $"PERF allocated {GC.GetTotalAllocatedBytes() / 1048576.0:F0} MB total ({GC.GetTotalAllocatedBytes() / 1024.0 / frames:F0} KB/frame), GC gen0 {GC.CollectionCount(0)} gen1 {GC.CollectionCount(1)} gen2 {GC.CollectionCount(2)}, pause {gcInfo.PauseTimePercentage:F1}%, heap {gcInfo.HeapSizeBytes / 1048576.0:F0} MB, working set {Environment.WorkingSet / 1048576.0:F0} MB; {GcDetail()}";
+    }
+
+    /// <summary>The PERF allocated line's GC detail: the total pause and the pause per collection, the young generation
+    /// before the last young GC (about the GC's gen0 budget: ~256 KB when the runtime could not read the CPU's cache
+    /// size, ~4 MB on a desktop; a phone run showed ~19 gen0 GCs/s at 3.5 MB/s) and the memory load against the GC's
+    /// high-load threshold. Cumulative, as the rest of the line: a window is the difference of two reports.</summary>
+    public static string GcDetail()
+    {
+        int collections = GC.CollectionCount(0);
+        double pauseMs = GC.GetTotalPauseDuration().TotalMilliseconds;
+        GCMemoryInfo young = GC.GetGCMemoryInfo(GCKind.Ephemeral);
+        long gen0Before = young.Index > 0 && young.GenerationInfo.Length > 0 ? young.GenerationInfo[0].SizeBeforeBytes : 0;
+        double loadPercent = young.TotalAvailableMemoryBytes > 0 ? 100.0 * young.MemoryLoadBytes / young.TotalAvailableMemoryBytes : 0;
+        double highPercent = young.TotalAvailableMemoryBytes > 0 ? 100.0 * young.HighMemoryLoadThresholdBytes / young.TotalAvailableMemoryBytes : 0;
+        return $"GC pause total {pauseMs:F0} ms ({pauseMs / Math.Max(1, collections):F2} ms per GC), gen0 before the last young GC {gen0Before / 1024.0:F0} KB, memory load {loadPercent:F0}% (GC high-load threshold {highPercent:F0}%)";
     }
 }

@@ -25,6 +25,7 @@ public sealed class SessionReportTests(GuestMemoryFixture fixture)
             Assert.Contains(lines, l => l.StartsWith("  GPU commands: submitted ", StringComparison.Ordinal));
             Assert.Contains(lines, l => l.StartsWith("PERF cpu ", StringComparison.Ordinal));
             Assert.StartsWith("PERF allocated ", lines[^1]);
+            Assert.Contains("ms per GC), gen0 before the last young GC ", lines[^1]);
             // the order the desktop always wrote: GPU commands, AUDIO summary, then the host process
             int gpu = lines.FindIndex(l => l.StartsWith("  GPU commands", StringComparison.Ordinal));
             int cpu = lines.FindIndex(l => l.StartsWith("PERF cpu ", StringComparison.Ordinal));
@@ -49,5 +50,23 @@ public sealed class SessionReportTests(GuestMemoryFixture fixture)
             }
             catch (IOException) { }
         }
+    }
+
+    /// <summary>The GC detail of the PERF allocated line: the pause per collection and the young generation before the
+    /// last young GC, which tells a phone log whether the GC runs with a tiny gen0 budget (VitaSharpGcGen0Size).</summary>
+    [Fact]
+    public void GcDetailReportsPausePerCollectionAndTheYoungGenerationSize()
+    {
+        byte[]? last = null;
+        for (int i = 0; i < 4096; i++)
+        {
+            last = new byte[512];
+        }
+        GC.KeepAlive(last);
+        GC.Collect(0, GCCollectionMode.Forced, blocking: true);
+
+        string detail = SessionReport.GcDetail();
+
+        Assert.Matches(@"^GC pause total \d+ ms \(\d+[.,]\d\d ms per GC\), gen0 before the last young GC [1-9]\d* KB, memory load \d+% \(GC high-load threshold [1-9]\d*%\)$", detail);
     }
 }
