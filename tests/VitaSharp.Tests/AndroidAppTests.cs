@@ -377,9 +377,10 @@ public sealed class AndroidAppTests : IDisposable
     [Fact]
     public void RoundControlsAreHitAsTheirCirclesAndTheirCornersAreFrontTouch()
     {
-        // a 2400x1080 phone: the image placed as the game screen places it
+        // a 2400x1080 phone: the image placed as the game screen places it, with the overlay layout (the default
+        // where the bars are narrow, OnScreenLayoutTests) set as the player's own so it stays over the image
         const float W = 2400, H = 1080;
-        var pad = new OnScreenPad { Aspect = W / H };
+        var pad = new OnScreenPad { Aspect = W / H, Layout = OnScreenPad.DefaultLayout };
         float scale = Math.Min(W / 960f, H / 544f);
         float iw = 960 * scale / W, ih = 544 * scale / H;
         pad.Image = ((1 - iw) / 2, (1 - ih) / 2, iw, ih);
