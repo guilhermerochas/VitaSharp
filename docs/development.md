@@ -1,0 +1,182 @@
+<!-- pair: development.pt-BR.md sha256=ca04d087989f4d91e483eddd8e4303905488f6913e1e49000fd127a802997924 -->
+# Development
+
+**English** | [Português](development.pt-BR.md)
+
+How to build, test and change VitaSharp; back to the [README](../README.md). Phone builds:
+[`docs/android/README.md`](android/README.md). Diagnostic and performance tools:
+[`docs/notes/developer-tools.md`](notes/developer-tools.md).
+
+**Contents:** [Build and test](#build-and-test) · [Before a push](#before-a-push) · [Code style](#code-style) ·
+[Developer options](#developer-options) · [Test requirements](#test-requirements) · [Releases](#releases)
+
+## Build and test
+
+Needs the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). The first build downloads FFmpeg (videos
+and MP3/AAC); the other native libraries come from NuGet. On macOS FFmpeg comes from the system (`brew install
+ffmpeg`), and Vulkan from MoltenVK (`brew install molten-vk vulkan-loader`).
+
+```sh
+dotnet build -c Release
+dotnet run --project src/VitaSharp.Desktop -c Release          # opens the launcher
+dotnet run --project src/VitaSharp.Desktop -c Release -- run <TITLEID>   # opens a game directly
+dotnet test tests/VitaSharp.Tests -c Release --filter "Category!=Slow"  # quick tests (without the CPU fuzz)
+build/coverage.ps1                                              # test coverage report (HTML + summary; also .sh)
+```
+
+The command line also has `install`, `install-firmware`, `boot-shell`, `test <scenario>` (automatic scenarios in
+[`tests/scenarios`](../tests/scenarios)), `replay-gpu`, `rerun`, `verify`, `imports`, `update` and more:
+`VitaSharp.Desktop --help`. Ready packages (zip, installer, tar.gz, AppImage, .app, .dmg; ReadyToRun or Native AOT):
+`build/publish.ps1` / `build/publish.sh`.
+
+Interface texts live in `src/VitaSharp.Core/Localization` (`Texts.resx` in English, `Texts.pt-BR.resx`); the external
+docs come in both languages too (`README.md` + `README.pt-BR.md`, and every `docs/*.md` with a `docs/*.pt-BR.md`,
+checked by `ExternalDocPairsTests`: the first line of each holds the SHA-256 of the other, and the failure prints the
+lines to write). To contribute system functions, see the specifications in [`docs/hle`](hle/README.md).
+`build/hle-abi-check.ps1` / `build/hle-abi-check.sh` lists the HLE functions whose argument registers differ from the
+[vita-headers](https://github.com/vitasdk/vita-headers) prototypes (needs `git` and network for the clone, or a local
+checkout). `build/hle-status.ps1` / `.sh` regenerates the README's progress badges and maps.
+
+## Before a push
+
+Every script comes as a `.ps1` + `.sh` pair, checked locally by `build/prepush-check`. Before a push run
+`build/prepush-check.ps1` (Windows) / `build/prepush-check.sh` (Linux, macOS, Git Bash): on exactly what is committed
+it runs script parity, the scripts' `--help`, ShellCheck, the code style, a 0-warning build and the `Category!=Slow`
+suite, which fails when a test fails, when the test host crashed (an aborted run) or when fewer tests ran than
+`dotnet test --list-tests` lists; push only after "prepush-check: ok". On Windows it also runs the suite on Linux
+through WSL when WSL has a .NET SDK in `~/.dotnet` (`dotnet-install.sh --channel 10.0 --install-dir ~/.dotnet`) and the
+Linux [test requirements](#test-requirements) (Debian 12 needs the newer Mesa of bookworm-backports). No step writes a
+crash dump (Linux: core size 0 and `coredump_filter` 0, as WSL's crash collector ignores the size limit).
+
+## Code style
+
+The C# style is the Ryujinx/Ryubing one, and [`.editorconfig`](../.editorconfig) is the rule (what is enforced, what is
+off and why). `build/format-check.ps1` (Windows) / `build/format-check.sh` (Linux, macOS) runs
+`dotnet format whitespace` and `dotnet format style --severity warn` with `--verify-no-changes` over the tracked `.cs`
+files only (`git ls-files`: never untracked or git-ignored files), as the CI job "Code style" does (that job is
+commented out in `.github/workflows/ci.yml` for now: run it locally), with the same exit code (2 when something
+differs); `-Fix` / `--fix` rewrites the files instead (also running `build/NamingTool`, which renames the symbols that
+break the naming rules with all their references, since `dotnet format` reports IDE1006 but cannot fix it, and
+`build/FormatTool`, which splits the blocks written on one line and keeps `{ get; set; }` on one line; the fix needs
+the NuGet packages of `build/NamingTool`, restored on its first run). Folders not converted yet are listed in
+[`build/format-pending.txt`](../build/format-pending.txt) and skipped. The file list goes to `dotnet format` as a
+response file, and the scripts run the `dotnet-format.dll` of the active SDK (`<sdk>/DotnetTools/dotnet-format/`)
+directly so that it reads that file itself: `dotnet format` would put every path on one command line, longer than
+Windows allows once the whole tree is listed (other SDK layouts fall back to `dotnet format`). `OneLineBlockTests` (in
+the test suite) rejects blocks written on one line (`if (x) { a; }`): every body goes on its own lines.
+
+**Options on both apps:** every new user option (settings, per-game settings, pause menu, controls) goes into the
+desktop launcher and the Android app in the same change, with the same name, default and meaning (the texts come from
+the shared `Texts.resx`); a test checks that both map it to the same emulator setting (`AndroidOptionParityTests`).
+
+Shell scripts follow the Google Shell Style Guide and must pass ShellCheck (CI job "ShellCheck"; the job
+"Scripts on macOS" also runs `build/check-scripts-help.sh` under the system bash 3.2). Install ShellCheck with
+`winget install koalaman.shellcheck` (Windows), `sudo apt install shellcheck` / `sudo dnf install ShellCheck`
+(Linux) or `brew install shellcheck` (macOS), then `shellcheck --severity=style build/*.sh build/package/*.sh`.
+
+## Developer options
+
+- IL backend dump: `VITASHARP_IL_DUMP=<folder>` writes the compiled guest blocks as assemblies to read with ILSpy
+  (`dotnet tool install -g ilspycmd`, then `ilspycmd -il <file>.dll`); `DOTNET_JitDisasm=<method>` prints the
+  machine code RyuJIT generates. See [`docs/notes/il-jit.md`](notes/il-jit.md).
+- Vulkan validation: `--validation` (`run`, `test`, `replay-gpu`) or `VITASHARP_VK_VALIDATION=1` (`=sync` adds
+  synchronization validation) needs the Khronos layer: the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home)
+  (Windows, Linux, macOS), or on Linux the distribution package (`vulkan-validationlayers` / `vulkan-validation-layers`);
+  on macOS the SDK also brings MoltenVK. Frame captures: [RenderDoc](https://renderdoc.org) (Windows, Linux) and
+  GPU dumps (`replay-gpu`, [`docs/notes/gpu-dump.md`](notes/gpu-dump.md)) on every OS.
+- Graphics pipeline libraries (off by default, measured slower with cold caches): `VITASHARP_PIPELINE_LIBRARY=1`
+  links first-use pipelines from shader libraries and optimises them in the background where the driver has
+  `VK_EXT_graphics_pipeline_library` with fast linking (desktop NVIDIA/AMD/Intel, Mesa); without it (MoltenVK,
+  Dozen, phone drivers) pipelines are compiled whole either way. The `[shadercache] session` log line counts what the
+  GPU thread compiled; see [`docs/notes/pipeline-skip.md`](notes/pipeline-skip.md).
+- Compile shaders at program load (`--compile-on-program-load=on|off`, default on;
+  `VITASHARP_COMPILE_ON_PROGRAM_LOAD=0|1` overrides it, also on Android): when a game creates a vertex or fragment
+  program (sceGxmShaderPatcherCreate*, usually behind its loading screen), the shader workers translate and compile its
+  shaders with the hints predicted from the program, and build the pipeline of the vertex program it is made for, so a
+  first session's first draw finds them ready. A draw whose texture or surface format differs from the prediction but
+  translates to the same shader uses the same module. The colour surfaces the game initialises and the scenes it
+  begins are remembered, and the programs that depend on the surface (programmable blending, native-colour or integer
+  outputs) are also built for each of them, with their fetch-pass and integer-view pipelines. The session's
+  `[shadercache] session` line ends with what was queued and used ("at program load: ..."); `replay-gpu
+  --compile-on-program-load=on` announces the dump's programs before its first command. Nothing extra to install,
+  every OS.
+- Shader workers (`--shader-workers=N` fixes the count, `VITASHARP_SHADER_WORKERS=N` overrides it): by default the
+  count follows the CPU budget, at most 90% of the logical processors the process may use. While the GPU thread works,
+  two of them stay with the guest CPU thread and the GPU thread (8 processors: 5 workers). While it waits for a shader
+  or pipeline, or the game waits for the shader cache load, the whole budget compiles (8 processors: 7): the workers
+  above the steady share are spare ones at below-normal priority, so they only take idle cores
+  (`VITASHARP_SHADER_SPARE_WORKERS=N` sets how many, A/B). On Android fewer run, on the LITTLE cores (2 big + 6 LITTLE:
+  2, 4 while waiting). The renderer's start line (`[gpu] shaders: ...`) gives the numbers. Nothing extra to install,
+  every OS.
+- The user-facing loading options (loading window, shader cache load, ARM code precompilation) are in the
+  [user guide](user-guide.md#graphics-and-loading).
+- Profiling: `dotnet-trace` / `dotnet-counters` (`dotnet tool install -g dotnet-trace`, every OS); on Windows also
+  PerfView and WPR/WPA (Windows Performance Toolkit). More in [`docs/notes/developer-tools.md`](notes/developer-tools.md).
+- Every environment variable is declared in `src/VitaSharp.Core/Util/EnvVars.cs`, with what it does.
+
+## Test requirements
+
+What `dotnet test tests/VitaSharp.Tests` needs per system; a test whose requirement is missing is skipped and says why.
+
+| | Windows | Linux | macOS |
+|---|---|---|---|
+| SDK | .NET 10 SDK | .NET 10 SDK | .NET 10 SDK |
+| Vulkan device (renderer, GPU dump and game-run tests) | Mesa lavapipe (Vulkan 1.4, the Linux CI's driver): unpack the `x64` folder of a [mesa-dist-win](https://github.com/pal1000/mesa-dist-win/releases) release (`vulkan_lvp.dll` + `lvp_icd.x86_64.json`) into `%LOCALAPPDATA%\VitaSharpTools\mesa\<version>\x64`; without it, or when the system loader `vulkan-1.dll` cannot take it, SwiftShader as Microsoft Edge or Google Chrome ship it (both found by themselves) | Mesa lavapipe newer than 22.3 (the CI has 25.2): `sudo apt install mesa-vulkan-drivers libvulkan1` (Fedora: `mesa-vulkan-drivers vulkan-loader`; Debian 12: `sudo apt install -t bookworm-backports mesa-vulkan-drivers`, its own 22.3 crashes the texture tests) | MoltenVK: the LunarG Vulkan SDK, or `brew install molten-vk vulkan-loader` |
+| shaderc (renderer and shader-compile tests; the renderer needs it too) | from the Silk.NET.Shaderc.Native package | from the package (found under `runtimes/linux-x64` also where Silk.NET's search misses it, as on Ubuntu); when that copy does not load: `sudo apt install libshaderc-dev` (Fedora, Arch: `shaderc`; loaded as `libshaderc.so.1`) | from the package, else Homebrew's `brew install shaderc` |
+| A desktop window (game overlay tests) | always | an X11 or Wayland display; headless: `xvfb-run dotnet test tests/VitaSharp.Tests` (`sudo apt install xvfb`) | skipped: AppKit creates windows only on the main thread, and the tests run on worker threads |
+| FFmpeg (video and audio decode tests) | downloaded by the first build | downloaded by the first build | the system's: `brew install ffmpeg` |
+
+- Any system: `VK_DRIVER_FILES` (or `VK_ICD_FILENAMES`) set to the ICD manifest of a downloaded SwiftShader or Mesa
+  build is used instead.
+- `RendererPipelineLibraryTests` checks the linked pipelines where the software device has the extension with fast
+  linking (SwiftShader, Mesa lavapipe) and the whole-pipeline fallback everywhere else.
+- Firmware: without it the tests of the real firmware modules (`libSceJson`, `libSceXml`, `libpaf`, the update file
+  install, the `sa0` fonts; `dbutil` then runs the HLE side only) are skipped. `VITASHARP_FIRMWARE_PUP` names a
+  `PSVUPDAT.PUP`, `VITASHARP_FIRMWARE_DIR` a `vs0` or Vita3K data folder; the Piglet compiler tests need
+  `libshacccg.suprx` in `ur0:data` of Vita3K's data folder or of the folder named by `VITASHARP_TEST_INSTALLED_DATA`.
+- `VITASHARP_TEST_INSTALLED_DATA` (optional, read only): a VitaSharp data folder with installed games and firmware for
+  the tests of real installed modules (`LleLibrariesTests`, the Piglet compiler); unset, they are skipped.
+- The microphone tests (`MicrophoneTests`) use a scripted tone on a clock the test moves: no capture device, no
+  permission and no sound card are needed on any system.
+- The location tests (`LocationSourceTests`) use a fixed position and a source the test moves: no location service
+  and no permission are needed on any system.
+- The tests never use your data folder: the test assembly points `VITASHARP_DATA` at a new temporary folder of the
+  run before any test starts (also over a value set in your shell), so `input.json`, `launcher.json`, logs, shader
+  cache and save states are the run's own; tests that need a folder of their own make one, and the child processes
+  get `--data=`. The launcher's Vita3K detection finds nothing in the tests. `TestDataIsolationTests` fails if a test
+  resolves or builds the path of your data folder. The game-run tests boot a small executable the tests write
+  themselves.
+- Optional: the LunarG Vulkan SDK's validation layers run the renderer workloads under validation with
+  `dotnet test tests/VitaSharp.Tests --filter Category=Slow` (`RendererValidationTests`; skipped without the layer).
+- The window test runs a hidden window (`VITASHARP_HIDDEN_WINDOW=1`): on Linux it needs a display (`DISPLAY`), on
+  Windows the system Vulkan loader (`vulkan-1.dll`, installed with any GPU driver), which gets the software driver
+  from `VK_DRIVER_FILES`. An elevated process (Administrator) makes the loader ignore that variable: run the tests
+  unelevated, or register the driver's `*_icd.json` as a DWORD value `0` under
+  `HKLM\SOFTWARE\Khronos\Vulkan\Drivers` (the CI does this for Edge's SwiftShader); otherwise the test is skipped. It
+  is skipped on macOS. An elevated process also takes SwiftShader instead of an unregistered lavapipe.
+- Windows' lavapipe has no `VK_EXT_headless_surface`: the test of a window-less renderer
+  (`RendererDeviceHandoffTests`) is skipped with it and runs with SwiftShader (the Windows CI) and on Linux.
+- Media parity (`MediaParityTests`): the desktop side (FFmpeg) always runs; the Android side needs the developer APK
+  (`-p:VitaSharpDeveloper=true`) on a phone or the Android Emulator (any system with the Android SDK: an x86_64
+  Google APIs image and the `android-x64` build). `build/android-media-parity.sh` (or `.ps1`) records the trace on the
+  device; `VITASHARP_ANDROID_MEDIA_TRACE=<trace> dotnet test tests/VitaSharp.Tests --filter MediaParityTests` compares
+  it with the desktop's (skipped without the variable). `SYNC=0` (`-Sync 0`) records the old MediaCodec timing.
+- Audio port parity (`AudioPortParityTests`): one port's grains at the port volume through OpenAL Soft's mixer (read
+  from an `ALC_SOFT_loopback` device, no sound card needed; the bundled OpenAL Soft has it on every system) and through
+  the Android stream (`BufferedPcmStream`, the buffering and volume in front of AAudio/AudioTrack) must give the same
+  PCM within one 16-bit step. Skipped with the reason when OpenAL Soft does not load.
+- .NET 11 (optional, for comparisons; the default and the CI stay on .NET 10): `-p:VitaSharpDotnet=net11.0` builds
+  every project against .NET 11 on any system. It needs the .NET 11 SDK (and, for Android, its `maui-android` workload
+  and the Android API 37 platform; .NET 11 has no Mono, so only `VitaSharpAndroidRuntime=coreclr` or `nativeaot`
+  build). An SDK installed outside the default location runs the desktop app with `DOTNET_ROOT` set to it.
+
+## Releases
+
+- **Versions**: a `v*` tag (or **Actions > Release > Run workflow**) publishes a release with the Native AOT packages
+  for Windows, Linux and macOS, the Android APK (`VitaSharp-<version>-android-arm64.apk`) and the `SHA256SUMS.txt`.
+- **Automatic builds**: every push to `main` whose CI passed becomes a `build-<commit>` prerelease with that CI run's
+  packages (the 10 newest stay).
+- The automatic update the packages run is described in the [user guide](user-guide.md#updates).
+- The desktop packages are not signed (Windows SmartScreen warns) and never include firmware. The APK is signed with
+  the repository's fixed keystore (secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASS`, `ANDROID_KEY_ALIAS`;
+  [Signing](android/README.md#signing)); a fork without them signs with a new debug key each run.
