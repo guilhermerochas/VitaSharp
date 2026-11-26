@@ -47,6 +47,7 @@ static class ReplayGpu
         Console.WriteLine("    --prefetch-ahead=N     with --async-shaders=on: each command reaches the shader prefetch N presents before it runs,");
         Console.WriteLine("                           as from a game's submitting thread (default 1; 0 = just before it runs)");
         Console.WriteLine("    --speed=X              without --window: also keep the recorded pace (default: as fast as possible)");
+        Console.WriteLine("    --loop=N               play the dump N times in a row (a longer steady state for profiling; presents keep counting)");
         Console.WriteLine("  png-diff <dirA> <dirB> [pattern]     compare same-named PNGs of two folders (e.g. two traces' targets/): <dirA>/compare.txt, diff_*.png");
         Console.WriteLine("    --info                 header and statistics only; --recompress=<out.vsgd> [--quality=0-11] rewrites it smaller (default 9)");
     }
@@ -223,6 +224,7 @@ static class ReplayGpu
     sealed class Settings
     {
         public long StopFrame = long.MaxValue, TraceFrame = -1, LimitFrame = -1, DrawLimit = -1;
+        public int Loops = 1;
         /// <summary>--probe=P[:CELL]: the present of the finding (-1: none) and its cell (-1: the whole picture).</summary>
         public long ProbePresent = -1;
         public int ProbeCell = -1;
@@ -250,6 +252,11 @@ static class ReplayGpu
             ImportState = !options.Contains("--no-targets"),
             Speed = options.Contains("--fast") ? 0 : double.TryParse(Opt(options, "--speed"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var sp) ? sp : 1,
         };
+        if (int.TryParse(Opt(options, "--loop"), out int loops) && loops > 1)
+        {
+            s.Loops = loops;
+        }
+
         if (long.TryParse(Opt(options, "--frame"), out var fr))
         {
             s.StopFrame = fr;
@@ -602,7 +609,25 @@ static class ReplayGpu
                 renderer.EndDrawTrace();
                 tracing = false;
             }
-            var st = GpuDumpPlayer.Play(reader, renderer, s.Idle, s.ImportState,
+            // --loop=N: the dump played N times in a row (a longer steady state for profiling the GPU worker); the later
+            // passes keep the renderer's state and write the recorded guest memory again before each command, as the first
+            var st = new GpuDumpPlayStats();
+            for (int pass = 0; pass < s.Loops; pass++)
+            {
+                using GpuDumpReader? again = pass == 0 ? null : new GpuDumpReader(path);
+                GpuDumpPlayStats passStats = PlayPass(again ?? reader, pass == 0);
+                st.Commands += passStats.Commands;
+                st.Draws += passStats.Draws;
+                st.Skipped += passStats.Skipped;
+                st.MemoryBytes += passStats.MemoryBytes;
+                st.Frames += passStats.Frames;
+                if (renderer.PresentCount >= s.StopFrame || closing?.IsSet == true)
+                {
+                    break;
+                }
+            }
+
+            GpuDumpPlayStats PlayPass(GpuDumpReader passReader, bool first) => GpuDumpPlayer.Play(passReader, renderer, s.Idle, s.ImportState && first,
                 executeDraw: (draw, frameDraw) =>
                 {
                     probeDraw?.Invoke(draw, frameDraw);
@@ -650,7 +675,7 @@ static class ReplayGpu
                 }
 
                 return true;
-            }, cancel: () => closing?.IsSet == true, prefetch: prefetchReader, prefetchFrames: Math.Max(0, s.PrefetchAhead));
+            }, cancel: () => closing?.IsSet == true, prefetch: first ? prefetchReader : null, prefetchFrames: Math.Max(0, s.PrefetchAhead));
             long frames = st.Frames;
             EndTrace(); // a trace still open (the dump ends inside the traced scene)
             // retire every frame in flight: the last dumps are written when their frame completes
