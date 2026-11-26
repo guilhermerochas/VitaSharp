@@ -937,7 +937,7 @@
     <value>Font package installed</value>
   </data>
   <data name="FontsMissing" xml:space="preserve">
-    <value>No font package: the system uses the fallback font</value>
+    <value>No font package: the text of the system and of many games is not shown</value>
   </data>
   <data name="ForceStop" xml:space="preserve">
     <value>Force stop</value>
@@ -3524,5 +3524,29 @@
   </data>
   <data name="InternalResolutionGlobalDetail" xml:space="preserve">
     <value>Default of every game (each game can have its own on its page). Sharper, costs GPU time</value>
+  </data>
+  <data name="FwFontsNeeded" xml:space="preserve">
+    <value>The system fonts are missing (sa0:data/font). The system update (PSVUPDAT.PUP) does not carry them: on the PS Vita they come from the factory, here from the firmware font package (another .PUP file). Without them the text of the Vita system and of many games is not shown. Install the font package.</value>
+  </data>
+  <data name="FwInstallFonts" xml:space="preserve">
+    <value>Install font package (.PUP)...</value>
+  </data>
+  <data name="MFontsNeededTitle" xml:space="preserve">
+    <value>System fonts missing</value>
+  </data>
+  <data name="MShellFontsMissing" xml:space="preserve">
+    <value>System fonts missing: the text is not shown. Tap to install the font package</value>
+  </data>
+  <data name="FontsNeededShort" xml:space="preserve">
+    <value>System fonts missing: no text</value>
+  </data>
+  <data name="OpenAnyway" xml:space="preserve">
+    <value>Open anyway</value>
+  </data>
+  <data name="MOpenAnyway" xml:space="preserve">
+    <value>Open anyway</value>
+  </data>
+  <data name="MFontsMissingToast" xml:space="preserve">
+    <value>The firmware fonts are missing: the Vita system has no text. Install the font package (.PUP) in Settings > Firmware.</value>
   </data>
 </root>

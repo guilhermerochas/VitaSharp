@@ -140,7 +140,7 @@ public sealed partial class MainWindow : Window
         // "Ao abrir o emulador: Sistema do Vita": the shell starts right away, the launcher stays behind it
         if (_saveSettings && _settings.StartupView == LauncherSettings.StartSystem && ShellInstalled)
         {
-            Opened += (_, _) => LaunchSystem();
+            Opened += (_, _) => LaunchSystem(ask: false);
         }
         // "Procurar atualizacoes ao iniciar": the GitHub releases, in the background (quiet when nothing is new)
         if (_saveSettings)
@@ -320,7 +320,7 @@ public sealed partial class MainWindow : Window
             Child = new Border { Margin = new Thickness(2, 0, 0, 0), Child = _k.Icon("play", 13, fg, fill: true) },
         });
         var texts = _k.VStack(0, _k.Text(S.OpenVitaSystem, 14, FontWeight.SemiBold, fg),
-            enabled ? _k.Text(shellRunning ? S.GoToGame : S.ShortcutAnywhere, 11, FontWeight.Medium, static p => p.OnAccent).Also(x => x.Opacity = 0.75)
+            enabled ? _k.Text(shellRunning ? S.GoToGame : SystemReady ? S.ShortcutAnywhere : S.FontsNeededShort, 11, FontWeight.Medium, static p => p.OnAccent).Also(x => x.Opacity = 0.75)
                 : _k.Text(!ShellInstalled ? S.InstallFirmwareFirst : S.GameRunningShort, 11, color: static p => p.Faint));
         texts.VerticalAlignment = VerticalAlignment.Center;
         g.Children.Add(Kit.At(texts, col: 1));
@@ -548,6 +548,11 @@ public sealed partial class MainWindow : Window
     /// <summary>firmware.json / detected firmware, read at each refresh.</summary>
     VitaSharp.Core.Firmware.FirmwareInfo? _fw;
 
+    /// <summary>The Vita system boots with its text: its shell and the system fonts are installed
+    /// (FirmwareInfo.SystemReady; without sa0's fonts the shell and its first-time setup draw no text, so the launcher
+    /// warns and offers the font package before booting it).</summary>
+    static bool SystemReady => VitaSharp.Core.Firmware.FirmwareInfo.SystemReady(Program.FsRoot);
+
     bool FirmwareInstalled => _fw != null || ShellInstalled;
 
     string FirmwareVersion => _fw?.Version ?? "?";
@@ -573,12 +578,31 @@ public sealed partial class MainWindow : Window
 
     /// <summary>"Sistema do Vita": boots the firmware's own shell (vs0:vsh/shell/shell.self) in the emulator window: its
     /// home screen and LiveArea; the games it starts run as processes of the same emulator session.</summary>
-    void LaunchSystem()
+    void LaunchSystem() => LaunchSystem(ask: true);
+
+    /// <summary><paramref name="ask"/>: without the system fonts, the warning with "Install font package" and "Open
+    /// anyway" comes first; the start-up launch (no dialog in front of the shell) says it in the status line instead.
+    /// The shell boots either way unless the font package is chosen: the emulator blocks nothing.</summary>
+    async void LaunchSystem(bool ask)
     {
         if (!ShellInstalled)
         {
             Navigate(PageSystem);
             return;
+        }
+        if (!SystemReady)
+        {
+            AppendLog("Vita system: the system fonts (sa0:data/font) are missing, its text is not drawn");
+            if (!ask)
+            {
+                SetStatus(S.FontsMissing);
+            }
+            else if (await Confirm(VitaSharp.Core.Localization.Loc.Get("FwFontsNeeded"), VitaSharp.Core.Localization.Loc.Get("FwInstallFonts"), noText: S.OpenAnyway))
+            {
+                Navigate(PageSystem);
+                _firmwarePanel?.PickFontPackage();
+                return;
+            }
         }
         StartEmulator(S.VitaSystem, "shell", ["boot-shell"], null);
     }
@@ -996,7 +1020,7 @@ public sealed partial class MainWindow : Window
         await dlg.ShowDialog(this);
     }
 
-    async Task<bool> Confirm(string message, string? yesText = null, bool danger = false)
+    async Task<bool> Confirm(string message, string? yesText = null, bool danger = false, string? noText = null)
     {
         if (ConfirmForTests is { } answer)
         {
@@ -1007,7 +1031,7 @@ public sealed partial class MainWindow : Window
         var dlg = (Window?)null;
         var yes = danger ? _k.Secondary(yesText ?? S.Yes, null, () => { result = true; dlg?.Close(); }, 40, static p => p.Danger)
                          : _k.Primary(yesText ?? S.Yes, null, () => { result = true; dlg?.Close(); }, 40, 90);
-        var no = _k.Secondary(S.No, null, () => dlg?.Close(), 40);
+        var no = _k.Secondary(noText ?? S.No, null, () => dlg?.Close(), 40);
         var buttons = _k.HStack(8, no, yes);
         buttons.HorizontalAlignment = HorizontalAlignment.Right;
         var panel = _k.VStack(20, _k.Wrap(message, 14, static p => p.Text), buttons);

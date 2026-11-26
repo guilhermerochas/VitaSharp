@@ -159,6 +159,14 @@ de comando: `install-firmware <PSVUPDAT.PUP>`. **Desinstalar firmware** (na mesm
 remove só o que a instalação criou (`os0`/`vs0`/`sa0`/`pd0` e os arquivos de índice `firmware.json`,
 `firmware-libraries.txt`): os jogos, os saves e o `ux0`/`ur0` ficam, e uma partição ligada a outra pasta perde só o link.
 
+**Fontes do sistema (pacote de fontes).** A atualização do sistema (`PSVUPDAT.PUP`) não traz o `sa0`: no console as
+fontes do sistema (`sa0:data/font/pgf` e `pvf`) vêm de fábrica, aqui vêm do pacote de fontes do firmware (outro .PUP,
+instalado pelos mesmos botões **Instalar firmware (.PUP)…** / **Instalar pacote de fontes (.PUP)…**, ou
+`install-firmware <.PUP do pacote de fontes>`) ou do `sa0` do Vita3K (copiado sozinho depois de instalar a atualização,
+quando o Vita3K o tem). Sem elas o Sistema do Vita e vários jogos ficam sem texto, por isso o launcher (desktop e
+Android) não abre o Sistema do Vita antes de elas estarem instaladas e diz o que falta; o `font_package` do
+`firmware.json` e a página do firmware mostram se as duas pastas de fontes estão lá.
+
 **Núcleo de compatibilidade PSP (em andamento).** O emulador de PSP do firmware dá boot num núcleo MIPS a partir do
 `os0:kd/pcbc.skprx`, cujo conteúdo só o processador seguro do console decifra. Para rodá-lo, tire do seu próprio
 console o código de boot decifrado (os 0x5CE0 bytes que o SceCompat carrega na janela + 0x600000) e coloque em

@@ -156,6 +156,14 @@ Vita3K's firmware** (copies `os0`/`vs0`/`sa0`/`pd0` from a Vita3K installation).
 install created (`os0`/`vs0`/`sa0`/`pd0` and the index files `firmware.json`, `firmware-libraries.txt`): games, saves and
 `ux0`/`ur0` stay, and a partition linked to another folder loses only the link.
 
+**System fonts (font package).** The system update (`PSVUPDAT.PUP`) carries no `sa0`: on the console the system
+fonts (`sa0:data/font/pgf` and `pvf`) come from the factory, here from the firmware font package (a separate .PUP,
+installed with the same **Install firmware (.PUP)...** / **Install font package (.PUP)...** buttons, or
+`install-firmware <font package .PUP>`) or from Vita3K's `sa0` (copied by itself after a system-update install when
+Vita3K has it). Without them the Vita System and many games draw no text, so the launcher (desktop and Android) does not
+start the Vita System until they are installed and says what is missing; `firmware.json`'s `font_package` and the
+firmware page show whether both font folders are there.
+
 **PSP compat core (in progress).** The PSP emulator of the firmware boots a MIPS core from `os0:kd/pcbc.skprx`, whose
 content only the console's secure processor decrypts. To run it, dump the decrypted boot code from your own console
 (the 0x5CE0 bytes SceCompat loads at its window + 0x600000) and place it at `os0:kd/pcbc.bin` in the data folder

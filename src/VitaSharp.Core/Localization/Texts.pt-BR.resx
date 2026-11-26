@@ -937,7 +937,7 @@
     <value>Pacote de fontes instalado</value>
   </data>
   <data name="FontsMissing" xml:space="preserve">
-    <value>Sem o pacote de fontes: o sistema usa a fonte substituta</value>
+    <value>Sem o pacote de fontes: os textos do sistema e de vários jogos não aparecem</value>
   </data>
   <data name="ForceStop" xml:space="preserve">
     <value>Forçar parada</value>
@@ -3524,5 +3524,29 @@
   </data>
   <data name="InternalResolutionGlobalDetail" xml:space="preserve">
     <value>Padrão de todos os jogos (cada jogo pode ter a sua na página dele). Mais nítido, custa placa de vídeo</value>
+  </data>
+  <data name="FwFontsNeeded" xml:space="preserve">
+    <value>Faltam as fontes do sistema (sa0:data/font). A atualização do sistema (PSVUPDAT.PUP) não as traz: no PS Vita elas vêm de fábrica, aqui vêm do pacote de fontes do firmware (outro arquivo .PUP). Sem elas os textos do Sistema do Vita e de vários jogos não aparecem. Instale o pacote de fontes.</value>
+  </data>
+  <data name="FwInstallFonts" xml:space="preserve">
+    <value>Instalar pacote de fontes (.PUP)...</value>
+  </data>
+  <data name="MFontsNeededTitle" xml:space="preserve">
+    <value>Faltam as fontes do sistema</value>
+  </data>
+  <data name="MShellFontsMissing" xml:space="preserve">
+    <value>Faltam as fontes do sistema: os textos não aparecem. Toque para instalar o pacote de fontes</value>
+  </data>
+  <data name="FontsNeededShort" xml:space="preserve">
+    <value>Faltam as fontes do sistema: sem texto</value>
+  </data>
+  <data name="OpenAnyway" xml:space="preserve">
+    <value>Abrir assim mesmo</value>
+  </data>
+  <data name="MOpenAnyway" xml:space="preserve">
+    <value>Abrir assim mesmo</value>
+  </data>
+  <data name="MFontsMissingToast" xml:space="preserve">
+    <value>Faltam as fontes do firmware: o Sistema do Vita fica sem texto. Instale o pacote de fontes (.PUP) em Ajustes > Firmware.</value>
   </data>
 </root>

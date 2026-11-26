@@ -77,13 +77,14 @@ public static class FirmwareCli
                 Console.WriteLine($"Installing {source} into {Program.FsRoot}");
                 info = FirmwareInstaller.Install(source, Program.FsRoot, progress, cts.Token);
                 info = FirmwareInstaller.ImportFactoryDataFromVita3KIfMissing(Program.FsRoot, cts.Token) ?? info;
+                info = FirmwareInstaller.ImportSystemFontsFromVita3KIfMissing(Program.FsRoot, cts.Token) ?? info;
             }
             Console.WriteLine($"Installed firmware {info.Display} ({string.Join(", ", info.Partitions)})");
             // a system update (PSVUPDAT.PUP) carries os0 and vs0 only: sa0 (system fonts) comes with the font package
             // PUP, pd0 is factory data written at the factory (Welcome Park, the home screen BGM) and no update has it
-            if (!Directory.Exists(Path.Combine(Program.FsRoot, "sa0", "data", "font")))
+            if (FirmwareInfo.MissingSystemFonts(Program.FsRoot) is { Count: > 0 } missingFonts)
             {
-                Console.WriteLine("Note: no system fonts (sa0:data/font). Text needs them: install the font package PUP, or copy sa0 from Vita3K (install-firmware --vita3k).");
+                Console.WriteLine($"Warning: no system fonts in sa0:data/font ({string.Join(", ", missingFonts)} missing). The text of the Vita system and of many games is not shown without them: install the font package PUP (install-firmware <font package .PUP>), or copy sa0 from Vita3K (install-firmware --vita3k).");
             }
 
             if (!Directory.Exists(Path.Combine(Program.FsRoot, "pd0", "data")))

@@ -30,6 +30,8 @@ public static class Strings
     public static string OpenVitaSystemTip => T();
     public static string ShortcutAnywhere => T();
     public static string InstallFirmwareFirst => T();
+    public static string FontsNeededShort => T();
+    public static string OpenAnyway => T();
     public static string GameRunningShort => T();
     public static string FirmwareInstalledShort(string version) => F(T(), version);
     public static string FirmwareMissingShort => T();

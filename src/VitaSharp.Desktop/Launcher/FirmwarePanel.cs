@@ -21,6 +21,9 @@ public sealed class FirmwarePanel : StackPanel
     readonly TextBlock _detail = new() { Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap, FontSize = 12, IsVisible = false };
     readonly ProgressBar _progress = new() { Minimum = 0, Maximum = 1, Height = 6, IsVisible = false };
     readonly Button _install = new() { Content = Loc.Get("FwInstallPup") };
+    /// <summary>"Install font package (.PUP)...": shown while a firmware is installed without the system fonts (a
+    /// system update carries no sa0); the same installer merges the font package into sa0.</summary>
+    readonly Button _installFonts = new() { Content = Loc.Get("FwInstallFonts"), IsVisible = false };
     readonly Button _vita3k = new() { Content = Loc.Get("FwUseVita3K") };
     readonly Button _cancel = new() { Content = S.Cancel, IsVisible = false };
     readonly Button _uninstall = new() { Content = Loc.Get("FwUninstall") };
@@ -45,6 +48,7 @@ public sealed class FirmwarePanel : StackPanel
         // the buttons go on in the next line when the card is narrow (a small window, the longer pt-BR labels)
         var buttons = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8 };
         buttons.Children.Add(_install);
+        buttons.Children.Add(_installFonts);
         if (_vita3kRoot != null)
         {
             ToolTip.SetTip(_vita3k, Loc.Format("FwUseVita3KTip", _vita3kRoot));
@@ -64,6 +68,7 @@ public sealed class FirmwarePanel : StackPanel
             Text = Loc.Get("FwAbout"),
         });
         _install.Click += async (_, _) => await PickAndInstall();
+        _installFonts.Click += async (_, _) => await PickAndInstall();
         _vita3k.Click += async (_, _) => await Run(Loc.Get("FwCopyingVita3K"),
             (p, ct) => FirmwareInstaller.ImportFrom(_vita3kRoot!, Program.FsRoot, "Vita3K", p, ct));
         _cancel.Click += (_, _) => { _cts?.Cancel(); _cancel.IsEnabled = false; };
@@ -117,6 +122,7 @@ public sealed class FirmwarePanel : StackPanel
         // fonts count on their own: sa0 may have been filled without a firmware install (copied by hand)
         bool fonts = FirmwareInfo.HasSystemFonts(Program.FsRoot);
         _uninstall.IsVisible = info != null || fonts;
+        _installFonts.IsVisible = info != null && !fonts;
         _status.Text = info == null
             ? Loc.Get("FwStatusMissing") + (fonts ? Loc.Get("FwFontsPresent") : "")
             : $"Firmware: {info.Display}" + (info.Partitions.Count > 0 ? $"  ({string.Join(", ", info.Partitions)})" : "") +
@@ -146,8 +152,9 @@ public sealed class FirmwarePanel : StackPanel
         await Run(Loc.Format("FwInstalling", Path.GetFileName(path)), (p, ct) =>
         {
             var info = FirmwareInstaller.Install(path, Program.FsRoot, p, ct);
-            // a system update has no pd0 (the home screen music): Vita3K's, when it has one
-            return FirmwareInstaller.ImportFactoryDataFromVita3KIfMissing(Program.FsRoot, ct) ?? info;
+            // a system update has no pd0 (the home screen music) and no sa0 (the system fonts): Vita3K's, when it has them
+            info = FirmwareInstaller.ImportFactoryDataFromVita3KIfMissing(Program.FsRoot, ct) ?? info;
+            return FirmwareInstaller.ImportSystemFontsFromVita3KIfMissing(Program.FsRoot, ct) ?? info;
         });
     }
 
@@ -159,7 +166,7 @@ public sealed class FirmwarePanel : StackPanel
         }
 
         _cts = new CancellationTokenSource();
-        _install.IsEnabled = _vita3k.IsEnabled = false;
+        _install.IsEnabled = _vita3k.IsEnabled = _installFonts.IsEnabled = false;
         _cancel.IsVisible = _cancel.IsEnabled = true;
         _progress.IsVisible = _detail.IsVisible = true;
         _progress.Value = 0;
@@ -190,7 +197,7 @@ public sealed class FirmwarePanel : StackPanel
         {
             _cts.Dispose();
             _cts = null;
-            _install.IsEnabled = _vita3k.IsEnabled = true;
+            _install.IsEnabled = _vita3k.IsEnabled = _installFonts.IsEnabled = true;
             _cancel.IsVisible = false;
             _progress.IsVisible = false;
         }
@@ -202,12 +209,27 @@ public sealed class FirmwarePanel : StackPanel
             _detail.Text = error;
             _detail.Foreground = Brushes.IndianRed;
         }
+        else if (!result!.FontPackage)
+        {
+            // a system update alone: the shell and many games draw no text until the font package is installed
+            _detail.Text = Loc.Format("FwInstalledIn", result.Display, Program.FsRoot) + " " + Loc.Get("FwFontsNeeded");
+            _detail.Foreground = Brushes.Orange;
+        }
         else
         {
-            _detail.Text = Loc.Format("FwInstalledIn", result!.Display, Program.FsRoot);
+            _detail.Text = Loc.Format("FwInstalledIn", result.Display, Program.FsRoot);
         }
 
         Finished?.Invoke();
+    }
+
+    /// <summary>"Install font package (.PUP)...": the file picker at once (the Vita system's missing-fonts warning).</summary>
+    public void PickFontPackage()
+    {
+        if (_cts == null)
+        {
+            _ = PickAndInstall();
+        }
     }
 
     /// <summary>Cancels a running installation (window closing); <see cref="Finished"/> follows once it stopped.</summary>

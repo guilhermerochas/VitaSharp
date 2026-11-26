@@ -186,6 +186,7 @@ public sealed class LibraryView : Screen<LibraryState>
     {
         var fw = State.Firmware;
         string detail = fw is not { Shell: true } ? Loc.Get("MInstallFirmwareFirst")
+            : fw.FontsNeeded ? Loc.Get("MShellFontsMissing")
             : Loc.Format("MShellFullscreen", fw.Installed?.Version ?? "");
         return Border(
                 Grid("Auto", "Auto,*,Auto",
@@ -200,12 +201,23 @@ public sealed class LibraryView : Screen<LibraryState>
                 ).Padding(14, 12))
             .StrokeShape(new RoundRectangle().CornerRadius(18)).Stroke(Palette.Border).StrokeThickness(1)
             .BackgroundColor(Palette.Surface).Margin(20, 12, 20, 0)
-            .OnTapped(() =>
+            .OnTapped(async () =>
             {
-                if (State.Firmware is { Shell: true })
-                    GameActivity.Launch(MainActivity.Current!, GameActivity.SystemTitleId);
-                else
+                if (State.Firmware is not { Shell: true })
+                {
                     Navigation?.PushAsync<FirmwarePage>();
+                    return;
+                }
+                // without the system fonts the shell (its first-time setup included) draws no text: warn and offer the
+                // font package, or open it anyway (the emulator blocks nothing)
+                if (!State.Firmware.SystemReady
+                    && await Confirm(Loc.Get("MFontsNeededTitle"), Loc.Get("FwFontsNeeded"), Loc.Get("MInstallFonts"), Loc.Get("MOpenAnyway")))
+                {
+                    FirmwarePage.PickFontPackageOnOpen = true;
+                    Navigation?.PushAsync<FirmwarePage>();
+                    return;
+                }
+                GameActivity.Launch(MainActivity.Current!, GameActivity.SystemTitleId);
             });
     }
 

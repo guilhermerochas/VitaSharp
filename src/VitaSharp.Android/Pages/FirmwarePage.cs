@@ -23,10 +23,19 @@ public sealed class FirmwarePage : Screen<FirmwareState>
 {
     CancellationTokenSource? _cts;
 
+    /// <summary>Set by the Vita system's missing-fonts warning ("Instalar pacote de fontes"): the screen opens the file
+    /// picker for the font package at once.</summary>
+    public static bool PickFontPackageOnOpen;
+
     protected override void OnMounted()
     {
         Refresh();
         base.OnMounted();
+        if (PickFontPackageOnOpen)
+        {
+            PickFontPackageOnOpen = false;
+            Install(Loc.Get("MSa0Detail"));
+        }
     }
 
     void Refresh() => _ = Task.Run(() =>
@@ -41,6 +50,7 @@ public sealed class FirmwarePage : Screen<FirmwareState>
         var fw = st?.Installed;
         return Page(Loc.Get("MFirmware"),
             VStack(
+                st?.FontsNeeded == true ? Note(Loc.Get("FwFontsNeeded")) : null,
                 Card(
                     Row(Loc.Get("MVersion"), fw?.Version ?? Loc.Get("MNotInstalled"), valueColor: fw != null ? Palette.Ok : Palette.Muted),
                     fw != null ? Divider() : null,
@@ -61,7 +71,9 @@ public sealed class FirmwarePage : Screen<FirmwareState>
                 State.Installing != null ? InstallProgress() : null,
                 VStack(
                     PrimaryButton(Loc.Get("MInstallFirmware"), () => Install("PSVUPDAT.PUP"), State.Installing == null),
-                    SecondaryButton(Loc.Get("MInstallFonts"), () => Install("PSP2UPDAT fontes"), State.Installing == null)
+                    st?.FontsNeeded == true
+                        ? PrimaryButton(Loc.Get("MInstallFonts"), () => Install(Loc.Get("MSa0Detail")), State.Installing == null)
+                        : SecondaryButton(Loc.Get("MInstallFonts"), () => Install(Loc.Get("MSa0Detail")), State.Installing == null)
                 ).Spacing(10).Padding(20, 8, 20, 0),
                 Note(Loc.Get("MFirmwareNote"))
             ), kicker: Loc.Get("MSettings"));
@@ -89,6 +101,7 @@ public sealed class FirmwarePage : Screen<FirmwareState>
         _cts = new CancellationTokenSource();
         SetState(s => { s.Installing = doc.DisplayName; s.Progress = new(Loc.Get("MOpening"), 0); });
         DeviceDisplay.Current.KeepScreenOn = true;
+        bool pickFonts = false;
         await Run(Loc.Format("MInstallWhat", what), async () =>
         {
             try
@@ -96,7 +109,16 @@ public sealed class FirmwarePage : Screen<FirmwareState>
                 string cache = System.IO.Path.Combine(AppServices.AppContext.CacheDir!.AbsolutePath, "imports");
                 var progress = new Progress<FirmwareProgress>(p => SetState(s => s.Progress = p));
                 var info = await FirmwareSetup.InstallAsync(() => doc.OpenSeekable(cache), doc.DisplayName, AppServices.Data.Fs, progress, _cts.Token);
-                await Alert(Loc.Get("MFirmware"), Loc.Format("MInstalledWhat", info.Display));
+                if (info.FontPackage)
+                {
+                    await Alert(Loc.Get("MFirmware"), Loc.Format("MInstalledWhat", info.Display));
+                }
+                else
+                {
+                    // a system update carries no sa0: the font package is the next file to pick
+                    pickFonts = await Confirm(Loc.Get("MFontsNeededTitle"), Loc.Format("MInstalledWhat", info.Display) + "\n\n" + Loc.Get("FwFontsNeeded"),
+                        Loc.Get("MInstallFonts"), Loc.Get("MNotNow"));
+                }
             }
             catch (OperationCanceledException)
             {
@@ -109,5 +131,9 @@ public sealed class FirmwarePage : Screen<FirmwareState>
                 Refresh();
             }
         });
+        if (pickFonts)
+        {
+            Install(Loc.Get("MSa0Detail"));
+        }
     }
 }

@@ -45,6 +45,12 @@ public sealed class MainActivity : MauiAppCompatActivity
         if (Mobile.Core.Settings.StartupViews.OpensSystem(AppServices.Prefs.StartupView, shellInstalled, savedInstanceState != null, gameRequested))
         {
             Core.Util.Log.Info("Startup view: Sistema do Vita");
+            // without the system fonts the shell and its first-time setup draw no text: said once, the start goes on
+            if (!Core.Firmware.FirmwareInfo.SystemReady(AppServices.Data.Fs))
+            {
+                Core.Util.Log.Warn("Startup view: the system fonts (sa0:data/font) are missing, the Vita system draws no text");
+                global::Android.Widget.Toast.MakeText(this, VitaSharp.Core.Localization.Loc.Get("MFontsMissingToast"), global::Android.Widget.ToastLength.Long)?.Show();
+            }
             Game.GameActivity.Launch(this, Game.GameActivity.SystemTitleId);
         }
     }

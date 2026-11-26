@@ -8,6 +8,10 @@ namespace VitaSharp.Core.Firmware;
 public readonly record struct FirmwareProgress(string Stage, double Fraction, string? Detail = null);
 
 /// <summary>What is installed in a file-system root (&lt;DataRoot&gt;/fs), from its firmware.json or detected.</summary>
+/// <para><see cref="FontPackage"/>: the system fonts of the firmware font package are in sa0:data/font
+/// (<see cref="HasSystemFonts"/>), read from the disk, not from how the firmware was installed. On the console sa0 is
+/// written at the factory; no system update (PSVUPDAT.PUP) carries it, so a firmware installed from the update alone
+/// has no fonts until the font package PUP (or another installation's sa0) is added.</para>
 public sealed record FirmwareInfo(string? Version, uint Build, string Source, DateTime? InstalledUtc, bool FontPackage, IReadOnlyList<string> Partitions)
 {
     public const string MetadataFile = "firmware.json";
@@ -40,7 +44,7 @@ public sealed record FirmwareInfo(string? Version, uint Build, string Source, Da
                 return new FirmwareInfo(d.GetValueOrDefault("version"), uint.TryParse(d.GetValueOrDefault("build"), out uint b) ? b : 0,
                     d.GetValueOrDefault("source", ""),
                     DateTime.TryParse(d.GetValueOrDefault("installed"), null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime t) ? t : null,
-                    d.GetValueOrDefault("font_package") == "true", parts);
+                    HasSystemFonts(fsRoot), parts);
             }
             catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
             {
@@ -52,7 +56,7 @@ public sealed record FirmwareInfo(string? Version, uint Build, string Source, Da
             return null;
         }
 
-        return new FirmwareInfo(DetectVersion(fsRoot), 0, "", null, false,
+        return new FirmwareInfo(DetectVersion(fsRoot), 0, "", null, HasSystemFonts(fsRoot),
             PartitionNames.Where(p => Directory.Exists(Path.Combine(fsRoot, p)) && Directory.EnumerateFileSystemEntries(Path.Combine(fsRoot, p)).Any()).ToArray());
     }
 
@@ -70,23 +74,43 @@ public sealed record FirmwareInfo(string? Version, uint Build, string Source, Da
         File.WriteAllText(Path.Combine(fsRoot, MetadataFile), JsonSerializer.Serialize(d, CoreJson.Indented.SortedDictionaryStringString));
     }
 
-    /// <summary>True when sa0:data/font holds the system PGF or PVF fonts (installed with the font package, copied
-    /// from Vita3K, or put there by hand), whatever else is installed.</summary>
-    public static bool HasSystemFonts(string fsRoot)
+    /// <summary>The font folders of the firmware font package: sa0:data/font/pgf (libpgf, PSP-style fonts) and
+    /// sa0:data/font/pvf (libpvf: the Vita system's own text through libpaf, and the games that use ScePvf).</summary>
+    public static readonly string[] SystemFontKinds = ["pgf", "pvf"];
+
+    /// <summary>True when sa0:data/font holds both the PGF and the PVF system fonts (installed with the font package,
+    /// copied from Vita3K, or put there by hand), whatever else is installed. Without the PVF fonts the Vita system's
+    /// text is not drawn at all (libpaf gets no font from libpvf); without the PGF fonts the text of libpgf games.</summary>
+    public static bool HasSystemFonts(string fsRoot) => MissingSystemFonts(fsRoot).Count == 0;
+
+    /// <summary>The Vita system's executable, relative to the file-system root.</summary>
+    public const string ShellPath = "vs0/vsh/shell/shell.self";
+
+    /// <summary>The Vita system boots with its text: its shell is installed and sa0 holds the system fonts. A console
+    /// always has its factory sa0; without it the shell, its first-time setup included, draws no text, so the
+    /// front-ends warn before booting it (install the font package, or open it anyway; the emulator blocks nothing).</summary>
+    public static bool SystemReady(string fsRoot) =>
+        File.Exists(Path.Combine(fsRoot, ShellPath.Replace('/', Path.DirectorySeparatorChar))) && HasSystemFonts(fsRoot);
+
+    /// <summary>The <see cref="SystemFontKinds"/> with no font file in sa0:data/font/&lt;kind&gt;.</summary>
+    public static IReadOnlyList<string> MissingSystemFonts(string fsRoot)
     {
-        foreach (string? kind in new[] { "pgf", "pvf" })
+        var missing = new List<string>();
+        foreach (string kind in SystemFontKinds)
         {
             string dir = Path.Combine(fsRoot, "sa0", "data", "font", kind);
+            bool present = false;
             try
             {
-                if (Directory.Exists(dir) && Directory.EnumerateFiles(dir, "*." + kind).Any())
-                {
-                    return true;
-                }
+                present = Directory.Exists(dir) && Directory.EnumerateFiles(dir, "*." + kind).Any();
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+            if (!present)
+            {
+                missing.Add(kind);
+            }
         }
-        return false;
+        return missing;
     }
 
     private static bool HasModules(string fsRoot)
@@ -248,6 +272,69 @@ public static class FirmwareInstaller
         }
     }
 
+    /// <summary>After a system update install (which has no sa0: the system fonts): copies the system fonts of Vita3K's
+    /// sa0 when <paramref name="fsRoot"/> lacks some and Vita3K has them all. Returns the new info, or null when nothing
+    /// was copied.</summary>
+    public static FirmwareInfo? ImportSystemFontsFromVita3KIfMissing(string fsRoot, CancellationToken cancellationToken = default)
+    {
+        if (FirmwareInfo.HasSystemFonts(fsRoot) || FindVita3KFirmware() is not { } v3k || !FirmwareInfo.HasSystemFonts(v3k))
+        {
+            return null;
+        }
+
+        try
+        {
+            return ImportSystemFonts(v3k, fsRoot, cancellationToken);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            Log.Warn($"firmware: sa0 fonts from {v3k}: {e.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Copies the system fonts (sa0:data/font, what the firmware font package installs) of an installed firmware
+    /// (another emulator's, e.g. Vita3K's) into <paramref name="fsRoot"/>, merged into its sa0 as the font package is.
+    /// </summary>
+    public static FirmwareInfo ImportSystemFonts(string sourceFsRoot, string fsRoot, CancellationToken cancellationToken = default)
+    {
+        if (!FirmwareInfo.HasSystemFonts(sourceFsRoot))
+        {
+            throw new InvalidDataException($"{sourceFsRoot} has no system fonts (sa0/data/font/pgf and pvf)");
+        }
+
+        string src = Path.Combine(sourceFsRoot, "sa0", "data", "font");
+        string staging = Path.Combine(fsRoot, StagingName);
+        DeleteTree(staging);
+        Directory.CreateDirectory(staging);
+        try
+        {
+            foreach (string file in EnumerateFilesNoLinks(src))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                string dst = Path.Combine(staging, "sa0", "data", "font", Path.GetRelativePath(src, file));
+                Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+                File.Copy(file, dst, overwrite: true);
+            }
+            Commit(Path.Combine(staging, "sa0"), Path.Combine(fsRoot, "sa0"), merge: true, staging);
+            var previous = FirmwareInfo.Read(fsRoot);
+            FirmwareInfo info = previous is null ? new FirmwareInfo(FirmwareInfo.DetectVersion(fsRoot), 0, "sa0", DateTime.UtcNow, true, ["sa0"])
+                : previous with
+                {
+                    FontPackage = FirmwareInfo.HasSystemFonts(fsRoot),
+                    Partitions = previous.Partitions.Union(["sa0"]).OrderBy(p => Array.IndexOf(FirmwareInfo.PartitionNames, p)).ToArray()
+                };
+            info.Write(fsRoot);
+            Log.Info($"firmware: copied the system fonts (sa0:data/font) from {sourceFsRoot} into {fsRoot}");
+            return info;
+        }
+        finally
+        {
+            DeleteTree(staging);
+        }
+    }
+
     /// <summary>pd0 (factory data) is installed in <paramref name="fsRoot"/>: pd0/data holds the system BGM
     /// (data/systembgm/home.at9, the shell's home screen music).</summary>
     public static bool HasFactoryData(string fsRoot) => Directory.Exists(Path.Combine(fsRoot, "pd0", "data"));
@@ -279,7 +366,7 @@ public static class FirmwareInstaller
             }
             Commit(Path.Combine(staging, "pd0"), Path.Combine(fsRoot, "pd0"), merge: false, staging);
             var previous = FirmwareInfo.Read(fsRoot);
-            FirmwareInfo info = previous is null ? new FirmwareInfo(FirmwareInfo.DetectVersion(fsRoot), 0, "pd0", DateTime.UtcNow, false, ["pd0"])
+            FirmwareInfo info = previous is null ? new FirmwareInfo(FirmwareInfo.DetectVersion(fsRoot), 0, "pd0", DateTime.UtcNow, FirmwareInfo.HasSystemFonts(fsRoot), ["pd0"])
                 : previous with
                 {
                     Partitions = previous.Partitions.Union(["pd0"]).OrderBy(p => Array.IndexOf(FirmwareInfo.PartitionNames, p)).ToArray()
@@ -440,9 +527,9 @@ public static class FirmwareInstaller
             }
 
             FirmwareInfo info = full
-                ? new FirmwareInfo(version, pup.BuildNumber, sourceName, DateTime.UtcNow, previous?.FontPackage ?? false,
+                ? new FirmwareInfo(version, pup.BuildNumber, sourceName, DateTime.UtcNow, FirmwareInfo.HasSystemFonts(fsRoot),
                     installed.Union(previous?.Partitions ?? []).Where(FirmwareInfo.PartitionNames.Contains).OrderBy(p => Array.IndexOf(FirmwareInfo.PartitionNames, p)).ToArray())
-                : new FirmwareInfo(previous?.Version, previous?.Build ?? 0, previous?.Source is { Length: > 0 } s ? s : sourceName, DateTime.UtcNow, true,
+                : new FirmwareInfo(previous?.Version, previous?.Build ?? 0, previous?.Source is { Length: > 0 } s ? s : sourceName, DateTime.UtcNow, FirmwareInfo.HasSystemFonts(fsRoot),
                     installed.Union(previous?.Partitions ?? []).OrderBy(p => Array.IndexOf(FirmwareInfo.PartitionNames, p)).ToArray());
             info.Write(fsRoot);
             progress?.Report(new FirmwareProgress(Localization.Loc.Get("FwDone"), 1.0));
@@ -501,7 +588,7 @@ public static class FirmwareInstaller
                 Commit(Path.Combine(staging, part), Path.Combine(fsRoot, part), merge: part == "sa0", staging);
             }
 
-            var info = new FirmwareInfo(FirmwareInfo.DetectVersion(fsRoot), 0, sourceName, DateTime.UtcNow, false, parts);
+            var info = new FirmwareInfo(FirmwareInfo.DetectVersion(fsRoot), 0, sourceName, DateTime.UtcNow, FirmwareInfo.HasSystemFonts(fsRoot), parts);
             info.Write(fsRoot);
             progress?.Report(new FirmwareProgress(Localization.Loc.Get("FwDone"), 1.0));
             Log.Info($"firmware: copied {info.Display} from {sourceFsRoot} into {fsRoot}");
