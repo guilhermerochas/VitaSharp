@@ -34,6 +34,24 @@ public sealed unsafe partial class VulkanRenderer
     private long _scratchFrame = -1;
     private readonly Dictionary<RenderTarget, long> _mirroredRt = new();
     private readonly Dictionary<(DepthTarget, bool Stencil), long> _mirroredDepth = new();
+    /// <summary>Scene serial in which each surface's mirror copy was last taken (<see cref="KeepSceneMirror"/>).</summary>
+    private readonly Dictionary<RenderTarget, long> _mirroredRtScene = new();
+    private readonly Dictionary<(DepthTarget, bool Stencil), long> _mirroredDepthScene = new();
+    private long _statMirrorKept;
+
+    /// <summary>VITASHARP_MAPPED_SCENE_START=1: see <see cref="KeepSceneMirror"/>.</summary>
+    private static readonly bool s_mappedSceneStart = Environment.GetEnvironmentVariable(EnvVars.MappedSceneStart)?.Trim() == "1";
+
+    /// <summary>
+    /// A memory read of a surface of the scene being rendered sees the Vita's memory, which holds the surface as it was
+    /// before the scene: the scene's draws live in tile memory until the scene ends and stores them. So once a mirror copy
+    /// of the scene's own colour or depth/stencil surface was taken during the scene, later reads in the same scene keep
+    /// it, although the surface's version moved on (each rendering of the scene bumps it). Refreshing it ended the
+    /// rendering for every such draw (Killzone Mercenary: nine 240x136 passes per frame reading their own depth, one
+    /// rendering and one depth copy each). Pure, unit-tested (MappedSceneMirrorTests).
+    /// </summary>
+    internal static bool KeepSceneMirror(bool enabled, bool inScene, bool ownSurface, long mirroredInScene, long scene) =>
+        enabled && inScene && ownSurface && mirroredInScene == scene;
 
     private void EnsureMirror()
     {
@@ -201,6 +219,7 @@ public sealed unsafe partial class VulkanRenderer
         BufferBarrier(_mirror, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
             AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit | AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit | AccessFlags.TransferWriteBit);
         var region = new BufferCopy(offset, target, size);
+        CostCopyBytes((long)region.Size * 2);
         _vk.CmdCopyBuffer(Cmd, _mirror, _mirror, 1, in region);
         BufferBarrier(_mirror, PipelineStageFlags.TransferBit, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit,
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit);
@@ -529,6 +548,7 @@ public sealed unsafe partial class VulkanRenderer
             BufferBarrier(_mirror, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
                 AccessFlags.ShaderWriteBit | AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit | AccessFlags.TransferWriteBit);
             var region = new BufferCopy(unchecked(from + delta), offset + (from - addr), to - from);
+            CostCopyBytes((long)region.Size * 2);
             _vk.CmdCopyBuffer(Cmd, _mirror, _mirror, 1, in region);
             BufferBarrier(_mirror, PipelineStageFlags.TransferBit, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit,
                 AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit);
@@ -627,6 +647,7 @@ public sealed unsafe partial class VulkanRenderer
             BufferBarrier(_mirror, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
                 AccessFlags.ShaderWriteBit | AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit | AccessFlags.TransferWriteBit);
             var region = new BufferCopy(unchecked(s + delta), area + (s - lo), e - s);
+            CostCopyBytes((long)region.Size * 2);
             _vk.CmdCopyBuffer(Cmd, _mirror, _mirror, 1, in region);
             BufferBarrier(_mirror, PipelineStageFlags.TransferBit, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit,
                 AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit);
@@ -651,6 +672,7 @@ public sealed unsafe partial class VulkanRenderer
         BufferBarrier(_mirror, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.TransferBit,
             AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit, AccessFlags.TransferWriteBit);
         var region = new BufferCopy(srcOff, mirrorOffset, size);
+        CostCopyBytes((long)region.Size * 2);
         _vk.CmdCopyBuffer(Cmd, src, _mirror, 1, in region);
         BufferBarrier(_mirror, PipelineStageFlags.TransferBit, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit,
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit);
@@ -784,7 +806,14 @@ public sealed unsafe partial class VulkanRenderer
             return true;
         }
 
+        if (_mirroredRt.ContainsKey(rt) && KeepSceneMirror(s_mappedSceneStart, _inScene, rt == _renderTarget, _mirroredRtScene.GetValueOrDefault(rt, -1), _sceneSerial))
+        {
+            _statMirrorKept++;
+            return true;
+        }
+
         _mirroredRt[rt] = rt.Version;
+        _mirroredRtScene[rt] = _inScene ? _sceneSerial : -1;
         _mirroredRtScaled.Remove(rt); // (the scaled layout shares the memory: VulkanRenderer.ResScale.cs)
         rt.Dirty = true;
         SyncRenderTargetForRead(rt);
@@ -800,6 +829,7 @@ public sealed unsafe partial class VulkanRenderer
             ImageExtent = new Extent3D(Math.Min(rt.Width, rt.Stride), rt.Height, 1),
         };
         DevStampOp();
+        CostCopy(region.ImageExtent, rt.Format);
         _vk.CmdCopyImageToBuffer(Cmd, NativeImageOf(rt), ImageLayout.General, _mirror, 1, in region); // guest size (VulkanRenderer.ResScale.cs)
         BufferBarrier(_mirror, PipelineStageFlags.TransferBit, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit,
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
@@ -823,7 +853,14 @@ public sealed unsafe partial class VulkanRenderer
             return true;
         }
 
+        if (_mirroredDepth.ContainsKey((dt, stencil)) && KeepSceneMirror(s_mappedSceneStart, _inScene, dt == _depth, _mirroredDepthScene.GetValueOrDefault((dt, stencil), -1), _sceneSerial))
+        {
+            _statMirrorKept++;
+            return true;
+        }
+
         _mirroredDepth[(dt, stencil)] = dt.Version;
+        _mirroredDepthScene[(dt, stencil)] = _inScene ? _sceneSerial : -1;
         EndRendering();
         const ImageAspectFlags DepthStencilAspect = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
         Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferSrcOptimal, DepthStencilAspect,
@@ -840,6 +877,7 @@ public sealed unsafe partial class VulkanRenderer
             ImageExtent = new Extent3D(dt.Scale != 1f ? dt.Width : Math.Min(dt.Width, stencil ? dt.StencilStrideBytes : dt.StrideBytes / 4), dt.Height, 1),
         };
         DevStampOp();
+        CostCopy(region.ImageExtent, Format.D24UnormS8Uint);
         _vk.CmdCopyImageToBuffer(Cmd, dt.Image, ImageLayout.TransferSrcOptimal, _mirror, 1, in region);
         Barrier(dt.Image, ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal, DepthStencilAspect,
             PipelineStageFlags.TransferBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,

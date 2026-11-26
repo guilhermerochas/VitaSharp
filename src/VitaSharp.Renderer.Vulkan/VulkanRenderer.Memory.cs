@@ -245,6 +245,7 @@ public sealed unsafe partial class VulkanRenderer
         ReleaseNativeImage(rt, now);
         ForgetRenderTargetViews(rt, now);
         _mirroredRt.Remove(rt);
+        _mirroredRtScene.Remove(rt);
         ForgetMemoryOrderCopy(rt);
         Release(() =>
         {
@@ -331,6 +332,8 @@ public sealed unsafe partial class VulkanRenderer
 
         _mirroredDepth.Remove((dt, false));
         _mirroredDepth.Remove((dt, true));
+        _mirroredDepthScene.Remove((dt, false));
+        _mirroredDepthScene.Remove((dt, true));
         // multisampled framebuffers that attach its view
         ImageView view = dt.View;
         foreach (MsaaImage msaaImage in _msImages.Values)
