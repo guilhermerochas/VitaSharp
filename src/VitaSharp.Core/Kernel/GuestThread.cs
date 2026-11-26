@@ -156,6 +156,10 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     [ThreadStatic] private static GuestThread? t_current;
     public static GuestThread? Current => t_current;
 
+    /// <summary>The OS thread id of the host thread running this guest thread (0 until it starts): host-side placement
+    /// (<see cref="Util.GpuSubmitterThread"/>).</summary>
+    public int HostTid { get; private set; }
+
     /// <summary>Set by an HLE function that loaded a whole new register context (e.g. a fiber switch): the dispatcher
     /// then resumes at the loaded PC instead of returning to LR.</summary>
     public bool ContextReplaced;
@@ -279,6 +283,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         // a kernel thread's objects and memory are the kernel's (0: the thread's own process, as before)
         using ProcessScope.PidScope kernelScope = ProcessScope.Enter(KernelMode ? KernelSpace.KernelPid : 0);
         Util.NativeThread.Register(Name, Util.NativeThread.Role.Guest);
+        HostTid = Util.NativeThread.CurrentId();
         Util.HostThreads.Apply(Util.HostThreads.Role.Guest);
         int status = 0;
         bool delete = false;

@@ -100,6 +100,10 @@ public sealed class PendingLaunch
     public required string TitleId, Dir;
     public int Flags;
     public string? Param;
+
+    /// <summary>The requester's callback the entry keeps (+0x1BB4 of the 3.74 entry, the kernel's debug launch
+    /// NID_1B6C2FED): notified with the new process's ID once the second stage created it; 0 none.</summary>
+    public int Callback;
 }
 
 /// <summary>

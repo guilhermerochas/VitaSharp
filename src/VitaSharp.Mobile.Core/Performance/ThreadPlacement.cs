@@ -52,6 +52,10 @@ public sealed record PlacementPlan(IReadOnlyDictionary<int, Placement> Placement
 /// threads follow the shader workers' rule: every core while the hot threads leave at least half a fast core idle, so
 /// a game's job threads the main thread waits for may use the fast cores' idle time (the system scheduler places them,
 /// as Skyline and the yuzu forks leave guest threads to it); the slow cores again once the hot threads fill them.</item>
+/// <item>with <see cref="GpuSubmitterOnFastCores"/> (<c>VITASHARP_ANDROID_GXM_THREAD=big</c>, A/B) the guest thread that
+/// began the last GXM scene (the one recording the frame's draws, which the main thread often waits for; a job
+/// system hands that work to a different job thread from frame to frame) also runs on the fastest cluster, beyond the
+/// hot-thread slots: while it records, the main thread mostly waits for it.</item>
 /// </list>
 /// The main thread changes only when another guest thread is clearly busier (hysteresis), so the pinning does not flap
 /// between two similar threads. One planner per process; <see cref="Plan"/> is called about once a second.
@@ -65,14 +69,18 @@ public sealed class ThreadPlacementPlanner
     private int _main;
     private bool _shadersOnBig;
 
-    public ThreadPlacementPlanner(CpuTopology topology, bool spareFastCoresForGuests = false)
+    public ThreadPlacementPlanner(CpuTopology topology, bool spareFastCoresForGuests = false, bool gpuSubmitterOnFastCores = false)
     {
         _topology = topology;
         SpareFastCoresForGuests = spareFastCoresForGuests;
+        GpuSubmitterOnFastCores = gpuSubmitterOnFastCores;
     }
 
     /// <summary>The guest threads that are not hot may use idle fast-core time (see the class summary).</summary>
     public bool SpareFastCoresForGuests { get; }
+
+    /// <summary>The guest thread recording GXM scenes runs on the fastest cluster (see the class summary).</summary>
+    public bool GpuSubmitterOnFastCores { get; }
 
     public CpuTopology Topology => _topology;
 
@@ -89,7 +97,9 @@ public sealed class ThreadPlacementPlanner
         _ => 0,
     };
 
-    public PlacementPlan Plan(IReadOnlyList<ThreadSample> threads)
+    /// <param name="threads">The registered threads and their loads over the last window.</param>
+    /// <param name="gpuSubmitterTid">The guest thread that began the last GXM scene (0: none yet).</param>
+    public PlacementPlan Plan(IReadOnlyList<ThreadSample> threads, int gpuSubmitterTid = 0)
     {
         if (_topology.Big is not { } big)
         {
@@ -127,7 +137,12 @@ public sealed class ThreadPlacementPlanner
         var others = new List<int>();
         foreach (ThreadSample g in guests.Where(g => g.Tid != _main).OrderByDescending(g => g.Load).ThenBy(g => g.Order))
         {
-            if (g.Load >= HotLoad && hot.Count < slots)
+            if (GpuSubmitterOnFastCores && g.Tid == gpuSubmitterTid)
+            {
+                hot.Add(g.Tid);
+                placements[g.Tid] = Placement.Big;
+            }
+            else if (g.Load >= HotLoad && hot.Count < slots)
             {
                 hot.Add(g.Tid);
                 placements[g.Tid] = Placement.Big;

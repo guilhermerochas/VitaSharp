@@ -259,7 +259,7 @@ public sealed partial class Fios2User
 
     /// <summary>ksceFiosKernelOverlayResolveSync(pid, mode, inPath, outPath, maxPath): every order.</summary>
     [Hle(Nid = 0x0F456345, Library = "SceFios2KernelForDriver")]
-    int ksceFiosKernelOverlayResolveSync(int pid, int mode, uint inPath, uint outPath, uint maxPath)
+    internal int ksceFiosKernelOverlayResolveSync(int pid, int mode, uint inPath, uint outPath, uint maxPath)
     {
         return KernelResolve(inPath, outPath, maxPath, 0, 0xFF);
     }

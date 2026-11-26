@@ -1124,6 +1124,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             r.DumpDone.Reset();
             r.Dump = GpuDumpRecorder.Start(new GpuDumpOptions
             {
+                Queue = _emu.Gpu,
                 Path = Path.Combine(dir, "gpu" + GpuDumpFormat.Extension),
                 Header = RedactHeader(_options.DumpHeader?.Invoke() ?? new GpuDumpHeader()),
                 MaxFrames = _options.DumpMaxFrames,

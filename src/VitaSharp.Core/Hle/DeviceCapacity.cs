@@ -14,6 +14,11 @@ public static class DeviceCapacity
     /// <summary>The largest memory card: 64 GiB.</summary>
     public const ulong MaxBytes = 64UL << 30;
 
+    /// <summary>Where the host drive's size and free bytes come from (the drive of a folder). Tests set a fixed source:
+    /// the real drive's free space moves while other processes write to it, so two reports read a moment apart could
+    /// differ. Null = the real drive.</summary>
+    internal static Func<string, (ulong Total, ulong Free)>? HostDriveSource;
+
     /// <summary>The total and free bytes behind <paramref name="hostFolder"/> (a resolved device root).</summary>
     public static (ulong Total, ulong Free) Of(string hostFolder)
     {
@@ -21,15 +26,21 @@ public static class DeviceCapacity
         ulong free = MaxBytes / 2;
         try
         {
-            var drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(hostFolder))!);
-            total = Math.Min((ulong)drive.TotalSize, MaxBytes);
-            free = Math.Min((ulong)drive.AvailableFreeSpace, total);
+            (ulong driveTotal, ulong driveFree) = HostDriveSource is { } source ? source(hostFolder) : RealDrive(hostFolder);
+            total = Math.Min(driveTotal, MaxBytes);
+            free = Math.Min(driveFree, total);
         }
         catch (Exception e) when (e is IOException or ArgumentException or UnauthorizedAccessException)
         {
         }
 
         return (total, free);
+    }
+
+    private static (ulong Total, ulong Free) RealDrive(string hostFolder)
+    {
+        var drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(hostFolder))!);
+        return ((ulong)drive.TotalSize, (ulong)drive.AvailableFreeSpace);
     }
 
     /// <summary>The SceIoDevInfo block of devctl 0x3001: u64 capacity, u64 free bytes, u32 cluster size, u32 0

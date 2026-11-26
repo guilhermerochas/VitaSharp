@@ -268,4 +268,92 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
         Assert.Equal(NetAdhocMatching.ERR_INVALID_ID, Call(m, "sceNetAdhocMatchingDelete", id));
         Assert.Equal(0, Call(m, "sceNetAdhocMatchingTerm"));
     }
+
+    /// <summary>CA_LIST.cer: "#name" lines and blank lines between the PEM blocks are not part of a certificate; each
+    /// block runs from BEGIN through the CRLF after END (the byte ranges libssl 3.74 reads).</summary>
+    [Fact]
+    public void CaListBlocks()
+    {
+        string pem1 = "-----BEGIN CERTIFICATE-----\r\nAAAA\r\n-----END CERTIFICATE-----\r\n";
+        string pem2 = "-----BEGIN CERTIFICATE-----\r\nBBBBBB\r\n-----END CERTIFICATE-----";
+        byte[] file = Encoding.ASCII.GetBytes("#Root A  \r\n" + pem1 + "\r\n##Group\r\n#Root B\r\n" + pem2);
+        byte[][] certs = Ssl.ParseCaList(file);
+        Assert.Equal(2, certs.Length);
+        Assert.Equal(pem1, Encoding.ASCII.GetString(certs[0]));
+        Assert.Equal(pem2, Encoding.ASCII.GetString(certs[1]));
+    }
+
+    /// <summary>
+    /// sceSslInternalGetCertificateAuthority serves the roots of vs0:data/external/cert/CA_LIST.cer as libssl 3.74 does:
+    /// without the firmware's file 0x80010002; a size query (no list or buffer) writes only the size, each certificate
+    /// taking its text, a NUL padded to 4 and an 8-byte node; a fill copies the texts and appends a node per certificate
+    /// to the caller's list after the nodes already there; a buffer too small is 0x8001000C. Only the roots are handed
+    /// out: what the guest's TLS code verifies against them is its own.
+    /// </summary>
+    [Fact]
+    public void CertificateAuthoritiesComeFromTheFirmwaresCaList()
+    {
+        using var h = new HleHarness(fx, "ssl-ca");
+        Ssl ssl = h.Module<Ssl>();
+        uint used = h.Word(0);
+        Assert.Equal(unchecked((int)0x80010002), Call(ssl, "sceSslInternalGetCertificateAuthority", 0, 0xFFFFFFFFu, 0u, 0u, 0u, used));
+
+        string pem1 = "-----BEGIN CERTIFICATE-----\r\nAAAA\r\n-----END CERTIFICATE-----\r\n";
+        string pem2 = "-----BEGIN CERTIFICATE-----\r\nBBBBBBB\r\n-----END CERTIFICATE-----\r\n";
+        string caList = h.Emu.Vfs.Resolve("vs0:data/external/cert/CA_LIST.cer", forWrite: true)!;
+        Directory.CreateDirectory(Path.GetDirectoryName(caList)!);
+        File.WriteAllBytes(caList, Encoding.ASCII.GetBytes("#Root A\r\n" + pem1 + "\r\n#Root B\r\n" + pem2));
+        // the missing file is not remembered: the next call reads it
+        uint size1 = (((uint)pem1.Length + 1 + 3) & ~3u) + 8, size2 = (((uint)pem2.Length + 1 + 3) & ~3u) + 8;
+        Assert.Equal(2, Call(ssl, "sceSslInternalGetCertificateAuthority", 0, 0xFFFFFFFFu, 0u, 0u, 0u, used));
+        Assert.Equal(size1 + size2, GuestMemory.R32(used));
+
+        // the caller's list already holds one node: the roots go after it
+        uint existing = h.Alloc(8);
+        GuestMemory.W32(existing, 0x1234);
+        GuestMemory.W32(existing + 4, 0);
+        uint list = h.Word(existing);
+        uint buffer = h.Alloc(size1 + size2);
+        Assert.Equal(unchecked((int)0x8001000C), Call(ssl, "sceSslInternalGetCertificateAuthority", 0, 0xFFFFFFFFu, list, buffer, size1 + size2 - 1, used));
+        GuestMemory.W32(existing + 4, 0);
+        Assert.Equal(2, Call(ssl, "sceSslInternalGetCertificateAuthority", 0, 0xFFFFFFFFu, list, buffer, size1 + size2, used));
+        Assert.Equal(existing, GuestMemory.R32(list));
+        uint first = GuestMemory.R32(existing + 4);
+        Assert.Equal(buffer + size1 - 8, first);
+        Assert.Equal(pem1, GuestMemory.ReadCString(GuestMemory.R32(first), 0x100));
+        uint second = GuestMemory.R32(first + 4);
+        Assert.Equal(buffer + size1 + size2 - 8, second);
+        Assert.Equal(pem2, GuestMemory.ReadCString(GuestMemory.R32(second), 0x100));
+        Assert.Equal(0u, GuestMemory.R32(second + 4));
+    }
+
+    /// <summary>
+    /// libnet's errno is per thread and always there: a failed call writes the calling guest thread's errno even
+    /// before that thread ever asked for sceNetErrnoLoc (ScePsp2Compat's connect() reads it only after a non-blocking
+    /// sceNetConnect failed; with one slot made on the first sceNetErrnoLoc, WebKit's first connection saw 0), and
+    /// another thread's errno is another word, untouched.
+    /// </summary>
+    [Fact]
+    public void EachGuestThreadHasItsOwnErrnoWrittenBeforeItAsksForIt()
+    {
+        using var h = new HleHarness(fx, "net-errno");
+        Net net = h.Module<Net>();
+        uint first = 0, second = 0;
+        h.OnGuest(_ =>
+        {
+            Assert.Equal(Net.EBADF, Call(net, "sceNetSocketClose", 0x7FFF));
+            first = (uint)Invoke(net, "sceNetErrnoLoc");
+            Assert.Equal(first, (uint)Invoke(net, "sceNetErrnoLoc"));
+        }, "errno-a");
+        Assert.NotEqual(0u, first);
+        Assert.Equal((uint)(Net.EBADF & 0xFF), GuestMemory.R32(first));
+
+        h.OnGuest(_ =>
+        {
+            second = (uint)Invoke(net, "sceNetErrnoLoc");
+        }, "errno-b");
+        Assert.NotEqual(first, second);
+        Assert.Equal(0u, GuestMemory.R32(second));
+        Assert.Equal((uint)(Net.EBADF & 0xFF), GuestMemory.R32(first));
+    }
 }

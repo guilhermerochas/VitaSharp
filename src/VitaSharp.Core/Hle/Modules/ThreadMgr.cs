@@ -166,7 +166,7 @@ public sealed partial class ThreadMgr : HleModule
 
     /// <summary>Class of the threadmgr object behind a UID (thread 1 ... simple event 13; see KernelObject.UidClass).</summary>
     [Hle]
-    int sceKernelGetThreadmgrUIDClass(int uid)
+    internal int sceKernelGetThreadmgrUIDClass(int uid)
     {
         if (K.GetThread(uid) != null) return 1;
         var o = K.Objects.Get<KernelObject>(uid);
@@ -1129,7 +1129,7 @@ public sealed partial class ThreadMgr : HleModule
     /// <summary>sceKernelCreateCallback (threadmgr 3.74, 0x8100c4bc): attributes other than 0 are ILLEGAL_ATTR; the
     /// callback belongs to the calling thread, at the end of its list.</summary>
     [Hle]
-    int sceKernelCreateCallback(string name, uint attr, uint func, uint arg)
+    internal int sceKernelCreateCallback(string name, uint attr, uint func, uint arg)
     {
         if (attr != 0)
         {
@@ -1146,7 +1146,7 @@ public sealed partial class ThreadMgr : HleModule
     /// UNKNOWN_CALLBACK_ID. Its notifications stop being pending; a run of it in progress ends first, and the UID is
     /// freed when it does.</summary>
     [Hle]
-    int sceKernelDeleteCallback(int uid)
+    internal int sceKernelDeleteCallback(int uid)
     {
         Callback? callback = Obj<Callback>(uid);
         if (callback == null)

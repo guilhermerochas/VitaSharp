@@ -935,10 +935,52 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   atrasado, com os 2 workers ocupados e 17 jobs na fila: limite de vazão, alavanca da frente (3)), GTAVCECTY x2 e
   PSVAS1178 0 → 0; opção ligada: 0 → 0 em todos; `--compare` dos 8 dumps nos dois modos pixel-idêntico. O engasgo do
   1º quadro continua com a opção desligada (a thread da GPU passa a esperar os workers em vez de montar: 2,1-4,4 s no
-  PCSE00053 com a CPU da máquina a 83-96%), e é o que a opção ligada resolve. Próximas partes: (3) estado dinâmico EDS3/vertex input onde houver; (4) Android: medir no
-  Killzone o tempo de carregamento a mais e a queda de pipelines no thread da GPU
+  PCSE00053 com a CPU da máquina a 83-96%), e é o que a opção ligada resolve. Próxima parte: Android: medir no
+  Killzone o tempo de carregamento a mais e a queda de pipelines no thread da GPU.
+  Estado dinâmico (frente 2; perf/stut1, 25/11/2026): contado, não implementado. Nos 10.973 pipelines gravados de 70
+  títulos (cópias dos `pipelines.list`), blend e máscara dinâmicos (`VK_EXT_extended_dynamic_state3`) tiram 6,7%,
+  vertex input dinâmico 2,8%, tudo junto 9,5%, mas quase tudo nos conjuntos 2D pequenos (GTAVCECTY 57 → 31); os 3D
+  que engasgam ficam com quase todos: PCSC00045 2.058 → 2.034 (1,2%), PCSE00333 809 → 794 (1,9%), PCSE00053 262 →
+  254 (3,1%), PCSA00017 0%. Com a compilação ao carregar o programa os replays frios já têm 0 pipelines na thread da
+  GPU e 0 quadros >= 4 ms, então não há quadro lento para tirar; só sobraria pouco trabalho a menos no carregamento.
+  Fica fora (tabela e motivo em `docs/notes/pipeline-skip.md`).
+  Workers pelo orçamento de CPU (frente 3; perf/uber5-uber6, 21/11/2026, feito): `ShaderWorkerBudget` deixa o
+  processo em no máximo 90% dos processadores lógicos, com 2 núcleos para a CPU emulada e a thread da GPU enquanto ela
+  trabalha (8 CPUs: 5 workers; fixado em 4: 2) e o orçamento inteiro quando ela espera um shader/pipeline, da 1ª
+  espera até o present daquele quadro, ou quando o jogo espera o carregamento do cache (8: 7; 4: 3). Android: 2 e 4
+  nos núcleos LITTLE (2 big + 6 LITTLE; antes 4 fixos). Referências: yuzu/Eden (todos os processadores menos 1,
+  prioridade baixa), Dolphin (núcleos - 3, 1-4), RPCS3 (tabela, 8 threads: 2), os três com um VkPipelineCache
+  compartilhado. Replay frio, opção desligada, base → orçamento (4 CPUs): 1º quadro PCSE00053 2.475-2.543 →
+  1.761-2.183 ms, 2º dump 2.431-2.828 → 1.770-2.057 ms; ligada: 0 → 0 em todos (números e escala em
+  `docs/notes/pipeline-skip.md`). Testes `RendererPathsTests.ShaderWorkersRunTheWholePoolFromAWaitUntilTheFrameIsPresented`
+  e `ShaderWorkerBudgetTests`. Falta: medir em 8 CPUs livres e no Android (Killzone).
+  Mais workers de folga (frente 3; perf/stut1, 25/11/2026, feito; juntado ao orçamento em fix/recover1, 25/11/2026):
+  a regra própria do stut1 (metade das CPUs em prioridade normal + folga abaixo do normal até 90% - 1, no máximo 8)
+  virou parte do `ShaderWorkerBudget`, para não haver duas regras de tamanho: os `Steady` workers rodam em prioridade
+  normal e os acima deles (`Spare`) são a folga, em prioridade abaixo do normal, e só rodam enquanto uma thread espera
+  os workers (8 CPUs: 5 + 2; 4: 2 + 1; 16: 8 + 4); `VITASHARP_SHADER_SPARE_WORKERS=N` (A/B) troca o número de folga
+  sobre o mesmo `Steady`. Referências: yuzu e forks `hardware_concurrency - 1` no desktop (forks Android: 3 núcleos
+  livres ou 2-8 escolhido), Ryujinx 8 threads de tradução e `min(ProcessorCount, 8)` compilações, Dolphin
+  `clamp(núcleos - 3, 1, 4)`; o pedido do draw atual já vai primeiro (a thread da GPU roda ela mesma o job que ainda
+  não começou). Teste `ShaderWorkerCountTests`. Medida do stut1 (antes da junção, com a folga rodando também fora
+  das esperas): replay frio do PCSE00053 (140 MB), fixado em 4 CPUs (2 workers lá; +1 equivale ao
+  4 → 6 de 8 CPUs), compilação ao carregar desligada, 2x alternado: esperas de pipeline 2.432/3.243 → 1.824/1.419 ms,
+  shaders esperados 21/12 → 4/5, pior quadro 2.326/3.550 → 1.788/2.120 ms (com 3 workers normais: o mesmo); com a
+  opção ligada (padrão) 0 quadros lentos nos dois e espera do carregamento 8,1 → 7,0-7,4 s (PCSE00333 0,93-1,03 →
+  0,86 s); 4 workers em 4 CPUs pioram (9,3 s). `--compare` dos 13 dumps contra a base: pixel-idênticos. Falta:
+  medir em gameplay no PC de 8 CPUs sem fixação (o efeito da prioridade baixa quando o jogo ocupa a CPU).
+  Pipelines internos (frente 5; perf/stut1, 25/11/2026, feito): agora contados (linha da sessão "built-in pipelines on
+  the GPU thread", uma linha de log por montagem) e somados à espera do quadro. Replay frio dos 13 dumps com a
+  compilação ao carregar ligada: 1 em 4 dumps, sempre o de carga de MSAA, 12-27 ms num quadro (GTAVCECTY x2, shell x2)
+  e era o único quadro lento deles (1 quadro >= 4 ms cada, 2 >= 16,7 ms); 0 nos outros 9; os de depth, ordem de
+  memória e overlay não apareceram. Uma cena multisample prevista (BeginScene do prefetch, superfície conhecida na
+  criação do programa) monta o pipeline de carga dela num worker, antes de qualquer outro job (`PrebuildMsaaLoad`,
+  `VulkanRenderer.MsaaNative.cs`; layout e shaders da carga criados sob lock). Nos 4 dumps: 1 → 0 montado na thread
+  da GPU, quadros >= 4 ms 1 → 0. Teste `RendererPathsTests.FirstMultisampledSceneFindsItsLoadPipelineBuiltByAWorker`
+  (2x e 4x, com e sem a criação do programa; sem a correção: (1, 0) em vez de (0, 1)). Ficam no 1º uso as variantes
+  tile-word e integer view da carga, que a previsão não vê.
   Entrega movida para "Corrigido, falta o usuário testar" (uber2/uber3/uber4, 22/11/2026); o resto segue aberto aqui.
-  Junto aqui (triagem de 22/11/2026) o item das bibliotecas de pipeline, que já cai na frente (3): o próximo passo dele é medir mais workers.
+  Junto aqui (triagem de 22/11/2026) o item das bibliotecas de pipeline, que já cai na frente (3): mais workers feito (acima).
   [P2][G] Engasgos da primeira vez: montar os pipelines que faltam com `VK_EXT_graphics_pipeline_library` (ligação
   rápida, sem otimizar, no thread da GPU) e trocar pelo otimizado em segundo plano; prever também as variantes
   tile-word e de saída inteira. Pular o desenho foi analisado e descartado: quase nada do que trava pode ser pulado
@@ -2263,17 +2305,29 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   escrever o .psp2dmp do processo); SceAppMgrForDriver: 324DD34E, E8DB7942 e 504023C8 feitos em 23/11/2026
   (fix/quick3, em "Corrigido, falta o usuário testar"); C4924946 feito em 24/11/2026 (feat/alg4-g: num kit de
   desenvolvimento o ProcessmgrKernel NID_5A57766C com os 6 argumentos e a configuração de depuração GXM do registro,
-  `AppMgr.GxmDebugging`, que o 324DD34E agora também passa; num retail 0x80020012). Faltam dois, [G] cada:
-  1B6C2FED (SceAppMgr 3.74 0x8100da9c; num retail 0x80020012, que já é a resposta): num kit de desenvolvimento,
-  só do processo do kernel (senão 0x8080201F), cria o semáforo "SceAppMgr:semafordbg" (0 de 1) e o callback
-  "SceAppMgr:cbkfordbg" com ele, e, se a thread não é a que já está nesse lançamento, confere o caminho (NULL
-  0x80802016, vazio 0x8080201A) e lança pelo caminho geral do módulo (0x8100b748) com a flag 0x20000 e o semáforo;
-  depois espera o semáforo, que o callback sinaliza quando o app termina, e devolve o erro do lançamento ou 0;
-  1574E1A4 (0x810232ec): montagem por id, cada faixa com a sua checagem de permissão (0x6A/0x6B
-  SceSblACMgrForDriver C98D82EE/8612B243, 0xCD 456DA7AC, 600 4DB7F512, 500-505 e 0x6E-0x70/0x12E-0x130 outro caminho,
-  900/901 o caminho pelo SceFios2KernelForDriver 0F456345 num bloco de 0x124 bytes);
-  SceCodecEngineWrapperForDriver 30 (modelo do motor de codec: janelas, RPC, contadores); SceUlobjMgrForDriver 14
-  (layout dos objetos da libult na memória do processo).
+  `AppMgr.GxmDebugging`, que o 324DD34E agora também passa; num retail 0x80020012). 1B6C2FED feito em 25/11/2026
+  (feat/kern9, em "Corrigido, falta o usuário testar": o pedido de lançamento por title id ao shell com a flag
+  0x20000 e o callback do módulo, que a segunda etapa notifica com o pid; a espera no semáforo com callbacks; junto,
+  o 99AA37C1, que só validava o nome, agora lança e recusa quem não é o processo do kernel). Falta um, [G]:
+  1574E1A4 (0x810232ec): feitas a checagem de permissão por id (0x6A/0x6B PSM ou sistema, 0xCD 456DA7AC, 600
+  4DB7F512, 0x6E-0x70/0x12E-0x130/500-505/900/901 pelo authority ID do chamador), 0x80800001 para os ids que não
+  montam, e o caminho do overlay (ksceFiosKernelOverlayResolveSync) nas pastas do id (900: ux0:/app/, ux0:/patch/,
+  gro0:/app/, grw0:/patch/; 901: ux0:/user/NN/savedata/, grw0:/savedata/, ux0:/data/savedata; senão 0x8080000C).
+  Falta a montagem em si: normaliza o caminho (FUN_81015a44, 0x124 bytes; o mesmo caminho já montado 0x80800003),
+  registro de 0x1D0 bytes numa lista do módulo, ponto de montagem "<prefixo do 0x81044c7c>" + 12 hex aleatórios
+  (SceSblSsMgrForDriver 4F9BFBE5) + "0:", 16 vagas de authority ID (a primeira livre recebe 0x2F00000000000001;
+  cheias 0x8080001E), kscePfsMount modo 10 (900) ou 9/7 (901, com a chave de FUN_81016ed4 e a keystone:
+  ksceSblPostSsMgrVerifyKeystone/WithPasscode com o passcode do 3º argumento), FUN_81016698 e FUN_8101807c, e
+  kscePfsApprove para 0x2800000000000001 e 0x2800000000007001; hoje devolve 0x80800007 (default);
+  SceCodecEngineWrapperForDriver 27 (3 feitos em 25/11/2026, feat/kern9: as operações da instância que rodam no
+  próprio módulo, 8CD35820 memória do decodificador, 9EB3D63E fim de stream e 16506603 callbacks de notificação; o
+  resto precisa do motor de codec: a abertura do decodificador, 2B74706E, e as decodificações são RPCs ao firmware
+  do motor (tabelas em 0x81017cd4/0x81017d34), as janelas e os buffers de bounce só existem com ele no boot, os 8 RPCs
+  e o contador de desempenho idem; emular o motor, ou o protocolo dos seus RPCs, é o trabalho que falta);
+  SceUlobjMgrForDriver: feito (feat/kernO, 21/11/2026, ver "Corrigido, falta o usuário testar"; a versão do
+  kern9, de 8 consultas, não foi trazida). SceCoredumpForDriver 3: as notas do .psp2dmp são cerca de
+  40 (SYSTEM_INFO 0x1001 .. TTY_INFO 0x102A, KERNEL_INFO 0x3000; os construtores estão entre 0x81011774 e as funções
+  das linhas de THREAD_REG_INFO/LIBRARY_INFO/GPU_ACT_INFO do descompilado), cada uma com a sua versão e layout.
   Entrega movida para "Corrigido, falta o usuário testar" (reboot do sistema, kernN, 22/11/2026); o resto segue aberto aqui.
 - [x] (22/11/2026, fix/quick1 529bd5a0: a montagem id 0xCA de ux0:pspemu fica registrada no AppMgr como no SceAppMgr 3.74; sceAppMgrUmount e o par do apputil desmontam; testes falham sem) [P3][G] sceAppMgrPspSaveDataRootMount (HLE) escreve `ux0:pspemu` como ponto de montagem sem registrar uma
   montagem no AppMgr, então um sceAppMgrUmount dele falha: conferir no appmgr 3.74 o que é montado (o SAVEDATA do
@@ -2490,6 +2544,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Wi-Fi vistas (`scePosNetCtlInetGetScanInfo`) pelo `SceHttp`. Esse serviço não existe mais; dar uma posição ao Near
   pelo caminho do firmware é responder essa requisição com a posição do host (o `SceNetCtl` com redes vistas e uma
   resposta WPS), e isso é [G]: decidir com o usuário antes. Usa: Near, Mapas.
+  Achado (25/11/2026, small5, sem fechar): a parte (1) não cabe num [M] multiplataforma: cada sistema tem a sua
+  API e nenhuma tem ligação no projeto. Windows: `Windows.Devices.Geolocation.Geolocator` é WinRT (o Desktop não
+  usa a TFM `-windows`; sem o CsWinRT seria ativar pelo `RoGetActivationFactory` e chamar a vtable à mão, com a
+  operação assíncrona `IAsyncOperation<Geoposition>`), e a localização do Windows vem desligada por padrão para apps
+  de desktop; Linux: GeoClue2 é só D-Bus (o cliente precisa ficar conectado: `CreateClient`, `Start`, sinal
+  `LocationUpdated`), e o projeto não tem biblioteca de D-Bus; macOS: o Core Location só pede a permissão a um app
+  em bundle com `NSLocationUsageDescription` (o binário solto herda a do terminal). Proposta: virar [G] com três
+  entregas (uma por sistema, cada uma com o teste do `ILocationSource` por trás de uma fonte falsa e o skip claro sem
+  o serviço), decidir com o usuário a ordem.
 - [ ] [P3][M] Magnetômetro, o que falta (o feito está em "Corrigido, falta o usuário testar"): (1) o anel de
   registros brutos do driver (`sceMotionDevRead`/`ReadForMagnCalib` copiam os registros do leitor, modo 0x10005 do
   FUN_81004420; o formato do registro ainda não foi lido) e o `dataInfo`. Achado (25/11/2026, small4, estudo do
@@ -2521,10 +2584,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `param_1[0x10..]`) e se o campo corrige o yaw continuamente (os ramos com `DAT_81015258` em 0x810066xx); só então
   trocar o `MotionFusion.Reset` (hoje só a gravidade) com teste; (3) o magnetômetro de um controle no PC (o SDL não
   expõe um).
-- [ ] [P3][M] Teclado e mouse Bluetooth, o que falta (o feito está em "Corrigido, falta o usuário testar"): conferir
-  no Sistema do Vita que Configurações > Bluetooth lista os dois dispositivos (os registros do `SceBt` seguem o 3.74,
-  mas a tela não foi aberta); no Wayland, conferir se o scancode que o GLFW dá a uma tecla de mídia é o do evdev + 8
-  como no X11; o monitor de teclas de mídia do macOS ainda não rodou num Mac (só o mapeamento é testado).
 - [ ] [P3][G] Processador de mídia Venezia (núcleos MeP + IVC2) para código MeP que não é do firmware (plugin
   VVNZRunner e o homebrew sobre ele; `docs/notes/hardware-coverage.md`): o `vnzimg.skprx` sai do `self2elf` em claro,
   sem chave. Primeira entrega: interpretador do núcleo MeP-c5 numa thread de guest com programa sintético no teste
@@ -2551,6 +2610,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 - [ ] [P3][G] Porta USB de dispositivo conectada a um host emulado (Content Manager com PC/PS3, armazenamento USB;
   `docs/notes/hardware-coverage.md`): primeira entrega: evento "cabo conectado", `SceUdcd` em `0x20`, a espera de
   estado retorna e um host roteirizado completa um pedido de controle.
+  Achado (25/11/2026, small5, estudo do SceUdcd 3.74, sem fechar): a troca de cabo não é uma chamada, é o
+  tratador de interrupção do controlador (o ramo que lê o registro +0x38 do controlador, bit 1): de um lado grava
+  0x10 na palavra de cabo, põe a conexão de volta no valor guardado e, se ela era 2 (estabelecida), chama o `attach`
+  (+0x34 do bloco SceUdcdDriver, com a versão USB e o user data) de cada driver iniciado (FUN_810014fc) e avisa o
+  ScePower (E4E3C316 3); do outro grava 0x20, guarda a conexão, põe 4 (suspensa) e chama o `detach` (+0x38,
+  FUN_81001548). Conferir qual dos dois lados é "conectado": o HLE de hoje chama 0x10 de desconectado, como o
+  vita-headers, e esse sentido precisa ser confirmado contra o código. Os pedidos de controle chegam ao
+  `processRequest` (+0x2C) pelo mesmo tratador. Falta no VitaSharp um jeito genérico de rodar um tratador de
+  interrupção de kernel (código de guest a partir de um evento do host): é a base da 1ª entrega (evento do host ->
+  tratador numa thread de kernel -> callbacks do driver -> a espera de estado acorda), [G] por isso.
 - [x] [P3][P] Idioma do sistema por jogo (pedido do usuário, 09/11/2026): opção "Idioma do sistema" nos ajustes de cada jogo
   (desktop e Android) que sobrepõe o idioma que o jogo recebe (SceSystemParamLang / `/CONFIG/SYSTEM/language`), para
   jogos sem o idioma do aparelho. Caso real: Killzone Mercenary PCSC00045 (lançamento asiático) só tem japonês
@@ -3269,19 +3338,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   menos que os dados (app_fps). Falta: linhas de 120 colunas como o resto do repositório (o guia pede 80; decidir com
   o usuário). O awk do `android-perf-run.sh` (era do GNU: `asort`, `match` com vetor) passou a POSIX (`match` com
   RSTART/RLENGTH, `split`, `sort -n`), mesma saída em dados de teste e aceito pelo `gawk --posix`.
-- [ ] [P3][M] Testes de paridade de mídia entre o PC e o Android (pedido do usuário, 13/11/2026). Hoje só há testes de cada
-  lado separado (`AndroidMediaDriverTests`: política do lado Android; `AudioFrameDecoderTests`: cabeçalhos de MP3 e
-  gancho do MP4); nada compara o que o jogo recebe nos dois. Um contrato único com um clipe H.264/MP4 e áudio AAC/MP3
-  sintéticos (gerados pelo teste, nada da Sony), passando pela API que o jogo usa: por quadro, o hash e o momento/ordem
-  em que o jogo recebe o "quadro pronto"; por porta de áudio, o PCM mixado e o tempo. Lado PC (FFmpeg + OpenAL) roda
-  sempre; lado Android (MediaCodec + AAudio) no emulador do Android (AVD x86_64, os codecs de software do Google, os
-  mesmos do celular para vídeos do tamanho do Vita) quando disponível, pulado com o motivo quando não. Vídeo: quadros
-  idênticos e mesma ordem/tempo; áudio: mesma contagem de amostras e tempo, PCM dentro de uma tolerância declarada
-  (arredondamento do decodificador). O hardware do celular (decodificador MediaTek, GPU Mali, modos do AAudio) segue
-  confirmado no aparelho. Documentar no README como rodar. Em andamento com o agente de bugs do Android (fix/android-video).
-  Junto aqui (triagem de 22/11/2026) o item "Mídia" da seção Testes de regressão:
-  [P3][M] **Mídia:** decodificação de vídeo e áudio pelo contrato do Vita no desktop e no Android (já existe a base em
-  `MediaContract`/`MediaParityTests`).
 - [ ] [P3][G] Cobertura de código mínima de 70% em tudo (pedido do usuário, 10/11/2026). Base de hoje (`build/coverage.ps1` /
   `.sh`, coverlet + ReportGenerator, `Category!=Slow`): geral 59,4% linhas / 42,5% ramos; VitaSharp.Core 65,8%;
   Mobile.Core 85,4%; Renderer.Vulkan 1,3%. Meta: cada projeto e cada namespace com pelo menos 70% de linhas, e manter
@@ -3411,6 +3467,52 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 
 ## Corrigido, falta o usuário testar
+
+- [ ] (25/11/2026, falta testar) [P2][G] SceUlobjMgrForDriver lê os objetos da libult na memória do processo como o
+  SceUlobjMgr 3.74 (feat/kernO, trazido em fix/recover1). Duas implementações da mesma biblioteca existiam
+  (feat/kernO e feat/kern9); ficou a do kernO, conferida contra o descompilado do 3.74 (só estudo): faz as 14
+  consultas (o kern9 fazia 8 e deixava 8E200387, CDAD91AD, B978DB70, 3685D4FB, 0C29AFEC e 5D7A7925 em resposta
+  padrão), o start mapeia a tabela de objetos e a entrega à libult (segundo start 0x80028003), e o NID_A90A564C
+  devolve (tabela, &revisão, registro) na ordem do módulo (registro +0x14, +0xC), que o kern9 tinha trocada. Nas
+  8 consultas em comum as duas leem os mesmos campos (cabeçalho +0x20 tamanho / +0x22 tipo, nós de 12 bytes, limite
+  do pool, entradas não nulas da tabela, mapa de estados 0,1,4,5,3,2); os 6 testes de objeto do kern9
+  (`UlobjKernelTests`: mutex com dono e esperas, condição pelo pool do mutex, semáforo, pool e pool de dados com as
+  listas, tabela de entradas, estado da thread) passam sem mudança contra o kernO e entraram junto. O que testar:
+  nada visível em jogo (só depuradores e o core dump usam); os jogos com libult rodam como antes.
+
+- [ ] (25/11/2026, falta testar) [P3][M] Testes de paridade de mídia entre o PC e o Android (fix/small5). O lado do
+  decodificador já existia (`MediaParityTests`: H.264, AAC e MP3 sintéticos pela API do jogo, o FFmpeg do PC sempre,
+  o rastro do Android pelo `build/android-media-parity.sh` num celular ou no Android Emulator). Faltava a porta de
+  áudio: agora `AudioPortParityTests` manda os mesmos grãos de uma porta (tom estéreo diferente em cada lado, volume
+  1, 0,5 e 0,25) pelo mixer do OpenAL Soft, lido de um dispositivo de loopback (`OpenAlAudio.TryCreateLoopback`,
+  `ALC_SOFT_loopback`, em float: sem placa de som, roda no CI dos três sistemas), e pelo `BufferedPcmStream` (o que o
+  Android faz antes do AAudio/AudioTrack: fila, volume, reamostragem) com um dispositivo que guarda o que recebe; o PCM
+  dos dois tem de ser o do jogo vezes o volume, quadro a quadro e na ordem, com tolerância declarada de um passo de 16
+  bits (o arredondamento do volume). Achado no caminho: a saída de 16 bits do OpenAL Soft tem dither (±1), por isso o
+  loopback lê em float. README: seção de testes. O hardware do celular (AAudio, decodificador do aparelho) segue
+  conferido no aparelho. Testar: nada no jogo; `dotnet test --filter AudioPortParityTests` passa no PC (Windows,
+  Linux, macOS).
+
+- [ ] (25/11/2026, falta testar) [P3][M] Teclado e mouse Bluetooth, o que faltava (fix/small5): no Wayland o GLFW
+  3.4 entrega à janela o código evdev da tecla, sem o +8 (o `keyboardHandleKey` do `wl_window.c` passa o código do
+  `wl_keyboard` direto ao `_glfwInputKey` e só soma 8 para o xkbcommon); no X11 é o keycode do X (evdev + 8). O
+  VitaSharp lia todo scancode do Linux como do X11, então no Wayland Play/Pause (KEY_PLAYPAUSE 164) não virava nada
+  e outras teclas podiam cair na tecla de mídia errada. Agora a janela pergunta a plataforma ao GLFW
+  (`glfwGetPlatform`) e lê o scancode como evdev, keycode do X ou set 1 do Windows
+  (`HidUsages.ConsumerFromScancode(scancode, ScancodeKind)`). Teste: `HidDeviceTests.MediaKeyScancodesFollowGlfwsPlatform`
+  (não compila sem a mudança; pela leitura antiga o 164 do Wayland dá 0, não Play/Pause). Testar: com "Teclado e mouse
+  Bluetooth" ligado, abrir o Sistema do Vita em Configurações > Bluetooth (os dois dispositivos listados); num Linux
+  com Wayland, as teclas de mídia do teclado (tocar/pausar, volume, próxima) agem no jogo/app como no X11; num Mac, as
+  teclas de mídia (o monitor do macOS ainda não rodou num Mac, só o mapeamento é testado).
+
+- [ ] (25/11/2026, falta testar) [P2][G] Lançamentos do kernel por title id do SceAppMgr 3.74 (feat/kern9, do item
+  "Kernel de software ainda em resposta padrão"). NID_1B6C2FED (0x8100da9c), o lançamento de depuração de um kit de
+  desenvolvimento: só do processo do kernel, cria o semáforo "SceAppMgr:semafordbg" e o callback "SceAppMgr:cbkfordbg",
+  pede o lançamento ao shell (evento 6) com a flag 0x20000 e o parâmetro, e espera, rodando callbacks, até a segunda
+  etapa do shell criar o processo e notificar o callback com o pid; devolve o erro do lançamento ou 0. NID_99AA37C1
+  (0x8100dc08) faz o mesmo pedido sem flags e volta logo (antes só validava o nome). A segunda etapa
+  (sceAppMgrLaunchAppByName2ndStage) passou a notificar o callback do pedido. O que testar: nada visível num retail
+  (só kits de desenvolvimento e depuradores usam essas entradas); conferir que abrir apps pelo shell continua igual.
 
 - [ ] (25/11/2026, falta testar) [P3][M] Entradas de import conferidas antes do link, como o modulemgr 3.74
   (fix/small4). Antes de ligar cada biblioteca que acha (FUN_81008aa0 -> FUN_81005100), num módulo de processo de
@@ -4143,6 +4245,34 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Teste: `KernelPluginBootOrderTests`. Testar: com "Ativar Plugins do Kernel" ligado, abrir um título; o `last.log`
   mostra cada `kernel plugin ...: loaded and started (...) (at system boot)` e `kernel plugins: N of M loaded and started
   at system boot` antes da linha do título (`PSM title ...`/`Loading ...`), também quando o título falha.
+- [ ] (23/11/2026, falta testar) [P3][P] SDK do programa lido no lugar certo para as regras antigas do libgxm
+  (fix/gxmex4): o libgxm 3.74 pede o SDK ao `sceKernelGetMainModuleSdkVersion` (SceProcessParam +0xC); o VitaSharp
+  lia +0x10, que é o ponteiro do nome da thread principal: com nome NULL todo programa ganhava as regras dos SDKs
+  antes do 2.50 (perfil YUV acima de 3 no `sceGxmSetYuvProfile`, modo 2 no NID_D352F90A), e com nome nenhum programa
+  antigo as ganhava. Agora as duas funções seguem o SDK do programa. Testes:
+  `GxmFlowTests.YuvProfileAndVisibilityBufferFollowTheFirmwareChecks` (falha sem a correção). Testar: os filmes e as
+  texturas YUV dos jogos continuam com as cores de antes (nenhum `sceGxmSetYuvProfile: 0x805B0003` novo no log).
+- [ ] (23/11/2026, falta testar) [P3][P] `sceGxmBeginScene` confere as superfícies contra o render target como o
+  libgxm 3.74 (fix/gxmex4; também `sceGxmBeginSceneEx` e `_sceGxmBeginScene`), depois do driver achar o render
+  target e nesta ordem: render target 2X com cor que não seja MSAA downscale → SCE_GXM_ERROR_UNSUPPORTED
+  (0x805B0009); região válida fora do render target → INVALID_VALUE; superfície de cor menor que a região (em pixels
+  do alvo: com MSAA sem downscale o tamanho dividido pela grade de amostras, com downscale sem MSAA o dobro) →
+  INVALID_VALUE; stride da profundidade menor que a largura da região arredondada para 32 vezes as amostras na
+  horizontal (antes do SDK 2.00, bit 0x400, sem arredondar) → INVALID_VALUE. A largura/altura da cor vem do que o
+  `sceGxmColorSurfaceInit` recebeu (o libgxm lê da textura embutida, igual para superfícies lineares e tiled).
+  Falta: a quarta palavra que o driver devolve do render target, que quando não é zero exige a região inteira (ver o
+  que é no SceGpuEs4). Testes: `GxmFlowTests.BeginSceneChecksTheSurfacesAgainstTheRenderTarget` (falha sem a
+  correção). Testar: os jogos que o usuário já abre continuam abrindo e mostrando imagem, em especial os com MSAA
+  (nenhum `sceGxmBeginScene: 0x805B0003` ou `0x805B0009` novo no log).
+- [ ] (23/11/2026, falta testar) [P3][P] `sceGxmColorSurfaceSetFormat` como o libgxm 3.74 (fix/gxmex4): superfície
+  NULL → INVALID_POINTER; desligada → UNSUPPORTED (antes do SDK 3.10, bit 0x8000, é a sem dados; do 3.10 em diante a
+  que o `sceGxmColorSurfaceInit` não descreveu); formato que a tabela do libgxm não conhece → INVALID_VALUE
+  (0xD0800000 só antes do SDK 3.10); formato de outro tamanho de pixel (bits; bytes antes do SDK 1.60) ou que uma
+  superfície com downscale não aceita → UNSUPPORTED; ao aceitar, a textura da superfície também troca de formato
+  (antes só gravava o formato, sem conferir nada). Falta: as mesmas checagens de formato no
+  `sceGxmColorSurfaceInit` (formato desconhecido, downscale, tipos tiled/swizzled). Testes:
+  `GxmFlowTests.ColorSurfaceSetFormatFollowsTheFirmwareRules` (SDK 1.50/3.0F/3.10/3.57). Testar: os jogos que o
+  usuário já abre continuam com as cores de antes (nenhum `sceGxmColorSurfaceSetFormat: 0x805B000x` no log).
 
 - [ ] (23/11/2026, falta testar) [P2][M] Gravar tudo analisável e reexecutável sem o jogo (feat/capself1,
   `docs/captures.md`): (1) nenhum arquivo da gravação leva dado pessoal: uma última etapa troca, em todo texto e no
@@ -4593,12 +4723,12 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   execução contínua é aplicada no próximo quadro.
   Feito (fix/res1, 22/11/2026): a troca de resolução e de MSAA (F1/F3 no PC, MSAA no menu do Android) não segura mais as threads do guest; o worker da GPU troca o renderer sozinho na próxima fronteira entre cenas e o jogo segue rodando (`GpuQueueLiveReplaceTests`, `GraphicsHotkeysTests.AChangeIsAppliedWhileAGuestThreadRunsGuestCode`). O save state continua exigindo o ponto seguro. Testar: no shell (com a música/SceShellMusicCoreCacheIo ativa) e num jogo, F1 de 1x para 2x/3x/4x e de volta, e F3: a troca aparece no próximo quadro, sem "not applied" no log e sem queda de fps durante a troca.
 
-- [ ] [P2][M] IO assíncrono (`sceIoXxxAsync`) bloqueava quem chama pelo tempo do cartão: a requisição inteira, com a
+- [ ] (22/11/2026, falta testar) [P2][M] IO assíncrono (`sceIoXxxAsync`) bloqueava quem chama pelo tempo do cartão: a requisição inteira, com a
   espera do modelo do cartão (7 MB/s), rodava na thread do guest, e um jogo que lê assíncrono na thread principal
   travava o quadro. Correção (fix/io1, 22/11/2026): como no SceIofilemgr 3.74 (fila "SceIoScheduler"), a chamada volta
   na hora, o trabalho no arquivo roda numa thread do host em ordem de envio e a conclusão (param, bit do evento,
   `sceIoComplete`) chega quando o tempo do dispositivo acaba, no relógio do guest; save state guarda pedido em voo
-  (`IoAsyncSchedulerTests`). Teste: um jogo que usa `sceIoReadAsync` (ex.: o shell copiando o pic0 de um jogo para o
+  (`IoAsyncSchedulerTests`). Nada listado como falta (conferido em 25/11/2026, small5). Testar: um jogo que usa `sceIoReadAsync` (ex.: o shell copiando o pic0 de um jogo para o
   LiveArea, a Câmera salvando foto) continua funcionando, e carregamentos com leitura assíncrona não engasgam o quadro.
 
 - [ ] (22/11/2026, falta testar) [P3][P] `--capture-playback` (rerun): o fim do rerun derrubava o processo quando a pasta da captura não tem
@@ -4608,7 +4738,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   de fechar o processo (`SessionCaptureTests.Compare_skips_when_a_capture_has_no_frames_file`). Teste: rodar o rerun
   de uma captura sem quadros e ver a linha `compare: skipped` e o resumo PERF no fim.
 
-- [ ] [P1][M] The Amazing Spider-Man (PCSE00333), tela de pausa piscando (relato do usuário, 21/11/2026; captura
+- [ ] (22/11/2026, falta testar) [P1][M] The Amazing Spider-Man (PCSE00333), tela de pausa piscando (relato do usuário, 21/11/2026; captura
   `PCSE00333_20261121_232645_tudo`, 4,3 s a 60 fps, dump da GPU de 198 quadros): o menu de pausa ("RESUME" e as
   opções abaixo, sobre o fundo com a aranha) pisca; na folha de contatos as opções abaixo de "RESUME" quase não
   aparecem. Comparar quadros seguidos no replay do dump (texto/opções presentes em um quadro e ausentes no outro).
@@ -4619,10 +4749,29 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   No Vita esses registradores guardam o que uma tarefa anterior deixou (o programa sobrescreve o resultado); o
   gerador agora zera todos os bancos (sa, p e as saídas também no fragmento), GeneratorVersion 34. Replay do dump:
   198/198 quadros idênticos entre execuções (antes 81-147/198). Teste: `ShaderRegisterInitTests`.
+  Também (fix/spidey2, 22/11/2026): a validação de sincronização (`VITASHARP_VK_VALIDATION=sync` no `replay-gpu`)
+  achou WRITE_AFTER_READ entre a cópia de readback do quadro (`RecordReadback`, sem barreira quando o alvo não tem
+  escala) e os draws do quadro seguinte no mesmo alvo, só sem swapchain (headless/replay); agora há barreiras antes e
+  depois da cópia em todos os casos.
+  Conferido de novo no release/20261117 (ff8e4faa, 25/11/2026, small5; inclui o ajuste f883f0e4, saídas do
+  fragmento com o TileWord1): dois replays do dump, 198/198 quadros idênticos (`--compare`), RESUME, RESTART,
+  SETTINGS e QUIT TO MAIN MENU em todos os quadros; o `verify` da captura diz "nada a verificar" (as regras do
+  relatório não marcaram o pisca na gravação: o texto escuro das opções é pequeno demais para o [flash] da célula).
   Testar: The Amazing Spider-Man, abrir a pausa (e a folha de contatos) e ficar alguns segundos: RESUME e as opções
   abaixo sempre visíveis, sem piscar.
 
 ## Bugs em aberto
+- [ ] [P3][P] `sceSslInternalGetCertificateAuthority` (feat/browser-1, trazido em fix/recover1) entrega todas as raízes do
+  `vs0:data/external/cert/CA_LIST.cer` para qualquer categoria e máscara. No libssl 3.74 (FUN_810482b0, só estudo)
+  cada categoria (1, 2, ...) e cada bit da máscara escolhem um trecho do arquivo por uma tabela de deslocamentos e
+  tamanhos; o sistema só pede (0, 0xFFFFFFFF), que é a lista inteira. Reproduzir a tabela e testar uma categoria e um
+  bit isolados. A validação dos certificados continua no código TLS do guest (nada é aceito pelo emulador).
+- [ ] Renderizador passa do `maxStorageBufferRange` do dispositivo: o espelho da CDRAM dos slots mapeados
+  (`VulkanRenderer.Mapped.cs`: CDRAM 256 MB + 32 MB de rascunho) é ligado como um storage buffer de 288 MB, e o
+  limite é 128 MB no lavapipe do Mesa 22.3 (e em várias GPUs móveis). A camada de validação acusa
+  `VUID-VkWriteDescriptorSet-descriptorType-00333`, e o lavapipe 22.3 cai com SIGSEGV em
+  `RendererTextureTests.EveryTextureFormatAndLayoutSamplesAndTheDumpReplaysTheSame`. Ligar uma janela dentro do limite
+  (ou dividir o espelho) e testar com um dispositivo que declara 128 MB.
 - [x] [P1][M] Testes de hooks: interferência de memória compartilhada (23/11/2026, hookfix1/cifix17/hookmem1):
 - [ ] [P1][M] Assassin's Creed III Liberation (PCSE00053) em 2x: textura da parede piscando e imagem embaçada (relato do
   usuário, 23/11/2026; captura `PCSE00053_20261123_134501_tudo`, build 793a9e96, resolução interna 2x por atalho no
@@ -4687,6 +4836,28 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   por thread do compilador do driver Intel (igc64), porque sem janela a troca do backend destruía e recriava a
   instância Vulkan nessa thread; agora a troca mantém a instância e o dispositivo também sem janela, e um crash nativo
   deixa uma linha `FATAL native exception` no log.
+  Medido depois (ac3w, 25/11/2026): o ds 0x61100000 é S8D24 (fmt 0x01266000, stride 704); a área ruim fica em
+  x 158-648, y 0-151, dentro do recorte 704x576 das duas passadas (sem aliasing de stride). Com os vértices e as MVPs
+  do dump, a profundidade do oclusor no modelo (float32, numpy) bate com a do pré-passe do renderer (99,9% a 2 passos
+  de 2^-24). Sem os oclusores, a parede fica de 0 a 2 passos atrás do pré-passe no quadro ruim e 1-2 passos na frente
+  no bom: um empate de 1-2 LSB do D24 que troca de lado com a câmera. A semântica estrita (o G-buffer carregaria o
+  próprio G-buffer anterior, sem o pré-passe) faria 77% da cena falhar: o pré-passe chega mesmo ao G-buffer no Vita.
+  Patente da Imagination (WO2001095257A1): o ISP guarda A,B,C por polígono (12 bytes) e avalia A·x+B·y+C em relação
+  ao tile, sem regra de desempate descrita; com isso faces coplanares de triangulação diferente não dão profundidade
+  igual garantida, então recalcular a profundidade pelo plano não basta. Falta a referência (Vita3K ou o aparelho no
+  mesmo ponto) para saber de que lado o Vita resolve esse empate (conversão float→D24 ao gravar/carregar a superfície,
+  precisão do ISP) antes de mudar o renderer.
+  Referência do aparelho (ac3w, 25/11/2026): vídeo de captura direta do Vita (YouTube qwGa8WQxNW4, "Handheld Players",
+  2:59-3:06, "Catch the chicken!"): a mesma parede (treliça, porta, venezianas verdes, tijolo) aparece inteira em todos
+  os quadros (0 flashes na região em 160 quadros únicos), então o Vita resolve o empate a favor da parede. Com a
+  profundidade lida em float (imagens D32F), a parede fica 0 a 2 ulps de float32 (= passos de 2^-24) atrás do pré-passe
+  nos quadros ruins e 1-2 na frente nos bons; simulando as regras de gravação da superfície S8D24 (arredondar, truncar
+  ou teto ao converter float→D24, com a parede em float ou quantizada) nenhuma deixa a parede inteira no quadro ruim
+  (no máximo 33% dos pixels passam, como hoje). Ou seja, não é a conversão ao gravar/carregar: o Vita calcula a
+  profundidade dessas faces coplanares de um jeito que dá o mesmo valor (ou a parede na frente) e o nosso caminho
+  (z/w por vértice e interpolação do driver) dá 1-2 ulps de diferença. Próximo passo possível: descobrir no USSE/ISP
+  como a profundidade sai do vértice (ex.: z e w do mesmo registro, divisão, precisão) a partir do código do shader e
+  de testes; sem isso, qualquer viés de profundidade seria chute.
 - [ ] [P1][G] PSM em Unity não abre (relato do usuário, 22/11/2026; log de 19:33, NPOA00239): o título traz o próprio
   runtime (`ux0:psm/<título>/runtime/eboot.bin`, PCSI00010 "Unity Runtime for PlayStation Mobile", mais mono_prx e
   bridge_prx), que está cifrado com a chave do conteúdo, e o carregador o lê como SELF comum: `InvalidDataException: Not
@@ -4746,9 +4917,26 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   stalled 98 ms`, 4 shaders e 2 pipelines novos), não de IO: a thread `main` esperou 0,0 s de IO, e a espera
   modelada do cartão (7 MB/s) da thread de streaming `Gear::AsynchGeneric` entrava no `fileIo` do ledger e virava a
   "causa" de todo quadro. Feito: o `fileIo` conta só a leitura no host, e o relatório da captura mostra o custo do
-  gravador por quadro e avisa quando ele passa de 4 ms. Falta: (1) baratear o gravador do dump (21 ms/quadro: a
-  codificação dos comandos e dos blocos de uniforms, ~11 MB/quadro crus, no GPU worker; levar para outra thread ou
-  reduzir as cópias/alocações por draw); (2) feito (fix/io1, 22/11/2026), ver "Corrigido, falta o usuário testar".
+  gravador por quadro e avisa quando ele passa de 4 ms. (1) Feito em parte (perf/ac3fps, 25/11/2026): o gravador
+  alocava um array novo por bloco de uniforms, o layout split de cada draw e o buffer de saída do compressor por chunk
+  (~17 MB/quadro de lixo, 60 gen2 em 20 s); agora reaproveita os arrays dos blocos que saem da janela (por tamanho),
+  um scratch do layout, um buffer de chunk do tamanho certo e os buffers do Brotli, e grava com qualidade 2 em vez de
+  3 (benchmark `GpuDumpCompressBenchmarks`: 2,4x menos CPU, arquivo do mesmo tamanho). Medido headless gravando os
+  quadros 600-1200 (2 rodadas cada): gravador 19,2 -> 7,3 ms/quadro no GPU worker, fps ~27,3 -> ~28,7, alocação
+  17,6 -> 3,9-4,6 MB/quadro, pausa de GC 8,5% -> 2,7%. A fila de chunks guarda no máximo compressores + 2 (era 16
+  chunks de buffers de 33-64 MB: com o worker mais rápido ela enchia e o processo ia de 2,1 a 3,4-4,0 GB); quando
+  os compressores não acompanham, o GPU worker espera por eles (o dump fica completo; nada é descartado) e o log do
+  dump mostra o máximo guardado ("at most N MB of chunks buffered", ~280 MB). Working set no fim gravando 2,15-2,25
+  GB (antes 2,06-2,07). Testar: "Gravar tudo" no AC III em gameplay; o relatório da captura deve mostrar o "dump
+  recorder" bem abaixo de 19 ms/quadro e o fps da gravação perto de 30. Falta: a compressão (2 threads, ~66-71 ms de
+  CPU por quadro) é o gargalo que sobra: o worker espera 3,6-9,3 ms/quadro por ela. Os bytes crus não caem com
+  deltas melhores: os blocos de uniforms do AC III são slots de array de 16-33 KB (16384 B x 11562 nos 34 quadros do
+  dump de 23/11) e 58% das palavras de 8 bytes mudam até contra o melhor dos 64 blocos anteriores do mesmo programa
+  (66% contra o anterior, 73% contra o mesmo draw do quadro anterior; 18,5% de palavras zero). Delta contra o mesmo
+  draw do quadro anterior foi medido e descartado: 332 -> 315 MB de uniforms (-5%, -3% dos registros), pago com duas
+  comparações por bloco no GPU worker. Próximo: gravar só os bytes de cada slot que o shader pode ler (ou que o guest
+  escreveu para o draw), ou mais um compressor quando a CPU deixar.
+  (2) feito (fix/io1, 22/11/2026), ver "Corrigido, falta o usuário testar".
 - [x] (18/11/2026, usuário: corrigido; reabre se aparecer de novo) [P1][M] PSVitaAlive (PSVAS1178, homebrew vita2d), bug gráfico no teclado de busca (usuário, 17/11/2026; captura
   `captures/PSVAS1178_20261117_215911_tudo`, 41 achados [flash]): em quadros isolados faltam as teclas e parte do
   texto ("9/12" em vez de "9/128") e triângulos saem do canto superior esquerdo. Causa (replay do gpu.vsgd, quadro

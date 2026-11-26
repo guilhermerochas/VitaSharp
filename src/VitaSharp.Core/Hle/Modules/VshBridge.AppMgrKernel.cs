@@ -1,3 +1,4 @@
+using VitaSharp.Core.Io;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 
@@ -239,13 +240,151 @@ public sealed partial class AppMgr
         return 0;
     }
 
-    /// <summary>NID_1574E1A4(id, buffer, size, result): a system path by id (the 0x6A/0x6B, 0xCD, 600 and 900 ids
-    /// of the system programs): NULL buffer or result 0x80800001; none is a path the emulator serves apart
-    /// (0x80800007).</summary>
-    [Hle(Nid = 0x1574E1A4, Library = "SceAppMgrForDriver", Default = true)]
-    int ksceAppMgr_1574E1A4(uint id, uint buffer, uint size, uint result)
+    /// <summary>The program authority IDs NID_1574E1A4 checks (high word, low word): the shell's 0x2800000000000001,
+    /// 0x280000000000002D, and 0x2808000000000001.</summary>
+    const uint ShellAuthorityHigh = 0x28000000, ShellAuthorityLow = 1, SecondShellAuthorityLow = 0x2D, MountAuthorityHigh = 0x28080000;
+
+    /// <summary>The source folders NID_1574E1A4 mounts: id 900 an application or its patch, 901 a save data folder (as
+    /// the overlay resolves them).</summary>
+    static readonly string[] AppMountSources = [.. new[] { FirmwareLayout.Applications, FirmwareLayout.Patches, FirmwareLayout.GameCardApplications, FirmwareLayout.GameCardPatches }.Select(folder => $"{folder.Device}:/{folder.Folder}/")];
+
+    /// <summary>
+    /// The caller's right to NID_1574E1A4's <paramref name="id"/> (SceAppMgr 3.74 0x810232ec): 0x6A/0x6B a PSM program
+    /// or a system program; 0xCD SceSblACMgrForDriver 456DA7AC; 600 ksceSblACMgrIsAllowedExtendedMemory; 0x6E-0x70,
+    /// 0x12E-0x130, 500-505 and 900/901 by the caller's program authority ID (ksceKernelGetProcessSelfAuthInfo; 0x6E the
+    /// shell's or 0x280000000000002D, 0x6F SceSblACMgrForDriver F5AE24AC, 0x70 a non-game program, 900/901
+    /// 0x2808000000000001, the others the shell's). Any other id passes.
+    /// </summary>
+    bool MountByIdAllowed(uint id)
     {
-        return buffer == 0 || result == 0 ? unchecked((int)0x80800001) : unchecked((int)0x80800007);
+        SystemServicesVsh services = Emu.Hle.Modules.OfType<SystemServicesVsh>().First();
+        if (id is 0x6A or 0x6B)
+        {
+            if (services.ksceSblACMgrIsPSMProgramThroughEntry(0) != 0)
+            {
+                return true;
+            }
+
+            return Emu.Hle.Modules.OfType<ProcessmgrKernel>().First().ksceSblACMgrIsSystemProgramThroughEntry(0) != 0;
+        }
+
+        if (id == 0xCD)
+        {
+            return services.SblAcMgrIsNonGameOrSystemApplicationThroughEntry(0) != 0;
+        }
+
+        if (id == 600)
+        {
+            return services.ksceSblACMgrIsAllowedExtendedMemoryThroughEntry(0) != 0;
+        }
+
+        bool byAuthority = id is (>= 0x6E and <= 0x70) or (>= 0x12E and <= 0x130) or (>= 500 and <= 505) or 900 or 901;
+        if (!byAuthority)
+        {
+            return true;
+        }
+
+        uint info;
+        using (ProcessScope.Enter(KernelSpace.KernelPid))
+        {
+            info = Mem.Alloc(0x90, "kernel:SceAppMgrSelfAuthInfo", MemoryRegion.Kernel);
+        }
+
+        try
+        {
+            if (Emu.Hle.Modules.OfType<ProcessmgrKernel>().First().ksceKernelGetProcessSelfAuthInfoThroughEntry(0, info) < 0)
+            {
+                return false;
+            }
+
+            uint low = GuestMemory.R32(info);
+            uint high = GuestMemory.R32(info + 4);
+            return id switch
+            {
+                0x70 => services.ksceSblACMgrIsNonGameProgramThroughEntry(0) != 0,
+                0x6F => services.SblAcMgrCapability80ThroughEntry(0) != 0,
+                0x6E => high == ShellAuthorityHigh && (low == ShellAuthorityLow || low == SecondShellAuthorityLow),
+                900 or 901 => high == MountAuthorityHigh && low == ShellAuthorityLow,
+                _ => high == ShellAuthorityHigh && low == ShellAuthorityLow,
+            };
+        }
+        finally
+        {
+            Mem.Free(info);
+        }
+    }
+
+    /// <summary>The overlay's path for NID_1574E1A4's source: null when the overlay refuses it or it is not in the
+    /// folders of its id (<see cref="AppMountSources"/>; 901: ux0:/user/NN/savedata/, grw0:/savedata/,
+    /// ux0:/data/savedata).</summary>
+    string? MountByIdSource(uint id, uint path)
+    {
+        const int PathSize = 0x124;
+        uint resolved;
+        using (ProcessScope.Enter(KernelSpace.KernelPid))
+        {
+            resolved = Mem.Alloc(PathSize, "kernel:SceAppMgrMountPath", MemoryRegion.Kernel);
+        }
+
+        try
+        {
+            GuestMemory.Fill(resolved, 0, PathSize);
+            Fios2User fios = Emu.Hle.Modules.OfType<Fios2User>().First();
+            if (fios.ksceFiosKernelOverlayResolveSyncThroughEntry(ProcessScope.CurrentPid, 0, path, resolved, PathSize) != 0)
+            {
+                return null;
+            }
+
+            string source = GuestMemory.ReadCString(resolved, PathSize);
+            bool inFolder;
+            if (id == 900)
+            {
+                inFolder = AppMountSources.Any(folder => source.StartsWith(folder, StringComparison.Ordinal));
+            }
+            else
+            {
+                bool userSaveData = source.StartsWith("ux0:/user/", StringComparison.Ordinal) && source.Length >= 0xC
+                    && string.CompareOrdinal(source, 0xC, "/savedata/", 0, 10) == 0;
+                inFolder = userSaveData || source.StartsWith("grw0:/savedata/", StringComparison.Ordinal)
+                    || source.StartsWith("ux0:/data/savedata", StringComparison.Ordinal);
+            }
+
+            return inFolder ? source : null;
+        }
+        finally
+        {
+            Mem.Free(resolved);
+        }
+    }
+
+    /// <summary>
+    /// NID_1574E1A4(id, path, passcode, mount point out): a system program's PFS mount by id (SceAppMgr 3.74
+    /// 0x810232ec). The caller's right to the id first (<see cref="MountByIdAllowed"/>, 0x80800009); only ids 900 (an
+    /// application) and 901 (save data) mount, any other id, or a NULL path or output, is 0x80800001. The path goes
+    /// through the overlay (ksceFiosKernelOverlayResolveSync) and must be in the id's folders
+    /// (<see cref="MountByIdSource"/>), else 0x8080000C. The module then mounts it with kscePfsMount at a mount point of
+    /// its own and approves it for the shell; that mount is not emulated yet (0x80800007, a default: see the roadmap).
+    /// The names of the comparisons are the firmware's own folder prefixes, fixed by the module.
+    /// </summary>
+    [Hle(Nid = 0x1574E1A4, Library = "SceAppMgrForDriver", Default = true)]
+    int ksceAppMgr_1574E1A4(uint id, uint path, uint passcode, uint result)
+    {
+        if (!MountByIdAllowed(id))
+        {
+            return unchecked((int)0x80800009);
+        }
+
+        if (id is not (900 or 901) || path == 0 || result == 0)
+        {
+            return unchecked((int)0x80800001);
+        }
+
+        if (MountByIdSource(id, path) == null)
+        {
+            return unchecked((int)0x8080000C);
+        }
+
+        return unchecked((int)0x80800007);
     }
 
     /// <summary>

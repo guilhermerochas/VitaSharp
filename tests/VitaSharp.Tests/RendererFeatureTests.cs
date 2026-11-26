@@ -34,7 +34,9 @@ public sealed class RendererFeatureTests(GuestMemoryFixture fx)
     {
         using IDisposable driver = SoftwareVulkan.Use();
         using var h = new HleHarness(fx, "vkfeat");
-        var w = new RendererTextureTests.Workload(h, multisample: 2); // SCE_GXM_MULTISAMPLE_4X
+        // SCE_GXM_MULTISAMPLE_4X with the MSAA downscale colour surface: libgxm 3.74's sceGxmBeginScene refuses a 4X
+        // target whose colour surface is neither downscaled nor at the sample grid (twice the size each way)
+        var w = new RendererTextureTests.Workload(h, multisample: 2, scaleMode: 1);
         string cache = Path.Combine(h.Root, "shadercache");
         try
         {

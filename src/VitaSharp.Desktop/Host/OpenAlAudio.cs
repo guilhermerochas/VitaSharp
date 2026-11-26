@@ -145,6 +145,82 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
         }
     }
 
+    const int ALC_FORMAT_CHANNELS_SOFT = 0x1990, ALC_FORMAT_TYPE_SOFT = 0x1991, ALC_STEREO_SOFT = 0x1501, ALC_FLOAT_SOFT = 0x1406;
+    delegate* unmanaged[Cdecl]<Device*, void*, int, void> _renderSamples;
+
+    /// <summary>
+    /// The same mixer on an OpenAL Soft loopback device (ALC_SOFT_loopback): nothing plays, the mix of every stream at
+    /// <paramref name="mixRate"/> Hz, stereo signed 16-bit, comes out of <see cref="RenderLoopback"/> when the caller
+    /// asks for it, as 32-bit float (the format the mixer works in and a WASAPI/Core Audio device takes; a 16-bit
+    /// loopback would add OpenAL Soft's dither). The audio parity tests read the desktop output with it, without a
+    /// sound card. Null when OpenAL or the extension is missing.
+    /// </summary>
+    public static OpenAlAudio? TryCreateLoopback(int mixRate)
+    {
+        try
+        {
+            var alc = ALContext.GetApi(true);
+            var al = AL.GetApi(true);
+            if (!alc.IsExtensionPresent(null, "ALC_SOFT_loopback"))
+            {
+                return null;
+            }
+
+            var openLoopback = (delegate* unmanaged[Cdecl]<byte*, Device*>)alc.GetProcAddress(null, "alcLoopbackOpenDeviceSOFT");
+            var renderSamples = (delegate* unmanaged[Cdecl]<Device*, void*, int, void>)alc.GetProcAddress(null, "alcRenderSamplesSOFT");
+            if (openLoopback == null || renderSamples == null)
+            {
+                return null;
+            }
+
+            Device* device = openLoopback(null);
+            if (device == null)
+            {
+                return null;
+            }
+
+            int* attributes = stackalloc int[]
+            {
+                ALC_FREQUENCY, mixRate, ALC_FORMAT_CHANNELS_SOFT, ALC_STEREO_SOFT, ALC_FORMAT_TYPE_SOFT, ALC_FLOAT_SOFT, 0,
+            };
+            Context* context = alc.CreateContext(device, attributes);
+            if (context == null)
+            {
+                alc.CloseDevice(device);
+                return null;
+            }
+
+            alc.MakeContextCurrent(context);
+            var audio = new OpenAlAudio(al, alc, device, context, new AudioOutputFollower(""));
+            audio._renderSamples = renderSamples;
+            return audio;
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"OpenAL loopback unavailable: {e.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>Mixes the next <c>interleaved.Length / 2</c> stereo frames of a loopback device (<see
+    /// cref="TryCreateLoopback"/>) into <paramref name="interleaved"/> (full scale = 1.0).</summary>
+    public void RenderLoopback(Span<float> interleaved)
+    {
+        if (_renderSamples == null)
+        {
+            throw new InvalidOperationException("not a loopback device");
+        }
+
+        lock (_lock)
+        {
+            _alc.MakeContextCurrent(_context);
+            fixed (float* destination = interleaved)
+            {
+                _renderSamples(_device, destination, interleaved.Length / 2);
+            }
+        }
+    }
+
     /// <summary>Device, mixer settings and per-stream buffering (debug lines, F10 audio.txt, session summary).</summary>
     public string Describe()
     {

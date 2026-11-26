@@ -425,7 +425,7 @@ public sealed partial class ProcessmgrKernel : HleModule
     /// runs from vs0:) and for homebrew with the system class (an unsafe fake SELF), 0 for a game or application, safe
     /// homebrew and the kernel process (its own auth info has bit 1 clear).</summary>
     [Hle(ReturnsValue = true)]
-    int ksceSblACMgrIsSystemProgram(int pid)
+    internal int ksceSblACMgrIsSystemProgram(int pid)
     {
         if (pid == KernelSpace.KernelPid)
         {

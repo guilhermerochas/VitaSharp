@@ -881,7 +881,7 @@ public sealed class GpuQueue : IDisposable
                     {
                         Log.Error($"GPU backend idle failed: {e}");
                     }
-                    GpuDumpRecorder.Current?.AfterIdle();
+                    GpuDumpRecorder.Current?.AfterIdle(this);
                     int idleWakeMs = _held.Count > 0 ? 2 : Backend?.IdleWakeMs ?? 50;
                     long ti = FrameLedger.Now();
                     if (s_lightSignals)
@@ -1027,7 +1027,7 @@ public sealed class GpuQueue : IDisposable
             }
         }
         GpuDumpRecorder? dump = GpuDumpRecorder.Current; // GPU dump recording (null when off)
-        dump?.BeforeExecute(cmd);
+        dump?.BeforeExecute(this, cmd);
         // a draw kicked while the worker was held reads its geometry from the copy taken at the kick
         GeometrySnapshot? geometry = (cmd as DrawCommand)?.Geometry;
         if (geometry != null)
@@ -1074,7 +1074,7 @@ public sealed class GpuQueue : IDisposable
         {
             lock (_backendLock)
             {
-                dump.AfterExecute(cmd, Backend);
+                dump.AfterExecute(this, cmd, Backend);
             }
         }
 

@@ -10,8 +10,9 @@
 #     prints the benchmarks).
 #   --name: result file name (default bench_<date>_<time>); --out: results folder
 #     (default ${TMPDIR:-/tmp}/vitasharp-bench).
-#   --dump / --at9 / --corpus: fixtures with game data (never in git): a GPU dump for GpuWorkerBenchmarks
-#     and ShaderTranslationBenchmarks, an .at9 file for Atrac9Benchmarks, a block corpus for
+#   --dump / --at9 / --corpus: fixtures with game data (never in git): a GPU dump for GpuWorkerBenchmarks,
+#     ShaderTranslationBenchmarks and the GPU dump recorder (GpuDumpRecorderBenchmarks,
+#     GpuDumpCompressBenchmarks), an .at9 file for Atrac9Benchmarks, a block corpus for
 #     CpuTranslatorBenchmarks.
 #   --variants: GpuWorkerBenchmarks runs 'base' and each '|'-separated set of switches (A/B on the
 #     same build).

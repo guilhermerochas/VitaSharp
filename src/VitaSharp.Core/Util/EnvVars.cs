@@ -313,6 +313,10 @@ public static class EnvVars
     public const string ShaderRebuild = "VITASHARP_SHADER_REBUILD";
     public const string ShaderWorkers = "VITASHARP_SHADER_WORKERS";
     public const string ShaderWorkerPrio = "VITASHARP_SHADER_WORKER_PRIO";
+    /// <summary>N (A/B): the spare shader workers above the steady share, at below-normal priority, that run while the
+    /// GPU thread waits for the workers (default: the CPU budget's, ShaderWorkerBudget: 90% of the processors in all;
+    /// none when VITASHARP_SHADER_WORKERS / --shader-workers fixes the pool, unless this sets them).</summary>
+    public const string ShaderSpareWorkers = "VITASHARP_SHADER_SPARE_WORKERS";
     /// <summary>1 = an application the shell launches replaces the shell instead of running as a second process.</summary>
     public const string SingleProcess = "VITASHARP_SINGLE_PROCESS";
     public const string SkipUnicorn = "VITASHARP_SKIP_UNICORN";
@@ -437,6 +441,10 @@ public static class EnvVars
     /// while the hot threads leave at least half a fast core idle, as the shader workers do; default: the slow cores
     /// (Mobile.Core Performance/ThreadPlacement.cs).</summary>
     public const string AndroidHelpers = "VITASHARP_ANDROID_HELPERS";
+    /// <summary>Android, A/B: =big moves the guest thread recording the GXM scenes (the last one to call
+    /// sceGxmBeginScene) to the fast cores as soon as it changes, beyond the hot-thread slots; default: placed by its load
+    /// (Mobile.Core Performance/ThreadPlacement.cs, Core Util/GpuSubmitterThread.cs).</summary>
+    public const string AndroidGxmThread = "VITASHARP_ANDROID_GXM_THREAD";
     /// <summary>Android: =info, =debug or =all keeps forwarding info/debug lines to logcat while a game runs (by
     /// default only warnings and errors reach logcat once the first frame is shown; the log file keeps everything).</summary>
     public const string AndroidLogcat = "VITASHARP_ANDROID_LOGCAT";

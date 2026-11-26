@@ -163,7 +163,7 @@ public sealed partial class SystemServicesVsh
     /// <summary>ksceSblACMgrIsNonGameProgram (pid): capability bit 3.</summary>
     [Hle("ksceSblACMgrIsNonGameProgram2", Nid = 0x3F99279F, Library = "SceSblACMgrForKernel", ReturnsValue = true)]
     [Hle("ksceSblACMgrIsNonGameProgram", Nid = 0x6C5AB07F, Library = "SceSblACMgrForDriver", ReturnsValue = true)]
-    int ksceSblACMgrIsNonGameProgram(int pid) => AcCapability(pid, 3) ? 1 : 0;
+    internal int ksceSblACMgrIsNonGameProgram(int pid) => AcCapability(pid, 3) ? 1 : 0;
 
     /// <summary>(pid): capability bit 0x1F.</summary>
     [Hle("NID_48F4D5EE", Nid = 0x48F4D5EE, Library = "SceSblACMgrForKernel", ReturnsValue = true)]
@@ -178,7 +178,7 @@ public sealed partial class SystemServicesVsh
     /// <summary>(pid): capability bit 0x80 (the Marlin network: SceMarlinHci, SceAppMgr, SceVshBridge).</summary>
     [Hle("NID_04C0ED3F", Nid = 0x04C0ED3F, Library = "SceSblACMgrForKernel", ReturnsValue = true)]
     [Hle("NID_F5AE24AC", Nid = 0xF5AE24AC, Library = "SceSblACMgrForDriver", ReturnsValue = true)]
-    int SblAcMgrCapability80(int pid) => AcCapability(pid, 0x80) ? 1 : 0;
+    internal int SblAcMgrCapability80(int pid) => AcCapability(pid, 0x80) ? 1 : 0;
 
     /// <summary>(pid): capability bit 0x81 (MagicGate: SceMgVideo, SceUsbstorMg).</summary>
     [Hle("NID_02422F1F", Nid = 0x02422F1F, Library = "SceSblACMgrForKernel", ReturnsValue = true)]
@@ -301,7 +301,7 @@ public sealed partial class SystemServicesVsh
     /// <summary>ksceSblACMgrIsPSMProgram (pid): the PSM runtime or a PSM program (or a fake SELF with the QA flag).</summary>
     [Hle("ksceSblACMgrIsPSMProgram2", Nid = 0xC90A9216, Library = "SceSblACMgrForKernel", ReturnsValue = true)]
     [Hle("ksceSblACMgrIsPSMProgram", Nid = 0xC98D82EE, Library = "SceSblACMgrForDriver", ReturnsValue = true)]
-    int ksceSblACMgrIsPSMProgram(int pid) => AcAuthority(pid, IsPsmProgramAuthority) ? 1 : 0;
+    internal int ksceSblACMgrIsPSMProgram(int pid) => AcAuthority(pid, IsPsmProgramAuthority) ? 1 : 0;
 
     /// <summary>ksceSblACMgrIsPSMRuntime (pid): 0x210000101CD2000A or the PSM runtime 0x2800C0101CD2000B.</summary>
     [Hle("ksceSblACMgrIsPSMRuntime2", Nid = 0x966B3738, Library = "SceSblACMgrForKernel", ReturnsValue = true)]
@@ -342,7 +342,7 @@ public sealed partial class SystemServicesVsh
     /// 0x2800000000000010, 0x2800000000000031, else capability bit 0x82.</summary>
     [Hle("ksceSblACMgrIsAllowedExtendedMemory2", Nid = 0x384D20FD, Library = "SceSblACMgrForKernel", ReturnsValue = true)]
     [Hle("ksceSblACMgrIsAllowedExtendedMemory", Nid = 0x4DB7F512, Library = "SceSblACMgrForDriver", ReturnsValue = true)]
-    int ksceSblACMgrIsAllowedExtendedMemory(int pid)
+    internal int ksceSblACMgrIsAllowedExtendedMemory(int pid)
     {
         if (!AcAuth(pid, out AcAuthInfo info))
         {
@@ -373,7 +373,7 @@ public sealed partial class SystemServicesVsh
     /// <summary>(pid): capability bit 3, the system's applications, 0x2800000000000044 or 0x280000000000001E.</summary>
     [Hle("NID_4C4B7D6B", Nid = 0x4C4B7D6B, Library = "SceSblACMgrForKernel", ReturnsValue = true)]
     [Hle("NID_456DA7AC", Nid = 0x456DA7AC, Library = "SceSblACMgrForDriver", ReturnsValue = true)]
-    int SblAcMgrIsNonGameOrSystemApplication(int pid)
+    internal int SblAcMgrIsNonGameOrSystemApplication(int pid)
     {
         if (!AcAuth(pid, out AcAuthInfo info))
         {

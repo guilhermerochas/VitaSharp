@@ -181,7 +181,9 @@ public static unsafe partial class NativeCrashLog
 
     private static string FormatWhere(ulong address, string? module, ulong moduleBase, uint threadId, string? threadName)
     {
-        string where = module != null ? $"{Path.GetFileName(module)}+0x{address - moduleBase:X}" : $"0x{address:X}";
+        // The module path is a Windows path (this log runs on Windows only), so the file name is cut at either
+        // separator: Path.GetFileName on Linux and macOS would keep a backslash path whole.
+        string where = module != null ? $"{module[(module.LastIndexOfAny(['\\', '/']) + 1)..]}+0x{address - moduleBase:X}" : $"0x{address:X}";
         string thread = string.IsNullOrEmpty(threadName) ? $"thread {threadId}" : $"thread {threadId} '{threadName}'";
         return $"{where} on {thread}";
     }
