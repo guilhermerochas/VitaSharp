@@ -3567,9 +3567,13 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   amostras por painel (uma por vblank desde a leitura anterior, mais a da leitura), `sceTouchPeek*` devolve as N mais
   novas e `sceTouchRead*` as que ainda não leu. Diagnóstico: linha `touch:` no `session.txt` e no `[perf]` do Android
   (eventos brutos por tipo, pontos históricos, leituras, amostras, contatos novos, hash dos relatórios) e
-  `Touch: view ...` no log. Testes: `AndroidTouchPathTests`. A re-execução de uma gravação entrega só a amostra da
-  leitura (as intermediárias não entram no `input.tsv`). Testar no celular: Sistema do Vita, tocar rápido em ícones,
-  rolar a tela inicial com arrasto lento e com "flick", arrastar e soltar fora da imagem, digitar rápido no teclado.
+  `Touch: view ...` no log. Testes: `AndroidTouchPathTests`. A gravação guarda também as amostras entre leituras
+  (linhas `touch-sample` do `input.tsv`) e a re-execução as entrega nas mesmas leituras. Os painéis reportam até 6
+  contatos na frente e 4 atrás, como o SceTouch 3.74 os configura (antes eram 4 e 4). O chip de pausa do Android se
+  esconde 4 s depois do último toque e deixa para o jogo os toques no lugar dele (a barra de status do Vita); um
+  toque longe dele o traz de volta. Testar no celular: Sistema do Vita, tocar rápido em ícones, rolar a tela inicial
+  com arrasto lento e com "flick", arrastar e soltar fora da imagem, digitar rápido no teclado, tocar na barra de
+  status (no topo, ao centro) depois que o chip de pausa sumir.
 - [ ] (25/11/2026, falta testar) [P2][G] SceUlobjMgrForDriver lê os objetos da libult na memória do processo como o
   SceUlobjMgr 3.74 (feat/kernO, trazido em fix/recover1). Duas implementações da mesma biblioteca existiam
   (feat/kernO e feat/kern9); ficou a do kernO, conferida contra o descompilado do 3.74 (só estudo): faz as 14
