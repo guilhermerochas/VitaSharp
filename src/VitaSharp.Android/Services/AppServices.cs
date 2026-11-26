@@ -62,6 +62,32 @@ public static class AppServices
         }
     }
 
+    /// <summary>
+    /// The Vita's clock follows the phone's own time zone rules (java.util.TimeZone, kept up to date by Android), not the
+    /// .NET runtime's copy of the zone data, which may be older than the phone's (VitaSharp.Core.Firmware.SystemTimeZone.Platform).
+    /// The log line compares both, so a report shows a disagreement.
+    /// </summary>
+    static void UsePhoneTimeZone()
+    {
+        try
+        {
+            string id = Java.Util.TimeZone.Default?.ID ?? "UTC";
+            VitaSharp.Core.Firmware.SystemTimeZone.Platform = (id, utc =>
+            {
+                long milliseconds = (long)(utc - DateTime.UnixEpoch).TotalMilliseconds;
+                return (Java.Util.TimeZone.Default?.GetOffset(milliseconds) ?? 0) / 60_000;
+            });
+            DateTime now = DateTime.UtcNow;
+            Log.Info($"Time zone: phone {id} UTC{VitaSharp.Core.Firmware.SystemTimeZone.Platform.Value.UtcOffsetMinutes(now) / 60.0:+0.##;-0.##}, "
+                + $"runtime {TimeZoneInfo.Local.Id} UTC{TimeZoneInfo.Local.GetUtcOffset(now).TotalHours:+0.##;-0.##}; "
+                + $"Vita zone {VitaSharp.Core.Firmware.SystemTimeZone.Host}, summer time {VitaSharp.Core.Firmware.SystemTimeZone.HostSummerTime}");
+        }
+        catch (Exception e) when (e is Java.Lang.Throwable or InvalidOperationException)
+        {
+            Log.Warn($"Time zone of the phone not read ({e.Message}): the runtime's is used");
+        }
+    }
+
     public static void Initialize(Context context, bool gameProcess)
     {
         lock (Lock)
@@ -110,6 +136,7 @@ public static class AppServices
             }
             foreach (var (name, value) in env)
                 Log.Info($"{EnvironmentFile.FileName}: {name}={value}");
+            UsePhoneTimeZone();
             Prefs = AppPreferences.Load(Data.AppSettingsFile);
             // the texts' language (Ajustes > Language): set before any screen or the game reads a text
             VitaSharp.Core.Localization.Loc.SetLanguage(Prefs.Language);
