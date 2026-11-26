@@ -1030,15 +1030,19 @@ public sealed unsafe class CpuCore : IDisposable
 
     private static bool s_vectorModeSeen;
 
+    /// <summary>Executions of a short-vector expansion before it is compiled (<see cref="RunVectorBlock"/>).</summary>
+    public const int VectorCompileExecutions = 2;
+
     /// <summary>Statistics: blocks compiled for VFP short-vector mode, and blocks run as that code.</summary>
     public static long VectorBlocksCompiled, VectorBlocksRun;
 
     /// <summary>
     /// Runs <paramref name="scalar"/> in VFP short-vector mode as compiled code: its expansion for the current mode
     /// (<see cref="BlockBuilder.ForVectorMode"/>, kept on the block) is compiled by the first backend of the chain that
-    /// takes it once it is as hot as any block, and then runs alone (the pacing window is closed for the run, so every
-    /// exit returns here and none is linked: the blocks after it may run in another mode). Returns false when the
-    /// caller must interpret the block (not hot yet, no backend, or debugging hooks that need the interpreter).
+    /// takes it on its second run (<see cref="VectorCompileExecutions"/>), and then runs alone (the pacing window is
+    /// closed for the run, so every exit returns here and none is linked: the blocks after it may run in another mode).
+    /// Returns false when the caller must interpret the block (its first run, no backend, or debugging hooks that need
+    /// the interpreter).
     /// </summary>
     private bool RunVectorBlock(CpuState* s, Block scalar, ref long sinceCheck, ref Native.NativeRuntime? native)
     {
@@ -1057,8 +1061,10 @@ public sealed unsafe class CpuCore : IDisposable
 
         if (vector.Code == null)
         {
-            if (vector.JitState != 0 || ++vector.ExecCount < Jit.MinExecutions
-                || (long)vector.ExecCount * vector.Insts.Length < vector.HotAt)
+            // compiled on its second run, not once as hot as any block: interpreted, each vector element goes through
+            // the managed VFP handler (~2000 host cycles per vector instruction), and a vector loop's blocks run few
+            // times each per pass (Dead Space's mixer: a 35 000-instruction first job took 15 ms interpreted)
+            if (vector.JitState != 0 || ++vector.ExecCount < VectorCompileExecutions)
             {
                 return false;
             }

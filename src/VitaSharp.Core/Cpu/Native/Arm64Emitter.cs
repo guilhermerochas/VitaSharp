@@ -2364,6 +2364,14 @@ public sealed unsafe partial class Arm64Emitter
         if (checkedAtEntry)
         {
         } // A64Opt.FpEntryCheck: the block entry checked the mode
+        else if (_ir.VectorMode)
+        {
+            // a short-vector expansion runs with LEN/STRIDE set: its ops are the scalar elements, so the fast path only
+            // needs the Vita's DN/FZ/rounding mode (FPSCR[25:22] == DN FZ, RMode 0)
+            LdState(X16, s_offFpscr);
+            assembler.Ubfx(X16, X16, 22, 4);
+            assembler.CmpImm(X16, 0xC);
+        }
         else if (_fastFpCheck)
         {
             LdState(X16, s_offFpscr);

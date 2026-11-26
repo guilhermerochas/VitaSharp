@@ -191,6 +191,35 @@ public sealed unsafe class VfpShortVectorJitTests(GuestMemoryFixture fx)
     }
 
     /// <summary>
+    /// A vector-mode block is compiled on its second run, not once it is as hot as any block: interpreted, every vector
+    /// element goes through the managed VFP handler, and the blocks of a vector loop run only a few times each per pass
+    /// (Dead Space's mixer). Three iterations of the loop are enough (before: at least 64 executions and 2000
+    /// instructions).</summary>
+    [Fact]
+    public void VectorModeBlockCompilesOnItsSecondRun()
+    {
+        if (!Jit.Enabled || Jit.Chain.Length == 0)
+        {
+            return;
+        }
+
+        MapCode([0xEEE10A10, 0xEE384A0C, 0xE2522001, 0x1AFFFFFC, 0xEEE11A10, Svc]);
+        using var core = new CpuCore(new BlockCache());
+        CpuState* s = core.State;
+        s->R[0] = BaseFpscr | (3 << 16);
+        s->R[1] = BaseFpscr;
+        s->R[2] = (uint)CpuCore.VectorCompileExecutions + 1;
+        s->R[15] = CodeBase;
+        s->Cpsr = 0x10;
+        s->Fpscr = BaseFpscr;
+        long compiled = CpuCore.VectorBlocksCompiled;
+        long run = CpuCore.VectorBlocksRun;
+        Assert.Equal(ExitReason.Svc, core.Run());
+        Assert.True(CpuCore.VectorBlocksCompiled > compiled, "the vector-mode block was not compiled on its second run");
+        Assert.True(CpuCore.VectorBlocksRun > run, "the compiled vector-mode block never ran");
+    }
+
+    /// <summary>
     /// The dispatcher end to end: a loop that runs in vector mode (vmsr; loop: vadd.f32 s8, s16, s24; subs; bne;
     /// vmsr; svc) is compiled for the mode once hot and then runs as that code, with the interpreter's results. Before,
     /// every vector-mode block ran in the interpreter however hot it was.
