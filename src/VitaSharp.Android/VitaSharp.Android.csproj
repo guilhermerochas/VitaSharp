@@ -143,14 +143,19 @@
     <LinkerArg Include="-Wl,--allow-multiple-definition" />
   </ItemGroup>
   <!--
-    GC gen0 budget (A/B, default unset = the runtime's choice): -p:VitaSharpGcGen0Size=0x400000 embeds GCgen0size in
+    GC gen0 budget (default 0x400000 = 4 MB; -p:VitaSharpGcGen0Size=<n> overrides it, =0 or empty turns it off and leaves
+    the runtime's choice): embeds GCgen0size in
     the Native AOT library (ILC runtime option, read when the runtime starts: the GC is set up before any of our code
     runs, so it cannot be a config/env.txt switch). Killzone gameplay on the Redmi Note 14 ran ~19 gen0 GCs/s with
     ~190 KB allocated per GC and 12% of the time in GC pauses: the budget the runtime picks when it cannot read the
     CPU's cache size (256 KB floor; the desktop picks ~4 MB, Mono's nursery on Android is 4 MB). The PERF allocated
-    line reports the young generation before the last GC to tell which one ran.
+    line reports the young generation before the last GC to tell which one ran. Measured (Killzone slot 1, gameplay):
+    GC pause 5.5-10.9% -> 2.3-2.5%, fps 19.5-24.3 -> 27-28.7 (median 30).
   -->
-  <ItemGroup Condition="'$(VitaSharpAndroidRuntime)' == 'nativeaot' and '$(VitaSharpGcGen0Size)' != ''">
+  <PropertyGroup Condition="'$(VitaSharpGcGen0Size)' == ''">
+    <VitaSharpGcGen0Size>0x400000</VitaSharpGcGen0Size>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(VitaSharpAndroidRuntime)' == 'nativeaot' and '$(VitaSharpGcGen0Size)' != '' and '$(VitaSharpGcGen0Size)' != '0'">
     <IlcArg Include="--runtimeopt:GCgen0size=$(VitaSharpGcGen0Size)" />
   </ItemGroup>
   <Target Name="_VitaSharpNativeAotInputs" AfterTargets="_AndroidComputeIlcCompileInputs" Condition="'$(VitaSharpAndroidRuntime)' == 'nativeaot'">

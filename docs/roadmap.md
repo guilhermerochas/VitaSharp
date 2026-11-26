@@ -1370,16 +1370,6 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   no celular (Uncharted 1º minuto a frio e 2ª sessão, Killzone gameplay) com as chaves acima no env.txt; metas: quadros
   > 50 ms do 1º minuto do Uncharted -30%, 0 travadas de texUpload > 100 ms na 2ª sessão e -50% na 1ª. Depois: pré-carregar
   as texturas na carga do nível (a fila dos transcodificadores antes do primeiro draw).
-- [ ] [P1][M] (falta medir no celular) Desempenho do Android, perf/andperf2: pausas do GC no gameplay. Killzone slot 1
-  (Redmi Note 14, 26/11, 5 execuções de 40 s): ~19 GCs de gen0 por segundo com ~190 KB alocados por GC e 12,1-12,8%
-  do tempo em pausa do GC (~6,4 ms por GC, ~5 ms por quadro de 41 ms, com todas as threads gerenciadas paradas); o
-  padrão do piso de 256 KB que o GC usa quando não lê o tamanho do cache da CPU (no PC ele escolhe ~4 MB; com
-  `GCgen0size=0x40000` um programa NativeAOT no PC repete o padrão: 0,5 -> 5 GCs/s, 4,5 MB -> 476 KB por GC). Feito:
-  `-p:VitaSharpGcGen0Size=0x400000` embute o `GCgen0size` na biblioteca NativeAOT (opção de build, não de env.txt: o
-  GC sobe antes do nosso código); a linha `PERF allocated` passa a dizer a pausa por GC e a gen0 antes do último GC.
-  Falta: uma execução com o APK atual para ler a gen0 (confirma o piso) e a série A/B (APK base x APK com a
-  propriedade) no Killzone slot 1; meta: pausa do GC <= 3% e <= 2 GCs de gen0/s no gameplay. As chaves de GPU
-  `VITASHARP_FLOAT_BITS_JOIN` e `VITASHARP_SHADER_VEC4_LOADS` não mudaram a GPU do Killzone (32,6-33,4 ms contra 32,8).
 - [x] App Android, tela da biblioteca: tirar a palavra "VitaSharp" em cima do título da biblioteca, o botão de instalar e o botão de Ajustes ao lado do texto da biblioteca. Feito (feat/andpar): o cabeçalho é só o título; instalar continua no botão flutuante e em Ajustes > Instalar jogo (`AndroidNarrowLayoutTests`). **Falta validar no aparelho.**
 - [ ] [P2][M] (precisa do usuário/aparelho) Dead Space (port, DEADSPACE) no Android sem som e engasgando (relato do usuário, 15/11/2026, APK build-1f8c024, com "Ativar Plugins do Kernel" e kubridge + fd_fix; no PC roda com som). Logs do celular guardados pelo lead (`<scratchpad>ds_android`). Ler o log primeiro: áudio (saída aberta? grãos/s), fps e tiers da CPU, threads em espera; comparar com o PC na mesma cena.
 - [x] Paridade de opções PC/Android: toda opção do launcher do desktop também no app Android, com o mesmo nome, padrão
@@ -3632,6 +3622,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- (26/11/2026, falta testar) [P1][M] Desempenho do Android, perf/andperf2: pausas do GC no gameplay. Killzone slot 1
+  (Redmi Note 14, 26/11): ~19 GCs de gen0 por segundo com ~190 KB alocados por GC e 12,1-12,8% do tempo em pausa do GC
+  (o piso de 256 KB que o GC usa quando não lê o tamanho do cache da CPU; no PC ele escolhe ~4 MB). Corrigido: o GC gen0
+  de 4 MB (`GCgen0size=0x400000` embutido na biblioteca NativeAOT) é agora o PADRÃO do build Android
+  (`VitaSharp.Android.csproj`; `-p:VitaSharpGcGen0Size=<n>` troca o valor, `=0` ou vazio desliga; opção de build, não de
+  env.txt: o GC sobe antes do nosso código). Medido no celular (Killzone slot 1, gameplay): pausa do GC 5,5-10,9% ->
+  2,3-2,5%, fps 19,5-24,3 -> 27-28,7 (mediana 30). A linha `PERF allocated` diz a pausa por GC e a gen0 antes do último
+  GC. Testar: APK novo, Killzone slot 1 em gameplay, olhar fps e a linha `PERF allocated`. As chaves de GPU
+  `VITASHARP_FLOAT_BITS_JOIN` e `VITASHARP_SHADER_VEC4_LOADS` não mudaram a GPU do Killzone (32,6-33,4 ms contra 32,8).
 - [ ] (26/11/2026, falta testar) [P1][M] Toque do shell no Android: o driver de toque amostra o painel a cada vblank,
   como o SceTouch do Vita (fix/andtouch1). O libpaf 3.74 lê o toque por `sceTouchPeekRegion`(`Ext`) com 16 buffers a
   cada quadro e processa cada amostra mais nova que a última vista (press/move/release pelo id do relatório). O HLE
