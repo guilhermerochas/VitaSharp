@@ -54,6 +54,18 @@ public sealed class VfsTests : IDisposable
         Assert.Equal(Path.Combine(fs, "ux0", "music"), vfs.Resolve("music0:"));
     }
 
+    /// <summary>vd0 (the system data partition) is one of the unit's devices: the shell's SceNetCtl keeps the network
+    /// interface statistics in vd0:network/ifstat.bin and creates the folder when it is missing. It was never mounted:
+    /// every access was "IO: unmapped path 'vd0:network'" and the folder could not be made.</summary>
+    [Fact]
+    public void TheSystemDataPartitionIsMounted()
+    {
+        string fs = Path.Combine(_root, "fs");
+        var vfs = new Vfs(fs);
+        Assert.Equal(Path.Combine(fs, "vd0", "network", "ifstat.bin"), vfs.Resolve("vd0:network/ifstat.bin", forWrite: true));
+        Assert.False(vfs.IsTitleDevice("vd0:"));
+    }
+
     [Fact]
     public void BackslashesAndDotSegmentsAreNormalized()
     {

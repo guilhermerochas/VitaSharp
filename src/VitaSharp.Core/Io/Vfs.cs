@@ -14,7 +14,9 @@ public sealed class Vfs
     public Vfs(string fsRoot)
     {
         FsRoot = fsRoot;
-        foreach (string? dev in new[] { "ux0", "ur0", "uma0", "imc0", "tm0", "vs0", "os0", "sa0", "pd0", "ud0", "host0", "sd0" })
+        // vd0 is the system data partition (FW 3.74: the registry, and vd0:network/ifstat.bin, the interface statistics
+        // the shell's SceNetCtl keeps)
+        foreach (string? dev in new[] { "ux0", "ur0", "uma0", "imc0", "tm0", "vs0", "os0", "sa0", "vd0", "pd0", "ud0", "host0", "sd0" })
         {
             Mount(dev, Path.Combine(fsRoot, dev));
         }
