@@ -107,6 +107,7 @@ public sealed unsafe partial class ArmFrontend
         _builder.AbortGuards = block.Owner?.DataAbortGuards == true;
         _builder.FaultExits = _builder.AbortGuards && HostFaultExits && block.Owner?.HostFaultAborts == true;
         IrBlock ir = _builder.Block;
+        ir.VectorMode = block.VectorFpscr != 0;
         int segments = chain?.Count ?? 1;
         long cycles = 0;
         int guest = 0;

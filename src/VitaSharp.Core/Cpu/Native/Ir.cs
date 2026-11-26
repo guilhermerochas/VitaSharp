@@ -122,6 +122,9 @@ public sealed class IrBlock
     public int GuestInstructions;
     public uint StartPc;
     public bool Thumb;
+    /// <summary>Translated from a short-vector expansion (<see cref="Block.VectorFpscr"/>): it runs with the FPSCR in
+    /// vector mode, so its scalar VFP ops take the handler path and no FPSCR entry check may send it back.</summary>
+    public bool VectorMode;
     public int Callouts;
     public int TempCount => IsConst.Count;
 
@@ -136,6 +139,7 @@ public sealed class IrBlock
         GuestInstructions = 0;
         StartPc = 0;
         Thumb = false;
+        VectorMode = false;
         Callouts = 0;
     }
 

@@ -36,6 +36,12 @@ public sealed unsafe class Block
     /// <summary>When the block's compiled code was first used (a process-wide sequence number; 0: not yet): the code
     /// cache keeps the blocks in this order, so the next boot translates what the game needs first, first.</summary>
     public long FirstUse;
+    /// <summary>VFP short-vector mode (FPSCR LEN/STRIDE bits) the block was expanded for (<see cref="BlockBuilder.ForVectorMode"/>),
+    /// 0 for an ordinary block. Such a block only runs while the FPSCR is in that mode, one block per native entry.</summary>
+    public uint VectorFpscr;
+    /// <summary>The last short-vector expansion of this block (<see cref="BlockBuilder.ForVectorMode"/>), null when
+    /// it never ran in vector mode.</summary>
+    public Block? VectorVariant;
     /// <summary>Exit link slots that jump into this block's native code (cleared on invalidation).</summary>
     internal List<nint>? _linkedFrom;
     /// <summary>The cache (process) the block belongs to: its indirect-exit table is the process's.</summary>
@@ -229,6 +235,54 @@ public static unsafe class BlockBuilder
         }
 
         return new Block { Start = pc, End = addr, Thumb = thumb, Insts = insts, Cycles = Math.Max(1, (quarters + CostUnit / 2) / CostUnit), HotAt = Jit.InitialThreshold };
+    }
+
+    /// <summary>
+    /// The block as it runs in VFP short-vector mode (<paramref name="fpscr"/> LEN/STRIDE non-zero): every
+    /// vector-capable instruction (<see cref="Vfp.IsVectorCapable"/>) is replaced by the scalar instructions it runs as
+    /// (<see cref="Vfp.ExpandVector"/>, the same expansion the interpreter's <see cref="Vfp.VectorOp"/> runs), each at
+    /// the instruction's address and with its condition, so any backend translates it as scalar code. The Vita's
+    /// Cortex-A9 has no short-vector hardware: on the console such an instruction traps and homebrew support code
+    /// (VFPVector, through kubridge) runs the same element operations. The mode cannot change inside a block (VMSR
+    /// ends it), so the expansion holds for the whole block. The result is not in any block cache: it is kept on the
+    /// scalar block (<see cref="Block.VectorVariant"/>) and goes away with it when the guest rewrites the code.
+    /// </summary>
+    public static Block ForVectorMode(Block scalar, uint fpscr)
+    {
+        uint mode = fpscr & Vfp.FpscrVectorMask;
+        var list = new List<DecodedInst>(scalar.Insts.Length + 8);
+        Span<uint> elements = stackalloc uint[Vfp.MaxVectorLength];
+        long quarters = 0;
+        foreach (ref DecodedInst d in scalar.Insts.AsSpan())
+        {
+            if (!Vfp.IsVectorCapable(d.Op, d.Raw))
+            {
+                list.Add(d);
+                quarters += CycleCost(in d);
+                continue;
+            }
+
+            int count = Vfp.ExpandVector(d.Op, d.Raw, mode, elements);
+            for (int i = 0; i < count; i++)
+            {
+                DecodedInst element = d;
+                element.Raw = elements[i];
+                list.Add(element);
+                quarters += CycleCost(in element);
+            }
+        }
+
+        return new Block
+        {
+            Start = scalar.Start,
+            End = scalar.End,
+            Thumb = scalar.Thumb,
+            Insts = list.ToArray(),
+            Cycles = Math.Max(1, (quarters + CostUnit / 2) / CostUnit),
+            HotAt = Jit.InitialThreshold,
+            Owner = scalar.Owner,
+            VectorFpscr = mode,
+        };
     }
 
     /// <summary><see cref="CycleCost"/> is in 1/CostUnit cycles, so that dual issue (an average below one cycle) can

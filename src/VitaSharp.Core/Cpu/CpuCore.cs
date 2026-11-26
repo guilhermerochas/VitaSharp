@@ -723,10 +723,16 @@ public sealed unsafe class CpuCore : IDisposable
             }
             else if ((s->Fpscr & Vfp.FpscrVectorMask) != 0)
             {
-                // VFP short-vector mode (FPSCR LEN/STRIDE): only the interpreter models it; generated code assumes
-                // scalar VFP. VMSR ends its block and leaves native code (ExitReason.FpMode), so no generated code
-                // runs in this mode.
+                // VFP short-vector mode (FPSCR LEN/STRIDE): the block's expansion for the mode (each vector op as its
+                // scalar element ops) runs as compiled code once hot, one block per native entry; until then, and
+                // without a backend, the interpreter runs the vector ops. VMSR ends its block and leaves native code
+                // (ExitReason.FpMode), so code compiled for scalar mode never runs in this mode.
                 b = Lookup(s->R[15], s->Thumb != 0);
+                if (RunVectorBlock(s, b, ref sinceCheck, ref native))
+                {
+                    goto ran;
+                }
+
                 InterpretVector(s, b);
                 BlocksExecuted++;
                 InstructionsExecuted += b.Insts.Length;
@@ -1023,6 +1029,120 @@ public sealed unsafe class CpuCore : IDisposable
     }
 
     private static bool s_vectorModeSeen;
+
+    /// <summary>Statistics: blocks compiled for VFP short-vector mode, and blocks run as that code.</summary>
+    public static long VectorBlocksCompiled, VectorBlocksRun;
+
+    /// <summary>
+    /// Runs <paramref name="scalar"/> in VFP short-vector mode as compiled code: its expansion for the current mode
+    /// (<see cref="BlockBuilder.ForVectorMode"/>, kept on the block) is compiled by the first backend of the chain that
+    /// takes it once it is as hot as any block, and then runs alone (the pacing window is closed for the run, so every
+    /// exit returns here and none is linked: the blocks after it may run in another mode). Returns false when the
+    /// caller must interpret the block (not hot yet, no backend, or debugging hooks that need the interpreter).
+    /// </summary>
+    private bool RunVectorBlock(CpuState* s, Block scalar, ref long sinceCheck, ref Native.NativeRuntime? native)
+    {
+        if (!Jit.Enabled || BlockHook != null || Probes != null || Native.NativeVerifier.Enabled || Jit.Chain.Length == 0)
+        {
+            return false;
+        }
+
+        uint mode = s->Fpscr & Vfp.FpscrVectorMask;
+        Block? vector = scalar.VectorVariant;
+        if (vector == null || vector.VectorFpscr != mode)
+        {
+            vector = BlockBuilder.ForVectorMode(scalar, mode);
+            scalar.VectorVariant = vector;
+        }
+
+        if (vector.Code == null)
+        {
+            if (vector.JitState != 0 || ++vector.ExecCount < Jit.MinExecutions
+                || (long)vector.ExecCount * vector.Insts.Length < vector.HotAt)
+            {
+                return false;
+            }
+
+            if (Interlocked.CompareExchange(ref vector.JitState, 1, 0) != 0)
+            {
+                return false; // another core is compiling it
+            }
+
+            Backends.CompiledBlock? code = null;
+            foreach (Backends.IBlockCompiler backend in Jit.Chain)
+            {
+                code = backend.Compile(vector);
+                if (code != null)
+                {
+                    break;
+                }
+            }
+
+            if (code == null)
+            {
+                vector.JitState = 3; // no backend takes it: the interpreter runs it
+                return false;
+            }
+
+            vector.NativeEntry = code.NativeEntry;
+            vector.Compiled = code.Managed;
+            vector.Code = code;
+            vector.JitState = 2;
+            if (Interlocked.Increment(ref VectorBlocksCompiled) == 1)
+            {
+                Util.Log.Info($"VFP short-vector mode: block 0x{vector.Start:X8} compiled for FPSCR 0x{mode:X8} by {code.Backend.Name} ({scalar.Insts.Length} instructions, {vector.Insts.Length} expanded)");
+            }
+        }
+
+        VectorBlocksRun++;
+        if (vector.NativeEntry != 0)
+        {
+            s->CycleAcc = sinceCheck;
+            s->CheckWindow = 0; // one block per entry: no exit chains on into code compiled for scalar mode
+            s->LinkBreak = 1;
+            s->NBlocks = 0;
+            s->NInstr = 0;
+            if (s->DispatchTable == 0)
+            {
+                s->DispatchTable = _cache.DispatchTable;
+            }
+
+            native ??= Native.NativeRuntime.Instance;
+            native.Run(s, vector.NativeEntry);
+            NativeEntries++;
+            if (s->Exit == ExitReason.DataAbort && s->Thumb != 0)
+            {
+                s->ITState = ItStateOfCached(s->SvcPc);
+            }
+
+            s->LastExitSlot = 0; // never linked (see above)
+            s->TierUpRequest = 0;
+            SimdOps += s->NSimdOps;
+            CondBranches += s->NCondBranches;
+            s->NSimdOps = 0;
+            s->NCondBranches = 0;
+            if (s->CalloutFault != 0)
+            {
+                Native.NativeRuntime.ThrowPendingFault(s);
+            }
+
+            sinceCheck = AccountNativeRun(s, sinceCheck);
+            return true;
+        }
+
+        vector.Compiled!(s);
+        if (s->Exit == ExitReason.DataAbort)
+        {
+            s->ITState = BlockBuilder.ItStateAt(scalar, s->SvcPc); // the expansion keeps the addresses and conditions
+        }
+
+        IlCycles += vector.Cycles;
+        BlocksExecuted++;
+        InstructionsExecuted += vector.Insts.Length;
+        sinceCheck += vector.Cycles;
+        BlockCycles += vector.Cycles;
+        return true;
+    }
 
     /// <summary><see cref="Interpret"/> in VFP short-vector mode: the vector-capable VFP instructions run as vectors.</summary>
     private static void InterpretVector(CpuState* s, Block b)

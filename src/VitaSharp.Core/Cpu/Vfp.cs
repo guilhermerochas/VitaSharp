@@ -362,38 +362,62 @@ internal static unsafe class Vfp
     /// </summary>
     public static void VectorOp(CpuState* state, Op op, uint ins, uint pc)
     {
-        uint fpscr = state->Fpscr;
-        uint len = ((fpscr >> 16) & 7) + 1, stride = ((fpscr >> 20) & 3) == 3 ? 2u : 1u;
+        Span<uint> elements = stackalloc uint[MaxVectorLength];
+        int count = ExpandVector(op, ins, state->Fpscr, elements);
+        // the vector bits are only read by the expansion: the scalar handlers ignore them
+        for (int i = 0; i < count; i++)
+        {
+            switch (op)
+            {
+                case Op.Vfp_Arith:
+                    Arith(state, elements[i], pc);
+                    break;
+                case Op.Vfp_MovImm:
+                    MovImm(state, elements[i], pc);
+                    break;
+                default:
+                    Other(state, elements[i], pc);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>The most elements a short vector has (FPSCR LEN = 7).</summary>
+    public const int MaxVectorLength = 8;
+
+    /// <summary>
+    /// The scalar instructions a vector-capable instruction (<see cref="IsVectorCapable"/>) runs as under the short-vector
+    /// mode of <paramref name="fpscr"/> (see <see cref="VectorOp"/>), in order: the interpreter runs them one after the
+    /// other, and the native backends translate a block of vector-mode code with each such instruction replaced by them
+    /// (<see cref="BlockBuilder.ForVectorMode"/>). Returns how many were written to <paramref name="elements"/> (1 to
+    /// <see cref="MaxVectorLength"/>).
+    /// </summary>
+    public static int ExpandVector(Op op, uint ins, uint fpscr, Span<uint> elements)
+    {
+        uint len = ((fpscr >> 16) & 7) + 1;
+        uint stride = ((fpscr >> 20) & 3) == 3 ? 2u : 1u;
         bool dbl = Bit(ins, 8) != 0;
-        uint d = dbl ? DoubleD(ins) : SingleD(ins), n = dbl ? DoubleN(ins) : SingleN(ins), m = dbl ? DoubleM(ins) : SingleM(ins);
+        uint d = dbl ? DoubleD(ins) : SingleD(ins);
+        uint n = dbl ? DoubleN(ins) : SingleN(ins);
+        uint m = dbl ? DoubleM(ins) : SingleM(ins);
         // bank 0 is S0-S7, or D0-D3 (and D16-D19, the bank 0 of the upper half: the bank field is bits 3:2)
-        uint bankMask = dbl ? 3u : 7u, bankField = dbl ? 0xCu : 0x18u;
+        uint bankMask = dbl ? 3u : 7u;
+        uint bankField = dbl ? 0xCu : 0x18u;
         if ((d & bankField) == 0)
         {
             len = 1;
         }
 
         uint mStride = (m & bankField) == 0 ? 0 : stride;
-        // the vector bits are only read here: the scalar handlers ignore them
         for (uint i = 0; i < len; i++)
         {
-            uint e = Encode(ins, d, n, m, dbl, op);
-            switch (op)
-            {
-                case Op.Vfp_Arith:
-                    Arith(state, e, pc);
-                    break;
-                case Op.Vfp_MovImm:
-                    MovImm(state, e, pc);
-                    break;
-                default:
-                    Other(state, e, pc);
-                    break;
-            }
+            elements[(int)i] = Encode(ins, d, n, m, dbl, op);
             d = (d & ~bankMask) | ((d + stride) & bankMask);
             n = (n & ~bankMask) | ((n + stride) & bankMask);
             m = (m & ~bankMask) | ((m + mStride) & bankMask);
         }
+
+        return (int)len;
     }
 
     /// <summary>The instruction with other registers: Vd always, Vn for the arithmetic ops, Vm unless it is VMOV

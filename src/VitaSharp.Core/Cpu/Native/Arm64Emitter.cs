@@ -277,7 +277,8 @@ public sealed unsafe partial class Arm64Emitter
         bool fpEntry = false, calls = false, faultExits = false;
         {
             Span<IrInst> all = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
-            bool checkFp = (opts & A64Opt.FpEntryCheck) != 0 && !NativeVerifier.Enabled;
+            // a short-vector expansion runs in vector mode: the entry check would send it back to the interpreter
+            bool checkFp = (opts & A64Opt.FpEntryCheck) != 0 && !NativeVerifier.Enabled && !ir.VectorMode;
             foreach (ref IrInst x in all)
             {
                 if (x.Op == IrOp.FpOp && checkFp)
