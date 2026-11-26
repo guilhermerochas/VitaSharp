@@ -5187,8 +5187,8 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   e destruíam o device sob o worker. Corrigido: o setter toma o `_backendLock` (a troca pelo `ReplaceOn` usa
   `InstallBackend` sem tomar de novo); teste `GpuQueueDetachTests` (falha sem a correção). Falta: pegar um dump de uma
   queda real para confirmar que era essa a pilha (o laço de Piglet/Renderer sob carga não reproduziu no timebox).
-  Para pegar a pilha (25/11/2026): o log de crash nativo (`Util/NativeCrashLog.cs`) só cobre a corrupção de heap
-  (0xC0000374); um AV não tratado não deixa linha (o Windows recusa um filtro de topo fora de uma imagem carregada).
+  Para pegar a pilha (25/11/2026): o log de crash nativo (`Util/NativeCrashLog.cs`) cobre a corrupção de heap
+  (0xC0000374) e o AV em código nativo (0xC0000005, desde fix/endcrash1), só no front-end (o testhost não o instala).
   Rodar a suíte sob `cdbX64 -o -G` com `sxd av` e `sxd -c2 "kn 60; !clrstack -f; q" av` (SOS do `dotnet-sos`), ou com
   WER LocalDumps (precisa de administrador), e apagar o dump depois.
   O `Prefetch` do `Submit` (fora do lock, na thread que envia) já era protegido pelo próprio renderer
@@ -5202,6 +5202,16 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   sair, sem prazo; ela confere o pedido de parada depois de cada espera (no máximo 50 ms). Teste:
   `FenceRetireWatcherTests` (fences falsas com a espera presa; falha sem a correção). O resto continua: guardar o log
   do testhost na próxima queda para ver a pilha.
+  Corrigido (25/11/2026, fix/endcrash1): mais um caminho do mesmo tipo, no fim da sessão. O `Emulator.Dispose` fazia
+  `Gpu.Dispose()` (para o worker com `Join(2000)`) e `Gpu.Backend?.Dispose()` sem o `_backendLock`: com SwiftShader numa
+  máquina carregada, um present ainda esperando a fence do quadro anterior passa de 2 s, e o `Dispose` do renderer
+  destruía os command pools debaixo dele (pilha no re-run do `SessionCaptureRerunTests`, 1 em 50: `Fatal error.
+  0xC0000005` em `Vk.ResetCommandPool` <- `BeginFrameIfNeeded` <- `Present` <- `GpuQueue.Run`, depois de "Run
+  finished"). Agora o fim usa `GpuQueue.Shutdown()`: para o worker, loga se ele ainda está num comando e descarta o
+  backend só com o lock (o worker fora dele), tirando-o da fila no mesmo passo; um worker que nunca sai (driver preso)
+  deixa o backend sem `Dispose` e uma linha de erro. Teste: `GpuSessionEndTests` (worker preso no Execute e no Idle;
+  falha sem a correção). O log de crash nativo passou a cobrir também o AV em código nativo (0xC0000005), com o
+  `VITASHARP_DEBUG_NATIVE_CRASH=access` e `NativeCrashLogTests`.
 - [x] Minecraft (PCSE00491) no Android fica mais lento com o tempo: duplicado (15/11/2026), junto no item "Minecraft
   (PCSE00491) fica lento jogando no celular" da seção Android. Nota que só estava aqui: no desktop o UC passou 18 s em
   sceAvcdecDeleteDecoder na tela de título com o main num PC só (f1567), a conferir

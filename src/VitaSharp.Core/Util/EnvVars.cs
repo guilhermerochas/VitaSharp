@@ -9,7 +9,8 @@ public static class EnvVars
     public const string Prefix = "VITASHARP_";
 
     /// <summary>Developer self-test of the native crash log (Util/NativeCrashLog.cs, Windows x64): =heap ends the
-    /// desktop front-end with native heap corruption (0xC0000374) right after the log opens.</summary>
+    /// desktop front-end with native heap corruption (0xC0000374) right after the log opens, =access with an access
+    /// violation in native code (0xC0000005) after a caught managed null reference.</summary>
     public const string DebugNativeCrash = "VITASHARP_DEBUG_NATIVE_CRASH";
 
     /// <summary>=0: BC/PVRTC textures are decoded to RGBA8 even on GPUs that sample ASTC (no ASTC transcoding).</summary>

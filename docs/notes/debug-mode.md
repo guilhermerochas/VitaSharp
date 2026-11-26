@@ -24,11 +24,15 @@ On Windows x64 native heap corruption (0xC0000374, e.g. a driver freeing a bad b
 code 0xC0000374` and a `FATAL native exception detail:` line with the module and the thread name
 (`Util/NativeCrashLog.cs`); the process then ends through Windows Error Reporting with that exit code (Git Bash shows
 exit codes mangled, e.g. 127 or 139: read them from PowerShell, `$p.ExitCode`, or from the Application Error event).
-An unhandled access violation (0xC0000005) or a fast fail (0xC0000409) is not logged (Windows refuses a top-level
-filter outside a loaded image): its exit code and the Application Error event tell it. Every orderly exit logs
+An access violation in native code (0xC0000005, e.g. a Vulkan call on a destroyed object) logs the same two lines,
+`FATAL native exception 0xC0000005 (access violation) at <address> ...: unless the native code handles it, the process
+ends with exit code 0xC0000005` (the handler runs after the runtime's and the guest memory's, which resume the faults
+they own, so a null reference in managed code is not reported; native code that handles its own access violations
+would be reported once). A fast fail (0xC0000409) is not logged: its exit code and the Application Error event tell
+it. Every orderly exit logs
 `Process exit at guest frame N`; a log without it and without a FATAL line ended in such a crash or from outside (a
 kill). Linux/macOS: no native line (the runtime owns the fault signals); the shell's signal status tells the crash.
-Developer self-test: `VITASHARP_DEBUG_NATIVE_CRASH=heap` crashes the front-end right after the log opens.
+Developer self-test: `VITASHARP_DEBUG_NATIVE_CRASH=heap` (or `=access`) crashes the front-end right after the log opens.
 Above 256 M characters in one session, info lines are dropped (warnings/errors still written) so a runaway log cannot
 fill the disk.
 
