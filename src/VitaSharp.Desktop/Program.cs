@@ -778,7 +778,13 @@ public static class Program
         }
 
         VitaSharp.Core.Firmware.CompatCoverageReport.Coverage coverage = VitaSharp.Core.Firmware.CompatCoverageReport.Parse(File.ReadAllText(source));
-        IReadOnlyList<string> problems = VitaSharp.Core.Firmware.CompatCoverageReport.Problems(coverage);
+        // the probes are read from the code under the repository, so a percentage cannot claim an item the code lacks
+        IReadOnlyList<string> problems = [.. VitaSharp.Core.Firmware.CompatCoverageReport.Problems(coverage),
+            .. VitaSharp.Core.Firmware.CompatCoverageReport.MissingProbes(coverage, relative =>
+            {
+                string file = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
+                return File.Exists(file) ? File.ReadAllText(file) : null;
+            })];
         foreach (string problem in problems)
         {
             Console.Error.WriteLine($"compat-coverage: {problem}");
@@ -797,8 +803,8 @@ public static class Program
             File.WriteAllText(full, text);
         }
 
-        (string label, int done, int total, int partial) = VitaSharp.Core.Firmware.CompatCoverageReport.BadgeCounts(coverage);
-        Console.WriteLine($"compat-coverage: {label}: {done}/{total} blocks done, {partial} partial; {coverage.Modules.Count} modules; {files.Count} files written under {root}");
+        (string label, int _, int _, int blocksDone, int blocks) = VitaSharp.Core.Firmware.CompatCoverageReport.BadgeCounts(coverage);
+        Console.WriteLine($"compat-coverage: {label}: {VitaSharp.Core.Firmware.CompatCoverageReport.BadgeValue(coverage)}, {blocksDone}/{blocks} blocks done; {coverage.Modules.Count} modules; {files.Count} files written under {root}");
         return 0;
     }
 
