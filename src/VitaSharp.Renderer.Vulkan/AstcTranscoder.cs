@@ -38,9 +38,9 @@ public static class AstcTranscoder
     /// <summary>
     /// Where a level that is in neither cache is encoded (VITASHARP_ASTC_ASYNC=0|wait|placeholder):
     /// <list type="bullet">
-    /// <item><see cref="AstcMode.GpuThread"/> (desktop default, =0): on the GPU thread (plus <see cref="Threads"/>
+    /// <item><see cref="AstcMode.GpuThread"/> (default on every platform, =0): on the GPU thread (plus <see cref="Threads"/>
     /// thread-pool threads for a large level), as before;</item>
-    /// <item><see cref="AstcMode.Wait"/> (Android default): by the <see cref="Workers"/> texture transcoder threads,
+    /// <item><see cref="AstcMode.Wait"/> (opt-in; slower than =0 on a phone, see docs/android/README.md): by the <see cref="Workers"/> texture transcoder threads,
     /// which take rows of blocks of the level in parallel (pinned to a phone's slow cores, below the game's threads);
     /// the GPU thread waits for the whole level, so every draw samples the exact texture, as on the console;</item>
     /// <item><see cref="AstcMode.Placeholder"/> (opt-in, not the console's behaviour): the GPU thread does not wait; it
@@ -49,7 +49,7 @@ public static class AstcTranscoder
     /// uploads inside a <see cref="BeginPlaceholders"/> scope get placeholders; elsewhere it waits.</item>
     /// </list>
     /// </summary>
-    public static AstcMode Mode = ParseMode(Environment.GetEnvironmentVariable(EnvVars.AstcAsync)) ?? (OperatingSystem.IsAndroid() ? AstcMode.Wait : AstcMode.GpuThread);
+    public static AstcMode Mode = ParseMode(Environment.GetEnvironmentVariable(EnvVars.AstcAsync)) ?? DefaultMode;
     /// <summary>Texture transcoder threads (<see cref="AstcMode.Wait"/> and <see cref="AstcMode.Placeholder"/>):
     /// VITASHARP_ASTC_WORKERS, default a quarter of the processors, 1-2.</summary>
     public static int Workers = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.AstcWorkers), out int workers) && workers > 0
@@ -116,6 +116,10 @@ public static class AstcTranscoder
             ArrayPool<byte>.Shared.Return(Source);
         }
     }
+
+    /// <summary>The mode when VITASHARP_ASTC_ASYNC is not set. GpuThread on every platform: on the phone (Redmi Note 14)
+    /// the Wait mode did not help (the transcoders on the A55 cores are slower than the GPU worker on an A76).</summary>
+    public const AstcMode DefaultMode = AstcMode.GpuThread;
 
     private static AstcMode? ParseMode(string? value) => value?.Trim().ToLowerInvariant() switch
     {

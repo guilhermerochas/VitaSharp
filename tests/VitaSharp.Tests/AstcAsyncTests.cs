@@ -178,6 +178,13 @@ public sealed class AstcAsyncTests : IDisposable
     }
 
     [Fact]
+    public void TheDefaultModeEncodesOnTheGpuThreadOnEveryPlatform()
+    {
+        // Android included: the transcoder threads (Wait) were measured slower than the GPU worker on the phone
+        Assert.Equal(AstcMode.GpuThread, AstcTranscoder.DefaultMode);
+    }
+
+    [Fact]
     public void TheGpuThreadModeStillEncodesOnTheCallingThread()
     {
         AstcTranscoder.Mode = AstcMode.GpuThread;

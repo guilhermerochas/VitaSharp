@@ -247,14 +247,18 @@ The game process places its hot threads itself (`Platforms/Android/Game/GamePerf
   it, with a nice-10 one ~90%. `VITASHARP_BG_NICE=0` in `config/env.txt` keeps them at nice 0 (A/B).
 - **ASTC encodes off the GPU worker** (`AstcTranscoder.Mode`, `VITASHARP_ASTC_ASYNC=0|wait|placeholder`): the first
   session of Uncharted spent 37 s encoding BC/PVRTC levels on the GPU worker (frames with 1-2 s of `texUpload`), plus
-  the encode's .NET thread-pool threads, which were never placed and ran on every core. On Android (`wait`, the
-  default) a level that is in neither ASTC cache goes to the **texture transcoder threads** (`VITASHARP_ASTC_WORKERS`,
+  the encode's .NET thread-pool threads, which were never placed and ran on every core. With `wait` (opt-in, NOT the
+  default on Android: see below) a level that is in neither ASTC cache goes to the **texture transcoder threads** (`VITASHARP_ASTC_WORKERS`,
   default 2 on 8 cores; registered as background threads: slow cores only, nice 5) in jobs of 4 block rows, and the
   GPU worker waits for the whole level, so every draw samples the exact texture, as on the console; while it waits it
-  runs queued row jobs itself (`VITASHARP_ASTC_HELP=0`: it only waits), so it is never idle. `=0` encodes on
-  the GPU worker as before (the desktop default); `=placeholder` (opt-in, not the console's behaviour) does not wait:
+  runs queued row jobs itself (`VITASHARP_ASTC_HELP=0`: it only waits), so it is never idle. `=0` (the default on every
+  platform, Android included) encodes on
+  the GPU worker as before; `=placeholder` (opt-in, not the console's behaviour) does not wait:
   the texture shows a coarse placeholder (each 4x4 block's mean colour as an ASTC void-extent block, `BcBlockMeans`)
-  and is uploaded again once its levels are done.
+  and is uploaded again once its levels are done. **Why `wait` is not the Android default:** the cold series on the Redmi
+  Note 14 (Uncharted, 26/11/2026) showed it does not help and makes the stalls worse: the transcoders sit on the slow A55
+  cores, slower than the GPU worker on an A76. Frames > 100 ms per run: 3-5 with `=0`, 5-8 with `wait`; Killzone fps
+  27.7-28.0 with `=0` against 26.1-27.7 with `wait`. `VITASHARP_ASTC_BC1_DIRECT` and `VITASHARP_BG_NICE` stay on.
 - **BC1 mapped straight to ASTC** (`AstcEncoder.EncodeFromBc1`, `VITASHARP_ASTC_BC1_DIRECT=0` to compare): a
   four-colour BC1 block (its two RGB565 endpoints and the thirds between them) is exactly an ASTC RGB-direct block with
   8-bit endpoints and 4 weight levels, so it is written without the encoder's search; only BC1's three-colour blocks

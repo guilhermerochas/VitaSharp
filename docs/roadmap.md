@@ -1365,8 +1365,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   threads de fundo (pré-compilação ARM depois do boot, workers de shader reserva, prewarm, transcodificadores) baixam
   o próprio nice no Linux/Android (o `Thread.Priority` do .NET não faz nada lá; `VITASHARP_BG_NICE=0` para comparar);
   a codificação ASTC sai do GPU worker para 2 threads fixas nos núcleos lentos em blocos de 4 linhas, com o draw
-  esperando a textura exata (`VITASHARP_ASTC_ASYNC=0|wait|placeholder`, padrão `wait` no Android); BC1 vira ASTC bloco a
-  bloco sem busca (`VITASHARP_ASTC_BC1_DIRECT=0`); o cache em disco é indexado uma vez por título. Falta: a série A B B A
+  esperando a textura exata (`VITASHARP_ASTC_ASYNC=0|wait|placeholder`; padrão `0` em toda plataforma, ver abaixo); BC1 vira ASTC bloco a
+  bloco sem busca (`VITASHARP_ASTC_BC1_DIRECT=0`); o cache em disco é indexado uma vez por título. Medido no celular (série a frio, 26/11): o modo `wait` não ajuda e piora as travadas, porque os transcodificadores nos A55 são mais lentos que o GPU worker no A76 (quadros > 100 ms por corrida: 3-5 com `=0`, 5-8 com `wait`; fps do Killzone 27,7-28,0 contra 26,1-27,7); por isso o padrão voltou a `0` no Android (`wait` fica como opção; BC1_DIRECT e BG_NICE continuam ligados). Falta: a série A B B A
   no celular (Uncharted 1º minuto a frio e 2ª sessão, Killzone gameplay) com as chaves acima no env.txt; metas: quadros
   > 50 ms do 1º minuto do Uncharted -30%, 0 travadas de texUpload > 100 ms na 2ª sessão e -50% na 1ª. Depois: pré-carregar
   as texturas na carga do nível (a fila dos transcodificadores antes do primeiro draw).
