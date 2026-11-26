@@ -266,7 +266,7 @@ public static class Runner
         {
             Log.Level = LogLevel.Debug;
         }
-        // debug mode (launcher "Modo de depuracao"): rate-limited diagnostic logging, see docs/notes/debug-mode.md
+        // the detailed log for the whole run (developers; the player gets it inside an F8 capture), see docs/notes/debug-mode.md
         if (options.Contains("--debug-mode") || Environment.GetEnvironmentVariable(EnvVars.DebugMode) is "1" or "on" or "true")
         {
             DebugMode.Enable();
@@ -662,30 +662,14 @@ public static class Runner
                 }
             });
         }
-        // F8: "Gravar tudo", the session capture (docs/notes/session-capture.md); the pre-roll follows debug mode
+        // F8: "Gravar tudo", the session capture (docs/notes/session-capture.md), the player's only debugging tool: it has
+        // the detailed log, the GPU dump and the diagnostics; the pre-roll is the launcher's "Pre-gravacao"
         capture = new SessionCaptureControl(emu, rendererOptions, () => renderer, options, diag.Status, diag.HostInfo);
         capture.Capture.Options.RecordingChanged = _ => { ShowTitle(); ShowPauseBadge(renderer); };
         window.SessionCaptureToggled += () => capture.Capture.Toggle("F8");
         window.BugMarked += () => capture.Capture.MarkBug("Shift+F8");
-        window.DiagnosticRequested += () => { capture.Capture.NoteKey("F10"); diag.Capture("F10"); };
-        // Ctrl+F8: GPU dump recording (docs/notes/gpu-dump.md)
+        // an --input script's "Ctrl+F8" step (developer runs): a GPU dump alone (docs/notes/gpu-dump.md)
         window.GpuDumpToggled += () => { capture.Capture.NoteKey("Ctrl+F8"); GpuDumpControl.Toggle(emu, () => renderer, options, diag.Status, diag.HostInfo); };
-        window.DebugModeToggled += () =>
-        {
-            if (DebugMode.Enabled)
-            {
-                DebugMode.Disable();
-            }
-            else
-            {
-                DebugMode.Enable();
-            }
-
-            Log.Info($"[dbg] debug mode {(DebugMode.Enabled ? "on" : "off")} (F9) at guest frame {DebugMode.Frame}");
-            capture.Capture.NoteKey("F9");
-            capture.UpdatePreRoll();
-            diag.Status?.Invoke(Loc.Get(DebugMode.Enabled ? "GameDebugOn" : "GameDebugOff"));
-        };
         using var watchdog = new Watchdog(emu, () => renderer);
         // save states: F5/F7 quick save/load, F6 picks a slot, Shift+F5/F7 that slot (SaveStateControl)
         var states = new SaveStateControl(emu, rendererOptions, () => { var r = NewRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; r.DeviceLost += OnDeviceLost; ShowPauseBadge(r); return renderer = r; }, diag.Status, s => ShowStatus(s, 15000));
@@ -1149,7 +1133,7 @@ public static class Runner
         }
     }
 
-    /// <summary>--debug-mode-at=FRAME[,FRAME...]: toggles debug mode like F9 when the guest frame is reached (tests).</summary>
+    /// <summary>--debug-mode-at=FRAME[,FRAME...]: toggles the detailed log when the guest frame is reached (tests).</summary>
     static void StartDebugModeToggles(string[] options)
     {
         if (Opt(options, "--debug-mode-at") is not { } spec)
@@ -1185,7 +1169,7 @@ public static class Runner
         }.Start();
     }
 
-    /// <summary>--diag-at=FRAME[,FRAME...]: the F10 capture, triggered when the guest frame is reached (tests).</summary>
+    /// <summary>--diag-at=FRAME[,FRAME...]: the diagnostic capture, triggered when the guest frame is reached (tests).</summary>
     static void StartScheduledCaptures(string[] options, Diagnostics diag)
     {
         if (Opt(options, "--diag-at") is not { } spec)

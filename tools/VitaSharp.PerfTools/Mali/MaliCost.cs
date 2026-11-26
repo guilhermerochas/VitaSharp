@@ -356,6 +356,46 @@ internal sealed class MaliCost(MaliCost.Settings s)
             sb.AppendLine(s_inv, $"  {x.D.Serial,4} {x.Ms,6:F3} {x.Ms / worst.Ms * 100,4:F1} {x.D.Vertices,9} {(x.D.Samples < 0 ? "?" : (x.D.Samples / Math.Max(1, x.D.SampleCount)).ToString(s_inv)),10}  {(fsHeavy ? "frag" : "vert")} {bound,-5} {x.D.VsHash:x16}  {x.D.FsHash:x16}  {string.Join("/", x.Fs.Cycles.Select(c => c.ToString("F2", s_inv)))}");
         }
 
+        // every draw of the reported frames (draws.tsv): bench selections (draws=A-B, vs=HASH) are picked from it
+        var tsv = new StringBuilder("present\tdraw\tscene\tprim\tindices\tunique\tfragments\tvs\tfs\tvertex_ms\tfragment_ms\n");
+        foreach (DrawCostRecord d in draws)
+        {
+            DrawCost c = Cost(d, "");
+            tsv.Append(s_inv, $"{d.Present}\t{d.Serial}\t{d.Scene}\t{d.PrimitiveType}\t{d.Vertices}\t{d.UniqueVertices}\t{(d.Samples < 0 ? -1 : d.Samples / Math.Max(1, d.SampleCount))}\t{d.VsHash:x16}\t{d.FsHash:x16}\t{c.VsMs:F4}\t{c.FsMs:F4}\n");
+        }
+
+        Directory.CreateDirectory(s.OutDir);
+        File.WriteAllText(Path.Combine(s.OutDir, "draws.tsv"), tsv.ToString());
+
+        // the draws with the most vertex work in that frame: how many shader invocations the indices really need
+        var frameCosts = frames.First(g => g.Key == worst.Present).Select(d => Cost(d, "")).ToList();
+        long heavyScene = frameCosts.GroupBy(x => x.D.Scene).OrderByDescending(g => g.Sum(x => x.VsMs)).First().Key;
+        // the heaviest draws, then the lightest of the scene with the most vertex work (a draw's fixed cost on the GPU)
+        var vtop = frameCosts.OrderByDescending(x => x.VsMs).Take(20)
+            .Concat(frameCosts.Where(x => x.D.Scene == heavyScene).OrderBy(x => x.D.Vertices).Take(8)).ToList();
+        string[] prims = ["tris", "lines", "points", "strip", "fan", "edges"];
+        sb.AppendLine();
+        sb.AppendLine(s_inv, $"vertex work of frame {worst.Present}: the 20 draws with the most (indices = vertex invocations the model counts; unique = distinct indices; fifo32 = invocations a 32-entry post-transform cache leaves):");
+        sb.AppendLine("  draw  scene  prim   idx  indices   unique    range   fifo32  idx/uniq  vertex ms  ms if unique  vs hash           vs cycles");
+        foreach (DrawCost x in vtop)
+        {
+            DrawCostRecord d = x.D;
+            double perVertex = d.Vertices > 0 ? x.VsMs / d.Vertices : 0;
+            string prim = d.PrimitiveType < prims.Length ? prims[d.PrimitiveType] : d.PrimitiveType.ToString(s_inv);
+            sb.AppendLine(s_inv, $"  {d.Serial,4} {d.Scene,6} {prim,-6} {(d.Index32 ? "32" : "16"),3} {d.Vertices,8} {d.UniqueVertices,8} {d.IndexRange,8} {d.CacheMisses32,8} {(double)d.Vertices / Math.Max(1, d.UniqueVertices),9:F2} {x.VsMs,10:F3} {perVertex * d.UniqueVertices,13:F3}  {d.VsHash:x16}  {x.Vs.BoundCycles,6:F1}");
+        }
+
+        sb.AppendLine(s_inv, $"  (the last 8 rows: the draws with the fewest vertices of scene {heavyScene}, {frameCosts.Count(x => x.D.Scene == heavyScene)} draws, {frameCosts.Where(x => x.D.Scene == heavyScene).Sum(x => x.VsMs):F2} ms of vertex work in the model)");
+        long fIdx = 0, fUnique = 0, fMiss = 0;
+        foreach (DrawCostRecord d in frames.First(g => g.Key == worst.Present))
+        {
+            fIdx += d.Vertices;
+            fUnique += d.UniqueVertices;
+            fMiss += d.CacheMisses32;
+        }
+
+        sb.AppendLine(s_inv, $"  frame {worst.Present}: {fIdx} indices x instances, {fUnique} distinct indices per draw summed ({(double)fIdx / Math.Max(1, fUnique):F2}x), {fMiss} misses of a 32-entry FIFO cache ({(double)fIdx / Math.Max(1, fMiss):F2}x)");
+
         // shaders that spill or run below full occupancy, weighted by their share of the estimate
         var share = new Dictionary<(ulong, ulong, bool), double>();
         foreach (DrawCost? x in draws.Select(d => Cost(d, "")))

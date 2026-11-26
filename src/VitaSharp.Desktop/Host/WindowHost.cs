@@ -14,6 +14,15 @@ using VitaSharp.Renderer.Vulkan;
 
 namespace VitaSharp.Desktop.Host;
 
+/// <summary>What a key of the game window does as a debugging tool (<see cref="WindowHost.DebugKeyFor"/>): the player
+/// has only F8 "Gravar tudo" and Shift+F8 (mark the problem), besides the screenshot and the log.</summary>
+internal enum DebugKey
+{
+    None,
+    RecordEverything,
+    MarkProblem,
+}
+
 /// <summary>Receives the keyboard while a text entry is open over the game (<see cref="WindowHost.TextCapture"/>).</summary>
 public interface ITextCapture
 {
@@ -52,11 +61,8 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMu
     /// keeps it open (a "Gravar tudo" recording is still being saved); the owner calls <see cref="Close"/> later.</summary>
     public Func<bool>? CloseVeto;
     public event Action? Resized;
-    /// <summary>F10: "Capturar diagnostico" (raised on the window thread; the handler must not block).</summary>
-    public event Action? DiagnosticRequested;
-    /// <summary>F9: turns debug mode on or off in game (raised on the window thread).</summary>
-    public event Action? DebugModeToggled;
-    /// <summary>Ctrl+F8: starts or stops a GPU dump recording (raised on the window thread; see docs/notes/gpu-dump.md).</summary>
+    /// <summary>A GPU dump recording alone, started or stopped by an --input script's "Ctrl+F8" step (developer runs; the
+    /// player's F8 capture already has the GPU dump, so no key of the window raises it; docs/notes/gpu-dump.md).</summary>
     public event Action? GpuDumpToggled;
     /// <summary>F8: starts or stops "Gravar tudo", the session capture (docs/notes/session-capture.md).</summary>
     public event Action? SessionCaptureToggled;
@@ -758,8 +764,21 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMu
 
     // ---------------------------------------------------------------- input
 
-    /// <summary>One F8 press: "Gravar tudo", with Ctrl the GPU dump, with Shift the mark of the problem (the key
-    /// handler and --input steps).</summary>
+    /// <summary>The player's debugging keys of the game window: F8 alone is "Gravar tudo" (with Ctrl too: the capture
+    /// already has the GPU dump), Shift+F8 marks the problem. Every other key, F9 and F10 included, is no debugging tool:
+    /// the F8 capture has the detailed log, the GPU dump and the diagnostics (docs/captures.md).</summary>
+    internal static DebugKey DebugKeyFor(Key key, bool ctrl, bool shift)
+    {
+        if (key != Key.F8)
+        {
+            return DebugKey.None;
+        }
+
+        return shift && !ctrl ? DebugKey.MarkProblem : DebugKey.RecordEverything;
+    }
+
+    /// <summary>One F8 press: "Gravar tudo", with Shift the mark of the problem; <paramref name="ctrl"/> (only an
+    /// --input script's "Ctrl+F8" step) the GPU dump alone.</summary>
     public void PressF8(bool ctrl, bool shift = false)
     {
         if (shift && !ctrl)
@@ -817,31 +836,12 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMu
             _f11Down = down;
             return;
         }
-        if (key == Key.F10)
-        {
-            if (down)
-            {
-                DiagnosticRequested?.Invoke();
-            }
-
-            return;
-        }
-        if (key == Key.F9)
-        {
-            if (down)
-            {
-                DebugModeToggled?.Invoke();
-            }
-
-            return;
-        }
         if (key == Key.F8)
         {
-            // F8 alone: "Gravar tudo"; Ctrl+F8: the GPU dump; Shift+F8: mark the problem (one per press, whatever key
-            // repeat sends)
+            // F8: "Gravar tudo"; Shift+F8: mark the problem (one per press, whatever key repeat sends)
             if (down && !_f8Down)
             {
-                PressF8(IsControlDown, IsShiftDown);
+                PressF8(ctrl: false, DebugKeyFor(key, IsControlDown, IsShiftDown) == DebugKey.MarkProblem);
             }
 
             _f8Down = down;

@@ -822,12 +822,6 @@
   <data name="DataFolder" xml:space="preserve">
     <value>Data folder</value>
   </data>
-  <data name="DebugMode" xml:space="preserve">
-    <value>Debug mode</value>
-  </data>
-  <data name="DebugModeDetail" xml:space="preserve">
-    <value>Detailed logs and automatic diagnostics when the picture looks corrupted; costs a few percent of performance</value>
-  </data>
   <data name="Delete" xml:space="preserve">
     <value>Delete</value>
   </data>
@@ -842,15 +836,6 @@
   </data>
   <data name="DiagFailed" xml:space="preserve">
     <value>Saving the diagnostic failed (see the log)</value>
-  </data>
-  <data name="DiagnosticBadge" xml:space="preserve">
-    <value>Diagnostic</value>
-  </data>
-  <data name="DiagnosticsChip" xml:space="preserve">
-    <value>F10 diagnostics · {0}</value>
-  </data>
-  <data name="DiagnosticsFolder" xml:space="preserve">
-    <value>Diagnostics folder</value>
   </data>
   <data name="DiagSaved" xml:space="preserve">
     <value>Diagnostic saved: {0}</value>
@@ -868,7 +853,7 @@
     <value>Recording the GPU dump failed: {0}</value>
   </data>
   <data name="DumpRecording" xml:space="preserve">
-    <value>Recording a GPU dump (Ctrl+F8 to stop)</value>
+    <value>Recording a GPU dump</value>
   </data>
   <data name="DumpSaved" xml:space="preserve">
     <value>GPU dump saved: {0} ({1} frames, {2:F0} MB)</value>
@@ -1017,12 +1002,6 @@
   <data name="GameClickDetail" xml:space="preserve">
     <value>The highlighted button on the cover, double click and Enter; the other one sits next to it</value>
   </data>
-  <data name="GameDebugOff" xml:space="preserve">
-    <value>Debug mode off</value>
-  </data>
-  <data name="GameDebugOn" xml:space="preserve">
-    <value>Debug mode on (F9 turns it off, F10 captures, F8 records everything with the last 10 s, Ctrl+F8 records a GPU dump)</value>
-  </data>
   <data name="GameDeviceLost" xml:space="preserve">
     <value>The GPU stopped responding (driver restarted): load a state (F7) or restart the game</value>
   </data>
@@ -1064,15 +1043,6 @@
   </data>
   <data name="GameTrophyUnlocked" xml:space="preserve">
     <value>Trophy unlocked: {0} ({1})</value>
-  </data>
-  <data name="GpuDumpBadge" xml:space="preserve">
-    <value>GPU dump</value>
-  </data>
-  <data name="GpuDumps" xml:space="preserve">
-    <value>GPU dumps · {0}</value>
-  </data>
-  <data name="GpuDumpsFolder" xml:space="preserve">
-    <value>GPU dumps (gpudumps)</value>
   </data>
   <data name="GradeBronze" xml:space="preserve">
     <value>Bronze</value>
@@ -1333,10 +1303,10 @@
     <value>No</value>
   </data>
   <data name="NoCaptures" xml:space="preserve">
-    <value>Nothing here. In game: F8 starts and stops "Record everything", Ctrl+F8 records only the GPU dump, F10 saves a diagnostic.</value>
+    <value>Nothing here. In game: F8 starts and stops "Record everything" (Shift+F8 marks the problem while it records).</value>
   </data>
   <data name="NoGameCaptures" xml:space="preserve">
-    <value>No recordings or dumps of this game. In game: F8 records everything, Ctrl+F8 only the GPU dump, F10 a diagnostic.</value>
+    <value>No recordings of this game. In game: F8 records everything, Shift+F8 marks the problem.</value>
   </data>
   <data name="NoMatch" xml:space="preserve">
     <value>No game matches the search or the filters.</value>
@@ -1648,7 +1618,7 @@
     <value>In-game shortcuts</value>
   </data>
   <data name="ShortcutsText" xml:space="preserve">
-    <value>F11 full screen · P pause (Controls &gt; Emulator shortcuts) · F5 / F7 save and load the quick state, F6 picks the slot · F8 "Record everything" (state, controls, pictures, audio and GPU dump in a .zip in captures) · Shift+F8 marks the problem while recording · Ctrl+F8 only the GPU dump · F9 turns debug mode on and off · F10 diagnostic (.zip in the diagnostics folder) · Mouse: left button = front screen, right button = rear touchpad.</value>
+    <value>F11 full screen · P pause (Controls &gt; Emulator shortcuts) · F5 / F7 save and load the quick state, F6 picks the slot · F8 "Record everything" (state, controls, pictures, audio, detailed log and GPU dump in a .zip in captures) · Shift+F8 marks the problem while recording · Mouse: left button = front screen, right button = rear touchpad.</value>
   </data>
   <data name="ShowInFolder" xml:space="preserve">
     <value>Show in folder</value>
@@ -2786,12 +2756,6 @@
   </data>
   <data name="MKernelPluginsDetail" xml:space="preserve">
     <value>Loads the plugins of ur0:kernel_plugins/config.txt in the next game. Off: the pure firmware</value>
-  </data>
-  <data name="MDebugMode" xml:space="preserve">
-    <value>Debug mode</value>
-  </data>
-  <data name="MDebugModeDetail" xml:space="preserve">
-    <value>Detailed log in the next game (logcat: VitaSharp, VitaSharp-Guest)</value>
   </data>
   <data name="MShareLog" xml:space="preserve">
     <value>Share log</value>

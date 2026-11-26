@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=232aa5ed8e6629983089c7762b82af8d1ccec949c7c561132d62dbfab2b84cf9 -->
+<!-- pair: README.md sha256=6013c33ea4b6967271a6936497e9c2336c4ff26d89a9ce66ca8aae82ee799a18 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -287,10 +287,7 @@ giroscópio. Tudo pode ser remapeado em **Configurações > Controles**, por con
 | `F5` / `F7` | Salvar / carregar o estado rápido; `Shift+F5` / `Shift+F7` salvam / carregam no slot escolhido |
 | `F6` | Tela de estados por cima do jogo pausado: o slot rápido e os slots 1-9 com o print, a data, o tempo de jogo e a versão; salvar (substituir pergunta antes, mostrando o print antigo e o atual), carregar (com o print grande), apagar (`Del` / Triângulo) |
 | `F8` | Inicia / para o **Gravar tudo** (ver [Relatar um bug](#relatar-um-bug)) |
-| `Shift+F8` | Durante a gravação: marca o problema (uma marca e um estado salvo daquele momento vão na gravação; `rerun --from=mark1` começa dali) |
-| `Ctrl+F8` | Inicia / para um dump da GPU (`gpudumps/*.vsgd`; `replay-gpu` refaz desenho por desenho, sem o jogo) |
-| `F9` | Liga / desliga o modo de depuração (logs detalhados, pré-gravação de 10 s, capturas automáticas) |
-| `F10` | Captura de diagnóstico: o próximo quadro com seus desenhos, texturas, alvos, print e log (`diagnostics/`) |
+| `Shift+F8` | Durante a gravação: marca o problema (uma marca e um estado salvo daquele momento vão na gravação) |
 | `F11` | Tela cheia |
 | `P` | Pausa / retoma a emulação |
 
@@ -319,21 +316,23 @@ Todas as opções, com a chave de linha de comando e os detalhes: [guia do usuá
 
 O **Gravar tudo** gera um `.zip` com tudo o que é preciso para ver e reproduzir o problema sem o jogo.
 
-1. Opcional, para problemas que passam rápido: ligue a **Pré-gravação** (Configurações > Avançado, ou o modo de
-   depuração com `F9`), para a gravação ter também os segundos antes de você apertar a tecla.
+1. Opcional, para problemas que passam rápido: ligue a **Pré-gravação** (Configurações > Avançado; Android: menu de
+   pausa > **Ajustes**), para a gravação ter também os segundos antes de você apertar a tecla.
 2. Durante o jogo aperte **F8** (a barra de título mostra *"● REC | Gravando tudo (F8 para parar)"*). Android: menu
    de pausa > **Gravar tudo**.
 3. Jogue até o problema aparecer. Nesse momento aperte **Shift+F8** (Android: menu de pausa > **Marcar o problema**):
    a gravação ganha uma marca e um estado salvo daquele instante.
 4. Aperte **F8** de novo (Android: **Parar gravação**). O `.zip` fica na pasta `captures/` da sua
    [pasta de dados](#onde-ficam-os-seus-dados).
-5. Abra uma issue no GitHub com o `.zip`, o nome e o title ID do jogo e o que aconteceu. O `logs/last.log` também ajuda.
+5. Abra uma issue no GitHub com o `.zip`, o nome e o title ID do jogo e o que aconteceu. Um print do problema (só a
+   imagem) e o `logs/last.log` também ajudam.
 
-A gravação leva um estado salvo, os controles, todas as imagens com seus tempos, o dump da GPU, o áudio e o log. Ela
-não leva nada pessoal: caminhos e nomes de usuário, computador e conta viram marcadores, e nenhum arquivo do jogo,
-licença ou chave é copiado. Quem corrige o problema consegue analisar, reexecutar e conferir uma correção
-(`VitaSharp.Desktop verify <zip>`) sem o jogo e sem os seus plugins: veja [`docs/captures.pt-BR.md`](docs/captures.pt-BR.md) e
-[`docs/notes/session-capture.md`](docs/notes/session-capture.md).
+O **Gravar tudo** é a única ferramenta de depuração de que você precisa: não há modo de depuração, tecla de
+diagnóstico nem dump da GPU separado para ligar. A gravação leva um estado salvo, os controles, todas as imagens com
+seus tempos, o dump da GPU, o áudio e o log detalhado (ligado sozinho durante a gravação e a pré-gravação). Ela não
+leva nada pessoal: caminhos e nomes de usuário, computador e conta viram marcadores, e nenhum arquivo do jogo, licença
+ou chave é copiado. Quem corrige o problema consegue analisar, reexecutar e conferir uma correção sem o jogo e sem os
+seus plugins (para desenvolvedores: [`docs/captures.pt-BR.md`](docs/captures.pt-BR.md)).
 
 ## Onde ficam os seus dados
 
@@ -345,8 +344,7 @@ licença ou chave é copiado. Quem corrige o problema consegue analisar, reexecu
 | Android | `/sdcard/.vitasharp` (com "Acesso a todos os arquivos"; senão `Android/data/io.github.vitasharp/files`) |
 
 Dentro dela: `fs/` é o armazenamento do Vita (jogos em `fs/ux0/app`, saves em `fs/ux0/user/00/savedata`, firmware em
-`fs/os0`, `fs/vs0`...), mais `logs/`, `savestates/`, `captures/` (Gravar tudo), `gpudumps/`, `diagnostics/` e
-`shadercache/`. `--data=<pasta>` ou a variável `VITASHARP_DATA` usam outra pasta. Atualizar o VitaSharp nunca muda
+`fs/os0`, `fs/vs0`...), mais `logs/`, `savestates/`, `captures/` (Gravar tudo) e `shadercache/`. `--data=<pasta>` ou a variável `VITASHARP_DATA` usam outra pasta. Atualizar o VitaSharp nunca muda
 essa pasta. Antes de desinstalar o app Android sem "Acesso a todos os arquivos", copie o `fs/ux0/user/00/savedata`
 para fora.
 

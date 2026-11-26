@@ -24,7 +24,7 @@ Tests: `tests/VitaSharp.Tests/SessionCaptureTests.cs`, `SessionCapturePrivacyTes
 > - **Android:** no menu de pausa (botão PS), escolha **Gravar tudo**. O contador de FPS mostra *"● REC"*. Para
 >   parar, abra o menu de novo e escolha **Parar gravação**.
 > - **Pré-gravação** (para defeitos rápidos): com ela ligada, a gravação também inclui os segundos *antes* de você
->   apertar. No PC: Configurações > Geral > *"Pré-gravação"*, ou ligue o modo de depuração (F9). No Android: menu de
+>   apertar. No PC: Configurações > Avançado > *"Pré-gravação"*. No Android: menu de
 >   pausa > *"Pré-gravação: ligada"*. Ela guarda um estado salvo na memória a cada 5 s (no PC, só o que mudou desde
 >   o anterior: o jogo para alguns milissegundos) ou 10 s (quando o estado para o jogo um quadro ou mais).
 > - **Marcar o problema:** durante a gravação, aperte **Shift+F8** (no Android: menu de pausa > *"Marcar o problema"*)
@@ -34,7 +34,8 @@ Tests: `tests/VitaSharp.Tests/SessionCaptureTests.cs`, `SessionCapturePrivacyTes
 >   sem a permissão "Acesso a todos os arquivos").
 >
 > Outras mensagens: *"Aguarde: a gravação anterior ainda está sendo salva"*, *"Falha ao iniciar a gravação: ..."*,
-> *"Falha ao salvar a gravação: ..."*. Ctrl+F8 grava só o dump da GPU; F9 (modo de depuração) e F10 (diagnóstico) continuam iguais.
+> *"Falha ao salvar a gravação: ..."*. O Gravar tudo é a única ferramenta de depuração: ele já leva o log detalhado e o
+> dump da GPU (não há modo de depuração, F9, F10 nem Ctrl+F8).
 >
 > A gravação termina sempre, mesmo com o jogo travado. Fechar a janela (X, Alt+F4, *Stop* no launcher) ou sair do
 > jogo no Android com uma gravação ligada ou ainda sendo salva não perde nada: a janela fica aberta com *"Salvando a
@@ -92,7 +93,7 @@ Folder `<data>/captures/<TITLEID>_<yyyyMMdd_HHmmss>_tudo/` and its zip:
 | `state_start.vss` | save state taken at the start of the recording |
 | `state_preroll.vss` | save state at the start of the pre-roll (when armed): the newest of the pre-roll's in-memory states taken at or before the pre-roll's start |
 | `state_mark_N.vss` | save state of the moment the player marked the problem (Shift+F8, Android pause menu "Marcar o problema"); session.txt `mark-state-N` |
-| `gpu.vsgd` | GPU dump from the start (the Ctrl+F8 format; `replay-gpu`); up to 5400 frames on the desktop, 1800 on Android |
+| `gpu.vsgd` | GPU dump from the start (the `.vsgd` format of docs/notes/gpu-dump.md; `replay-gpu`); up to 5400 frames on the desktop, 1800 on Android |
 | `audio/*.wav`, `audio/files.txt`, `audio_mix.wav` | every guest audio port and every NGS source voice as a WAV (`AudioDump`), the time each opened, and their mix at 48 kHz as the device would play it; the microphone port only with `--capture-mic-audio` / `VITASHARP_CAPTURE_MIC_AUDIO=1` (by default `audio.txt` has only its format, source and pace) |
 | `threads_start.txt`, `threads_stop.txt` | guest threads (wait state, backtrace, recent HLE calls in debug mode), held mutexes, GPU queue |
 | `hle_errors.txt` | HLE error returns and unimplemented calls by count (counted while recording, as debug mode does), and the calls of `hle_calls.tsv` by function |
@@ -103,8 +104,10 @@ Folder `<data>/captures/<TITLEID>_<yyyyMMdd_HHmmss>_tudo/` and its zip:
 
 ### Pre-roll
 
-Armed by `--capture-preroll[=SECONDS]` (launcher "Pré-gravação"), `VITASHARP_CAPTURE_PREROLL=SECONDS`, debug mode
-on the desktop (F9 or `--debug-mode`, 10 s), or the Android pause menu. While armed, the presented frames, their
+Armed by `--capture-preroll[=SECONDS]` (launcher Configurações > Avançado > "Pré-gravação"),
+`VITASHARP_CAPTURE_PREROLL=SECONDS`, or the Android pause menu (the detailed log no longer arms it). While armed or
+recording, the detailed log is on (docs/notes/debug-mode.md: `DebugMode.CaptureStarted`), so `log.txt` has its
+first-use, HLE error, anomaly and periodic PERF lines for the pre-roll too. While armed, the presented frames, their
 timing and the input go into memory rings, and a save state is taken into memory (`SaveStates.Save(emu, Stream)`:
 nothing is written to disk while armed) every 5 s (`SessionCaptureOptions.PreRollStateInterval`) while the last three
 stopped the game less than a frame (`PreRollStateStopBudgetMs`, 16 ms), else every 10 s (`PreRollSlowStateInterval`,
@@ -150,7 +153,7 @@ Measured on the desktop (GTX 1650 laptop, 4 logical CPUs given to the emulator, 
 | | |
 |---|---|
 | Presented frames | ~1.1 MB/s at 60 fps on FIFA 13 menus (~70 MB/min); moving gameplay more |
-| GPU dump | the Ctrl+F8 numbers: FIFA 13 menus 3 MB/s, Killzone gameplay ~20 MB/s (docs/notes/gpu-dump.md) |
+| GPU dump | the numbers of a dump alone: FIFA 13 menus 3 MB/s, Killzone gameplay ~20 MB/s (docs/notes/gpu-dump.md) |
 | States | 30-50 MB each (start, and pre-roll) |
 | Audio | 11.5 MB/min per stereo 48 kHz port or voice WAV |
 | Input, timeline, text | < 1 MB/min |

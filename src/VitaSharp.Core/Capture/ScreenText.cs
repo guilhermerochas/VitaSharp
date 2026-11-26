@@ -81,16 +81,14 @@ public static class ScreenText
         }
     }
 
-    /// <summary>The frame a path names: a PNG, a "Gravar tudo" capture folder or its frames.vsfr (the last frame, or
-    /// frame <paramref name="frameIndex"/> counted from 0; negative counts from the end), or an F10 diagnostic folder
-    /// (its screenshot.png).</summary>
+    /// <summary>The frame a path names: a PNG, or a "Gravar tudo" capture folder or its frames.vsfr (the last frame, or
+    /// frame <paramref name="frameIndex"/> counted from 0; negative counts from the end). The screen text belongs to
+    /// the F8 capture's report: no other folder (a diagnostic's screenshot.png) is read for it.</summary>
     public static (byte[] Rgba, int Width, int Height, string What) LoadFrame(string path, int frameIndex = -1)
     {
         if (Directory.Exists(path))
         {
-            string frames = Path.Combine(path, "frames.vsfr");
-            string screenshot = Path.Combine(path, "screenshot.png");
-            path = !File.Exists(frames) && File.Exists(screenshot) ? screenshot : frames;
+            path = Path.Combine(path, "frames.vsfr");
         }
 
         if (path.EndsWith(".png", StringComparison.OrdinalIgnoreCase))

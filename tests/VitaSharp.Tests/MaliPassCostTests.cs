@@ -68,4 +68,28 @@ public sealed class MaliPassCostTests
         Assert.Equal(0.5, VulkanRenderer.CostBytesPerTexel(Format.BC1RgbaUnormBlock));
         Assert.Equal(4, VulkanRenderer.CostBytesPerTexel(Format.R8G8B8A8Unorm));
     }
+
+    [Fact]
+    public void IndexStatsCountDistinctIndicesAndCacheMisses()
+    {
+        // a quad as two triangles (0 1 2, 2 1 3): 6 indices, 4 vertices, all within a 32-entry cache
+        byte[] quad = [0, 0, 1, 0, 2, 0, 2, 0, 1, 0, 3, 0];
+        (long unique, long range, long misses) = DrawCostRecord.IndexStats(quad, false);
+
+        Assert.Equal(4, unique);
+        Assert.Equal(4, range);
+        Assert.Equal(4, misses);
+    }
+
+    [Fact]
+    public void ACacheTooSmallShadesAgain()
+    {
+        // 0 1 2 0 with a 2-entry FIFO: 0 is evicted by 2 and missed again
+        byte[] idx = [0, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0];
+        (long unique, long range, long misses) = DrawCostRecord.IndexStats(idx, true, 2);
+
+        Assert.Equal(3, unique);
+        Assert.Equal(3, range);
+        Assert.Equal(4, misses);
+    }
 }

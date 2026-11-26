@@ -18,7 +18,8 @@ public sealed class SettingsState
 /// <summary>
 /// Ajustes (ajustes.html): Sistema (firmware status, Sistema do Vita), Desempenho (the default CPU backend, clock and
 /// GPU profile of every game, VSync, FPS, GPU driver and GPU information), Rede e PSN, Armazenamento (where the data
-/// folder is) and Depuracao (debug logging, the log files).
+/// folder is) and Depuracao (kernel plugins, the log files; the detailed log is part of the pause menu's "Gravar tudo",
+/// the only debugging tool).
 /// </summary>
 public sealed class SettingsView : Screen<SettingsState>
 {
@@ -174,9 +175,6 @@ public sealed class SettingsView : Screen<SettingsState>
                 Note(Loc.Get("MStorageNote")),
                 SectionTitle(Loc.Get("MDebugging")),
                 Card(
-                    ToggleRow(Loc.Get("MDebugMode"), p.DebugMode, v => Change(x => x.DebugMode = v),
-                        detail: Loc.Get("MDebugModeDetail")),
-                    Divider(),
                     ToggleRow(Loc.Get("MKernelPlugins"), p.KernelPlugins, v => Change(x => x.KernelPlugins = v),
                         detail: Loc.Get("MKernelPluginsDetail")),
                     Divider(),
@@ -293,16 +291,6 @@ public sealed class SettingsView : Screen<SettingsState>
     {
         change(AppServices.Prefs);
         AppServices.SavePrefs();
-        if (AppServices.Prefs.DebugMode)
-        {
-            Log.Level = LogLevel.Debug;
-            DebugMode.Enable();
-        }
-        else
-        {
-            Log.Level = LogLevel.Info;
-            DebugMode.Disable();
-        }
         SetState(s => s.Revision++);
     }
 

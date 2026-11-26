@@ -11,7 +11,7 @@ namespace VitaSharp.Tests;
 /// <summary>
 /// The desktop's side of "Gravar tudo" (VitaSharp.Desktop <see cref="SessionCaptureControl"/>,
 /// docs/notes/session-capture.md): the options it reads (--capture-preroll[=S], --capture-max=S), the pre-roll that
-/// follows debug mode unless set explicitly, the notes and GPU dump header it gives the capture, and the re-run of a
+/// is armed only when set (the detailed log does not arm it), the notes and GPU dump header it gives the capture, and the re-run of a
 /// capture (<c>rerun DIR</c>, --capture-playback=DIR@start): its refusals for a folder that is not a capture, a missing
 /// state or a game that is not installed, and the playback that replaces the host's input from the state load on and
 /// records the re-run into DIR/reruns/.
@@ -24,10 +24,10 @@ public sealed class SessionCaptureControlTests(GuestMemoryFixture fixture) : IDi
     public void Dispose() => _harness.Dispose();
 
     /// <summary>The pre-roll: --capture-preroll alone is the default 10 s, =SECONDS sets it (negative is none), the
-    /// option wins over VITASHARP_CAPTURE_PREROLL, and without either it follows debug mode (F9: 10 s, off: none).
-    /// A re-run's own recording never has one, whatever the options say.</summary>
+    /// option wins over VITASHARP_CAPTURE_PREROLL, and without either there is none (the detailed log, explicit or
+    /// not, no longer arms it). A re-run's own recording never has one, whatever the options say.</summary>
     [Fact]
-    public void ThePreRollFollowsItsOptionAndDebugMode()
+    public void ThePreRollFollowsItsOptionOnly()
     {
         Assert.Equal(SessionCaptureControl.DefaultPreRoll, SessionCaptureControl.ExplicitPreRoll(["--capture-preroll"], null));
         Assert.Equal(3.5, SessionCaptureControl.ExplicitPreRoll(["--cpu=interp", "--capture-preroll=3.5"], null));
@@ -38,10 +38,9 @@ public sealed class SessionCaptureControlTests(GuestMemoryFixture fixture) : IDi
         Assert.Null(SessionCaptureControl.ExplicitPreRoll(["--capture-preroll=soon"], null));
         Assert.Null(SessionCaptureControl.ExplicitPreRoll(["--capture-prerollx=4"], null));
 
-        Assert.Equal(SessionCaptureControl.DefaultPreRoll, SessionCaptureControl.PreRollFor(null, debugMode: true));
-        Assert.Equal(0, SessionCaptureControl.PreRollFor(null, debugMode: false));
-        Assert.Equal(0, SessionCaptureControl.PreRollFor(0, debugMode: true)); // turned off explicitly: F9 does not arm it
-        Assert.Equal(3.5, SessionCaptureControl.PreRollFor(3.5, debugMode: false));
+        Assert.Equal(0, SessionCaptureControl.PreRollFor(null));
+        Assert.Equal(0, SessionCaptureControl.PreRollFor(0));
+        Assert.Equal(3.5, SessionCaptureControl.PreRollFor(3.5));
 
         using var rerun = new SessionCaptureControl(_harness.Emu, new VulkanRendererOptions(), () => null, ["--capture-preroll=5"], null, null, Options());
         Assert.False(rerun.Capture.Armed);

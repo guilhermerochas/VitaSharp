@@ -65,14 +65,19 @@ public sealed class PhaseProfile
     /// <summary>False: nothing is counted (<c>VITASHARP_PHASE_PROF=0</c>; A/B of the profile's own cost).</summary>
     public static bool Enabled { get; set; } = Environment.GetEnvironmentVariable(EnvVars.PhaseProf) != "0";
 
-    /// <summary>One dispatcher turn in this many is timed (1: every turn, <c>VITASHARP_PHASE_PROF=1</c> or the debug mode).</summary>
-    public static int SampleEvery { get; set; } = Environment.GetEnvironmentVariable(EnvVars.PhaseProf) == "1" ? 1 : DefaultSampleEvery;
+    /// <summary><c>VITASHARP_PHASE_PROF=1</c>: every turn timed for the whole run.</summary>
+    private static readonly bool s_everyTurn = Environment.GetEnvironmentVariable(EnvVars.PhaseProf) == "1";
+
+    /// <summary>One dispatcher turn in this many is timed (1: every turn, <c>VITASHARP_PHASE_PROF=1</c> or the detailed
+    /// log, which is on while an F8 capture records: <see cref="DebugMode"/>).</summary>
+    public static int SampleEvery { get; set; } = s_everyTurn ? 1 : DefaultSampleEvery;
 
     /// <summary>The sampling period when not every turn is timed (prime: a loop of a power-of-two period does not alias).</summary>
     public const int DefaultSampleEvery = 31;
 
-    /// <summary>Times every turn from now on (the debug mode).</summary>
-    public static void TimeEveryTurn() => SampleEvery = 1;
+    /// <summary>The detailed log turned on or off (an F8 capture recording, --debug-mode): every turn is timed while it
+    /// is on, so the capture sees every slow turn; off, the sampling comes back (unless <c>VITASHARP_PHASE_PROF=1</c>).</summary>
+    public static void SetDetailed(bool on) => SampleEvery = on || s_everyTurn ? 1 : DefaultSampleEvery;
 
     /// <summary>Host time per guest cycle above which a window raises an alert: 70 ns, about 200 host cycles at the
     /// 3 GHz of a desktop core or a phone's big core (<c>VITASHARP_PHASE_BUDGET_NS</c>). Native code runs at 1-5 ns
