@@ -371,6 +371,113 @@ public sealed class AndroidTouchPathTests : IDisposable
     }
 
     [Fact]
+    public async Task ConcurrentReadsOfOnePanelNeverInterleave()
+    {
+        // four guest threads peek the front panel at once while the fingers move and guest time passes (the
+        // driver's mutex per panel): every read gets samples in time order, none torn or repeated
+        const int Readers = 4, Peeks = 400;
+        uint[] buffers = [.. Enumerable.Range(0, Readers).Select(_ => _harness.Alloc(BufferSize * Buffers))];
+        var failures = new System.Collections.Concurrent.ConcurrentBag<string>();
+        Frame();
+        using var stop = new CancellationTokenSource();
+        var mover = Task.Run(() =>
+        {
+            for (int step = 0; !stop.IsCancellationRequested; step++)
+            {
+                lock (_pad)
+                {
+                    _hostUs += 4000;
+                    _clock.Advance(4000);
+                    _pad.Update(step % 3 == 2 ? [] : [Finger(step % 2, (step % 10) / 10f, 0.5f)], _hostUs);
+                }
+
+                Thread.Yield();
+            }
+        });
+        Parallel.For(0, Readers, new ParallelOptions { MaxDegreeOfParallelism = Readers }, reader =>
+        {
+            uint data = buffers[reader];
+            for (int i = 0; i < Peeks; i++)
+            {
+                int n = Call(_touch, "sceTouchPeek", 0, data, (uint)Buffers);
+                ulong previous = 0;
+                for (int b = 0; b < n; b++)
+                {
+                    uint buffer = data + (uint)(b * BufferSize);
+                    ulong stamp = GuestMemory.Read<ulong>(buffer);
+                    uint reports = GuestMemory.R32(buffer + 12);
+                    if (stamp <= previous || reports > 6)
+                    {
+                        failures.Add($"reader {reader} peek {i} buffer {b}: stamp {stamp} after {previous}, {reports} reports");
+                    }
+
+                    previous = stamp;
+                }
+            }
+        });
+        stop.Cancel();
+        await mover;
+        Assert.Empty(failures);
+    }
+
+    /// <summary>Waits for the script's own thread to reach a state (a deadline only against a hang: the result is
+    /// decided by the state, never by the time).</summary>
+    private static void WaitUntil(Func<bool> done)
+    {
+        DateTime deadline = DateTime.UtcNow.AddSeconds(60);
+        while (!done())
+        {
+            Assert.True(DateTime.UtcNow < deadline, "the navigation script did not get there");
+            Thread.Sleep(2);
+        }
+    }
+
+    [Fact]
+    public void ANavScriptSwipeReachesTheGuestWithItsPointsBetweenReads()
+    {
+        // a headless navigation script swipes over 6 presented frames of 33 ms while the shell reads every third
+        string dir = Path.Combine(Path.GetTempPath(), "vitasharp-navtouch-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        string file = Path.Combine(dir, "nav.txt");
+        File.WriteAllText(file, "swipe 0.1 0.5 0.9 0.5 6" + Environment.NewLine);
+        var ro = new VitaSharp.Renderer.Vulkan.VulkanRendererOptions();
+        var nav = new VitaSharp.Desktop.NavScript(file, false, dir, ro, () => _hostUs);
+        try
+        {
+            _harness.Emu.Host.Input = nav;
+            Frame();
+            WaitUntil(() => nav.GetTouches(false).Count == 1);
+            for (int frame = 1; frame <= 9; frame++)
+            {
+                Wait(33);
+                Display.FramesPresented++;
+                ro.FrameSink!(Display.FramesPresented, new byte[4], 1, 1);
+                if (frame == 6)
+                {
+                    WaitUntil(() => nav.GetTouches(false).Count == 0); // the script lifts the finger
+                }
+
+                if (frame % 3 == 0)
+                {
+                    Frame();
+                }
+            }
+
+            string[] moves = [.. _events.Where(e => e.StartsWith("move ", StringComparison.Ordinal))];
+            Assert.True(moves.Length >= 4, string.Join(", ", _events));
+            int[] xs = [.. moves.Select(m => int.Parse(m.Split(' ')[2], System.Globalization.CultureInfo.InvariantCulture))];
+            Assert.Equal(xs.OrderBy(x => x), xs);
+            Assert.StartsWith("press ", _events[0]);
+            Assert.Equal("release", Kinds()[^1]);
+        }
+        finally
+        {
+            nav.Quit = true;
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
     public void TheSamplerGivesEachContactItsOwnIdAndForgetsTheOldest()
     {
         long now = 0;
