@@ -64,7 +64,37 @@ it) and FEX/Box64 (per-block metadata from the host pc to the guest state).
 The interpreter, the IL backend, callouts, the ARM64 backend and the other hosts keep the guards.
 `VITASHARP_DATA_ABORT_FAULTS=0` keeps them on Windows x64 too. Cost with a handler (`CpuDataAbortGuardBenchmarks`, in process, cores
 0x0F, the cleanest of two runs each): native loop 11.97 us without a handler, 11.87 us with one through host faults
-(0%), against 11.38 -> 15.48 us (median) with the guards on the same build. Tests: `NativeJitTests.DataAbortMatrix` (the same 23
+(0%), against 11.38 -> 15.48 us (median) with the guards on the same build.
+
+### Host faults on Linux and Android (ARM64, x86-64)
+
+The same design on Linux/Android ARM64 and Linux x86-64 hosts with 4 KB pages, opt-in with
+`VITASHARP_DATA_ABORT_FAULTS=1` until a device (Android) and a Linux host confirm it; 16 KB host pages (Apple silicon,
+some Android kernels) and macOS keep the guards.
+
+- Memory: the guest window is mapped read/write everywhere on POSIX, so arming `mprotect`s every unmapped page
+  `PROT_NONE` (private pages are also decommitted, then protected), freed blocks are protected again, a mapped block
+  is read/write again (a fresh mapping for private pages, `mprotect` for the shared views), and a let-through page is
+  made read/write in its space.
+- ARM64 emitter: the fault mark writes the SIMD register cache back (at any access of the instruction the register
+  file in the state is what the instructions before it left; what the instruction itself loaded is UNKNOWN for an
+  aborted instruction), the exits are laid out after the block with no cached SIMD register, unknown host flags and the
+  FPCR state of the mark, and blocks with fault exits do not group dirty-page marks (a fault can stop an instruction
+  between two of its stores).
+- Handler (`HostFaultSignals`): machine code installed with the kernel's `rt_sigaction` in front of the runtime's
+  (CoreCLR or Mono) and chained to it, like Ryujinx's generated signal handler. It reads a data block the managed side
+  keeps current (code arena, guest windows, the fault site array). A fault in a guest window at a site pc on an unmapped
+  page stores the fault (ARM64: WnR from the ESR record of the signal frame; x86-64: bit 1 of the page fault error
+  code) in the state (x19 / rbx) and resumes at the exit; any other fault in a guest window `mprotect`s the host page
+  read/write and resumes (as without handlers); anything else goes to the previous handler (or the default action).
+  Linux arm64 frame: si_addr at 16, uc_mcontext at 176 (x0-x30 from 184, pc at 440, records from 464); Linux x86-64:
+  gregs from 40 (rbx 11, rip 16, err 19). The ARM64 code uses x0-x17 only (x18 is Android's shadow call stack).
+- Tests: `NativeArm64HostFaultDataAbortsMatchTheInterpreter` (the sandbox protects the test pages and runs the
+  handler's logic, `HostFaultAborts.Classify`, at the precise faulting pc kept by a code hook),
+  `TheArm64SignalHandlerEntersTheExitOfAFaultSite` (the ARM64 handler itself in the sandbox on hand-made frames: site
+  hit with and without WnR, chaining outside the windows) and `TheX64SignalHandlerEntersTheExitOfAFaultSite` (the
+  x86-64 handler through a System V thunk on Windows). Only a device / Linux host runs the install, the chaining to the
+  real runtime handler, the `mprotect` path and the default action. Tests: `NativeJitTests.DataAbortMatrix` (the same 23
 forms with guards and with host faults, the fault counter, a freed shared page in both modes and a host read of it).
 ## perf/android-jit-13 (2026-11-13): worker time, dispatcher returns, single precision in the SIMD cache
 

@@ -130,7 +130,7 @@ public sealed unsafe partial class NativeJitTests
 
             AbortMatrixState(s, thumb, baseAddress, stack);
             Block b = AbortMatrixBlock(thumb, words, guards);
-            Snapshot other = Take(s, Guard(() => run(s, b)));
+            Snapshot other = Take(s, GuardMessage(() => run(s, b)));
             if (abortAt >= 0)
             {
                 // an aborted instruction's own loads into SIMD registers and stores to memory are UNKNOWN in the ARM ARM
@@ -207,6 +207,62 @@ public sealed unsafe partial class NativeJitTests
         CheckAbortMatrix("arm64", (s, b) => RunArm64(sb, s, NativeArm64Compiler.Instance.Compile(b, sb.Stubs)!.NativeEntry), thumb, words, r0, r0Offset, sp, spOffset, abortAt);
     }
 
+    /// <summary>
+    /// The ARM64 backend's fault exits (Linux and Android with 4 KB pages, HostFaultAborts): the sandbox protects the
+    /// unmapped test pages as the device's mprotect does and runs the signal handler's logic on the faulting access.
+    /// Every case must leave the interpreter's state, and the aborts must come through the handler.
+    /// </summary>
+    [Arm64SandboxTheory]
+    [MemberData(nameof(AbortMatrixCases))]
+    public void NativeArm64HostFaultDataAbortsMatchTheInterpreter(bool thumb, string words, AbortBase r0, int r0Offset, AbortBase sp, int spOffset, int abortAt)
+    {
+        if (!HostFaultAborts.Supported || Arm64Runner.Native)
+        {
+            return; // the sandbox needs a host that arms guest windows for host faults; a device runs the real handler
+        }
+
+        bool was = HostFaultAborts.Arm64FaultExits;
+        HostFaultAborts.Arm64FaultExits = true;
+        try
+        {
+            using var sandbox = new Arm64Sandbox();
+            sandbox.ProtectGuestPage(AbortTestAddress);
+            sandbox.ProtectGuestPage(DataBase + DataSize);
+            EnsureGuestPages();
+            Block probe = AbortMatrixBlock(thumb, words);
+            IrBlock faultIr = WithFaultExits(NativeArm64Compiler.NewFrontend()).Translate(probe);
+            Assert.DoesNotContain(faultIr.Insts, x => x.Op == IrOp.PageMapped);
+            long before = Interlocked.Read(ref HostFaultAborts.Entered);
+            CheckAbortMatrix("arm64 host faults", (s, b) => RunArm64(sandbox, s, NativeArm64Compiler.Instance.Compile(b, sandbox.Stubs)!.NativeEntry), thumb, words, r0, r0Offset, sp, spOffset, abortAt);
+            if (abortAt >= 0)
+            {
+                Assert.True(Interlocked.Read(ref HostFaultAborts.Entered) > before, "the abort did not come through the fault handler");
+            }
+        }
+        finally
+        {
+            HostFaultAborts.Arm64FaultExits = was;
+        }
+    }
+
+    private static string? GuardMessage(Action a)
+    {
+        try
+        {
+            a();
+            return null;
+        }
+        catch (Exception e)
+        {
+            return e.GetType().Name + ": " + e.Message;
+        }
+    }
+
+    private static ArmFrontend WithFaultExits(ArmFrontend frontend)
+    {
+        frontend.HostFaultExits = true;
+        return frontend;
+    }
     /// <summary>
     /// A freed page of a shared region (kernel memory here; CDRAM is the same) aborts like a private one, with the guards
     /// and with host faults: its view cannot be decommitted, so it is made inaccessible when freed. A stray host access

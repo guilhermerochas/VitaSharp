@@ -274,7 +274,7 @@ public sealed unsafe partial class Arm64Emitter
         _storeLit = (opts & A64Opt.StoreLiteral) != 0;
         _stub = (opts & A64Opt.ExitStubs) != 0;
         _abortUsed = _slotPathUsed = _tailZeroUsed = false;
-        bool fpEntry = false, calls = false;
+        bool fpEntry = false, calls = false, faultExits = false;
         {
             Span<IrInst> all = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
             bool checkFp = (opts & A64Opt.FpEntryCheck) != 0 && !NativeVerifier.Enabled;
@@ -288,6 +288,11 @@ public sealed unsafe partial class Arm64Emitter
                 if (LinearScan.IsCallSite(x))
                 {
                     calls = true;
+                }
+
+                if (x.Op == IrOp.Nop && x.Imm == IrBuilder.FaultMark)
+                {
+                    faultExits = true;
                 }
             }
         }
@@ -310,7 +315,8 @@ public sealed unsafe partial class Arm64Emitter
         }
 
         _loc = loc;
-        PlanMarks(ir, (opts & A64Opt.GroupMarks) != 0);
+        // a host fault can stop an instruction between two of its stores: every store marks its own page then
+        PlanMarks(ir, (opts & A64Opt.GroupMarks) != 0 && !faultExits);
         _labels = new int[ir.Labels];
         for (int i = 0; i < ir.Labels; i++)
         {
@@ -341,8 +347,45 @@ public sealed unsafe partial class Arm64Emitter
         }
         int exitIndex = 0;
         Span<IrInst> insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
+        _faultRegions.Clear();
+        FaultSites.Clear();
+        int faultMark = -1;
+        bool fpcrAtMark = false;
         for (int i = 0; i < insts.Length; i++)
         {
+            if (insts[i].Op == IrOp.Nop && insts[i].Imm == IrBuilder.FaultMark)
+            {
+                // an instruction whose faults enter a data abort exit starts: the SIMD cache is written back first, so
+                // at any of its accesses the register file in the state holds what the instructions before it left
+                if (_vcAnyDirty)
+                {
+                    VcFlushAll();
+                }
+
+                faultMark = _assembler.Count;
+                fpcrAtMark = _fpcrHost;
+                continue;
+            }
+
+            if (insts[i].Op == IrOp.BranchIf && insts[i].Imm == IrBuilder.FaultExitBranch)
+            {
+                // the exit the code never branches into: laid out after the block (see X64Emitter.Prepare)
+                int end = i + 1;
+                while (insts[end].Op != IrOp.Label || insts[end].Imm != insts[i].Imm2)
+                {
+                    end++;
+                }
+
+                if (faultMark >= 0 && faultMark < _assembler.Count)
+                {
+                    _faultRegions.Add((faultMark, _assembler.Count, i + 1, end, fpcrAtMark));
+                }
+
+                faultMark = -1;
+                i = end;
+                continue;
+            }
+
             if (_pair && i + 1 < insts.Length && TryPair(insts[i], insts[i + 1]))
             {
                 i++;
@@ -399,6 +442,26 @@ public sealed unsafe partial class Arm64Emitter
                 JumpTo(rt.Epilogue);
             }
         }
+        // the data abort exits entered by host faults (HostFaultAborts): each starts with no SIMD register cached (the
+        // fault mark wrote them back; what the instruction loaded into the cache since is UNKNOWN for an aborted
+        // instruction), the host flags unknown and the FPCR as it was at the mark
+        foreach ((int start, int end, int irFrom, int irTo, bool fpcrHost) in _faultRegions)
+        {
+            Array.Fill(_vcOff, -1);
+            Array.Clear(_vcDirty);
+            _vcAny = _vcAnyDirty = false;
+            ForgetHostFlags();
+            _fpcrHost = fpcrHost;
+            int stub = _assembler.Count;
+            for (int k = irFrom; k < irTo; k++)
+            {
+                _cur = k;
+                Lower(insts[k], slotFor, ref exitIndex);
+            }
+
+            FaultSites.Add(((uint)start * 4, (uint)end * 4, (uint)stub * 4));
+        }
+
         foreach ((int cold, int back) in _coldMarks)
         {
             // the first store to a clean page: set its byte (x16 = page index, kept from the check)
@@ -515,6 +578,17 @@ public sealed unsafe partial class Arm64Emitter
 
     /// <summary><see cref="Assemble"/> into the assembler's buffer (valid until the next encoding on this emitter).</summary>
     public ReadOnlySpan<byte> AssembleSpan() => _assembler.FinishSpan();
+
+    // data abort exits entered by host faults (IrBuilder.FaultExits): the word range of the instruction's accesses, the
+    // IR of the exit and the FPCR state at the fault mark
+    private readonly List<(int Start, int End, int IrFrom, int IrTo, bool FpcrHost)> _faultRegions = new();
+
+    /// <summary>
+    /// After <see cref="Prepare"/>: the block's data abort fault sites as byte offsets from the code's start (a host fault
+    /// at an offset in [Start, End) enters the exit at Stub, <see cref="HostFaultAborts"/>). The code is position
+    /// independent and its literal pool follows it, so the offsets hold wherever it is placed.
+    /// </summary>
+    public List<(uint Start, uint End, uint Stub)> FaultSites { get; } = new();
 
     /// <summary>The words of the prepared block (tests).</summary>
     public IReadOnlyList<uint> Words => _assembler.Words;

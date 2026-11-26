@@ -63,6 +63,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         armFrontend.HleCallouts = hleCallouts;
         armFrontend.DeferRegions = (Arm64Emitter.Opts & Arm64Emitter.A64Opt.DeferRegions) != 0;
         armFrontend.DynamicExitOperands = true;
+        armFrontend.HostFaultExits = HostFaultAborts.Arm64FaultExits; // data aborts through host faults where supported
         List<uint> deps = t_deps ??= new();
         deps.Clear();
         bool cross = successors != null && !NativeVerifier.Enabled && CpuCore.Probes == null; // analyses beyond the block
@@ -131,6 +132,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         long encode = Stopwatch.GetTimestamp() - t3;
         int size = bytes.Length;
         byte* code = rt.Code.Place(bytes, Jit.ReuseFreedCode);
+        HostFaultAborts.Register((ulong)code, arm64Emitter.FaultSites);
         Interlocked.Add(ref NativeX64Compiler.CodeBytes, size); // one counter for both native backends (Report)
         if (stubs.PatchLinks)
         {

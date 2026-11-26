@@ -18,7 +18,7 @@ namespace VitaSharp.Tests;
 public sealed unsafe partial class Arm64Sandbox : IArm64Runner
 {
     private const int UC_ARCH_ARM64 = 2, UC_MODE_ARM = 0, UC_PROT_ALL = 7, UC_PROT_READ = 1, UC_PROT_EXEC = 4;
-    private const int UC_HOOK_CODE = 4, UC_HOOK_MEM_UNMAPPED = 112;
+    private const int UC_HOOK_CODE = 4, UC_HOOK_MEM_UNMAPPED = 112, UC_HOOK_MEM_PROT = 128 | 256, UC_MEM_WRITE_PROT = 22, UC_PROT_NONE = 0;
     private const int RegX0 = 199, RegX30 = 2, RegSp = 4, RegPc = 260;
     public const ulong CalloutStub = 0x1000, ReturnStub = 0x2000;
     /// <summary>A RET whose code hook calls <see cref="FakeFunction"/> with x0-x3 and puts its result in x0.</summary>
@@ -93,6 +93,7 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         Check(uc_hook_add(_unicorn, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnCallout, null, CalloutStub, CalloutStub), "hook callout");
         Check(uc_hook_add(_unicorn, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnFake, null, FakeStub, FakeStub), "hook fake");
         Check(uc_hook_add(_unicorn, out _, UC_HOOK_MEM_UNMAPPED, (void*)(delegate* unmanaged<nint, int, ulong, int, long, void*, int>)&OnUnmapped, null, 1, 0), "hook unmapped");
+        Check(uc_hook_add(_unicorn, out _, UC_HOOK_MEM_PROT, (void*)(delegate* unmanaged<nint, int, ulong, int, long, void*, int>)&OnProtected, null, 1, 0), "hook protected");
         if (countInstructions)
         {
             HookCount();
@@ -158,6 +159,12 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         uc_reg_write(_unicorn, RegX30, &lr);
         uc_reg_write(_unicorn, RegSp, &sp);
         int err = uc_emu_start(_unicorn, _tramp, ReturnStub, 0, 0);
+        while (err != 0 && TakeProtectedAccess() is not 0 and ulong exit)
+        {
+            // the emulated SIGSEGV handler sent the faulting access to its data abort exit
+            err = uc_emu_start(_unicorn, exit, ReturnStub, 0, 0);
+        }
+
         t_current = null;
         if (err != 0 || _fault != null)
         {
@@ -165,6 +172,13 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
             uc_reg_read(_unicorn, RegPc, &pc);
             throw new InvalidOperationException($"ARM64 sandbox: {(_fault ?? Marshal.PtrToStringAnsi(uc_strerror(err)))} at pc={pc:X} (arena +0x{pc - (ulong)NativeRuntime.Instance.Code.ExecBase:X})");
         }
+    }
+
+    /// <summary>Calls an AAPCS64 function at <paramref name="fn"/> with three arguments (no trampoline).</summary>
+    public void Call(ulong fn, ulong arg0, ulong arg1, ulong arg2)
+    {
+        uc_reg_write(_unicorn, RegX0 + 2, &arg2);
+        Call(fn, arg0, arg1);
     }
 
     /// <summary>Calls an AAPCS64 function at <paramref name="fn"/> with two arguments (no trampoline).</summary>
@@ -285,6 +299,77 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         }
     }
 
+    /// <summary>
+    /// Makes the guest page holding <paramref name="guestAddress"/> inaccessible to the emulated code (what the device's
+    /// mprotect does for host fault data aborts): an access to it runs the emulated SIGSEGV handler (<see cref="OnProtected"/>).
+    /// </summary>
+    public void ProtectGuestPage(uint guestAddress)
+    {
+        ulong page = ((ulong)GuestMemory.Base + guestAddress) & ~(Page - 1);
+        Check(uc_mem_protect(_unicorn, page, (nuint)Page, UC_PROT_NONE), $"protect {page:X}");
+        if (!_trackPc)
+        {
+            // the pc of a memory hook is the translation block's: the code hook keeps the instruction's
+            _trackPc = true;
+            ulong lo = (ulong)NativeRuntime.Instance.Code.ExecBase;
+            Check(uc_hook_add(_unicorn, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnTrack, null, lo, lo + ExecutableMemory.ReserveSize - 1), "hook pc");
+        }
+    }
+
+    private bool _trackPc;
+    private ulong _lastPc;
+
+    [UnmanagedCallersOnly]
+    private static void OnTrack(nint uc, ulong address, uint size, void* user)
+    {
+        if (t_current is { } sb)
+        {
+            sb._lastPc = address;
+        }
+    }
+
+    /// <summary>
+    /// The device's SIGSEGV handler for host fault data aborts (<see cref="HostFaultSignals"/>), in C#: a faulting pc in a
+    /// registered fault site on an unmapped guest page stores the fault in the state (x19) and resumes at the site's exit.
+    /// </summary>
+    [UnmanagedCallersOnly]
+    private static int OnProtected(nint uc, int type, ulong address, int size, long value, void* user)
+    {
+        // the pc read inside a memory hook is the translation block's, not the access's: the access is classified once
+        // the emulation stopped at it (Run)
+        if (t_current is { } sb)
+        {
+            sb._protectedAccess = (address, type == UC_MEM_WRITE_PROT);
+        }
+
+        return 0;
+    }
+
+    private (ulong Address, bool Write)? _protectedAccess;
+
+    /// <summary>The emulated signal handler on the access <see cref="OnProtected"/> stopped at: the exit to resume at.</summary>
+    private ulong TakeProtectedAccess()
+    {
+        if (_protectedAccess is not { } access)
+        {
+            return 0;
+        }
+
+        _protectedAccess = null;
+        ulong pc = _lastPc, x19;
+        uc_reg_read(_unicorn, RegX0 + 19, &x19);
+        var s = (CpuState*)x19;
+        ulong exit = HostFaultAborts.Classify(pc, s->MemBase, access.Address, access.Write, out uint faultAddress, out uint status);
+        if (exit == 0)
+        {
+            _fault = $"access to a protected page {access.Address:X} at pc {pc:X} outside a fault site ({HostFaultAborts.SitesNear(pc)})";
+            return 0;
+        }
+
+        s->AbortAddr = faultAddress;
+        s->AbortStatus = status;
+        return exit;
+    }
     [UnmanagedCallersOnly]
     private static int OnUnmapped(nint uc, int type, ulong address, int size, long value, void* user)
     {
@@ -365,6 +450,7 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
     [LibraryImport("unicorn")] private static partial int uc_close(nint uc);
     [LibraryImport("unicorn")] private static partial int uc_mem_map(nint uc, ulong address, nuint size, uint perms);
     [LibraryImport("unicorn")] private static partial int uc_mem_map_ptr(nint uc, ulong address, nuint size, uint perms, void* ptr);
+    [LibraryImport("unicorn")] private static partial int uc_mem_protect(nint uc, ulong address, nuint size, uint perms);
     [LibraryImport("unicorn")] private static partial int uc_mem_write(nint uc, ulong address, void* bytes, nuint size);
     [LibraryImport("unicorn")] private static partial int uc_reg_write(nint uc, int regid, void* value);
     [LibraryImport("unicorn")] private static partial int uc_reg_read(nint uc, int regid, void* value);

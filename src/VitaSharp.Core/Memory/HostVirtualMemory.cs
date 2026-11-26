@@ -86,15 +86,19 @@ internal static unsafe partial class HostVirtualMemory
     private static partial bool VirtualProtect(void* addr, nuint size, uint protect, uint* old);
 
     /// <summary>
-    /// Windows: the committed pages of [<paramref name="addr"/>, + <paramref name="size"/>) (a view of shared memory, which
-    /// cannot be decommitted through one of its views) become inaccessible (<paramref name="accessible"/> = false) or
-    /// read/write again; pages not committed are left alone (they fault already, and commit read/write). Other hosts:
-    /// nothing (their reservations are never made inaccessible).
+    /// Makes [<paramref name="addr"/>, + <paramref name="size"/>) of a guest window inaccessible (<paramref name="accessible"/>
+    /// = false) or read/write again (host fault data aborts, <see cref="Cpu.Native.HostFaultAborts"/>). Windows: only the
+    /// committed pages change (a view of shared memory cannot be decommitted through one of its views; pages only
+    /// reserved fault already, and commit read/write). Linux, Android, macOS: mprotect of the whole host pages in the range
+    /// (the guest window is mapped read/write everywhere, so this is what makes a page fault).
     /// </summary>
     public static void ProtectCommitted(byte* addr, nuint size, bool accessible)
     {
         if (!OperatingSystem.IsWindows())
         {
+            nuint page = (nuint)Environment.SystemPageSize;
+            nuint first = (nuint)addr & ~(page - 1), last = ((nuint)addr + size + page - 1) & ~(page - 1);
+            mprotect((void*)first, last - first, accessible ? PROT_READ | PROT_WRITE : PROT_NONE);
             return;
         }
 

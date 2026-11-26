@@ -46,7 +46,7 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
         long t0 = Stopwatch.GetTimestamp();
         // per compile thread, reusing its IR buffers: the IR is consumed before this thread translates another block
         // data aborts found by host faults where the host allows it: fault exits instead of guards (HostFaultAborts)
-        t_frontend ??= new ArmFrontend(X64Emitter.SupportsVec, tinyCheck: true, reuseIr: true) { HostFaultExits = HostFaultAborts.Supported };
+        t_frontend ??= new ArmFrontend(X64Emitter.SupportsVec, tinyCheck: true, reuseIr: true) { HostFaultExits = HostFaultAborts.X64FaultExits };
         IrBlock ir = t_frontend.Translate(b);
         long t1 = Stopwatch.GetTimestamp();
         IrPasses.DeadCode(ir);
