@@ -1,4 +1,4 @@
-<!-- pair: development.md sha256=83ea323504dfd4c8bab8fa96a016b919c82e542031bae0d7b09755c842421e93 -->
+<!-- pair: development.md sha256=dcf5fb68433698ef2072d236198d5117c92aa4f9792042d44e69e221fd559fd3 -->
 # Desenvolvimento
 
 [English](development.md) | **Português**
@@ -133,6 +133,7 @@ O que o `dotnet test tests/VitaSharp.Tests` precisa em cada sistema; um teste se
 | Dispositivo Vulkan (testes do renderizador, dos dumps da GPU e dos jogos rodando) | o lavapipe do Mesa (Vulkan 1.4, o mesmo do CI do Linux): descompacte a pasta `x64` de uma versão do [mesa-dist-win](https://github.com/pal1000/mesa-dist-win/releases) (`vulkan_lvp.dll` + `lvp_icd.x86_64.json`) em `%LOCALAPPDATA%\VitaSharpTools\mesa\<versão>\x64`; sem ele, ou quando o carregador do sistema `vulkan-1.dll` não pode usá-lo, o SwiftShader que vem com o Microsoft Edge ou o Google Chrome (os dois achados sozinhos) | o lavapipe de um Mesa mais novo que o 22.3 (o CI tem o 25.2): `sudo apt install mesa-vulkan-drivers libvulkan1` (Fedora: `mesa-vulkan-drivers vulkan-loader`; Debian 12: `sudo apt install -t bookworm-backports mesa-vulkan-drivers`, o 22.3 dele derruba os testes de textura) | o MoltenVK: o Vulkan SDK da LunarG, ou `brew install molten-vk vulkan-loader` |
 | shaderc (testes do renderizador e de compilação de shaders; o renderizador também precisa dele) | vem do pacote Silk.NET.Shaderc.Native | vem do pacote (achado em `runtimes/linux-x64` também onde a busca do Silk.NET não acha, como no Ubuntu); quando essa cópia não carrega: `sudo apt install libshaderc-dev` (Fedora, Arch: `shaderc`; carregado como `libshaderc.so.1`) | vem do pacote, senão o `brew install shaderc` do Homebrew |
 | Uma janela do desktop (testes do overlay do jogo) | sempre | uma tela X11 ou Wayland; sem tela: `xvfb-run dotnet test tests/VitaSharp.Tests` (`sudo apt install xvfb`) | pulados: o AppKit só cria janelas na thread principal, e os testes rodam em threads de trabalho |
+| OCR (`screen-text`, `ScreenTextTests`, o texto da tela no relatório do F8) | o Windows.Media.Ocr do sistema (Windows 10/11, pelo Windows PowerShell 5.1) com um idioma de OCR instalado (Configurações > Hora e idioma > Idioma; japonês para menus em japonês) | `sudo apt install tesseract-ocr` (`tesseract-ocr-jpn` para japonês) | `brew install tesseract` (`tesseract-lang` para japonês) |
 | FFmpeg (testes de decodificação de vídeo e áudio) | baixado pelo primeiro build | baixado pelo primeiro build | o do sistema: `brew install ffmpeg` |
 
 - Qualquer sistema: `VK_DRIVER_FILES` (ou `VK_ICD_FILENAMES`) com o manifesto ICD de um SwiftShader ou Mesa baixado é
