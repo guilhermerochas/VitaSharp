@@ -2,6 +2,7 @@ using VitaSharp.Core.Util;
 using System.Diagnostics;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Host;
+using VitaSharp.Core.Input;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 
@@ -831,82 +832,279 @@ public sealed partial class Touch : HleModule
     readonly Dictionary<int, byte>[] _ids = [new(), new()];
     readonly byte[] _nextId = [1, 1];
 
-    int Peek(int port, uint data, uint count)
+    /// <summary>
+    /// One panel's ring of samples, as the touch driver keeps it (SceTouch 3.74): a sample per vblank since the
+    /// previous read (from the host's touch history, <see cref="ITouchHistory"/>) and one at the read itself, each with
+    /// its timestamp. sceTouchPeek copies the newest buffers of it, sceTouchRead the ones it has not read yet; libpaf
+    /// peeks 16 per frame and processes every sample newer than the last one it saw.
+    /// </summary>
+    sealed class SampleRing
     {
-        if (data == 0 || port is < 0 or > 1 || count > MaxBuffers) return ERR_INVALID_ARG;
-        if (count == 0) return 0;
-        // stopped panel: the read still succeeds, with a header and no reports (Vita3K: reportNum = 0)
+        public const int Size = MaxBuffers;
+        public readonly ulong[] TimeStamps = new ulong[Size];
+        public readonly int[] Counts = new int[Size];
+        public readonly byte[] Ids = new byte[Size * MaxReports];
+        public readonly ushort[] X = new ushort[Size * MaxReports];
+        public readonly ushort[] Y = new ushort[Size * MaxReports];
+        /// <summary>Samples taken so far; the newest is at (Written - 1) % Size.</summary>
+        public long Written;
+        /// <summary>Samples sceTouchRead has handed over.</summary>
+        public long ReadUpTo;
+        /// <summary>The vblank sampled last (-1: none yet, nothing to sample backwards from).</summary>
+        public long LastVblank = -1;
+        public ulong LastTimeStamp;
+    }
+
+    /// <summary>Reports per sample (SCE_TOUCH_MAX_REPORT).</summary>
+    const int MaxReports = 8;
+
+    /// <summary>The panels' samples: rebuilt from the next read on after a state load (the host history is not the
+    /// guest's).</summary>
+    [VitaSharp.Core.SaveState.SnapshotIgnore]
+    readonly SampleRing[] _rings = [new(), new()];
+
+    /// <summary>Takes the samples of a read: one per vblank since the previous read from the host's touch history,
+    /// then the contacts of now. False when the panel is stopped (the read gets one empty buffer).</summary>
+    bool TakeSamples(int port)
+    {
+        if (_sampling[port] == 0)
+        {
+            return false;
+        }
+
         // polled every frame: stack buffers instead of lists/LINQ (no garbage per call)
-        Span<TouchPoint> touches = stackalloc TouchPoint[8];
+        Span<TouchPoint> touches = stackalloc TouchPoint[MaxReports];
         // only the foreground process is touched, except inside the shell's active touch regions over it (its status
         // bar, its on-screen keyboard): those contacts are the shell's
         bool claimed = Emu.Vita.TouchClaimedByShell(port);
         bool touched = claimed || Emu.IsForeground;
-        int reports = 0;
-        if (_sampling[port] != 0 && touched && Emu.Host.Input is { } input)
+        SampleRing ring = _rings[port];
+        ulong now = Emu.Kernel.ProcessTimeUs;
+        long vblankNow = VBlank.Count;
+        IInputBackend? input = touched ? Emu.Host.Input : null;
+        // the number of this read (IGuestReadInput): the samples taken before it are kept with it by a recording
+        long read = input != null ? Ctrl.NextRead(ref _touchReads, port) : -1;
+        int replayed = input is IGuestTouchSamples replay ? replay.SampleCount(port == 1, read) : -1;
+        if (replayed >= 0)
         {
-            long read = Ctrl.NextRead(ref _touchReads, port);
+            // a re-run: the recording's samples before this read, in order, between the previous sample and now
+            ulong from = ring.LastTimeStamp;
+            for (int index = 0; index < replayed; index++)
+            {
+                int past = ((IGuestTouchSamples)input!).Sample(port == 1, read, index, touches);
+                ulong stamp = from + (now - Math.Min(from, now)) * (ulong)(index + 1) / (ulong)(replayed + 1);
+                if (stamp > ring.LastTimeStamp && stamp < now)
+                {
+                    Push(port, touches[..Filter(port, touches[..past], claimed)], stamp);
+                }
+            }
+        }
+        else if (input is ITouchHistory history && ring.LastVblank >= 0)
+        {
+            double guestNow = GuestClock.Seconds;
+            double speed = GuestClock.Speed > 0 ? GuestClock.Speed : 1;
+            for (long vblank = Math.Max(ring.LastVblank + 1, vblankNow - (SampleRing.Size - 2)); vblank <= vblankNow; vblank++)
+            {
+                double age = guestNow - vblank * VBlank.PeriodSeconds / TimeScale.VBlank;
+                if (age <= 0)
+                {
+                    continue;
+                }
+
+                ulong ageUs = (ulong)(age * 1e6 * TimeScale.Proc);
+                if (ageUs >= now)
+                {
+                    continue; // before the process started
+                }
+
+                ulong stamp = now - ageUs;
+                if (stamp <= ring.LastTimeStamp || stamp >= now)
+                {
+                    continue; // not after the previous sample: only the samples taken are asked for (and recorded)
+                }
+
+                int past = history.TouchesAgo(port == 1, (long)(age * 1e6 / speed), read, touches);
+                if (past < 0)
+                {
+                    continue; // older than the host's history
+                }
+
+                Push(port, touches[..Filter(port, touches[..past], claimed)], stamp);
+            }
+        }
+
+        ring.LastVblank = vblankNow;
+        int reports = 0;
+        if (input != null)
+        {
             reports = input is IGuestReadInput ordered ? ordered.GetTouches(port == 1, touches, read) : input.GetTouches(port == 1, touches);
         }
-        if (claimed)
+
+        Push(port, touches[..Filter(port, touches[..reports], claimed)], Math.Max(now, ring.LastTimeStamp + 1));
+        return true;
+    }
+
+    /// <summary>Keeps the contacts that belong to this process: inside the shell's active regions they are the
+    /// shell's, outside them the application's. Returns how many are kept (moved to the front).</summary>
+    int Filter(int port, Span<TouchPoint> touches, bool claimed)
+    {
+        if (!claimed)
         {
-            int kept = 0;
-            for (int r = 0; r < reports; r++)
-            {
-                var t = touches[r];
-                bool shells = Emu.Vita.ShellTouchRegionAt(port, PanelX(t.X), PanelY(port, t.Y));
-                if (shells == Emu.IsShell) touches[kept++] = t;
-            }
-            reports = kept;
+            return touches.Length;
         }
-        Span<byte> ids = stackalloc byte[8];
+
+        int kept = 0;
+        for (int r = 0; r < touches.Length; r++)
+        {
+            TouchPoint t = touches[r];
+            bool shells = Emu.Vita.ShellTouchRegionAt(port, PanelX(t.X), PanelY(port, t.Y));
+            if (shells == Emu.IsShell)
+            {
+                touches[kept++] = t;
+            }
+        }
+
+        return kept;
+    }
+
+    /// <summary>Adds a sample to the panel's ring: report ids for its contacts (a new contact gets the next id, one
+    /// no longer present frees its own) and panel coordinates, up to the panel's contacts.</summary>
+    void Push(int port, ReadOnlySpan<TouchPoint> touches, ulong stamp)
+    {
+        // the panel reports as many contacts as SceTouch configures it for: 6 on the front, 4 on the rear
+        touches = touches[..Math.Min(touches.Length, port == 0 ? MappedInput.MaxFrontContacts : MappedInput.MaxBackContacts)];
+        SampleRing ring = _rings[port];
+        int slot = (int)(ring.Written % SampleRing.Size);
+        int presses = 0;
+        ulong hash = TouchDiagnostics.Mix(TouchDiagnostics.HashSeed, (uint)touches.Length);
         lock (_ids)
         {
-            var map = _ids[port];
+            Dictionary<int, byte> map = _ids[port];
             // forget contacts that are no longer reported
-            Span<int> gone = stackalloc int[8];
-            int nGone = 0;
+            Span<int> gone = stackalloc int[MaxReports];
+            int goneCount = 0;
             bool overflow = false;
-            foreach (var k in map.Keys)
+            foreach (int hostId in map.Keys)
             {
-                bool present = false;
-                for (int r = 0; r < reports; r++) if (touches[r].Id == k) { present = true; break; }
-                if (present) continue;
-                if (nGone < gone.Length) gone[nGone++] = k; else overflow = true;
+                if (Contains(touches, hostId))
+                {
+                    continue;
+                }
+
+                if (goneCount < gone.Length)
+                {
+                    gone[goneCount++] = hostId;
+                }
+                else
+                {
+                    overflow = true;
+                }
             }
-            for (int i = 0; i < nGone; i++) map.Remove(gone[i]);
+
+            for (int i = 0; i < goneCount; i++)
+            {
+                map.Remove(gone[i]);
+            }
+
             if (overflow)
-                foreach (var k in map.Keys.ToList())
-                {
-                    bool present = false;
-                    for (int r = 0; r < reports; r++) if (touches[r].Id == k) { present = true; break; }
-                    if (!present) map.Remove(k);
-                }
-            for (int r = 0; r < reports; r++)
             {
-                if (!map.TryGetValue(touches[r].Id, out ids[r]))
+                foreach (int hostId in map.Keys.ToList())
                 {
-                    ids[r] = _nextId[port];
-                    _nextId[port] = (byte)(_nextId[port] % 127 + 1); // 1..127: the game treats id 0 as no contact
-                    map[touches[r].Id] = ids[r];
+                    if (!Contains(touches, hostId))
+                    {
+                        map.Remove(hostId);
+                    }
                 }
             }
+
+            for (int r = 0; r < touches.Length; r++)
+            {
+                if (!map.TryGetValue(touches[r].Id, out byte id))
+                {
+                    id = _nextId[port];
+                    _nextId[port] = (byte)(_nextId[port] % 127 + 1); // 1..127: the game treats id 0 as no contact
+                    map[touches[r].Id] = id;
+                    presses++;
+                }
+
+                ushort x = (ushort)PanelX(touches[r].X), y = (ushort)PanelY(port, touches[r].Y);
+                ring.Ids[slot * MaxReports + r] = id;
+                ring.X[slot * MaxReports + r] = x;
+                ring.Y[slot * MaxReports + r] = y;
+                hash = TouchDiagnostics.Mix(TouchDiagnostics.Mix(TouchDiagnostics.Mix(hash, id), x), y);
+            }
         }
-        // only the newest sample is reported (the count requested is a maximum)
-        GuestMemory.Fill(data, 0, 0x90);
-        GuestMemory.Write(data, (ulong)Emu.Kernel.ProcessTimeUs);
-        GuestMemory.W32(data + 12, (uint)reports);
-        byte force = _force[port] ? (byte)128 : (byte)0; // panel force range is 1..128 and the host has no pressure
-        for (int r = 0; r < reports; r++)
+
+        ring.Counts[slot] = touches.Length;
+        ring.TimeStamps[slot] = stamp;
+        ring.LastTimeStamp = stamp;
+        ring.Written++;
+        TouchDiagnostics.Sampled(port, touches.Length, presses, hash);
+    }
+
+    static bool Contains(ReadOnlySpan<TouchPoint> touches, int hostId)
+    {
+        for (int r = 0; r < touches.Length; r++)
         {
-            uint rp = data + 16 + (uint)r * 16;
-            var t = touches[r];
-            GuestMemory.Write(rp, ids[r]);
-            GuestMemory.Write(rp + 1, force);
-            GuestMemory.Write(rp + 2, (ushort)PanelX(t.X));
-            GuestMemory.Write(rp + 4, (ushort)PanelY(port, t.Y));
+            if (touches[r].Id == hostId)
+            {
+                return true;
+            }
         }
-        return 1;
+
+        return false;
+    }
+
+    /// <summary>Copies the newest <paramref name="buffers"/> samples (oldest first) into the guest's SceTouchData
+    /// array.</summary>
+    void WriteSamples(int port, uint data, int buffers)
+    {
+        SampleRing ring = _rings[port];
+        byte force = _force[port] ? (byte)128 : (byte)0; // panel force range is 1..128 and the host has no pressure
+        GuestMemory.Fill(data, 0, (uint)(0x90 * buffers));
+        for (int b = 0; b < buffers; b++)
+        {
+            int slot = (int)((ring.Written - buffers + b) % SampleRing.Size);
+            uint buffer = data + (uint)b * 0x90;
+            GuestMemory.Write(buffer, ring.TimeStamps[slot]);
+            GuestMemory.W32(buffer + 12, (uint)ring.Counts[slot]);
+            for (int r = 0; r < ring.Counts[slot]; r++)
+            {
+                uint report = buffer + 16 + (uint)r * 16;
+                GuestMemory.Write(report, ring.Ids[slot * MaxReports + r]);
+                GuestMemory.Write(report + 1, force);
+                GuestMemory.Write(report + 2, ring.X[slot * MaxReports + r]);
+                GuestMemory.Write(report + 4, ring.Y[slot * MaxReports + r]);
+            }
+        }
+    }
+
+    /// <summary>sceTouchPeek: the newest samples, up to <paramref name="count"/> (how many the ring holds); returns
+    /// how many buffers were written. A stopped panel still succeeds, with one buffer and no reports (Vita3K:
+    /// reportNum = 0).</summary>
+    int Peek(int port, uint data, uint count)
+    {
+        if (data == 0 || port is < 0 or > 1 || count > MaxBuffers)
+        {
+            return ERR_INVALID_ARG;
+        }
+
+        if (count == 0)
+        {
+            return 0;
+        }
+
+        if (!TakeSamples(port))
+        {
+            GuestMemory.Fill(data, 0, 0x90);
+            GuestMemory.Write(data, (ulong)Emu.Kernel.ProcessTimeUs);
+            return 1;
+        }
+
+        int buffers = (int)Math.Min(count, Math.Min(_rings[port].Written, SampleRing.Size));
+        WriteSamples(port, data, buffers);
+        TouchDiagnostics.Peeked(port, buffers);
+        return buffers;
     }
 
     // front panel covers 1920x1088; the rear panel's active area is y 108..889 (see sceTouchGetPanelInfo)
@@ -929,7 +1127,11 @@ public sealed partial class Touch : HleModule
     int sceTouchPeek(int port, uint data, uint count)
     {
         int r = Peek(port, data, count);
-        if (r <= 0 || !PeekUnread || port is < 0 or > 1) return r;
+        if (r <= 0 || !PeekUnread || port is < 0 or > 1)
+        {
+            return r;
+        }
+
         // a port the game never reads keeps the old behaviour (every peek sees a sample)
         long lastRead = _lastRead[port];
         return lastRead < 0 || VBlank.Count > lastRead ? r : 0;
@@ -937,14 +1139,37 @@ public sealed partial class Touch : HleModule
 
     readonly long[] _lastRead = [-1, -1];
 
-    /// <summary>Blocks only until a sample newer than the previous read exists (one per vblank), like the hardware.</summary>
+    /// <summary>Blocks only until a sample newer than the previous read exists (one per vblank), like the hardware,
+    /// then hands over the samples it has not read yet (the newest <paramref name="count"/>).</summary>
     [Hle("sceTouchRead", Cost = HleCost.SchedulerWait)]
     [Hle("sceTouchRead2", Cost = HleCost.SchedulerWait)]
     int sceTouchRead(int port, uint data, uint count)
     {
-        if (data == 0 || port is < 0 or > 1 || count > MaxBuffers) return ERR_INVALID_ARG;
+        if (data == 0 || port is < 0 or > 1 || count > MaxBuffers)
+        {
+            return ERR_INVALID_ARG;
+        }
+
         _lastRead[port] = VBlank.WaitFor(Math.Max(_lastRead[port] + 1, VBlank.Count));
-        return Peek(port, data, count);
+        if (count == 0)
+        {
+            return 0;
+        }
+
+        if (!TakeSamples(port))
+        {
+            GuestMemory.Fill(data, 0, 0x90);
+            GuestMemory.Write(data, (ulong)Emu.Kernel.ProcessTimeUs);
+            return 1;
+        }
+
+        SampleRing ring = _rings[port];
+        long unread = Math.Min(ring.Written - ring.ReadUpTo, SampleRing.Size);
+        int buffers = (int)Math.Max(1, Math.Min(count, unread));
+        WriteSamples(port, data, buffers);
+        ring.ReadUpTo = ring.Written;
+        TouchDiagnostics.Peeked(port, buffers);
+        return buffers;
     }
 
     // Regions split the panel between processes/overlays; a game owns the whole panel, so the region is ignored.

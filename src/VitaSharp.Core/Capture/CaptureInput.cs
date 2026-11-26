@@ -55,8 +55,55 @@ public static class CaptureMarks
 /// guest reads (buttons, sticks, touches) and every motion sample it receives goes to the capture. The values pass
 /// through unchanged; the check is a compare per poll.
 /// </summary>
-public sealed class InputRecorder(IInputBackend? inner, IMotionSource? innerMotion, Action<InputEvent> sink) : IInputBackend, IMotionSource, IGuestReadInput
+public sealed class InputRecorder(IInputBackend? inner, IMotionSource? innerMotion, Action<InputEvent> sink) : IInputBackend, IMotionSource, IGuestReadInput, ITouchHistory, IGuestTouchSamples
 {
+    /// <summary>The kind of the lines that keep the driver's samples between two reads (<see cref="TouchesAgo"/>):
+    /// "front|back id:x:y ... read=N", the read they came before. A re-run hands them over in order.</summary>
+    public const string TouchSampleKind = "touch-sample";
+
+    /// <summary>The touch history of the wrapped input, so the driver samples it at the panel's rate while recording as
+    /// it does without. Each sample is kept with the read it came before (runs without a finger once).</summary>
+    public int TouchesAgo(bool back, long ageUs, long guestRead, Span<TouchPoint> dest)
+    {
+        int n = Inner is ITouchHistory history ? history.TouchesAgo(back, ageUs, guestRead, dest) : -1;
+        if (n >= 0)
+        {
+            RecordSample(back, dest[..n], guestRead);
+        }
+
+        return n;
+    }
+
+    /// <summary>A re-run's own recording wraps the playback: its samples go on to the driver, and into this recording.</summary>
+    public int SampleCount(bool back, long guestRead) => Inner is IGuestTouchSamples samples ? samples.SampleCount(back, guestRead) : -1;
+
+    public int Sample(bool back, long guestRead, int index, Span<TouchPoint> dest)
+    {
+        int n = Inner is IGuestTouchSamples samples ? samples.Sample(back, guestRead, index, dest) : 0;
+        RecordSample(back, dest[..n], guestRead);
+        return n;
+    }
+
+    private void RecordSample(bool back, ReadOnlySpan<TouchPoint> touches, long guestRead)
+    {
+        int side = back ? 1 : 0;
+        lock (_lastTouch)
+        {
+            // every sample with a finger is kept (a finger held still is time the guest measures: a long press);
+            // only a run of samples without one is left out
+            if (_guestTouchSeen[side] && touches.Length == 0 && _guestLastTouchCount[side] == 0)
+            {
+                return;
+            }
+
+            _guestTouchSeen[side] = true;
+            int m = Math.Min(touches.Length, _guestLastTouch[side].Length);
+            touches[..m].CopyTo(_guestLastTouch[side]);
+            _guestLastTouchCount[side] = m;
+            sink(InputEvent.Now(TouchSampleKind, FormatTouches(back, touches[..m]) + " " + ReadToken + guestRead.ToString(CultureInfo.InvariantCulture)));
+        }
+    }
+
     /// <summary>The token a pad or touch event carries when the guest's read saw the change: "read=N", the N-th read of
     /// that port or panel by the process (<see cref="IGuestReadInput"/>).</summary>
     public const string ReadToken = "read=";
@@ -246,8 +293,10 @@ public sealed class InputRecorder(IInputBackend? inner, IMotionSource? innerMoti
 /// loaded) the guest sees each change at the same guest time it saw it while recording. Before that, the pad is idle.
 /// The emulation itself is not deterministic (host thread timing), so a re-run is close, not identical.
 /// </summary>
-public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook, IGuestReadInput
+public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook, IGuestReadInput, IGuestTouchSamples
 {
+    // the driver's samples between two reads (InputRecorder.TouchSampleKind), by the read they came before
+    private readonly Dictionary<long, List<TouchPoint[]>>[] _samplesByRead = [new(), new()];
     private readonly List<(long Us, ControllerState S)>[] _pad = [new(), new(), new(), new(), new()];
     private readonly List<(long Us, TouchPoint[] T)>[] _touch = [new(), new()];
     // the changes as the guest's reads saw them (captures that number the reads): by read, not by guest clock
@@ -294,13 +343,20 @@ public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook, I
 
                         break;
                     }
+                    case InputRecorder.TouchSampleKind when p.Length >= 1 && GuestRead(p) is { } sampleRead:
+                    {
+                        Dictionary<long, List<TouchPoint[]>> byRead = _samplesByRead[p[0] == "back" ? 1 : 0];
+                        if (!byRead.TryGetValue(sampleRead, out List<TouchPoint[]>? samples))
+                        {
+                            byRead[sampleRead] = samples = [];
+                        }
+
+                        samples.Add(ParseTouches(p));
+                        break;
+                    }
                     case "touch" when p.Length >= 1:
                     {
-                        TouchPoint[] touches = p.Skip(1).Where(t => !t.StartsWith(InputRecorder.ReadToken, StringComparison.Ordinal)).Select(t =>
-                        {
-                            string[] q = t.Split(':');
-                            return new TouchPoint(int.Parse(q[0]), float.Parse(q[1], CultureInfo.InvariantCulture), float.Parse(q[2], CultureInfo.InvariantCulture));
-                        }).ToArray();
+                        TouchPoint[] touches = ParseTouches(p);
                         int side = p[0] == "back" ? 1 : 0;
                         if (GuestRead(p) is { } read)
                         {
@@ -339,6 +395,32 @@ public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook, I
         {
             list.Sort((x, y) => x.Read.CompareTo(y.Read));
         }
+    }
+
+    /// <summary>The contacts of a touch line: "front|back id:x:y ..." (the read token skipped).</summary>
+    private static TouchPoint[] ParseTouches(string[] fields) =>
+        fields.Skip(1).Where(t => !t.StartsWith(InputRecorder.ReadToken, StringComparison.Ordinal)).Select(t =>
+        {
+            string[] q = t.Split(':');
+            return new TouchPoint(int.Parse(q[0], CultureInfo.InvariantCulture), float.Parse(q[1], CultureInfo.InvariantCulture), float.Parse(q[2], CultureInfo.InvariantCulture));
+        }).ToArray();
+
+    /// <summary>A recording with samples between reads hands them over in order; one without them (older captures,
+    /// hosts without a touch history) has none, and the driver takes only the read's own sample.</summary>
+    public int SampleCount(bool back, long guestRead) =>
+        !Active ? 0 : _samplesByRead[back ? 1 : 0].TryGetValue(guestRead, out List<TouchPoint[]>? samples) ? samples.Count : 0;
+
+    public int Sample(bool back, long guestRead, int index, Span<TouchPoint> dest)
+    {
+        if (!Active || !_samplesByRead[back ? 1 : 0].TryGetValue(guestRead, out List<TouchPoint[]>? samples) || index >= samples.Count)
+        {
+            return 0;
+        }
+
+        TouchPoint[] touches = samples[index];
+        int n = Math.Min(touches.Length, dest.Length);
+        touches.AsSpan(0, n).CopyTo(dest);
+        return n;
     }
 
     /// <summary>The read number of an event the guest's read saw ("read=N"), or null.</summary>

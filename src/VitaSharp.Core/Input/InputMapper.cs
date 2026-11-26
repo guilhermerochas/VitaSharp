@@ -75,8 +75,9 @@ public sealed class PadSnapshot
     }
 }
 
-/// <summary>Up to four touch contacts of one panel, stored inline (no allocation per poll).</summary>
-[System.Runtime.CompilerServices.InlineArray(4)]
+/// <summary>The touch contacts of one panel, stored inline (no allocation per poll): as many as the front panel
+/// reports (<see cref="MappedInput.MaxFrontContacts"/>).</summary>
+[System.Runtime.CompilerServices.InlineArray(MappedInput.MaxFrontContacts)]
 public struct TouchContacts
 {
     private TouchPoint _first;
@@ -85,7 +86,9 @@ public struct TouchContacts
 /// <summary>Result of mapping one device: the Vita pad state plus the touches it produces.</summary>
 public struct MappedInput
 {
-    public const int MaxContacts = 4;
+    /// <summary>Contacts the Vita's panels report at most: SceTouch 3.74 configures the front panel for 6 and the rear
+    /// panel for 4 when it starts them (read in the module, study only).</summary>
+    public const int MaxFrontContacts = 6, MaxBackContacts = 4;
     /// <summary>Host contact ids (the touch HLE turns each into a fresh report id): the TouchFront/TouchBack point
     /// and the touch pad fingers.</summary>
     public const int PointId = 3, FingerId = 10;
@@ -102,12 +105,12 @@ public struct MappedInput
     {
         if (back)
         {
-            if (BackCount < MaxContacts)
+            if (BackCount < MaxBackContacts)
             {
                 Back[BackCount++] = touchPoint;
             }
         }
-        else if (FrontCount < MaxContacts)
+        else if (FrontCount < MaxFrontContacts)
         {
             Front[FrontCount++] = touchPoint;
         }

@@ -206,7 +206,9 @@ or `state_start.vss`, the re-run replaces the host input with
 it again: the controller and touch drivers number the guest's reads of each port and panel (`IGuestReadInput`; the
 count is part of the save state), `input.tsv` notes the read (`read=N`) and the re-run hands the change to that
 read, however fast the host runs it (the guest clock follows the host: under load a change matched by guest time
-landed a frame early or late). Motion samples, and captures without read numbers, play back by guest clock time (a
+landed a frame early or late). The touch driver also samples the host's finger history at every vblank between two
+reads (its ring of reports, as SceTouch does): `input.tsv` keeps each of those samples as a `touch-sample` line with
+the read it came before, and the re-run hands them over in order at that read (`IGuestTouchSamples`). Motion samples, and captures without read numbers, play back by guest clock time (a
 save state restores the guest clock exactly); `sceKernelGetRandomNumber` returns the recorded numbers in order. The
 re-run records itself as a capture into `<capture>/reruns/` (no state, no GPU dump unless `--rerun-gpu-dump`),
 analyzes it, and pairs its frames with the original's by guest frame from the state (the re-run's first frame is the

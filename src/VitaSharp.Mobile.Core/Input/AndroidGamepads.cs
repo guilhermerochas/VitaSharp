@@ -318,23 +318,31 @@ public sealed class AndroidGamepads
 /// The core's <see cref="IInputBackend"/> on Android: the on-screen pad, every physical controller and a hardware
 /// keyboard combined (buttons OR-ed, sticks taking the value furthest from the centre, touches of all).
 /// </summary>
-public sealed class AndroidInput(OnScreenPad pad, AndroidGamepads gamepads, AndroidKeyboard? keyboard = null) : IInputBackend
+public sealed class AndroidInput(OnScreenPad pad, AndroidGamepads gamepads, AndroidKeyboard? keyboard = null) : IInputBackend, ITouchHistory
 {
     public OnScreenPad Pad { get; } = pad;
     public AndroidGamepads Gamepads { get; } = gamepads;
     public AndroidKeyboard? Keyboard { get; } = keyboard;
 
-    private MappedInput Current()
+    /// <summary>Everything combined, with the on-screen pad's touches of <paramref name="ageUs"/> microseconds ago
+    /// (0: now) and the other devices' touches of now; null when the pad's history does not reach back that far.</summary>
+    private MappedInput? Current(long ageUs)
     {
         var touch = new MappedInput { State = Pad.GetController(0) };
-        foreach (TouchPoint t in Pad.GetTouches(false))
+        Span<TouchPoint> touches = stackalloc TouchPoint[TouchSampler.MaxContacts];
+        for (int side = 0; side < 2; side++)
         {
-            touch.AddTouch(false, t);
-        }
+            bool back = side == 1;
+            int n = ageUs == 0 ? Pad.CopyTouches(back, touches) : Pad.TouchesAgo(back, ageUs, touches);
+            if (n < 0)
+            {
+                return null;
+            }
 
-        foreach (TouchPoint t in Pad.GetTouches(true))
-        {
-            touch.AddTouch(true, t);
+            for (int i = 0; i < n; i++)
+            {
+                touch.AddTouch(back, touches[i]);
+            }
         }
 
         MappedInput r = Gamepads.AnyConnected ? InputMapper.Combine(touch, Gamepads.Map()) : touch;
@@ -355,6 +363,8 @@ public sealed class AndroidInput(OnScreenPad pad, AndroidGamepads gamepads, Andr
     /// <summary>Scripted buttons, sticks and taps for unattended runs (VITASHARP_ANDROID_INPUT), or null.</summary>
     public ScriptedPad? Script { get; set; }
 
+    private MappedInput Current() => Current(0) ?? MappedInput.Neutral;
+
     public ControllerState GetController(int port) => port == 0 ? Current().State : ControllerState.Neutral;
 
     public IReadOnlyList<TouchPoint> GetTouches(bool back)
@@ -366,4 +376,8 @@ public sealed class AndroidInput(OnScreenPad pad, AndroidGamepads gamepads, Andr
     }
 
     public int GetTouches(bool back, Span<TouchPoint> dest) => Current().CopyTouches(back, dest);
+
+    /// <inheritdoc/>
+    public int TouchesAgo(bool back, long ageUs, long guestRead, Span<TouchPoint> dest) =>
+        Current(Math.Max(ageUs, 1)) is { } past ? past.CopyTouches(back, dest) : -1;
 }

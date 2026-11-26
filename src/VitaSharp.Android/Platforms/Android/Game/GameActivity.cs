@@ -49,6 +49,9 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     SurfaceView? _view;
     OnScreenControlsView? _controls;
     TextView? _fps, _toast;
+    // the pause chip over the top centre (the Vita's status bar): it hides while the screen is left alone
+    TextView? _pauseChip;
+    readonly ChromeAutoHide _chrome = new(SystemClock.UptimeMillis());
     readonly OnScreenPad _pad = new();
     AndroidKeyboard? _keyboard;
     AndroidInput? _input;
@@ -182,6 +185,7 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         root.AddView(_view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
         _controls = new OnScreenControlsView(this, _pad) { ControlsOpacity = prefs.OnScreenOpacity, Haptics = prefs.Haptics, HapticStrength = prefs.HapticStrength };
         root.AddView(_controls, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
+        _controls.FingerDown += OnFingerDown;
         root.AddView(TopBar(), new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent, GravityFlags.Top | GravityFlags.CenterHorizontal));
         _toast = Chip("", 14);
         _toast.Visibility = ViewStates.Gone;
@@ -292,6 +296,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         _surface = null;
     }
 
+    (int, int) _touchLayoutLogged;
+
     /// <summary>The 960x544 image is scaled to the view's height and centred (the renderer letterboxes the same way):
     /// the pad needs its rectangle to turn image touches into front-touch points.</summary>
     void UpdateImageRect()
@@ -301,6 +307,12 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         float scale = Math.Min(v.Width / 960f, v.Height / 544f);
         float iw = 960 * scale / v.Width, ih = 544 * scale / v.Height;
         _pad.Image = ((1 - iw) / 2, (1 - ih) / 2, iw, ih);
+        // the touch mapping for the log, once per layout change: view size, density and where the image sits
+        if (_touchLayoutLogged != (v.Width, v.Height))
+        {
+            _touchLayoutLogged = (v.Width, v.Height);
+            Log.Info(FormattableString.Invariant($"Touch: view {v.Width}x{v.Height}, density {Resources?.DisplayMetrics?.Density ?? 0:F2}, image at x {(1 - iw) / 2:F4} y {(1 - ih) / 2:F4} size {iw:F4}x{ih:F4}"));
+        }
         ApplySurfaceSize(v);
     }
 
@@ -572,13 +584,52 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         _fps = Chip("\u2014 FPS", 12);
         bar.AddView(_fps);
         var pause = Chip("\u275A\u275A", 12);
+        _pauseChip = pause;
         pause.Click += (_, _) => OpenMenu();
         // not focusable: arrow keys of a keyboard (or a D-pad that is not a game controller) moved the focus onto it
         // and drew Android's focus highlight over the game
         pause.Focusable = false;
         var lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { LeftMargin = Dp(8) };
         bar.AddView(pause, lp);
+        pause.PostDelayed(UpdatePauseChip, ChromeAutoHide.HideAfterMs);
         return bar;
+    }
+
+    /// <summary>A finger went down on the game screen (the controls' view coordinates): the pause chip shows again
+    /// unless the finger is on its place while it is hidden (that touch is the game's).</summary>
+    void OnFingerDown(float x, float y)
+    {
+        if (_pauseChip is not { } chip || _controls is not { } controls)
+        {
+            return;
+        }
+
+        int[] chipAt = new int[2], viewAt = new int[2];
+        chip.GetLocationInWindow(chipAt);
+        controls.GetLocationInWindow(viewAt);
+        float cx = x + viewAt[0] - chipAt[0], cy = y + viewAt[1] - chipAt[1];
+        bool onChip = cx >= 0 && cy >= 0 && cx < chip.Width && cy < chip.Height;
+        _chrome.FingerDown(SystemClock.UptimeMillis(), onChip);
+        UpdatePauseChip();
+    }
+
+    /// <summary>Shows or hides the pause chip by <see cref="ChromeAutoHide"/> and checks again when it is due to hide.</summary>
+    void UpdatePauseChip()
+    {
+        if (_pauseChip is not { } chip)
+        {
+            return;
+        }
+
+        long now = SystemClock.UptimeMillis();
+        bool visible = _chrome.Visible(now);
+        // invisible: the chip takes no touches, they reach the game below it
+        chip.Visibility = visible ? ViewStates.Visible : ViewStates.Invisible;
+        if (visible)
+        {
+            chip.RemoveCallbacks(UpdatePauseChip);
+            chip.PostDelayed(UpdatePauseChip, Math.Max(1, _chrome.HidesAtMs - now));
+        }
     }
 
     TextView Chip(string text, int sp)
@@ -625,6 +676,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
             if (Core.Cpu.Jit.Enabled)
                 Log.Info($"[perf] {Core.Cpu.Jit.Describe()}");
             Log.Info($"[perf] audio: {_session.AudioSummary}");
+            // the touch path (raw MotionEvents, the driver's samples and reads, a hash of the reports): counts only
+            Log.Info($"[perf] {Core.Input.TouchDiagnostics.Describe()}");
             _framesAtLog = frames;
         }
         _fps.Visibility = _session.Settings.ShowFps || _session.Paused ? ViewStates.Visible : ViewStates.Invisible;
