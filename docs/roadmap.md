@@ -3586,6 +3586,35 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   toque longe dele o traz de volta. Testar no celular: Sistema do Vita, tocar rápido em ícones, rolar a tela inicial
   com arrasto lento e com "flick", arrastar e soltar fora da imagem, digitar rápido no teclado, tocar na barra de
   status (no topo, ao centro) depois que o chip de pausa sumir.
+- [ ] (26/11/2026, falta testar) [P1][M] Revisão do Sistema do Vita no PC (fix/shellrev; boot do shell sem janela,
+  Configurações página por página). Correções, cada uma com o teste que falha sem ela:
+  - Relógio do Vita 1 h adiantado no celular (fuso America/Sao_Paulo, sem horário de verão desde 2019): o fuso e o
+    horário de verão de um sistema novo vêm do relógio do próprio Android (java.util.TimeZone), não da cópia das
+    regras de fuso do runtime .NET; o log diz "Time zone: phone ..., runtime ..." (`SystemTimeZoneSummerTimeTests`).
+    Um registro que já gravou `/CONFIG/DATE/summer_time = 1` continua assim: desmarcar o horário de verão em
+    Configurações > Data e hora.
+  - `sceTouchSetProcessPrivilege` aceita programas do sistema (o shell recebia 0x80350002 a cada botão PS;
+    `TouchProcessPrivilegeTests`).
+  - Modo avião nas Configurações: "Aguarde..." por mais de um minuto e depois "Ocorreu um erro. Esse sistema será
+    desligado." (a sessão acabava). O shell/Configurações do 3.74 desligam o Wi-Fi (`sceWlanSetConfiguration`) e
+    esperam até 20 s o aviso do driver no callback registrado; o HLE não avisava (`WlanCallbackTests`).
+  - `sceIoRename` sobre um nome que existe devolve EEXIST como o iofilemgr 3.74 (o shell remove e renomeia de novo),
+    e erros do host em rename/remove/mkdir/rmdir viram erro para o jogo em vez de derrubar a thread (cópia do
+    appmeta, bancos do shell; `IoRenameAndHostErrorTests`).
+  - `sceRegMgrSetKeys/GetKeys` com chaves de texto e binárias por ponteiro (o registro guardava endereços nas chaves
+    /CONFIG/MTP/NET*; `RegMgrKeyListTests`).
+  - vd0 montado (estatísticas de rede do SceNetCtl em vd0:network; `VfsTests`).
+  O que testar: Configurações > Modo avião (marcar e desmarcar: some o "Aguarde..." em 1-2 s, sem erro); a bolha e
+  a LiveArea de um jogo instalado continuam aparecendo depois de instalar/atualizar; no celular, a hora da tela de
+  bloqueio igual à do Android (se ainda estiver 1 h adiantada, desmarcar o horário de verão em Data e hora).
+- [ ] [P2][P] Achados da mesma revisão, a decidir: (1) o registro do usuário tem `/CONFIG/DATE/time_zone = 0`
+  (Samoa Americana, UTC-11: a tela de bloqueio mostra 17:02 do dia anterior quando são 01:02 em Brasília), gravado
+  pela configuração inicial antes da correção de 06/11 (9c960e73); um sistema novo já nasce com o fuso do host. O
+  usuário corrige em Configurações > Data e hora > Fuso horário; decidir se vale uma migração. (2) As chaves
+  /CONFIG/MTP/NET*/ do registro do usuário guardam endereços (bug do item acima); o libmtp as regrava sozinho ao
+  conectar um host. (3) As chamadas SceRegMgr (sceRegMgrGetKeyInt...) não recusam um jogo (o 3.74 devolve
+  0x80010058 fora de programas do sistema); `PerGameSystemLanguageTests` lê o idioma por elas num processo de jogo.
+
 - [ ] (25/11/2026, falta testar) [P2][G] SceUlobjMgrForDriver lê os objetos da libult na memória do processo como o
   SceUlobjMgr 3.74 (feat/kernO, trazido em fix/recover1). Duas implementações da mesma biblioteca existiam
   (feat/kernO e feat/kern9); ficou a do kernO, conferida contra o descompilado do 3.74 (só estudo): faz as 14

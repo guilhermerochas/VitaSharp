@@ -149,7 +149,7 @@ public sealed class HleRestTests(GuestMemoryFixture fixture) : IDisposable
         const int PRIV = unchecked((int)0x80350002);
         Assert.Equal(PRIV, Call(touch, "sceTouchGetDeviceInfo", 0u, Alloc(0xC)));
         Assert.Equal(PRIV, Call(touch, "sceTouchGetProcessInfo", 0u, 0u));
-        Assert.Equal(PRIV, Call(touch, "sceTouchSetProcessPrivilege", 0u, 0u));
+        // sceTouchSetProcessPrivilege answers by the caller: TouchProcessPrivilegeTests
 
         var audio = new Audio();
         int port = Call(audio, "sceAudioInOpenPortForDiag", 14, 0, 0, 0); // DIAG: grain/freq not validated

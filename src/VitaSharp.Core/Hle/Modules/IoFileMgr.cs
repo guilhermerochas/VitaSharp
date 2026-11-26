@@ -317,7 +317,15 @@ int fd, long offset, int whence)
 
         var host = HostPath(path, true);
         if (host == null || !File.Exists(host)) return SceError.IO_ENOENT;
-        File.Delete(host);
+        try
+        {
+            File.Delete(host);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return HostError(e, path);
+        }
+
         return 0;
     }
 
@@ -342,8 +350,16 @@ int fd, long offset, int whence)
 
         var host = HostPath(path, true);
         if (host == null) return SceError.IO_ENOENT;
-        if (Directory.Exists(host)) return SceError.IO_EEXIST;
-        Directory.CreateDirectory(host);
+        if (Directory.Exists(host) || File.Exists(host)) return SceError.IO_EEXIST;
+        try
+        {
+            Directory.CreateDirectory(host);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return HostError(e, path);
+        }
+
         return 0;
     }
 
@@ -368,8 +384,21 @@ int fd, long offset, int whence)
 
         var host = HostPath(path, true);
         if (host == null || !Directory.Exists(host)) return SceError.IO_ENOENT;
-        try { Directory.Delete(host); return 0; }
-        catch (IOException) { return SceError.IO_ENOTEMPTY; }
+        if (Directory.EnumerateFileSystemEntries(host).Any())
+        {
+            return SceError.IO_ENOTEMPTY;
+        }
+
+        try
+        {
+            Directory.Delete(host);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return HostError(e, path);
+        }
+
+        return 0;
     }
 
     [Hle]
@@ -396,10 +425,60 @@ int fd, long offset, int whence)
         var a = HostPath(oldPath, true);
         var b = HostPath(newPath, true);
         if (a == null || b == null) return SceError.IO_ENOENT;
-        if (File.Exists(a)) File.Move(a, b, true);
-        else if (Directory.Exists(a)) Directory.Move(a, b);
-        else return SceError.IO_ENOENT;
+        bool isFile = File.Exists(a);
+        if (!isFile && !Directory.Exists(a))
+        {
+            return SceError.IO_ENOENT;
+        }
+
+        // FW 3.74: a target that exists already, file or folder, is EEXIST and nothing is replaced. The shell relies
+        // on it: it writes a file under a temporary name, renames it over the old one and, on 0x80010011, removes the
+        // old one and renames again (shell.self, the function before 0x8123360E). A rename that only changes the case
+        // of a name names the same entry on the Vita's case-insensitive exFAT (and on a Windows or macOS host)
+        bool sameEntry = string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
+        if (!sameEntry && (File.Exists(b) || Directory.Exists(b)))
+        {
+            return SceError.IO_EEXIST;
+        }
+
+        try
+        {
+            if (isFile)
+            {
+                File.Move(a, b);
+            }
+            else
+            {
+                Directory.Move(a, b);
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return HostError(e, newPath);
+        }
+
         return 0;
+    }
+
+    const int IO_EIO = unchecked((int)0x80010005);
+
+    /// <summary>
+    /// The SCE error for a host file operation that failed under a guest call (a folder the host does not let the
+    /// emulator change, a file another program holds, a full disk, a parent folder missing on the host): the guest
+    /// sees a failed call, as it would on the console for a storage error, instead of its thread ending with the
+    /// host's exception (an exception here crashed the calling thread: the shell's, while it copies a title's
+    /// metadata into ur0:appmeta or renames its databases).
+    /// </summary>
+    static int HostError(Exception e, string guestPath)
+    {
+        int error = e switch
+        {
+            FileNotFoundException or DirectoryNotFoundException => SceError.IO_ENOENT,
+            UnauthorizedAccessException => SceError.IO_EACCES,
+            _ => IO_EIO,
+        };
+        Log.Warn($"IO: host error on '{guestPath}': {e.GetType().Name}: {e.Message} (0x{error:X8} to the guest)");
+        return error;
     }
 
     [Hle]

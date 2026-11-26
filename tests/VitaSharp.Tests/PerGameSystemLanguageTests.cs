@@ -80,8 +80,8 @@ public sealed class PerGameSystemLanguageTests(GuestMemoryFixture fixture) : IDi
         Assert.Equal(0, Call(regMgrSystem, "sceRegMgrGetKeyInt", category, name, new Ptr<int>(buf)));
         int fromRegMgrKey = (int)GuestMemory.R32(buf);
 
-        // SceRegMgrKeys { size, name, type, value } read in one call
-        GuestMemory.W32(buf + 0, 4);
+        // SceRegMgrKeysInfo { 0x10, name, u16 type, u16 size, value } read in one call
+        GuestMemory.W32(buf + 0, 0x10);
         GuestMemory.W32(buf + 4, name);
         GuestMemory.W32(buf + 8, 0);
         GuestMemory.W32(buf + 12, 0xFFFFFFFF);

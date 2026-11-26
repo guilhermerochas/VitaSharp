@@ -48,17 +48,73 @@ public static class SystemTimeZone
     /// <summary>The template's default (UTC-05:00 Eastern Time).</summary>
     public const int Default = 12;
 
-    /// <summary>Vita time zone id of the host's time zone, read once.</summary>
-    public static int Host { get; } = FromTimeZone(TimeZoneInfo.Local);
+    /// <summary>
+    /// The host's own clock where the .NET runtime's time zone data may not be the system's: the platform's zone id and
+    /// its offset from UTC at a given time (minutes, summer time included), as the platform itself shows the time
+    /// (Android: java.util.TimeZone, set by the app at start). Null: .NET's TimeZoneInfo.Local. The runtime on a phone
+    /// may carry its own copy of the zone rules, older than the phone's: with the rules of before 2019 São Paulo is in
+    /// summer time from November, and the Vita clock showed an hour more than the phone.
+    /// </summary>
+    public static (string Id, Func<DateTime, int> UtcOffsetMinutes)? Platform { get; set; }
+
+    /// <summary>Vita time zone id of the host's time zone.</summary>
+    public static int Host
+    {
+        get
+        {
+            if (Platform is not { } platform)
+            {
+                return s_hostFromRuntime.Value;
+            }
+
+            DateTime now = DateTime.UtcNow;
+            int standard = platform.UtcOffsetMinutes(now) - SummerMinutes(platform.UtcOffsetMinutes, now);
+            return FromZone(platform.Id, standard);
+        }
+    }
+
+    private static readonly Lazy<int> s_hostFromRuntime = new(() => FromTimeZone(TimeZoneInfo.Local));
+
+    /// <summary>Whether the host is in summer time now (/CONFIG/DATE/summer_time of a fresh system, SceAppUtil's
+    /// SCE_SYSTEM_PARAM_ID_DAYLIGHT_SAVINGS): its offset now past its standard offset (<see cref="SummerTime"/>), from
+    /// the platform's clock when it gave one.</summary>
+    public static int HostSummerTime
+    {
+        get
+        {
+            DateTime now = DateTime.UtcNow;
+            if (Platform is { } platform)
+            {
+                return SummerMinutes(platform.UtcOffsetMinutes, now) > 0 ? 1 : 0;
+            }
+
+            TimeZoneInfo local = TimeZoneInfo.Local;
+            return SummerTime((int)local.GetUtcOffset(now).TotalMinutes, (int)local.BaseUtcOffset.TotalMinutes);
+        }
+    }
+
+    /// <summary>1 when a zone's offset now is past its standard offset (summer time moves the clock forward), else 0.</summary>
+    public static int SummerTime(int currentOffsetMinutes, int standardOffsetMinutes) => currentOffsetMinutes > standardOffsetMinutes ? 1 : 0;
+
+    /// <summary>The summer time part of a platform zone's offset at <paramref name="utc"/>: the offset then minus the
+    /// smaller of the offsets half a year before and after (the standard one, for a zone with summer time).</summary>
+    private static int SummerMinutes(Func<DateTime, int> offsetAt, DateTime utc)
+    {
+        int now = offsetAt(utc);
+        int standard = Math.Min(now, Math.Min(offsetAt(utc.AddMonths(-6)), offsetAt(utc.AddMonths(6))));
+        return now - standard;
+    }
 
     /// <summary>The zone of the same city, else the zone CLDR names for the host zone's Windows zone (a city the tz
     /// database renamed, as Asia/Kolkata for the Asia/Calcutta of the table, or another city of that zone), else the
     /// first one with the same standard offset, else the one with the nearest offset. Only the zone's id (an IANA or a
     /// Windows id) and its standard offset are used, never the host's time zone database: a Linux without the tz
     /// database's old names (no America/Buenos_Aires file) maps its zones the same way.</summary>
-    public static int FromTimeZone(TimeZoneInfo timeZoneInfo)
+    public static int FromTimeZone(TimeZoneInfo timeZoneInfo) => FromZone(timeZoneInfo.Id, (int)timeZoneInfo.BaseUtcOffset.TotalMinutes);
+
+    /// <summary><see cref="FromTimeZone"/> by the zone's id and standard offset in minutes.</summary>
+    public static int FromZone(string id, int standardMinutes)
     {
-        string id = timeZoneInfo.Id;
         if (City(id) is int same)
         {
             return same;
@@ -79,8 +135,7 @@ public static class SystemTimeZone
             return zoneCity;
         }
 
-        int minutes = (int)timeZoneInfo.BaseUtcOffset.TotalMinutes;
-        return s_zones.MinBy(z => Math.Abs(z.Minutes - minutes)).Id;
+        return s_zones.MinBy(z => Math.Abs(z.Minutes - standardMinutes)).Id;
     }
 
     /// <summary>The Vita time zone of the city an IANA id names (the table's names are CLDR's), null when none.</summary>

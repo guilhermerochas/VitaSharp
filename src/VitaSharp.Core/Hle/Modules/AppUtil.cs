@@ -155,8 +155,8 @@ public sealed partial class AppUtil : HleModule
         2 => 1,  // enter button: cross
         4 => 0,  // date format YYYYMMDD
         5 => 0,  // 12 hour clock
-        6 => (int)TimeZoneInfo.Local.BaseUtcOffset.TotalMinutes,
-        7 => TimeZoneInfo.Local.IsDaylightSavingTime(DateTime.Now) ? 1 : 0,
+        6 => Firmware.SystemTimeZone.OffsetMinutes(Firmware.SystemTimeZone.Host) ?? (int)TimeZoneInfo.Local.BaseUtcOffset.TotalMinutes,
+        7 => Firmware.SystemTimeZone.HostSummerTime, // the host's clock now (the platform's where it gave one)
         _ => 0,
     };
 
