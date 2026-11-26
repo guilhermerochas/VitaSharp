@@ -58,6 +58,7 @@ public static class CaptureAnalyzer
 
         var findings = new List<Finding>();
         var stats = new List<FrameStat>();
+        (byte[] Rgba, int W, int H)? lastPicture = null;
         // the contact sheet: SheetCells frames spread over the recording, picked by index from the frame count
         int total = CountFrames(dir, expectedFrames);
         HashSet<int> sheetAt = SheetIndices(total, SheetCells);
@@ -76,6 +77,7 @@ public static class CaptureAnalyzer
                 if (pic is { } pv)
                 {
                     (byte[]? px, int w, int h) = pv;
+                    lastPicture = pv;
                     st.Hash = XxHash64.HashToUInt64(px);
                     (st.Luma, st.Dark) = Brightness(px);
                     st.Thumb = Downscale(px, w, h, TW, TH);
@@ -306,6 +308,13 @@ public static class CaptureAnalyzer
         }
 
         List<string> screenLines = ScreenStateSection(dir, ctxStop);
+        // the text on the last frame (what the screen says: "SECURITY SCAN", "Press X"): Capture/ScreenText.cs
+        if (lastPicture is { } last && !cancel.IsCancellationRequested)
+        {
+            screenLines.Add("");
+            screenLines.AddRange(ScreenTextSection(last.Rgba, last.W, last.H));
+        }
+
         if (screenLines.Count > 0)
         {
             sb.AppendLine();
@@ -1065,6 +1074,25 @@ public static class CaptureAnalyzer
             lines.Insert(0, "Screen state (waiting for input / loading / busy):");
         }
 
+        return lines;
+    }
+
+    /// <summary>"Screen text (last frame)": the OCR's lines with their boxes, or why there is no OCR here.</summary>
+    internal static List<string> ScreenTextSection(byte[] rgba, int width, int height)
+    {
+        var lines = new List<string>();
+        ScreenTextResult result;
+        try
+        {
+            result = ScreenText.Recognize(rgba, width, height, timeoutMs: 30000);
+        }
+        catch (Exception e) when (e is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            result = new ScreenTextResult("ocr", [], e.Message);
+        }
+
+        lines.Add($"Screen text (last frame, {width}x{height}, {result.Backend}):");
+        lines.AddRange(ScreenText.Format(result));
         return lines;
     }
 

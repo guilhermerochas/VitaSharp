@@ -224,7 +224,11 @@ Over a window of `VITASHARP_INPUT_WAIT_FRAMES` presented frames (default 60):
 
 A change is logged once it holds for a quarter of the window. The F8 capture writes the state at its start and stop
 in `context.txt` (`screen:`) and `report.txt` has a "Screen state" section (the state at the stop and the last 8
-`[input-wait]` changes of the log). What to do on a known screen: `docs/games/screens.json` (docs/agents/screens.md).
+`[input-wait]` changes of the log), followed by "Screen text (last frame)": the text the OCR reads on the last
+recorded frame, each line with its box and centre (`Capture/ScreenText.cs`; the same as
+`VitaSharp.Desktop screen-text <capture folder>`). The OCR is Windows.Media.Ocr on Windows and the `tesseract` command
+on Linux/macOS (docs/development.md "Test requirements"); without one the section says `(no OCR: ...)`. What to do on
+a known screen: `docs/games/screens.json` (docs/agents/screens.md).
 
 ## Debug mode ("Modo de depuração")
 

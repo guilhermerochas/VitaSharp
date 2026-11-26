@@ -97,13 +97,14 @@ jobs:
       # a Vulkan device for the renderer tests (tests/VitaSharp.Tests/SoftwareVulkan.cs): Mesa's lavapipe on Linux,
       # MoltenVK on macOS; the Windows runner's Microsoft Edge ships SwiftShader. Linux also gets the distribution's
       # shaderc (libshaderc-dev: libshaderc_shared.so, the name Silk.NET.Shaderc loads), which the renderer and
-      # ShaderFuzzTests fall back to when the copy from Silk.NET.Shaderc.Native does not load on the runner
-      - name: Install a software Vulkan device and shaderc (Linux)
+      # ShaderFuzzTests fall back to when the copy from Silk.NET.Shaderc.Native does not load on the runner.
+      # tesseract: the OCR of screen-text (ScreenTextTests; Windows uses the system's Windows.Media.Ocr)
+      - name: Install a software Vulkan device, shaderc and tesseract (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libvulkan1 libshaderc-dev
-      - name: Install MoltenVK (macOS)
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libvulkan1 libshaderc-dev tesseract-ocr
+      - name: Install MoltenVK and tesseract (macOS)
         if: runner.os == 'macOS'
-        run: brew install molten-vk vulkan-loader
+        run: brew install molten-vk vulkan-loader tesseract
       # the window test's child process reaches SwiftShader through the system Vulkan loader (its window surface),
       # and the loader ignores VK_DRIVER_FILES in an elevated process (the runner's): register Edge's manifest instead
       # (the runner has no HKLM\SOFTWARE\Khronos key at all: -Force makes New-Item create the whole path); vulkaninfo,
