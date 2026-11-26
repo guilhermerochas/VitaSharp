@@ -40,7 +40,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
     };
 
     public CompiledBlock? Compile(Block b) => Compile(b, NativeRuntime.Instance.Arm64Stubs, hleCallouts: HleCallouts,
-        successors: b.Owner is { } cache ? cache.GetFromAnyThread : null);
+        successors: b.Owner is { } cache && b.VectorFpscr == 0 ? cache.GetFromAnyThread : null); // a vector-mode expansion: its successors are scalar blocks
 
     /// <summary>Statistics: state stores dropped because the exit's target overwrites the slot first (<see cref="StateLiveness"/>).</summary>
     public static long DeadStoresDropped;

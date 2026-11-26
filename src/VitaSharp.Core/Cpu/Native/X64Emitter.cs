@@ -1324,6 +1324,9 @@ public sealed unsafe partial class X64Emitter
     /// detects tininess before rounding, x86 after): those, any other FPSCR mode and unrepresentable conversions run
     /// the interpreter handler instead. NaN results become the default NaN. MXCSR is the host's outside fast paths.
     /// </summary>
+    /// <summary>FPSCR DN, FZ and RMode: the mode bits a short-vector expansion's scalar ops depend on.</summary>
+    private const int FpModeMaskVector = 0x03C00000;
+
     private void FpOp(IrInst x, Runtime rt)
     {
         Assembler a = Asm;
@@ -1338,7 +1341,9 @@ public sealed unsafe partial class X64Emitter
         AssemblerMemoryOperand Dq(int off) => __qword_ptr[rbx + off];
 
         a.mov(eax, State(s_offFpscr));
-        a.and(eax, 0x03F70000);
+        // a short-vector expansion (IrBlock.VectorMode) runs with LEN/STRIDE set: its ops are the scalar elements, so the
+        // fast path only needs the Vita's DN/FZ/rounding mode
+        a.and(eax, _ir.VectorMode ? FpModeMaskVector : 0x03F70000);
         a.cmp(eax, 0x03000000);
         a.jne(slow);
         a.ldmxcsr(State(s_offMxcsrGuest));

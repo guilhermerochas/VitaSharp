@@ -277,7 +277,8 @@ public sealed unsafe partial class Arm64Emitter
         bool fpEntry = false, calls = false, faultExits = false;
         {
             Span<IrInst> all = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
-            bool checkFp = (opts & A64Opt.FpEntryCheck) != 0 && !NativeVerifier.Enabled;
+            // a short-vector expansion runs in vector mode: the entry check would send it back to the interpreter
+            bool checkFp = (opts & A64Opt.FpEntryCheck) != 0 && !NativeVerifier.Enabled && !ir.VectorMode;
             foreach (ref IrInst x in all)
             {
                 if (x.Op == IrOp.FpOp && checkFp)
@@ -2363,6 +2364,14 @@ public sealed unsafe partial class Arm64Emitter
         if (checkedAtEntry)
         {
         } // A64Opt.FpEntryCheck: the block entry checked the mode
+        else if (_ir.VectorMode)
+        {
+            // a short-vector expansion runs with LEN/STRIDE set: its ops are the scalar elements, so the fast path only
+            // needs the Vita's DN/FZ/rounding mode (FPSCR[25:22] == DN FZ, RMode 0)
+            LdState(X16, s_offFpscr);
+            assembler.Ubfx(X16, X16, 22, 4);
+            assembler.CmpImm(X16, 0xC);
+        }
         else if (_fastFpCheck)
         {
             LdState(X16, s_offFpscr);
