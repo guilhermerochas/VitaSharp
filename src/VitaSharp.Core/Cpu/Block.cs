@@ -311,10 +311,10 @@ public sealed unsafe class BlockCache
 
         // where the host's memory protection can find the aborting accesses, native code needs no guards
         // (HostFaultAborts): the space's unmapped pages are made inaccessible first
-        if (Native.HostFaultAborts.Supported && Memory.GuestMemory.Instance is { } memory)
+        // (the handler first: a host access to a page made inaccessible needs it)
+        if (Native.HostFaultAborts.Supported && Memory.GuestMemory.Instance is { } memory && Native.HostFaultAborts.EnsureInstalled())
         {
             memory.ArmHostFaults(Space ?? memory.Primary);
-            Native.HostFaultAborts.EnsureInstalled();
             _hostFaultAborts = true;
         }
 

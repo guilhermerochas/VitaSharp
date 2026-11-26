@@ -2053,8 +2053,13 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   lazy-commit (`HostFaultAborts`); o caminho principal não tem instrução a mais. Custo com handler no
   `CpuDataAbortGuardBenchmarks`: nativo 11,97 -> 11,87 us (0%; com guards 11,38 -> 15,48 us). `VITASHARP_DATA_ABORT_FAULTS=0`
   volta aos guards. Testes: `NativeJitTests.DataAbortMatrix` (23 formas com guards e com falha do host, página
-  compartilhada liberada nos dois modos, leitura perdida do host). Falta P2 Linux/macOS x64 (mprotect + SIGSEGV/SIGBUS nativo
-  encadeado, ucontext por SO) e P3 ARM64 (Android/Apple; páginas de host de 16 KB ficam com guard).
+  compartilhada liberada nos dois modos, leitura perdida do host).
+  Feito P3/P2 (excp1): Android/Linux ARM64 e Linux x64 com página de host de 4 KB — páginas não mapeadas PROT_NONE, handler
+  SIGSEGV em código de máquina (rt_sigaction, encadeado ao do runtime; `HostFaultSignals`), saídas fora de linha no emitter
+  ARM64. Ligado só com `VITASHARP_DATA_ABORT_FAULTS=1` até confirmar no aparelho; 16 KB (Apple, alguns Android) e macOS
+  ficam com guards. Testes no sandbox ARM64 (matriz + o próprio handler em frames montados) e o handler x64 por thunk.
+  Falta confirmar no aparelho: com `VITASHARP_DATA_ABORT_FAULTS=1` no env.txt, kubridge ligado, o jogo roda igual e o fps
+  volta ao de sem plugins (log: "host faults through a SIGSEGV handler"); depois, ligar por padrão.
 - [x] [P3] GXM: aplicar no tradutor de shaders o remapeamento de coordenadas de textura de
   `sceGxmShaderPatcherCreateFragmentProgramForGles` (tabela de 10 bytes: TEXCOORDi do fragment lê o TEXCOORD[remap[i]]
   do vertex). Feito (16/11/2026, rm1, fix/gxm-texcoord-remap): a tabela fica empacotada no programa

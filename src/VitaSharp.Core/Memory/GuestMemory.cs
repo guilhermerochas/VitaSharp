@@ -185,6 +185,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
         }
 
         var space = new AddressSpace(@base, parts, views);
+        Cpu.Native.HostFaultAborts.AddWindow(@base); // the host fault handler checks this window (Linux, Android)
         CopySharedMapping(space);
         _spaces.Add(space);
         _spaceSnapshot = _spaces.ToArray();
@@ -720,6 +721,11 @@ public sealed unsafe partial class GuestMemory : IDisposable
             {
                 ProtectShared(b.Address, b.Size, accessible: false);
             }
+            else if (!OperatingSystem.IsWindows() && space._hostFaults)
+            {
+                // POSIX: the decommitted pages are mapped read/write again; inaccessible, they fault (HostFaultAborts)
+                ProtectUnmapped(space, b.Address, b.Size);
+            }
 
             DirtyPages.MarkRange(space.Base, b.Address, b.Size);
             if (b.Region == MemoryRegion.Fixed)
@@ -901,6 +907,10 @@ public sealed unsafe partial class GuestMemory : IDisposable
                 else
                 {
                     DecommitPrivate(space, host, size);
+                    if (!OperatingSystem.IsWindows())
+                    {
+                        HostVirtualMemory.ProtectCommitted(host, size, accessible: false); // POSIX: decommitted reads zeros
+                    }
                 }
 
                 page = end;
@@ -908,6 +918,30 @@ public sealed unsafe partial class GuestMemory : IDisposable
         }
     }
 
+    /// <summary>POSIX host faults: the pages of [<paramref name="addr"/>, + <paramref name="size"/>) no block maps in
+    /// <paramref name="space"/> become inaccessible. Called under the lock.</summary>
+    private static void ProtectUnmapped(AddressSpace space, uint addr, uint size)
+    {
+        byte* table = MappedTable(space.Base);
+        ulong p = addr / PageSize, end = ((ulong)addr + size + PageSize - 1) / PageSize;
+        while (p < end)
+        {
+            if (table[p] != 0)
+            {
+                p++;
+                continue;
+            }
+
+            ulong run = p + 1;
+            while (run < end && table[run] == 0)
+            {
+                run++;
+            }
+
+            HostVirtualMemory.ProtectCommitted(space.Base + p * PageSize, (nuint)((run - p) * PageSize), accessible: false);
+            p = run;
+        }
+    }
     /// <summary>Decommits [<paramref name="host"/>, + <paramref name="size"/>) of a space, piece by piece of its host
     /// reservation (a decommit cannot span two of them).</summary>
     private static void DecommitPrivate(AddressSpace space, byte* host, nuint size)
@@ -1013,7 +1047,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
             *entry = PageTolerated;
         }
 
-        if (InSharedRegion(addr) && Instance is { SeparateSpaces: true })
+        if (!OperatingSystem.IsWindows() || (InSharedRegion(addr) && Instance is { SeparateSpaces: true }))
         {
             // a view kept inaccessible (host fault data aborts): the page is let through in this space
             HostVirtualMemory.ProtectCommitted(spaceBase + (addr & ~(PageSize - 1)), PageSize, accessible: true);
