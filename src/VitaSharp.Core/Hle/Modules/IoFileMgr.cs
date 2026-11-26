@@ -126,6 +126,11 @@ public sealed partial class IoFileMgr : HleModule
             int fd = Interlocked.Increment(ref _nextFd);
             _files[fd] = new OpenFile { VitaPath = path, Stream = fs };
             Capture.CaptureHooks.Files?.Opened(Emu, path, host);
+            if (Input.InputWaitMonitor.Active)
+            {
+                Input.InputWaitMonitor.FileOpened();
+            }
+
             Log.Debug($"sceIoOpen({path}, 0x{flags:X}) = {fd}");
             return fd;
         }
@@ -187,6 +192,11 @@ public sealed partial class IoFileMgr : HleModule
                 Interlocked.Add(ref BytesRead, n);
             }
         }
+        if (Input.InputWaitMonitor.Active)
+        {
+            Input.InputWaitMonitor.FileRead(n);
+        }
+
         IoTiming.Read(f, pos, n);
         return n;
     }
@@ -253,6 +263,11 @@ int fd, long offset, int whence)
             DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
             Interlocked.Add(ref BytesRead, n);
         }
+        if (Input.InputWaitMonitor.Active)
+        {
+            Input.InputWaitMonitor.FileRead(n);
+        }
+
         IoTiming.Read(f, offset, n);
         return n;
     }

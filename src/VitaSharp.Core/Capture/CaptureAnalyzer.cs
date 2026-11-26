@@ -58,6 +58,7 @@ public static class CaptureAnalyzer
 
         var findings = new List<Finding>();
         var stats = new List<FrameStat>();
+        (byte[] Rgba, int W, int H)? lastPicture = null;
         // the contact sheet: SheetCells frames spread over the recording, picked by index from the frame count
         int total = CountFrames(dir, expectedFrames);
         HashSet<int> sheetAt = SheetIndices(total, SheetCells);
@@ -76,6 +77,7 @@ public static class CaptureAnalyzer
                 if (pic is { } pv)
                 {
                     (byte[]? px, int w, int h) = pv;
+                    lastPicture = pv;
                     st.Hash = XxHash64.HashToUInt64(px);
                     (st.Luma, st.Dark) = Brightness(px);
                     st.Thumb = Downscale(px, w, h, TW, TH);
@@ -303,6 +305,23 @@ public static class CaptureAnalyzer
         foreach (string? l in ctxStop.Where(l => l.StartsWith("audio: ", StringComparison.Ordinal)))
         {
             sb.AppendLine("    " + l["audio: ".Length..]);
+        }
+
+        List<string> screenLines = ScreenStateSection(dir, ctxStop);
+        // the text on the last frame (what the screen says: "SECURITY SCAN", "Press X"): Capture/ScreenText.cs
+        if (lastPicture is { } last && !cancel.IsCancellationRequested)
+        {
+            screenLines.Add("");
+            screenLines.AddRange(ScreenTextSection(last.Rgba, last.W, last.H));
+        }
+
+        if (screenLines.Count > 0)
+        {
+            sb.AppendLine();
+            foreach (string l in screenLines)
+            {
+                sb.AppendLine(l);
+            }
         }
 
         List<string> fileLines = CaptureFileRecorder.ReportSection(dir);
@@ -1002,6 +1021,78 @@ public static class CaptureAnalyzer
                 lines.Add(l);
             }
         }
+        return lines;
+    }
+
+    /// <summary>
+    /// "Screen state": whether the game waits for the player (and which input it reads), loads or is busy, at the stop
+    /// of the recording (context.txt "screen:") and the detector's last changes (log.txt "[input-wait]"), so a still
+    /// picture is not taken for a loading screen (docs/notes/screens.md).
+    /// </summary>
+    internal static List<string> ScreenStateSection(string dir, List<string> ctxStop)
+    {
+        var lines = new List<string>();
+        foreach (string l in ctxStop)
+        {
+            if (l.StartsWith("screen: ", StringComparison.Ordinal))
+            {
+                lines.Add("  at the stop: " + l["screen: ".Length..]);
+            }
+        }
+
+        string log = Path.Combine(dir, "log.txt");
+        if (File.Exists(log))
+        {
+            var changes = new Queue<string>();
+            foreach (string l in File.ReadLines(log))
+            {
+                int at = l.IndexOf("[input-wait] ", StringComparison.Ordinal);
+                if (at < 0)
+                {
+                    continue;
+                }
+
+                changes.Enqueue(l[(at + "[input-wait] ".Length)..]);
+                while (changes.Count > 8)
+                {
+                    changes.Dequeue();
+                }
+            }
+
+            if (changes.Count > 0)
+            {
+                lines.Add("  last changes (log.txt [input-wait]):");
+                foreach (string c in changes)
+                {
+                    lines.Add("    " + c);
+                }
+            }
+        }
+
+        if (lines.Count > 0)
+        {
+            lines.Insert(0, "Screen state (waiting for input / loading / busy):");
+        }
+
+        return lines;
+    }
+
+    /// <summary>"Screen text (last frame)": the OCR's lines with their boxes, or why there is no OCR here.</summary>
+    internal static List<string> ScreenTextSection(byte[] rgba, int width, int height)
+    {
+        var lines = new List<string>();
+        ScreenTextResult result;
+        try
+        {
+            result = ScreenText.Recognize(rgba, width, height, timeoutMs: 30000);
+        }
+        catch (Exception e) when (e is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            result = new ScreenTextResult("ocr", [], e.Message);
+        }
+
+        lines.Add($"Screen text (last frame, {width}x{height}, {result.Backend}):");
+        lines.AddRange(ScreenText.Format(result));
         return lines;
     }
 

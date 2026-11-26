@@ -612,6 +612,11 @@ public sealed partial class Ctrl : HleModule
     {
         if (data == 0) return unchecked((int)0x80340001); // SCE_CTRL_ERROR_INVALID_ARG
         if (count == 0) return 0;
+        if (Input.InputWaitMonitor.Active)
+        {
+            Input.InputWaitMonitor.CtrlRead();
+        }
+
         // every requested sample, all with the current state, and the count as the result (Vita3K's ctrl_get): Need for
         // Speed Most Wanted peeks 2 samples into a 2-entry buffer, whose second entry was left as the game had it
         count = Math.Min(count, MaxSamples);

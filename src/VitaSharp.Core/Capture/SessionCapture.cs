@@ -257,6 +257,9 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         }
     }
 
+    /// <summary>This capture turned the "waiting for input" detector on (<see cref="Input.InputWaitMonitor"/>).</summary>
+    private bool _monitoring;
+
     private string SafeDescribe(string when)
     {
         try
@@ -436,6 +439,12 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         InstallInput();
         _input!.RecordMotion = true;
         _options.SetPresentTap(this);
+        if (!_monitoring)
+        {
+            _monitoring = true;
+            Input.InputWaitMonitor.CaptureStarted();
+        }
+
         if (_options.Files && _files == null)
         {
             _files = new CaptureFileRecorder(_options.MaxFileBytes, _options.KeepSaveData);
@@ -448,6 +457,12 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     private void StopRunning()
     {
         _options.SetPresentTap(null);
+        if (_monitoring)
+        {
+            _monitoring = false;
+            Input.InputWaitMonitor.CaptureStopped();
+        }
+
         if (_files != null && ReferenceEquals(CaptureHooks.Files, _files))
         {
             CaptureHooks.Files = null;

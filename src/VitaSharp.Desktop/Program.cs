@@ -289,6 +289,10 @@ public static class Program
             }
             case "memdiff" when args.Length >= 3:
                 return MemDiff.Run(args[1], args[2], args.Length > 3 ? float.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture) : 10f);
+            case "screen-text":
+                return ScreenTextCommand.ScreenTextMain(args.Skip(1).ToArray());
+            case "screens":
+                return ScreenTextCommand.ScreensMain(args.Skip(1).ToArray());
             case "png-diff" when args.Length >= 3:
                 ReplayGpu.Compare(args[1], args[2], args.Length > 3 ? args[3] : "*.png");
                 return 0;
@@ -1069,6 +1073,7 @@ public static class Program
         Console.WriteLine("  test <scenario.txt> [options]        run an automated scenario (frames, contact sheet, report); run options given here win over the scenario's args=");
         ReplayGpu.PrintUsage();
         VerifyCapture.PrintUsage();
+        ScreenTextCommand.PrintUsage();
         Console.WriteLine("  run options: --gpu-dump-at=F1:F2[:file]  record frames F1..F2 as a GPU dump (Ctrl+F8 in the window starts/stops one)");
         Console.WriteLine("  run options: --capture-preroll[=S] --capture-at=A:B  Gravar tudo (F8): keep the last S s / record guest frames A..B");
         Console.WriteLine("  run options: --capture-files-mb=MB --capture-savedata  Gravar tudo: keep up to MB of the bytes the game read (default 0: hashes only) / keep the save data's bytes too");

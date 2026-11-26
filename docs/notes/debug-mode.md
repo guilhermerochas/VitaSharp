@@ -200,6 +200,36 @@ and repeats it at 30 s and 120 s of the same stall. `executing` is the GPU comma
 backend when it stays the same), `(not returned)` marks the HLE call a thread is blocked in (debug mode only; the last 6 calls per thread here, 16 in
 a capture's state.txt).
 
+## Waiting for input / loading / busy (`[input-wait]`)
+
+`Input/InputWaitMonitor.cs` (detector: `Input/InputWaitDetector.cs`) tells from the run itself whether the game in
+front waits for the player, loads, or is busy, so a still screen is not guessed at. It runs in debug mode, while a
+"Gravar tudo" (F8) capture records (pre-roll included), or with `VITASHARP_INPUT_WAIT=1`; off, each hook is one static
+read. Desktop and Android alike (the renderer feeds it the debug copy of every presented frame).
+
+Over a window of `VITASHARP_INPUT_WAIT_FRAMES` presented frames (default 60):
+
+- **still picture**: identical frames, a loop over at most 8 pictures (blinking "Press X"), or at most 6% of a 32x18
+  luminance grid changing against the first picture of the run (a pulse, a small spinner, a scan line);
+- **loading**: file reads of at least 256 KB/s (streamed music, ~40 KB/s, stays below), 2 file opens/s, any module
+  load, any shader compiled, or 200 code blocks/s compiled by the JIT;
+- **input reads**: sceCtrl Peek/Read calls (any port) and sceTouchPeek/Read per panel (front, rear), at least 10/s.
+
+| State | Rule | Line |
+|---|---|---|
+| WAITING FOR INPUT | still, no loading, input read | `[input-wait] WAITING FOR INPUT: <title> — reads front touch N/s, ctrl buttons N/s, rear touch N/s; screen static since frame F` |
+| LOADING | still, loading | `[input-wait] LOADING: <title> — file reads N KB/s, N opens/s, N modules loaded, N shaders compiled, N code blocks/s; reads ...; screen static since frame F` |
+| BUSY | still, nothing loaded, no input read | `[input-wait] BUSY: <title> — no input read, no file I/O or compilation (the CPU/GPU works or the game hangs); screen static since frame F` |
+| ACTIVE | the picture changes | `[input-wait] ACTIVE: <title> — the picture changes (frame F); reads ...` |
+
+A change is logged once it holds for a quarter of the window. The F8 capture writes the state at its start and stop
+in `context.txt` (`screen:`) and `report.txt` has a "Screen state" section (the state at the stop and the last 8
+`[input-wait]` changes of the log), followed by "Screen text (last frame)": the text the OCR reads on the last
+recorded frame, each line with its box and centre (`Capture/ScreenText.cs`; the same as
+`VitaSharp.Desktop screen-text <capture folder>`). The OCR is Windows.Media.Ocr on Windows and the `tesseract` command
+on Linux/macOS (docs/development.md "Test requirements"); without one the section says `(no OCR: ...)`. What to do on
+a known screen: `docs/games/screens.json` (docs/notes/screens.md).
+
 ## Debug mode ("Modo de depuração")
 
 Launcher: Configurações > Geral > "Modo de depuração (gera logs detalhados para diagnóstico)", saved in
