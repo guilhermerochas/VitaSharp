@@ -297,8 +297,9 @@ The game process places its hot threads itself (`Platforms/Android/Game/GamePerf
 - **GXM scene recorder on the fast cores** (A/B, off by default): `VITASHARP_ANDROID_GXM_THREAD=big` moves the guest
   thread that began the last GXM scene (often a game's render job thread, not its main thread) to the fast cluster as
   soon as it changes, and the previous one back; the log says `GXM scenes recorded on thread N: moved to ...`.
-- **Debug mode from `config/env.txt`**: `VITASHARP_DEBUG_MODE=1` turns debug mode on as the setting does (as
-  `--debug-mode` / the variable on desktop).
+- **Detailed log for a whole run (developers)**: `VITASHARP_DEBUG_MODE=1` in `config/env.txt` keeps the detailed log
+  on from the start (as `--debug-mode` / the variable on desktop). There is no setting for it: for the player the
+  detailed log is part of the pause menu's **Gravar tudo**, on while it records or keeps its pre-recording.
 - **Where the guest threads wait** (any platform): `VITASHARP_PERF_HLE_TIME=1` times every HLE call (wall clock, two
   timestamps per call) and adds `PERF hle time` lines to each periodic summary: per busy guest thread, its time in HLE
   calls per frame since the previous summary and the functions it went to (notification, display queue, lwcond,
@@ -443,7 +444,7 @@ happened with `mono-aot` and in the earlier phone runs, so it is a driver issue,
    (the SDK's property cache does not track `EnableLLVM`; the variant attribute changes the app assembly, which
    re-runs the AOT step, but a clean intermediate folder rules out stale images).
 2. Settings for every run: CPU automatic, default clock, GPU profile native, **VSync off** (Ajustes), no
-   `config/env.txt`, debug mode off; phone on the charger, screen brightness fixed, `adb shell dumpsys thermalservice`
+   `config/env.txt`, no **Gravar tudo** recording or pre-recording (the detailed log is on during them); phone on the charger, screen brightness fixed, `adb shell dumpsys thermalservice`
    at status 0 before each run (wait otherwise), the app killed between runs (`adb shell am force-stop
    io.github.vitasharp`).
 3. Games and scenes, in this order: **Knightin'+** (title screen, then the first level, 3 minutes), **Devious
@@ -685,7 +686,8 @@ and follows the activity: listeners and cameras only between `onResume` and `onP
 (`sceClibPrintf`, TTY writes, `sceKernelPrintf`: the `[guest...]` lines) goes to **VitaSharp-Guest**. Lines are split
 at line breaks and at 4,000 bytes (liblog truncates near 4 KB). The console copy is off (stdout would duplicate every
 line). The file logs stay: `logs/app.log` (UI process, truncated at each start) and `logs/last.log` (the current or
-last game; the previous ones kept as `<time>_<TITLEID>.log`, 10 at most). "Modo de depuração" turns on debug level.
+last game; the previous ones kept as `<time>_<TITLEID>.log`, 10 at most). The detailed log is on while **Gravar tudo**
+records (or keeps its pre-recording).
 
 **During gameplay** (from the game's first frame) only warnings and errors go to logcat: every entry is a system call
 into logd and a slot in a buffer the whole system shares, and info lines (guest `printf` output, thread creation,
@@ -1175,8 +1177,8 @@ runs, Devious Dungeon 11.2 M); Devious Dungeon town 49.3-49.8 fps against 47.2-4
    Mono does not report per-thread times there).
 7. **Audio**: the log's `Audio:` lines (AAudio on 8.1+, low-latency and exclusive or shared, the device rate and burst;
    AudioTrack on the x86_64 emulator image if it is API 26); sound plays at the right pitch and pace (a 44.1 kHz
-   device exercises the resampler), the `AUDIO summary` device line and underruns after a session (debug mode for
-   the periodic AUDIO lines); home → back (pause/resume, no burst of stale grains); plugging/unplugging headphones and
+   device exercises the resampler), the `AUDIO summary` device line and underruns after a session (a **Gravar tudo**
+   recording, whose detailed log has the periodic AUDIO lines); home → back (pause/resume, no burst of stale grains); plugging/unplugging headphones and
    connecting a Bluetooth headset during a game ("reopening the output", sound continues on the new device, at its
    rate); writes before `requestStart` (priming) are accepted by AAudio.
 8. **Video**: SceAvcdec/SceVideodec games and SceAvPlayer movies (an intro movie, F1 2011's): the log's

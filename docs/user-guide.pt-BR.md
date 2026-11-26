@@ -1,4 +1,4 @@
-<!-- pair: user-guide.md sha256=a8a6c112443998f49bb6d2324ceb299c84f606727f448774b07aa58a0e5dafb7 -->
+<!-- pair: user-guide.md sha256=c3934feb3f83cf759824c1a41c12fa1ad7a1a7c2eaf15c629e604dc6e43ba077 -->
 # Guia do usuário
 
 [English](user-guide.md) | **Português**
@@ -287,7 +287,7 @@ primeira vez que um jogo pergunta onde o Vita está, nunca antes; recusada, a po
 **Menu de pausa, save states e Gravar tudo.** O botão PS (na tela ou no controle) pausa um jogo iniciado sozinho:
 **Continuar**, **Salvar estado** / **Carregar estado** (6 slots com imagem), **Ajustes** (toque traseiro, controles na
 tela, MSAA, taxa de quadros, pré-gravação), **Recentralizar** (movimento), **Gravar tudo** e **Sair do jogo**. **Gravar
-tudo** grava o mesmo relatório de bug do F8 do desktop (save state, entrada, GPU dump, quadros, áudio e log) em
+tudo** grava o mesmo relatório de bug do F8 do desktop (save state, entrada, GPU dump, quadros, áudio e log detalhado) em
 `captures/` até **Parar gravação**; **Marcar o problema** marca o momento. Envie o `.zip` como em
 [Relatar um bug](../README.pt-BR.md#relatar-um-bug) no README.
 

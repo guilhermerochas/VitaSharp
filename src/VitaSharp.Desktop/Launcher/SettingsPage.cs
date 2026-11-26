@@ -452,18 +452,8 @@ public sealed class SettingsPage : UserControl
         // ---------------------------------------------------------- Avancado
         s.Children.Add(Anchor(SectionAdvanced, S.SectionAdvanced));
         s.Children.Add(_k.Group(
-            _k.Row("alert", S.DebugMode, S.DebugModeDetail, _k.Switch(_settings.DebugMode, v => Set(() => _settings.DebugMode = v))),
             _k.Row("camera", S.PreRoll, S.PreRollDetail, _k.Switch(_settings.CapturePreRoll, v => Set(() => _settings.CapturePreRoll = v))),
             _k.Row("layers", S.KernelPlugins, S.KernelPluginsDetail, _k.Switch(_settings.KernelPlugins, v => Set(() => _settings.KernelPlugins = v))),
-            _k.Row("folder", S.DiagnosticsFolder, Diagnostics.Root, _k.Secondary(S.Open, null, () =>
-            {
-                try
-                {
-                    Directory.CreateDirectory(Diagnostics.Root);
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Diagnostics.Root) { UseShellExecute = true });
-                }
-                catch (Exception) { }
-            }, 36)),
             _k.Row("hdd", S.DataFolder, Program.DataRoot, _k.Secondary(S.Open, null, () =>
             {
                 try

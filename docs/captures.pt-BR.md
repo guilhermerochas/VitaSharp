@@ -1,4 +1,4 @@
-<!-- pair: captures.md sha256=35c2d44a4e2694e6f6682bc4ff36e6218cc43ad5b8d0710dff289a66fde2aecb -->
+<!-- pair: captures.md sha256=db0e4d41b03858a534bc44bbf16e7ee227c75b0f407a6c17c220b1c0ab081f8d -->
 # Analisar uma gravação do Gravar tudo sem o jogo
 
 [English](captures.md) | **Português**
@@ -6,6 +6,12 @@
 Uma gravação do **Gravar tudo** (F8 no PC, menu de pausa no Android) é feita para ser enviada: alguém publica o
 `.zip` no GitHub e quem corrige o problema trabalha só com ele, num computador que não tem o jogo, nem a atualização
 dele, nem os plugins de quem gravou.
+
+Esta página é para desenvolvedores que analisam uma gravação: o jogador só aperta F8 (e Shift+F8 no problema), como diz
+[Relatar um bug](../README.pt-BR.md#relatar-um-bug) no README. A gravação é a única ferramenta de depuração do
+jogador, então tem tudo o que as antigas ferramentas separadas davam: o `log.txt` é o log da sessão com o log
+detalhado (as linhas de primeiro uso, erros de HLE, anomalias e PERF periódico do modo de depuração: ligado sozinho
+enquanto a gravação grava ou guarda a pré-gravação), e o `gpu.vsgd` é o dump da GPU.
 
 ## O que sai junto com a gravação
 

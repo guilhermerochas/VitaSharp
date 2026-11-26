@@ -1,4 +1,4 @@
-<!-- pair: captures.pt-BR.md sha256=fafed6430938e184069b222e413aa6e487233ff4979983f512a89e9f8cc998aa -->
+<!-- pair: captures.pt-BR.md sha256=bcf50309d62c75305ffcda4f1aac6db0871944775917dfa4d84611f30112b90f -->
 # Analysing a Record everything capture without the game
 
 **English** | [Português](captures.pt-BR.md)
@@ -6,6 +6,12 @@
 A **Record everything** capture (F8 on the PC, pause menu on Android) is made to be sent: someone posts the `.zip` on
 GitHub and whoever fixes the problem works from it alone, on a computer that has neither the game, nor its update,
 nor the plugins of the person who recorded it.
+
+This page is for developers who analyse a capture: the player only presses F8 (and Shift+F8 at the problem), as the
+README's [Report a bug](../README.md#report-a-bug) says. The capture is the player's only debugging tool, so it has
+everything the old separate tools gave: `log.txt` is the session log with the detailed log (the debug mode's
+first-use, HLE error, anomaly and periodic PERF lines: on by itself while the capture records or keeps its
+pre-roll), and `gpu.vsgd` is the GPU dump.
 
 ## What leaves with the capture
 

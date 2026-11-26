@@ -3,32 +3,76 @@ using System.Collections.Concurrent;
 namespace VitaSharp.Core.Util;
 
 /// <summary>
-/// "Modo de depuração" (--debug-mode, launcher Configurações > Geral, or VITASHARP_DEBUG_MODE=1): extra, rate-limited
-/// logging meant to diagnose problems from the log alone (first use of shaders/pipelines/targets/texture formats,
-/// HLE error returns, address-overlap choices, periodic PERF lines, deduplicated warnings, frame anomaly checks).
-/// Set at startup or toggled in game (F9); every site checks this flag first, so the cost when it is off is one
-/// static read. Turned on mid-game, the first-use logs report everything used from then on. See
+/// The detailed log: extra, rate-limited logging meant to diagnose problems from the log alone (first use of
+/// shaders/pipelines/targets/texture formats, HLE error returns, address-overlap choices, periodic PERF lines,
+/// deduplicated warnings, frame anomaly checks). For the player it is part of "Gravar tudo" (F8): it is on while a
+/// session capture records or keeps its pre-roll (<see cref="CaptureStarted"/>), so the capture's log.txt has it;
+/// there is no separate switch in the apps. Developers can also keep it on for a whole run (--debug-mode,
+/// VITASHARP_DEBUG_MODE=1: <see cref="Enable"/>). Every site checks <see cref="Enabled"/> first, so the cost when it is
+/// off is one static read. Turned on mid-game, the first-use logs report everything used from then on. See
 /// docs/notes/debug-mode.md.
 /// </summary>
 public static class DebugMode
 {
+    private static readonly object s_lock = new();
+    private static bool s_explicit;
+    private static int s_captures;
+
+    /// <summary>The detailed log is on: set explicitly (--debug-mode) or while a session capture runs.</summary>
     public static bool Enabled { get; private set; }
+
+    /// <summary>Set explicitly for the whole run (--debug-mode, VITASHARP_DEBUG_MODE=1), not by a capture.</summary>
+    public static bool Explicit => s_explicit;
 
     public static void Enable()
     {
-        bool was = Enabled;
-        Enabled = true;
-        Log.DedupeWarnings = true;
-        if (!was)
+        lock (s_lock)
         {
-            AudioDiagnostics.OnDebugModeChanged(true); // snapshot of the ports and streams opened before
+            s_explicit = true;
+            Refresh();
         }
     }
 
     public static void Disable()
     {
-        Enabled = false;
-        Log.DedupeWarnings = false;
+        lock (s_lock)
+        {
+            s_explicit = false;
+            Refresh();
+        }
+    }
+
+    /// <summary>A session capture began recording or keeping its pre-roll: the detailed log is on until the matching
+    /// <see cref="CaptureStopped"/> (nested captures count).</summary>
+    public static void CaptureStarted()
+    {
+        lock (s_lock)
+        {
+            s_captures++;
+            Refresh();
+        }
+    }
+
+    /// <summary>The session capture of a <see cref="CaptureStarted"/> stopped recording and keeping its pre-roll.</summary>
+    public static void CaptureStopped()
+    {
+        lock (s_lock)
+        {
+            s_captures = Math.Max(0, s_captures - 1);
+            Refresh();
+        }
+    }
+
+    private static void Refresh()
+    {
+        bool was = Enabled;
+        bool now = s_explicit || s_captures > 0;
+        Enabled = now;
+        Log.DedupeWarnings = now;
+        if (now && !was)
+        {
+            AudioDiagnostics.OnDebugModeChanged(true); // snapshot of the ports and streams opened before
+        }
     }
 
     /// <summary>A session capture is recording: HLE error returns and unimplemented calls are counted (and logged,

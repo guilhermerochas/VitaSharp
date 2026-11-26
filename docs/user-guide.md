@@ -1,4 +1,4 @@
-<!-- pair: user-guide.pt-BR.md sha256=50fffef47bb83e9c0e1fc403011d236fafad648014db339096395da58d82efe2 -->
+<!-- pair: user-guide.pt-BR.md sha256=4050acd501f900f1ef1c14bdc02154ad5faeb0a901a642f927bdde0fcae3c326 -->
 # User guide
 
 **English** | [Português](user-guide.pt-BR.md)
@@ -282,7 +282,7 @@ where the Vita is, never before; refused, the position stays undetermined.
 started on its own: **Continuar**, **Salvar estado** / **Carregar estado** (6 slots with a picture), **Ajustes** (rear
 touch, on-screen controls, MSAA, frame rate, pre-recording), **Recentralizar** (motion), **Gravar tudo** and **Sair do
 jogo**. **Gravar tudo** records the same bug report as the desktop's F8 (save state, input, GPU dump, frames, audio and
-log) into `captures/` until **Parar gravação**; **Marcar o problema** marks the moment. Send the `.zip` as in the
+detailed log) into `captures/` until **Parar gravação**; **Marcar o problema** marks the moment. Send the `.zip` as in the
 README's [Report a bug](../README.md#report-a-bug).
 
 **States and recordings on the game page.** The game's details show the 6 slots with their picture and date; tapping a

@@ -8,11 +8,12 @@ using S = VitaSharp.Desktop.Launcher.Ui.Strings;
 
 namespace VitaSharp.Desktop.Launcher;
 
-/// <summary>Capturas: F8 "Gravar tudo" recordings (captures/*.zip), Ctrl+F8 GPU dumps (gpudumps/*.vsgd) and F10
-/// diagnostics (diagnostics/*.zip), with their game, date and size; show in the folder or delete.</summary>
+/// <summary>Capturas: the F8 "Gravar tudo" recordings (captures/*.zip), the player's only debugging tool (each has the
+/// detailed log, the GPU dump and the diagnostics), with their game, date and size; show in the folder or delete. The
+/// GPU dumps and diagnostic folders of developer runs (gpudumps/, diagnostics/) are not listed.</summary>
 public sealed partial class MainWindow
 {
-    public const string CaptureRecording = "recording", CaptureGpuDump = "gpudump", CaptureDiagnostic = "diagnostic";
+    public const string CaptureRecording = "recording";
 
     sealed record CaptureFile(string Kind, string TitleId, string Path, long Size, DateTime When);
 
@@ -40,8 +41,6 @@ public sealed partial class MainWindow
             }
         }
         Add(SessionCaptureControl.Root, "*.zip", CaptureRecording);
-        Add(GpuDumpControl.Root, "*.vsgd", CaptureGpuDump);
-        Add(Diagnostics.Root, "*.zip", CaptureDiagnostic);
         return list.OrderByDescending(c => c.When).ToList();
     }
 
@@ -56,9 +55,7 @@ public sealed partial class MainWindow
         var actions = _k.HStack(10,
             _k.Secondary(S.DeleteOld(old.Count), "trash", () => _ = DeleteCaptures(old), 44, enabled: old.Count > 0),
             _k.MenuButton(S.OpenFolder, "folder", 44,
-                (S.RecordingsFolder, () => { Directory.CreateDirectory(SessionCaptureControl.Root); OpenPath(SessionCaptureControl.Root); }, true),
-                (S.GpuDumpsFolder, () => { Directory.CreateDirectory(GpuDumpControl.Root); OpenPath(GpuDumpControl.Root); }, true),
-                (S.DiagnosticsFolder, () => { Directory.CreateDirectory(Diagnostics.Root); OpenPath(Diagnostics.Root); }, true)));
+                (S.RecordingsFolder, () => { Directory.CreateDirectory(SessionCaptureControl.Root); OpenPath(SessionCaptureControl.Root); }, true)));
         actions.VerticalAlignment = VerticalAlignment.Center;
         header.Children.Add(Kit.At(actions, col: 1));
         page.Children.Add(header);
@@ -71,8 +68,6 @@ public sealed partial class MainWindow
         }
         chips.Children.Add(_k.Chip(S.FilterAll(all.Count), _captureKind == "", () => Kind("")));
         chips.Children.Add(_k.Chip(S.Recordings(all.Count(c => c.Kind == CaptureRecording)), _captureKind == CaptureRecording, () => Kind(CaptureRecording), "camera"));
-        chips.Children.Add(_k.Chip(S.GpuDumps(all.Count(c => c.Kind == CaptureGpuDump)), _captureKind == CaptureGpuDump, () => Kind(CaptureGpuDump), "layers"));
-        chips.Children.Add(_k.Chip(S.DiagnosticsChip(all.Count(c => c.Kind == CaptureDiagnostic)), _captureKind == CaptureDiagnostic, () => Kind(CaptureDiagnostic), "alert"));
         var gameItems = new List<(string, bool, Action)> { (S.AllGames, _captureGame == null, () => { _captureGame = null; ShowPage(); }) };
         foreach (var id in all.Select(c => c.TitleId).Distinct().OrderBy(CaptureTitle))
         {
@@ -116,12 +111,7 @@ public sealed partial class MainWindow
             ? _k.Picture(pic, compact ? 88 : 112, compact ? 50 : 63, 10, decodeWidth: 240)
             : new Border { Width = compact ? 88 : 112, Height = compact ? 50 : 63, CornerRadius = new CornerRadius(10), Background = Kit.B(static p => p.SurfaceHigh), Child = _k.Icon(c.TitleId == "shell" ? "vita" : "file", 24, static p => p.AccentSoft) };
         r.Children.Add(thumb);
-        (string Label, Func<Palette, Color> Color) badge = c.Kind switch
-        {
-            CaptureRecording => (S.RecordingBadge, static p => p.Accent),
-            CaptureGpuDump => (S.GpuDumpBadge, static p => p.Warn),
-            _ => (S.DiagnosticBadge, static p => p.Danger),
-        };
+        (string Label, Func<Palette, Color> Color) badge = (S.RecordingBadge, static p => p.Accent);
         var title = compact ? _k.HStack(8, _k.Badge(badge.Label, badge.Color), _k.Text(S.When(c.When), 13, FontWeight.SemiBold))
                             : _k.HStack(8, _k.Text(CaptureTitle(c.TitleId), 14, FontWeight.SemiBold), _k.Badge(badge.Label, badge.Color));
         var tx = _k.VStack(4, title, _k.Text(compact ? $"{System.IO.Path.GetFileName(c.Path)} \u00B7 {S.Size(c.Size)}" : System.IO.Path.GetFileName(c.Path), 12, color: static p => p.Muted));

@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=a262a1a8f83a84af15b8c4498df60dd30f70e30913d562b011937d04824d57c0 -->
+<!-- pair: README.pt-BR.md sha256=0196caa76645f0bc7747307c3bbfb26e3b46af30e4d91a6e78272beec33250bb -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -287,10 +287,7 @@ bottom button is always Cross) and the gyroscope. Everything can be remapped in 
 | `F5` / `F7` | Save / load the quick state; `Shift+F5` / `Shift+F7` save / load in the chosen slot |
 | `F6` | Save state picker over the paused game: the quick slot and slots 1-9 with their picture, date, play time and version; save (overwriting asks, showing the old and the current picture), load (with the picture large), delete (`Del` / Triangle) |
 | `F8` | Starts / stops **Record everything** (see [Report a bug](#report-a-bug)) |
-| `Shift+F8` | While recording: marks the problem (a mark and a save state of that moment go into the recording; `rerun --from=mark1` starts there) |
-| `Ctrl+F8` | Starts / stops a GPU dump (`gpudumps/*.vsgd`; `replay-gpu` redraws it draw by draw, without the game) |
-| `F9` | Turns debug mode on / off (detailed logs, 10 s pre-recording, automatic captures) |
-| `F10` | Diagnostic capture: the next frame with its draws, textures, targets, screenshot and log (`diagnostics/`) |
+| `Shift+F8` | While recording: marks the problem (a mark and a save state of that moment go into the recording) |
 | `F11` | Full screen |
 | `P` | Pauses / resumes the emulation |
 
@@ -319,21 +316,23 @@ Every option, with its command-line switch and the details: [user guide](docs/us
 
 **Record everything** makes one `.zip` with everything needed to see and reproduce the problem without the game.
 
-1. Optional, for problems that are over quickly: turn on **Pre-recording** (Settings > Advanced, or debug mode with
-   `F9`), so the recording also has the seconds before you press the key.
+1. Optional, for problems that are over quickly: turn on **Pre-recording** (Settings > Advanced; Android: pause menu
+   > **Ajustes**), so the recording also has the seconds before you press the key.
 2. While playing press **F8** (the title bar shows *"● REC | Recording everything (F8 to stop)"*). Android: pause menu
    > **Record everything**.
 3. Play until the problem shows. At that moment press **Shift+F8** (Android: pause menu > **Mark the problem**): the
    recording gets a mark and a save state of that instant.
 4. Press **F8** again (Android: **Stop recording**). The `.zip` is in the `captures/` folder of your
    [data folder](#where-your-data-lives).
-5. Open an issue on GitHub with the `.zip`, the game's name and title ID, and what happened. `logs/last.log` helps too.
+5. Open an issue on GitHub with the `.zip`, the game's name and title ID, and what happened. A screenshot of the
+   problem (just the picture) and `logs/last.log` help too.
 
-The recording carries a save state, the controls, every picture with its timing, the GPU dump, the audio and the log.
-It carries nothing personal: paths, user, computer and account names become placeholders, and no game file, license
-or key is copied. Whoever fixes the problem can analyse it, re-run it and check a fix
-(`VitaSharp.Desktop verify <zip>`) without the game or your plugins: see [`docs/captures.md`](docs/captures.md) and
-[`docs/notes/session-capture.md`](docs/notes/session-capture.md).
+**Record everything** is the only debugging tool you need: there is no debug mode, diagnostic key or separate GPU dump
+to turn on. The recording carries a save state, the controls, every picture with its timing, the GPU dump, the audio
+and the detailed log (on by itself while it records and during the pre-recording). It carries nothing personal: paths,
+user, computer and account names become placeholders, and no game file, license or key is copied. Whoever fixes the
+problem can analyse it, re-run it and check a fix without the game or your plugins (for developers:
+[`docs/captures.md`](docs/captures.md)).
 
 ## Where your data lives
 
@@ -345,8 +344,7 @@ or key is copied. Whoever fixes the problem can analyse it, re-run it and check 
 | Android | `/sdcard/.vitasharp` (with "All files access"; otherwise `Android/data/io.github.vitasharp/files`) |
 
 Inside it: `fs/` is the Vita's storage (games in `fs/ux0/app`, saves in `fs/ux0/user/00/savedata`, firmware in
-`fs/os0`, `fs/vs0`...), plus `logs/`, `savestates/`, `captures/` (Record everything), `gpudumps/`, `diagnostics/` and
-`shadercache/`. `--data=<folder>` or the `VITASHARP_DATA` variable use another folder. Updating VitaSharp never
+`fs/os0`, `fs/vs0`...), plus `logs/`, `savestates/`, `captures/` (Record everything) and `shadercache/`. `--data=<folder>` or the `VITASHARP_DATA` variable use another folder. Updating VitaSharp never
 changes this folder. Before uninstalling the Android app without "All files access", copy `fs/ux0/user/00/savedata`
 out.
 

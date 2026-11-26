@@ -3639,6 +3639,17 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- (26/11/2026, falta testar) [P2][M] O F8 "Gravar tudo" é a única ferramenta de depuração do jogador (feat/f8only1).
+  Saíram da interface e da documentação do usuário: F9 (modo de depuração), F10 (captura de diagnóstico), Ctrl+F8
+  (dump da GPU sozinho), o "Modo de depuração" das Configurações do launcher e dos Ajustes do Android, a pasta de
+  diagnósticos e os filtros de dumps/diagnósticos da página Capturas. O log detalhado (`DebugMode`) liga sozinho
+  enquanto a captura grava ou guarda a pré-gravação (Configurações > Avançado > "Pré-gravação"); a captura já levava o
+  dump da GPU. As anomalias de imagem ficam no log da captura (a captura automática de diagnóstico só com
+  `--debug-mode`). Os comandos de terminal (`--debug-mode`, `--diag-at`, passos F10/Ctrl+F8 do `--input`, `replay-gpu`,
+  `screen-text`, `rerun`, `verify`) continuam, só nas docs de desenvolvedor; o `screen-text` não lê mais o
+  `screenshot.png` da pasta de diagnóstico. Testar: no launcher, F9/F10/Ctrl+F8 não fazem nada de depuração (Ctrl+F8
+  = F8); Configurações > Avançado sem "Modo de depuração" nem pasta de diagnósticos; gravar com F8 e ver no `log.txt`
+  da captura linhas `[dbg]`; no Android, Ajustes > Depuração sem "Modo de depuração".
 - (26/11/2026, falta testar) [P1][M] Desempenho do Android, perf/andperf2: pausas do GC no gameplay. Killzone slot 1
   (Redmi Note 14, 26/11): ~19 GCs de gen0 por segundo com ~190 KB alocados por GC e 12,1-12,8% do tempo em pausa do GC
   (o piso de 256 KB que o GC usa quando não lê o tamanho do cache da CPU; no PC ele escolhe ~4 MB). Corrigido: o GC gen0

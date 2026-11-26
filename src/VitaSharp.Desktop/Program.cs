@@ -1080,7 +1080,7 @@ public static class Program
         ReplayGpu.PrintUsage();
         VerifyCapture.PrintUsage();
         ScreenTextCommand.PrintUsage();
-        Console.WriteLine("  run options: --gpu-dump-at=F1:F2[:file]  record frames F1..F2 as a GPU dump (Ctrl+F8 in the window starts/stops one)");
+        Console.WriteLine("  run options: --gpu-dump-at=F1:F2[:file]  record frames F1..F2 as a GPU dump (an F8 capture has its own)");
         Console.WriteLine("  run options: --capture-preroll[=S] --capture-at=A:B  Gravar tudo (F8): keep the last S s / record guest frames A..B");
         Console.WriteLine("  run options: --capture-files-mb=MB --capture-savedata  Gravar tudo: keep up to MB of the bytes the game read (default 0: hashes only) / keep the save data's bytes too");
         Console.WriteLine("  run options: --capture-mic-audio     Gravar tudo: also keep what the microphone captured (default: only its format and pace)");

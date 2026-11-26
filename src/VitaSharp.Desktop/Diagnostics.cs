@@ -10,7 +10,8 @@ using VitaSharp.Renderer.Vulkan;
 namespace VitaSharp.Desktop;
 
 /// <summary>
-/// "Capturar diagnostico" (F10 in the game window, --diag-at=FRAME[,FRAME...], and debug-mode anomalies): the renderer
+/// The diagnostic capture of developer runs (--diag-at=FRAME[,FRAME...], an --input script's "F10" step, and the
+/// anomalies of --debug-mode; the player has F8 "Gravar tudo" instead, which has all of this): the renderer
 /// traces the next frame (draw list, render targets, sampled textures, screenshot) into
 /// &lt;DataRoot&gt;/diagnostics/&lt;TITLEID&gt;_&lt;yyyyMMdd_HHmmss&gt;/, then this class adds info.txt, the log so far and the
 /// emulator state, and zips the folder next to it. One capture at a time; requests during a capture are ignored.
@@ -124,9 +125,16 @@ public sealed class Diagnostics
         return true;
     }
 
-    /// <summary>Debug mode: an anomaly on the presented image. Rate-limited automatic capture.</summary>
+    /// <summary>The detailed log found an anomaly on the presented image (its <c>[anomaly]</c> line is in the log).
+    /// While the player's F8 capture runs, that line in its log.txt and the capture's GPU dump are the report: no
+    /// separate diagnostic folder. With --debug-mode (developer runs) a rate-limited automatic capture is taken.</summary>
     public void OnAnomaly(string kind, string detail, long present)
     {
+        if (!DebugMode.Explicit)
+        {
+            return;
+        }
+
         lock (this)
         {
             if (_autoCount >= AutoMax)
@@ -220,9 +228,9 @@ public sealed class Diagnostics
             sb.AppendLine($"Traced frame: between renderer presents #{res.Present} and #{res.Present + 1}; {res.Draws} draws, {res.Targets} render targets dumped, {res.Textures} textures sampled ({res.Milliseconds:F0} ms)");
             sb.AppendLine($"Presented frame: {res.FrameWidth}x{res.FrameHeight}{(res.Screenshot ? "" : " (no screenshot)")}");
             sb.AppendLine(res.ReplayFrames > 0 ? $"Replay: {res.ReplayFrames} presented frames before the traced one in replay/ (see replay/replay.txt)"
-                : res.ReplayFrames < 0 ? "Replay: writing replay/ failed (see log.txt)" : "Replay: off (the replay ring runs only in debug mode, F9)");
+                : res.ReplayFrames < 0 ? "Replay: writing replay/ failed (see log.txt)" : "Replay: off (the replay ring runs only with the detailed log: a Gravar tudo capture or --debug-mode)");
             sb.AppendLine(res.DrawRingFrames > 0 ? $"Draw ring: draw lists of {res.DrawRingFrames} presented frames before the traced one in drawring/ (see drawring/index.txt and diff.txt)"
-                : res.DrawRingFrames < 0 ? "Draw ring: writing drawring/ failed (see log.txt)" : "Draw ring: off (runs only in debug mode, F9)");
+                : res.DrawRingFrames < 0 ? "Draw ring: writing drawring/ failed (see log.txt)" : "Draw ring: off (runs only with the detailed log: a Gravar tudo capture or --debug-mode)");
             if (res.Error != null)
             {
                 sb.AppendLine($"Renderer error: {res.Error}");
@@ -236,7 +244,7 @@ public sealed class Diagnostics
         sb.AppendLine($"Debug mode: {(DebugMode.Enabled ? "on" : "off")}");
         sb.AppendLine(Core.Gpu.GpuDumpRecorder.Current is { } dump
             ? $"GPU dump: {(dump.Recording ? $"recording, {dump.FramesRecorded} frames so far" : "armed")} -> {dump.Options.Path}"
-            : $"GPU dump: not recording (Ctrl+F8 records one into {GpuDumpControl.Root}; see docs/notes/gpu-dump.md)");
+            : $"GPU dump: not recording (F8 \"Gravar tudo\" records one; see docs/notes/gpu-dump.md)");
         if (HostInfo?.Invoke() is { Length: > 0 } host)
         {
             sb.AppendLine(host);

@@ -42,7 +42,6 @@ public sealed class DesktopLogicTests : IDisposable
         s.CpuMhz = 444;
         s.FastShaderCompile = false;
         s.BackgroundShaderCompile = false;
-        s.DebugMode = true;
         s.CapturePreRoll = true;
         s.TrophySound = false;
         s.PsnSignedIn = true;
@@ -52,7 +51,7 @@ public sealed class DesktopLogicTests : IDisposable
         s.HleModules = "libc, libm;libfios2";
         opts = s.RunOptions().ToList();
         foreach (string? o in new[] { "--fullscreen", "--scale=2", "--no-vsync", "--validation", "--camera-front=none", "--cpu=interp", "--cpu-mhz=444",
-            "--shaderc-opt=perf", "--async-shaders=off", "--debug-mode", "--capture-preroll", "--trophy-sound=off", "--psn=on", "--psn-local=off",
+            "--shaderc-opt=perf", "--async-shaders=off", "--capture-preroll", "--trophy-sound=off", "--psn=on", "--psn-local=off",
             "--net=real", "--audio-device=Speakers", "--hle-modules=libc,libm,libfios2" })
         {
             Assert.Contains(o, opts);

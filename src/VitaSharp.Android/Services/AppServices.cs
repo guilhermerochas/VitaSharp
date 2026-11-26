@@ -145,8 +145,9 @@ public static class AppServices
             Prefs = AppPreferences.Load(Data.AppSettingsFile);
             // the texts' language (Ajustes > Language): set before any screen or the game reads a text
             VitaSharp.Core.Localization.Loc.SetLanguage(Prefs.Language);
-            // debug mode: the setting, or VITASHARP_DEBUG_MODE=1 in config/env.txt (as --debug-mode / the variable on desktop)
-            if (Prefs.DebugMode || System.Environment.GetEnvironmentVariable(EnvVars.DebugMode) is "1" or "on" or "true")
+            // the detailed log for the whole run (developers): VITASHARP_DEBUG_MODE=1 in config/env.txt, as --debug-mode on
+            // the desktop; for the player it is part of "Gravar tudo" (on while the capture runs, DebugMode.CaptureStarted)
+            if (System.Environment.GetEnvironmentVariable(EnvVars.DebugMode) is "1" or "on" or "true")
             {
                 Log.Level = LogLevel.Debug;
                 DebugMode.Enable();

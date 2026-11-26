@@ -54,8 +54,6 @@ public sealed class AppPreferences
     public string GpuProfile { get; set; } = "";
     public bool VSync { get; set; } = true;
     public bool ShowFps { get; set; }
-    /// <summary>"Modo de depuracao": debug logging (Log level Debug + DebugMode, docs/notes/debug-mode.md).</summary>
-    public bool DebugMode { get; set; }
     /// <summary>The emulator option "Ativar Plugins do Kernel": the plugins of ur0:tai / ux0:tai config.txt load (off:
     /// the pure firmware, no plugin).</summary>
     public bool KernelPlugins { get; set; }
