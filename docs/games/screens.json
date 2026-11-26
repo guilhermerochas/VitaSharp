@@ -17,8 +17,8 @@
       "name": "Uncharted: Golden Abyss",
       "toGameplay": [
         "opening film: skip it after at most 40 s",
-        "Tutorial: Journal: still being investigated (see the screen below)",
-        "gameplay: the journal button sits at the bottom right corner"
+        "Tutorial: Journal (start of the Prologue): tap the icon-bar tab at the bottom right (see the screen below)",
+        "gameplay: the icon bar sits on the right edge (camera, journal, table of contents, the tab that shows or hides it)"
       ]
     }
   ],
@@ -38,11 +38,12 @@
       "title": "PCSF00001",
       "screen": "Tutorial: Journal",
       "match": ["Tutorial: Journal", "Drake's Journal", "Journal"],
-      "after": "the opening film",
-      "expects": "a touch on the journal (the on-screen prompt says which); the exact gesture is still unknown",
-      "action": { "kind": "none" },
-      "status": "investigating",
-      "notes": "automated runs have not got past it yet: run screen-text on the frame and read the [input-wait] line (which panel it reads) before trying a gesture"
+      "after": "the opening film, when the Prologue's gameplay starts (a real Vita shows it there too with Tutorial Hints on)",
+      "expects": "a touch on the icon-bar tab at the bottom right of the screen, the icon under the lined-paper one (\"Touch to bring up the ICON bar...\"); the game is paused meanwhile and buttons, the book icon, the lined paper (table of contents) and touches elsewhere do not close it",
+      "action": { "kind": "tap", "x": 0.98, "y": 0.8 },
+      "result": "the tutorial closes and the Prologue's gameplay goes on",
+      "status": "confirmed",
+      "notes": "the tab spans about x 0.93-0.99, y 0.72-0.84 (re-runs of a capture: taps at 0.93,0.72 / 0.95,0.75 / 0.965,0.78 / 0.98,0.80 close it at once; 0.96,0.915 below it does not). Android with the on-screen controls on: the right stick's circle covers the left two thirds of the tab on a 20:9 phone, so tap its right edge (x 0.98) or turn the on-screen controls off in the pause menu first"
     }
   ]
 }

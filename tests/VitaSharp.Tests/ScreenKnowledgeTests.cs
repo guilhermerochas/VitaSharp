@@ -48,8 +48,10 @@ public sealed class ScreenKnowledgeTests
         Assert.Null(kb.Match("PCSF00001", ["SECURITY SCAN"]));
         KnownScreen? journal = kb.Match("PCSF00001", ["TAP to open Drake's Journal"]);
         Assert.NotNull(journal);
-        Assert.Equal("investigating", journal.Status);
-        Assert.Contains(ScreenKnowledge.Describe(journal), l => l == "  action: unknown yet");
+        Assert.Equal("confirmed", journal.Status);
+        // Uncharted's journal tutorial closes on the icon-bar tab at the bottom right, not on the book or a button
+        Assert.Equal("tap", journal.Action!.Kind);
+        Assert.Equal(["touch:0.98:0.8"], journal.Action.ToAndroid());
     }
 
     [Fact]
