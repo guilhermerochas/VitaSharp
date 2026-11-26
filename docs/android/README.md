@@ -259,6 +259,13 @@ The game process places its hot threads itself (`Platforms/Android/Game/GamePerf
   Note 14 (Uncharted, 26/11/2026) showed it does not help and makes the stalls worse: the transcoders sit on the slow A55
   cores, slower than the GPU worker on an A76. Frames > 100 ms per run: 3-5 with `=0`, 5-8 with `wait`; Killzone fps
   27.7-28.0 with `=0` against 26.1-27.7 with `wait`. `VITASHARP_ASTC_BC1_DIRECT` and `VITASHARP_BG_NICE` stay on.
+- **Memory reads of the scene's own surfaces keep the scene's copy** (`VITASHARP_MAPPED_SCENE_START`, default on for
+  tile-based GPUs, chosen from the device's vendor and driver; `=0` turns it off, `=1` forces it on a desktop GPU): a
+  shader that reads the colour or depth/stencil surface of the scene being rendered as memory sees what the Vita's
+  memory holds, the surface as it was before the scene, so the copy taken in the scene stays valid for the rest of it.
+  Refreshing it after each rendering ended the rendering for every such draw (Killzone Mercenary: nine 240x136 passes
+  per frame at one spot, each copying the depth). Mali-G57 bench (4 rounds x 3): Killzone gameplay fixture 33.3 ->
+  30.1 ms of GPU per frame, the stairs fixture 27.1 -> 26.4 ms, same picture.
 - **BC1 mapped straight to ASTC** (`AstcEncoder.EncodeFromBc1`, `VITASHARP_ASTC_BC1_DIRECT=0` to compare): a
   four-colour BC1 block (its two RGB565 endpoints and the thirds between them) is exactly an ASTC RGB-direct block with
   8-bit endpoints and 4 weight levels, so it is written without the encoder's search; only BC1's three-colour blocks
