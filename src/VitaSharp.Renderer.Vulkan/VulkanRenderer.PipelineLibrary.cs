@@ -98,7 +98,7 @@ public sealed unsafe partial class VulkanRenderer
     private RenderPass LibraryPass(in PipelineKey key)
     {
         bool msPass = key.Samples != SampleCountFlags.Count1Bit || key.InputPass;
-        return msPass ? MsaaCompatPass(key.ColorFormat, key.Samples, key.HasColor && key.TileWord1 != 0) : default;
+        return msPass ? MsaaCompatPass(key.ColorFormat, key.Samples, key.HasColor && key.TileWord1 != 0, key.Rtss) : default;
     }
 
     /// <summary>

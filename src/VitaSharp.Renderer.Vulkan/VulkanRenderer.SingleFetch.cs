@@ -124,7 +124,7 @@ public sealed unsafe partial class VulkanRenderer
             Framebuffer = fb,
             RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(w, h)),
         };
-        CountOps(true, AttachmentLoadOp.Load, AttachmentStoreOp.Store, true, AttachmentLoadOp.Load, AttachmentStoreOp.Store);
+        CountOps(true, AttachmentLoadOp.Load, AttachmentStoreOp.Store, true, AttachmentLoadOp.Load, AttachmentStoreOp.Store, new Extent2D(w, h), format);
         // the primary, after any ended renderings still waiting to be begun there (VulkanRenderer.SceneBreaks.cs)
         CommandBuffer cmd = Cmd;
         DevStampOp(cmd, depthReadOnly ? "fetch-pass-depthro" : "fetch-pass");

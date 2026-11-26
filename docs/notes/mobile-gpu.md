@@ -42,6 +42,7 @@ are queried so the log and info.txt say what the device has, and are never enabl
 | `sampleRateShading` | programmable blending in MSAA scenes per sample (`gl_SampleID`) | shaders read sample 0 (part of the shader cache key, as before) |
 | framebuffer sample counts | GXM 2X/4X downscale MSAA | 2X with 4 samples when the device has 4 but not 2 (Mali, `Msaa2xAs4x`); no usable count: 2x2 supersampling (existing fallback) |
 | `VK_EXT_rasterization_order_attachment_access` / `VK_ARM_...` | programmable blending in MSAA render passes | input attachment + by-region barrier per draw, small draws split per triangle (as before). With it: the subpass and pipelines declare rasterization-order colour access, no barriers, no splitting. Not present on the GTX 1650 / Iris Xe: **untested** |
+| `VK_EXT_multisampled_render_to_single_sampled` | only with `VITASHARP_MSAA_RTSS=1` (off by default; render-pass path with deferred renderings, the Mali-G57): native MSAA scenes render to the one-sample surface, LOAD fills every sample with its pixel and STORE resolves; depth/stencil keeps its multisampled image; no multisampled colour image, scene-start copy or sample-load draw (`VulkanRenderer.MsaaRtss.cs`). A surface whose scene needs the samples outside a rendering (mid-scene break, programmable blending, tile word, raw outputs) continues from the stored pixels and uses the default path from then on | the default path. No PC GPU here has it (GTX 1650, Iris Xe, SwiftShader): checked on the phone only |
 | `VK_EXT_memory_budget` | eviction under memory pressure, VRAM logs | pressure = renderer bytes / 80% of the largest device heap; 50% on mobile/unified-memory devices (`ConservativeMemoryBudget`: Android kills apps before the heap is full) |
 | `maxPushConstantsSize` | 32 bytes of push constants | 128 is the Vulkan minimum: always fits |
 | per-stage samplers / sampled images, `maxDescriptorSetSamplers` | 16 vertex + 16 fragment texture units + 2 framebuffer-fetch samplers | fewer units bound (the Mali-G57 reports 8388608 per stage, so it binds all of them); a draw whose program samples a missing unit is skipped with a warning |
@@ -325,6 +326,14 @@ dotnet build tools/VitaSharp.PerfTools -c Release -m:2 -o <dir>
   tile ms, Mali ms, the fp16 what-if), the average, the total tile bytes, the 10 most expensive draws of the worst frame
   (draw number, share, shader hashes, the stage and unit that bound it, fragment cycles A/LS/V/T), and the shaders that
   spill or run below 100% occupancy, weighted by their ms per frame.
+- **Per surface and per pass** (since perf/andgpu1): every scene rendering is recorded with its area, colour format,
+  samples and load/store/resolve ops (`PassCostRecord`: colour at its format's size, depth/stencil 4 bytes, both times
+  the samples when loaded or stored; a resolve writes one colour value per pixel), and every transfer (copy, blit,
+  upload, readback) with its bytes read + written and the renderer method that recorded it (`CopyCostRecord`). The
+  report adds the scenes grouped by colour surface (address, size, format, samples) in ms per frame (vertex,
+  fragment, tile bytes, transfers during those scenes, renderings, draws, overdraw), the transfers and the renderings
+  by renderer site, and one frame's renderings and transfers in recording order. Not modelled: AFBC compression of the
+  attachments, texture fetch bandwidth, the fixed cost of a render pass on the tiler.
 - **fp16 what-if** (`--fp16-whatif`; the real generator is unchanged): `half` recompiles each shader with mediump on
   what the GXP holds in half registers: the translator's `unpackHalf2x16` temporaries, fragment inputs whose every use
   is a copy into such a temporary (varyings the GXP loads as F16; varyings used as F32 texture coordinates stay highp)

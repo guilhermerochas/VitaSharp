@@ -147,6 +147,7 @@ public sealed unsafe partial class VulkanRenderer
             Extent = new Extent3D(w, h, 1),
         };
         DevStampOp();
+        CostCopy(copy.Extent, Format.D24UnormS8Uint);
         _vk.CmdCopyImage(Cmd, dt.Image, ImageLayout.TransferSrcOptimal, depthTex.Image, ImageLayout.TransferDstOptimal, 1, in copy);
         Barrier(dt.Image, ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal, DepthStencilAspect,
             PipelineStageFlags.TransferBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,
@@ -768,6 +769,7 @@ void main() {
             ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             ImageExtent = new Extent3D(w, h, 1),
         };
+        CostCopy(region.ImageExtent, Format.R8Uint);
         _vk.CmdCopyBufferToImage(Cmd, _mirror, stencilTex.Image, ImageLayout.TransferDstOptimal, 1, in region);
         Barrier(stencilTex.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit,
@@ -812,6 +814,7 @@ void main() {
             ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.StencilBit, 0, 0, 1),
             ImageExtent = new Extent3D(w, h, 1),
         };
+        CostCopy(region.ImageExtent, Format.R8Uint);
         _vk.CmdCopyImageToBuffer(Cmd, dt.Image, ImageLayout.TransferSrcOptimal, _stencilScratch, 1, in region);
         Barrier(dt.Image, ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal, DepthStencilAspect,
             PipelineStageFlags.TransferBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,
@@ -821,6 +824,7 @@ void main() {
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit,
             AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
         region.ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1);
+        CostCopy(region.ImageExtent, Format.R8Uint);
         _vk.CmdCopyBufferToImage(Cmd, _stencilScratch, stencilTex.Image, ImageLayout.TransferDstOptimal, 1, in region);
         Barrier(stencilTex.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit,

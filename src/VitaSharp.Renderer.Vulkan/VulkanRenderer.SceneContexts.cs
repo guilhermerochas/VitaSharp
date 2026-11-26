@@ -26,6 +26,7 @@ public sealed unsafe partial class VulkanRenderer
         public long SceneSerial;
         public bool Ss, SsUnresolved, Ms, MsNeedsLoad, MsUnresolved, MsSceneRaw, MsaaNoDownscale;
         public SampleCountFlags MsSamples;
+        public bool MsRtss;
         public bool Tw1Active;
         public TileWordImage? Tw1;
         public (uint X, uint Y, uint W, uint H)[] Regions = [];
@@ -85,6 +86,7 @@ public sealed unsafe partial class VulkanRenderer
             MsSceneRaw = _msSceneRaw,
             MsaaNoDownscale = _msaaNoDownscale,
             MsSamples = _msSamples,
+            MsRtss = _msRtss,
             Tw1Active = _tw1Active,
             Tw1 = _tileWord1,
             Regions = [.. _sceneRegions],
@@ -93,7 +95,7 @@ public sealed unsafe partial class VulkanRenderer
         _scene = null;
         _renderTarget = null;
         _depth = null;
-        _supersampled = _ssUnresolved = _multisampled = _msUnresolved = _msaaNoDownscale = false;
+        _supersampled = _ssUnresolved = _multisampled = _msUnresolved = _msaaNoDownscale = _msRtss = false;
         _sceneRegions.Clear();
         EndTileWord1();
         if ((++_statSceneSwitches & (_statSceneSwitches - 1)) == 0)
@@ -113,6 +115,7 @@ public sealed unsafe partial class VulkanRenderer
         (_supersampled, _ssUnresolved, _multisampled, _msNeedsLoad, _msUnresolved, _msSceneRaw, _msaaNoDownscale, _msSamples) =
             (suspendedScene.Ss, suspendedScene.SsUnresolved, suspendedScene.Ms, suspendedScene.MsNeedsLoad, suspendedScene.MsUnresolved, suspendedScene.MsSceneRaw, suspendedScene.MsaaNoDownscale, suspendedScene.MsSamples);
         (_tw1Active, _tileWord1) = (suspendedScene.Tw1Active, suspendedScene.Tw1);
+        _msRtss = suspendedScene.MsRtss;
         _sceneRegions.Clear();
         _sceneRegions.AddRange(suspendedScene.Regions);
         _renderTarget?.LastTouchedFrame = FrameCount;

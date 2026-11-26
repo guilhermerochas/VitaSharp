@@ -1443,6 +1443,23 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
     menos atualizações de descriptors por draw (31/10: conjuntos de texturas repetidos já são reaproveitados)
   - [ ] Shaders: shaderc em segundo plano nos núcleos rápidos e reaproveitar o cache de shaders gerado no PC
   - [ ] GPU: conversão para ASTC com cache em disco sempre ligada na Mali (sem BC), MSAA nativo
+  - [ ] GPU da Mali por passe (perf/andgpu1, dump de gameplay do KZ slot 1, presents 2700-2760, 30,8 ms de GPU no
+    celular): o `mali-cost` agora mostra o custo por superfície/passe e as cópias por método. Modelo: 17,9 ms por quadro
+    (draws 11,6 = vértice 3,3 + fragmento 2,6 + tile 5,8; cópias 6,4). Os 5 maiores: cena principal 960x544 RGBA16F 4x
+    7,6 ms (vértice 3,2 do skinning, carga do depth 4x 8 MB, resolve 4 MB, cópia de início de cena 8 MB + o draw de
+    carga das amostras); atlas 384x512 3,3 ms (17 renderings, dependências reais); 240x136 RGBA16F 3,0 ms (9 renderings
+    por quadro: cada draw lê o depth da própria cena como memória e cada leitura copiava o depth e fechava a
+    renderização); 384x192 4x 1,4 ms; as duas 960x544 RGBA8 1,1 ms cada. Feito atrás de chave:
+    `VITASHARP_MAPPED_SCENE_START=1` (no Vita a memória guarda a superfície de antes da cena até a cena gravar: a cópia
+    tirada na cena vale para o resto dela): 32 -> 24 renderings por quadro, 17,9 -> 16,9 ms no modelo (-5,7%), 61/61
+    quadros idênticos no replay (perfil mali). Medir no celular; próximos, por ganho no modelo: MSAA com
+    `VK_EXT_multisampled_render_to_single_sampled` (a Mali-G57 tem: tira a cópia de início de cena de 8 MB, o draw de
+    carga e a imagem MSAA de cor; ~1,1 ms) e "texture viewport" do Vita3K para regiões de outras superfícies (sem cópia)
+    Feito atrás de chave, desligado: `VITASHARP_MSAA_RTSS=1` (VulkanRenderer.MsaaRtss.cs). Cena principal: tráfego de
+    tile + cópia 19,9 -> 15,9 MB por quadro (cópia de início de cena 8 MB e resolve 4 MB saem; entra a carga 1x de 4 MB),
+    384x192: 0,8 -> 0,6 MB; no modelo -0,56 ms, mais o draw de carga das amostras em tela cheia e a leitura de 4 MB da
+    cópia, que o modelo não conta. Nenhuma GPU do PC tem a extensão: no PC vale o caminho atual (replay --compare
+    idêntico com a chave ligada); fidelidade e tempo só no celular (bench do dump com imagem comparada)
   - [x] Feitos até 31/10/2026 (detalhes em `docs/android/README.md` e `docs/notes/native-jit.md`): threads do jogo e
     da GPU nos núcleos rápidos + sessão ADPF, logcat só com avisos, `Surface.setFrameRate` com o fps do jogo, ajuste
     do JIT nativo ARM64, AOT do código gerenciado (hoje o Release é NativeAOT, desde 09/11/2026)

@@ -750,7 +750,7 @@ public sealed unsafe partial class VulkanRenderer
     /// is attached at location 1 and left unwritten; 2: attached and written</param>
     private readonly record struct PipelineKey(ulong Vs, ulong Fs, ulong VertexLayout, Format ColorFormat, bool HasColor,
         bool Blend, byte ColorFunc, byte AlphaFunc, byte ColorSrc, byte ColorDst, byte AlphaSrc, byte AlphaDst, byte Mask,
-        int TopologyClass, PolygonMode Polygon, SampleCountFlags Samples, ulong Static = 0, byte TileWord1 = 0, bool InputPass = false);
+        int TopologyClass, PolygonMode Polygon, SampleCountFlags Samples, ulong Static = 0, byte TileWord1 = 0, bool InputPass = false, bool Rtss = false);
 
     /// <summary>GPU-thread view of the pipelines (lock-free lookups on the draw path).</summary>
     private readonly Dictionary<PipelineKey, Pipeline> _pipelines = new();
@@ -1007,7 +1007,7 @@ public sealed unsafe partial class VulkanRenderer
             {
                 SType = StructureType.GraphicsPipelineCreateInfo,
                 PNext = msPass || rpPass ? null : &rendering,
-                RenderPass = msPass ? MsaaCompatPass(colorFormat, key.Samples, tileWord) : rpPass ? SingleCompatPass(key.HasColor ? colorFormat : Format.Undefined, tileWord) : default,
+                RenderPass = msPass ? MsaaCompatPass(colorFormat, key.Samples, tileWord, key.Rtss) : rpPass ? SingleCompatPass(key.HasColor ? colorFormat : Format.Undefined, tileWord) : default,
                 Subpass = 0,
                 StageCount = 2,
                 PStages = stages,
@@ -1290,6 +1290,13 @@ public sealed unsafe partial class VulkanRenderer
             ActivateTileWord1();
         }
 
+        // a render-to-single-sampled MSAA scene keeps no samples outside tile memory: a draw that reads them
+        // (programmable blending, the tile word) or writes raw bits continues the scene on the multisampled image
+        if (_multisampled && _msRtss && (fs.Gen!.UsesFragColor || _tw1Active || fs.Gen.RawColorBits != 0))
+        {
+            DemoteRtss(fs.Gen.UsesFragColor ? "programmable blending" : _tw1Active ? "tile word" : "raw outputs");
+        }
+
         bool tw1 = _tw1Active && fs.Gen!.TileWord1 != 0 && fs.Gen.RawColorBits == 0;
         bool inputFetch = (fs.Gen!.UsesFragColor || tw1) && _multisampled && _msaaInputFetch && fs.Gen.RawColorBits == 0;
         PrimitiveTopology topology = Formats.Topology(d.PrimitiveType);
@@ -1385,7 +1392,7 @@ public sealed unsafe partial class VulkanRenderer
         byte tw1Key = !_tw1Active ? (byte)0 : tw1 && mask != 0 && (fs.Gen!.TileWord1 & TileWord1Use.Writes) != 0 ? (byte)2 : (byte)1;
         var key = new PipelineKey(vs.Module.Handle, fs.Module.Handle, vs.LayoutHash, attachFormat, hasColor,
             blendOn, blend?.ColorFunc ?? 0, blend?.AlphaFunc ?? 0, blend?.ColorSrc ?? 1, blend?.ColorDst ?? 0, blend?.AlphaSrc ?? 1, blend?.AlphaDst ?? 0,
-            mask, TopologyClass(topology), Formats.Polygon(drawState.Front.PolygonMode), SceneSamples, StaticStateKey(in drawState, topology), tw1Key, passDraw);
+            mask, TopologyClass(topology), Formats.Polygon(drawState.Front.PolygonMode), SceneSamples, StaticStateKey(in drawState, topology), tw1Key, passDraw, _multisampled && _msRtss);
         Pipeline pipeline = GetPipeline(key, vs, fs, topology);
         if (_frameStallTicks != stall0)
         {

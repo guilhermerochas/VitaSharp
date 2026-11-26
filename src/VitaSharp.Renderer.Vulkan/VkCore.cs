@@ -601,6 +601,17 @@ public sealed unsafe class VkCore : IDisposable
             SType = StructureType.PhysicalDeviceRasterizationOrderAttachmentAccessFeaturesExt,
             RasterizationOrderColorAttachmentAccess = true,
         };
+        // VITASHARP_MSAA_RTSS=1: multisampled scenes render their samples in tile memory only and load/store the
+        // surface itself (VK_EXT_multisampled_render_to_single_sampled, VulkanRenderer.MsaaNative.cs)
+        MultisampledRenderToSingleSampled = Environment.GetEnvironmentVariable(EnvVars.MsaaRtss)?.Trim() == "1" && api >= Vk.Version12
+            && devExts.Contains(RtssExtension) && QueryRtss();
+        var fRtss = new PhysicalDeviceMultisampledRenderToSingleSampledFeaturesEXT
+        {
+            SType = StructureType.PhysicalDeviceMultisampledRenderToSingleSampledFeaturesExt,
+            MultisampledRenderToSingleSampled = true,
+            PNext = RasterizationOrderColor ? &fRoaa : null,
+        };
+        void* featureTail = MultisampledRenderToSingleSampled ? &fRtss : RasterizationOrderColor ? &fRoaa : null;
         // dynamic rendering only where the renderer uses it; a Vulkan 1.1 device (or the adreno-vk11 profile) gets no
         // 1.2/1.3 feature structs at all, and mirror-clamp-to-edge through its extension
         bool chain13 = Has(GpuFeature.DynamicRendering) && !Caps.Has(GpuQuirk.RenderPasses);
@@ -617,15 +628,15 @@ public sealed unsafe class VkCore : IDisposable
             SType = StructureType.PhysicalDeviceVulkan13Features,
             DynamicRendering = true,
             Synchronization2 = true,
-            PNext = RasterizationOrderColor ? &fRoaa : null
+            PNext = featureTail
         };
         var f12 = new PhysicalDeviceVulkan12Features
         {
             SType = StructureType.PhysicalDeviceVulkan12Features,
-            PNext = chain13 ? &f13 : RasterizationOrderColor ? &fRoaa : null,
+            PNext = chain13 ? &f13 : featureTail,
             SamplerMirrorClampToEdge = SamplerMirrorClampToEdge
         };
-        void* featureChain = chain12 ? &f12 : chain13 ? &f13 : RasterizationOrderColor ? &fRoaa : null;
+        void* featureChain = chain12 ? &f12 : chain13 ? &f13 : featureTail;
         // VK_KHR_portability_subset must be enabled when present, and each of its features must be enabled to be used:
         // enable whatever the device has, then degrade where the renderer depends on a missing one
         PhysicalDevicePortabilitySubsetFeaturesKHR fPortability = hasPortability with
@@ -697,6 +708,12 @@ public sealed unsafe class VkCore : IDisposable
         if (mirrorExt)
         {
             exts.Add(MirrorClampExtension);
+        }
+
+        if (MultisampledRenderToSingleSampled)
+        {
+            exts.Add(RtssExtension);
+            Log.Info($"[boot] {RtssExtension}: multisampled scenes render to the single-sampled surface (VITASHARP_MSAA_RTSS=1)");
         }
         // LOAD_OP_NONE / STORE_OP_NONE: an attachment no draw of a rendering uses keeps its memory without tile traffic
         string? noneExt = devExts.Contains("VK_KHR_load_store_op_none") ? "VK_KHR_load_store_op_none" : devExts.Contains("VK_EXT_load_store_op_none") ? "VK_EXT_load_store_op_none" : null;
@@ -1084,6 +1101,19 @@ public sealed unsafe class VkCore : IDisposable
         return features.GraphicsPipelineLibrary && properties.GraphicsPipelineLibraryFastLinking;
     }
     private const string CompressionControlExtension = "VK_EXT_image_compression_control";
+
+    private const string RtssExtension = "VK_EXT_multisampled_render_to_single_sampled";
+
+    /// <summary>VK_EXT_multisampled_render_to_single_sampled is enabled with its feature (VITASHARP_MSAA_RTSS=1 only).</summary>
+    public bool MultisampledRenderToSingleSampled;
+
+    private bool QueryRtss()
+    {
+        var rtss = new PhysicalDeviceMultisampledRenderToSingleSampledFeaturesEXT { SType = StructureType.PhysicalDeviceMultisampledRenderToSingleSampledFeaturesExt };
+        var features2 = new PhysicalDeviceFeatures2 { SType = StructureType.PhysicalDeviceFeatures2, PNext = &rtss };
+        Vk.GetPhysicalDeviceFeatures2(Physical, &features2);
+        return rtss.MultisampledRenderToSingleSampled;
+    }
 
     /// <summary>VK_KHR/EXT_load_store_op_none is enabled (AttachmentLoadOp/StoreOp NONE).</summary>
     public bool LoadStoreOpNone;

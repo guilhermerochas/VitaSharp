@@ -185,6 +185,7 @@ public sealed unsafe partial class VulkanRenderer
             DstOffset = offset,
             Extent = extent,
         };
+        CostCopy(copy.Extent, Format.Undefined);
         _vk.CmdCopyImage(Cmd, src.Image, ImageLayout.General, _tw1Copy, ImageLayout.General, 1, in copy);
         Barrier(_tw1Copy, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit,
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);

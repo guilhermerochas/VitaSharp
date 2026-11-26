@@ -309,6 +309,7 @@ public sealed unsafe partial class VulkanRenderer
                 blit.SrcOffsets[1] = new Offset3D((int)(sx + w * 2), (int)(sy + h * 2), 1);
                 blit.DstOffsets[0] = new Offset3D(0, 0, 0);
                 blit.DstOffsets[1] = new Offset3D((int)w, (int)h, 1);
+                CostCopy((long)w * h * 5 / 2, Format.Undefined);
                 _vk.CmdBlitImage(Cmd, srcImage, ImageLayout.General, dst.Image, ImageLayout.General, 1, in blit, Filter.Linear);
             }
             else
@@ -320,6 +321,7 @@ public sealed unsafe partial class VulkanRenderer
                     DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
                     Extent = new Extent3D(w, h, 1),
                 };
+                CostCopy(copy.Extent, Format.Undefined);
                 _vk.CmdCopyImage(Cmd, srcImage, ImageLayout.General, dst.Image, ImageLayout.General, 1, in copy);
             }
             Barrier(dst.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
