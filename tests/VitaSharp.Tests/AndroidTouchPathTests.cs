@@ -371,6 +371,56 @@ public sealed class AndroidTouchPathTests : IDisposable
     }
 
     [Fact]
+    public async Task ConcurrentReadsOfOnePanelNeverInterleave()
+    {
+        // four guest threads peek the front panel at once while the fingers move and guest time passes (the
+        // driver's mutex per panel): every read gets samples in time order, none torn or repeated
+        const int Readers = 4, Peeks = 400;
+        uint[] buffers = [.. Enumerable.Range(0, Readers).Select(_ => _harness.Alloc(BufferSize * Buffers))];
+        var failures = new System.Collections.Concurrent.ConcurrentBag<string>();
+        Frame();
+        using var stop = new CancellationTokenSource();
+        var mover = Task.Run(() =>
+        {
+            for (int step = 0; !stop.IsCancellationRequested; step++)
+            {
+                lock (_pad)
+                {
+                    _hostUs += 4000;
+                    _clock.Advance(4000);
+                    _pad.Update(step % 3 == 2 ? [] : [Finger(step % 2, (step % 10) / 10f, 0.5f)], _hostUs);
+                }
+
+                Thread.Yield();
+            }
+        });
+        Parallel.For(0, Readers, new ParallelOptions { MaxDegreeOfParallelism = Readers }, reader =>
+        {
+            uint data = buffers[reader];
+            for (int i = 0; i < Peeks; i++)
+            {
+                int n = Call(_touch, "sceTouchPeek", 0, data, (uint)Buffers);
+                ulong previous = 0;
+                for (int b = 0; b < n; b++)
+                {
+                    uint buffer = data + (uint)(b * BufferSize);
+                    ulong stamp = GuestMemory.Read<ulong>(buffer);
+                    uint reports = GuestMemory.R32(buffer + 12);
+                    if (stamp <= previous || reports > 6)
+                    {
+                        failures.Add($"reader {reader} peek {i} buffer {b}: stamp {stamp} after {previous}, {reports} reports");
+                    }
+
+                    previous = stamp;
+                }
+            }
+        });
+        stop.Cancel();
+        await mover;
+        Assert.Empty(failures);
+    }
+
+    [Fact]
     public void TheSamplerGivesEachContactItsOwnIdAndForgetsTheOldest()
     {
         long now = 0;

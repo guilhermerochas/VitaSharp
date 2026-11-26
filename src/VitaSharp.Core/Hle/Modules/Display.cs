@@ -864,7 +864,8 @@ public sealed partial class Touch : HleModule
     readonly SampleRing[] _rings = [new(), new()];
 
     /// <summary>Takes the samples of a read: one per vblank since the previous read from the host's touch history,
-    /// then the contacts of now. False when the panel is stopped (the read gets one empty buffer).</summary>
+    /// then the contacts of now. False when the panel is stopped (the read gets one empty buffer). Under the
+    /// panel's lock (its <see cref="SampleRing"/>).</summary>
     bool TakeSamples(int port)
     {
         if (_sampling[port] == 0)
@@ -1094,17 +1095,22 @@ public sealed partial class Touch : HleModule
             return 0;
         }
 
-        if (!TakeSamples(port))
+        // the driver's mutex of the panel (SceTouch 3.74): two guest threads reading it, or a read and the samples
+        // it takes, never interleave in the ring
+        lock (_rings[port])
         {
-            GuestMemory.Fill(data, 0, 0x90);
-            GuestMemory.Write(data, (ulong)Emu.Kernel.ProcessTimeUs);
-            return 1;
-        }
+            if (!TakeSamples(port))
+            {
+                GuestMemory.Fill(data, 0, 0x90);
+                GuestMemory.Write(data, (ulong)Emu.Kernel.ProcessTimeUs);
+                return 1;
+            }
 
-        int buffers = (int)Math.Min(count, Math.Min(_rings[port].Written, SampleRing.Size));
-        WriteSamples(port, data, buffers);
-        TouchDiagnostics.Peeked(port, buffers);
-        return buffers;
+            int buffers = (int)Math.Min(count, Math.Min(_rings[port].Written, SampleRing.Size));
+            WriteSamples(port, data, buffers);
+            TouchDiagnostics.Peeked(port, buffers);
+            return buffers;
+        }
     }
 
     // front panel covers 1920x1088; the rear panel's active area is y 108..889 (see sceTouchGetPanelInfo)
@@ -1156,20 +1162,24 @@ public sealed partial class Touch : HleModule
             return 0;
         }
 
-        if (!TakeSamples(port))
-        {
-            GuestMemory.Fill(data, 0, 0x90);
-            GuestMemory.Write(data, (ulong)Emu.Kernel.ProcessTimeUs);
-            return 1;
-        }
-
+        // the panel's mutex, taken after the vblank wait (a waiting reader holds nothing)
         SampleRing ring = _rings[port];
-        long unread = Math.Min(ring.Written - ring.ReadUpTo, SampleRing.Size);
-        int buffers = (int)Math.Max(1, Math.Min(count, unread));
-        WriteSamples(port, data, buffers);
-        ring.ReadUpTo = ring.Written;
-        TouchDiagnostics.Peeked(port, buffers);
-        return buffers;
+        lock (ring)
+        {
+            if (!TakeSamples(port))
+            {
+                GuestMemory.Fill(data, 0, 0x90);
+                GuestMemory.Write(data, (ulong)Emu.Kernel.ProcessTimeUs);
+                return 1;
+            }
+
+            long unread = Math.Min(ring.Written - ring.ReadUpTo, SampleRing.Size);
+            int buffers = (int)Math.Max(1, Math.Min(count, unread));
+            WriteSamples(port, data, buffers);
+            ring.ReadUpTo = ring.Written;
+            TouchDiagnostics.Peeked(port, buffers);
+            return buffers;
+        }
     }
 
     // Regions split the panel between processes/overlays; a game owns the whole panel, so the region is ignored.
