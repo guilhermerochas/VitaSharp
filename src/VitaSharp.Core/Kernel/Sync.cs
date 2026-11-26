@@ -194,9 +194,12 @@ public static class Wait
                     // the timeout ends in this slice and Monitor.Wait's whole milliseconds would overshoot it: the host
                     // timer pulses sync at its microsecond deadline (the Vita's threadmgr arms a microsecond timer;
                     // Monitor.Wait alone made a 500 us timeout last 1.1 ms, a 1.5 ms one 2.1 ms), and the slice gets a
-                    // millisecond more as the fallback. A timeout of whole milliseconds keeps Monitor.Wait: the timer's
-                    // extra hop (its thread wakes, then pulses this one) would end it later than the monitor does
-                    if (leftUs <= 50_000 && sliceMs * 1000L - leftUs / GuestClock.Speed >= MinTimerGainUs
+                    // millisecond more as the fallback. A timeout of whole milliseconds keeps Monitor.Wait on Linux and
+                    // Android: the timer's extra hop (its thread wakes, then pulses this one) would end it later than
+                    // the monitor does. Windows always takes the timer: Monitor.Wait follows the system timer, which
+                    // Windows 11 leaves at 15.6 ms for a process without a visible window (timeBeginPeriod ignored):
+                    // a 1 ms timeout measured 15 ms there
+                    if (leftUs <= 50_000 && (s_windows || sliceMs * 1000L - leftUs / GuestClock.Speed >= MinTimerGainUs)
                         && HostTimeoutTimer.Arm(sync, TimeoutDeadline(leftUs)))
                     {
                         armed = true;
@@ -266,6 +269,8 @@ public static class Wait
     /// <summary>A timeout goes to <see cref="HostTimeoutTimer"/> when Monitor.Wait's rounding up to whole milliseconds
     /// would end it at least this much late (microseconds): about twice the timer's own hand-off.</summary>
     private const long MinTimerGainUs = 200;
+
+    private static readonly bool s_windows = OperatingSystem.IsWindows();
 
     /// <summary>The host moment (Stopwatch ticks) a wait with <paramref name="leftUs"/> of its limit left runs out (the
     /// limit is in scaled guest microseconds, <see cref="ElapsedUs"/>; the guest clock runs at its speed factor).</summary>
