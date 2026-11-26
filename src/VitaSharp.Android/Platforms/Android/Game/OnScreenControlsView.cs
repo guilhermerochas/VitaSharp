@@ -87,11 +87,19 @@ public sealed class OnScreenControlsView : View
         PerformHapticFeedback(FeedbackConstants.KeyboardTap);
     }
 
+    /// <summary>A finger went down (view coordinates): the game screen shows its auto-hidden chrome again.</summary>
+    public event Action<float, float>? FingerDown;
+
     public override bool OnTouchEvent(MotionEvent? e)
     {
         if (e == null || Width == 0 || Height == 0)
         {
             return false;
+        }
+
+        if (e.ActionMasked is MotionEventActions.Down or MotionEventActions.PointerDown)
+        {
+            FingerDown?.Invoke(e.GetX(e.ActionIndex), e.GetY(e.ActionIndex));
         }
 
         int n = e.PointerCount;

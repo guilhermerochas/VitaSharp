@@ -270,6 +270,22 @@ public sealed class AndroidTouchPathTests : IDisposable
     }
 
     [Fact]
+    public void ThePauseChipHidesAndATouchOnItsPlaceStaysTheGames()
+    {
+        var chrome = new ChromeAutoHide(1000);
+        Assert.True(chrome.Visible(1000));
+        Assert.False(chrome.Visible(1000 + ChromeAutoHide.HideAfterMs)); // left alone: hidden, the bar is the game's
+        long now = 1000 + ChromeAutoHide.HideAfterMs + 500;
+        chrome.FingerDown(now, onChip: true); // a tap on the Vita's status bar where the chip was
+        Assert.False(chrome.Visible(now));
+        chrome.FingerDown(now, onChip: false); // a touch elsewhere brings it back
+        Assert.True(chrome.Visible(now + ChromeAutoHide.HideAfterMs - 1));
+        chrome.FingerDown(now + 100, onChip: true); // shown: a tap on it is the chip's, and keeps it
+        Assert.Equal(now + 100 + ChromeAutoHide.HideAfterMs, chrome.HidesAtMs);
+        Assert.False(chrome.Visible(now + 100 + ChromeAutoHide.HideAfterMs));
+    }
+
+    [Fact]
     public void TheSamplerGivesEachContactItsOwnIdAndForgetsTheOldest()
     {
         long now = 0;
