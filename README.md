@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=e4696ba4fa32cd06f9f0d08acd53efe9598007f916ad6abc95ebd1c0910a257e -->
+<!-- pair: README.pt-BR.md sha256=ae2c5cfa21fa29266202a22826b7b169bcc57cf248d058d0d4b178cecc4b3975 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -117,21 +117,30 @@ and the test games ([progress per library](docs/hle/progress.md)).
 [![VitaSDK functions](docs/assets/status/badge-vitasdk.svg)](docs/hle/progress.md)
 [![firmware 3.74 exports](docs/assets/status/badge-overall.svg)](docs/hle/progress.md)
 [![firmware 3.74 kernel exports](docs/assets/status/badge-kernel.svg)](docs/hle/progress.md)
-<!-- PSP badge: goes here, next to the others -->
+[![PSP 6.61 hardware](docs/assets/status/badge-psp.svg)](docs/psp/progress.md)
 
 <table>
 <tr>
-<td width="100%" valign="top" align="center">
+<td width="50%" valign="top" align="center">
 <a href="docs/hle/progress.md">
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/status/progress-map-light.svg">
-  <img src="docs/assets/status/progress-map.svg" alt="HLE progress map: one cell per firmware library, user libraries and kernel libraries in separate regions, sized by their exported functions and coloured by how many are implemented" width="760">
+  <img src="docs/assets/status/progress-map.svg" alt="HLE progress map: one cell per firmware library, user libraries and kernel libraries in separate regions, sized by their exported functions and coloured by how many are implemented" width="100%">
 </picture>
 </a>
 <br><sub><b>PS Vita:</b> one cell per firmware library (user and kernel), sized by its functions and coloured by how
 many are implemented.</sub>
 </td>
-<!-- PSP map: a second <td> here (progress-map-psp.svg + its light version, width 50% each), with one line saying what it shows -->
+<td width="50%" valign="top" align="center">
+<a href="docs/psp/progress.md">
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/status/progress-map-psp-light.svg">
+  <img src="docs/assets/status/progress-map-psp.svg" alt="PSP hardware map: one cell per emulated hardware block and one per module of the PSP firmware 6.61, coloured by the state of the worst block each module uses" width="100%">
+</picture>
+</a>
+<br><sub><b>PSP:</b> VitaSharp runs the real PSP firmware 6.61, so this map measures the emulated hardware it uses:
+one cell per block and per firmware module, coloured by the worst block the module needs.</sub>
+</td>
 </tr>
 </table>
 

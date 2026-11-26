@@ -1,4 +1,4 @@
-<!-- pair: development.md sha256=eb146a5e7c7db4aba51768a45fd9e0be2b1d5a2bb7c9fd187256d3f0dc9fad11 -->
+<!-- pair: development.md sha256=884179441c4d559d594dc95c719bceb9f633e85cdb60120fef8a5fcf325b4649 -->
 # Desenvolvimento
 
 [English](development.md) | **Português**
@@ -37,7 +37,8 @@ falha mostra as linhas a escrever). Para contribuir com funções do sistema, ve
 [`docs/hle`](hle/README.md). `build/hle-abi-check.ps1` / `build/hle-abi-check.sh` lista as funções HLE cujos
 registradores de argumento diferem dos protótipos do [vita-headers](https://github.com/vitasdk/vita-headers) (precisa
 de `git` e rede para o clone, ou de um clone local). `build/hle-status.ps1` / `.sh` gera de novo os selos e os mapas de
-progresso do README.
+progresso do README; `-PspOnly` / `--psp-only` refaz só o mapa do PSP, a partir de `docs/psp/coverage.json`, sem o
+firmware e os jogos.
 
 ## Antes de um push
 

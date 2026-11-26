@@ -53,7 +53,8 @@ public class ExternalDocPairsTests
     {
         string root = Root();
         var english = s_required.Select(p => Path.Combine(root, p)).ToList();
-        foreach (string? dir in new[] { root, Path.Combine(root, "docs") })
+        // docs/psp: the PSP progress pages, generated in both languages (PspCoverageReport writes the pair lines)
+        foreach (string? dir in new[] { root, Path.Combine(root, "docs"), Path.Combine(root, "docs", "psp") })
         {
             foreach (string pt in Directory.EnumerateFiles(dir, "*.pt-BR.md"))
             {

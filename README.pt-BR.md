@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=b4a406387c26ba47ea8f1fd31727cabafea7e415d256727dd49d3606c33ee622 -->
+<!-- pair: README.md sha256=7b564a20222cbcc66bb3d292446e4fa1f35a534a928a1dd5767dfc73c1868f72 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -117,21 +117,30 @@ e dos jogos de teste ([progresso por biblioteca](docs/hle/progress.md)).
 [![funções do VitaSDK](docs/assets/status/badge-vitasdk.svg)](docs/hle/progress.md)
 [![exports do firmware 3.74](docs/assets/status/badge-overall.svg)](docs/hle/progress.md)
 [![exports de kernel do firmware 3.74](docs/assets/status/badge-kernel.svg)](docs/hle/progress.md)
-<!-- selo do PSP: entra aqui, ao lado dos outros -->
+[![hardware do PSP 6.61](docs/assets/status/badge-psp.svg)](docs/psp/progress.pt-BR.md)
 
 <table>
 <tr>
-<td width="100%" valign="top" align="center">
+<td width="50%" valign="top" align="center">
 <a href="docs/hle/progress.md">
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/status/progress-map-light.svg">
-  <img src="docs/assets/status/progress-map.svg" alt="Mapa de progresso do HLE: uma célula por biblioteca do firmware, bibliotecas de usuário e de kernel em regiões separadas, do tamanho das funções exportadas e com a cor de quantas estão implementadas" width="760">
+  <img src="docs/assets/status/progress-map.svg" alt="Mapa de progresso do HLE: uma célula por biblioteca do firmware, bibliotecas de usuário e de kernel em regiões separadas, do tamanho das funções exportadas e com a cor de quantas estão implementadas" width="100%">
 </picture>
 </a>
 <br><sub><b>PS Vita:</b> uma célula por biblioteca do firmware (usuário e kernel), do tamanho das suas funções e com a
 cor de quantas estão implementadas.</sub>
 </td>
-<!-- mapa do PSP: um segundo <td> aqui (progress-map-psp.svg + a versão light, largura 50% cada), com uma linha dizendo o que ele mostra -->
+<td width="50%" valign="top" align="center">
+<a href="docs/psp/progress.pt-BR.md">
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/status/progress-map-psp-light.svg">
+  <img src="docs/assets/status/progress-map-psp.svg" alt="Mapa do hardware do PSP: uma célula por bloco de hardware emulado e uma por módulo do firmware 6.61 do PSP, com a cor do pior bloco que cada módulo usa" width="100%">
+</picture>
+</a>
+<br><sub><b>PSP:</b> o VitaSharp roda o firmware 6.61 real do PSP, então este mapa mede o hardware emulado que ele usa:
+uma célula por bloco e por módulo do firmware, com a cor do pior bloco de que o módulo precisa.</sub>
+</td>
 </tr>
 </table>
 

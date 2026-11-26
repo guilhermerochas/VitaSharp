@@ -198,6 +198,10 @@ public static class Program
                 // kernel-census [--root=<repository>]: the HLE status of every FW 3.74 kernel export in
                 // docs/hle/data/kernel-exports.tsv and the per-library table of docs/hle/kernel-exports.md
                 return KernelCensus(OptValue(args, "--root") ?? Directory.GetCurrentDirectory());
+            case "psp-coverage":
+                // psp-coverage [--status=<repository>]: the PSP-side status (which emulated hardware the PSP firmware
+                // modules use) from docs/psp/coverage.json: the PSP map, its badge and the docs/psp/progress pages
+                return PspCoverage(OptValue(args, "--status") ?? Directory.GetCurrentDirectory());
             case "hle-coverage":
                 return HleCoverage(args.Skip(1).FirstOrDefault(a => a.StartsWith("--out="))?["--out=".Length..],
                     args.Skip(1).FirstOrDefault(a => a.StartsWith("--vitasdk="))?["--vitasdk=".Length..],
@@ -757,6 +761,43 @@ public static class Program
         return byNid;
     }
 
+    /// <summary>psp-coverage: renders the PSP-side status from its versioned source (docs/psp/coverage.json) into the
+    /// repository (the map and badge in docs/assets/status, docs/psp/progress.md and its pt-BR pair); refuses a source
+    /// whose modules use blocks it does not list.</summary>
+    static int PspCoverage(string root)
+    {
+        string source = Path.Combine(root, VitaSharp.Core.Firmware.PspCoverageReport.SourcePath.Replace('/', Path.DirectorySeparatorChar));
+        if (!File.Exists(source))
+        {
+            Console.Error.WriteLine($"psp-coverage: {source} not found (pass --status=<repository root>)");
+            return 1;
+        }
+
+        VitaSharp.Core.Firmware.PspCoverageReport.Coverage coverage = VitaSharp.Core.Firmware.PspCoverageReport.Parse(File.ReadAllText(source));
+        IReadOnlyList<string> problems = VitaSharp.Core.Firmware.PspCoverageReport.Problems(coverage);
+        foreach (string problem in problems)
+        {
+            Console.Error.WriteLine($"psp-coverage: {problem}");
+        }
+
+        if (problems.Count > 0)
+        {
+            return 1;
+        }
+
+        IReadOnlyDictionary<string, string> files = VitaSharp.Core.Firmware.PspCoverageReport.Render(coverage);
+        foreach ((string path, string text) in files)
+        {
+            string full = Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            File.WriteAllText(full, text);
+        }
+
+        (string label, int done, int total, int partial) = VitaSharp.Core.Firmware.PspCoverageReport.BadgeCounts(coverage);
+        Console.WriteLine($"psp-coverage: {label}: {done}/{total} blocks done, {partial} partial; {coverage.Modules.Count} modules; {files.Count} files written under {root}");
+        return 0;
+    }
+
     /// <summary>hle-coverage [--out=&lt;tsv&gt;]: how much of the real system the HLE implements. Total = every function the
     /// installed firmware exports to user code (user modules, syscall libraries of the kernel modules), split into the
     /// ones the installed games import, the ones the system programs/modules import (not already counted for games) and
@@ -1040,6 +1081,7 @@ public static class Program
         Console.WriteLine("  kernel-census [--root=<repo>]       HLE status of the FW 3.74 kernel exports (docs/hle/data/kernel-exports.tsv, kernel-exports.md)");
         Console.WriteLine("  import-check [--fs=<fs folder>]     FW 3.74 import entry check over every installed user module, read only");
         Console.WriteLine("  audio-devices [--audio-device=<name>]  list the audio outputs and show the one a game opens");
+        Console.WriteLine("  psp-coverage [--status=<repo>]       PSP map: the emulated hardware the PSP firmware modules use (docs/psp/coverage.json)");
         Console.WriteLine("  hle-coverage [--out=<tsv>] [--vitasdk=<tsv>] [--status=<repo>]  HLE coverage of every function the installed firmware exports (games/system/general)");
         Console.WriteLine("  imports <TITLEID|folder> [x.self] [--tsv=<file>]   list the system functions a title (or one of its executables) needs; --tsv: who provides each one");
         Console.WriteLine("        [--names=SceNp,SceNet]          ...and every imported function name of the libraries with these prefixes");
