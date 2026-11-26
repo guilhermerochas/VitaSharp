@@ -106,7 +106,7 @@ public sealed class OnScreenPad : IInputBackend
         _back = new TouchSampler(clockUs);
     }
 
-    /// <summary>Now on the clock of the touch history (µs): the time base of <see cref="Update"/>'s event times.</summary>
+    /// <summary>Now on the clock of the touch history (microseconds): the time base of <see cref="Update"/>'s event times.</summary>
     public long NowUs => _front.NowUs;
 
     /// <summary>Changes of the image touches recorded so far (the touch diagnostics).</summary>
