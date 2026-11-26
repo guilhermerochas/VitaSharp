@@ -94,7 +94,7 @@ public sealed class AstcAsyncTests : IDisposable
     /// <summary>The level is encoded by the transcoder threads, not by the uploading (GPU) thread, which waits for it
     /// and gets exactly the synchronous encoder's blocks: no placeholder, nothing a draw could see half done.</summary>
     [Fact]
-    public void TheGpuThreadWaitsForTheTranscodersExactLevel()
+    public async Task TheGpuThreadWaitsForTheTranscodersExactLevel()
     {
         byte[] blocks = Bc1Blocks(128, 64, 1);
         AstcTranscoder.TestGate = new ManualResetEventSlim(false);
@@ -105,13 +105,13 @@ public sealed class AstcAsyncTests : IDisposable
         Assert.False(upload.IsCompleted);
         Assert.Equal(0, AstcTranscoder.Encoded);
         AstcTranscoder.TestGate.Set();
-        Assert.True(upload.Wait(s_wait));
+        byte[] uploaded = await upload.WaitAsync(s_wait);
         Assert.Null(placeholders);
-        Assert.Equal(Reference(TexBase.UBC1, blocks, 128, 64, AstcChannels.Rgba), upload.Result);
+        Assert.Equal(Reference(TexBase.UBC1, blocks, 128, 64, AstcChannels.Rgba), uploaded);
         Assert.Equal(1, AstcTranscoder.Encoded);
         Assert.Equal(1, AstcTranscoder.BackgroundEncoded);
         // the next upload of the same contents comes from memory
-        Assert.Equal(upload.Result, Upload(TexBase.UBC1, blocks, 128, 64, out _));
+        Assert.Equal(uploaded, Upload(TexBase.UBC1, blocks, 128, 64, out _));
         Assert.Equal(1, AstcTranscoder.Encoded);
     }
 
@@ -163,7 +163,7 @@ public sealed class AstcAsyncTests : IDisposable
     }
 
     [Fact]
-    public void TexturesWithTheSameContentsShareOneLevelJob()
+    public async Task TexturesWithTheSameContentsShareOneLevelJob()
     {
         byte[] blocks = Bc1Blocks(64, 64, 2);
         AstcTranscoder.TestGate = new ManualResetEventSlim(false);
@@ -172,8 +172,8 @@ public sealed class AstcAsyncTests : IDisposable
         Task<byte[]> second = Task.Run(() => Upload(TexBase.UBC1, blocks, 64, 64, out _));
         Assert.Equal(1, AstcTranscoder.PendingJobs);
         AstcTranscoder.TestGate.Set();
-        Assert.True(Task.WaitAll([first, second], s_wait));
-        Assert.Equal(first.Result, second.Result);
+        byte[][] both = await Task.WhenAll(first, second).WaitAsync(s_wait);
+        Assert.Equal(both[0], both[1]);
         Assert.Equal(1, AstcTranscoder.Encoded);
     }
 
