@@ -1,7 +1,17 @@
-# Diagnostics: F10 capture, debug mode, watchdog, session logs
+# Diagnostics: the detailed log, diagnostic captures, watchdog, session logs
 
-Branch `feat/diag-capture`. Goal: when a user sees a problem while playing normally, the evidence exists without
-reproducing the scene. Everything here is generic (no title-specific code).
+Goal: when a user sees a problem while playing normally, the evidence exists without reproducing the scene. Everything
+here is generic (no title-specific code).
+
+**For the player there is one debugging tool: F8 "Gravar tudo"** (Shift+F8 marks the problem; Android: the pause
+menu), plus a plain screenshot and the log. The apps have no debug mode switch, no F9, no F10 and no Ctrl+F8: what
+they gave is part of the F8 capture (`docs/notes/session-capture.md`). The detailed log described below ("debug
+mode", `DebugMode.Enabled`) is on while a capture records or keeps its pre-roll (`DebugMode.CaptureStarted` /
+`CaptureStopped`, called by `SessionCapture` with the "waiting for input" detector), so the capture's `log.txt` has
+its lines; the launcher's Configurações > Avançado > "Pré-gravação" (Android: pause menu > Ajustes) keeps it on from
+the moment the pre-roll is armed. The capture records the GPU dump itself. The rest of this page is for developers:
+the diagnostic capture and the whole-run detailed log stay as terminal switches (`--diag-at`, an `--input` script's
+`F10` / `Ctrl+F8` steps, `--debug-mode`, `--debug-mode-at`, `VITASHARP_DEBUG_MODE=1`).
 
 ## Where things go
 
@@ -36,12 +46,12 @@ Developer self-test: `VITASHARP_DEBUG_NATIVE_CRASH=heap` (or `=access`) crashes 
 Above 256 M characters in one session, info lines are dropped (warnings/errors still written) so a runaway log cannot
 fill the disk.
 
-## F10: "Capturar diagnóstico"
+## Diagnostic capture (developers)
 
-Press F10 in the game window (also `--diag-at=FRAME[,FRAME...]` for tests, and automatically in debug mode, below).
-The title bar shows `Capturando diagnóstico...` then `Diagnóstico salvo: <zip>` for 6 s; the log gets
+`--diag-at=FRAME[,FRAME...]` or an `--input` script's `key@fN:F10` step (no key of the window: the player has F8),
+and automatically on an anomaly with `--debug-mode` (below). The title bar shows `Capturando diagnóstico...` then `Diagnóstico salvo: <zip>` for 6 s; the log gets
 `[diag] capture requested ...`, `[diag] capture armed at present #N ...`, `[diag] frame traced: ...` and
-`[diag] saved: <dir> and <zip>`. Presses during a capture are ignored (`[diag] F10: ignored, a capture is in progress`).
+`[diag] saved: <dir> and <zip>`. Requests during a capture are ignored (`[diag] <reason>: ignored, a capture is in progress`).
 
 The renderer arms the trace at the next present and traces the **whole following frame** (present #N to #N+1); the
 frame is presented normally, then every render target is read back. The game stalls for the readbacks (typically
@@ -230,14 +240,14 @@ recorded frame, each line with its box and centre (`Capture/ScreenText.cs`; the 
 on Linux/macOS (docs/development.md "Test requirements"); without one the section says `(no OCR: ...)`. What to do on
 a known screen: `docs/games/screens.json` (docs/notes/screens.md).
 
-## Debug mode ("Modo de depuração")
+## The detailed log ("debug mode")
 
-Launcher: Configurações > Geral > "Modo de depuração (gera logs detalhados para diagnóstico)", saved in
-`launcher.json` (`DebugMode`) and passed as `--debug-mode`; also `VITASHARP_DEBUG_MODE=1`. (`--debug` is unrelated:
-it sets the log level to Debug, which is far more verbose.) The log says `[dbg] debug mode on` at the start.
-F9 in the game window toggles it at runtime (`[dbg] debug mode on|off (F9) at guest frame N`): turned on mid-game,
-the first-use lines report every shader, pipeline, target and texture format used from that frame on, and the
-per-thread HLE rings start filling then.
+On while "Gravar tudo" records or keeps its pre-roll (the player's way: no switch in the apps). Developers can keep it
+on for a whole run with `--debug-mode` or `VITASHARP_DEBUG_MODE=1` (Android: `config/env.txt`); the log then says
+`[dbg] debug mode on` at the start. (`--debug` is unrelated: it sets the log level to Debug, which is far more
+verbose.) `--debug-mode-at=FRAME[,FRAME...]` toggles it at those guest frames (tests). Turned on mid-game (a capture
+started, `--debug-mode-at`), the first-use lines report every shader, pipeline, target and texture format used from
+that frame on, and the per-thread HLE rings start filling then.
 
 All lines carry the log timestamp; `[dbg]` lines also `f<guest frame> p<renderer present>`.
 
@@ -266,7 +276,7 @@ decoding) runs on at most 2 texture uploads per frame.
 
 ### Replay ring, per-frame anomaly checks and automatic captures
 
-While debug mode is on (from the start or after F9; F9 off frees it), **every** present blits the presented image,
+While the detailed log is on (a capture, or the whole run; switching it off frees it), **every** present blits the presented image,
 downscaled to fit 480x272, into a small device-local staging image and copies it into the next slot of a ring of
 128 host-visible (cached) staging slots, all with the frame's own command buffer: nothing waits for the GPU. When
 the frame retires (non-blocking, `VulkanRenderer.Sync.cs`), its slot is measured on every 4th pixel of every 4th row
@@ -294,10 +304,12 @@ A single-frame spike is ignored. Lines: `[anomaly] p<present> f<guest frame> <ki
 `... <kind> cleared` / `cleared after n frames` when it ends, `[frame-metrics] p.. mean white black magenta green
 blue` every 300 presents.
 
-A confirmed anomaly with "auto capture" triggers the same capture as F10 (`[diag] capture requested (auto: <kind> at
-present #N - <details>)`), at most one every 5 minutes and 3 per session (`[diag] anomaly ...: skipped` otherwise).
+A confirmed anomaly is logged (`[anomaly] ...`: in a "Gravar tudo" capture, that line in `log.txt` and the capture's
+GPU dump are the report). With `--debug-mode` (developers), one with "auto capture" also triggers the diagnostic
+capture (`[diag] capture requested (auto: <kind> at present #N - <details>)`), at most one every 5 minutes and 3 per
+session (`[diag] anomaly ...: skipped` otherwise).
 The renderer keeps filling the ring for 30 more presents (~1 s) before it arms the trace, so `replay/` covers about
-3 s before the spike and 1 s after it. F10 and `--diag-at` arm at the next present as before (their `replay/` ends
+3 s before the spike and 1 s after it. `--diag-at` and the script's F10 step arm at the next present as before (their `replay/` ends
 at the present before the traced frame).
 
 At arm time the renderer retires the frames in flight (a wait of at most a frame's GPU work, during a capture that
@@ -318,7 +330,7 @@ p3001 saturated [capture]: 50% pure green and 0% pure blue pixels (...), in 2 of
 ```
 
 `hits` = per-frame thresholds the frame is over (M magenta, S saturated, B blown-out, K black); the trigger is the
-present the anomaly was confirmed on (auto) or the present when the request arrived (F10/--diag-at); `dt` is
+present the anomaly was confirmed on (auto) or the present when the request arrived (--diag-at / the script's F10); `dt` is
 relative to it.
 
 Test switch: `VITASHARP_DEBUG_INJECT=<kind>@<present>[:<count>]` (kind = green, blue, magenta, black, white; count
@@ -334,7 +346,7 @@ Branch `feat/diag-nan`, `src/VitaSharp.Renderer.Vulkan/VulkanRenderer.NanCheck.c
 like NaN/Inf spreading through post-processing (saturated blocky areas growing out of bloom/blur/exposure passes),
 which the presented image alone does not explain.
 
-**Layer 1, per-scene target scan (debug mode, follows F9).** At the end of every scene whose colour surface is a float
+**Layer 1, per-scene target scan (debug mode: follows the detailed log).** At the end of every scene whose colour surface is a float
 format (host F16x4: guest F16x4 HDR and U2F10F10F10; F11F11F10; F16/F16x2/F32/F32x2), a 16x16 compute shader reads
 **every** pixel of the surface and counts the pixels with a NaN, an Inf, a huge finite value (>= 65000 for 16-bit and
 packed formats, >= 1e30 for F32) or a negative value, plus the first NaN/Inf (and first huge) pixel in raster order.
@@ -444,7 +456,7 @@ propagation: luminance downsample `87AA82B962069A7A` (rt 0x663D6000), RGBM encod
 
 `src/VitaSharp.Core/Util/AudioDiagnostics.cs` counts, for every sceAudioOut port, the guest outputs, the gaps
 between them, silent (all-zero) grains and host underruns. Counting is always on (a few field writes per output); what
-gets logged depends on debug mode, which is checked on every call, so F9 takes effect immediately.
+gets logged depends on debug mode, which is checked on every call, so a capture starting or stopping takes effect immediately.
 
 **Host device line** (start of every session): `Audio: OpenAL Soft, OpenAL '<device>' mixer 48000 Hz, update 960
 samples (20,0 ms)`. OpenAL Soft mixes in updates of that size and only gives back a buffer once it is fully played,
@@ -466,7 +478,7 @@ at 5, latency ~47 ms, underruns N`) appears in the summary, the snapshot and aud
 | `AUDIO open port 1 MAIN grain 256 48000 Hz stereo volume 1,00/1,00, expected 187,5 outputs/s` / `AUDIO release ...: <totals>` / `AUDIO config ...` | sceAudioOutOpenPort / OpenExtPort, ReleasePort, SetConfig |
 | `AUDIO open NGS system 0x..: granularity 256, 48000 Hz, 64 voices` | sceNgsSystemInit (and `release` at sceNgsSystemRelease) |
 | `AUDIO open Audiodec decoder N: AAC 2 ch` / `Atrac handle N: ATRAC9 2 ch 48000 Hz, ... samples, loop ..` / `AvPlayer <file>: audio 2 ch 48000 Hz, video WxH fps, duration` | decoder streams created / deleted (Audiodec, Atrac, HLE SceAvPlayer). Games that link their own AvPlayer show up through Audiodec and their audio port instead |
-| `AUDIO snapshot: device ...`, one line per open port (with host queue and totals so far), one per NGS system / decoder stream | debug mode switched on mid-game (F9, `--debug-mode-at`): the open events already happened, so their state is listed once |
+| `AUDIO snapshot: device ...`, one line per open port (with host queue and totals so far), one per NGS system / decoder stream | the detailed log switched on mid-game (a capture started, `--debug-mode-at`): the open events already happened, so their state is listed once |
 | `AUDIO port 1 MAIN: R outputs/s (expected E), gap avg A ms max M ms (grain G ms), host queue Q samples, underruns u, silent s/N over T s` | every 10 s per open port while debug mode is on (stops when it is turned off) |
 | `AUDIO underrun burst #n on <port> ended: k underruns over T ms` | a burst is over (no underrun for 1 s; checked with the periodic line) |
 
@@ -475,14 +487,14 @@ audio thread, or host blocking); `expected` reached but underruns anyway = host 
 update; large `gap max` with no underruns = the queue absorbed a stall; a high `silent` share is normal in menus and
 loading screens (CRI/NGS keep outputting zeros).
 
-**F10 capture:** `audio.txt` = device and buffering, every open port (host queue, time since the last output, totals),
+**Diagnostic capture:** `audio.txt` = device and buffering, every open port (host queue, time since the last output, totals),
 the ports released earlier in the session, NGS systems and decoder streams.
 
 **Tests:** `--audio` uses the OpenAL device in headless runs. For a silent run that records the mixed output, set
 `ALSOFT_CONF` to a file with `[general]` `drivers=wave`, `sample-type=int16` and `[wave]` `file=<path>.wav` (OpenAL
 Soft's wave writer runs in real time, like a device). `--audio-dump=<dir>` instead writes exactly what the game sent to each port, one
 WAV per opened port (`NN_portP_TYPE_RATE.wav`, after port volume, no device timing), the input for content analysis
-(clipping, clicks, pitch, comparison with a reference decode). `--debug-mode-at=FRAME[,FRAME...]` toggles debug mode like F9
+(clipping, clicks, pitch, comparison with a reference decode). `--debug-mode-at=FRAME[,FRAME...]` toggles the detailed log at those frames
 when the guest frame is reached (`[dbg] debug mode on (--debug-mode-at) at guest frame N`).
 
 ## Cost
@@ -528,7 +540,7 @@ us/frame** for the metrics and rules when the frame retires (~190 us with 2x2 sa
 GPU-worker time per frame (~1.5% of its ~4.6 ms). The GPU work is one 960x544 -> 480x272 linear blit and a 510 KB
 image-to-buffer copy per present. Memory: 64 MB of host-visible system memory and a 510 KB device-local image while
 debug mode is on, nothing while it is off. Debug off runs exactly the code of before plus one null check per present
-(`_replay != null`, to free the ring after F9). A capture adds ~64 MB of temporary managed copies and about 1 s of
+(`_replay != null`, to free the ring once the detailed log is off). A capture adds ~64 MB of temporary managed copies and about 1 s of
 background PNG writing (127 frames + 5 sheets, ~40 MB; the kz_replay auto capture zip was 45 MB in all); kz_skin with debug on gave no false anomaly over
 the whole route (only the expected `black` on the loading screen).
 
@@ -574,10 +586,11 @@ texture, two field writes per texture resolution. Memory: ~19 MB of managed arra
 copies the ring (a few MB) when it is armed and writes drawring/ in the background in ~1.2 s; for a Killzone gameplay
 capture drawring/ is ~26 MB of text (128 files of ~300 draws), which compresses well in the zip.
 
-## Ctrl+F8: GPU dump
+## GPU dump
 
-Ctrl+F8 records the GPU work (commands plus the guest memory they read) until Ctrl+F8 is pressed again, into
-`<DataRoot>/gpudumps/*.vsgd`; `replay-gpu` replays it offline draw by draw. See `docs/notes/gpu-dump.md`.
+The F8 capture records the GPU work (commands plus the guest memory they read) as its `gpu.vsgd`; a dump alone goes
+into `<DataRoot>/gpudumps/*.vsgd` with `--gpu-dump-at` or an `--input` script's `Ctrl+F8` step (developers; no key of
+the window). `replay-gpu` replays it offline draw by draw. See `docs/notes/gpu-dump.md`.
 
 ## Implementation map
 
@@ -595,7 +608,7 @@ Ctrl+F8 records the GPU work (commands plus the guest memory they read) until Ct
   (pure logic, unit-tested in `tests/VitaSharp.Tests/FrameAnomalyDetectorTests.cs`).
 - `VulkanRenderer.cs` Present: `_traceFrame`/`_traceDumpFrame`/`_traceDir` replace the launch-time `TraceDrawsFrame`
   checks; `--trace-draws=N` sets both frames to N (its old behaviour, including the cache bypass and the skipped present).
-- `src/VitaSharp.Desktop/Diagnostics.cs`: F10 / `--diag-at` / anomaly captures, info.txt, log copy, zip.
+- `src/VitaSharp.Desktop/Diagnostics.cs`: `--diag-at` / script F10 / `--debug-mode` anomaly captures, info.txt, log copy, zip.
 - `src/VitaSharp.Desktop/Watchdog.cs`: watchdog, periodic PERF and summaries, session log rotation (`LogFiles`).
 - `src/VitaSharp.Core/Util/AudioDiagnostics.cs`: audio port/stream statistics, debug lines, summary, audio.txt; fed by `Hle/Modules/Audio.cs` (ports), Ngs, Audiodec, Atrac, AvPlayer (streams) and `Desktop/Host/OpenAlAudio.cs` (device description, underruns).
 - `src/VitaSharp.Core/Util/DebugMode.cs`, `Log.cs` (dedupe, size cap, FilePath), `GuestThread.cs` (HLE ring/errors),

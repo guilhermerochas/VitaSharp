@@ -1,4 +1,4 @@
-<!-- pair: developer-tools.pt-BR.md sha256=d245a71ce138abb64f1c868c847f08c8857fd880f132d17133f27d698a4354a6 -->
+<!-- pair: developer-tools.pt-BR.md sha256=c93b1bf01d4ae0dcad83b4c80ab3dfcb79bfc578d4222c254c5352554b8fca51 -->
 # Developer flavour (`-p:VitaSharpDeveloper=true`)
 
 *Português: [developer-tools.pt-BR.md](developer-tools.pt-BR.md).*
@@ -183,9 +183,10 @@ The fixtures stay out of git. They are cut again from the scratch dumps with the
 One recording that is enough to diagnose a bug offline; details, formats, sizes and cost in
 [`session-capture.md`](session-capture.md).
 
-- **Desktop:** F8 starts and stops it (Ctrl+F8 records only a GPU dump; F9, F10 unchanged). Scripted: `--capture-at=A:B` (guest frames) or
-  `VITASHARP_CAPTURE_AT`. Pre-roll: `--capture-preroll[=S]`, `VITASHARP_CAPTURE_PREROLL=S`, the launcher's
-  "Pré-gravação", or debug mode (F9).
+- **Desktop:** F8 starts and stops it, Shift+F8 marks the problem: the player's only debugging key (the capture has
+  the detailed log and the GPU dump; no F9, F10 or Ctrl+F8). Scripted: `--capture-at=A:B` (guest frames) or
+  `VITASHARP_CAPTURE_AT`; an `--input` script's `F10` / `Ctrl+F8` steps still take a diagnostic capture / a GPU dump
+  alone. Pre-roll: `--capture-preroll[=S]`, `VITASHARP_CAPTURE_PREROLL=S`, or the launcher's "Pré-gravação".
 - **Android:** pause menu > **Gravar tudo** / **Parar gravação**, and **Pré-gravação: ligada/desligada**; or
   `VITASHARP_CAPTURE_PREROLL=S` in `env.txt`. Output in `files/captures/TITLE_DATE_tudo/` and `.zip`.
 - A capture holds a save state at the start (`state_start.vss`; with the pre-roll also `state_preroll.vss`), the input
