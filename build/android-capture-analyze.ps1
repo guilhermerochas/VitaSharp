@@ -1,12 +1,12 @@
 # Analyses a capture recorded with the pause menu ("Gravar tudo" in every build, docs/notes/session-capture.md; "Gravar tempo/conteúdo" in the developer APK): pulls it from the
 # phone (or takes a local folder) and prints one summary: for "Gravar tudo", the report of vitasharp-perf capture; fps and the timing part, the PERF lines, the busiest HLE
 # functions and threads the log reports, the audio check of every guest port WAV, and, from a replay of the GPU dump on
-# this PC, the flicker check over every frame and the GPU ms per scene of one frame (tools/dev/README.md, "Captures").
+# this PC, the flicker check over every frame and the GPU ms per scene of one frame (docs/notes/developer-tools.md, "Captures").
 # Usage: build/android-capture-analyze.ps1 [CAPTURE_NAME|LOCAL_FOLDER] [-Out DIR] [-Perf EXE] [-GpuProfile mali] [-Desktop EXE]
 param([string]$Capture = '', [string]$Out = (Join-Path (Get-Location) 'captures'), [string]$Perf = '', [string]$GpuProfile = 'mali', [string]$Desktop = '')
 $ErrorActionPreference = 'Stop'
 # the app's data folder (docs/android/README.md, "Storage"): the app's own answer (data-root.txt), checked
-# against "All files access" (appops), by the phone-side command in tools/dev/android-data-root.txt
+# against "All files access" (appops), by the phone-side command in build/android-data-root.txt
 $dataRoot = ''
 try
 {

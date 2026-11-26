@@ -1,7 +1,7 @@
 # Records a Perfetto trace of a game on a USB-connected Android phone running the developer APK (-p:VitaSharpDeveloper=true):
 # CPU scheduling, CPU/GPU frequency, GPU counters and render stages when the driver offers them, and the emulator's own
 # markers (VITASHARP_TRACE=1: guest frames, GPU worker frames and submits, sampled HLE calls, JIT compiles, audio grains).
-# Open the .perfetto-trace at https://ui.perfetto.dev (tools/dev/README.md, "Reading a trace").
+# Open the .perfetto-trace at https://ui.perfetto.dev (docs/notes/developer-tools.md, "Reading a trace").
 # Usage: build/android-trace.ps1 TITLEID [-Seconds 10] [-Delay 40] [-Input SCRIPT] [-Out DIR] [-Hle 64] [-ExtraEnv 'K=V;K=V']
 param(
     [Parameter(Mandatory = $true)][string]$TitleId,
@@ -16,7 +16,7 @@ $ErrorActionPreference = 'Stop'
 $pkg = 'io.github.vitasharp'
 & "$PSScriptRoot\android-awake.ps1" start   # the phone's screen is kept on until the end (build/android-awake.ps1)
 # the app's data folder (docs/android/README.md, "Storage"): the app's own answer (data-root.txt), checked
-# against "All files access" (appops), by the phone-side command in tools/dev/android-data-root.txt
+# against "All files access" (appops), by the phone-side command in build/android-data-root.txt
 $dataRoot = ''
 try
 {
@@ -41,7 +41,7 @@ if ($Input) { $envLines += "VITASHARP_ANDROID_INPUT=$Input" }
 if ($ExtraEnv) { $envLines += $ExtraEnv.Split(';') }
 [System.IO.File]::WriteAllText((Join-Path $Out 'env.txt'), ($envLines -join "`n") + "`n")
 $cfg = Join-Path $Out 'config.pbtx'
-[System.IO.File]::WriteAllText($cfg, "duration_ms: $($Seconds * 1000)`n" + [System.IO.File]::ReadAllText((Join-Path $here 'tools/dev/perfetto-vitasharp.pbtx')))
+[System.IO.File]::WriteAllText($cfg, "duration_ms: $($Seconds * 1000)`n" + [System.IO.File]::ReadAllText((Join-Path $here 'tools/VitaSharp.PerfTools/perfetto-vitasharp.pbtx')))
 $activity = (adb shell cmd package resolve-activity --brief $pkg | Select-Object -Last 1).Trim()
 adb shell am force-stop $pkg
 & "$PSScriptRoot\android-awake.ps1" reopen

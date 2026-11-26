@@ -6,7 +6,7 @@ using VitaSharp.Renderer.Vulkan.Developer;
 
 namespace VitaSharp.PerfTools.Commands;
 
-/// <summary><c>vitasharp-perf bench</c>: the GPU bench of the developer flavour (tools/dev/README.md). cut and table work in
+/// <summary><c>vitasharp-perf bench</c>: the GPU bench of the developer flavour (docs/notes/developer-tools.md). cut and table work in
 /// any build; run, shaders and --child need -p:VitaSharpDeveloper=true (the renderer's bench hooks).</summary>
 internal sealed class BenchCommand : IPerfCommand
 {

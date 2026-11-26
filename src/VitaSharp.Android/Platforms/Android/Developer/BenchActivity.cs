@@ -13,7 +13,7 @@ namespace VitaSharp.Android.Developer;
 /// switches are read once per process), then the process ends. Started by build/android-bench.* or the
 /// "Opcoes de desenvolvedor" screen:
 /// <c>adb shell am start -n io.github.vitasharp/io.github.vitasharp.BenchActivity --es bench "fixture=uc_title;variant=v1;reps=3;run=R"</c>.
-/// Fixtures, variants and results are in files/bench (tools/dev/README.md); the BENCH lines also go to logcat.
+/// Fixtures, variants and results are in files/bench (docs/notes/developer-tools.md); the BENCH lines also go to logcat.
 /// </summary>
 [Activity(Name = "io.github.vitasharp.BenchActivity", Label = "VitaSharp Bench", Process = ":bench", Exported = true,
     Theme = "@android:style/Theme.Black.NoTitleBar", LaunchMode = global::Android.Content.PM.LaunchMode.SingleTask)]

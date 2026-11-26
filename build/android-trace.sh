@@ -3,7 +3,7 @@
 # Records a Perfetto trace of a game on a USB-connected Android phone running the developer APK
 # (-p:VitaSharpDeveloper=true): CPU scheduling, CPU/GPU frequency, GPU counters and render stages when the driver
 # offers them, and the emulator's own markers (VITASHARP_TRACE=1: guest frames, GPU worker frames and submits, sampled
-# HLE calls, JIT compiles, audio grains). Open the .perfetto-trace at https://ui.perfetto.dev (tools/dev/README.md,
+# HLE calls, JIT compiles, audio grains). Open the .perfetto-trace at https://ui.perfetto.dev (docs/notes/developer-tools.md,
 # "Reading a trace").
 # Usage: build/android-trace.sh TITLEID [SECONDS] [DELAY] [INPUT]   (same as build/android-trace.ps1)
 #   SECONDS traced (default 10) after DELAY seconds of play (default 40); INPUT = VITASHARP_ANDROID_INPUT script.
@@ -17,8 +17,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly HERE
 readonly PKG=io.github.vitasharp
 # the app's data folder (docs/android/README.md, "Storage"): the app's own answer (data-root.txt), checked
-# against "All files access" (appops), by the phone-side command in tools/dev/android-data-root.txt
-DATA_ROOT="$(adb shell "$(cat "$(dirname "${BASH_SOURCE[0]}")/../tools/dev/android-data-root.txt")" 2>/dev/null | tr -d '' || true)"
+# against "All files access" (appops), by the phone-side command in build/android-data-root.txt
+DATA_ROOT="$(adb shell "$(cat "$(dirname "${BASH_SOURCE[0]}")/android-data-root.txt")" 2>/dev/null | tr -d '' || true)"
 DATA_ROOT="${DATA_ROOT:-/sdcard/Android/data/${PKG}/files}"
 readonly DATA_ROOT
 readonly FILES="${DATA_ROOT}"
@@ -71,7 +71,7 @@ main() {
   } >"${out}/env.txt"
   {
     echo "duration_ms: $((seconds * 1000))"
-    cat "${root}/tools/dev/perfetto-vitasharp.pbtx"
+    cat "${root}/tools/VitaSharp.PerfTools/perfetto-vitasharp.pbtx"
   } >"${out}/config.pbtx"
 
   local activity

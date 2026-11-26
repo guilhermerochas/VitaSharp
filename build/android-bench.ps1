@@ -1,6 +1,6 @@
 # GPU bench on a USB-connected Android phone with the developer APK (-p:VitaSharpDeveloper=true): pushes the fixtures and
 # variants, runs every (fixture, variant) ROUNDS times interleaved A/B/B/A (one process per run, REPS timed repetitions
-# each), pulls the results and prints fixture x variant -> median GPU ms, spread and delta (tools/dev/README.md).
+# each), pulls the results and prints fixture x variant -> median GPU ms, spread and delta (docs/notes/developer-tools.md).
 # Usage: build/android-bench.ps1 FIXTURES VARIANTS [ROUNDS] [REPS]   (same as build/android-bench.sh)
 #   FIXTURES, VARIANTS: comma-separated names (BenchDir/fixtures/NAME.vsgd, BenchDir/variants/NAME; "base" = none).
 #   -BenchDir (default ./bench), -Param (more bench parameters, ';'-separated), -Perf (vitasharp-perf executable for
@@ -18,7 +18,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $pkg = 'io.github.vitasharp'
 # the app's data folder (docs/android/README.md, "Storage"): the app's own answer (data-root.txt), checked
-# against "All files access" (appops), by the phone-side command in tools/dev/android-data-root.txt
+# against "All files access" (appops), by the phone-side command in build/android-data-root.txt
 $dataRoot = ''
 try
 {

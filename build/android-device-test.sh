@@ -18,8 +18,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly HERE
 readonly PKG=io.github.vitasharp
 # the app's data folder (docs/android/README.md, "Storage"): the app's own answer (data-root.txt), checked
-# against "All files access" (appops), by the phone-side command in tools/dev/android-data-root.txt
-DATA_ROOT="$(adb shell "$(cat "$(dirname "${BASH_SOURCE[0]}")/../tools/dev/android-data-root.txt")" 2>/dev/null | tr -d '' || true)"
+# against "All files access" (appops), by the phone-side command in build/android-data-root.txt
+DATA_ROOT="$(adb shell "$(cat "$(dirname "${BASH_SOURCE[0]}")/android-data-root.txt")" 2>/dev/null | tr -d '' || true)"
 DATA_ROOT="${DATA_ROOT:-/sdcard/Android/data/${PKG}/files}"
 readonly DATA_ROOT
 readonly FILES="${DATA_ROOT}"

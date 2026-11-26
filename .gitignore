@@ -518,7 +518,7 @@ third_party/android-adrenotools/
 *.PUP
 *.pup
 
-# developer bench fixtures and results (game data: never committed, tools/dev/README.md)
+# developer bench fixtures and results (game data: never committed, docs/notes/developer-tools.md)
 /bench/
 obj-dev/
 bin-dev/

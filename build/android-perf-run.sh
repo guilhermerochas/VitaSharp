@@ -95,8 +95,8 @@ main() {
   maxtemp="${MAXTEMP:-37}"
   pkg=io.github.vitasharp
   # the app's data folder (docs/android/README.md, "Storage"): the app's own answer (data-root.txt), checked
-  # against "All files access" (appops), by the phone-side command in tools/dev/android-data-root.txt
-  files="$(adb shell "$(cat "$(dirname "${BASH_SOURCE[0]}")/../tools/dev/android-data-root.txt")" 2>/dev/null | tr -d '' || true)"
+  # against "All files access" (appops), by the phone-side command in build/android-data-root.txt
+  files="$(adb shell "$(cat "$(dirname "${BASH_SOURCE[0]}")/android-data-root.txt")" 2>/dev/null | tr -d '' || true)"
   files="${files:-/sdcard/Android/data/${pkg}/files}"
   here="$(cd "$(dirname "$0")" && pwd)"
   case "$scene" in

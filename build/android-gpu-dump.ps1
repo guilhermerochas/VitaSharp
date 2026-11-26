@@ -19,7 +19,7 @@ $ErrorActionPreference = 'Stop'
 $pkg = 'io.github.vitasharp'
 & "$PSScriptRoot\android-awake.ps1" start   # the phone's screen is kept on until the end (build/android-awake.ps1)
 # the app's data folder (docs/android/README.md, "Storage"): the app's own answer (data-root.txt), checked
-# against "All files access" (appops), by the phone-side command in tools/dev/android-data-root.txt
+# against "All files access" (appops), by the phone-side command in build/android-data-root.txt
 $dataRoot = ''
 try
 {

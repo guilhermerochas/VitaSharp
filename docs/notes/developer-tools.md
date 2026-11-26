@@ -1,4 +1,7 @@
+<!-- pair: developer-tools.pt-BR.md sha256=d245a71ce138abb64f1c868c847f08c8857fd880f132d17133f27d698a4354a6 -->
 # Developer flavour (`-p:VitaSharpDeveloper=true`)
+
+*Português: [developer-tools.pt-BR.md](developer-tools.pt-BR.md).*
 
 Tooling for performance work that iterates in seconds: no APK rebuild and no game boot per experiment.
 
@@ -17,7 +20,7 @@ dotnet build tools/VitaSharp.PerfTools -c Release -p:VitaSharpDeveloper=true -m:
   package id `io.github.vitasharp`, so `adb install -r` keeps the user's data.
 - Fixtures contain game data, so they never go into git. On the phone they live in
   `<data>/bench/` (`<data>`: `/sdcard/.vitasharp`, or `/sdcard/Android/data/io.github.vitasharp/files` on a rooted
-  phone or without "All files access"; the folder in use is what `adb shell "$(cat tools/dev/android-data-root.txt)"`
+  phone or without "All files access"; the folder in use is what `adb shell "$(cat build/android-data-root.txt)"`
   prints, docs/android/README.md, "Storage"); on the PC, in any folder with the same layout:
 
 ```
@@ -106,7 +109,7 @@ build/android-trace.ps1 PCSE00002 -Seconds 10 -Delay 40
 ```
 
 The script writes `VITASHARP_TRACE=1` (and `VITASHARP_TRACE_HLE=N`) to `files/config/env.txt`, starts the game and
-records `tools/dev/perfetto-vitasharp.pbtx` with `perfetto --txt`. It then pulls `TITLE.perfetto-trace` and
+records `tools/VitaSharp.PerfTools/perfetto-vitasharp.pbtx` with `perfetto --txt`. It then pulls `TITLE.perfetto-trace` and
 `last.log`, removes `env.txt` and the trace from the phone, and force-stops the app.
 
 The trace records:
@@ -178,7 +181,7 @@ The fixtures stay out of git. They are cut again from the scratch dumps with the
 ## Gravar tudo: the session capture (every build, desktop and Android)
 
 One recording that is enough to diagnose a bug offline; details, formats, sizes and cost in
-[`docs/notes/session-capture.md`](../../docs/notes/session-capture.md).
+[`session-capture.md`](session-capture.md).
 
 - **Desktop:** F8 starts and stops it (Ctrl+F8 records only a GPU dump; F9, F10 unchanged). Scripted: `--capture-at=A:B` (guest frames) or
   `VITASHARP_CAPTURE_AT`. Pre-roll: `--capture-preroll[=S]`, `VITASHARP_CAPTURE_PREROLL=S`, the launcher's
