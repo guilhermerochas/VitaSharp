@@ -307,6 +307,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         float scale = Math.Min(v.Width / 960f, v.Height / 544f);
         float iw = 960 * scale / v.Width, ih = 544 * scale / v.Height;
         _pad.Image = ((1 - iw) / 2, (1 - ih) / 2, iw, ih);
+        // the controls' view is the same size: round controls are hit as the circles drawn on it
+        _pad.Aspect = v.Width / (float)v.Height;
         // the touch mapping for the log, once per layout change: view size, density and where the image sits
         if (_touchLayoutLogged != (v.Width, v.Height))
         {

@@ -26,6 +26,37 @@ public sealed record OnScreenControl(VitaControl Control, string Label, float X,
     public string Text => LabelKey is { } key ? Loc.Get(key) : Label;
 
     public bool Contains(float x, float y) => x >= X && x < X + Width && y >= Y && y < Y + Height;
+
+    /// <summary>How far past its drawn edge a round control still takes a finger: a tenth of its radius.</summary>
+    public const float RoundMargin = 0.1f;
+
+    /// <summary>Drawn round (OnScreenControlsView): the sticks, the face buttons and PS. The others are rectangles.</summary>
+    public bool IsRound => Shape == OnScreenShape.Stick
+        || Control is VitaControl.Cross or VitaControl.Circle or VitaControl.Square or VitaControl.Triangle or VitaControl.PS;
+
+    /// <summary>
+    /// Whether a finger at (x, y) (fractions of the screen) is on the control as it is drawn, on a screen
+    /// <paramref name="aspect"/> times wider than tall. A stick is the circle of the smaller side of its rectangle and a
+    /// round button the rounded rectangle with that radius, each <see cref="RoundMargin"/> of the radius larger; the
+    /// corners of the rectangle around them are the game's (a front touch), not the control's. Rectangular controls
+    /// take their whole rectangle.
+    /// </summary>
+    public bool HitTest(float x, float y, float aspect)
+    {
+        if (!IsRound)
+        {
+            return Contains(x, y);
+        }
+
+        // in units of the screen's height, so a circle on the screen is a circle here
+        float width = Width * aspect, height = Height;
+        float px = (x - X) * aspect, py = y - Y;
+        float radius = Math.Min(width, height) / 2;
+        float cx = Math.Clamp(px, radius, width - radius), cy = Math.Clamp(py, radius, height - radius);
+        float dx = px - cx, dy = py - cy;
+        float reach = radius * (1 + RoundMargin);
+        return dx * dx + dy * dy <= reach * reach;
+    }
 }
 
 /// <summary>
@@ -59,6 +90,10 @@ public sealed class OnScreenPad : IInputBackend
     /// <summary>Where the 960x544 image sits on the screen (fractions), set by the front-end when the surface changes.
     /// Touches inside it that hit no control become front-touch points.</summary>
     public (float X, float Y, float Width, float Height) Image { get; set; } = (DpFraction(78, 0), 0, DpFraction(688, 0), 1);
+
+    /// <summary>The screen's width over its height (set by the front-end with <see cref="Image"/>): the round controls
+    /// are hit as the circles they are drawn as (<see cref="OnScreenControl.HitTest"/>).</summary>
+    public float Aspect { get; set; } = 844f / 390f;
 
     public IReadOnlyList<OnScreenControl> Layout { get; set; } = DefaultLayout;
     public bool Visible { get; set; } = true;
@@ -151,7 +186,7 @@ public sealed class OnScreenPad : IInputBackend
                 live.Add(f.Id);
                 if (!_captured.TryGetValue(f.Id, out OnScreenControl? hit))
                 {
-                    _captured[f.Id] = hit = Visible ? Layout.FirstOrDefault(c => c.Contains(f.X, f.Y)) : null;
+                    _captured[f.Id] = hit = Visible ? HitControl(f.X, f.Y) : null;
                 }
 
                 if (hit == null)
@@ -165,7 +200,7 @@ public sealed class OnScreenPad : IInputBackend
                     continue;
                 }
                 // a button only counts while the finger is still on it; a stick follows its finger anywhere
-                if (hit.Shape != OnScreenShape.Stick && !hit.Contains(f.X, f.Y))
+                if (hit.Shape != OnScreenShape.Stick && !hit.HitTest(f.X, f.Y, Aspect))
                 {
                     continue;
                 }
@@ -218,6 +253,20 @@ public sealed class OnScreenPad : IInputBackend
         {
             PsPressed?.Invoke();
         }
+    }
+
+    /// <summary>The control under a finger as the controls are drawn; null: the image (a front touch) or nothing.</summary>
+    private OnScreenControl? HitControl(float x, float y)
+    {
+        foreach (OnScreenControl c in Layout)
+        {
+            if (c.HitTest(x, y, Aspect))
+            {
+                return c;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>Releases every finger (the activity lost focus or the overlay was hidden).</summary>

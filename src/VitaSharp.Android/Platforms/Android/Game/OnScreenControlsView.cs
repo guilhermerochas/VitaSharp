@@ -184,7 +184,7 @@ public sealed class OnScreenControlsView : View
                 }
                 default:
                 {
-                    bool round = c.Control is VitaControl.Cross or VitaControl.Circle or VitaControl.Square or VitaControl.Triangle or VitaControl.PS;
+                    bool round = c.IsRound; // the shape the pad hit-tests (OnScreenControl.HitTest)
                     float corner = round ? Math.Min(r.Width(), r.Height()) / 2 : 12 * density;
                     canvas.DrawRoundRect(r, corner, corner, _fill);
                     canvas.DrawRoundRect(r, corner, corner, _stroke);
