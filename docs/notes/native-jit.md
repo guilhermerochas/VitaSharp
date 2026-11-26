@@ -36,6 +36,36 @@ Cost with a handler (`DataAbortGuardCostTable`, `CpuDataAbortGuardBenchmarks`): 
 per frame in generated code (+25%), process CPU 9.3 -> 9.6 ms per frame (+3%). The zero-cost
 design (host fault + host-pc -> guest recipe table) is a roadmap item.
 
+### Host faults instead of guards (feat/excp1, Windows x64)
+
+With a data abort handler registered, native x64 code on Windows carries no guard: the host's memory protection finds
+the aborting accesses (`Cpu/Native/HostFaultAborts.cs`), as fastmem does in Dolphin (unchecked accesses, a host fault
+looked up by host pc in a table of access sites), Ryujinx (a host fault handler in front of the runtime's, chained to
+it) and FEX/Box64 (per-block metadata from the host pc to the guest state).
+
+- Memory (`GuestMemory.ArmHostFaults`, from `BlockCache.ArmDataAborts`): every page of the space no block maps is made
+  inaccessible. Private pages are decommitted; the shared regions (kernel, CDRAM) are views of one section that a view
+  cannot decommit, so their unmapped committed pages become `PAGE_NOACCESS` in each armed space's views, and so do the
+  pages of every shared block freed later (a block mapped again gets read/write back first).
+- Code (`IrBuilder.FaultExits`): an instruction with accesses gets a `FaultMark` before its first access and, after it,
+  its data abort exit (the dirty slots of the instruction's start, R15/SvcPc, `ExitReason.DataAbort`) as a region
+  behind a `BranchIf` that is always taken (`FaultExitBranch`). Every pass sees an ordinary region; placed after the
+  instruction, the exit keeps the values it stores live across all of the instruction's accesses. The x64 emitter lays
+  the region out after the block and reports `[mark, end of instruction) -> exit` (`X64Emitter.FaultSites`, offsets
+  from either encoder); the main path has no added instruction.
+- Fault: a vectored handler in front of the lazy commit handlers (put back in front when a new space installs its own)
+  filters RIPs in the code arena natively and calls the managed `HostFaultAborts.OnFault`: a RIP in a registered range
+  and a guest page that is unmapped in the mapping table give `AbortAddr`/`AbortStatus` (WnR from the exception
+  record) in the state (rbx) and RIP = the exit. A fault on a mapped or let-through page goes on to the lazy commit
+  handler, as before.
+- Host code (HLE, GPU worker) touching such a page still works: the lazy commit handler (now emitted with Iced) first
+  tries `VirtualProtect` read/write (a protected view page), then commits (a decommitted page).
+
+The interpreter, the IL backend, callouts, the ARM64 backend and the other hosts keep the guards.
+`VITASHARP_DATA_ABORT_FAULTS=0` keeps them on Windows x64 too. Cost with a handler (`CpuDataAbortGuardBenchmarks`, in process, cores
+0x0F, the cleanest of two runs each): native loop 11.97 us without a handler, 11.87 us with one through host faults
+(0%), against 11.38 -> 15.48 us (median) with the guards on the same build. Tests: `NativeJitTests.DataAbortMatrix` (the same 23
+forms with guards and with host faults, the fault counter, a freed shared page in both modes and a host read of it).
 ## perf/android-jit-13 (2026-11-13): worker time, dispatcher returns, single precision in the SIMD cache
 
 Branch `perf/android-jit-13` (from main 5d2597ec). Not merged, not pushed. x64 output unchanged.

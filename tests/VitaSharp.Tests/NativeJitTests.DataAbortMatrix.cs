@@ -177,7 +177,7 @@ public sealed unsafe partial class NativeJitTests
     public void NativeX64GuardedDataAbortsMatchTheInterpreter(bool thumb, string words, AbortBase r0, int r0Offset, AbortBase sp, int spOffset, int abortAt) =>
         CheckAbortMatrix("x64 guards", static (s, b) => RunNative(s, NativeX64Compiler.Instance.Compile(b)!.NativeEntry), thumb, words, r0, r0Offset, sp, spOffset, abortAt, guards: true);
 
-    /// <summary>Windows x64: the aborts of the fault exits come from host faults (the counter moves once per abort), and
+    /// <summary>Windows x64: the aborts of the fault exits come from host faults (the handler's counter moves), and
     /// the code has no guard at all.</summary>
     [NativeTheory]
     [MemberData(nameof(AbortMatrixCases))]

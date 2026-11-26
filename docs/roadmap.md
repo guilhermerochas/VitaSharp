@@ -2048,6 +2048,13 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   RIP por instrução). Exige: páginas não mapeadas protegidas (Windows: reservadas; POSIX: mprotect PROT_NONE, que não
   separa páginas de 4 KB em host de 16 KB), handler VEH/SIGSEGV encadeado (CoreCLR e Mono), receita por acesso nos dois
   emitters (inclusive caches de registros NEON e flags lazy). Decisão do usuário pendente.
+  Feito P1 (excp1, feat/excp1): Windows x64 — páginas não mapeadas inacessíveis no host (privadas decommitadas;
+  compartilhadas PAGE_NOACCESS na view, também ao liberar), saída de data abort fora de linha por instrução e VEH na frente do
+  lazy-commit (`HostFaultAborts`); o caminho principal não tem instrução a mais. Custo com handler no
+  `CpuDataAbortGuardBenchmarks`: nativo 11,97 -> 11,87 us (0%; com guards 11,38 -> 15,48 us). `VITASHARP_DATA_ABORT_FAULTS=0`
+  volta aos guards. Testes: `NativeJitTests.DataAbortMatrix` (23 formas com guards e com falha do host, página
+  compartilhada liberada nos dois modos, leitura perdida do host). Falta P2 Linux/macOS x64 (mprotect + SIGSEGV/SIGBUS nativo
+  encadeado, ucontext por SO) e P3 ARM64 (Android/Apple; páginas de host de 16 KB ficam com guard).
 - [x] [P3] GXM: aplicar no tradutor de shaders o remapeamento de coordenadas de textura de
   `sceGxmShaderPatcherCreateFragmentProgramForGles` (tabela de 10 bytes: TEXCOORDi do fragment lê o TEXCOORD[remap[i]]
   do vertex). Feito (16/11/2026, rm1, fix/gxm-texcoord-remap): a tabela fica empacotada no programa
