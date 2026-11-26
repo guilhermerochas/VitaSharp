@@ -305,6 +305,16 @@ public static class CaptureAnalyzer
             sb.AppendLine("    " + l["audio: ".Length..]);
         }
 
+        List<string> screenLines = ScreenStateSection(dir, ctxStop);
+        if (screenLines.Count > 0)
+        {
+            sb.AppendLine();
+            foreach (string l in screenLines)
+            {
+                sb.AppendLine(l);
+            }
+        }
+
         List<string> fileLines = CaptureFileRecorder.ReportSection(dir);
         if (fileLines.Count > 0)
         {
@@ -1002,6 +1012,59 @@ public static class CaptureAnalyzer
                 lines.Add(l);
             }
         }
+        return lines;
+    }
+
+    /// <summary>
+    /// "Screen state": whether the game waits for the player (and which input it reads), loads or is busy, at the stop
+    /// of the recording (context.txt "screen:") and the detector's last changes (log.txt "[input-wait]"), so a still
+    /// picture is not taken for a loading screen (docs/agents/screens.md).
+    /// </summary>
+    internal static List<string> ScreenStateSection(string dir, List<string> ctxStop)
+    {
+        var lines = new List<string>();
+        foreach (string l in ctxStop)
+        {
+            if (l.StartsWith("screen: ", StringComparison.Ordinal))
+            {
+                lines.Add("  at the stop: " + l["screen: ".Length..]);
+            }
+        }
+
+        string log = Path.Combine(dir, "log.txt");
+        if (File.Exists(log))
+        {
+            var changes = new Queue<string>();
+            foreach (string l in File.ReadLines(log))
+            {
+                int at = l.IndexOf("[input-wait] ", StringComparison.Ordinal);
+                if (at < 0)
+                {
+                    continue;
+                }
+
+                changes.Enqueue(l[(at + "[input-wait] ".Length)..]);
+                while (changes.Count > 8)
+                {
+                    changes.Dequeue();
+                }
+            }
+
+            if (changes.Count > 0)
+            {
+                lines.Add("  last changes (log.txt [input-wait]):");
+                foreach (string c in changes)
+                {
+                    lines.Add("    " + c);
+                }
+            }
+        }
+
+        if (lines.Count > 0)
+        {
+            lines.Insert(0, "Screen state (waiting for input / loading / busy):");
+        }
+
         return lines;
     }
 

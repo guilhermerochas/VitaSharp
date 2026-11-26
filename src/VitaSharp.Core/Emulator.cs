@@ -157,6 +157,8 @@ public sealed partial class Emulator : IDisposable
     {
         // a session starts: how long its first frame and its first minute take (StartupMeter), from the user's click
         StartupMeter.Current.Begin(EmulationPause.ActiveHostTicks);
+        // the "waiting for input" lines name the title in front of this emulator's system
+        Input.InputWaitMonitor.Attach(this);
         Options = options;
         // the JIT switches are process-wide: Dispose gives them back, so an emulator built with EnableJit = false (the
         // HLE unit tests, the disasm command) does not leave the JIT off for everything that runs after it
@@ -1993,6 +1995,11 @@ public sealed partial class Emulator : IDisposable
         {
             string host = hostFile ?? (Vfs.Resolve(vitaPath) is { } h && File.Exists(h) ? h : throw new FileNotFoundException(vitaPath));
             elf = SelfDecryptor.ToElf(File.ReadAllBytes(host), Klicensee);
+            if (Input.InputWaitMonitor.Active)
+            {
+                Input.InputWaitMonitor.ModuleLoaded();
+            }
+
             if (hostFile == null)
             {
                 Capture.CaptureHooks.Files?.ModuleLoaded(this, vitaPath, elf);

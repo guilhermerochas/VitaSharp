@@ -325,6 +325,12 @@ public sealed unsafe partial class VulkanRenderer
                 Log.WarnOnce("presenttap", $"[capture] present tap failed: {x.Message}");
             }
         }
+        // the "waiting for input" detector: still picture + input reads, against file I/O and compilation
+        if (VitaSharp.Core.Input.InputWaitMonitor.Active)
+        {
+            VitaSharp.Core.Input.InputWaitMonitor.OnFrame(e.Present, e.GuestFrame, new ReadOnlySpan<byte>(px, (int)(e.W * e.H * 4)), (int)e.W, (int)e.H, ShaderCompiler.Compiled);
+        }
+
         // the metrics and the anomaly rules are debug mode's (the capture's analyzer measures offline)
         if (!DebugMode.Enabled)
         {

@@ -442,6 +442,11 @@ public static class EnvVars
     /// <summary>=0 (A/B): sceTouchPeek always reports 1 sample, instead of 0 when sceTouchRead already consumed the newest
     /// one (Sonic & All-Stars Racing Transformed hangs draining the panel otherwise).</summary>
     public const string TouchPeekUnread = "VITASHARP_TOUCH_PEEK_UNREAD";
+    /// <summary>=1: the "waiting for input" detector runs (Input/InputWaitMonitor.cs; it also runs in debug mode and while
+    /// a "Gravar tudo" capture records): the log gets "[input-wait] WAITING FOR INPUT / LOADING / BUSY / ACTIVE" lines.</summary>
+    public const string InputWait = "VITASHARP_INPUT_WAIT";
+    /// <summary>Presented frames the "waiting for input" detector decides over (default 60).</summary>
+    public const string InputWaitFrames = "VITASHARP_INPUT_WAIT_FRAMES";
     /// <summary>H.264 decoding: auto (default, software), off/sw, hw (the platform's FFmpeg hwaccel) or a device type name.</summary>
     public const string VideoHw = "VITASHARP_VIDEO_HW";
     public const string VisForce = "VITASHARP_VIS_FORCE";

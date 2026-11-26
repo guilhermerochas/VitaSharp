@@ -2095,7 +2095,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             }
             F.SplashCheck = true;
         }
-        if (DebugMode.Enabled || _options.PresentTap != null)
+        if (DebugMode.Enabled || _options.PresentTap != null || VitaSharp.Core.Input.InputWaitMonitor.Active)
         {
             DebugPresent(src, frame);
         }
