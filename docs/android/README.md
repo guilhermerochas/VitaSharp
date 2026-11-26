@@ -498,18 +498,20 @@ happened with `mono-aot` and in the earlier phone runs, so it is a driver issue,
   right stick on AXIS_Z/RZ or RX/RY by what the device reports). TRÁS toggles rear touch (touches on the image go to
   the rear pad). The on-screen controls hide while a controller is connected (setting). In a game on its own the
   PS button (on-screen or the controller's) opens the pause menu; in Sistema do Vita it goes to the shell.
-- **On-screen layout** (`OnScreenPad.DefaultLayoutFor`): the Vita has no virtual controls (the whole panel is the
-  game's, and games put touch icons up to its edges), so the default layout keeps the controls off the image when
-  the black bars beside the 16:9 image are wide enough (each bar at least `MinColumn` = 0.15 of the screen's height
-  plus the hit margin, about 0.17: 20:9 and 19.5:9 phones, e.g. 2400x1080 and 2340x1080): one column per bar, laid
-  out like the console's halves (left: L, D-pad, left stick, PS and TRÁS; right: R, face buttons, right stick,
-  SELECT and START), sized to the bar (at most the reference layout's size). On narrower bars (16:9, 18:9, 16:10
-  tablets) the overlay layout of `docs/android/mockups/jogo.html` (`OnScreenPad.DefaultLayout`) stays over the
-  image; there, as in Vita3K's, yuzu's and Dolphin's overlays, a finger that starts on the image outside a control's
-  drawn shape (round controls: their circle plus a tenth of the radius) is the game's front touch, and a finger that
-  starts on the image stays a touch when it slides over a control. The default layout is rebuilt when the surface
-  changes; a layout set on the pad (the Vita system view's PS-only layout, or one arranged by the player once a
-  layout editor exists) is kept on every screen. Tests: `OnScreenLayoutTests`.
+- **On-screen layout** (`OnScreenPad.DefaultLayout`): the overlay of `docs/android/mockups/jogo.html` on every
+  screen, with the two sticks about 15% smaller than the mockup's (`OnScreenPad.StickDp` = 106 dp of the 844x390
+  reference screen instead of 124, same centres), drawn and hit together. A finger that starts on the image outside a
+  control's drawn shape (round controls: their circle plus a tenth of the radius) is the game's front touch, and a
+  finger that starts on the image stays a touch when it slides over a control. On a 2400x1080, 2340x1080 or
+  1920x1080 phone the centre of the icon tab at the image's lower-right corner (Uncharted's "Tutorial: Journal",
+  (0.96, 0.78) and (0.98, 0.80) of the image) reaches the game; the tab's left edge is still under the right stick.
+  Tests: `OnScreenLayoutTests`.
+- **Hide the on-screen controls**: the small button by the fps counter and the pause chip (top centre; it hides and
+  comes back with the pause chip, also when the fps counter is off) shows or hides the on-screen controls with one
+  tap, and so does the pause menu's **Controles na tela** (the same code, `OnScreenVisibility`). The choice is saved
+  for every game (`ShowOnScreenControls` in the app settings, like the controls' opacity and "hide with a
+  controller"); hidden, the whole screen is the game's touch. A connected controller still hides them when "Esconder
+  com controle conectado" is on; the button shows them over it.
 - **Gravar tudo** (pause menu, every build): records a save state, the input, the GPU dump, every presented frame
   with its timing, the audio and the log into `files/captures/TITLE_DATE_tudo/` and a `.zip`, until **Parar
   gravação**; "● REC" shows by the fps counter. **Pré-gravação: ligada** keeps the seconds before the start (a save

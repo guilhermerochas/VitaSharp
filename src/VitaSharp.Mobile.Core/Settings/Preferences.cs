@@ -61,6 +61,10 @@ public sealed class AppPreferences
     public bool KernelPlugins { get; set; }
     /// <summary>Opacity of the on-screen controls, 0.1..1.</summary>
     public float OnScreenOpacity { get; set; } = 0.55f;
+    /// <summary>The on-screen controls show in the game screen: the button by the fps counter and the pause menu's
+    /// "Controles na tela" toggle it, for every game (Input.OnScreenVisibility). Off, the whole screen is the game's
+    /// touch.</summary>
+    public bool ShowOnScreenControls { get; set; } = true;
     /// <summary>Hide the on-screen controls while a physical controller is connected.</summary>
     public bool HideOnScreenWithGamepad { get; set; } = true;
     /// <summary>Vibrate briefly on every on-screen control press, also while another finger holds the stick.</summary>

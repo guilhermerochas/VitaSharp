@@ -1,29 +1,55 @@
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Input;
 using VitaSharp.Mobile.Core.Input;
+using VitaSharp.Mobile.Core.Settings;
+using Xunit.Abstractions;
 
 namespace VitaSharp.Tests;
 
 /// <summary>
-/// The default on-screen layout against the game's image. The Vita has no virtual controls (its whole panel is the
-/// game's) and games put touch icons at the edges of the screen: on a 2400x1080 phone the right stick of the old
-/// overlay layout covered two thirds of the tab that closes Uncharted's "Tutorial: Journal" (x 0.93-0.99, y 0.72-0.84
-/// of the image), so a tap there moved the stick instead of reaching the game. Where the bars beside the 16:9 image
-/// are wide enough, the controls now sit in them; where they are not, a finger that starts on the image outside a
-/// control's drawn shape is the game's.
+/// The default on-screen layout (the jogo.html overlay on every screen, with sticks about 15% smaller than jogo.html's
+/// around the same centres) against the game's image, and the button that hides the controls
+/// (<see cref="OnScreenVisibility"/>). Games put touch icons at the edges of the Vita's screen: with jogo.html's
+/// 124 dp sticks the right one took the centre of the tab that closes Uncharted's "Tutorial: Journal" (x 0.93-0.99,
+/// y 0.72-0.84 of the image) on a 2400x1080 phone.
 /// </summary>
 public sealed class OnScreenLayoutTests
 {
-    // phones and a tablet in landscape, and whether their bars beside the image take the controls
-    public static TheoryData<int, int, bool> Screens => new()
+    private readonly ITestOutputHelper _output;
+
+    public OnScreenLayoutTests(ITestOutputHelper output)
     {
-        { 2400, 1080, true },  // 20:9 (the Redmi Note 14)
-        { 2340, 1080, true },  // 19.5:9
-        { 3200, 1440, true },  // 20:9 at 1440p
-        { 1920, 1080, false }, // 16:9: no bars
-        { 2160, 1080, false }, // 18:9: bars too narrow
-        { 2560, 1600, false }, // 16:10 tablet: bars above and below the image
+        _output = output;
+    }
+
+    // phones and a tablet in landscape
+    public static TheoryData<int, int> Screens => new()
+    {
+        { 2400, 1080 }, // 20:9 (the Redmi Note 14)
+        { 2340, 1080 }, // 19.5:9
+        { 1920, 1080 }, // 16:9
+        { 2160, 1080 }, // 18:9
+        { 2560, 1600 }, // 16:10 tablet
     };
+
+    // jogo.html's controls (844x390 dp reference screen) other than the sticks: x, y, width, height in dp
+    private static readonly (VitaControl Control, float X, float Y, float Width, float Height)[] s_jogoHtml =
+    [
+        (VitaControl.L, 18, 12, 108, 40),
+        (VitaControl.R, 718, 12, 108, 40),
+        (VitaControl.Up, 70, 92, 40, 44),
+        (VitaControl.Down, 70, 168, 40, 44),
+        (VitaControl.Left, 30, 132, 44, 40),
+        (VitaControl.Right, 106, 132, 44, 40),
+        (VitaControl.Triangle, 714, 84, 50, 50),
+        (VitaControl.Square, 664, 134, 50, 50),
+        (VitaControl.Circle, 764, 134, 50, 50),
+        (VitaControl.Cross, 714, 184, 50, 50),
+        (VitaControl.Select, 322, 346, 76, 30),
+        (VitaControl.PS, 410, 346, 30, 30),
+        (VitaControl.Start, 452, 346, 70, 30),
+        (VitaControl.TouchBack, 22, 320, 52, 36),
+    ];
 
     // the image placed as the game screen places it (GameActivity.UpdateImageRect)
     private static OnScreenPad PadFor(int width, int height)
@@ -47,97 +73,136 @@ public sealed class OnScreenLayoutTests
 
     [Theory]
     [MemberData(nameof(Screens))]
-    public void UnchartedJournalTabReachesTheGame(int width, int height, bool _)
+    public void DefaultLayoutIsTheJogoHtmlOverlayOnEveryScreen(int width, int height)
     {
         OnScreenPad pad = PadFor(width, height);
-        Assert.True(ReachesTheGame(pad, 0.98f, 0.80f));
-        // the whole tab, not only its right edge: the old right stick took its centre (0.96, 0.78)
-        for (float y = 0.72f; y <= 0.84f; y += 0.02f)
+        Assert.Same(OnScreenPad.DefaultLayout, pad.Layout);
+        Assert.Equal(s_jogoHtml.Length + 2, pad.Layout.Count);
+        foreach ((VitaControl control, float x, float y, float controlWidth, float controlHeight) in s_jogoHtml)
         {
-            for (float x = 0.93f; x <= 0.99f; x += 0.01f)
-            {
-                Assert.True(ReachesTheGame(pad, x, y), $"{width}x{height}: tab point ({x:F2}, {y:F2}) did not reach the game");
-            }
-        }
-    }
-
-    [Theory]
-    [MemberData(nameof(Screens))]
-    public void NoDefaultControlIsOverTheImageWhenTheBarsTakeThem(int width, int height, bool barsTakeControls)
-    {
-        OnScreenPad pad = PadFor(width, height);
-        (float X, float Y, float Width, float Height) image = pad.Image;
-        if (!barsTakeControls)
-        {
-            Assert.Same(OnScreenPad.DefaultLayout, pad.Layout);
-            return;
-        }
-
-        Assert.NotSame(OnScreenPad.DefaultLayout, pad.Layout);
-        foreach (OnScreenControl control in pad.Layout)
-        {
-            Assert.True(control.X + control.Width <= image.X || control.X >= image.X + image.Width,
-                $"{width}x{height}: {control.Control} is drawn over the image");
-            Assert.True(control.X >= 0 && control.X + control.Width <= 1 && control.Y >= 0 && control.Y + control.Height <= 1,
-                $"{width}x{height}: {control.Control} is off the screen");
-        }
-
-        // and none takes a finger on the image, the round controls' hit margin included: every point is the game's
-        for (int row = 0; row <= 40; row++)
-        {
-            for (int column = 0; column <= 40; column++)
-            {
-                float x = column / 40f * 0.9999f, y = row / 40f * 0.9999f;
-                Assert.True(ReachesTheGame(pad, x, y), $"{width}x{height}: image point ({x:F3}, {y:F3}) did not reach the game");
-            }
-        }
-    }
-
-    [Theory]
-    [MemberData(nameof(Screens))]
-    public void TheDefaultLayoutHasEveryControlOnceAndTheyDoNotOverlap(int width, int height, bool _)
-    {
-        OnScreenPad pad = PadFor(width, height);
-        VitaControl[] controls = pad.Layout.Select(c => c.Control).ToArray();
-        Assert.Equal(OnScreenPad.DefaultLayout.Select(c => c.Control).OrderBy(c => c), controls.OrderBy(c => c));
-        Assert.Equal(controls.Length, controls.Distinct().Count());
-        // the centre of each control presses it (no other control is in front of it)
-        foreach (OnScreenControl control in pad.Layout.Where(c => c.Shape == OnScreenShape.Button))
-        {
-            pad.Update([(1, control.X + control.Width / 2, control.Y + control.Height / 2)]);
-            Assert.Equal(VitaControls.Button(control.Control), pad.GetController(0).Buttons);
-            pad.Update([]);
-        }
-        // sticks large enough for a thumb, round on the screen
-        foreach (OnScreenControl stick in pad.Layout.Where(c => c.Shape == OnScreenShape.Stick))
-        {
-            Assert.InRange(Math.Min(stick.Width * pad.Aspect, stick.Height), OnScreenPad.MinColumn, 0.33f);
+            OnScreenControl drawn = pad.Layout.Single(c => c.Control == control);
+            Assert.Equal((x / 844f, y / 390f, controlWidth / 844f, controlHeight / 390f), (drawn.X, drawn.Y, drawn.Width, drawn.Height));
         }
     }
 
     [Fact]
-    public void TheDefaultLayoutFollowsTheScreenButASetLayoutIsKept()
+    public void SticksAreAboutFifteenPercentSmallerAroundJogoHtmlsCentres()
+    {
+        // jogo.html: 124 dp sticks at (112, 236) and (608, 236), centres (174, 298) and (670, 298)
+        foreach ((VitaControl control, float centreX) in new[] { (VitaControl.LStickUp, 174f), (VitaControl.RStickUp, 670f) })
+        {
+            OnScreenControl stick = OnScreenPad.DefaultLayout.Single(c => c.Control == control);
+            Assert.Equal(OnScreenShape.Stick, stick.Shape);
+            Assert.Equal(centreX / 844f, stick.X + stick.Width / 2, 5);
+            Assert.Equal(298f / 390f, stick.Y + stick.Height / 2, 5);
+            float shrink = 1 - stick.Width * 844f / 124f;
+            Assert.InRange(shrink, 0.13f, 0.20f);
+            Assert.Equal(stick.Width * 844f, stick.Height * 390f, 3);
+        }
+    }
+
+    [Theory]
+    [InlineData(2400, 1080)]
+    [InlineData(2340, 1080)]
+    [InlineData(1920, 1080)]
+    public void UnchartedJournalTabReachesTheGame(int width, int height)
+    {
+        OnScreenPad pad = PadFor(width, height);
+        // the tab's centre and its lower right, where the tutorial's arrow points
+        Assert.True(ReachesTheGame(pad, 0.96f, 0.78f), $"{width}x{height}: (0.96, 0.78) did not reach the game");
+        Assert.True(ReachesTheGame(pad, 0.98f, 0.80f), $"{width}x{height}: (0.98, 0.80) did not reach the game");
+
+        // how much of the whole tab (x 0.93-0.99, y 0.72-0.84) is the game's: recorded, the sticks did not move
+        int free = 0, total = 0;
+        for (int iy = 0; iy <= 12; iy++)
+        {
+            for (int ix = 0; ix <= 6; ix++)
+            {
+                total++;
+                if (ReachesTheGame(pad, 0.93f + ix * 0.01f, 0.72f + iy * 0.01f))
+                {
+                    free++;
+                }
+            }
+        }
+
+        _output.WriteLine($"{width}x{height}: {free} of {total} points of the tab reach the game ({100.0 * free / total:F0}%)");
+    }
+
+    [Fact]
+    public void HiddenControlsTakeNoFingerAndTheChoiceIsSaved()
     {
         OnScreenPad pad = PadFor(2400, 1080);
-        IReadOnlyList<OnScreenControl> columns = pad.Layout;
-        Assert.True(pad.UsesDefaultLayout);
+        var prefs = new AppPreferences();
+        Assert.True(prefs.ShowOnScreenControls);
+        OnScreenVisibility.Apply(pad, prefs, gamepadConnected: false);
+        Assert.True(pad.Visible);
 
-        // the surface changes (rotation, split screen, a 16:9 external display): the default layout is rebuilt
-        float iw = 1, ih = 1;
-        pad.Aspect = 1920f / 1080f;
-        pad.Image = (0, 0, iw, ih);
-        Assert.Same(OnScreenPad.DefaultLayout, pad.Layout);
+        // a finger held on the stick is let go when the controls hide
+        OnScreenControl lstick = pad.Layout.Single(c => c.Control == VitaControl.LStickUp);
+        pad.Update([(1, lstick.X + lstick.Width * 0.9f, lstick.Y + lstick.Height / 2)]);
+        Assert.True(pad.IsPressed(lstick));
+        Assert.False(OnScreenVisibility.Toggle(pad, prefs));
+        Assert.False(pad.Visible);
+        Assert.False(prefs.ShowOnScreenControls);
+        Assert.False(pad.IsPressed(lstick));
+        Assert.Equal(ControllerState.Neutral, pad.GetController(0));
 
-        // a layout the player arranged (or the system view's) is never replaced by the default one
-        OnScreenControl[] custom = [new(VitaControl.Cross, "X", 0.4f, 0.4f, 0.1f, 0.1f)];
-        pad.Layout = custom;
-        Assert.False(pad.UsesDefaultLayout);
-        pad.Aspect = 2400f / 1080f;
-        pad.Image = PadFor(2400, 1080).Image;
-        Assert.Same(custom, pad.Layout);
+        // hidden, no control takes a finger: one on each control's centre is a front touch (on the image) or nothing
+        (float X, float Y, float Width, float Height) image = pad.Image;
+        foreach (OnScreenControl control in pad.Layout)
+        {
+            float x = control.X + control.Width / 2, y = control.Y + control.Height / 2;
+            pad.Update([(2, x, y)]);
+            Assert.False(pad.IsPressed(control), $"{control.Control} took a finger while hidden");
+            Assert.Equal(ControllerState.Neutral, pad.GetController(0));
+            bool onImage = x >= image.X && x < image.X + image.Width && y >= image.Y && y < image.Y + image.Height;
+            Assert.Equal(onImage ? 1 : 0, pad.GetTouches(false).Count);
+            pad.Update([]);
+        }
 
-        pad.UseDefaultLayout();
-        Assert.True(pad.UsesDefaultLayout);
-        Assert.Equal(columns, pad.Layout);
+        // saved: the next game screen opens with them hidden
+        string file = Path.Combine(Path.GetTempPath(), "vitasharp-onscreen-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            prefs.Save(file);
+            var loaded = AppPreferences.Load(file);
+            Assert.False(loaded.ShowOnScreenControls);
+            OnScreenPad next = PadFor(2400, 1080);
+            OnScreenVisibility.Apply(next, loaded, gamepadConnected: false);
+            Assert.False(next.Visible);
+
+            // shown again: saved as shown, and the stick takes its finger again
+            Assert.True(OnScreenVisibility.Toggle(next, loaded));
+            loaded.Save(file);
+            Assert.True(AppPreferences.Load(file).ShowOnScreenControls);
+            OnScreenControl stick = next.Layout.Single(c => c.Control == VitaControl.LStickUp);
+            next.Update([(3, stick.X + stick.Width / 2, stick.Y + stick.Height / 2)]);
+            Assert.True(next.IsPressed(stick));
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Fact]
+    public void AConnectedControllerHidesThemUnlessThePlayerShowsThem()
+    {
+        var prefs = new AppPreferences();
+        Assert.True(OnScreenVisibility.Shown(prefs, gamepadConnected: false));
+        Assert.False(OnScreenVisibility.Shown(prefs, gamepadConnected: true));
+        prefs.HideOnScreenWithGamepad = false;
+        Assert.True(OnScreenVisibility.Shown(prefs, gamepadConnected: true));
+        prefs.ShowOnScreenControls = false;
+        Assert.False(OnScreenVisibility.Shown(prefs, gamepadConnected: false));
+
+        // the button over a connected controller: the player asked for them, they show
+        prefs = new AppPreferences();
+        OnScreenPad pad = PadFor(2400, 1080);
+        OnScreenVisibility.Apply(pad, prefs, gamepadConnected: true);
+        Assert.False(pad.Visible);
+        Assert.True(OnScreenVisibility.Toggle(pad, prefs));
+        Assert.True(pad.Visible);
     }
 }
