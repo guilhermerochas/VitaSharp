@@ -68,8 +68,10 @@ main() {
   local rounds="${3:-4}"
   local reps="${4:-3}"
   local bench="${BENCH_DIR:-${PWD}/bench}"
-  "${HERE}/android-awake.sh" start # the phone's screen is kept on until the end (build/android-awake.sh)
-  trap '"${HERE}/android-awake.sh" stop' EXIT
+  # the phone's screen is kept on until the end (build/android-awake.sh); a watchdog that was already running stays on
+  if "${HERE}/android-awake.sh" begin; then
+    trap '"${HERE}/android-awake.sh" stop' EXIT
+  fi
   local run
   run="$(date +%Y%m%d_%H%M%S)"
   local -a fx vs
