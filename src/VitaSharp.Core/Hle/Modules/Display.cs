@@ -1013,7 +1013,28 @@ public sealed partial class Touch : HleModule
     const int ERR_PRIV_REQUIRED = unchecked((int)0x80350002);
     [Hle] int sceTouchGetDeviceInfo(uint portType, uint info) => ERR_PRIV_REQUIRED;
     [Hle] int sceTouchGetProcessInfo(uint a0, uint a1) => ERR_PRIV_REQUIRED;
-    [Hle] int sceTouchSetProcessPrivilege(uint a0, uint a1) => ERR_PRIV_REQUIRED;
+
+    /// <summary>The touch privilege the process set for itself (sceTouchSetProcessPrivilege; the driver keeps it in the
+    /// process's touch control block, +8).</summary>
+    [VitaSharp.Core.SaveState.SnapshotMissing] // states of builds before it: never set
+    int _processPrivilege;
+
+    internal int ProcessPrivilege => _processPrivilege;
+
+    /// <summary>(int privilege): FW 3.74 SceTouch 0x609EA489: a system program stores the value in its process's touch
+    /// control block and gets 0 (the shell calls it with 0 each time it takes the screen back, after the PS button);
+    /// anything else gets 0x80350002. It answered 0x80350002 to the shell too.</summary>
+    [Hle]
+    int sceTouchSetProcessPrivilege(int privilege)
+    {
+        if (!Emu.Access.IsSystemProgram)
+        {
+            return ERR_PRIV_REQUIRED;
+        }
+
+        _processPrivilege = privilege;
+        return 0;
+    }
 
     [Hle("sceTouchSetSamplingState")]
     [Hle("sceTouchSetSamplingStateExt")]
