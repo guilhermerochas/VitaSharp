@@ -8,7 +8,7 @@ namespace VitaSharp.Tests;
 /// resolution (rinfo.res_multiplier) in its ScaledPointSize variant, which has a cache key of its own; every other
 /// program keeps its GLSL and its key (no shader cache is invalidated).
 /// </summary>
-[Collection("shadergen")]
+[Collection("guest")]
 public class PointSizeTests
 {
     // the vertex program of MaliDeviceTests, with the varyings block moved to 0xA0 so its vertex outputs can be set

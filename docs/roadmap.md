@@ -69,6 +69,13 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
   Fechado (triagem 15/11/2026): não reproduziu em 6 rodadas e o log agora diz `Process exit at guest frame N` em toda saída normal; se repetir, item novo com o código de saída e o WER.
 
 ## Testes de regressão
+- [ ] Opções do gerador de shaders por renderer, não globais do processo: o construtor do VulkanRenderer grava as
+  opções do `ShaderGenerator` (FarPlane, PerSampleFramebufferFetch, LowerDynamicIndexing, Vertex/FragmentStores,
+  RelaxHalfPrecision, UncheckedUniformLoads, VectorLoads, SplitUniformSlots) para o processo inteiro, e os testes de
+  shader viam as do perfil mali/adreno de outro teste (ShaderGeneratorVersionTests falhava junto com
+  RendererAttachmentSyncTests). Paliativo feito (fix/shadergen-options): o renderer devolve as opções anteriores ao
+  ser descartado e os testes de shader rodam na collection "guest" com os de renderer. Falta passar as opções como
+  instância ao gerador (Generate, UsseTranslator, GxmObjects.DataBytes, bindings do renderer)
 
 - [ ] [P1][G] Achar erros sem jogar (pedido do usuário, 21/11/2026: "não quero ter que jogar todos os jogos de Vita
   pra encontrar todos os problemas do emulador"). Prioridade máxima para os próximos dias. Regras de dados: o

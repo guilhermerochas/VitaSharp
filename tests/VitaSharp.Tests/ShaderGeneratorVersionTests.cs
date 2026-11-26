@@ -16,7 +16,7 @@ namespace VitaSharp.Tests;
 /// the new version and hash below (the failure message prints the hash); if it is not intended, the change altered the
 /// translation by accident.</para>
 /// </summary>
-[Collection("shadergen")]
+[Collection("guest")]
 public sealed class ShaderGeneratorVersionTests
 {
     /// <summary>The version the hash below was recorded with.</summary>

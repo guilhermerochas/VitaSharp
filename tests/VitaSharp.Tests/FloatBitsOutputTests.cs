@@ -11,7 +11,7 @@ namespace VitaSharp.Tests;
 /// words are the ones the float view stores (<c>floatBitsToUint</c> of the same colour) and what the Vita writes: its
 /// output register words go to the surface unconverted.
 /// </summary>
-[Collection("shadergen")]
+[Collection("guest")]
 public sealed class FloatBitsOutputTests
 {
     private const uint F32F32 = 0x11000000;
