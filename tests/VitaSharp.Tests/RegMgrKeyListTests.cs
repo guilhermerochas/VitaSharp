@@ -26,7 +26,7 @@ public sealed class RegMgrKeyListTests(GuestMemoryFixture fixture) : IDisposable
 
     private Registry DefineHostKeys()
     {
-        Registry registry = Registry.For(_harness.Root);
+        var registry = Registry.For(_harness.Root);
         registry.Define(Category + "host_id", Registry.KeyType.Bin, 16);
         registry.Define(Category + "host_name", Registry.KeyType.Str, 0x81);
         registry.Define(Category + "host_type", Registry.KeyType.Int, 4);
