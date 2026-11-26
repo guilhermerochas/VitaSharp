@@ -1249,7 +1249,50 @@ public sealed class GpuQueue : IDisposable
     }
     private static readonly Action s_noOp = static () => { };
 
-    public void Dispose()
+    /// <summary>How long <see cref="Shutdown"/> waits for the worker to stop before it logs that it is still inside a
+    /// command (it keeps waiting for it: see there).</summary>
+    internal static int WorkerStopWaitMs { get; set; } = 2000;
+
+    /// <summary>How long <see cref="Shutdown"/> waits, after that, for the worker to leave the backend before it gives up
+    /// disposing it (a worker stuck in the driver: the process ends without the backend's Dispose).</summary>
+    internal static int BackendLeaveWaitMs { get; set; } = 60_000;
+
+    /// <summary>
+    /// The session ends: stops the worker, then disposes the backend once the worker is out of it, and takes it off the
+    /// queue in the same step, so a worker still running a command afterwards finds no backend. The worker can still be
+    /// inside a command well after the guest stopped (a present waiting for the previous frame's fence on a slow, loaded
+    /// software GPU): disposing the renderer as soon as the 2 s stop wait ended destroyed its command pools under that
+    /// present (0xC0000005 in vkResetCommandPool on the GPU worker, the process ended after "Run finished"; 25/11/2026).
+    /// </summary>
+    public void Shutdown()
+    {
+        StopWorker();
+        if (_worker.IsAlive)
+        {
+            Log.Warn($"GPU worker still running a command {WorkerStopWaitMs} ms after the end: the GPU backend is disposed once the worker leaves it");
+        }
+
+        if (!Monitor.TryEnter(_backendLock, BackendLeaveWaitMs))
+        {
+            Log.Error($"GPU worker did not leave the GPU backend in {BackendLeaveWaitMs} ms: the process ends without disposing it");
+            return;
+        }
+
+        try
+        {
+            IGpuBackend? backend = _backend;
+            InstallBackend(null);
+            backend?.Dispose();
+        }
+        finally
+        {
+            Monitor.Exit(_backendLock);
+        }
+
+        Dispose();
+    }
+
+    private void StopWorker()
     {
         _stopping = true;
         lock (_progress)
@@ -1257,7 +1300,12 @@ public sealed class GpuQueue : IDisposable
             Monitor.PulseAll(_progress);
         }
 
-        _worker.Join(2000);
+        _worker.Join(WorkerStopWaitMs);
+    }
+
+    public void Dispose()
+    {
+        StopWorker();
         _available.Dispose();
     }
 }

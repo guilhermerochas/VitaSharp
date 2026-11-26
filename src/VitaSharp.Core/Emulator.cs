@@ -2653,8 +2653,7 @@ public sealed partial class Emulator : IDisposable
         EmulationPause.Changed -= OnPauseChanged;
         VitaSharp.Core.Gxm.GxmProgramInfo.Clear(); // the parsed programs of this system's guest memory
         Vita.Power.Dispose();
-        Gpu.Dispose();
-        Gpu.Backend?.Dispose();
+        Gpu.Shutdown(); // the worker first, then the backend once the worker left it
         Host.Dispose();
     }
 }

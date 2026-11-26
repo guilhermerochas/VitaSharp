@@ -19,8 +19,17 @@ public sealed class SessionCaptureRerunTests : IDisposable
         Directory.CreateDirectory(_analyst);
     }
 
+    /// <summary>Set by a test that got to its end: a failed one keeps both folders (the recording, the re-run's data
+    /// folder with its log) for the analysis, and its messages name them.</summary>
+    private bool _passed;
+
     public void Dispose()
     {
+        if (!_passed)
+        {
+            return;
+        }
+
         foreach (string dir in new[] { _recorded, _analyst })
         {
             try
@@ -32,10 +41,10 @@ public sealed class SessionCaptureRerunTests : IDisposable
         }
     }
 
-    private static string Tail(string s) => s.Length > 6000 ? s[^6000..] : s;
+    private string Tail(string s) => $"(folders kept: {_recorded} {_analyst})\n" + (s.Length > 6000 ? s[^6000..] : s);
 
     /// <summary>The re-run's comparison lines, then the end of its output.</summary>
-    private static string Summary(string s) =>
+    private string Summary(string s) =>
         string.Join("\n", s.Split('\n').Where(l => l.Contains("compare", StringComparison.Ordinal) || l.Contains("HLE calls", StringComparison.Ordinal) || l.Contains("files:", StringComparison.Ordinal) || l.Contains("did not read", StringComparison.Ordinal))) + "\n" + Tail(s);
 
     [SoftwareVulkanFact]
@@ -70,6 +79,7 @@ public sealed class SessionCaptureRerunTests : IDisposable
         Assert.True(rerun.Output.Contains("no divergence", StringComparison.Ordinal), Summary(rerun.Output));
         Assert.True(rerun.Output.Contains("HLE calls: the same calls and results in every thread", StringComparison.Ordinal), Summary(rerun.Output));
         Assert.False(Directory.Exists(Path.Combine(_analyst, "fs", "ux0", "app", "VSTS00001")), "the re-run made the game's folder");
+        _passed = true;
     }
 
     /// <summary>
@@ -108,6 +118,7 @@ public sealed class SessionCaptureRerunTests : IDisposable
         Assert.True(rerun.Output.Contains("files: every read of the title's files was one the recording made", StringComparison.Ordinal), Summary(rerun.Output));
         Assert.True(rerun.Output.Contains("HLE calls: the same calls and results in every thread", StringComparison.Ordinal), Summary(rerun.Output));
         Assert.False(Directory.Exists(Path.Combine(_analyst, "fs", "ux0", "app", "VSTS00001")), "the re-run made the game's folder");
+        _passed = true;
     }
 
     private static void CopyFolder(string from, string to)
