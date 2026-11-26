@@ -145,7 +145,20 @@ public sealed partial class SystemServicesVsh : HleModule
     // SceWlan (bootimage SceWlanBt): the Wi-Fi configuration word; no Wi-Fi chip, the word is kept.
     int _wlanConfig;
     [Hle] int sceWlanGetConfiguration() => _wlanConfig;
-    [Hle] int sceWlanSetConfiguration(int config) { _wlanConfig = config; return 0; }
+
+    /// <summary>
+    /// (int mode): turns the Wi-Fi chip off (2) or on (3), among other modes. The driver applies it and reports the new
+    /// state to the registered callbacks (<see cref="sceWlanRegisterCallback"/>). Airplane mode in Settings and in the
+    /// shell's quick menu (shell.self 3.74 0x8115A488) sets the mode and waits up to 20 s for that report; without it
+    /// Settings showed "Please wait..." for 20 s and then failed (0x80108F01).
+    /// </summary>
+    [Hle]
+    int sceWlanSetConfiguration(int config)
+    {
+        _wlanConfig = config;
+        NotifyWlanCallbacks(_wlanConfig);
+        return 0;
+    }
 
     /// <summary>(int type 0..1, int enable): routes keyboard input to the caller (Sign Up's text fields); no keyboard.</summary>
     [Hle] int sceHidKeyboardSetIntercept(int type, int enable) => (uint)type > 1 ? unchecked((int)0x80010016) : 0;

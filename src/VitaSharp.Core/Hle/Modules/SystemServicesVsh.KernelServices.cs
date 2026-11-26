@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.SaveState;
 
@@ -160,9 +161,86 @@ public sealed partial class SystemServicesVsh
     // ------------------------------------------------------------------ registrations for devices nothing reports
     [SnapshotMissing] // states of builds before it: the call did not exist, so it was never set
     int _wlanCallbacks;
-    /// <summary>(SceUID cb): Wi-Fi events; returns the registration id. No Wi-Fi chip raises them.</summary>
-    [Hle] int sceWlanRegisterCallback(int cb) => ++_wlanCallbacks;
-    [Hle] int sceWlanUnregisterCallback(int id) => 0;
+    private const int WlanCallbackSlots = 2;
+    private const int WLAN_ERR_ALREADY_REGISTERED = unchecked((int)0x80418002), WLAN_ERR_NO_SLOT = unchecked((int)0x80418005);
+
+    /// <summary>The two Wi-Fi driver callback slots of FW 3.74 SceWlanBt (0x8100E0D4..): the owner (process id + 1, 0 =
+    /// free) and its callback.</summary>
+    [SnapshotMissing] // states of builds before it: no slot taken
+    private readonly int[] _wlanCallbackOwner = new int[WlanCallbackSlots];
+
+    [SnapshotMissing] // states of builds before it: no slot taken
+    private readonly int[] _wlanCallbackUid = new int[WlanCallbackSlots];
+
+    /// <summary>(SceUID cb): the Wi-Fi driver's events go to <paramref name="cb"/> (FW 3.74 SceWlanBt 0x810007DC):
+    /// two processes may register, each once (again: 0x80418002; a third: 0x80418005); returns 0. The driver notifies
+    /// the callbacks with its state word when the chip changes state, among others once a configuration
+    /// (sceWlanSetConfiguration) has been applied.</summary>
+    [Hle]
+    int sceWlanRegisterCallback(int cb)
+    {
+        int owner = ProcessScope.CurrentPid + 1;
+        lock (_wlanCallbackOwner)
+        {
+            if (Array.IndexOf(_wlanCallbackOwner, owner) >= 0)
+            {
+                return WLAN_ERR_ALREADY_REGISTERED;
+            }
+
+            int slot = Array.IndexOf(_wlanCallbackOwner, 0);
+            if (slot < 0)
+            {
+                return WLAN_ERR_NO_SLOT;
+            }
+
+            _wlanCallbackOwner[slot] = owner;
+            _wlanCallbackUid[slot] = cb;
+            _wlanCallbacks++;
+        }
+
+        return 0;
+    }
+
+    /// <summary>(void): frees the caller's Wi-Fi callback slot.</summary>
+    [Hle]
+    int sceWlanUnregisterCallback()
+    {
+        int owner = ProcessScope.CurrentPid + 1;
+        lock (_wlanCallbackOwner)
+        {
+            int slot = Array.IndexOf(_wlanCallbackOwner, owner);
+            if (slot >= 0)
+            {
+                _wlanCallbackOwner[slot] = 0;
+                _wlanCallbackUid[slot] = 0;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>The driver reports a change of state to the registered callbacks (FW 3.74 SceWlanBt 0x81000A00: each
+    /// slot's callback is notified with the state word).</summary>
+    private void NotifyWlanCallbacks(int state)
+    {
+        Span<int> callbacks = stackalloc int[WlanCallbackSlots];
+        int count = 0;
+        lock (_wlanCallbackOwner)
+        {
+            for (int slot = 0; slot < WlanCallbackSlots; slot++)
+            {
+                if (_wlanCallbackOwner[slot] != 0)
+                {
+                    callbacks[count++] = _wlanCallbackUid[slot];
+                }
+            }
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            Emu?.Kernel.Objects.Get<Callback>(callbacks[i])?.Notify(state);
+        }
+    }
     /// <summary>(SceUID *pid): the process woken by Wake-on-WLAN: none.</summary>
     [Hle]
     int sceWlanGetWakeOnTargetProcess(uint pid)
