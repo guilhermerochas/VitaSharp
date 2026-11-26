@@ -229,6 +229,7 @@ public sealed unsafe partial class VulkanRenderer
             }
             _prewarmThread = new Thread(() =>
             {
+                HostThreads.LowerCurrent(ThreadPriority.BelowNormal);
                 WarmTranslator(recipes);
                 Prewarm(head);
             })

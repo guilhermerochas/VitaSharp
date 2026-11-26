@@ -28,6 +28,11 @@ public sealed unsafe partial class VulkanRenderer
         /// <summary>How often the contents changed after the first upload (the content cache keeps images from the second
         /// change on: VulkanRenderer.TexContentCache.cs).</summary>
         public int Changes;
+        /// <summary>Levels uploaded as ASTC placeholders while their encode runs in the background
+        /// (<see cref="AstcTranscoder.Mode"/>, placeholder mode); null when the image holds the real contents.</summary>
+        public ulong[]? AstcPending;
+        /// <summary>Upload the same contents again: the placeholders' encodes are ready.</summary>
+        public bool AstcRefine;
     }
 
     /// <summary>The id the texture cache keeps for data at <paramref name="addr"/> read now (see <see cref="Texture.SpaceId"/>).</summary>
@@ -37,6 +42,8 @@ public sealed unsafe partial class VulkanRenderer
     private long _texChecks, _texSkipped, _texHashed, _texHashedBytes, _texHashTicks, _texUploads, _texMissed;
     /// <summary>Time in texture uploads (decode, transcode, staging), and uploads of a content uploaded before.</summary>
     private long _texUploadTicks, _texUploadRepeats;
+    /// <summary>Textures uploaded again because the background ASTC encodes of their placeholders were ready.</summary>
+    private long _texAstcRefines;
     private readonly HashSet<ulong> _uploadedContents = new();
     private long _sweptFrame = -1;
     private long _sweepTicks;
@@ -65,7 +72,7 @@ public sealed unsafe partial class VulkanRenderer
         return $"PERF texcache ({DirtyPages.Mode switch { "0" => "dirty tracking off", "verify" => "verify", _ => "dirty tracking" }}): " +
                $"{_texChecks / frames:F1} checks/frame, {_texSkipped / frames:F1} clean (skipped), {_texHashed / frames:F1} hashed " +
                $"({_texHashedBytes / frames / 1024:F0} KB/frame, {_texHashTicks / f / frames:F3} ms/frame), {_texUploads / frames:F2} uploads/frame ({_texUploadTicks / f / frames:F3} ms/frame, {_texUploadRepeats / frames:F2} of contents uploaded before), content cache {_texContentHits / frames:F2} images taken back/frame ({_contentCache.Count} kept, {_contentCacheBytes >> 20} MB), " +
-               $"sweep {_sweepTicks / f / frames:F3} ms/frame" + (DirtyPages.Verify ? $", MISSED {_texMissed}" : "")
+               $"sweep {_sweepTicks / f / frames:F3} ms/frame" + (_texAstcRefines > 0 ? $", {_texAstcRefines} uploaded again once their background ASTC encode was ready" : "") + (DirtyPages.Verify ? $", MISSED {_texMissed}" : "")
                + (_options.InspectTextures ? $"; test inspection {_inspectTicks / f / frames:F3} ms/frame ({_inspectDone} inspected, {_inspectDuplicate} repeated contents skipped, {_inspectDeferred} over the frame budget: {_inspectBackground} inspected in the background, {_inspectStale} changed before their turn, {_inspectQueue.Count} still queued)" : "");
     }
 
@@ -911,6 +918,16 @@ public sealed unsafe partial class VulkanRenderer
 
         _textures.TryGetValue(key, out Texture? tex);
         _texSrcTex = tex;
+        if (tex?.AstcPending is { } pendingLevels && AstcTranscoder.Settled(pendingLevels))
+        {
+            // the background ASTC encodes of its placeholder levels are done: upload the texture again, now from
+            // the transcoder's memory cache
+            tex.AstcPending = null;
+            tex.AstcRefine = true;
+            tex.ForceCheck = true;
+            tex.CheckedFrame = -1;
+            _texAstcRefines++;
+        }
         if (s_traceTexAddr != 0 && addr - s_traceTexAddr < 0x100000)
         {
             Log.Info($"[trace-tex] t={System.Diagnostics.Stopwatch.GetTimestamp() / (System.Diagnostics.Stopwatch.Frequency / 10000) / 10.0:F1}ms resolve 0x{addr:X8} {w}x{h} frame {FrameCount} cached={tex != null} checked={tex?.CheckedFrame == FrameCount} hash {System.IO.Hashing.XxHash32.HashToUInt32(GuestMemory.ReadSpan(addr, (int)Math.Min(w * 4, 4096u))):X8}");
@@ -986,7 +1003,7 @@ public sealed unsafe partial class VulkanRenderer
             Log.Warn($"[gpu] texdirty verify: texture 0x{addr:X8} {w}x{h} fmt 0x{gxmTextureDesc.Format:X8} changed without a dirty page (frame {FrameCount})");
         }
 
-        if (tex != null && tex.Hash == hash)
+        if (tex != null && tex.Hash == hash && !tex.AstcRefine)
         {
             tex.CheckedFrame = FrameCount;
             tex.LastUsedFrame = FrameCount;
@@ -1050,7 +1067,7 @@ public sealed unsafe partial class VulkanRenderer
         DecoderOutputs.Picture? earlier = VitaSharp.Core.Gpu.DecoderOutputs.EarlierFor(addr, w, h);
         // contents this texture (or another one with the same key layout) had before: take that image back, no upload
         bool fromCache = false;
-        if (s_contentCacheOn && earlier == null && hash != 0)
+        if (s_contentCacheOn && earlier == null && hash != 0 && !(tex?.AstcRefine ?? false))
         {
             ulong oldHash = tex?.Hash ?? 0; // what the current image holds (a forced re-check does not change that)
             if (TakeCachedContent(key, hash) is { } cached)
@@ -1106,6 +1123,7 @@ public sealed unsafe partial class VulkanRenderer
         tex.Stamp = DirtyPages.Epoch;
         tex.ForceCheck = false;
         tex.SpaceId = spaceId;
+        tex.AstcRefine = false;
         _texUploads++;
         tex.CheckedFrame = FrameCount;
         tex.LastUsedFrame = FrameCount;
@@ -1132,7 +1150,16 @@ public sealed unsafe partial class VulkanRenderer
             using TextureDecoder.SourceScope source = earlier != null ? TextureDecoder.UseSource(addr, earlier.Data) : default;
             long u0 = System.Diagnostics.Stopwatch.GetTimestamp();
             ProfMark(ProfPhase.TexMemHash); // hashing the changed memory, a new image
-            UploadTexture(tex, gxmTextureDesc, info, layout, w, h, mips, faces, format, lodMin);
+            AstcTranscoder.BeginPlaceholders();
+            try
+            {
+                UploadTexture(tex, gxmTextureDesc, info, layout, w, h, mips, faces, format, lodMin);
+            }
+            finally
+            {
+                tex.AstcPending = AstcTranscoder.EndPlaceholders();
+            }
+
             ProfMark(ProfPhase.TexMemUpload);
             _texUploadTicks += System.Diagnostics.Stopwatch.GetTimestamp() - u0;
             if (_uploadedContents.Count > 65536)

@@ -695,6 +695,12 @@ public sealed unsafe partial class VulkanRenderer
                 {
                     NativeThread.Register("Shader worker");
                     t_shaderWorker = true;
+                    // the managed priority alone does nothing on Linux/Android: there the spare workers get a nice value
+                    if (spare || s_workerPriority != ThreadPriority.Normal)
+                    {
+                        HostThreads.LowerCurrent(spare ? ThreadPriority.BelowNormal : s_workerPriority);
+                    }
+
                     WorkerLoop(spare);
                 })
                 {

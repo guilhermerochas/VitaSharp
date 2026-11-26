@@ -84,6 +84,19 @@ public static class EnvVars
     public const string Astc = "VITASHARP_ASTC";
     /// <summary>Size limit in MB of a title's ASTC transcode disk cache (default 512).</summary>
     public const string AstcCacheMb = "VITASHARP_ASTC_CACHE_MB";
+    /// <summary>Where a BC/PVRTC level missing from the ASTC caches is encoded: =0 (gpu) on the GPU thread (desktop
+    /// default), =wait by the texture transcoder threads while the GPU thread waits (Android default: exact textures),
+    /// =placeholder by the transcoder threads while the texture shows a coarse placeholder and is uploaded again when
+    /// ready (opt-in, not the console's behaviour) (Renderer.Vulkan AstcTranscoder.cs).</summary>
+    public const string AstcAsync = "VITASHARP_ASTC_ASYNC";
+    /// <summary>Texture transcoder threads of the wait/placeholder modes (default: a quarter of the processors, 1-2).</summary>
+    public const string AstcWorkers = "VITASHARP_ASTC_WORKERS";
+    /// <summary>=0: in the wait mode the GPU thread only waits for the texture transcoders instead of running their
+    /// queued row jobs too (Renderer.Vulkan AstcTranscoder.Help).</summary>
+    public const string AstcHelp = "VITASHARP_ASTC_HELP";
+    /// <summary>=0: BC1 levels go through the ASTC encoder's search like the other formats instead of the direct
+    /// block mapping (A/B; Renderer.Vulkan AstcTranscoder.Bc1Direct).</summary>
+    public const string AstcBc1Direct = "VITASHARP_ASTC_BC1_DIRECT";
     public const string AsyncPipelines = "VITASHARP_ASYNC_PIPELINES";
     public const string AsyncShaders = "VITASHARP_ASYNC_SHADERS";
     public const string AudioDevice = "VITASHARP_AUDIO_DEVICE";
@@ -446,6 +459,9 @@ public static class EnvVars
     /// while the hot threads leave at least half a fast core idle, as the shader workers do; default: the slow cores
     /// (Mobile.Core Performance/ThreadPlacement.cs).</summary>
     public const string AndroidHelpers = "VITASHARP_ANDROID_HELPERS";
+    /// <summary>Linux and Android: =0 leaves the background threads (speculative JIT precompile, spare shader workers,
+    /// texture transcoders) at nice 0 instead of 5-10, to compare (Core Util/HostThreads.cs LowerCurrent).</summary>
+    public const string BackgroundNice = "VITASHARP_BG_NICE";
     /// <summary>Android, A/B: =big moves the guest thread recording the GXM scenes (the last one to call
     /// sceGxmBeginScene) to the fast cores as soon as it changes, beyond the hot-thread slots; default: placed by its load
     /// (Mobile.Core Performance/ThreadPlacement.cs, Core Util/GpuSubmitterThread.cs).</summary>

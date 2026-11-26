@@ -280,8 +280,17 @@ public sealed class CodePrecompiler
         var exits = new List<(uint Pc, bool Thumb)>();
         Jit.StaticExits = exits;
         Jit.ReuseFreedCode = true;
+        bool lowered = false;
         while (!_stop.IsCancellationRequested && (stays || Volatile.Read(ref _foreground) != 0))
         {
+            // once nothing waits for the boot step, the work left is speculative: below the game's threads, also on
+            // Linux/Android where the managed priority set by Run does nothing (HostThreads.LowerCurrent)
+            if (!lowered && Volatile.Read(ref _foreground) == 0)
+            {
+                lowered = true;
+                Util.HostThreads.LowerCurrent(ThreadPriority.Lowest);
+            }
+
             if (_executed.TryDequeue(out (Block Block, bool Interpreted) executed))
             {
                 try

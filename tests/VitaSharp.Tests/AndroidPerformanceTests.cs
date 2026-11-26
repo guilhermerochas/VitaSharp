@@ -213,7 +213,33 @@ public sealed class AndroidPerformanceTests : IDisposable
         Assert.Equal(Placement.All, p.Plan(Threads(0.5, 0.2)).Placements[5]);
     }
 
+    /// <summary>
+    /// The texture transcoders (ASTC encodes off the GPU thread, Renderer.Vulkan AstcTranscoder.Mode) stay off the fast cores
+    /// even while those are idle: a level-load burst of encodes must not take the cores the game's main thread and the
+    /// GPU worker come back to (they were thread-pool threads before, never placed, on every core).
+    /// </summary>
+    [Fact]
+    public void BackgroundThreadsNeverTakeTheFastCores()
+    {
+        var p = new ThreadPlacementPlanner(HelioG99(), spareFastCoresForGuests: true);
+        static ThreadSample[] Threads(double main, double gpu) =>
+        [
+            Guest(1, main), new(9, ThreadKind.Gpu, "GPU worker", gpu, 9), new(5, ThreadKind.ShaderWorker, "Shader worker", 0.9, 5),
+            new(6, ThreadKind.Background, "Texture transcoder", 1.0, 6), new(7, ThreadKind.Background, "Texture transcoder", 1.0, 7)
+        ];
+        PlacementPlan idle = p.Plan(Threads(0.2, 0.1)); // a loading screen: fast cores idle
+        Assert.Equal(Placement.All, idle.Placements[5]);
+        Assert.Equal(Placement.NotBig, idle.Placements[6]);
+        Assert.Equal(Placement.NotBig, idle.Placements[7]);
+        Assert.DoesNotContain(6, idle.HotTids);
+        PlacementPlan busy = p.Plan(Threads(1.0, 0.95));
+        Assert.Equal(Placement.NotBig, busy.Placements[6]);
+        Assert.Equal(Placement.Big, busy.Placements[1]);
+        Assert.Equal(Placement.Big, busy.Placements[9]);
+    }
+
     [Theory]
+    [InlineData(NativeThread.Role.Background, "Texture transcoder", ThreadKind.Background)]
     [InlineData(NativeThread.Role.Guest, "SceFiosIO", ThreadKind.Guest)]
     [InlineData(NativeThread.Role.Gpu, "GPU worker", ThreadKind.Gpu)]
     [InlineData(NativeThread.Role.JitWorker, "JIT worker", ThreadKind.JitWorker)]
