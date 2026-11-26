@@ -87,8 +87,10 @@ main() {
     sed -n '3,11s/^# \{0,1\}//p' "${BASH_SOURCE[0]}"
     return 0
   fi
-  "${HERE}/android-awake.sh" start # the phone's screen is kept on until the end (build/android-awake.sh)
-  trap '"${HERE}/android-awake.sh" stop' EXIT
+  # the phone's screen is kept on until the end (build/android-awake.sh); a watchdog that was already running stays on
+  if "${HERE}/android-awake.sh" begin; then
+    trap '"${HERE}/android-awake.sh" stop' EXIT
+  fi
   local out="${OUT:-${PWD}/captures}"
   local arg="${1:-}"
   local dir name

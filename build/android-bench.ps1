@@ -33,7 +33,9 @@ if (-not $dataRoot)
     $dataRoot = '/sdcard/Android/data/io.github.vitasharp/files'
 }
 $remote = "$dataRoot/bench"
-& "$PSScriptRoot\android-awake.ps1" start   # the phone's screen is kept on until the end (build/android-awake.ps1)
+# the phone's screen is kept on until the end (build/android-awake.ps1); a watchdog that was already running stays on
+& "$PSScriptRoot\android-awake.ps1" begin
+$awakeOwned = $LASTEXITCODE -eq 0
 $run = Get-Date -Format 'yyyyMMdd_HHmmss'
 $here = Split-Path -Parent $PSScriptRoot
 $fx = @($Fixtures.Split(',') | Where-Object { $_ })
@@ -79,6 +81,9 @@ adb pull "$remote/results/$run.flicker.tsv" $ftsv 2>$null | Out-Null
 if (Test-Path $ftsv) {
     adb pull "$remote/results/${run}_flicker" $results 2>$null | Out-Null
     Write-Host 'fixture variant pace frames flagged fps frames-flagged'; Get-Content $ftsv
+    if ($awakeOwned) {
+        & "$PSScriptRoot\android-awake.ps1" stop
+    }
     exit 0
 }
 
@@ -91,4 +96,6 @@ else {
     dotnet build $proj -c Release -p:VitaSharpDeveloper=true -p:UseSharedCompilation=false -m:2 -v q -nologo | Out-Null
     dotnet run --no-build --project $proj -c Release -p:VitaSharpDeveloper=true -- bench table $tsv --base $vs[0] --scenes $Scenes
 }
-& "$PSScriptRoot\android-awake.ps1" stop
+if ($awakeOwned) {
+    & "$PSScriptRoot\android-awake.ps1" stop
+}

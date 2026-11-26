@@ -102,8 +102,10 @@ main() {
   mkdir -p "${out}/shots"
 
   adb get-state >/dev/null
-  "${HERE}/android-awake.sh" start # the phone's screen is kept on until the end (build/android-awake.sh)
-  trap '"${HERE}/android-awake.sh" stop' EXIT
+  # the phone's screen is kept on until the end (build/android-awake.sh); a watchdog that was already running stays on
+  if "${HERE}/android-awake.sh" begin; then
+    trap '"${HERE}/android-awake.sh" stop' EXIT
+  fi
   local activity
   activity="$(adb shell cmd package resolve-activity --brief "${PKG}" | tr -d '\r' | tail -n 1)"
   if [[ -z "${activity}" ]]; then
