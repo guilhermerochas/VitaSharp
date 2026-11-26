@@ -4,12 +4,12 @@ using VitaSharp.Core.Firmware;
 namespace VitaSharp.Tests;
 
 /// <summary>
-/// The PSP side of the README status (the PSP hardware map, its badge, docs/psp/progress.md and its pt-BR pair) is
-/// generated from docs/psp/coverage.json by build/hle-status (VitaSharp.Desktop psp-coverage). Rendering the committed
+/// The compat side of the README status (the Compat hardware map, its badge, docs/compat/progress.md and its pt-BR pair) is
+/// generated from docs/compat/coverage.json by build/hle-status (VitaSharp.Desktop compat-coverage). Rendering the committed
 /// source again must give the committed files, every block a module uses must be in the source, and every source file
 /// a block names as its implementation must exist, so the map cannot claim hardware the code does not have.
 /// </summary>
-public class PspCoverageReportTests
+public class CompatCoverageReportTests
 {
     private static string Root([CallerFilePath] string source = "")
     {
@@ -26,15 +26,15 @@ public class PspCoverageReportTests
 
     private static string Read(string relative) => File.ReadAllText(Path.Combine(Root(), relative)).Replace("\r\n", "\n");
 
-    private static PspCoverageReport.Coverage Committed() => PspCoverageReport.Parse(Read(PspCoverageReport.SourcePath));
+    private static CompatCoverageReport.Coverage Committed() => CompatCoverageReport.Parse(Read(CompatCoverageReport.SourcePath));
 
     [Fact]
     public void CommittedFilesMatchTheSource()
     {
-        PspCoverageReport.Coverage coverage = Committed();
+        CompatCoverageReport.Coverage coverage = Committed();
         Assert.NotEmpty(coverage.Blocks);
         Assert.NotEmpty(coverage.Modules);
-        var stale = PspCoverageReport.Render(coverage)
+        var stale = CompatCoverageReport.Render(coverage)
             .Where(f => !File.Exists(Path.Combine(Root(), f.Key)) || Read(f.Key) != f.Value)
             .Select(f => f.Key).ToList();
         Assert.Empty(stale);
@@ -43,8 +43,8 @@ public class PspCoverageReportTests
     [Fact]
     public void EveryBlockAModuleUsesIsInTheSource()
     {
-        PspCoverageReport.Coverage coverage = Committed();
-        Assert.Empty(PspCoverageReport.Problems(coverage));
+        CompatCoverageReport.Coverage coverage = Committed();
+        Assert.Empty(CompatCoverageReport.Problems(coverage));
         var ids = coverage.Blocks.Select(b => b.Id).ToHashSet(StringComparer.Ordinal);
         Assert.All(coverage.Modules, m => Assert.All(m.Uses, id => Assert.Contains(id, ids)));
         // the flash0 layout: kernel modules in kd, the utilities in vsh/module
@@ -57,10 +57,10 @@ public class PspCoverageReportTests
     [Fact]
     public void EveryImplementedBlockPointsAtCodeThatExists()
     {
-        PspCoverageReport.Coverage coverage = Committed();
-        foreach (PspCoverageReport.Block block in coverage.Blocks)
+        CompatCoverageReport.Coverage coverage = Committed();
+        foreach (CompatCoverageReport.Block block in coverage.Blocks)
         {
-            if (block.State is PspCoverageReport.BlockState.Done or PspCoverageReport.BlockState.Partial)
+            if (block.State is CompatCoverageReport.BlockState.Done or CompatCoverageReport.BlockState.Partial)
             {
                 Assert.NotEmpty(block.Code);
             }
@@ -69,8 +69,8 @@ public class PspCoverageReportTests
             Assert.False(string.IsNullOrWhiteSpace(block.Note.En) || string.IsNullOrWhiteSpace(block.Note.Pt), block.Id);
         }
 
-        Assert.Equal(PspCoverageReport.BlockState.Policy, coverage.Blocks.Single(b => b.Id == "kirk").State);
-        Assert.Equal(0, PspCoverageReport.UsedBy(coverage, "umd"));
+        Assert.Equal(CompatCoverageReport.BlockState.Policy, coverage.Blocks.Single(b => b.Id == "kirk").State);
+        Assert.Equal(0, CompatCoverageReport.UsedBy(coverage, "umd"));
     }
 
     /// <summary>A module's colour is its worst block: missing, then not emulated by policy, then partial, then done.</summary>
@@ -91,19 +91,19 @@ public class PspCoverageReportTests
                 { "path": "kd/three.prx", "uses": ["b", "c", "a"], "role": { "en": "r", "pt": "r" } },
                 { "path": "vsh/module/four.prx", "uses": ["c", "d"], "role": { "en": "r", "pt": "r" } } ] }
             """;
-        PspCoverageReport.Coverage coverage = PspCoverageReport.Parse(Json);
-        Assert.Empty(PspCoverageReport.Problems(coverage));
+        CompatCoverageReport.Coverage coverage = CompatCoverageReport.Parse(Json);
+        Assert.Empty(CompatCoverageReport.Problems(coverage));
         Assert.Equal(
-            [PspCoverageReport.BlockState.Done, PspCoverageReport.BlockState.Partial, PspCoverageReport.BlockState.Policy, PspCoverageReport.BlockState.Missing],
-            coverage.Modules.Select(m => PspCoverageReport.Worst(coverage, m)));
+            [CompatCoverageReport.BlockState.Done, CompatCoverageReport.BlockState.Partial, CompatCoverageReport.BlockState.Policy, CompatCoverageReport.BlockState.Missing],
+            coverage.Modules.Select(m => CompatCoverageReport.Worst(coverage, m)));
         // the badge leaves the absent block out: 1 done of 4
-        Assert.Equal(("PSP 6.61 hardware", 1, 4, 1), PspCoverageReport.BadgeCounts(coverage));
-        IReadOnlyDictionary<string, string> files = PspCoverageReport.Render(coverage);
-        Assert.Contains("25% (1/4 blocks, 1 partial)", files[PspCoverageReport.BadgePath]);
-        Assert.Contains("<title>kd/three.prx: not emulated by policy (b partial, c not emulated by policy, a done)</title>", files[PspCoverageReport.MapPath]);
-        Assert.Contains(">flash0 kd (3 modules): 1 with every block done<", files[PspCoverageReport.MapLightPath]);
-        Assert.Contains(">flash0 vsh/module (1 modules): 0 with every block done<", files[PspCoverageReport.MapPath]);
-        Assert.Contains("| `kd/two.prx` | r | `a`, `b` | parcial |", files[PspCoverageReport.ProgressPtPath]);
+        Assert.Equal(("Compat 6.61", 1, 4, 1), CompatCoverageReport.BadgeCounts(coverage));
+        IReadOnlyDictionary<string, string> files = CompatCoverageReport.Render(coverage);
+        Assert.Contains("25% (1/4 blocks, 1 partial)", files[CompatCoverageReport.BadgePath]);
+        Assert.Contains("<title>kd/three.prx: not emulated by policy (b partial, c not emulated by policy, a done)</title>", files[CompatCoverageReport.MapPath]);
+        Assert.Contains(">flash0 kd (3 modules): 1 with every block done<", files[CompatCoverageReport.MapLightPath]);
+        Assert.Contains(">flash0 vsh/module (1 modules): 0 with every block done<", files[CompatCoverageReport.MapPath]);
+        Assert.Contains("| `kd/two.prx` | r | `a`, `b` | parcial |", files[CompatCoverageReport.ProgressPtPath]);
     }
 
     [Fact]
@@ -119,25 +119,25 @@ public class PspCoverageReportTests
                 { "path": "kd/one.prx", "uses": ["e"], "role": { "en": "r", "pt": "r" } },
                 { "path": "kd/none.prx", "uses": [], "role": { "en": "r", "pt": "r" } } ] }
             """;
-        IReadOnlyList<string> problems = PspCoverageReport.Problems(PspCoverageReport.Parse(Json));
+        IReadOnlyList<string> problems = CompatCoverageReport.Problems(CompatCoverageReport.Parse(Json));
         Assert.Contains(problems, p => p.Contains("\"zz\", which is not a block", StringComparison.Ordinal));
         Assert.Contains(problems, p => p.Contains("\"e\", which the Vita does not have", StringComparison.Ordinal));
         Assert.Contains(problems, p => p.Contains("kd/one.prx is listed twice", StringComparison.Ordinal));
         Assert.Contains(problems, p => p.Contains("kd/none.prx uses no block", StringComparison.Ordinal));
-        Assert.Throws<FormatException>(() => PspCoverageReport.ParseState("maybe"));
+        Assert.Throws<FormatException>(() => CompatCoverageReport.ParseState("maybe"));
     }
 
-    /// <summary>Both READMEs show the PSP badge and the PSP map next to the Vita's.</summary>
+    /// <summary>Both READMEs show the Compat badge and the Compat map next to the Vita's.</summary>
     [Fact]
-    public void TheReadmesShowThePspBadgeAndMap()
+    public void TheReadmesShowTheCompatBadgeAndMap()
     {
         foreach (string readme in new[] { "README.md", "README.pt-BR.md" })
         {
             string text = Read(readme);
-            Assert.Contains($"({PspCoverageReport.BadgePath})", text);
-            Assert.Contains($"srcset=\"{PspCoverageReport.MapLightPath}\"", text);
-            Assert.Contains($"src=\"{PspCoverageReport.MapPath}\"", text);
-            Assert.Contains("(docs/psp/progress", text);
+            Assert.Contains($"({CompatCoverageReport.BadgePath})", text);
+            Assert.Contains($"srcset=\"{CompatCoverageReport.MapLightPath}\"", text);
+            Assert.Contains($"src=\"{CompatCoverageReport.MapPath}\"", text);
+            Assert.Contains("(docs/compat/progress", text);
         }
     }
 }

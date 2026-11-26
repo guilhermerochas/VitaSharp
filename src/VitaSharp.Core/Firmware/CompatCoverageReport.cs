@@ -6,22 +6,23 @@ using System.Text.Json;
 namespace VitaSharp.Core.Firmware;
 
 /// <summary>
-/// The PSP side of the README status. VitaSharp does not reimplement the PSP's modules: like a Vita it runs the PSP
+/// The compat side of the README status (the Vita's compatibility core, SceCompat's Allegrex). VitaSharp does not
+/// reimplement the modules that run on it: like a Vita it runs the
 /// firmware 6.61 of <c>pcff</c> (the kermit flash0) on its Allegrex core inside SceCompat
 /// (docs/notes/psp-compat.md). So this measures the hardware: which emulated blocks each firmware module uses and the
 /// state of each block in VitaSharp, a module's colour being its worst block. Everything is rendered from the
-/// versioned source docs/psp/coverage.json (<c>VitaSharp.Desktop psp-coverage --status=&lt;repo&gt;</c>, run by
-/// build/hle-status); PspCoverageReportTests renders it again and compares, so the committed map, badge and pages
+/// versioned source docs/compat/coverage.json (<c>VitaSharp.Desktop compat-coverage --status=&lt;repo&gt;</c>, run by
+/// build/hle-status); CompatCoverageReportTests renders it again and compares, so the committed map, badge and pages
 /// cannot drift from the source.
 /// </summary>
-public static class PspCoverageReport
+public static class CompatCoverageReport
 {
-    public const string SourcePath = "docs/psp/coverage.json";
-    public const string ProgressPath = "docs/psp/progress.md";
-    public const string ProgressPtPath = "docs/psp/progress.pt-BR.md";
-    public const string MapPath = HleStatusReport.AssetDir + "/progress-map-psp.svg";
-    public const string MapLightPath = HleStatusReport.AssetDir + "/progress-map-psp-light.svg";
-    public const string BadgePath = HleStatusReport.AssetDir + "/badge-psp.svg";
+    public const string SourcePath = "docs/compat/coverage.json";
+    public const string ProgressPath = "docs/compat/progress.md";
+    public const string ProgressPtPath = "docs/compat/progress.pt-BR.md";
+    public const string MapPath = HleStatusReport.AssetDir + "/progress-map-compat.svg";
+    public const string MapLightPath = HleStatusReport.AssetDir + "/progress-map-compat-light.svg";
+    public const string BadgePath = HleStatusReport.AssetDir + "/badge-compat.svg";
 
     /// <summary>A block's state in VitaSharp. Policy: not emulated by a project decision (KIRK). Absent: hardware the
     /// Vita's compat core does not have (no module of the flash0 drives it).</summary>
@@ -187,7 +188,7 @@ public static class PspCoverageReport
     public static (string Label, int Done, int Total, int Partial) BadgeCounts(Coverage coverage)
     {
         var applicable = coverage.Blocks.Where(b => b.State != BlockState.Absent).ToList();
-        return ($"PSP {coverage.Firmware} hardware", applicable.Count(b => b.State == BlockState.Done), applicable.Count,
+        return ($"Compat {coverage.Firmware}", applicable.Count(b => b.State == BlockState.Done), applicable.Count,
             applicable.Count(b => b.State == BlockState.Partial));
     }
 
@@ -254,14 +255,14 @@ public static class PspCoverageReport
         string muted = dark ? "#9198a1" : "#59636e";
         var kernel = coverage.Modules.Where(m => m.Path.StartsWith("kd/", StringComparison.Ordinal)).ToList();
         var vsh = coverage.Modules.Where(m => !m.Path.StartsWith("kd/", StringComparison.Ordinal)).ToList();
-        string aria = $"PSP hardware map: {coverage.Blocks.Count} emulated blocks and the {coverage.Modules.Count} modules of the PSP firmware {coverage.Firmware}";
+        string aria = $"Compat hardware map: {coverage.Blocks.Count} emulated blocks of the Vita's compat core and the {coverage.Modules.Count} modules of its firmware {coverage.Firmware}";
         StringBuilder b = new();
         b.Append(s_inv, $"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{F(W)}\" height=\"{F(H)}\" viewBox=\"0 0 {F(W)} {F(H)}\" role=\"img\" aria-label=\"{Esc(aria)}\">\n");
         b.Append(s_inv, $"<rect width=\"{F(W)}\" height=\"{F(H)}\" rx=\"8\" fill=\"{bg}\"/>\n");
         b.Append("<g font-family=\"-apple-system,Segoe UI,Helvetica,Arial,sans-serif\">\n");
-        b.Append(s_inv, $"<text x=\"{F(Pad + 4)}\" y=\"27\" font-size=\"17\" font-weight=\"600\" fill=\"{fg}\">PSP hardware map</text>\n");
-        string subtitle = $"firmware {coverage.Firmware}: {coverage.Modules.Count} modules, colour = worst block used";
-        b.Append(s_inv, $"<text x=\"{F(Pad + 4 + 160)}\" y=\"27\" font-size=\"12\" fill=\"{muted}\">{Esc(subtitle)}</text>\n");
+        b.Append(s_inv, $"<text x=\"{F(Pad + 4)}\" y=\"27\" font-size=\"17\" font-weight=\"600\" fill=\"{fg}\">Compat hardware map</text>\n");
+        string subtitle = $"firmware {coverage.Firmware} (flash0): {coverage.Modules.Count} modules, colour = worst block used";
+        b.Append(s_inv, $"<text x=\"{F(Pad + 4 + HleStatusReport.TextWidth("Compat hardware map", 17) + 14)}\" y=\"27\" font-size=\"12\" fill=\"{muted}\">{Esc(subtitle)}</text>\n");
         // legend: one swatch per state a module can show
         double legendX = W - Pad - 4 - 300;
         foreach (BlockState state in new[] { BlockState.Done, BlockState.Partial, BlockState.Missing, BlockState.Policy })
@@ -353,11 +354,11 @@ public static class PspCoverageReport
         b.Append(pt ? "# Cobertura do hardware do PSP\n\n" : "# PSP hardware coverage\n\n");
         b.Append(pt ? "*English: [progress.md](progress.md).*\n\n" : "*Português: [progress.pt-BR.md](progress.pt-BR.md).*\n\n");
         b.Append(pt
-            ? "<!-- Gerado por build/hle-status (VitaSharp.Desktop psp-coverage --status) a partir de docs/psp/coverage.json; não edite à mão. -->\n\n"
-            : "<!-- Generated by build/hle-status (VitaSharp.Desktop psp-coverage --status) from docs/psp/coverage.json; do not edit by hand. -->\n\n");
+            ? "<!-- Gerado por build/hle-status (VitaSharp.Desktop compat-coverage --status) a partir de docs/compat/coverage.json; não edite à mão. -->\n\n"
+            : "<!-- Generated by build/hle-status (VitaSharp.Desktop compat-coverage --status) from docs/compat/coverage.json; do not edit by hand. -->\n\n");
         if (pt)
         {
-            b.Append(s_inv, $"O que o firmware do PSP que o Vita roda precisa do hardware emulado. O VitaSharp não reimplementa os módulos do PSP (não há HLE deste lado): como um Vita, ele roda o firmware {coverage.Firmware} do PSP que vem no `pcff` (o flash0 kermit em `vs0:app/NPXS10028`) no núcleo Allegrex dentro do SceCompat ([psp-compat.pt-BR.md](../notes/psp-compat.pt-BR.md)). ");
+            b.Append(s_inv, $"O que o firmware do Compat (o núcleo de compatibilidade do Vita: o Allegrex dentro do SoC, que o firmware chama de SceCompat) precisa do hardware emulado. O VitaSharp não reimplementa os módulos que rodam nele (não há HLE deste lado): como um Vita, ele roda o firmware {coverage.Firmware} que vem no `pcff` (o flash0 kermit em `vs0:app/NPXS10028`) nesse núcleo ([psp-compat.pt-BR.md](../notes/psp-compat.pt-BR.md)). ");
             b.Append("Por isso esta página mede o hardware: uma linha por bloco emulado com o estado dele no VitaSharp e uma linha por módulo do firmware com os blocos que ele usa; a cor do módulo é a do pior bloco.\n\n");
             b.Append("- Os blocos que o Vita atende do lado ARM (Memory Stick, flash, áudio, Media Engine, Wi-Fi, USB, syscon, utilitários) chegam ao ScePspemu real como pedidos kermit; ficam parciais até esse caminho rodar de ponta a ponta.\n");
             b.Append("- Todo módulo do flash0 é cifrado (`~PSP`) e carregado pelo `memlmd`, que precisa do KIRK: não emulado por política, mostrado nos módulos que o chamam (memlmd e os de DRM) em vez de repetido em todos.\n");
@@ -366,7 +367,7 @@ public static class PspCoverageReport
         }
         else
         {
-            b.Append(s_inv, $"What the PSP firmware the Vita runs needs from the emulated hardware. VitaSharp does not reimplement the PSP's modules (no HLE on this side): like a Vita, it runs the PSP firmware {coverage.Firmware} that comes in `pcff` (the kermit flash0 in `vs0:app/NPXS10028`) on the Allegrex core inside SceCompat ([psp-compat.md](../notes/psp-compat.md)). ");
+            b.Append(s_inv, $"What the Compat firmware (the Vita's compatibility core: the Allegrex inside the SoC, which the firmware calls SceCompat) needs from the emulated hardware. VitaSharp does not reimplement the modules that run on it (no HLE on this side): like a Vita, it runs the firmware {coverage.Firmware} that comes in `pcff` (the kermit flash0 in `vs0:app/NPXS10028`) on that core ([psp-compat.md](../notes/psp-compat.md)). ");
             b.Append("So this page measures the hardware: one row per emulated block with its state in VitaSharp, and one row per firmware module with the blocks it uses; a module's colour is its worst block.\n\n");
             b.Append("- The blocks the Vita serves on the ARM side (Memory Stick, flash, audio, Media Engine, Wi-Fi, USB, syscon, utilities) reach the real ScePspemu as kermit requests; they stay partial until that path runs end to end.\n");
             b.Append("- Every flash0 module is encrypted (`~PSP`) and loaded through `memlmd`, which needs KIRK: not emulated by policy, shown on the modules that call it (memlmd and the DRM ones) rather than repeated on every module.\n");
@@ -374,10 +375,10 @@ public static class PspCoverageReport
             b.Append("- Module names come from the file table of `pcff`; roles from uOFW, the kermit channels and psdevwiki's PSP module lists (\"to confirm\" where no source gives the role). Each block's state is what `src/VitaSharp.Core/Compat` implements.\n\n");
         }
 
-        b.Append("<picture>\n  <source media=\"(prefers-color-scheme: light)\" srcset=\"../assets/status/progress-map-psp-light.svg\">\n");
+        b.Append("<picture>\n  <source media=\"(prefers-color-scheme: light)\" srcset=\"../assets/status/progress-map-compat-light.svg\">\n");
         b.Append(pt
-            ? "  <img src=\"../assets/status/progress-map-psp.svg\" alt=\"Mapa do hardware do PSP: um bloco por célula e os módulos do flash0 coloridos pelo pior bloco que usam\" width=\"100%\">\n</picture>\n\n"
-            : "  <img src=\"../assets/status/progress-map-psp.svg\" alt=\"PSP hardware map: one cell per block and the flash0 modules coloured by the worst block they use\" width=\"100%\">\n</picture>\n\n");
+            ? "  <img src=\"../assets/status/progress-map-compat.svg\" alt=\"Mapa do hardware Compat: um bloco por célula e os módulos do flash0 coloridos pelo pior bloco que usam\" width=\"100%\">\n</picture>\n\n"
+            : "  <img src=\"../assets/status/progress-map-compat.svg\" alt=\"Compat hardware map: one cell per block and the flash0 modules coloured by the worst block they use\" width=\"100%\">\n</picture>\n\n");
         b.Append(pt ? "| Estado | Blocos | Módulos (pior bloco) |\n|---|---:|---:|\n" : "| State | Blocks | Modules (worst block) |\n|---|---:|---:|\n");
         foreach (BlockState state in s_states)
         {

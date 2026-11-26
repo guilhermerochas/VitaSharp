@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=ae2c5cfa21fa29266202a22826b7b169bcc57cf248d058d0d4b178cecc4b3975 -->
+<!-- pair: README.pt-BR.md sha256=ac05a3aa88770ad4aceec53eb5b28051a27cd9605b8488188c640f4983281a6c -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -117,7 +117,7 @@ and the test games ([progress per library](docs/hle/progress.md)).
 [![VitaSDK functions](docs/assets/status/badge-vitasdk.svg)](docs/hle/progress.md)
 [![firmware 3.74 exports](docs/assets/status/badge-overall.svg)](docs/hle/progress.md)
 [![firmware 3.74 kernel exports](docs/assets/status/badge-kernel.svg)](docs/hle/progress.md)
-[![PSP 6.61 hardware](docs/assets/status/badge-psp.svg)](docs/psp/progress.md)
+[![Compat 6.61](docs/assets/status/badge-compat.svg)](docs/compat/progress.md)
 
 <table>
 <tr>
@@ -132,13 +132,14 @@ and the test games ([progress per library](docs/hle/progress.md)).
 many are implemented.</sub>
 </td>
 <td width="50%" valign="top" align="center">
-<a href="docs/psp/progress.md">
+<a href="docs/compat/progress.md">
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/status/progress-map-psp-light.svg">
-  <img src="docs/assets/status/progress-map-psp.svg" alt="PSP hardware map: one cell per emulated hardware block and one per module of the PSP firmware 6.61, coloured by the state of the worst block each module uses" width="100%">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/status/progress-map-compat-light.svg">
+  <img src="docs/assets/status/progress-map-compat.svg" alt="Compat hardware map: one cell per emulated block of the Vita's compatibility core and one per module of its firmware 6.61, coloured by the state of the worst block each module uses" width="100%">
 </picture>
 </a>
-<br><sub><b>PSP:</b> VitaSharp runs the real PSP firmware 6.61, so this map measures the emulated hardware it uses:
+<br><sub><b>Compat</b> (the Allegrex compatibility core, SceCompat): VitaSharp runs its real firmware 6.61, so this map
+measures the emulated hardware that firmware uses:
 one cell per block and per firmware module, coloured by the worst block the module needs.</sub>
 </td>
 </tr>

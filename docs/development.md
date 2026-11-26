@@ -1,4 +1,4 @@
-<!-- pair: development.pt-BR.md sha256=bc85f2129c32f52b3a3fab1ec55b8ca16d0af0ad41f95e377db3a016d95b6fc7 -->
+<!-- pair: development.pt-BR.md sha256=247ca9773825293f1438db51fa4af31c8afccfb8dbb546e6cba08dfa1455ac55 -->
 # Development
 
 **English** | [Português](development.pt-BR.md)
@@ -35,8 +35,8 @@ checked by `ExternalDocPairsTests`: the first line of each holds the SHA-256 of 
 lines to write). To contribute system functions, see the specifications in [`docs/hle`](hle/README.md).
 `build/hle-abi-check.ps1` / `build/hle-abi-check.sh` lists the HLE functions whose argument registers differ from the
 [vita-headers](https://github.com/vitasdk/vita-headers) prototypes (needs `git` and network for the clone, or a local
-checkout). `build/hle-status.ps1` / `.sh` regenerates the README's progress badges and maps; `-PspOnly` / `--psp-only`
-redoes only the PSP map, from `docs/psp/coverage.json`, without the firmware and games.
+checkout). `build/hle-status.ps1` / `.sh` regenerates the README's progress badges and maps; `-CompatOnly` / `--compat-only`
+redoes only the Compat map, from `docs/compat/coverage.json`, without the firmware and games.
 
 ## Before a push
 

@@ -1,11 +1,11 @@
-<!-- pair: progress.md sha256=1c720e29582f8e9f2a1da74b6716c7d65e90fae431c7c3d49d323775d1e4e7a7 -->
+<!-- pair: progress.md sha256=b09f56a76b947ca2d8ab6aa21422e86b7ba50d15eb82b9a49ab957a6571062bf -->
 # Cobertura do hardware do PSP
 
 *English: [progress.md](progress.md).*
 
-<!-- Gerado por build/hle-status (VitaSharp.Desktop psp-coverage --status) a partir de docs/psp/coverage.json; não edite à mão. -->
+<!-- Gerado por build/hle-status (VitaSharp.Desktop compat-coverage --status) a partir de docs/compat/coverage.json; não edite à mão. -->
 
-O que o firmware do PSP que o Vita roda precisa do hardware emulado. O VitaSharp não reimplementa os módulos do PSP (não há HLE deste lado): como um Vita, ele roda o firmware 6.61 do PSP que vem no `pcff` (o flash0 kermit em `vs0:app/NPXS10028`) no núcleo Allegrex dentro do SceCompat ([psp-compat.pt-BR.md](../notes/psp-compat.pt-BR.md)). Por isso esta página mede o hardware: uma linha por bloco emulado com o estado dele no VitaSharp e uma linha por módulo do firmware com os blocos que ele usa; a cor do módulo é a do pior bloco.
+O que o firmware do Compat (o núcleo de compatibilidade do Vita: o Allegrex dentro do SoC, que o firmware chama de SceCompat) precisa do hardware emulado. O VitaSharp não reimplementa os módulos que rodam nele (não há HLE deste lado): como um Vita, ele roda o firmware 6.61 que vem no `pcff` (o flash0 kermit em `vs0:app/NPXS10028`) nesse núcleo ([psp-compat.pt-BR.md](../notes/psp-compat.pt-BR.md)). Por isso esta página mede o hardware: uma linha por bloco emulado com o estado dele no VitaSharp e uma linha por módulo do firmware com os blocos que ele usa; a cor do módulo é a do pior bloco.
 
 - Os blocos que o Vita atende do lado ARM (Memory Stick, flash, áudio, Media Engine, Wi-Fi, USB, syscon, utilitários) chegam ao ScePspemu real como pedidos kermit; ficam parciais até esse caminho rodar de ponta a ponta.
 - Todo módulo do flash0 é cifrado (`~PSP`) e carregado pelo `memlmd`, que precisa do KIRK: não emulado por política, mostrado nos módulos que o chamam (memlmd e os de DRM) em vez de repetido em todos.
@@ -13,8 +13,8 @@ O que o firmware do PSP que o Vita roda precisa do hardware emulado. O VitaSharp
 - Os nomes dos módulos vêm da tabela de arquivos do `pcff`; os papéis, do uOFW, dos canais kermit e das listas de módulos do psdevwiki ("a confirmar" onde nenhuma fonte dá o papel). O estado de cada bloco é o que `src/VitaSharp.Core/Compat` implementa.
 
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="../assets/status/progress-map-psp-light.svg">
-  <img src="../assets/status/progress-map-psp.svg" alt="Mapa do hardware do PSP: um bloco por célula e os módulos do flash0 coloridos pelo pior bloco que usam" width="100%">
+  <source media="(prefers-color-scheme: light)" srcset="../assets/status/progress-map-compat-light.svg">
+  <img src="../assets/status/progress-map-compat.svg" alt="Mapa do hardware Compat: um bloco por célula e os módulos do flash0 coloridos pelo pior bloco que usam" width="100%">
 </picture>
 
 | Estado | Blocos | Módulos (pior bloco) |
@@ -31,7 +31,7 @@ O que o firmware do PSP que o Vita roda precisa do hardware emulado. O VitaSharp
 | Bloco | Id | Estado | Usado por | Código | Notas |
 |---|---|---|---:|---|---|
 | CPU Allegrex | `cpu` | feito | 34 | [AllegrexCore.cs](../../src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.cs), [AllegrexCore.Blocks.cs](../../src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.Blocks.cs), [AllegrexCore.Il.cs](../../src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.Il.cs) | o ISA inteiro com as adições do Allegrex, COP0, exceções, interrupções, instruções de cache; cache de blocos e camada IL |
-| FPU (COP1) | `fpu` | feito | 0 | [AllegrexCore.Fpu.cs](../../src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.Fpu.cs) | resultados exatos em software nos quatro modos de arredondamento, causas, flags e enables IEEE, o NaN e o flush-to-zero do PSP |
+| FPU (COP1) | `fpu` | feito | 0 | [AllegrexCore.Fpu.cs](../../src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.Fpu.cs) | resultados exatos em software nos quatro modos de arredondamento, causas, flags e enables IEEE, o NaN e o flush-to-zero do Allegrex |
 | VFPU (COP2) | `vfpu` | feito | 0 | [AllegrexCore.Vfpu.cs](../../src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.Vfpu.cs), [AllegrexVfpuMath.cs](../../src/VitaSharp.Core/Compat/Allegrex/AllegrexVfpuMath.cs) | todos os opcodes, prefixos, visões de registradores; as transcendentais batem bit a bit com o pspautotests |
 | Memória (RAM, VRAM, scratchpad) | `memory` | feito | 4 | [PspBus.cs](../../src/VitaSharp.Core/Compat/PspBus.cs) | os quatro bancos de 16 MB da janela do SceCompat, o buraco, VRAM e scratchpad no topo do banco 3, a SRAM compartilhada |
 | Controlador de interrupções | `intc` | feito | 7 | [PspInterruptController.cs](../../src/VitaSharp.Core/Compat/Psp/PspInterruptController.cs) | 0xBC300000: 64 linhas, pendentes mascaradas/brutas e enable, saída no IP2 |
@@ -40,13 +40,13 @@ O que o firmware do PSP que o Vita roda precisa do hardware emulado. O VitaSharp
 | GE (motor gráfico) | `ge` | feito | 14 | [GeEngine.cs](../../src/VitaSharp.Core/Compat/Ge/GeEngine.cs), [GeEngine.Draw.cs](../../src/VitaSharp.Core/Compat/Ge/GeEngine.Draw.cs), [GeVulkanRasterizer.cs](../../src/VitaSharp.Renderer.Vulkan/GeVulkanRasterizer.cs) | 0xBD400000/0xBD500000: listas de display, estado dos comandos, decodificação de vértices, texturas e CLUT, patches, rasterizados no Vulkan |
 | Display e LCD DMA | `display` | feito | 7 | [PspDisplayController.cs](../../src/VitaSharp.Core/Compat/Psp/PspDisplayController.cs), [PspLcdc.cs](../../src/VitaSharp.Core/Compat/Psp/PspLcdc.cs), [CompatLcdDma.cs](../../src/VitaSharp.Core/Compat/CompatLcdDma.cs) | temporização e vblank (interrupção 30) em 0xBE740000, o canal de scan-out em 0xBC800100, o LCD DMA para o framebuffer do ScePspemu (a origem é inferida) |
 | Controle do sistema e clocks | `sysreg` | parcial | 0 | [PspSystemControl.cs](../../src/VitaSharp.Core/Compat/Psp/PspSystemControl.cs) | 0xBC100000/0xBC200000: reset, enables de clock e IO, PLL, razões do barramento; versão do chip e fuse id do núcleo de compatibilidade desconhecidos (leem 0) |
-| Kermit (mailbox, SRAM compartilhada) | `kermit` | parcial | 21 | [CompatMailbox.cs](../../src/VitaSharp.Core/Compat/CompatMailbox.cs), [CompatSharedSram.cs](../../src/VitaSharp.Core/Compat/CompatSharedSram.cs), [PspDdrController.cs](../../src/VitaSharp.Core/Compat/Psp/PspDdrController.cs), [Compat.cs](../../src/VitaSharp.Core/Hle/Modules/Compat.cs) | pedidos, respostas, interrupções virtuais e o flush DDR como o SceCompat 3.74 os move; o número de interrupção PSP das campainhas e os registradores de pendente/confirmação são inferidos até o trace do boot |
-| Controle (SRAM compartilhada) | `ctrl` | feito | 5 | [Compat.cs](../../src/VitaSharp.Core/Hle/Modules/Compat.cs) | sceCompatWriteSharedCtrl grava as três palavras do controle que o lado PSP lê |
-| Media Engine (canal 6) | `me` | parcial | 16 | [Compat.cs](../../src/VitaSharp.Core/Hle/Modules/Compat.cs) | sem ME do lado PSP: o kermit_me_wrapper manda os codecs para o ScePspemu real (LLE) e os codecs do Vita; ainda não rodado de ponta a ponta |
+| Kermit (mailbox, SRAM compartilhada) | `kermit` | parcial | 21 | [CompatMailbox.cs](../../src/VitaSharp.Core/Compat/CompatMailbox.cs), [CompatSharedSram.cs](../../src/VitaSharp.Core/Compat/CompatSharedSram.cs), [PspDdrController.cs](../../src/VitaSharp.Core/Compat/Psp/PspDdrController.cs), [Compat.cs](../../src/VitaSharp.Core/Hle/Modules/Compat.cs) | pedidos, respostas, interrupções virtuais e o flush DDR como o SceCompat 3.74 os move; o número de interrupção das campainhas no núcleo e os registradores de pendente/confirmação são inferidos até o trace do boot |
+| Controle (SRAM compartilhada) | `ctrl` | feito | 5 | [Compat.cs](../../src/VitaSharp.Core/Hle/Modules/Compat.cs) | sceCompatWriteSharedCtrl grava as três palavras do controle que o núcleo compat lê |
+| Media Engine (canal 6) | `me` | parcial | 16 | [Compat.cs](../../src/VitaSharp.Core/Hle/Modules/Compat.cs) | sem ME no núcleo compat: o kermit_me_wrapper manda os codecs para o ScePspemu real (LLE) e os codecs do Vita; ainda não rodado de ponta a ponta |
 | Memory Stick (canal 3) | `ms` | parcial | 16 | [Compat.cs](../../src/VitaSharp.Core/Hle/Modules/Compat.cs) | pedidos do kermit_msfs atendidos pelo ScePspemu real sobre o sistema de arquivos do Vita (ux0:pspemu); ainda não rodado de ponta a ponta |
 | flash0/NAND e ID storage (canal 4) | `flash` | parcial | 7 | [Compat.cs](../../src/VitaSharp.Core/Hle/Modules/Compat.cs) | kermit_flashfs atendido pelo ScePspemu real; sceCompatIdStorageLookup responde as folhas do ID storage; ainda não rodado de ponta a ponta |
 | Áudio (canais 5 e 11) | `audio` | parcial | 4 | [Compat.cs](../../src/VitaSharp.Core/Hle/Modules/Compat.cs) | o kermit_audio manda PCM que o ScePspemu real toca com sceAudioOut (interrupções virtuais 1-3); ainda não rodado de ponta a ponta |
-| Syscon: energia, RTC, IO baixo (canais 7 e 9) | `syscon` | parcial | 7 | [Compat.cs](../../src/VitaSharp.Core/Hle/Modules/Compat.cs) | sem syscon do lado PSP: energia, relógio, LEDs, controle remoto e periféricos vão ao ScePspemu real como pedidos kermit (energia: interrupção virtual 10); ainda não rodado de ponta a ponta |
+| Syscon: energia, RTC, IO baixo (canais 7 e 9) | `syscon` | parcial | 7 | [Compat.cs](../../src/VitaSharp.Core/Hle/Modules/Compat.cs) | sem syscon no núcleo compat: energia, relógio, LEDs, controle remoto e periféricos vão ao ScePspemu real como pedidos kermit (energia: interrupção virtual 10); ainda não rodado de ponta a ponta |
 | Wi-Fi (canal 10) | `wlan` | parcial | 53 | [Compat.cs](../../src/VitaSharp.Core/Hle/Modules/Compat.cs) | kermit_wlan atendido pelo ScePspemu real sobre o HLE de rede do Vita (interrupções virtuais 7-8); ainda não rodado de ponta a ponta |
 | USB (canais 8 e 12) | `usb` | parcial | 6 | [Compat.cs](../../src/VitaSharp.Core/Hle/Modules/Compat.cs) | kermit_usb atendido pelo ScePspemu real; do lado do Vita o cabo fica sempre desconectado (a resposta do firmware sem host) |
 | Utilitários: OSK e diálogos (canal 13) | `utility` | parcial | 3 | [Compat.cs](../../src/VitaSharp.Core/Hle/Modules/Compat.cs) | pedidos do kermit_utility (teclado na tela, diálogo de rede) mostrados pelo ScePspemu real com os diálogos do Vita; ainda não rodado de ponta a ponta |

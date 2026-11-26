@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=7b564a20222cbcc66bb3d292446e4fa1f35a534a928a1dd5767dfc73c1868f72 -->
+<!-- pair: README.md sha256=c76e1c11694b43c7baf2e553b9e89b79c5bcc26223f7a3cb8999d34bcd97a2f0 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -117,7 +117,7 @@ e dos jogos de teste ([progresso por biblioteca](docs/hle/progress.md)).
 [![funções do VitaSDK](docs/assets/status/badge-vitasdk.svg)](docs/hle/progress.md)
 [![exports do firmware 3.74](docs/assets/status/badge-overall.svg)](docs/hle/progress.md)
 [![exports de kernel do firmware 3.74](docs/assets/status/badge-kernel.svg)](docs/hle/progress.md)
-[![hardware do PSP 6.61](docs/assets/status/badge-psp.svg)](docs/psp/progress.pt-BR.md)
+[![Compat 6.61](docs/assets/status/badge-compat.svg)](docs/compat/progress.pt-BR.md)
 
 <table>
 <tr>
@@ -132,13 +132,14 @@ e dos jogos de teste ([progresso por biblioteca](docs/hle/progress.md)).
 cor de quantas estão implementadas.</sub>
 </td>
 <td width="50%" valign="top" align="center">
-<a href="docs/psp/progress.pt-BR.md">
+<a href="docs/compat/progress.pt-BR.md">
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/status/progress-map-psp-light.svg">
-  <img src="docs/assets/status/progress-map-psp.svg" alt="Mapa do hardware do PSP: uma célula por bloco de hardware emulado e uma por módulo do firmware 6.61 do PSP, com a cor do pior bloco que cada módulo usa" width="100%">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/status/progress-map-compat-light.svg">
+  <img src="docs/assets/status/progress-map-compat.svg" alt="Mapa do hardware Compat: uma célula por bloco emulado do núcleo de compatibilidade do Vita e uma por módulo do firmware 6.61 dele, com a cor do pior bloco que cada módulo usa" width="100%">
 </picture>
 </a>
-<br><sub><b>PSP:</b> o VitaSharp roda o firmware 6.61 real do PSP, então este mapa mede o hardware emulado que ele usa:
+<br><sub><b>Compat</b> (o núcleo de compatibilidade Allegrex, SceCompat): o VitaSharp roda o firmware 6.61 real dele, então
+este mapa mede o hardware emulado que esse firmware usa:
 uma célula por bloco e por módulo do firmware, com a cor do pior bloco de que o módulo precisa.</sub>
 </td>
 </tr>

@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1100" viewBox="0 0 1000 1100" role="img" aria-label="PSP hardware map: 22 emulated blocks and the 142 modules of the PSP firmware 6.61">
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1100" viewBox="0 0 1000 1100" role="img" aria-label="Compat hardware map: 22 emulated blocks of the Vita's compat core and the 142 modules of its firmware 6.61">
 <rect width="1000" height="1100" rx="8" fill="#ffffff"/>
 <g font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
-<text x="12" y="27" font-size="17" font-weight="600" fill="#1f2328">PSP hardware map</text>
-<text x="172" y="27" font-size="12" fill="#59636e">firmware 6.61: 142 modules, colour = worst block used</text>
+<text x="12" y="27" font-size="17" font-weight="600" fill="#1f2328">Compat hardware map</text>
+<text x="224" y="27" font-size="12" fill="#59636e">firmware 6.61 (flash0): 142 modules, colour = worst block used</text>
 <rect x="688" y="16" width="14" height="14" rx="2" fill="#64d864"/>
 <text x="706" y="27" font-size="11" fill="#59636e">done</text>
 <rect x="746.4" y="16" width="14" height="14" rx="2" fill="#d8d864"/>
