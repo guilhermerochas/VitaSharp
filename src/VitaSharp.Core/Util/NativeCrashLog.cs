@@ -10,13 +10,17 @@ namespace VitaSharp.Core.Util;
 /// (25/11/2026: headless runs from a state "died in silence", the Intel driver's thread-exit callback freeing a bad
 /// block). This installs a vectored exception handler written in machine code (it sees every exception of the
 /// process, the native code's lazily committed pages included, and runs on any thread, also one being torn down with
-/// the loader lock held, so it must not enter the runtime): for 0xC0000374 only, it records the code, address and
-/// thread, wakes the reporter thread and waits (at most <see cref="ReportWaitMs"/>) for it to write a FATAL line to
-/// the log and flush it; then the default handling goes on (Windows Error Reporting, exit code 0xC0000374).
-/// Not covered: an access violation nothing handles goes to the top-level filter, and Windows refuses a top-level
-/// filter outside a loaded image (it reads back null), so it is not logged (exit code 0xC0000005); a fast fail
-/// (0xC0000409) runs no handler at all. Linux and macOS: not installed (the runtime owns the fault signals there).
-/// A log without the "Process exit" line and a non-zero exit code tell those cases.
+/// the loader lock held, so it must not enter the runtime): for 0xC0000374 and 0xC0000005, the first of each, it
+/// records the code, address and thread, wakes the reporter thread and waits (at most <see cref="ReportWaitMs"/>) for
+/// it to write a FATAL line to the log and flush it; then the default handling goes on (Windows Error Reporting, the
+/// exception's exit code).
+/// Access violations: the handler is called after the runtime's and the guest memory's handlers, which resume the
+/// faults they own (a null reference in managed code, a lazily committed guest page), so what reaches it is a fault in
+/// native code (25/11/2026: the renderer disposed under the GPU worker, 0xC0000005 in vkResetCommandPool, and the run
+/// ended after "Run finished" with only the runtime's "Fatal error" on the error output). Native code that catches its
+/// own access violations would also be reported once; the line says so.
+/// Not covered: a fast fail (0xC0000409) runs no handler at all. Linux and macOS: not installed (the runtime owns the
+/// fault signals there). A log without the "Process exit" line and a non-zero exit code tell those cases.
 /// </summary>
 public static unsafe partial class NativeCrashLog
 {
@@ -24,14 +28,18 @@ public static unsafe partial class NativeCrashLog
     public const int ReportWaitMs = 5000;
 
     private const uint HeapCorruption = 0xC0000374;
+    private const uint AccessViolation = 0xC0000005;
 
-    // the page: [0] claimed (int), [4] exception code (uint), [8] address (ulong), [16] thread id (uint); the handler's
-    // code follows at CodeOffset
-    private const int CodeOffset = 64;
+    // the page: one slot per reported code (0: heap corruption, 1: access violation), each [0] claimed (int),
+    // [4] exception code (uint), [8] address (ulong), [16] thread id (uint), [24] its "crashed" event handle and
+    // [32] its "reported" event handle (ulong); the handler's code follows at CodeOffset
+    private const int SlotSize = 40;
+    private const int SlotCount = 2;
+    private const int CodeOffset = 128;
 
     private static byte* s_page;
-    private static AutoResetEvent? s_crashed;
-    private static ManualResetEvent? s_reported;
+    private static AutoResetEvent[]? s_crashed;
+    private static ManualResetEvent[]? s_reported;
     private static Thread? s_reporter;
 
     /// <summary>The handler is installed (false off Windows x64, or when its page could not be made).</summary>
@@ -53,11 +61,9 @@ public static unsafe partial class NativeCrashLog
         try
         {
             nint kernel32 = NativeLibrary.Load("kernel32.dll");
-            s_crashed = new AutoResetEvent(false);
-            s_reported = new ManualResetEvent(false);
+            s_crashed = [new AutoResetEvent(false), new AutoResetEvent(false)];
+            s_reported = [new ManualResetEvent(false), new ManualResetEvent(false)];
             var handles = new HandlerCalls(
-                (ulong)s_crashed.SafeWaitHandle.DangerousGetHandle(),
-                (ulong)s_reported.SafeWaitHandle.DangerousGetHandle(),
                 (ulong)NativeLibrary.GetExport(kernel32, "SetEvent"),
                 (ulong)NativeLibrary.GetExport(kernel32, "WaitForSingleObject"),
                 (ulong)NativeLibrary.GetExport(kernel32, "GetCurrentThreadId"));
@@ -65,6 +71,12 @@ public static unsafe partial class NativeCrashLog
             if (page == null)
             {
                 return false;
+            }
+
+            for (int slot = 0; slot < SlotCount; slot++)
+            {
+                *(ulong*)(page + slot * SlotSize + 24) = (ulong)s_crashed[slot].SafeWaitHandle.DangerousGetHandle();
+                *(ulong*)(page + slot * SlotSize + 32) = (ulong)s_reported[slot].SafeWaitHandle.DangerousGetHandle();
             }
 
             ulong entry = (ulong)(page + CodeOffset);
@@ -95,47 +107,56 @@ public static unsafe partial class NativeCrashLog
         }
     }
 
-    private readonly record struct HandlerCalls(ulong Crashed, ulong Reported, ulong SetEvent, ulong WaitForSingleObject, ulong GetCurrentThreadId);
+    private readonly record struct HandlerCalls(ulong SetEvent, ulong WaitForSingleObject, ulong GetCurrentThreadId);
 
     /// <summary>
-    /// The handler (rcx = EXCEPTION_POINTERS*): for 0xC0000374 only, claims the report once, stores code, address and
-    /// thread id in the page, signals the reporter and waits for it; always returns EXCEPTION_CONTINUE_SEARCH (0).
+    /// The handler (rcx = EXCEPTION_POINTERS*): for 0xC0000374 and 0xC0000005, claims the code's slot once, stores
+    /// code, address and thread id in it, signals the reporter and waits for it; always returns
+    /// EXCEPTION_CONTINUE_SEARCH (0).
     /// </summary>
     private static byte[] EmitHandler(ulong rip, ulong page, HandlerCalls calls)
     {
         var a = new Assembler(64);
+        Label report = a.CreateLabel();
         Label done = a.CreateLabel();
+        // rbx = EXCEPTION_POINTERS*, rsi = the slot (both kept across the calls); two pushes and 40 bytes keep rsp
+        // 16-byte aligned with 32 bytes of shadow space for the calls
         a.push(rbx);
+        a.push(rsi);
+        a.sub(rsp, 40);
         a.mov(rbx, rcx);
         a.mov(rax, __qword_ptr[rcx]);
-        a.cmp(__dword_ptr[rax], unchecked((int)HeapCorruption));
+        a.mov(eax, __dword_ptr[rax]);
+        a.mov(rsi, page);
+        a.cmp(eax, unchecked((int)HeapCorruption));
+        a.je(report);
+        a.mov(rsi, page + SlotSize);
+        a.cmp(eax, unchecked((int)AccessViolation));
         a.jne(done);
-        // claim: only the first one of the process is reported
-        a.mov(r10, page);
+        a.Label(ref report);
+        // claim: only the first one of each code is reported
         a.mov(r8d, 1);
-        a.xchg(__dword_ptr[r10], r8d);
+        a.xchg(__dword_ptr[rsi], r8d);
         a.test(r8d, r8d);
         a.jnz(done);
         a.mov(rax, __qword_ptr[rbx]);
         a.mov(edx, __dword_ptr[rax]);
-        a.mov(__dword_ptr[r10 + 4], edx);
+        a.mov(__dword_ptr[rsi + 4], edx);
         a.mov(rdx, __qword_ptr[rax + 16]);
-        a.mov(__qword_ptr[r10 + 8], rdx);
-        // rsp is 16-byte aligned after the push; 32 bytes of shadow space for the calls
-        a.sub(rsp, 32);
+        a.mov(__qword_ptr[rsi + 8], rdx);
         a.mov(rax, calls.GetCurrentThreadId);
         a.call(rax);
-        a.mov(r10, page);
-        a.mov(__dword_ptr[r10 + 16], eax);
-        a.mov(rcx, calls.Crashed);
+        a.mov(__dword_ptr[rsi + 16], eax);
+        a.mov(rcx, __qword_ptr[rsi + 24]);
         a.mov(rax, calls.SetEvent);
         a.call(rax);
-        a.mov(rcx, calls.Reported);
+        a.mov(rcx, __qword_ptr[rsi + 32]);
         a.mov(edx, ReportWaitMs);
         a.mov(rax, calls.WaitForSingleObject);
         a.call(rax);
-        a.add(rsp, 32);
         a.Label(ref done);
+        a.add(rsp, 40);
+        a.pop(rsi);
         a.pop(rbx);
         a.xor(eax, eax);
         a.ret();
@@ -146,23 +167,28 @@ public static unsafe partial class NativeCrashLog
 
     private static void ReportLoop()
     {
-        s_crashed!.WaitOne();
-        try
+        for (int reports = 0; reports < SlotCount; reports++)
         {
-            uint code = *(uint*)(s_page + 4);
-            ulong address = *(ulong*)(s_page + 8);
-            uint threadId = *(uint*)(s_page + 16);
-            // the line first: the crashing thread may hold the loader lock (a thread ending), which the module and
-            // thread name lookups can need; if they block, the line is already in the file when the wait times out
-            Log.Error(FormatLine(code, address, null, 0, threadId, null));
-            Log.Flush();
-            (string? module, ulong moduleBase) = ModuleOf(address);
-            Log.Error("FATAL native exception detail: " + FormatWhere(address, module, moduleBase, threadId, ThreadName(threadId)));
-            Log.Flush();
-        }
-        finally
-        {
-            s_reported!.Set();
+            int slot = WaitHandle.WaitAny(s_crashed!);
+            byte* data = s_page + slot * SlotSize;
+            try
+            {
+                uint code = *(uint*)(data + 4);
+                ulong address = *(ulong*)(data + 8);
+                uint threadId = *(uint*)(data + 16);
+                // the line first: the crashing thread may hold the loader lock (a thread ending), which the module
+                // and thread name lookups can need; if they block, the line is already in the file when the wait
+                // times out
+                Log.Error(FormatLine(code, address, null, 0, threadId, null));
+                Log.Flush();
+                (string? module, ulong moduleBase) = ModuleOf(address);
+                Log.Error("FATAL native exception detail: " + FormatWhere(address, module, moduleBase, threadId, ThreadName(threadId)));
+                Log.Flush();
+            }
+            finally
+            {
+                s_reported![slot].Set();
+            }
         }
     }
 
@@ -176,7 +202,9 @@ public static unsafe partial class NativeCrashLog
     /// <summary>The log line of a fatal native exception.</summary>
     public static string FormatLine(uint code, ulong address, string? module, ulong moduleBase, uint threadId, string? threadName)
     {
-        return $"FATAL native exception 0x{code:X8} ({Describe(code)}) at {FormatWhere(address, module, moduleBase, threadId, threadName)}: the process ends with exit code 0x{code:X8} (Windows Error Reporting records it as an Application Error)";
+        // an access violation is seen before the native code's own handlers (if it has any) run
+        string ends = code == AccessViolation ? "unless the native code handles it, the process ends" : "the process ends";
+        return $"FATAL native exception 0x{code:X8} ({Describe(code)}) at {FormatWhere(address, module, moduleBase, threadId, threadName)}: {ends} with exit code 0x{code:X8} (Windows Error Reporting records it as an Application Error)";
     }
 
     private static string FormatWhere(ulong address, string? module, ulong moduleBase, uint threadId, string? threadName)
@@ -247,8 +275,11 @@ public static unsafe partial class NativeCrashLog
     }
 
     /// <summary>
-    /// Developer self-test (<see cref="EnvVars.DebugNativeCrash"/>=heap): frees a block of a private heap twice, which
-    /// ntdll detects as heap corruption (0xC0000374), on a thread named like the one of the real crash.
+    /// Developer self-test (<see cref="EnvVars.DebugNativeCrash"/>): =heap frees a block of a private heap twice, which
+    /// ntdll detects as heap corruption (0xC0000374); =access first dereferences a null reference in managed code (the
+    /// runtime turns it into a NullReferenceException, caught here: not reported) and then writes through a bad pointer
+    /// in native code (ntdll's RtlMoveMemory, called like the renderer calls the Vulkan driver: 0xC0000005). Both on a
+    /// thread named like the one of the real crash.
     /// </summary>
     public static void CrashForTest(string kind)
     {
@@ -272,9 +303,35 @@ public static unsafe partial class NativeCrashLog
             thread.Start();
             thread.Join();
         }
+        else if (kind == "access")
+        {
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    _ = NoString()!.Length;
+                }
+                catch (NullReferenceException)
+                {
+                    Log.Warn($"{EnvVars.DebugNativeCrash}={kind}: a null reference in managed code was caught");
+                }
+
+                ulong source = 0;
+                RtlMoveMemory((void*)8, &source, 8);
+            })
+            {
+                Name = "crash self-test",
+            };
+            thread.Start();
+            thread.Join();
+        }
 
         Log.Warn($"{EnvVars.DebugNativeCrash}={kind}: the process did not crash");
     }
+
+    /// <summary>Null for the =access self-test (not inlined: the null reference is a real load in managed code).</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static string? NoString() => null;
 
     private const uint MemCommit = 0x1000;
     private const uint MemReserve = 0x2000;
@@ -313,6 +370,9 @@ public static unsafe partial class NativeCrashLog
 
     [LibraryImport("kernel32.dll")]
     private static partial uint SetErrorMode(uint mode);
+
+    [LibraryImport("kernel32.dll")]
+    private static partial void RtlMoveMemory(void* destination, void* source, nuint length);
 
     [LibraryImport("kernel32.dll")]
     private static partial uint GetCurrentThreadId();

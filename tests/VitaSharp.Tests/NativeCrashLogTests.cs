@@ -55,12 +55,30 @@ public sealed class NativeCrashLogTests : IDisposable
         Assert.Equal(unchecked((int)0xC0000374), r.ExitCode);
     }
 
+    /// <summary>An access violation in native code reached through P/Invoke (the renderer disposed under the GPU
+    /// worker: 0xC0000005 in vkResetCommandPool, 25/11/2026) leaves the FATAL lines too; the managed null reference
+    /// caught before it (an access violation the runtime turns into a NullReferenceException) is not reported.</summary>
+    [WindowsX64Fact]
+    public void AnAccessViolationInNativeCodeLeavesAFatalLineAndAManagedNullReferenceDoesNot()
+    {
+        (DesktopProcess.Result r, string log) = CrashWith("access");
+        Assert.Contains("a null reference in managed code was caught", log);
+        Assert.Contains("FATAL native exception 0xC0000005 (access violation)", log);
+        Assert.Contains("unless the native code handles it, the process ends with exit code 0xC0000005", log);
+        Assert.Matches(@"FATAL native exception detail: ntdll\.dll\+0x[0-9A-F]+ on thread \d+ 'crash self-test'", log);
+        Assert.Single(log.Split('\n'), l => l.Contains("FATAL native exception 0x", StringComparison.Ordinal));
+        Assert.DoesNotContain("did not crash", log);
+        Assert.NotEqual(0, r.ExitCode);
+    }
+
     [Fact]
     public void TheLineNamesTheCodeTheModuleAndTheThread()
     {
         string line = NativeCrashLog.FormatLine(0xC0000374, 0x7FFA80812000 + 0x6C, @"C:\drivers\igc64.dll", 0x7FFA80812000, 0x49A0, "save-state steps");
         Assert.Equal("FATAL native exception 0xC0000374 (native heap corruption) at igc64.dll+0x6C on thread 18848 'save-state steps': the process ends with exit code 0xC0000374 (Windows Error Reporting records it as an Application Error)", line);
         Assert.Equal("access violation", NativeCrashLog.Describe(0xC0000005));
+        Assert.EndsWith(": unless the native code handles it, the process ends with exit code 0xC0000005 (Windows Error Reporting records it as an Application Error)",
+            NativeCrashLog.FormatLine(0xC0000005, 0x1000, null, 0, 1, null));
         Assert.Equal("stack overflow", NativeCrashLog.Describe(0xC00000FD));
         Assert.Equal("native exception", NativeCrashLog.Describe(0xE0000001));
     }
