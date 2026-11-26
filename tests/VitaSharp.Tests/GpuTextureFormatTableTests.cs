@@ -145,7 +145,7 @@ public sealed class GpuTextureFormatTableTests(GuestMemoryFixture fx)
         "F10F10F10U2_RGBA", "F10F10F10U2_BGRA", "F10F10F10X2_RGB1", "F10F10F10X2_BGR1", "F11F11F10_RGB",
         "F32M_000R", "F32M_111R", "F32M_RRRR", "F32M_0RRR", "F32M_1RRR", "F32M_R000", "F32M_R111", "F32M_R",
         "S5S5U6_RGB", "U6S5S5_BGR", "U10U10U10U2_RGBA", "U10U10U10U2_BGRA", "U10U10U10X2_RGB1", "U10U10U10X2_BGR1",
-        "U24X8_DS", "U8U3U3U2_ARGB",
+        "U24X8_DS",
         "X8S8S8U8_1BGR", "X8U8S8S8_1RGB",
     ];
 
@@ -457,12 +457,18 @@ public sealed class GpuTextureFormatTableTests(GuestMemoryFixture fx)
         return expected;
     }
 
-    /// <summary>F16 equality within one half-precision step of the expected value (the colour surface's rounding).</summary>
+    /// <summary>
+    /// F16 equality within one half-precision step of the expected value (the colour surface's rounding), or within
+    /// one 8-bit step: the software Vulkan of the Linux CI runner (an older Mesa lavapipe) expands narrow unsigned
+    /// normalised fields (5-bit channels) to 8 bits before filtering, so 5/31 comes back as 41/255. A wrong field,
+    /// channel or layout is off by far more than that.
+    /// </summary>
     private static bool Close(double expected, double actual)
     {
         double magnitude = Math.Max(Math.Abs(expected), Math.Pow(2, -14));
         double step = Math.Pow(2, Math.Floor(Math.Log2(magnitude)) - 10);
-        return Math.Abs(expected - actual) <= step * 1.01;
+        double tolerance = Math.Max(step * 1.01, 1.0 / 255);
+        return Math.Abs(expected - actual) <= tolerance;
     }
 
     /// <summary>Every format of the table in every layout of this block: the fetched texels against the reference.</summary>
