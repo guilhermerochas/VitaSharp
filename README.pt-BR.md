@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=ec7c532948dfc63c3ccfe88bb05041cd12a9ca1b67f34f3bccf3ccdd544c1949 -->
+<!-- pair: README.md sha256=b4a406387c26ba47ea8f1fd31727cabafea7e415d256727dd49d3606c33ee622 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -7,58 +7,76 @@
 
 ### Um emulador de PlayStation Vita escrito em C#
 
-Roda jogos comerciais do Vita e o próprio sistema do console, sem núcleo nativo: um JIT ARMv7, um renderizador
-Vulkan e mais de 1.100 funções do sistema reimplementadas, tudo em .NET 10.
+Roda jogos comerciais do Vita e o próprio software de sistema do console, sem núcleo nativo: um JIT ARMv7, um
+renderizador Vulkan e mais de 1.100 funções do sistema reimplementadas, tudo em .NET 10.
 
 [![Licença: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Vulkan 1.3](https://img.shields.io/badge/Vulkan-1.3-AC162C.svg)](https://www.vulkan.org/)
-[![Estado: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](docs/compatibility.md)
+[![Estado: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](docs/compatibility.pt-BR.md)
 
 <br>
 
 <img src="docs/assets/screenshots/shell-home.webp" alt="A tela inicial do PS Vita com os jogos instalados, rodando no VitaSharp" width="760">
 
-<sub><i>A tela inicial de verdade do PS Vita (o <code>shell.self</code> do firmware) rodando no VitaSharp.</i></sub>
-
-<br><br>
-
-<picture>
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/launcher-light.png">
-  <img src="docs/assets/launcher.png" alt="O launcher do VitaSharp: a biblioteca de jogos" width="760">
-</picture>
-
-<sub><i>A biblioteca de jogos do launcher do desktop (entradas homebrew de exemplo; o tema claro segue o tema do seu GitHub).</i></sub>
+<sub><i>A tela inicial real do PS Vita (o <code>shell.self</code> do firmware) rodando no VitaSharp.</i></sub>
 
 </div>
 
 ---
 
-## O que é
+**Conteúdo:** [Começo rápido](#começo-rápido) · [O que é](#o-que-é) · [Estado atual](#estado-atual) · [Progresso](#progresso) ·
+[Requisitos](#requisitos) · [Instalação](#instalação) · [Firmware e fontes do sistema](#firmware-e-fontes-do-sistema) ·
+[Seu primeiro jogo](#seu-primeiro-jogo) · [Controles](#controles) · [Opções principais](#opções-principais) ·
+[Relatar um bug](#relatar-um-bug) · [Onde ficam os seus dados](#onde-ficam-os-seus-dados) · [Desenvolvimento](#desenvolvimento) ·
+[Licença e créditos](#licença-e-créditos)
 
-O VitaSharp emula o PS Vita. Ele executa o código ARMv7 do console (interpretador e JITs nativos para x86-64 e
-ARM64), traduz os shaders da GPU do Vita para Vulkan e reimplementa as bibliotecas do sistema que os jogos chamam
-(HLE). Com o firmware oficial instalado, ele também roda o software do próprio Vita: tela de bloqueio, tela inicial,
-LiveArea e jogos abertos por elas. É um projeto de pesquisa em desenvolvimento ativo, todo em C#.
+## Começo rápido
+
+1. Baixe o VitaSharp do seu sistema na página de **Releases** ([Instalação](#instalação)).
+2. Abra: o launcher (a sua biblioteca de jogos) aparece.
+3. Clique em **Instalar pkg / vpk** e escolha um jogo tirado do seu próprio console ([Seu primeiro jogo](#seu-primeiro-jogo)).
+4. Selecione o jogo e aperte **Jogar**.
+5. Opcional: instale o firmware oficial e o pacote de fontes dele para ter a tela inicial real do Vita
+   ([Firmware e fontes do sistema](#firmware-e-fontes-do-sistema)).
 
 > [!IMPORTANT]
 > O VitaSharp não inclui jogos, firmware nem código da Sony. Use jogos e licenças tirados do seu próprio console e
 > baixe a atualização do sistema (`PSVUPDAT.PUP`) no site da PlayStation. Pirataria não é suportada.
 
+## O que é
+
+O VitaSharp emula o PS Vita num PC (Windows, Linux, macOS) e em celulares Android. Ele roda o código ARM do console,
+traduz o trabalho da GPU do Vita para Vulkan e reimplementa as bibliotecas do sistema que os jogos chamam. Com o
+firmware oficial instalado ele também roda o software do próprio Vita: a tela de bloqueio, a tela inicial, a LiveArea
+e os jogos abertos por elas.
+
+É um projeto de pesquisa em desenvolvimento ativo. Muitos jogos já chegam ao gameplay, mas nenhum tem garantia de
+rodar do começo ao fim, e alguns ainda não abrem.
+
 <table>
 <tr>
 <td width="33%"><img src="docs/assets/screenshots/killzone-mercenary.webp" alt="Killzone: Mercenary" width="300"><br><sub><b>Killzone: Mercenary</b>, campanha</sub></td>
-<td width="33%"><img src="docs/assets/screenshots/uncharted.webp" alt="Uncharted: Golden Abyss" width="300"><br><sub><b>Uncharted: Golden Abyss</b>, primeira fase</sub></td>
+<td width="33%"><img src="docs/assets/screenshots/uncharted.webp" alt="Uncharted: Golden Abyss" width="300"><br><sub><b>Uncharted: Golden Abyss</b>, primeiro capítulo</sub></td>
 <td width="33%"><img src="docs/assets/screenshots/gravity-rush.webp" alt="Gravity Rush" width="300"><br><sub><b>Gravity Rush</b>, abertura</sub></td>
 </tr>
 <tr>
 <td><img src="docs/assets/screenshots/god-of-war.webp" alt="God of War Collection" width="300"><br><sub><b>God of War Collection</b>, combate</sub></td>
 <td><img src="docs/assets/screenshots/persona-4-golden.webp" alt="Persona 4 Golden" width="300"><br><sub><b>Persona 4 Golden</b>, abertura</sub></td>
-<td><img src="docs/assets/screenshots/shell-livearea.webp" alt="LiveArea do Uncharted" width="300"><br><sub><b>Sistema do Vita</b>, LiveArea de um jogo</sub></td>
+<td><img src="docs/assets/screenshots/shell-livearea.webp" alt="A LiveArea do Uncharted" width="300"><br><sub><b>Sistema do Vita</b>, a LiveArea de um jogo</sub></td>
 </tr>
 </table>
 
-<p><b>No Android</b> (Redmi Note 14, Mali-G57; veja <a href="#android">Android</a>):</p>
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/launcher-light.png">
+  <img src="docs/assets/launcher.png" alt="O launcher do VitaSharp: a biblioteca de jogos" width="760">
+</picture>
+
+<sub><i>A biblioteca de jogos do launcher do desktop (entradas de homebrew de exemplo; o tema claro segue o tema do seu GitHub).</i></sub>
+</div>
+
+<p><b>No Android</b> (Redmi Note 14, Mali-G57):</p>
 
 <table>
 <tr>
@@ -73,190 +91,173 @@ LiveArea e jogos abertos por elas. É um projeto de pesquisa em desenvolvimento 
 </tr>
 </table>
 
-## Status
+## Estado atual
 
-[![games imports](docs/assets/status/badge-games.svg)](docs/hle/progress.md)
-[![system imports](docs/assets/status/badge-system.svg)](docs/hle/progress.md)
-[![VitaSDK functions](docs/assets/status/badge-vitasdk.svg)](docs/hle/progress.md)
-[![firmware 3.74 exports](docs/assets/status/badge-overall.svg)](docs/hle/progress.md)
-[![firmware 3.74 kernel exports](docs/assets/status/badge-kernel.svg)](docs/hle/progress.md)
+| Área | Estado |
+| --- | --- |
+| **Jogos de PS Vita** | 37 testados: 24 chegam ao gameplay (Killzone: Mercenary, Uncharted: Golden Abyss, Gravity Rush, God of War Collection, FIFA 13, Persona 4 Golden, LittleBigPlanet, Tearaway, WRC 4, Skullgirls, Devious Dungeon...), 12 chegam aos menus, 1 sem confirmação. Lista completa: [compatibilidade](docs/compatibility.pt-BR.md) |
+| **Sistema do Vita** (a tela inicial real) | Funciona com o firmware instalado: configuração inicial, tela de bloqueio, tela inicial, LiveArea, abrir e retomar jogos ([detalhes](docs/notes/system-apps.md)) |
+| **Windows** (x64) | A plataforma mais testada: launcher, janela do jogo, Sistema do Vita, todas as ferramentas de diagnóstico |
+| **Linux** (x64) | Compila e roda; testado no Debian 12 |
+| **macOS** (Apple silicon) | Compila e gera pacotes; ainda sem teste num Mac |
+| **Android** (arm64) | App próprio; testado num Redmi Note 14 (Mali-G57). O desempenho é o principal trabalho em andamento ([Android](docs/user-guide.pt-BR.md#android)) |
+| **Jogos de PSP e PSone** | Em andamento: o núcleo da CPU do PSP está escrito e o emulador de PSP do próprio Vita está sendo colocado de pé, mas jogos de PSP e PSone ainda não rodam; o Adrenaline ainda não passa do início ([notas do PSP](docs/notes/psp-compat.pt-BR.md)) |
+| **PlayStation Mobile (PSM)** | Os jogos e o runtime do PSM se instalam; rodá-los está em andamento |
+| **Multijogador local (ad hoc)** | Primeira parte: grupos ad hoc do PSP entre instâncias do VitaSharp na mesma rede |
 
+Os defeitos conhecidos e o trabalho futuro estão no [roadmap](docs/roadmap.md).
+
+## Progresso
+
+Quanto do software de sistema do console o VitaSharp reimplementa, gerado pelo `build/hle-status` a partir do firmware
+e dos jogos de teste ([progresso por biblioteca](docs/hle/progress.md)).
+
+[![imports dos jogos](docs/assets/status/badge-games.svg)](docs/hle/progress.md)
+[![imports do sistema](docs/assets/status/badge-system.svg)](docs/hle/progress.md)
+[![funções do VitaSDK](docs/assets/status/badge-vitasdk.svg)](docs/hle/progress.md)
+[![exports do firmware 3.74](docs/assets/status/badge-overall.svg)](docs/hle/progress.md)
+[![exports de kernel do firmware 3.74](docs/assets/status/badge-kernel.svg)](docs/hle/progress.md)
+<!-- selo do PSP: entra aqui, ao lado dos outros -->
+
+<table>
+<tr>
+<td width="100%" valign="top" align="center">
 <a href="docs/hle/progress.md">
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/status/progress-map-light.svg">
-  <img src="docs/assets/status/progress-map.svg" alt="Mapa do progresso do HLE: uma célula por biblioteca do firmware, bibliotecas de usuário e de kernel em regiões separadas, do tamanho das funções que elas exportam e com a cor de quantas estão implementadas" width="760">
+  <img src="docs/assets/status/progress-map.svg" alt="Mapa de progresso do HLE: uma célula por biblioteca do firmware, bibliotecas de usuário e de kernel em regiões separadas, do tamanho das funções exportadas e com a cor de quantas estão implementadas" width="760">
 </picture>
 </a>
+<br><sub><b>PS Vita:</b> uma célula por biblioteca do firmware (usuário e kernel), do tamanho das suas funções e com a
+cor de quantas estão implementadas.</sub>
+</td>
+<!-- mapa do PSP: um segundo <td> aqui (progress-map-psp.svg + a versão light, largura 50% cada), com uma linha dizendo o que ele mostra -->
+</tr>
+</table>
 
-[Progresso por biblioteca](docs/hle/progress.md)
+<details>
+<summary>O que as porcentagens significam</summary>
 
-<sub>* Porcentagens das funções que o firmware 3.74 exporta para o código de usuário (seus módulos de usuário e as
-bibliotecas de syscall dos módulos do kernel) com implementação HLE, não de todas as funções do sistema do PS Vita.
-"Games imports": as funções exportadas que os jogos de teste instalados importam; "system imports": as que só o
+<sub>Porcentagens das funções que o firmware 3.74 exporta para código de usuário (os módulos de usuário dele e as
+bibliotecas de syscall dos módulos de kernel) com implementação HLE, não de todas as funções do sistema do PS Vita.
+"Imports dos jogos": as funções exportadas que os jogos de teste instalados importam; "imports do sistema": as que só o
 software do sistema importa; VitaSDK: as funções de usuário da lista de NIDs do VitaSDK. "Default": funções
-implementadas que precisam de hardware ou serviço que o emulador não tem e devolvem o resultado do próprio firmware
-para esse caso (contam na porcentagem, mostradas à parte). "LLE": funções de bibliotecas que o emulador fornece
-carregando e rodando o módulo de verdade que o programa traz (a libsmart/libface do próprio jogo, a libshacccg.suprx que
-o usuário extrai do console, o módulo do firmware de uma biblioteca que o emulador carrega para todo importador; também contam, mostradas à parte; lista em [`docs/hle/progress.md`](docs/hle/progress.md)).
-"Kernel exports": as funções que os módulos do kernel exportam para outro código de kernel (o que um plugin de kernel
-pode importar), do censo em [`docs/hle/kernel-exports.md`](docs/hle/kernel-exports.md). Atualizado com
-`build/hle-status.ps1`.</sub>
+implementadas que precisam de um hardware ou serviço que o emulador não tem e devolvem o próprio resultado do firmware
+para esse caso (contadas na porcentagem, mostradas à parte). "LLE": funções de bibliotecas que o emulador oferece
+carregando e rodando o módulo real que o programa traz (a libsmart/libface do próprio jogo, o libshacccg.suprx que o
+usuário extrai do console, o módulo do firmware de uma biblioteca que o emulador carrega para todo importador; também
+contadas, mostradas à parte; lista em [`docs/hle/progress.md`](docs/hle/progress.md)). "Exports de kernel": as funções
+que os módulos de kernel exportam para outro código de kernel (o que um plugin de kernel pode importar), do censo em
+[`docs/hle/kernel-exports.md`](docs/hle/kernel-exports.md). Atualizado com `build/hle-status.ps1`.</sub>
 
-## Jogos
+</details>
 
-38 jogos testados até agora ([`docs/compatibility.md`](docs/compatibility.md), com o estado e o cenário de teste de
-cada um): 25 chegam ao gameplay (entre eles Killzone: Mercenary, Uncharted: Golden Abyss, Gravity Rush, God of War
-Collection, FIFA 13, Persona 4 Golden, LittleBigPlanet, Tearaway, WRC 4, Skullgirls e Devious Dungeon) e o
-resto chega aos menus. Os defeitos conhecidos e o trabalho futuro estão no
-[roadmap](docs/roadmap.md).
+## Requisitos
 
-## Plataformas
+| | Windows | Linux | macOS | Android |
+| --- | --- | --- | --- | --- |
+| Sistema | Windows 10 ou 11, x64 | distribuição x64 (testada: Debian 12) | Apple silicon (arm64) | Android 8.0 ou mais novo, arm64 |
+| GPU | driver Vulkan 1.3 (NVIDIA, AMD ou Intel recentes) | driver Vulkan 1.3 (Mesa ou o do fabricante) e o carregador Vulkan | MoltenVK 1.3 ou mais novo | Vulkan 1.1 ou mais novo |
+| Programas extras | nenhum | `libvulkan1` (`sudo apt install libvulkan1 mesa-vulkan-drivers`) | `brew install molten-vk vulkan-loader ffmpeg` (ou o Vulkan SDK da LunarG + `brew install ffmpeg`) | nenhum |
+| CPU | vários núcleos | vários núcleos | vários núcleos | vários núcleos |
 
-| Plataforma | Estado |
-| --- | --- |
-| **Windows** (x64) | A mais testada: launcher, janela do jogo, Sistema do Vita, todas as ferramentas de diagnóstico |
-| **Android** (arm64) | App .NET MAUI próprio (Native AOT, JIT ARM64, Vulkan 1.1+; biblioteca, ajustes, controles na tela, menu de pausa); testado num Redmi Note 14 (Mali-G57). APK pelo artefato do CI ou compilado localmente ([Android](#android)) |
-| Linux, macOS | Compilam e geram pacotes; Linux x64 testado no Debian 12, macOS ainda sem teste num Mac |
+O firmware é opcional para a maioria dos jogos ([abaixo](#firmware-e-fontes-do-sistema)). Compilar pelo código tem os
+seus próprios requisitos ([Desenvolvimento](#desenvolvimento)).
 
-Requisitos no PC: um driver Vulkan 1.3 (NVIDIA, AMD ou Intel recentes) e um processador com vários núcleos.
+## Instalação
 
-## Instalar e jogar
+Todos os pacotes estão na página de **Releases**: versões numeradas e prereleases automáticas `build-<commit>` de todo
+build da `main` cujas checagens passaram. Os pacotes não são assinados e nunca incluem firmware.
 
-1. Baixe o pacote da página de **Releases** (zip ou instalador para Windows; veja [Releases](#releases)) ou compile
-   (veja [Compilar e testar](#compilar-e-testar)).
-2. Abra o VitaSharp: o launcher (biblioteca de jogos) aparece.
-3. Em **Instalar pkg / vpk** (ou arrastando os arquivos para qualquer tela):
-   - **VPK ou zip**;
-   - **PKG com licença**: o pacote junto com a licença, um `work.bin`/`.rif` ou o texto zRIF colado;
-   - **Pasta descriptografada**: uma pasta de jogo já descriptografada.
-4. Escolha o jogo e aperte **Jogar**.
+### Windows
 
-**PlayStation Mobile (PSM).** Um `.pkg` de jogo de PSM se instala como um do PS Vita, com a licença da sua própria
-conta: o `.rif` de PSM de 1024 bytes (ou o zRIF dele) que o seu console tem para o jogo; licença de PS Vita ou de
-outro jogo é recusada. Ele vai para onde o console põe, `ux0:psm/<TITLEID>` (`RO` com o jogo e `RO/License`,
-`RW/Documents` com os saves, que uma reinstalação mantém); o jogo continua protegido como foi vendido e quem o abre é
-o runtime do PSM, com a sua licença. Também precisa do **PSM Runtime Package** (`PCSI00011`, um `.pkg` normal de PS
-Vita com a licença dele). A Biblioteca mostra um jogo de PSM instalado com o nome e o ícone do próprio jogo, e a tela
-inicial do **Sistema do Vita** mostra a bolha dele depois que o sistema reconstrói a sua base (na inicialização seguinte
-à instalação, como no console). Rodar jogos de PSM ainda está em andamento (veja `docs/roadmap.md`); um jogo de PSM
-instalado por uma versão anterior precisa ser instalado de novo.
+1. Baixe o `VitaSharp-<versão>-win-x64-setup.exe` (instalador) ou o `VitaSharp-<versão>-win-x64.zip`.
+2. Rode o instalador, ou descompacte o zip em qualquer pasta.
+3. Abra o **VitaSharp** (`VitaSharp.Desktop.exe`). O SmartScreen avisa porque o pacote não é assinado: **Mais
+   informações > Executar assim mesmo**.
 
-**Onde fica cada coisa.** Tudo fica onde o console guarda (jogos em `ux0:app`, atualizações em `ux0:patch`, DLC em
-`ux0:addcont`, jogos de PSP/PSone em `ux0:pspemu/PSP/GAME`, jogos de PSM em `ux0:psm`, saves em
-`ux0:user/00/savedata`, licenças em `ux0:license/app/<TITLEID>`). As licenças que as versões anteriores guardavam em
-`ux0:license/<TITLEID>` vão sozinhas para `ux0:license/app/<TITLEID>` na inicialização seguinte (uma licença cujo novo
-lugar já tem outra diferente fica onde estava). Uma atualização instalada vale como no console: o jogo vê os
-arquivos dela por cima dos seus (`ux0:patch/<TITLEID>`, ou `grw0:patch/<TITLEID>` para um cartão), a versão dele passa
-a ser a da atualização (a Biblioteca também mostra) e os apps do próprio firmware não recebem nenhuma. Um jogo de PSM
-feito em Unity guarda o próprio runtime em `ux0:psm/<TITLEID>/runtime`, com a licença desse runtime em
-`ux0:license/app/<TITLEID>`; um que uma versão anterior deixou em `RO/runtime` vai sozinho para lá na inicialização
-seguinte.
+### Linux
 
-**Firmware (opcional).** Os jogos rodam sem firmware. Instale-o para ter as fontes e bibliotecas do sistema
-(`libSceXml`, `libSceSqlite`...) e o **Sistema do Vita**: na página **Sistema do Vita**, **Instalar firmware
-(.PUP)…**, ou **Usar firmware do Vita3K** (copia o `os0`/`vs0`/`sa0`/`pd0` de uma instalação do Vita3K). Pela linha
-de comando: `install-firmware <PSVUPDAT.PUP>`. **Desinstalar firmware** (na mesma página; `uninstall-firmware [--yes]`)
-remove só o que a instalação criou (`os0`/`vs0`/`sa0`/`pd0` e os arquivos de índice `firmware.json`,
-`firmware-libraries.txt`): os jogos, os saves e o `ux0`/`ur0` ficam, e uma partição ligada a outra pasta perde só o link.
+1. Instale o carregador Vulkan e um driver: `sudo apt install libvulkan1 mesa-vulkan-drivers` (Fedora:
+   `vulkan-loader mesa-vulkan-drivers`).
+2. Baixe o `VitaSharp-<versão>-linux-x64.AppImage` (ou o `.tar.gz`).
+3. AppImage: `chmod +x VitaSharp-*.AppImage` e rode. Tarball: descompacte e rode `VitaSharp/VitaSharp.Desktop`.
 
-**Fontes do sistema (pacote de fontes).** A atualização do sistema (`PSVUPDAT.PUP`) não traz o `sa0`: no console as
-fontes do sistema (`sa0:data/font/pgf` e `pvf`) vêm de fábrica, aqui vêm do pacote de fontes do firmware (outro .PUP,
-instalado pelos mesmos botões **Instalar firmware (.PUP)…** / **Instalar pacote de fontes (.PUP)…**, ou
-`install-firmware <.PUP do pacote de fontes>`) ou do `sa0` do Vita3K (copiado sozinho depois de instalar a atualização,
-quando o Vita3K o tem). Sem elas o Sistema do Vita e vários jogos ficam sem texto, por isso o launcher (desktop e
-Android) não abre o Sistema do Vita antes de elas estarem instaladas e diz o que falta; o `font_package` do
-`firmware.json` e a página do firmware mostram se as duas pastas de fontes estão lá.
+### macOS
 
-**Núcleo de compatibilidade PSP (em andamento).** O emulador de PSP do firmware dá boot num núcleo MIPS a partir do
-`os0:kd/pcbc.skprx`, cujo conteúdo só o processador seguro do console decifra. Para rodá-lo, tire do seu próprio
-console o código de boot decifrado (os 0x5CE0 bytes que o SceCompat carrega na janela + 0x600000) e coloque em
-`os0:kd/pcbc.bin` na pasta de dados (`%APPDATA%\VitaSharp\fs\os0\kd\pcbc.bin` no Windows, o mesmo `fs/os0/kd` dentro
-da pasta de dados no Linux e no macOS). O VitaSharp nunca o distribui. Situação e limites: `docs/roadmap.md` (item do
-núcleo de compatibilidade PSP).
+1. Instale o Vulkan e o FFmpeg: `brew install molten-vk vulkan-loader ffmpeg`.
+2. Baixe o `VitaSharp-<versão>-osx-arm64.dmg` (ou o `.app.zip`) e arraste o VitaSharp para Aplicativos.
+3. O app não é assinado: na primeira vez, clique nele com o botão direito e escolha **Abrir**.
 
-**Sistema do Vita.** Com o firmware instalado, o botão **Abrir Sistema do Vita** do launcher (Ctrl+H, ou `boot-shell`) roda o
-`shell.self` do firmware: configuração inicial na primeira vez, tela de bloqueio, tela inicial com os jogos
-instalados e LiveArea. Um jogo aberto pela LiveArea roda como um segundo processo; o botão PS (tecla Home) volta ao
-sistema e **Continuar** retoma o jogo. Detalhes e o que falta em [`docs/notes/system-apps.md`](docs/notes/system-apps.md).
+### Android
 
-**Android.** Veja [Android](#android).
+1. Baixe o `VitaSharp-<versão>-android-arm64.apk` da página de Releases.
+2. Abra no celular (permitindo instalar dessa origem) ou rode `adb install -r <apk>`.
+3. Na primeira abertura o app pede **"Acesso a todos os arquivos"**: permita, para os seus jogos e saves ficarem na
+   pasta visível `.vitasharp` na raiz do armazenamento do celular e continuarem lá se o app for desinstalado.
 
-**Idioma.** O launcher e a janela do jogo seguem o idioma do sistema (inglês ou português do Brasil);
-**Configurações > Geral > Aparência > Idioma** escolhe um (no Android: **Ajustes > Aparência > Idioma**). Os logs continuam em inglês.
-O idioma que um jogo vê é o idioma do sistema do Vita; para um jogo sem o seu (ex.: um lançamento asiático só com
-japonês e inglês, que cai no japonês), o ajuste **Idioma do sistema** dele (na página do jogo no launcher, nos detalhes
-do jogo no Android; `--system-language=<0-19>` na linha de comando) faz só esse jogo ver outro.
+Os APKs das releases são assinados com a chave fixa do projeto, então um APK mais novo instala por cima do antigo e
+mantém os seus dados. Um APK que você mesmo compila, ou de um fork, é assinado com outra chave: aí o Android pede para
+desinstalar o app antigo antes. Detalhes do app, das telas e de como compilá-lo: [guia do Android](docs/user-guide.pt-BR.md#android)
+e [`docs/android/README.md`](docs/android/README.md).
 
-**Microfone.** O microfone do Vita (chat de voz, apps que gravam) ouve o dispositivo de captura do PC pelo OpenAL Soft,
-a mesma biblioteca que toca o som (WASAPI no Windows, PipeWire/PulseAudio/ALSA no Linux, Core Audio no macOS; nada a
-instalar). **Configurações > Áudio > Microfone** escolhe o padrão do sistema (o padrão), um dispositivo de captura, desligado
-(silêncio) ou um tom de teste de 440 Hz; na linha de comando `--microphone=<nome|índice|none|tone[:HZ]>`, e `mic-test`
-lista os dispositivos e mostra o nível que um jogo receberia. O dispositivo só liga enquanto um jogo ou app está com a
-porta do microfone aberta; sem dispositivo (ou, no macOS, sem a permissão de microfone para o terminal ou app que roda o
-VitaSharp: **Ajustes do Sistema > Privacidade e Segurança > Microfone**) o jogo ouve silêncio, como numa sala quieta.
-Nada do que o microfone capta é gravado; uma captura **Gravar tudo** guarda só o formato e o ritmo dele, a não ser que
-`--capture-mic-audio` (ou `VITASHARP_CAPTURE_MIC_AUDIO=1`) peça o som também.
+### Atualizações
 
-**Localização.** Apps e jogos que perguntam ao Vita onde ele está não recebem posição por padrão: o Vita
-responde que o aplicativo não tem permissão, como quando o jogador recusa. **Configurações > Áudio > Localização** (ou
-`--location=<latitude,longitude[,altitude[,precisão]]>`, graus decimais com ponto, metros) dá ao Vita uma posição
-fixa, respondida com essa precisão (10 m quando não informada); vazio ou `none` desliga. O serviço de localização do
-próprio PC ainda não é lido. A posição nunca vai para o log; uma captura **Gravar tudo** a omite (o Vita responde
-"posição indeterminada" enquanto a captura está armada ou gravando, e o `session.txt` guarda `--location=<location>`),
-a não ser com `--capture-location` (ou `VITASHARP_CAPTURE_LOCATION=1`).
+Os pacotes do desktop procuram uma versão nova ao abrir (**Configurações > Geral > Atualizações**: liga/desliga, canal,
+**Procurar agora**) e podem se atualizar sozinhos; a sua pasta de dados nunca é mexida
+([detalhes](docs/user-guide.pt-BR.md#atualizações)).
 
-**Modelo do console.** **Configurações > Emulação > Modelo** (ou `--model=pstv`, `VITASHARP_MODEL=pstv`) faz o
-aparelho emulado ser um PlayStation TV em vez do PS Vita portátil (PCH-1000, o padrão): os jogos veem um PS TV (vários
-controles suportados), cada controle conectado é um jogador nas portas 1-4 (o teclado joga junto com o primeiro
-controle) e a vibração chega aos controles. O software de sistema próprio do PS TV, os ajustes de HDMI e o USB host
-ainda não são emulados.
+## Firmware e fontes do sistema
 
-**Teclado e mouse Bluetooth.** **Configurações > Emulação > Teclado e mouse Bluetooth** (ou `--bt-keyboard-mouse=on`)
-pareia o teclado e o mouse do PC com o Vita, para jogos e apps que leem teclado ou mouse (SceHid: o navegador, chat).
-Desligado por padrão; as teclas continuam valendo como controle com ele ligado. As teclas de mídia do teclado
-(reproduzir/pausar, faixas, volume) também chegam ao Vita como seus controles de consumidor, no Windows, Linux (X11),
-macOS e Android.
+**O que é.** O firmware é o software de sistema do próprio PS Vita. A Sony publica ele como um arquivo de atualização
+do sistema, o `PSVUPDAT.PUP`, no site da PlayStation. O VitaSharp nunca o distribui.
 
-**Ad hoc (multijogador local).** **Configurações > Emulação > Ad hoc pela rede local** (ou `--adhoc-lan=on`; Android:
-Ajustes) põe o Wi-Fi ad hoc do Vita na rede local: outras instâncias do VitaSharp com a opção ligada, na mesma rede ou no
-mesmo PC, se acham sem servidor. O firewall precisa liberar a entrada da porta UDP 30860 na rede local (o Windows
-pergunta na primeira vez). Onde o multicast não passa (VPN, alguns roteadores), `--adhoc-peer=host[:porta],...` alcança
-os outros PCs pelo endereço. Desligado por padrão. Hoje: os grupos ad hoc do PSP (`pspnet_adhoc`: criar/entrar pelo
-diálogo de checagem de rede, lista de pares, datagramas PDP); PTP, Matching e o modo ad hoc do próprio Vita vêm depois.
+**Precisa dele?** A maioria dos jogos roda sem. Instale para ter:
 
-Os dados ficam em `%APPDATA%\VitaSharp` no Windows (`~/.local/share/VitaSharp` no Linux,
-`~/Library/Application Support/VitaSharp` no macOS; `--data=<pasta>` ou `VITASHARP_DATA` trocam a pasta): jogos em
-`fs/ux0/app`, firmware em `fs/os0`... , `logs/`, `savestates/`, `captures/` (Gravar tudo), `gpudumps/`,
-`diagnostics/`, `shadercache/`.
+- o **Sistema do Vita** (a tela de bloqueio, a tela inicial e a LiveArea de verdade);
+- as bibliotecas do sistema que o VitaSharp não reimplementa (`libSceXml`, `libSceSqlite`, `libSceJson`...), que
+  alguns jogos usam;
+- as fontes do sistema (do pacote de fontes, abaixo), sem as quais o Sistema do Vita e vários jogos ficam sem texto.
 
-### Plugins do kernel
+**Como instalar.**
 
-Uma opção do emulador, **Ativar Plugins do Kernel**, como pausar ou gravar a tela (o Vita não tem essa configuração).
-**Desligada por padrão: roda o firmware puro e nenhum plugin carrega.** Ligada, o VitaSharp carrega os plugins que a
-configuração lista e oferece a eles as bibliotecas do framework de plugins que eles importam (informação de módulo,
-busca de exports e imports, injeção de dados, hooks de função), como um console com o ambiente homebrew instalado.
+1. Baixe o `PSVUPDAT.PUP` (a atualização do sistema; a versão 3.74 é a testada) no site da PlayStation.
+2. No launcher, abra a página **Sistema do Vita** e clique em **Instalar firmware (.PUP)…** (Android: **Ajustes >
+   Firmware > Instalar firmware (.PUP)**).
+3. Instale também o **pacote de fontes**: **Instalar pacote de fontes (.PUP)...** com o pacote de fontes do firmware da
+   Sony, um `.PUP` separado que traz as fontes do sistema (o mesmo arquivo para o qual o guia de início rápido do Vita3K
+   aponta). A atualização do sistema não tem fontes: num Vita de verdade elas vêm de fábrica.
+4. Clique em **Abrir Sistema do Vita** (ou aperte `Ctrl+H`).
 
-- **Como ligar:** launcher **Configurações > Avançado**; Android **Configurações > Depuração**; linha de comando
-  `--kernel-plugins=on|off`; ambiente `VITASHARP_KERNEL_PLUGINS=1` (as chaves valem sobre a variável).
-- **Pasta:** `ur0:kernel_plugins/` (no computador `fs/ur0/kernel_plugins/`, igual no Windows, Linux, macOS e Android),
-  ao lado de `ur0:tai`, guarda o `config.txt`. As linhas dele são caminhos do Vita, como no Vita
-  (`ur0:tai/kubridge.skprx`): os plugins ficam em `fs/ur0/tai` (ou `fs/ux0/tai`), onde os homebrews conferem os
-  arquivos. Uma linha sem dispositivo (`meu.skprx`) é um arquivo que você coloca em `ur0:kernel_plugins/`. Seções como
-  no Vita: `*KERNEL` para os plugins de kernel, `*ALL` / `*TITLEID` para os de usuário, `*main` é a tela inicial.
-- **Alternativa:** sem `ur0:kernel_plugins/config.txt`, é lido o `fs/ux0/tai/config.txt` do Vita (senão
-  `fs/ur0/tai/config.txt`), como copiado de um Vita.
-- **Mudança automática:** na primeira vez com a opção ligada, o `config.txt` do Vita vai para `ur0:kernel_plugins/`
-  sem mudanças (uma cópia fica como `ur0:kernel_plugins/config.txt.bak`); os plugins, o arquivo do próprio framework e
-  os arquivos de dados dos plugins ficam em `ur0:tai`. O arquivo do próprio framework nunca é carregado: o emulador
-  oferece as bibliotecas dele. A pasta das versões anteriores (`kernel_plugins/` ao lado de `fs/` na pasta de dados)
-  vai do mesmo jeito para `ur0:kernel_plugins/`, e a pasta antiga vazia é apagada.
-- **Log:** uma linha por plugin, `kernel plugin <caminho>: loaded and started (<nome>) (at system boot)`, `... not
-  started: no module provides ...` ou `... not loaded (...)`. Os plugins de `*KERNEL` carregam no boot do sistema, antes
-  do lançamento do título, mesmo quando esse lançamento falha.
+Já tem o Vita3K? **Usar firmware do Vita3K** copia o firmware dele, fontes incluídas, com um clique. Pela linha de
+comando: `VitaSharp.Desktop install-firmware <arquivo.PUP>`. Mais (desinstalar, o código de boot do PSP, o que cada
+parte faz): [guia do usuário](docs/user-guide.pt-BR.md#firmware).
 
-Detalhes em [`docs/notes/plugins.pt-BR.md`](docs/notes/plugins.pt-BR.md).
+## Seu primeiro jogo
 
-## Teclas
+1. Tire o jogo do seu próprio console: um `.vpk`, um `.pkg` com a licença, ou uma pasta de jogo já descriptografada.
+2. No launcher clique em **Instalar pkg / vpk**, ou arraste os arquivos para qualquer tela (Android: **Biblioteca >
+   Instalar jogo**).
+3. Escolha o que você tem:
+
+   | Você tem | Dê ao launcher |
+   | --- | --- |
+   | VPK ou zip | o arquivo |
+   | PKG | o `.pkg` e a licença: um arquivo `work.bin` / `.rif` ou o texto zRIF colado |
+   | Pasta descriptografada | a pasta do jogo |
+
+4. Selecione o jogo e aperte **Jogar**. A primeira abertura de um jogo é mais lenta: os shaders e o código dele são
+   preparados e guardados para a próxima vez.
+
+Atualizações e DLC se instalam do mesmo jeito e vão para onde o console guarda. Jogos de PlayStation Mobile, onde fica
+cada arquivo e o que acontece numa reinstalação: [guia do usuário](docs/user-guide.pt-BR.md#jogos-e-onde-ficam).
+
+## Controles
+
+Controles USB e Bluetooth (pelo SDL2) funcionam sozinhos, com os botões por posição (o botão de baixo é sempre Cruz) e
+giroscópio. Tudo pode ser remapeado em **Configurações > Controles**, por controle
+([detalhes](docs/notes/controller-config.md)). No Android há controles na tela; veja o
+[guia do Android](docs/user-guide.pt-BR.md#android).
 
 | Tecla | Função |
 | --- | --- |
@@ -280,338 +281,110 @@ Detalhes em [`docs/notes/plugins.pt-BR.md`](docs/notes/plugins.pt-BR.md).
 | `F11` | Tela cheia |
 | `P` | Pausa / retoma a emulação |
 
-Controles (SDL2) são detectados sozinhos, com layout posicional (o botão de baixo é sempre Cruz) e giroscópio. Tudo
-pode ser remapeado em **Configurações > Controles**, por controle ([`docs/notes/controller-config.md`](docs/notes/controller-config.md)).
+## Opções principais
 
-## Android
+As **Configurações** do launcher valem para todos os jogos; a página de um jogo as substitui para aquele jogo. O app
+Android tem as mesmas opções, com os mesmos nomes.
 
-O app Android (`src/VitaSharp.Android`) é um app .NET MAUI que roda o mesmo núcleo do emulador do desktop em celulares
-arm64: o APK Release é compilado com Native AOT por padrão, o código ARMv7 do Vita roda no JIT nativo ARM64 e a imagem é
-desenhada com Vulkan. Tem telas próprias: biblioteca de jogos, detalhes do jogo (backend de CPU, clock, perfil de GPU,
-resolução interna, MSAA, taxa de quadros, VSync e contador de FPS por jogo, saves), troféus, controles, ajustes, firmware, driver da GPU,
-conta PSN e rede, e uma página de desempenho. O app segue o idioma escolhido (**Ajustes > Aparência > Idioma**; os
-nomes de menu abaixo são os em português). Telas e design:
-[`docs/android/README.md`](docs/android/README.md#screens).
-
-**Requisitos.** Um celular arm64 com Android 8.0 ou mais novo (API 26) e driver Vulkan 1.1 ou mais novo.
-
-**Estado (medido num Redmi Note 14, Helio G99, Mali-G57).** A versão mobile chegou a uma certa estabilidade; o
-desempenho ainda é o principal trabalho em andamento. Medido hoje:
-
-| Jogo | Onde foi medido | fps (nativo) |
+| Opção | Onde | O que faz |
 | --- | --- | --- |
-| Killzone: Mercenary | campanha | cerca de 22-25 (30) |
-| Uncharted: Golden Abyss | o Prólogo | 30 (30) |
-| F1 2011 | a corrida | 30 (30) |
+| Resolução interna | Configurações > Gráficos; a página do jogo; `F1` | Desenha a 1x-4x a resolução do Vita (o Android também 50% e 75%) |
+| Taxa de quadros, MSAA | a página do jogo; `F2`, `F3` | Ritmo nativo ou fixo em 30/60/sem limite; MSAA nativo, superamostragem 2x ou desligado |
+| Carregar o cache de shaders antes de jogar | Configurações > Gráficos; a página do jogo | Monta os shaders gravados nas sessões anteriores antes de o jogo começar, para evitar engasgos |
+| Pré-compilar código ARM | Configurações > Gráficos; a página do jogo | Traduz o código do jogo em todos os núcleos livres antes de ele começar |
+| Idioma / Idioma do sistema | Configurações > Geral; a página do jogo | O idioma do launcher (inglês ou português do Brasil) / o idioma que um jogo vê |
+| Modelo | Configurações > Emulação | PS Vita portátil (padrão) ou PlayStation TV |
+| Teclado e mouse Bluetooth | Configurações > Emulação | Dá o teclado e o mouse do PC aos jogos e apps que os leem (navegador, chat) |
+| Ad hoc pela rede local | Configurações > Emulação | Multijogador local com outras instâncias do VitaSharp na mesma rede |
+| Microfone, Localização | Configurações > Áudio | O que o microfone do Vita ouve; uma posição fixa para apps que perguntam onde o Vita está |
+| Pré-gravação | Configurações > Avançado | Guarda os últimos segundos, para o **Gravar tudo** incluir o que aconteceu antes do `F8` |
+| Ativar Plugins do Kernel | Configurações > Avançado | Desligada por padrão (firmware puro); ligada, carrega os plugins do seu `config.txt` |
 
-Jogos mais leves chegam aos seus 30 ou 60 fps nativos; os outros jogos ainda não foram medidos no celular. Celulares
-Adreno foram pouco testados.
-
-**Instalar o APK.** Baixe o `VitaSharp-<versão>-android-arm64.apk` da página de **Releases** (toda versão e toda
-prerelease automática `build-<commit>` o traz). Toda execução do CI também gera um para celulares arm64: na página da
-execução em **Actions**, o artefato **VitaSharp-android-arm64-packages** traz o
-`VitaSharp-ci-<execução>-android-arm64.apk`. O APK é o build Release (Native AOT, com o compilador de shaders do
-aparelho e o libadrenotools; assinado com uma chave de debug descartável, então um APK de outra execução ou de outro PC só instala
-depois de desinstalar o anterior, o que apaga os dados do app). Instale com `adb install` ou abrindo-o no celular. Copie os saves antes (veja abaixo).
-Para compilar num PC: o SDK do .NET 10 com o workload MAUI Android (`dotnet workload install maui-android`), um JDK
-17, o Android SDK (plataforma 36) e o NDK (r30: `sdkmanager "ndk;30.0.16248370"`), e então
-`build/build-android-apk.ps1` / `.sh`, o mesmo script do CI (compila as bibliotecas nativas na primeira vez, depois o
-APK em `artifacts/android/packages`, e o confere). Passos e opções:
-[`docs/android/README.md`](docs/android/README.md#building).
-
-```sh
-build/build-android-apk.sh          # Windows: build/build-android-apk.ps1
-adb install -r artifacts/android/packages/VitaSharp-dev-android-arm64.apk
-```
-
-**Jogos, licenças, firmware e saves.** O app não pede permissão de armazenamento nem pasta: cada arquivo entra pelo
-seletor de arquivos do Android (Storage Access Framework) e é lido no lugar. Em **Biblioteca**, **Instalar jogo** aceita
-um `.vpk` (ou `.zip`) ou um `.pkg` com a licença (`work.bin`, `.rif` ou o zRIF colado). O firmware é opcional, como no
-PC: **Ajustes > Firmware > Instalar firmware (.PUP)** com o `PSVUPDAT.PUP`; depois **Sistema do Vita** na biblioteca
-inicia a tela inicial de verdade. Drivers de GPU próprios (Adreno, pela libadrenotools) são instalados em **Ajustes >
-Driver da GPU**. Tudo fica numa pasta de dados com a organização do desktop (jogos em `fs/ux0/app`, licenças em
-`fs/ux0/license/app`, saves em `fs/ux0/user/00/savedata`, `config/env.txt`...): sem root ela é a **`.vitasharp`** na raiz
-do armazenamento do celular (`/sdcard/.vitasharp`), visível e editável em qualquer gerenciador de arquivos e mantida se o
-app for desinstalado; para isso o app pede **"Acesso a todos os arquivos"** na primeira abertura e move a antiga
-`Android/data/io.github.vitasharp/files` para lá (conferida arquivo por arquivo, retomada se for interrompida). Enquanto a
-permissão não é dada, e num celular com root, os dados ficam em `Android/data/io.github.vitasharp/files`
-([detalhes](docs/android/README.md#storage)).
-
-**Controles.** Controles translúcidos na tela, sobre as laterais da imagem (direcional, analógicos, botões de ação,
-L/R, SELECT/PS/START, um botão TRÁS para o touchpad traseiro); toques na imagem são a tela de toque frontal. Controles
-Bluetooth ou USB são detectados sozinhos com o layout posicional do desktop (os controles na tela somem enquanto um está
-conectado), e um teclado físico usa as teclas do desktop. **Controles** remapeia os botões de cada controle (toque
-no controle da lista e aperte o botão no controle; **Restaurar padrão** volta ao padrão) e ajusta a troca O/X, zona morta, opacidade,
-vibração (a cada toque, também com o outro dedo no analógico; fraca, média ou forte) e esconder sozinho. O giroscópio e o acelerômetro do celular alimentam o sensor de movimento do Vita, e o magnetômetro, a bússola do Vita (quando o jogo liga o magnetômetro).
-**Ajustes > Sistema > Ao abrir o emulador** pode dar boot no Sistema do Vita (o shell do firmware) ao abrir o app,
-como no desktop. **Ajustes > Câmeras** escolhe o que cada câmera do Vita mostra, como as opções de câmera do desktop: a câmera do
-celular daquele lado (o padrão), uma imagem PNG/JPEG ou nenhuma (quadros cinza).
-**Ajustes > Microfone** escolhe o que o microfone do Vita ouve: o microfone do celular (o padrão; o do fone conectado,
-quando houver), desligado (silêncio) ou o tom de teste. O Android pede a permissão do microfone na primeira vez que um
-jogo abre o microfone, nunca antes; recusada, o jogo ouve silêncio.
-**Ajustes > Localização** dá ao Vita a posição do celular (desligada por padrão): o Android pede a permissão de
-localização na primeira vez que um jogo pergunta onde o Vita está, nunca antes; recusada, a posição fica indeterminada.
-
-**Menu de pausa, save states e Gravar tudo.** O botão PS (na tela ou no controle) pausa um jogo iniciado sozinho:
-**Continuar**, **Salvar estado** / **Carregar estado** (6 slots com imagem), **Ajustes** (toque traseiro, controles na
-tela, MSAA, taxa de quadros, pré-gravação), **Recentralizar** (movimento), **Gravar tudo** e **Sair do jogo**. **Gravar tudo** grava o mesmo
-relatório de bug do F8 do desktop (save state, entrada, GPU dump, quadros, áudio e log) em `captures/` até **Parar
-gravação**; envie o `.zip` como em [Relatar um bug](#relatar-um-bug).
-
-**Estados e gravações na página do jogo.** Os detalhes do jogo mostram os 6 slots com a imagem e a data; tocar num
-slot abre o jogo já carregando aquele estado (como o `--load-state` do desktop; com o jogo aberto, carrega nele). Logo
-abaixo ficam as gravações do **Gravar tudo** do jogo, com data e tamanho; tocar numa compartilha o `.zip`. Pelo adb:
-`am start ... --es titleId <ID> --ei loadSlot <1-6>`.
-
-**Ajustes por jogo.** Nos detalhes do jogo: resolução interna (50%, 75%, nativa, 2x, 3x ou 4x, como no desktop), MSAA, taxa de quadros
-(**Nativo**, o ritmo do próprio jogo, por padrão; **Fixo em 30**, **Fixo em 60** ou **Sem limite**, como o `--frame-rate`
-do desktop; também no menu de pausa, vale na hora, e aparece ao lado do contador de FPS), VSync, o contador de FPS,
-backend de CPU, clock, perfil de GPU e o idioma do sistema que o jogo vê (**Idioma do sistema**), salvos por jogo (**Voltar ao padrão de Ajustes** volta aos ajustes gerais).
-
-**Resolução interna padrão.** A resolução interna com que abre todo jogo sem escolha própria também é um ajuste geral:
-no launcher do desktop **Configurações > Gráficos > Resolução interna** (1x-4x), no Android **Ajustes > Resolução
-interna** (50%-4x). A escolha do próprio jogo na página dele (inclusive a nativa) vence; a página mostra **Padrão (...)**
-com o valor geral. A tela de carregamento mostra a resolução com que o jogo abre, e o log da sessão tem a linha
-`Internal resolution: ...`.
-
-**Limitações conhecidas.**
-
-- Os vídeos do Killzone: Mercenary podem ficar lentos por um tempo até se recuperarem.
-- O Minecraft perde desempenho com o tempo de sessão (em investigação).
-- GPUs Adreno (e drivers próprios) foram pouco testadas; as medidas acima são de uma Mali-G57.
-
-Os itens abertos estão no [roadmap](docs/roadmap.md) (seção Android).
+Todas as opções, com a chave de linha de comando e os detalhes: [guia do usuário](docs/user-guide.pt-BR.md).
 
 ## Relatar um bug
 
-Use o **Gravar tudo**: aperte **F8** durante o jogo (a barra de título mostra *"● REC | Gravando tudo (F8 para
-parar)"*), jogue até o problema aparecer e aperte **F8** de novo. Sai um `.zip` em `captures/` com um estado salvo,
-os controles, todas as imagens com seus tempos, o dump da GPU, o áudio (mix e cada voz) e o log: dá para reproduzir o
-problema sem jogar de novo. No Android: menu de pausa > **Gravar tudo**. Para defeitos rápidos, ligue a
-**Pré-gravação** (Configurações > Geral, ou o modo de depuração com F9): o arquivo inclui os segundos antes da tecla. Quando o
-problema aparecer, aperte **Shift+F8** (Android: menu de pausa > **Marcar o problema**): a gravação ganha uma marca e
-um estado salvo daquele momento.
+O **Gravar tudo** gera um `.zip` com tudo o que é preciso para ver e reproduzir o problema sem o jogo.
 
-Envie o `.zip` com o nome do jogo (title ID) e o que aconteceu. Toda sessão também grava `logs/last.log`. A
-gravação não leva nada pessoal (caminhos, nomes de usuário, computador e conta viram marcadores) e pode ser analisada
-e reexecutada sem o jogo e sem os plugins: veja [`docs/captures.pt-BR.md`](docs/captures.pt-BR.md). Detalhes
-em [`docs/notes/session-capture.md`](docs/notes/session-capture.md); quem analisa usa `vitasharp-perf capture <zip>` e
-`VitaSharp.Desktop rerun <pasta>`.
+1. Opcional, para problemas que passam rápido: ligue a **Pré-gravação** (Configurações > Avançado, ou o modo de
+   depuração com `F9`), para a gravação ter também os segundos antes de você apertar a tecla.
+2. Durante o jogo aperte **F8** (a barra de título mostra *"● REC | Gravando tudo (F8 para parar)"*). Android: menu
+   de pausa > **Gravar tudo**.
+3. Jogue até o problema aparecer. Nesse momento aperte **Shift+F8** (Android: menu de pausa > **Marcar o problema**):
+   a gravação ganha uma marca e um estado salvo daquele instante.
+4. Aperte **F8** de novo (Android: **Parar gravação**). O `.zip` fica na pasta `captures/` da sua
+   [pasta de dados](#onde-ficam-os-seus-dados).
+5. Abra uma issue no GitHub com o `.zip`, o nome e o title ID do jogo e o que aconteceu. O `logs/last.log` também ajuda.
 
-## Compilar e testar
+A gravação leva um estado salvo, os controles, todas as imagens com seus tempos, o dump da GPU, o áudio e o log. Ela
+não leva nada pessoal: caminhos e nomes de usuário, computador e conta viram marcadores, e nenhum arquivo do jogo,
+licença ou chave é copiado. Quem corrige o problema consegue analisar, reexecutar e conferir uma correção
+(`VitaSharp.Desktop verify <zip>`) sem o jogo e sem os seus plugins: veja [`docs/captures.pt-BR.md`](docs/captures.pt-BR.md) e
+[`docs/notes/session-capture.md`](docs/notes/session-capture.md).
 
-Precisa do [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). O primeiro build baixa o FFmpeg
-(vídeos e MP3/AAC); as outras bibliotecas nativas vêm do NuGet.
+## Onde ficam os seus dados
+
+| Sistema | Pasta de dados |
+| --- | --- |
+| Windows | `%APPDATA%\VitaSharp` |
+| Linux | `~/.local/share/VitaSharp` |
+| macOS | `~/Library/Application Support/VitaSharp` |
+| Android | `/sdcard/.vitasharp` (com "Acesso a todos os arquivos"; senão `Android/data/io.github.vitasharp/files`) |
+
+Dentro dela: `fs/` é o armazenamento do Vita (jogos em `fs/ux0/app`, saves em `fs/ux0/user/00/savedata`, firmware em
+`fs/os0`, `fs/vs0`...), mais `logs/`, `savestates/`, `captures/` (Gravar tudo), `gpudumps/`, `diagnostics/` e
+`shadercache/`. `--data=<pasta>` ou a variável `VITASHARP_DATA` usam outra pasta. Atualizar o VitaSharp nunca muda
+essa pasta. Antes de desinstalar o app Android sem "Acesso a todos os arquivos", copie o `fs/ux0/user/00/savedata`
+para fora.
+
+## Desenvolvimento
+
+### Compilar e testar
+
+Precisa do [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). O primeiro build baixa o FFmpeg (vídeos
+e MP3/AAC); as outras bibliotecas nativas vêm do NuGet.
 
 ```sh
 dotnet build -c Release
 dotnet run --project src/VitaSharp.Desktop -c Release          # abre o launcher
 dotnet run --project src/VitaSharp.Desktop -c Release -- run <TITLEID>   # abre um jogo direto
 dotnet test tests/VitaSharp.Tests -c Release --filter "Category!=Slow"  # testes rápidos (sem o fuzz da CPU)
-build/coverage.ps1                                              # relatório de cobertura dos testes (HTML + resumo; também .sh)
 ```
 
-A linha de comando tem também `install`, `boot-shell`, `test <cenário>` (cenários automáticos em
-[`tests/scenarios`](tests/scenarios)), `replay-gpu`, `rerun`, `imports`, `update` e outras: `VitaSharp.Desktop --help`. O app
-Android: [`docs/android/README.md`](docs/android/README.md). Pacotes prontos (zip, instalador, tar.gz, AppImage, .app,
-.dmg; ReadyToRun ou Native AOT): `build/publish.ps1` / `build/publish.sh`.
+Antes de um push rode `build/prepush-check.ps1` (Windows) / `build/prepush-check.sh` (Linux, macOS, Git Bash): sobre
+exatamente o que está commitado ele roda a paridade dos scripts, o `--help` dos scripts, o ShellCheck, o estilo do
+código, um build com 0 avisos e a suíte `Category!=Slow`; só suba depois de "prepush-check: ok".
 
-Todo script vem em par `.ps1` + `.sh`, conferido localmente pelo `build/prepush-check`. Antes de um push rode
-`build/prepush-check.ps1` (Windows) / `build/prepush-check.sh` (Linux, macOS, Git Bash): sobre exatamente o que está
-commitado ele roda a paridade dos scripts, o `--help` dos scripts, o ShellCheck, o estilo do código, um build com 0
-avisos e a suíte `Category!=Slow`, que falha quando um teste falha, quando o processo de testes caiu (execução
-abortada) ou quando rodaram menos testes do que o `dotnet test --list-tests` lista; só suba depois de
-"prepush-check: ok". No Windows ele também roda a suíte no Linux pelo WSL quando o WSL tem um .NET SDK em `~/.dotnet`
-(`dotnet-install.sh --channel 10.0 --install-dir ~/.dotnet`) e os requisitos de teste do Linux abaixo (o Debian 12
-precisa do Mesa mais novo do bookworm-backports). Nenhuma etapa grava despejo de memória (Linux: tamanho de core 0 e
-`coredump_filter` 0, porque o coletor de falhas do WSL ignora o limite de tamanho). Os textos da interface ficam em
-`src/VitaSharp.Core/Localization` (`Texts.resx` em inglês, `Texts.pt-BR.resx`); a documentação externa também vem nos
-dois idiomas (`README.md` + `README.pt-BR.md`, conferidos pelo `ExternalDocPairsTests`). Para contribuir com funções do
-sistema, veja as especificações em [`docs/hle`](docs/hle/README.md). `build/hle-abi-check.ps1` / `build/hle-abi-check.sh` lista as funções HLE cujos registradores de argumento diferem dos protótipos do [vita-headers](https://github.com/vitasdk/vita-headers) (precisa de `git` e rede para o clone, ou de um clone local).
+O resto para quem contribui está em [`docs/development.pt-BR.md`](docs/development.pt-BR.md): a linha de comando, os
+pacotes, os requisitos dos testes por sistema, o estilo de código, as opções de desenvolvedor e o processo de release.
+Também: [ferramentas de desenvolvimento](docs/notes/developer-tools.md), o [build do app Android](docs/android/README.md#building),
+as especificações das funções do sistema em [`docs/hle`](docs/hle/README.md) e o [roadmap](docs/roadmap.md).
 
-### Estilo de código
-
-O estilo do C# é o do Ryujinx/Ryubing, e o [`.editorconfig`](.editorconfig) é a regra (o que é cobrado, o que está
-desligado e por quê). `build/format-check.ps1` (Windows) / `build/format-check.sh` (Linux, macOS) roda
-`dotnet format whitespace` e `dotnet format style --severity warn` com `--verify-no-changes` só nos arquivos `.cs`
-versionados (`git ls-files`: nunca arquivos fora do git nem ignorados por ele), como o job
-"Code style" do CI (esse job está comentado no `.github/workflows/ci.yml` por enquanto: rode localmente), com o mesmo código de saída (2 quando algo difere); `-Fix` / `--fix` reescreve os arquivos em
-vez de conferir (rodando também o `build/NamingTool`, que renomeia os símbolos fora das regras de nomes junto com
-todas as referências, já que o `dotnet format` aponta o IDE1006 mas não sabe corrigi-lo, e o `build/FormatTool`, que
-quebra os blocos escritos numa linha e mantém `{ get; set; }` numa linha; a correção precisa dos pacotes NuGet do
-`build/NamingTool`, baixados na primeira vez). As pastas ainda não convertidas ficam em
-[`build/format-pending.txt`](build/format-pending.txt) e são puladas. A lista de arquivos vai para o `dotnet format` num arquivo de resposta, e os scripts rodam direto o
-`dotnet-format.dll` do SDK ativo (`<sdk>/DotnetTools/dotnet-format/`) para que ele mesmo leia esse arquivo: o
-`dotnet format` poria todos os caminhos numa linha de comando, maior do que o Windows aceita quando a árvore inteira é
-listada (outros layouts de SDK voltam para o `dotnet format`). O `OneLineBlockTests` (na suíte de testes)
-recusa blocos escritos numa linha só (`if (x) { a; }`): todo corpo vai em linhas próprias.
-
-**Opções nos dois apps:** toda opção nova do usuário (ajustes, ajustes por jogo, menu de pausa, controles) entra no
-launcher do desktop e no app Android na mesma mudança, com o mesmo nome, padrão e significado (os textos vêm do
-`Texts.resx` compartilhado); um teste confere que os dois levam a opção ao mesmo ajuste do emulador
-(`AndroidOptionParityTests`).
-
-Os scripts shell seguem o Google Shell Style Guide e precisam passar no ShellCheck (job "ShellCheck" do CI; o job
-"Scripts on macOS" também roda o `build/check-scripts-help.sh` no bash 3.2 do sistema). Instale o ShellCheck com
-`winget install koalaman.shellcheck` (Windows), `sudo apt install shellcheck` / `sudo dnf install ShellCheck`
-(Linux) ou `brew install shellcheck` (macOS) e rode `shellcheck --severity=style build/*.sh build/package/*.sh`.
-
-### Ferramentas de desenvolvimento
-
-- Dump do backend IL: `VITASHARP_IL_DUMP=<pasta>` grava os blocos do jogo compilados como assemblies para ler no ILSpy
-  (`dotnet tool install -g ilspycmd`, depois `ilspycmd -il <arquivo>.dll`); `DOTNET_JitDisasm=<método>` mostra o
-  código de máquina que o RyuJIT gera. Veja [`docs/notes/il-jit.md`](docs/notes/il-jit.md).
-- Validação do Vulkan: `--validation` (`run`, `test`, `replay-gpu`) ou `VITASHARP_VK_VALIDATION=1` (`=sync` inclui a
-  validação de sincronização) precisa da camada da Khronos: o [Vulkan SDK](https://vulkan.lunarg.com/sdk/home)
-  (Windows, Linux, macOS) ou, no Linux, o pacote da distribuição (`vulkan-validationlayers` /
-  `vulkan-validation-layers`); no macOS o SDK também traz o MoltenVK. Captura de quadros:
-  [RenderDoc](https://renderdoc.org) (Windows, Linux) e os dumps da GPU (`replay-gpu`,
-  [`docs/notes/gpu-dump.md`](docs/notes/gpu-dump.md)) em todos os sistemas.
-- Bibliotecas de pipeline gráfico (desligadas por padrão, mais lentas nas medições com caches frios):
-  `VITASHARP_PIPELINE_LIBRARY=1` liga pipelines de primeiro uso ligados a partir de bibliotecas de shader e otimizados
-  em segundo plano, onde o driver tem `VK_EXT_graphics_pipeline_library` com ligação rápida (NVIDIA/AMD/Intel de
-  desktop, Mesa); sem ela (MoltenVK, Dozen, drivers de celular) os pipelines são compilados inteiros de qualquer jeito.
-  A linha `[shadercache] session` do log conta o que a thread da GPU compilou; ver
-  [`docs/notes/pipeline-skip.md`](docs/notes/pipeline-skip.md).
-- Janela de carregamento: o clique num jogo abre a janela dele na hora (960x544 vezes o `--scale`), antes de o processo
-  do jogo fazer qualquer parte da inicialização, com a imagem de abertura do jogo (`sce_sys/pic0.png`), o ícone e o
-  nome, a etapa atual (firmware, controles, áudio, GPU, o jogo, o cache de shaders, o código ARM) com uma barra e,
-  durante as esperas do cache de shaders e do código ARM, "Cancelar". A janela do próprio jogo espera escondida no
-  mesmo lugar (`--loading-screen=launcher --window-pos=X,Y`) e aparece quando o jogo está pronto; as etapas são as
-  linhas `[boot-step] <etapa>` do log do processo do jogo e `[boot-log] <caminho>` o arquivo de log dele. Um segundo
-  clique no jogo traz a mesma janela de volta; o X dela para o jogo. Uma inicialização que falha (título que não
-  carrega, licença ausente, saída com erro) deixa o motivo e o lugar do log na janela, com "Fechar". O Android mostra a
-  mesma tela sobre o jogo. Nada a mais para instalar, em todos os sistemas.
-- "Carregar o cache de shaders antes de jogar" / "Load the shader cache before playing" (launcher: Configurações, ao
-  lado de "Compilar shaders em segundo plano", e a página de cada jogo; `--load-shader-cache=on|off`, ligado por padrão;
-  o nome antigo `--precompile-shaders` ainda é aceito, com um aviso): antes de o jogo começar, o cache de shaders dele
-  (os shaders e pipelines gravados nas sessões anteriores, `shadercache/titles/<ID>/`) é montado atrás de uma barra de
-  progresso na barra de status do launcher; "Cancelar" (a linha `cancel-shader-cache-load` na entrada padrão do
-  processo do jogo) começa o jogo na hora e o resto é montado em segundo plano. É um carregamento de cache, não uma
-  pré-compilação: a primeira sessão de um jogo não tem nada gravado. Nada a mais para instalar, igual no Windows, Linux
-  e macOS.
-- Compilar shaders ao carregar o programa ("compile shaders at program load"; `--compile-on-program-load=on|off`, ligado
-  por padrão; `VITASHARP_COMPILE_ON_PROGRAM_LOAD=0|1` tem prioridade, também no Android): quando o jogo cria um programa de
-  vértice ou de fragmento (sceGxmShaderPatcherCreate*, normalmente atrás da tela de carregamento), os workers de shader
-  traduzem e compilam os shaders com os hints previstos pelo programa e montam o pipeline do programa de vértice para
-  o qual ele foi feito, então o primeiro desenho da primeira sessão já os encontra prontos. Um desenho cujo formato de
-  textura ou de superfície difere do previsto mas traduz para o mesmo shader usa o mesmo módulo. As superfícies de cor
-  que o jogo inicializa e as cenas que ele começa são lembradas, e os programas que dependem da superfície (blending
-  programável, saída de cor nativa ou inteira) também são montados para cada uma delas, com os pipelines de fetch pass
-  e de integer view. A linha `[shadercache] session` da sessão termina com o que foi enfileirado e usado ("at program
-  load: ..."); `replay-gpu --compile-on-program-load=on` anuncia os programas do dump antes do primeiro comando. Nada a
-  mais para instalar, em todos os sistemas.
-- Workers de shader (`--shader-workers=N` fixa o número, `VITASHARP_SHADER_WORKERS=N` sobrepõe): por padrão o número
-  segue o orçamento de CPU, no máximo 90% dos processadores lógicos que o processo pode usar. Enquanto a thread da GPU
-  trabalha, dois deles ficam com a thread da CPU emulada e a thread da GPU (8 processadores: 5 workers). Enquanto ela
-  espera um shader ou pipeline, ou o jogo espera o carregamento do cache de shaders, o orçamento inteiro compila (8
-  processadores: 7): os workers acima da parte fixa são de folga, em prioridade abaixo do normal, e só usam núcleos
-  livres (`VITASHARP_SHADER_SPARE_WORKERS=N` define quantos, A/B). No Android rodam menos, nos núcleos LITTLE (2 big +
-  6 LITTLE: 2, 4 na espera). A linha de início do renderizador (`[gpu] shaders: ...`) mostra os números. Nada a mais
-  para instalar, em todos os sistemas.
-- "Precompilar código ARM" / "Precompile ARM code" (launcher: Configurações, depois da opção do cache de shaders, e a
-  página de cada jogo; `--precompile-code=on|off`, ligado por padrão): antes de o jogo começar, o JIT nativo traduz o
-  código ARM dele em todos os núcleos livres, atrás de uma barra de progresso própria na barra de status do launcher
-  ("Cancelar" = a linha `cancel-code-precompile` na entrada padrão do processo do jogo; linhas de log
-  `[code-precompile] progress ...`): os blocos que as sessões anteriores executaram, na ordem em que rodaram pela
-  primeira vez (o cache de código: `codecache/<hash da imagem do módulo>.vsjc` na pasta de dados,
-  `--code-cache=<pasta>|off`; um arquivo por imagem de módulo, vale em qualquer endereço de carga, rejeitado depois de
-  uma mudança no tradutor), ou, na primeira sessão, o código que a análise estática alcança a partir das entradas dos
-  módulos (início do módulo, exportações, branches diretos e retornos de chamada). O jogo começa assim que esses ficam
-  prontos; depois, algumas threads de prioridade baixa traduzem o código perto do que o jogo executa (alguns blocos
-  além de cada bloco que ele alcança, e o resto da função dele, achada pelo índice de funções `.ARM.exidx`), no máximo
-  64 MB da arena de código. O código pré-compilado é publicado quando o jogo chega nele pela primeira vez. As linhas de
-  log `ARM code precompilation: boot step ...` e, no fim, `... % of the run blocks were precompiled` dão o tempo e a
-  cobertura. O Android espera a mesma etapa atrás da tela de carregamento (a opção fica nos ajustes do app e nos de
-  cada jogo). Nada a mais para instalar, em todos os sistemas.
-- Perfil: `dotnet-trace` / `dotnet-counters` (`dotnet tool install -g dotnet-trace`, todos os sistemas); no Windows
-  também o PerfView e o WPR/WPA (Windows Performance Toolkit).
-
-### Requisitos dos testes
-
-O que o `dotnet test tests/VitaSharp.Tests` precisa em cada sistema; um teste sem o seu requisito é pulado e diz o porquê.
-
-| | Windows | Linux | macOS |
-|---|---|---|---|
-| SDK | .NET 10 SDK | .NET 10 SDK | .NET 10 SDK |
-| Dispositivo Vulkan (testes do renderizador, dos dumps da GPU e dos jogos rodando) | o lavapipe do Mesa (Vulkan 1.4, o mesmo do CI do Linux): descompacte a pasta `x64` de uma versão do [mesa-dist-win](https://github.com/pal1000/mesa-dist-win/releases) (`vulkan_lvp.dll` + `lvp_icd.x86_64.json`) em `%LOCALAPPDATA%\VitaSharpTools\mesa\<versão>\x64`; sem ele, ou quando o carregador do sistema `vulkan-1.dll` não pode usá-lo, o SwiftShader que vem com o Microsoft Edge ou o Google Chrome (os dois achados sozinhos) | o lavapipe de um Mesa mais novo que o 22.3 (o CI tem o 25.2): `sudo apt install mesa-vulkan-drivers libvulkan1` (Fedora: `mesa-vulkan-drivers vulkan-loader`; Debian 12: `sudo apt install -t bookworm-backports mesa-vulkan-drivers`, o 22.3 dele derruba os testes de textura) | o MoltenVK: o Vulkan SDK da LunarG, ou `brew install molten-vk vulkan-loader` |
-| shaderc (testes do renderizador e de compilação de shaders; o renderizador também precisa dele) | vem do pacote Silk.NET.Shaderc.Native | vem do pacote (achado em `runtimes/linux-x64` também onde a busca do Silk.NET não acha, como no Ubuntu); quando essa cópia não carrega: `sudo apt install libshaderc-dev` (Fedora, Arch: `shaderc`; carregado como `libshaderc.so.1`) | vem do pacote, senão o `brew install shaderc` do Homebrew |
-| Uma janela do desktop (testes do overlay do jogo) | sempre | uma tela X11 ou Wayland; sem tela: `xvfb-run dotnet test tests/VitaSharp.Tests` (`sudo apt install xvfb`) | pulados: o AppKit só cria janelas na thread principal, e os testes rodam em threads de trabalho |
-| FFmpeg (testes de decodificação de vídeo e áudio) | baixado pelo primeiro build | baixado pelo primeiro build | o do sistema: `brew install ffmpeg` |
-
-- Qualquer sistema: `VK_DRIVER_FILES` (ou `VK_ICD_FILENAMES`) com o manifesto ICD de um SwiftShader ou Mesa baixado é
-  usado no lugar.
-- O `RendererPipelineLibraryTests` confere os pipelines ligados onde o dispositivo por software tem a extensão com
-  ligação rápida (SwiftShader, Mesa lavapipe) e a compilação inteira em todos os outros.
-- Firmware: sem ele os testes dos módulos reais do firmware (`libSceJson`, `libSceXml`, `libpaf`, a instalação do
-  arquivo de atualização, as fontes do `sa0`; o `dbutil` então roda só o lado HLE) são pulados. `VITASHARP_FIRMWARE_PUP`
-  aponta um `PSVUPDAT.PUP`, `VITASHARP_FIRMWARE_DIR` uma pasta `vs0` ou de dados do Vita3K; os testes do compilador do
-  Piglet precisam do `libshacccg.suprx` em `ur0:data` da pasta de dados do Vita3K ou da pasta indicada por
-  `VITASHARP_TEST_INSTALLED_DATA`.
-- `VITASHARP_TEST_INSTALLED_DATA` (opcional, só leitura): uma pasta de dados do VitaSharp com jogos e firmware
-  instalados, para os testes dos módulos reais instalados (`LleLibrariesTests`, o compilador do Piglet); sem ela, eles
-  são pulados.
-- Os testes do microfone (`MicrophoneTests`) usam um tom roteirizado num relógio que o próprio teste avança: nenhum
-  dispositivo de captura, permissão ou placa de som é preciso em nenhum sistema.
-- Os testes de localização (`LocationSourceTests`) usam uma posição fixa e uma fonte que o teste move: nenhum
-  serviço de localização nem permissão em nenhum sistema.
-- Os testes nunca usam a sua pasta de dados: antes de qualquer teste, o assembly de testes aponta o `VITASHARP_DATA`
-  para uma pasta temporária nova da execução (também por cima de um valor definido no seu shell), então `input.json`,
-  `launcher.json`, logs, cache de shaders e save states são da execução; os testes que precisam de uma pasta própria
-  criam uma, e os processos filhos recebem `--data=`. A detecção do Vita3K do launcher não acha nada nos testes. O
-  `TestDataIsolationTests` falha se algum teste resolver ou montar o caminho da sua pasta de dados. Os testes de jogo
-  rodando iniciam um executável pequeno que os próprios testes escrevem.
-- Opcional: as camadas de validação do Vulkan SDK da LunarG rodam as cargas do renderizador sob validação com
-  `dotnet test tests/VitaSharp.Tests --filter Category=Slow` (`RendererValidationTests`; pulado sem a camada).
-- O teste de janela abre uma janela oculta (`VITASHARP_HIDDEN_WINDOW=1`): no Linux precisa de um display (`DISPLAY`), no
-  Windows do carregador Vulkan do sistema (`vulkan-1.dll`, instalado com qualquer driver de GPU), que recebe o driver
-  por software em `VK_DRIVER_FILES`. Num processo elevado (Administrador) o carregador ignora essa variável: rode os
-  testes sem elevação, ou registre o `*_icd.json` do driver como um valor DWORD `0` em
-  `HKLM\SOFTWARE\Khronos\Vulkan\Drivers` (o CI faz isso com o SwiftShader do Edge); senão o teste é pulado. No macOS
-  ele é pulado. Um processo elevado também usa o SwiftShader no lugar de um lavapipe não registrado.
-- O lavapipe do Windows não tem `VK_EXT_headless_surface`: o teste do renderizador sem janela
-  (`RendererDeviceHandoffTests`) é pulado com ele e roda com o SwiftShader (o CI do Windows) e no Linux.
-- Paridade de mídia (`MediaParityTests`): o lado do desktop (FFmpeg) roda sempre; o lado do Android precisa do APK de
-  desenvolvedor (`-p:VitaSharpDeveloper=true`) num celular ou no Android Emulator (qualquer sistema com o Android SDK:
-  uma imagem x86_64 Google APIs e o build `android-x64`). `build/android-media-parity.sh` (ou `.ps1`) grava o traço no
-  aparelho; `VITASHARP_ANDROID_MEDIA_TRACE=<traço> dotnet test tests/VitaSharp.Tests --filter MediaParityTests` compara
-  com o do desktop (pulado sem a variável). `SYNC=0` (`-Sync 0`) grava com o tempo antigo do MediaCodec.
-- Paridade da porta de áudio (`AudioPortParityTests`): os grãos de uma porta, no volume da porta, pelo mixer do OpenAL
-  Soft (lido de um dispositivo `ALC_SOFT_loopback`, sem placa de som; o OpenAL Soft do pacote tem isso em todo
-  sistema) e pelo fluxo do Android (`BufferedPcmStream`, a fila e o volume antes do AAudio/AudioTrack) têm de dar o
-  mesmo PCM, com no máximo um passo de 16 bits de diferença. Pulado com o motivo quando o OpenAL Soft não carrega.
-- .NET 11 (opcional, para comparações; o padrão e o CI continuam no .NET 10): `-p:VitaSharpDotnet=net11.0` compila
-  todos os projetos para o .NET 11 em qualquer sistema. Precisa do SDK do .NET 11 (e, no Android, do workload
-  `maui-android` dele e da plataforma Android API 37; o .NET 11 não tem Mono, então só `VitaSharpAndroidRuntime=coreclr`
-  ou `nativeaot` compilam). Com o SDK instalado fora do local padrão, o app do desktop roda com `DOTNET_ROOT`
-  apontando para ele.
-
-## Releases
-
-- **Versões**: uma tag `v*` (ou **Actions > Release > Run workflow**) publica uma release com os pacotes Native AOT de
-  Windows, Linux e macOS, o APK do Android (`VitaSharp-<versão>-android-arm64.apk`) e o `SHA256SUMS.txt`.
-- **Builds automáticos**: todo push na `main` cujo CI passou vira uma prerelease `build-<commit>` com os pacotes
-  daquele CI (as 10 mais novas ficam).
-- **Atualização automática**: os pacotes procuram uma versão nova ao abrir (Configurações > Geral > Atualizações:
-  liga/desliga, canal builds automáticos ou só versões, **Procurar agora**). O diálogo mostra a versão em uso, a nova,
-  a data e as novidades, com **Pular esta versão**, **Lembrar depois** e **Atualizar agora**: o pacote da plataforma
-  é baixado, conferido pelo `SHA256SUMS.txt` e trocado (o instalador, no Windows instalado pelo setup), e o VitaSharp
-  reabre. Só os arquivos do emulador mudam; a pasta de dados nunca. Um build compilado do código se atualiza pelo git
-  (pela linha de comando: `update [--channel=releases] [--apply]`).
-- Os pacotes não são assinados (o Windows SmartScreen avisa) e nunca incluem firmware.
-
-## Créditos e licença
-
-O VitaSharp se apoia no trabalho da comunidade do Vita: [Vita3K](https://github.com/Vita3K/Vita3K) (referência de
-comportamento, NIDs, modelo de registradores USSE), [VitaSDK](https://vitasdk.org/) e vita-headers, a
-[wiki de desenvolvimento do PS Vita](https://wiki.henkaku.xyz/), [VGAudio](https://github.com/Thealexbarney/VGAudio)
-(decodificador ATRAC9, MIT), [RPCN](https://github.com/RipleyTom/rpcn), [Silk.NET](https://github.com/dotnet/Silk.NET),
-[Avalonia](https://avaloniaui.net/), [FFmpeg](https://ffmpeg.org/) (LGPL, baixado no build) e
-[SQLite](https://sqlite.org/) (domínio público) pelo [SQLitePCLRaw](https://github.com/ericsink/SQLitePCL.raw) (Apache-2.0),
-[PPSSPP](https://www.ppsspp.org/) (referência de comportamento da CPU do PSP; as tabelas do interpolador da VFPU
-e a do recíproco do GE,
-GPL-2.0-or-later, [third_party/ppsspp](third_party/ppsspp/README.md)) e [pspautotests](https://github.com/hrydgard/pspautotests)
-(resultados do hardware do PSP usados pelos testes).
+## Licença e créditos
 
 Licença **GPL v3** ([LICENSE](LICENSE)); componentes de terceiros mantêm as suas. PlayStation e PS Vita são marcas da
 Sony Interactive Entertainment; o VitaSharp não tem ligação com a Sony.
+
+O VitaSharp se apoia no trabalho da comunidade do Vita: [Vita3K](https://github.com/Vita3K/Vita3K) (referência de
+comportamento, NIDs, modelo de registradores USSE), [VitaSDK](https://vitasdk.org/) e vita-headers, a
+[wiki de desenvolvimento do PS Vita](https://wiki.henkaku.xyz/), [PPSSPP](https://www.ppsspp.org/) (referência de
+comportamento da CPU do PSP; as tabelas do interpolador da VFPU e a do recíproco do GE, GPL-2.0-or-later,
+[third_party/ppsspp](third_party/ppsspp/README.md)), [pspautotests](https://github.com/hrydgard/pspautotests)
+(resultados do hardware do PSP usados pelos testes) e [RPCN](https://github.com/RipleyTom/rpcn).
+
+Componentes de terceiros:
+
+| Componente | Usado para | Licença |
+| --- | --- | --- |
+| [Silk.NET](https://github.com/dotnet/Silk.NET) | bindings de Vulkan, OpenAL, SDL2, janelas e shaderc | MIT |
+| [OpenAL Soft](https://openal-soft.org/), [SDL2](https://www.libsdl.org/), [shaderc](https://github.com/google/shaderc) | som e microfone, controles, compilador de shaders (bibliotecas nativas) | LGPL-2.0-or-later, zlib, Apache-2.0 |
+| [Avalonia](https://avaloniaui.net/) | o launcher do desktop | MIT |
+| [.NET MAUI](https://github.com/dotnet/maui), [MauiReactor](https://github.com/adospace/reactorui-maui) | o app Android | MIT |
+| [FFmpeg](https://ffmpeg.org/) pelo FFmpeg.AutoGen | decodificação de vídeo e MP3/AAC (baixado no build) | LGPL |
+| [VGAudio](https://github.com/Thealexbarney/VGAudio) | decodificador ATRAC9 | MIT |
+| [SQLite](https://sqlite.org/) pelo [SQLitePCLRaw](https://github.com/ericsink/SQLitePCL.raw) | as bases de dados do sistema | domínio público, Apache-2.0 |
+| [Iced](https://github.com/icedland/iced) | geração de código x86-64 do JIT | MIT |
+| [libadrenotools](https://github.com/bylaws/libadrenotools) | drivers de GPU próprios no Android | BSD-2-Clause |
+| [FlashCap](https://github.com/kekyo/FlashCap), [StbTrueTypeSharp](https://github.com/StbSharp/StbTrueTypeSharp) | as câmeras do PC, o rasterizador das fontes do sistema | veja cada projeto |
+| [Unicorn](https://www.unicorn-engine.org/) | CPU ARM de referência para os testes e a comparação lockstep | GPL-2.0 |
+| [Inter](https://rsms.me/inter/), [Sora](https://fonts.google.com/specimen/Sora) | as fontes do app Android | SIL OFL 1.1 |

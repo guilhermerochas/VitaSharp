@@ -10,7 +10,7 @@ On-screen text follows the app's language setting (English or Brazilian Portugue
 
 ## Current state (14/11/2026)
 
-The user-facing summary is the [main README's Android section](../../README.md#android); the dated runs below keep the
+The user-facing summary is the [user guide's Android section](../user-guide.md#android); the dated runs below keep the
 history.
 
 - **Runtime**: the Release APK uses `VitaSharpAndroidRuntime=nativeaot` by default (see
@@ -21,9 +21,10 @@ history.
   not been measured on the phone yet.
 - **Install**: download `VitaSharp-<version>-android-arm64.apk` from the Releases page (versions and the automatic
   `build-<commit>` prereleases), or the artifact `VitaSharp-android-arm64-packages` of a CI run; otherwise build it
-  as in [Building](#building). The APK is signed with a debug
-  key, so switching to a build signed with another key needs an uninstall, which deletes the data folder (games,
-  saves, settings; see [Storage](#storage)): copy `fs/ux0/user/00/savedata` out first.
+  as in [Building](#building). The Releases and CI APKs are signed with the repository's fixed key
+  ([Signing](#signing)), so each installs over the last; a build signed with another key needs an uninstall, which
+  deletes the app-specific data folder (games, saves, settings; `.vitasharp` stays, see [Storage](#storage)): copy
+  `fs/ux0/user/00/savedata` out first.
 - **Known limitations**: Killzone: Mercenary's movies can play slowly for a while before they catch up; Minecraft loses
   performance as a session goes on (under investigation); Adreno phones and custom drivers are barely tested.
 
@@ -141,9 +142,9 @@ ABI inside (`AndroidApkContentsTests`), and `build/check-dev-gating` fails with 
 AOT)** (`.github/workflows/ci.yml`, ubuntu-latest, every push and pull request) runs it and uploads the artifact
 **VitaSharp-android-arm64-packages** (release.yml publishes its APK on the Releases page);
 it caches NuGet, the NDK and the compiled native libraries (about 15-20
-minutes warm, 25-35 cold). The APK is signed with the debug keystore .NET creates on the fly (no secret): APKs of
-different runs or machines have different keys, so replacing one with another needs an uninstall first. Only arm64
-for now (no x86_64 artifact).
+minutes warm, 25-35 cold). The APK is signed with the repository's fixed keystore ([Signing](#signing)); a fork
+without the secrets signs with a debug keystore made on the fly, a new key each run, so replacing one of those with
+another needs an uninstall first. Only arm64 for now (no x86_64 artifact).
 
 `-r android-arm64` (phones) or `-r android-x64` (the emulator) builds and AOT-compiles one ABI (the csproj narrows
 `RuntimeIdentifiers` to it; before 09/11/2026 the other ABI was still LLVM-compiled, doubling the time), into `bin/Release/net10.0-android/<rid>/`
