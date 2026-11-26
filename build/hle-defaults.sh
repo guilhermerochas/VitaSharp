@@ -38,7 +38,8 @@ find_browser() {
 
 main() {
   local out="${HOME}/VitaSharpReports"
-  local date_arg="$(date +%Y-%m-%d)"
+  local date_arg
+  date_arg="$(date +%Y-%m-%d)"
   local pdf=1
   local arg
   for arg in "$@"; do
