@@ -65,12 +65,22 @@ public sealed class SettingsView : Screen<SettingsState>
                     Row(Loc.Get("MFirmware"), fw?.Summary ?? "\u2026", () => Navigation?.PushAsync<FirmwarePage>(),
                         valueColor: fw?.Installed != null ? Palette.Ok : Palette.Muted),
                     Divider(),
-                    Row(Loc.Get("MVitaSystem"), fw is { Shell: true } ? Loc.Get("MReady") : Loc.Get("MNeedsFirmware"), () =>
+                    // without the system fonts the shell draws no text: warn and offer the font package, or open it anyway
+                    Row(Loc.Get("MVitaSystem"), fw is { SystemReady: true } ? Loc.Get("MReady") : fw is { Shell: true } ? Loc.Get("MFontsNeededTitle") : Loc.Get("MNeedsFirmware"), async () =>
                     {
-                        if (fw is { Shell: true })
-                            Game.GameActivity.Launch(MainActivity.Current!, Game.GameActivity.SystemTitleId);
-                        else
+                        if (fw is not { Shell: true })
+                        {
                             Navigation?.PushAsync<FirmwarePage>();
+                            return;
+                        }
+                        if (!fw.SystemReady
+                            && await Confirm(Loc.Get("MFontsNeededTitle"), Loc.Get("FwFontsNeeded"), Loc.Get("MInstallFonts"), Loc.Get("MOpenAnyway")))
+                        {
+                            FirmwarePage.PickFontPackageOnOpen = true;
+                            Navigation?.PushAsync<FirmwarePage>();
+                            return;
+                        }
+                        Game.GameActivity.Launch(MainActivity.Current!, Game.GameActivity.SystemTitleId);
                     }, detail: Loc.Get("MShellDetail")),
                     Divider(),
                     Row(Loc.Get("StartupView"), SettingsChoices.LabelOf(StartupViews.Choices, p.StartupView),

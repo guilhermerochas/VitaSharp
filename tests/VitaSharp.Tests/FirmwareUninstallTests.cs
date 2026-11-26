@@ -145,6 +145,7 @@ public sealed class FirmwareUninstallTests : IDisposable
         Write(source, "os0/kd/registry.db0");
         Write(source, "vs0/sys/external/libSceXml.suprx");
         Write(source, "sa0/data/font/pvf/ltn0.pvf");
+        Write(source, "sa0/data/font/pgf/ltn0.pgf");
 
         IReadOnlyList<string> removed = await FirmwareSetup.UninstallAsync(FsRoot); // the shared service (Mobile.Core)
         Assert.Contains("vs0", removed);

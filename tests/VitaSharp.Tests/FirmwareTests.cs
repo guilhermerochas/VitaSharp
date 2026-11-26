@@ -674,6 +674,8 @@ public class FirmwareTests
             Directory.CreateDirectory(Path.Combine(fsRoot, "sa0", "data", "font", "pgf"));
             File.WriteAllBytes(Path.Combine(fsRoot, "sa0", "data", "font", "pgf", "ltn0.pgf"), Bytes(5, 9));
             File.WriteAllBytes(Path.Combine(fsRoot, "sa0", "data", "font", "pgf", "mine.pgf"), Bytes(5, 8));
+            Directory.CreateDirectory(Path.Combine(fsRoot, "sa0", "data", "font", "pvf"));
+            File.WriteAllBytes(Path.Combine(fsRoot, "sa0", "data", "font", "pvf", "ltn0.pvf"), Bytes(5, 7));
             Assert.Null(FirmwareInfo.Read(fsRoot));
             Assert.True(FirmwareInfo.HasSystemFonts(fsRoot));
             FirmwareInfo info = FirmwareInstaller.ImportFrom(other, fsRoot, "Vita3K");

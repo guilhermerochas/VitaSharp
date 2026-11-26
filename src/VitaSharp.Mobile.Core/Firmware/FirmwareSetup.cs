@@ -9,7 +9,7 @@ namespace VitaSharp.Mobile.Core.Firmware;
 /// </summary>
 public sealed record FirmwareStatus(FirmwareInfo? Installed, bool SystemFonts, bool Pd0, bool Shell)
 {
-    public const string ShellPath = "vs0/vsh/shell/shell.self";
+    public const string ShellPath = FirmwareInfo.ShellPath;
 
     public static FirmwareStatus Read(string fsRoot) => new(
         FirmwareInfo.Read(fsRoot),
@@ -21,6 +21,14 @@ public sealed record FirmwareStatus(FirmwareInfo? Installed, bool SystemFonts, b
     /// "nao instalado".</summary>
     public string Summary => Installed is not { } fw ? Loc.Get("MNotInstalled")
         : SystemFonts ? fw.Display : Loc.Format("MFontsMissing", fw.Version ?? Loc.Get("MUnknownVersion"));
+
+    /// <summary>A firmware is installed but sa0 has no system fonts (a system update alone carries none): the Vita
+    /// system and many games draw no text, so the screens ask for the font package.</summary>
+    public bool FontsNeeded => Installed != null && !SystemFonts;
+
+    /// <summary>The Vita system boots with its text (FirmwareInfo.SystemReady): shell installed and the system fonts in
+    /// sa0. A shell without them still opens, after the warning ("Abrir assim mesmo").</summary>
+    public bool SystemReady => Shell && SystemFonts;
 
     private static bool HasEntries(string dir)
     {
