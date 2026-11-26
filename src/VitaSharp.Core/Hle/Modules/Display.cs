@@ -882,7 +882,24 @@ public sealed partial class Touch : HleModule
         ulong now = Emu.Kernel.ProcessTimeUs;
         long vblankNow = VBlank.Count;
         IInputBackend? input = touched ? Emu.Host.Input : null;
-        if (input is ITouchHistory history && ring.LastVblank >= 0)
+        // the number of this read (IGuestReadInput): the samples taken before it are kept with it by a recording
+        long read = input != null ? Ctrl.NextRead(ref _touchReads, port) : -1;
+        int replayed = input is IGuestTouchSamples replay ? replay.SampleCount(port == 1, read) : -1;
+        if (replayed >= 0)
+        {
+            // a re-run: the recording's samples before this read, in order, between the previous sample and now
+            ulong from = ring.LastTimeStamp;
+            for (int index = 0; index < replayed; index++)
+            {
+                int past = ((IGuestTouchSamples)input!).Sample(port == 1, read, index, touches);
+                ulong stamp = from + (now - Math.Min(from, now)) * (ulong)(index + 1) / (ulong)(replayed + 1);
+                if (stamp > ring.LastTimeStamp && stamp < now)
+                {
+                    Push(port, touches[..Filter(port, touches[..past], claimed)], stamp);
+                }
+            }
+        }
+        else if (input is ITouchHistory history && ring.LastVblank >= 0)
         {
             double guestNow = GuestClock.Seconds;
             double speed = GuestClock.Speed > 0 ? GuestClock.Speed : 1;
@@ -900,17 +917,19 @@ public sealed partial class Touch : HleModule
                     continue; // before the process started
                 }
 
-                int past = history.TouchesAgo(port == 1, (long)(age * 1e6 / speed), touches);
+                ulong stamp = now - ageUs;
+                if (stamp <= ring.LastTimeStamp || stamp >= now)
+                {
+                    continue; // not after the previous sample: only the samples taken are asked for (and recorded)
+                }
+
+                int past = history.TouchesAgo(port == 1, (long)(age * 1e6 / speed), read, touches);
                 if (past < 0)
                 {
                     continue; // older than the host's history
                 }
 
-                ulong stamp = now - ageUs;
-                if (stamp > ring.LastTimeStamp && stamp < now)
-                {
-                    Push(port, touches[..Filter(port, touches[..past], claimed)], stamp);
-                }
+                Push(port, touches[..Filter(port, touches[..past], claimed)], stamp);
             }
         }
 
@@ -918,7 +937,6 @@ public sealed partial class Touch : HleModule
         int reports = 0;
         if (input != null)
         {
-            long read = Ctrl.NextRead(ref _touchReads, port);
             reports = input is IGuestReadInput ordered ? ordered.GetTouches(port == 1, touches, read) : input.GetTouches(port == 1, touches);
         }
 

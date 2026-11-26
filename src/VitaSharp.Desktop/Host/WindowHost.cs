@@ -1175,7 +1175,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IMu
     }
 
     /// <summary>The mouse's touches of <paramref name="ageUs"/> microseconds ago and the controllers' of now.</summary>
-    public int TouchesAgo(bool back, long ageUs, Span<TouchPoint> dest)
+    public int TouchesAgo(bool back, long ageUs, long guestRead, Span<TouchPoint> dest)
     {
         int n = (back ? _backTouches : _touches).At(ageUs, dest);
         if (n < 0)

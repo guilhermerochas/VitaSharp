@@ -378,6 +378,6 @@ public sealed class AndroidInput(OnScreenPad pad, AndroidGamepads gamepads, Andr
     public int GetTouches(bool back, Span<TouchPoint> dest) => Current().CopyTouches(back, dest);
 
     /// <inheritdoc/>
-    public int TouchesAgo(bool back, long ageUs, Span<TouchPoint> dest) =>
+    public int TouchesAgo(bool back, long ageUs, long guestRead, Span<TouchPoint> dest) =>
         Current(Math.Max(ageUs, 1)) is { } past ? past.CopyTouches(back, dest) : -1;
 }

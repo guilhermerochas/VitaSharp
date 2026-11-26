@@ -86,8 +86,24 @@ public interface ITouchHistory
 {
     /// <summary>The contacts of a panel <paramref name="ageUs"/> microseconds ago (host time), with the ids
     /// <see cref="IInputBackend.GetTouches(bool, Span{TouchPoint})"/> gives; -1 when the history no longer reaches
-    /// back that far.</summary>
-    int TouchesAgo(bool back, long ageUs, Span<TouchPoint> dest);
+    /// back that far. The driver asks only for the samples it takes, before the read <paramref name="guestRead"/>
+    /// itself (<see cref="IGuestReadInput"/>), so a recording keeps each one with that read.</summary>
+    int TouchesAgo(bool back, long ageUs, long guestRead, Span<TouchPoint> dest);
+}
+
+/// <summary>
+/// A re-run's touch samples: the ones the driver took between two reads while recording ("touch-sample" lines of
+/// input.tsv, by read number), handed over in their order instead of sampling a host history, so the guest sees the
+/// recording's presses, moves and releases at the same reads.
+/// </summary>
+public interface IGuestTouchSamples
+{
+    /// <summary>How many samples the recording took before the read <paramref name="guestRead"/> of a panel; -1 when
+    /// this input does not replay samples (the driver then samples the host's history).</summary>
+    int SampleCount(bool back, long guestRead);
+
+    /// <summary>The <paramref name="index"/>-th of those samples.</summary>
+    int Sample(bool back, long guestRead, int index, Span<TouchPoint> dest);
 }
 
 /// <summary>An audio output stream fed with interleaved signed 16-bit samples.</summary>

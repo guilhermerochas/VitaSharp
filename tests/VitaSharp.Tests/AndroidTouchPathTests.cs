@@ -1,3 +1,4 @@
+using VitaSharp.Core.Capture;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Input;
@@ -267,6 +268,90 @@ public sealed class AndroidTouchPathTests : IDisposable
         Assert.Equal(0, Call(_touch, "sceTouchSetSamplingState", 1, 1u));
         Assert.Equal(1, Call(_touch, "sceTouchPeek", 1, _data, 1u));
         Assert.Equal(4u, GuestMemory.R32(_data + 12));
+    }
+
+    /// <summary>Two taps and a drag between slow shell frames, as <see cref="Frame"/> sees them.</summary>
+    private void TapsAndADrag()
+    {
+        Frame();
+        Wait(20);
+        Down(0, 0.2f, 0.5f);
+        Wait(40);
+        Up();
+        Wait(20);
+        Down(0, 0.8f, 0.5f);
+        Wait(40);
+        Up();
+        Wait(20);
+        Frame();
+        Down(0, 0.1f, 0.3f);
+        long start = _hostUs;
+        for (int step = 1; step <= 5; step++)
+        {
+            Wait(20);
+            _pad.Update([Finger(0, 0.1f + step * 0.15f, 0.3f)], start + step * 20_000);
+        }
+
+        Up();
+        Wait(30);
+        Frame();
+    }
+
+    [Fact]
+    public void AReRunHandsOverTheSamplesTakenBetweenReads()
+    {
+        // record: the capture's input recorder wraps the phone's input
+        var recorded = new List<InputEvent>();
+        var recorder = new InputRecorder(_harness.Emu.Host.Input, null, recorded.Add);
+        _harness.Emu.Host.Input = recorder;
+        TapsAndADrag();
+        string[] live = Normalized(_events);
+        Assert.Contains(recorded, e => e.Kind == InputRecorder.TouchSampleKind);
+
+        // re-run: the same reads (the read count goes on from the recording's, as a state loaded at its start
+        // would have it) get the recording's samples, the host's fingers are not looked at
+        long reads = recorded.Select(e => ReadOf(e.Data)).Max();
+        var playback = new InputPlayback(recorded.Select(e => e with { Data = ShiftRead(e.Data, reads) }));
+        playback.Activate(0);
+        _harness.Emu.Host.Input = playback;
+        _events.Clear();
+        _down.Clear();
+        Frame(); // the re-run's first read: the recording's first
+        Wait(140);
+        Frame();
+        Wait(130);
+        Frame();
+        Assert.Equal(live, Normalized(_events));
+    }
+
+    /// <summary>The events with the report ids replaced by their order of appearance (a re-run's driver hands out
+    /// ids from where its counter is).</summary>
+    private static string[] Normalized(List<string> events)
+    {
+        var order = new Dictionary<string, int>();
+        return [.. events.Select(e =>
+        {
+            string[] f = e.Split(' ');
+            if (!order.TryGetValue(f[1], out int n))
+            {
+                order[f[1]] = n = order.Count;
+            }
+
+            f[1] = n.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return string.Join(' ', f);
+        })];
+    }
+
+    private static long ReadOf(string data)
+    {
+        int at = data.IndexOf(InputRecorder.ReadToken, StringComparison.Ordinal);
+        return at < 0 ? 0 : long.Parse(data.AsSpan(at + InputRecorder.ReadToken.Length), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static string ShiftRead(string data, long by)
+    {
+        int at = data.IndexOf(InputRecorder.ReadToken, StringComparison.Ordinal);
+        return at < 0 ? data : data[..at] + InputRecorder.ReadToken + (ReadOf(data) + by).ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
     [Fact]
