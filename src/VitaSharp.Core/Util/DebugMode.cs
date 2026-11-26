@@ -19,6 +19,7 @@ public static class DebugMode
         bool was = Enabled;
         Enabled = true;
         Log.DedupeWarnings = true;
+        Cpu.PhaseProfile.TimeEveryTurn(); // every dispatcher turn timed: slow single turns are seen (Cpu/PhaseProfile.cs)
         if (!was)
         {
             AudioDiagnostics.OnDebugModeChanged(true); // snapshot of the ports and streams opened before

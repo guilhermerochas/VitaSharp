@@ -324,6 +324,16 @@ public static class CaptureAnalyzer
             }
         }
 
+        List<string> phaseLines = CpuPhasesSection(dir, ContextSection(dir, stop: false), ctxStop);
+        if (phaseLines.Count > 0)
+        {
+            sb.AppendLine();
+            foreach (string l in phaseLines)
+            {
+                sb.AppendLine(l);
+            }
+        }
+
         List<string> fileLines = CaptureFileRecorder.ReportSection(dir);
         if (fileLines.Count > 0)
         {
@@ -1072,6 +1082,88 @@ public static class CaptureAnalyzer
         if (lines.Count > 0)
         {
             lines.Insert(0, "Screen state (waiting for input / loading / busy):");
+        }
+
+        return lines;
+    }
+
+    /// <summary>
+    /// "CPU phases": for every guest thread, where its host time went during the recording (context.txt "cpu-phases:"
+    /// at the start and the stop, Cpu/PhaseProfile.cs): ns of host time per guest cycle by dispatcher phase, HLE and
+    /// pacing time, blocks decoded and compiled on the thread, and the last budget alerts (log.txt "[phase-alert]").
+    /// A thread that started during the recording counts from zero.
+    /// </summary>
+    internal static List<string> CpuPhasesSection(string dir, List<string> ctxStart, List<string> ctxStop)
+    {
+        const string Prefix = "cpu-phases: ";
+        var start = new Dictionary<string, long[]>();
+        var seen = new Dictionary<string, int>();
+        foreach (string l in ctxStart)
+        {
+            if (l.StartsWith(Prefix, StringComparison.Ordinal) && Cpu.PhaseProfile.ParseContextLine(l[Prefix.Length..]) is { } parsed)
+            {
+                int n = seen[parsed.Thread] = seen.GetValueOrDefault(parsed.Thread) + 1;
+                start[$"{parsed.Thread}#{n}"] = parsed.Counters;
+            }
+        }
+
+        seen.Clear();
+        var rows = new List<(long Cycles, string Line)>();
+        foreach (string l in ctxStop)
+        {
+            if (!l.StartsWith(Prefix, StringComparison.Ordinal) || Cpu.PhaseProfile.ParseContextLine(l[Prefix.Length..]) is not { } parsed)
+            {
+                continue;
+            }
+
+            int n = seen[parsed.Thread] = seen.GetValueOrDefault(parsed.Thread) + 1;
+            long[] before = start.GetValueOrDefault($"{parsed.Thread}#{n}") ?? new long[Cpu.PhaseProfile.SnapshotLength];
+            long[] delta = Cpu.PhaseProfile.Delta(parsed.Counters, before);
+            long cycles = Cpu.PhaseProfile.TotalCycles(delta);
+            if (cycles > 0)
+            {
+                rows.Add((cycles, "  " + Cpu.PhaseProfile.Format(parsed.Thread, delta, parsed.Frequency)));
+            }
+        }
+
+        var lines = new List<string>();
+        foreach ((long _, string line) in rows.OrderByDescending(r => r.Cycles))
+        {
+            lines.Add(line);
+        }
+
+        string log = Path.Combine(dir, "log.txt");
+        if (File.Exists(log))
+        {
+            var alerts = new Queue<string>();
+            foreach (string l in File.ReadLines(log))
+            {
+                int at = l.IndexOf("[phase-alert] ", StringComparison.Ordinal);
+                if (at < 0)
+                {
+                    continue;
+                }
+
+                alerts.Enqueue(l[(at + "[phase-alert] ".Length)..]);
+                while (alerts.Count > 12)
+                {
+                    alerts.Dequeue();
+                }
+            }
+
+            if (alerts.Count > 0)
+            {
+                lines.Add("  last budget alerts (log.txt [phase-alert]):");
+                foreach (string a in alerts)
+                {
+                    lines.Add("    " + a);
+                }
+            }
+        }
+
+        if (lines.Count > 0)
+        {
+            lines.Insert(0, "CPU phases (per guest thread, during the recording; host time per guest cycle, Cpu/PhaseProfile.cs):");
         }
 
         return lines;

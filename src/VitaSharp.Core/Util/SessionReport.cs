@@ -63,6 +63,11 @@ public static class SessionReport
         {
             yield return l;
         }
+
+        foreach (string l in PhaseLines(emu, window: false))
+        {
+            yield return l;
+        }
         // VITASHARP_PEEK_END=ADDR:LEN[,ADDR:LEN...] hex-dumps guest memory when the run stops (state of a hang)
         if (Environment.GetEnvironmentVariable(EnvVars.PeekEnd) is { } peekEnd)
         {
@@ -157,6 +162,7 @@ public static class SessionReport
         }
         Add(CpuBackendLines);
         Add(() => CycleLines(emu, window: true));
+        Add(() => PhaseLines(emu, window: true));
         Add(() => [HleCallsLine(emu)]);
         Add(() => HleTimeReport.Lines(emu));
         Add(() => GpuLines(emu));
@@ -241,6 +247,31 @@ public static class SessionReport
             .OrderByDescending(x => x.Sample.BlockCycles + x.Sample.ChargedCycles).Take(6))
         {
             yield return CycleLine(t.Name, t.Core, d, span, window ? frames : -1);
+        }
+    }
+
+    /// <summary>
+    /// The PERF phases lines (Cpu/PhaseProfile.cs) of the six threads that ran the most guest cycles: host time per guest
+    /// cycle by dispatcher phase, HLE and pacing time, blocks decoded and compiled on the thread, alerts.
+    /// <paramref name="window"/>: since the previous periodic report, else over the run.
+    /// </summary>
+    private static IEnumerable<string> PhaseLines(Emulator emu, bool window)
+    {
+        if (!VitaSharp.Core.Cpu.PhaseProfile.Enabled)
+        {
+            yield break;
+        }
+
+        var samples = new List<(string Name, long[] Counters)>();
+        foreach (GuestThread t in emu.Kernel.Threads.ToArray())
+        {
+            samples.Add((t.Name, window ? t.Core.Phases.TakeWindow() : t.Core.Phases.Snapshot()));
+        }
+
+        foreach ((string name, long[] counters) in samples.Where(x => VitaSharp.Core.Cpu.PhaseProfile.TotalCycles(x.Counters) > 0)
+            .OrderByDescending(x => VitaSharp.Core.Cpu.PhaseProfile.TotalCycles(x.Counters)).Take(6))
+        {
+            yield return VitaSharp.Core.Cpu.PhaseProfile.Format(name, counters, System.Diagnostics.Stopwatch.Frequency) + (window ? " (since the last report)" : " (over the run)");
         }
     }
 

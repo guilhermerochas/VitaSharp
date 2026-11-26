@@ -44,6 +44,16 @@ public sealed unsafe class CpuCore : IDisposable
     public long BlocksExecuted;
     /// <summary>Guest instructions executed by this thread (diagnostics; weighted cycles are in <see cref="BlockCycles"/>).</summary>
     public long InstructionsExecuted;
+    /// <summary>Where this thread's host time goes, by dispatcher phase (always on, sampled; see <see cref="PhaseProfile"/>).</summary>
+    public PhaseProfile Phases { get; } = new();
+    private int _phaseCountdown;
+
+    /// <summary>The core whose <see cref="Run"/> is on this host thread now (null outside a run): the block decoder and
+    /// the compilers charge the work they do on a guest thread to its <see cref="Phases"/>.</summary>
+    [ThreadStatic] private static CpuCore? t_running;
+
+    /// <summary>The profile of the guest thread running on this host thread, or null (a compile worker, a test outside Run).</summary>
+    internal static PhaseProfile? RunningProfile => PhaseProfile.Enabled ? t_running?.Phases : null;
 
     /// <param name="cache">The process's translated code.</param>
     /// <param name="memBase">Guest address 0 of the process's address space (<see cref="Memory.AddressSpace.Base"/>);
@@ -671,12 +681,15 @@ public sealed unsafe class CpuCore : IDisposable
 
     public ExitReason Run()
     {
+        CpuCore? outer = t_running;
+        t_running = this;
         try
         {
             return RunBlocks();
         }
         finally
         {
+            t_running = outer;
             FlushTierCounts();
         }
     }
@@ -698,10 +711,25 @@ public sealed unsafe class CpuCore : IDisposable
         bool resume = false; // an HLE call returned: native code continues through the dispatch table
         bool republish = false; // an indirect exit missed the dispatch table: the block found next takes its entry back
         bool interpretNext = false; // a native block returned before running (ARM64 FPSCR mode check): interpret it once
+        bool profile = PhaseProfile.Enabled;
+        int sampleEvery = PhaseProfile.SampleEvery;
+        PhaseProfile phases = Phases;
         while (!StopRequested)
         {
             Block? b = null;
             nint entry = 0;
+            // phase profile: every turn counts its guest cycles; one in sampleEvery is timed (turnStart != 0)
+            CpuPhase phase = CpuPhase.Dispatch;
+            long cyclesAtTurn = BlockCycles;
+            long turnStart = 0;
+            long execStart = 0;
+            long execTicks = 0;
+            long hleTicks = 0;
+            if (profile && --_phaseCountdown <= 0)
+            {
+                _phaseCountdown = sampleEvery;
+                turnStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            }
             if (resume)
             {
                 resume = false;
@@ -713,6 +741,8 @@ public sealed unsafe class CpuCore : IDisposable
                 // runs once in the interpreter with the IT state of the CPSR, then translated code goes on
                 b = BlockBuilder.Build(s->R[15], s->Thumb != 0, s->ITState);
                 s->ITState = 0;
+                phase = CpuPhase.Interpret;
+                execStart = turnStart;
                 Interpret(s, b);
                 BlocksExecuted++;
                 InstructionsExecuted += b.Insts.Length;
@@ -728,12 +758,20 @@ public sealed unsafe class CpuCore : IDisposable
                 // without a backend, the interpreter runs the vector ops. VMSR ends its block and leaves native code
                 // (ExitReason.FpMode), so code compiled for scalar mode never runs in this mode.
                 b = Lookup(s->R[15], s->Thumb != 0);
+                execStart = Stamp(turnStart);
                 if (RunVectorBlock(s, b, ref sinceCheck, ref native))
                 {
+                    phase = CpuPhase.VectorCode;
                     goto ran;
                 }
 
+                phase = CpuPhase.InterpretVector;
                 InterpretVector(s, b);
+                if (profile)
+                {
+                    phases.Interpreted(b.VectorVariant is { JitState: 3 } ? int.MaxValue : 0, b.Cycles); // rejected by every backend: interpreted for good
+                }
+
                 BlocksExecuted++;
                 InstructionsExecuted += b.Insts.Length;
                 InterpCycles += b.Cycles;
@@ -778,6 +816,8 @@ public sealed unsafe class CpuCore : IDisposable
             if (entry == 0 && b!.NativeEntry != 0 && BlockHook == null && verify)
             {
                 // differential mode: native run checked against the interpreter, which provides the result
+                phase = CpuPhase.Verify;
+                execStart = Stamp(turnStart);
                 Native.NativeVerifier.Run(s, b);
                 BlocksExecuted++;
                 InstructionsExecuted += b.Insts.Length;
@@ -801,12 +841,14 @@ public sealed unsafe class CpuCore : IDisposable
                 }
 
                 native ??= Native.NativeRuntime.Instance;
-                if (++_nativeEntries >= NativeTimingSample)
+                phase = CpuPhase.Native;
+                bool timeEntry = ++_nativeEntries >= NativeTimingSample;
+                if (timeEntry || turnStart != 0)
                 {
-                    _nativeEntries = 0;
                     TimingNative = true;
                     CalloutHleTicks = 0;
                     long n0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                    execStart = turnStart != 0 ? n0 : 0;
                     try
                     {
                         native.Run(s, entry);
@@ -816,8 +858,19 @@ public sealed unsafe class CpuCore : IDisposable
                         TimingNative = false; // also when an HLE call throws out of native code (thread exit)
                     }
 
-                    NativeTicks += (System.Diagnostics.Stopwatch.GetTimestamp() - n0) * NativeTimingSample;
-                    NativeHleTicks += CalloutHleTicks * NativeTimingSample;
+                    long n1 = System.Diagnostics.Stopwatch.GetTimestamp();
+                    if (timeEntry)
+                    {
+                        _nativeEntries = 0;
+                        NativeTicks += (n1 - n0) * NativeTimingSample;
+                        NativeHleTicks += CalloutHleTicks * NativeTimingSample;
+                    }
+
+                    if (turnStart != 0)
+                    {
+                        execTicks = n1 - n0;
+                        hleTicks = CalloutHleTicks;
+                    }
                 }
                 else
                 {
@@ -865,16 +918,20 @@ public sealed unsafe class CpuCore : IDisposable
             {
                 b ??= Lookup(s->R[15], s->Thumb != 0); // always looked up above (only a resume skips it, and it runs native code)
                 JitBlockFn? fn = b.Compiled;
+                execStart = Stamp(turnStart);
                 if (BlockHook != null && BlockHook(this, s, b))
                 {
+                    phase = CpuPhase.Verify;
                 } // the hook executed the block itself
                 else if (fn != null && Native.NativeVerifier.Enabled)
                 {
+                    phase = CpuPhase.Verify;
                     Native.NativeVerifier.RunCompiled(s, b, fn);
                     IlCycles += b.Cycles;
                 }
                 else if (fn != null)
                 {
+                    phase = CpuPhase.Il;
                     fn(s);
                     if (s->Exit == ExitReason.DataAbort)
                     {
@@ -889,9 +946,15 @@ public sealed unsafe class CpuCore : IDisposable
                 }
                 else
                 {
+                    phase = CpuPhase.Interpret;
                     Interpret(s, b);
                     InterpCycles += b.Cycles;
                     InterpByJitState[b.JitState & 3] += b.Insts.Length; // racy on purpose: statistics only
+                    if (profile)
+                    {
+                        phases.Interpreted(b.ExecCount, b.Cycles);
+                    }
+
                     if (++b.ExecCount >= Jit.MinExecutions && b.JitState == 0 && (long)b.ExecCount * b.Insts.Length >= b.HotAt)
                     {
                         Jit.Enqueue(b);
@@ -911,6 +974,21 @@ public sealed unsafe class CpuCore : IDisposable
                 BlockCycles += b.Cycles;
             }
         ran:
+            if (profile)
+            {
+                phases.Count(phase, BlockCycles - cyclesAtTurn);
+                if (turnStart != 0)
+                {
+                    long turnEnd = System.Diagnostics.Stopwatch.GetTimestamp();
+                    if (execTicks == 0 && execStart != 0)
+                    {
+                        execTicks = turnEnd - execStart; // the interpreter / IL paths: the run until here
+                    }
+
+                    phases.AddTimed(phase, execTicks, Math.Max(0, turnEnd - turnStart - execTicks), hleTicks, sampleEvery);
+                }
+            }
+
             if (s->Exit == ExitReason.FpMode)
             {
                 s->Exit = ExitReason.None; // VMSR changed the vector mode: the loop picks the path
@@ -921,7 +999,18 @@ public sealed unsafe class CpuCore : IDisposable
                 _throttleInstrs += sinceCheck;
                 sinceCheck = 0;
                 _chargedSinceCheck = 0;
+                long throttleStart = Stamp(turnStart);
                 Throttle();
+                if (throttleStart != 0)
+                {
+                    phases.AddTime(CpuPhase.Throttle, System.Diagnostics.Stopwatch.GetTimestamp() - throttleStart, sampleEvery);
+                }
+
+                if (profile)
+                {
+                    phases.CheckWindow();
+                }
+
                 if (ShouldYield != null && ShouldYield())
                 {
                     InterruptRequested = true;
@@ -936,7 +1025,14 @@ public sealed unsafe class CpuCore : IDisposable
                 }
 
                 s->Exit = ExitReason.None;
-                if (!svc.TryHandleSvc(s))
+                long hleStart = Stamp(turnStart);
+                bool handled = svc.TryHandleSvc(s);
+                if (hleStart != 0)
+                {
+                    phases.AddTime(CpuPhase.Hle, System.Diagnostics.Stopwatch.GetTimestamp() - hleStart, sampleEvery);
+                }
+
+                if (!handled)
                 {
                     s->Exit = ExitReason.Svc;
                     return ExitReason.Svc;
@@ -960,6 +1056,10 @@ public sealed unsafe class CpuCore : IDisposable
         }
         return ExitReason.Halt;
     }
+
+    /// <summary>A host timestamp when the turn is timed (<paramref name="turnStart"/> != 0), else 0.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static long Stamp(long turnStart) => turnStart != 0 ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
 
     /// <summary>Single-block step (debugging / tests).</summary>
     public ExitReason Step()
@@ -1056,6 +1156,20 @@ public sealed unsafe class CpuCore : IDisposable
     /// sees it sees all of it. No backend: the interpreter keeps running it.</summary>
     private static void CompileVector(Block vector, Memory.AddressSpace? space)
     {
+        PhaseProfile? onGuestThread = RunningProfile;
+        long started = onGuestThread != null ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+        try
+        {
+            CompileVectorHere(vector, space);
+        }
+        finally
+        {
+            onGuestThread?.CompiledOnGuestThread(System.Diagnostics.Stopwatch.GetTimestamp() - started, vector.Start);
+        }
+    }
+
+    private static void CompileVectorHere(Block vector, Memory.AddressSpace? space)
+    {
         using Memory.AddressSpace.Activation activation = Memory.AddressSpace.Use(space);
         Backends.CompiledBlock? code = null;
         try
@@ -1083,7 +1197,7 @@ public sealed unsafe class CpuCore : IDisposable
 
         vector.NativeEntry = code.NativeEntry;
         vector.Compiled = code.Managed;
-        Volatile.Write(ref vector.JitState, 2);
+        vector.JitState = 2; // a volatile field: a release write
         if (Interlocked.Increment(ref VectorBlocksCompiled) == 1)
         {
             Util.Log.Info($"VFP short-vector mode: block 0x{vector.Start:X8} compiled for FPSCR 0x{vector.VectorFpscr:X8} by {code.Backend.Name} ({vector.Insts.Length} expanded instructions)");

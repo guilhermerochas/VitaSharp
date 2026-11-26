@@ -58,6 +58,12 @@ public static class CaptureContext
             sb.AppendLine(l);
         }
 
+        // the CPU phase profile of every guest thread (report.txt's "CPU phases" compares the start and the stop)
+        foreach (Kernel.GuestThread t in emu.Kernel.Threads.ToArray())
+        {
+            sb.AppendLine(t.Core.Phases.ContextLine());
+        }
+
         // the plugin hooks and their counters (report.txt's "Plugin hooks" compares the start and the stop)
         foreach (string l in Hle.Modules.PluginFramework.HookContextLines(emu))
         {

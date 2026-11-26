@@ -620,4 +620,10 @@ public static class EnvVars
     /// <summary>=0: the guest clock counts the host's garbage-collector pauses again (A/B); default: they are left out,
     /// as on the console no time passes while the whole emulated machine is stopped (Util/GuestClock.cs HostElapsed).</summary>
     public const string GcPauseClock = "VITASHARP_GC_PAUSE_CLOCK";
+    /// <summary>The CPU phase profile (Cpu/PhaseProfile.cs): unset = one dispatcher turn in 31 timed (always on), 1 = every
+    /// turn timed (also the debug mode), 0 = off.</summary>
+    public const string PhaseProf = "VITASHARP_PHASE_PROF";
+    /// <summary>Host nanoseconds per guest cycle above which a guest thread raises a [phase-alert] (default 70, ~200 host
+    /// cycles at 3 GHz).</summary>
+    public const string PhaseBudgetNs = "VITASHARP_PHASE_BUDGET_NS";
 }
