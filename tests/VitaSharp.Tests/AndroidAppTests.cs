@@ -377,10 +377,9 @@ public sealed class AndroidAppTests : IDisposable
     [Fact]
     public void RoundControlsAreHitAsTheirCirclesAndTheirCornersAreFrontTouch()
     {
-        // a 2400x1080 phone: the image placed as the game screen places it, with the overlay layout (the default
-        // where the bars are narrow, OnScreenLayoutTests) set as the player's own so it stays over the image
+        // a 2400x1080 phone: the image placed as the game screen places it
         const float W = 2400, H = 1080;
-        var pad = new OnScreenPad { Aspect = W / H, Layout = OnScreenPad.DefaultLayout };
+        var pad = new OnScreenPad { Aspect = W / H };
         float scale = Math.Min(W / 960f, H / 544f);
         float iw = 960 * scale / W, ih = 544 * scale / H;
         pad.Image = ((1 - iw) / 2, (1 - ih) / 2, iw, ih);
@@ -388,8 +387,8 @@ public sealed class AndroidAppTests : IDisposable
         OnScreenControl lstick = pad.Layout.Single(c => c.Control == VitaControl.LStickUp);
         OnScreenControl cross = pad.Layout.Single(c => c.Control == VitaControl.Cross);
 
-        // Uncharted's journal icon at (2080, 680): inside the right stick's rectangle, outside its circle
-        (float X, float Y) icon = (2080 / W, 680 / H);
+        // a point near the top-right corner of the right stick's rectangle: inside the rectangle, outside its circle
+        (float X, float Y) icon = (rstick.X + rstick.Width * 0.95f, rstick.Y + rstick.Height * 0.05f);
         Assert.True(rstick.Contains(icon.X, icon.Y));
         Update(pad, (1, icon.X, icon.Y));
         Assert.Single(pad.GetTouches(false));

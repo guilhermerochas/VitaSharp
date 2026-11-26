@@ -51,6 +51,7 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     TextView? _fps, _toast;
     // the pause chip over the top centre (the Vita's status bar): it hides while the screen is left alone
     TextView? _pauseChip;
+    TextView? _controlsChip;
     readonly ChromeAutoHide _chrome = new(SystemClock.UptimeMillis());
     readonly OnScreenPad _pad = new();
     AndroidKeyboard? _keyboard;
@@ -449,10 +450,28 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
 
     void OnGamepadsChanged() => RunOnUiThread(() =>
     {
-        bool hide = AppServices.Prefs.HideOnScreenWithGamepad && AppServices.Gamepads.AnyConnected;
-        _pad.Visible = !hide;
-        _controls?.Invalidate();
+        OnScreenVisibility.Apply(_pad, AppServices.Prefs, AppServices.Gamepads.AnyConnected);
+        OnControlsVisibilityChanged();
     });
+
+    /// <summary>The button by the fps counter and the pause menu's "Controles na tela": shows or hides the on-screen
+    /// controls and saves the choice (<see cref="OnScreenVisibility"/>).</summary>
+    void SetControlsShown(bool shown)
+    {
+        OnScreenVisibility.Set(_pad, AppServices.Prefs, shown);
+        AppServices.SavePrefs();
+        OnControlsVisibilityChanged();
+    }
+
+    void OnControlsVisibilityChanged()
+    {
+        _controls?.Invalidate();
+        if (_controlsChip is { } chip)
+        {
+            // dimmed while the controls are hidden, like a switch that is off
+            chip.Alpha = _pad.Visible ? 1f : 0.55f;
+        }
+    }
 
     public override bool DispatchKeyEvent(KeyEvent? e)
     {
@@ -594,6 +613,15 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         var lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { LeftMargin = Dp(8) };
         bar.AddView(pause, lp);
         pause.PostDelayed(UpdatePauseChip, ChromeAutoHide.HideAfterMs);
+        // shows/hides the on-screen controls; it hides and comes back with the pause chip (ChromeAutoHide), also
+        // when the fps counter is off (the counter keeps its place, invisible)
+        var controlsChip = Chip("\U0001F3AE", 12);
+        _controlsChip = controlsChip;
+        controlsChip.ContentDescription = Loc.Get("MOnScreenControls");
+        controlsChip.Focusable = false;
+        controlsChip.Click += (_, _) => SetControlsShown(!_pad.Visible);
+        bar.AddView(controlsChip, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { LeftMargin = Dp(8) });
+        OnControlsVisibilityChanged();
         return bar;
     }
 
@@ -606,13 +634,19 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
             return;
         }
 
-        int[] chipAt = new int[2], viewAt = new int[2];
-        chip.GetLocationInWindow(chipAt);
-        controls.GetLocationInWindow(viewAt);
-        float cx = x + viewAt[0] - chipAt[0], cy = y + viewAt[1] - chipAt[1];
-        bool onChip = cx >= 0 && cy >= 0 && cx < chip.Width && cy < chip.Height;
+        bool onChip = IsOnView(chip, controls, x, y) || (_controlsChip is { } controlsChip && IsOnView(controlsChip, controls, x, y));
         _chrome.FingerDown(SystemClock.UptimeMillis(), onChip);
         UpdatePauseChip();
+    }
+
+    // whether (x, y) of the controls' view is on the place of view
+    static bool IsOnView(AView view, AView controls, float x, float y)
+    {
+        int[] viewAt = new int[2], controlsAt = new int[2];
+        view.GetLocationInWindow(viewAt);
+        controls.GetLocationInWindow(controlsAt);
+        float cx = x + controlsAt[0] - viewAt[0], cy = y + controlsAt[1] - viewAt[1];
+        return cx >= 0 && cy >= 0 && cx < view.Width && cy < view.Height;
     }
 
     /// <summary>Shows or hides the pause chip by <see cref="ChromeAutoHide"/> and checks again when it is due to hide.</summary>
@@ -627,6 +661,10 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         bool visible = _chrome.Visible(now);
         // invisible: the chip takes no touches, they reach the game below it
         chip.Visibility = visible ? ViewStates.Visible : ViewStates.Invisible;
+        if (_controlsChip is { } controlsChip)
+        {
+            controlsChip.Visibility = chip.Visibility;
+        }
         if (visible)
         {
             chip.RemoveCallbacks(UpdatePauseChip);
