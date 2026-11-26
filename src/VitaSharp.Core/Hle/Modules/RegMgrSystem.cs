@@ -114,32 +114,121 @@ public sealed partial class RegMgrSystem : HleModule
     [Hle] int sceRegMgrSetKeyStr(uint category, uint name, uint buf, int size) => SetBytes(Str(category), Str(name), buf, size, nameof(sceRegMgrSetKeyStr));
     [Hle] int sceRegMgrSetKeyBin(uint category, uint name, uint buf, int size) => SetBytes(Str(category), Str(name), buf, size, nameof(sceRegMgrSetKeyBin));
 
-    /// <summary>(category, SceRegMgrKeys *keys, count): keys[i] = { size, const char *name, type, int value } (16
-    /// bytes, Vita3K); fills each value.</summary>
+    /// <summary>The size every entry of a key list states at +0 (FW 3.74 SceRegistryMgr: anything else is 0x800D001C).</summary>
+    const int KeyEntrySize = 0x10;
+
+    const int ERR_ENTRY_SIZE = unchecked((int)0x800D001C);
+
+    /// <summary>A key list holds 1 to 32 entries.</summary>
+    const int MaxKeyEntries = 32;
+
+    /// <summary>
+    /// Checks a key list of sceRegMgrGetKeys/SetKeys as the FW 3.74 syscall does before it touches the registry
+    /// (SceRegistryMgr 0x8100C090): a category and a list (0x800D0004 otherwise), 1 to 32 entries, each one 0x10 bytes
+    /// { +0 0x10, +4 const char *name (not NULL), +8 u16 type (0 int, 1 string, 2 binary), +0xA u16 size, +0xC the
+    /// integer itself or, for a string or binary key, a pointer to its bytes (not NULL) }.
+    /// </summary>
+    static int CheckKeyList(string? category, uint keys, int count)
+    {
+        if (category == null || keys == 0 || (uint)(count - 1) >= MaxKeyEntries)
+        {
+            return ERR_INVALID;
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            uint entry = keys + (uint)(i * KeyEntrySize);
+            if (GuestMemory.R32(entry) != KeyEntrySize)
+            {
+                return ERR_ENTRY_SIZE;
+            }
+
+            ushort type = GuestMemory.Read<ushort>(entry + 8);
+            bool bytes = type is (ushort)Registry.KeyType.Str or (ushort)Registry.KeyType.Bin;
+            if (GuestMemory.R32(entry + 4) == 0 || (type != (ushort)Registry.KeyType.Int && !bytes)
+                || (bytes && GuestMemory.R32(entry + 0xC) == 0))
+            {
+                return ERR_INVALID;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>(const char *category, SceRegMgrKeysInfo *keys, int count): reads several keys of a category at once
+    /// (list layout: <see cref="CheckKeyList"/>). An integer key's value goes to +0xC; a string or binary key's bytes
+    /// go to the buffer +0xC points at, at most +0xA bytes.</summary>
     [Hle]
     int sceRegMgrGetKeys(uint category, uint keys, int count)
     {
         string? c = Str(category);
-        if (c == null || keys == 0) return ERR_INVALID;
+        int check = CheckKeyList(c, keys, count);
+        if (check < 0)
+        {
+            return check;
+        }
+
         for (int i = 0; i < count; i++)
         {
-            uint k = keys + (uint)i * 16;
-            string? n = Str(GuestMemory.R32(k + 4));
-            GuestMemory.W32(k + 12, n != null && TryReadInt(c, n, out int v) ? (uint)v : 0);
+            uint entry = keys + (uint)(i * KeyEntrySize);
+            string? name = Str(GuestMemory.R32(entry + 4));
+            ushort type = GuestMemory.Read<ushort>(entry + 8);
+            int result;
+            if (type == (ushort)Registry.KeyType.Int)
+            {
+                result = GetInt(c, name, new Ptr<int>(entry + 0xC), nameof(sceRegMgrGetKeys));
+            }
+            else
+            {
+                result = GetBytes(c, name, GuestMemory.R32(entry + 0xC), GuestMemory.Read<ushort>(entry + 0xA),
+                    type == (ushort)Registry.KeyType.Str, nameof(sceRegMgrGetKeys));
+            }
+
+            if (result < 0)
+            {
+                return result;
+            }
         }
+
         return 0;
     }
 
+    /// <summary>(const char *category, const SceRegMgrKeysInfo *keys, int count): writes several keys of a category
+    /// at once (list layout: <see cref="CheckKeyList"/>): an integer from +0xC, a string or binary key from the +0xA
+    /// bytes +0xC points at. The list is checked whole before anything is written. libmtp keeps the hosts it knows this
+    /// way (/CONFIG/MTP/NET*/NN: host_id, host_name, last_connected_time, mac_address); every value used to be stored
+    /// as the integer at +0xC, so those keys held the guest addresses of their bytes.</summary>
     [Hle]
     int sceRegMgrSetKeys(uint category, uint keys, int count)
     {
         string? c = Str(category);
-        if (c == null || keys == 0) return ERR_INVALID;
+        int check = CheckKeyList(c, keys, count);
+        if (check < 0)
+        {
+            return check;
+        }
+
         for (int i = 0; i < count; i++)
         {
-            uint k = keys + (uint)i * 16;
-            if (Str(GuestMemory.R32(k + 4)) is { } n) Reg.SetInt(c, n, (int)GuestMemory.R32(k + 12));
+            uint entry = keys + (uint)(i * KeyEntrySize);
+            string name = Str(GuestMemory.R32(entry + 4))!;
+            ushort type = GuestMemory.Read<ushort>(entry + 8);
+            int result;
+            if (type == (ushort)Registry.KeyType.Int)
+            {
+                result = Reg.SetInt(c!, name, (int)GuestMemory.R32(entry + 0xC)) ? 0 : Unknown(nameof(sceRegMgrSetKeys), c!, name);
+            }
+            else
+            {
+                result = SetBytes(c, name, GuestMemory.R32(entry + 0xC), GuestMemory.Read<ushort>(entry + 0xA), nameof(sceRegMgrSetKeys));
+            }
+
+            if (result < 0)
+            {
+                return result;
+            }
         }
+
         return 0;
     }
 
