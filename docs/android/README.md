@@ -76,9 +76,32 @@ adb install -r src/VitaSharp.Android/bin/Release/net10.0-android/io.github.vitas
 
 Or open the APK on the phone. Each CI run also publishes the APK as the artifact
 `VitaSharp-android-arm64-packages`, and the Releases page carries it as `VitaSharp-<version>-android-arm64.apk`.
-The APK is signed with a debug key: a build signed with another key (another PC,
-or the CI) does not install over it, and uninstalling first deletes the data folder ([Storage](#storage)); copy
-`fs/ux0/user/00/savedata` out before switching.
+Android updates an installed app only with an APK signed by the same key: a build signed with another key does
+not install over it, and uninstalling first deletes the whole data folder ([Storage](#storage): firmware, fonts,
+games, saves and every cache), so the next start is a cold first run. Every build a phone gets must therefore use one
+fixed keystore.
+
+### Signing
+
+`build/build-android-apk.sh` / `.ps1` sign with the keystore in `ANDROID_KEYSTORE` when it is set
+(`ANDROID_KEYSTORE_PASS`, default `android`; `ANDROID_KEY_ALIAS`, default `androiddebugkey`; `ANDROID_KEY_PASS`,
+default the store's password; the passwords reach MSBuild as `env:` references, not on the command line), else with
+the .NET debug keystore of the machine (made on the fly when missing: Windows
+`%LOCALAPPDATA%\Xamarin\Mono for Android\debug.keystore`, Linux/macOS `~/.local/share/Xamarin/Mono for Android/debug.keystore`).
+The CI job `android-arm64` signs with the repository secrets `ANDROID_KEYSTORE_BASE64` (the keystore file in base64),
+`ANDROID_KEYSTORE_PASS` and `ANDROID_KEY_ALIAS`; without them (a fork) it warns and signs with a new debug key each
+run, and that APK cannot update an installed build. The job summary prints the signer's SHA-256. To give the CI the
+key a PC already builds with (so local and CI builds update each other):
+
+```sh
+# Linux/macOS (macOS: base64 -i FILE); Windows PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes($path))
+base64 -w0 "<keystore>" | gh secret set ANDROID_KEYSTORE_BASE64
+gh secret set ANDROID_KEYSTORE_PASS --body android
+gh secret set ANDROID_KEY_ALIAS --body androiddebugkey
+```
+
+The keystore itself is never committed. Switching an installed app to the fixed key needs one last uninstall: copy
+the data folder out first (`adb pull /sdcard/Android/data/io.github.vitasharp/files`) and push it back after.
 
 ### Native libraries
 

@@ -4,12 +4,16 @@
 # android-arm64): -r android-arm64 with the Release default runtime, Native AOT. Builds libshaderc
 # (build/build-android-shaderc.sh arm64-v8a) and libadrenotools first when third_party has not got them, then checks
 # the APK (build/AndroidApkCheck: Native AOT, lib/arm64-v8a/libshaderc_shared.so, libadrenotools and its hooks,
-# arm64-v8a only; and build/check-dev-gating.sh: no developer tooling). Signed with the .NET debug keystore (made on
-# the fly when missing): installable with adb, not a store release. Needs the .NET 10 SDK with the maui-android
+# arm64-v8a only; and build/check-dev-gating.sh: no developer tooling). Signed with ANDROID_KEYSTORE when it is set,
+# else with the .NET debug keystore (made on the fly when missing): installable with adb, not a store release. Android
+# updates an installed app only with an APK of the same key; another key means uninstalling, which deletes the app's
+# data (firmware, games, saves, caches), so every build a phone gets must use one fixed keystore. Needs the .NET 10 SDK with the maui-android
 # workload, a JDK 17, the Android SDK (platform android-36, in ANDROID_HOME), the NDK (ANDROID_NDK_HOME or
 # ANDROID_NDK_ROOT, else the newest under the SDK's ndk folder; r30 is the one used) and git.
 # OUT: output folder (default artifacts/android): packages/VitaSharp-<VERSION>-android-arm64.apk and publish/;
 # VERSION: the name's version (default dev); JOBS: parallel native compiles (default 2).
+# ANDROID_KEYSTORE: keystore file to sign with; ANDROID_KEYSTORE_PASS: its password (default android);
+# ANDROID_KEY_ALIAS: the key (default androiddebugkey); ANDROID_KEY_PASS: the key's password (default the store's).
 # Usage: build/build-android-apk.sh [--check APK]   (same as build/build-android-apk.ps1; --check only checks an APK)
 
 set -euo pipefail
@@ -87,10 +91,28 @@ main() {
     JOBS="${jobs}" bash "${ROOT}/build/build-android-adrenotools.sh"
   fi
 
+  local -a signing=()
+  if [[ -n "${ANDROID_KEYSTORE:-}" ]]; then
+    if [[ ! -f "${ANDROID_KEYSTORE}" ]]; then
+      echo "ANDROID_KEYSTORE: no file ${ANDROID_KEYSTORE}" >&2
+      return 1
+    fi
+    # the passwords go through the environment (env:), not the command line
+    export ANDROID_KEYSTORE_PASS="${ANDROID_KEYSTORE_PASS:-android}"
+    export ANDROID_KEY_PASS="${ANDROID_KEY_PASS:-${ANDROID_KEYSTORE_PASS}}"
+    signing=(-p:AndroidKeyStore=true "-p:AndroidSigningKeyStore=${ANDROID_KEYSTORE}"
+      "-p:AndroidSigningKeyAlias=${ANDROID_KEY_ALIAS:-androiddebugkey}"
+      -p:AndroidSigningStorePass=env:ANDROID_KEYSTORE_PASS -p:AndroidSigningKeyPass=env:ANDROID_KEY_PASS)
+    echo "Signing with ${ANDROID_KEYSTORE}"
+  else
+    echo "Signing with the .NET debug keystore (ANDROID_KEYSTORE not set)"
+  fi
+
   rm -rf "${out:?}/publish" "${out:?}/packages"
   mkdir -p "${out}/packages"
   dotnet publish "${ROOT}/src/VitaSharp.Android" -c Release -r "${RID}" -p:VitaSharpAndroidRuntime=nativeaot \
-    "-p:AndroidNdkDirectory=${ndk}" -p:UseSharedCompilation=false -m:2 -nologo -o "${out}/publish"
+    "-p:AndroidNdkDirectory=${ndk}" -p:UseSharedCompilation=false -m:2 -nologo -o "${out}/publish" \
+    ${signing[@]+"${signing[@]}"}
 
   local apk
   apk="$(find "${out}/publish" -maxdepth 1 -name '*-Signed.apk' | head -n 1)"
