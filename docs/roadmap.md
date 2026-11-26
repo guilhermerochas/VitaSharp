@@ -1431,6 +1431,27 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   - [ ] Custo por draw do worker da GPU no celular: F1 2011 na corrida ainda abaixo de 30 fps (cerca de 1.000 draws por
     quadro, o worker da GPU num núcleo A76 inteiro); dividir a preparação e a gravação dos comandos em duas threads,
     menos atualizações de descriptors por draw (31/10: conjuntos de texturas repetidos já são reaproveitados)
+    - Perfil no PC (perf/andwork1, 26/11): replay do dump de gameplay do Killzone (61 quadros, ~430 draws/quadro,
+      perfil mali) com `replay-gpu --loop=3` e `VITASHARP_WORKER_PROF_FROM=61` (só o regime). A linha `PERF worker`
+      agora traz a CPU da própria thread (ciclos no Windows, ns no resto; não conta preempção nem esperas), os KB
+      alocados por fase e as sub-fases de Geometry (GeoMinMax/GeoIndex/GeoStreams) e Record (RecPipeline/RecSets/
+      RecBuffers/RecDynamic/RecDraw). Regime: ~4,8 ms/quadro no Execute (GTX 1650), draws 3,8 ms: texturas 1,23
+      (unidades de RT 0,25 = 2,1 µs cada; alocação+escrita dos sets 0,21; consulta/checagem de texturas da memória
+      0,26), gravação 1,10 (draw+barreiras dos pedaços de programmable blending 0,58, que o Mali do celular não faz
+      porque tem rasterization order; bind de pipeline 0,27), geometria 0,57 (streams 0,49), uniforms 0,25, shader
+      0,17. Sem nenhum item dominante: os 30% a menos pedidos não saem de ajustes por draw.
+    - Feito: `VITASHARP_DRAW_DEDUP` (ligado; =0 volta ao antigo): índice rebaseado pelo firstIndex em vez de rebind
+      (492 -> 32 binds de índice por quadro), push constants iguais não são reenviadas (492 -> 47; o número do draw só
+      vai nelas com VITASHARP_DEBUG_TEX0=id, DEBUG_NAN=draws ou DEBUG_FS), set 0 e vertex buffers iguais não são
+      religados; laços sem alocação no `_gpuWritten` (o enumerador do SortedList alocava por draw e stream: 110 -> 62
+      KB/quadro alocados pelo worker). No PC: ~-4% no Execute (dentro do ruído de ±4% da máquina dividida).
+      Pixel-idêntico nos dumps (lista no relatório do agente). Falta: medir no celular (Killzone, base x
+      `VITASHARP_DRAW_DEDUP=0`), onde cada vkCmd custa mais.
+    - Testado sem ganho no PC: alocar descriptor sets em pacotes de 16 por chamada (como o Vita3K), TEXSET_PERSIST,
+      TEXSET_REUSE e VK_DIRECT no replay (todos dentro do ruído).
+    - Próximos: os binds de descriptor (1 por draw, offsets dinâmicos diferentes a cada draw) e de vertex buffer (1 por
+      draw) só somem com offsets fora do set (push constants / vertex pulling, mexe nos shaders); as unidades de RT
+      (2 µs cada no PC) e a origem dos ~35 KB/quadro alocados na fase de uniforms.
   - [ ] Shaders: shaderc em segundo plano nos núcleos rápidos e reaproveitar o cache de shaders gerado no PC
   - [ ] GPU: conversão para ASTC com cache em disco sempre ligada na Mali (sem BC), MSAA nativo
   - [x] Feitos até 31/10/2026 (detalhes em `docs/android/README.md` e `docs/notes/native-jit.md`): threads do jogo e

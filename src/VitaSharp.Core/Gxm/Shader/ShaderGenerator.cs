@@ -1903,6 +1903,10 @@ float packC10(vec3 c) {
     private static readonly bool s_debugUv = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) == "uv";
     private static readonly bool s_debugId = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) == "id";
 
+    /// <summary>Some generated shader reads the push constants' draw number (VITASHARP_DEBUG_TEX0=id, VITASHARP_DEBUG_NAN=draws,
+    /// or a VITASHARP_DEBUG_FS expression); otherwise the renderer leaves it 0, so equal push constants are not pushed again.</summary>
+    public static bool ReadsDrawId => s_debugId || NanDraws || s_debugFs != null;
+
     /// <summary>
     /// VITASHARP_DEBUG_NAN=draws (debug, chosen at launch): every generated fragment shader checks its colour output
     /// and records NaN/Inf fragments per draw id in a storage buffer (set 0, <see cref="NanDrawBinding"/>). The output

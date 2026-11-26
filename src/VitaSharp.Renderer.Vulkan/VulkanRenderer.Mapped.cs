@@ -335,8 +335,11 @@ public sealed unsafe partial class VulkanRenderer
         }
         // the merged range gets a new stamp: the CPU writes since the older ranges were stored count first
         uint lo = start, hi = end;
-        foreach ((uint s, (uint e, uint _, uint d)) in _gpuWritten)
+        // an index loop: SortedList's enumerator is a class (an allocation per loop, per draw and stream)
+        for (int wi1 = 0; wi1 < _gpuWritten.Count; wi1++)
         {
+            uint s = _gpuWritten.Keys[wi1];
+            (uint e, uint _, uint d) = _gpuWritten.Values[wi1];
             if (e >= start && s <= end && d == delta)
             {
                 lo = Math.Min(lo, s);
@@ -394,8 +397,11 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         ExpireGpuWritten(addr, addr + length, innerPages: length >= 3u << DirtyPages.PageShift);
-        foreach ((uint s, (uint e, uint _, uint delta)) in _gpuWritten)
+        // an index loop: SortedList's enumerator is a class (an allocation per loop, per draw and stream)
+        for (int wi2 = 0; wi2 < _gpuWritten.Count; wi2++)
         {
+            uint s = _gpuWritten.Keys[wi2];
+            (uint e, uint _, uint delta) = _gpuWritten.Values[wi2];
             if (s > addr)
             {
                 break;
@@ -414,8 +420,11 @@ public sealed unsafe partial class VulkanRenderer
         }
         if (_diagActive != null)
         {
-            foreach ((uint s, (uint e, uint _, uint _)) in _gpuWritten)
+            // an index loop: SortedList's enumerator is a class (an allocation per loop, per draw and stream)
+            for (int wi3 = 0; wi3 < _gpuWritten.Count; wi3++)
             {
+                uint s = _gpuWritten.Keys[wi3];
+                (uint e, uint _, uint _) = _gpuWritten.Values[wi3];
                 if (s < addr + length && addr < e)
                 {
                     TraceLine($"[mirror] draw id={NextDrawId - 1} stream 0x{addr:X8}+{length} overlaps the stored range 0x{s:X8}-0x{e:X8} but is not inside it: read from guest memory");
@@ -431,8 +440,11 @@ public sealed unsafe partial class VulkanRenderer
     {
         uint end = addr + size, at = addr;
         ExpireGpuWritten(addr, end);
-        foreach ((uint s, (uint e, uint _, uint _)) in _gpuWritten)
+        // an index loop: SortedList's enumerator is a class (an allocation per loop, per draw and stream)
+        for (int wi4 = 0; wi4 < _gpuWritten.Count; wi4++)
         {
+            uint s = _gpuWritten.Keys[wi4];
+            (uint e, uint _, uint _) = _gpuWritten.Values[wi4];
             if (e <= at)
             {
                 continue;
@@ -518,8 +530,11 @@ public sealed unsafe partial class VulkanRenderer
     private void OverlayStoredOutsideCdram(uint addr, uint size, uint offset)
     {
         uint end = addr + size;
-        foreach ((uint s, (uint e, uint _, uint delta)) in _gpuWritten)
+        // an index loop: SortedList's enumerator is a class (an allocation per loop, per draw and stream)
+        for (int wi5 = 0; wi5 < _gpuWritten.Count; wi5++)
         {
+            uint s = _gpuWritten.Keys[wi5];
+            (uint e, uint _, uint delta) = _gpuWritten.Values[wi5];
             if (delta == CdramDelta || s >= end || e <= addr)
             {
                 continue;
@@ -548,8 +563,11 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         ExpireGpuWritten(addr, addr + size);
-        foreach ((uint s, (uint e, uint _, uint delta)) in _gpuWritten)
+        // an index loop: SortedList's enumerator is a class (an allocation per loop, per draw and stream)
+        for (int wi6 = 0; wi6 < _gpuWritten.Count; wi6++)
         {
+            uint s = _gpuWritten.Keys[wi6];
+            (uint e, uint _, uint delta) = _gpuWritten.Values[wi6];
             if (s > addr)
             {
                 break;
@@ -577,8 +595,11 @@ public sealed unsafe partial class VulkanRenderer
         while (grew)
         {
             grew = false;
-            foreach ((uint s, (uint e, uint _, uint delta)) in _gpuWritten)
+            // an index loop: SortedList's enumerator is a class (an allocation per loop, per draw and stream)
+            for (int wi7 = 0; wi7 < _gpuWritten.Count; wi7++)
             {
+                uint s = _gpuWritten.Keys[wi7];
+                (uint e, uint _, uint delta) = _gpuWritten.Values[wi7];
                 if (delta != CdramDelta && s < hi && e > lo && (s < lo || e > hi))
                 {
                     lo = Math.Min(lo, s);
