@@ -1,5 +1,36 @@
 namespace VitaSharp.Mobile.Core.Storage;
 
+/// <summary>Which data folder the user picked when both could be used (<see cref="DataRoot.Resolve"/>); kept by the
+/// app until it is uninstalled (StorageSetup, the app's private preferences).</summary>
+public enum StorageChoice
+{
+    /// <summary>Nothing picked: the default rules of <see cref="DataRoot"/>.</summary>
+    None,
+
+    /// <summary>The app-specific folder (Android/data/&lt;package&gt;/files), even with the visible one available;
+    /// /storage/emulated/0/.vitasharp is left as it is.</summary>
+    AppFolder,
+
+    /// <summary>The visible folder, with the app-specific folder's own data left there untouched (not merged).</summary>
+    SharedFolder,
+}
+
+/// <summary>What the app has to ask before it may use a data folder (<see cref="DataRootPlan.Question"/>).</summary>
+public enum StorageQuestion
+{
+    /// <summary>Nothing: <see cref="DataRootPlan.Root"/> is the folder to use.</summary>
+    None,
+
+    /// <summary>The visible folder holds VitaSharp data (games, firmware, saves of an earlier install) but "All files
+    /// access" is not granted (a reinstall resets it): the app says where the data is and offers the permission screen
+    /// or the app-specific folder, instead of starting empty without a word.</summary>
+    GrantForSharedData,
+
+    /// <summary>Both folders hold the user's data (the app ran in the app-specific folder before the permission came
+    /// back): nothing is moved until the user picks one folder or the merge, which overwrites nothing.</summary>
+    ChooseBetweenFolders,
+}
+
 /// <summary>What the app knows about the device when it picks its data folder (<see cref="DataRoot.Resolve"/>).</summary>
 /// <param name="AppSpecificDir">Context.GetExternalFilesDir(null): /storage/emulated/0/Android/data/&lt;package&gt;/files
 /// (null when shared storage is not mounted).</param>
@@ -9,12 +40,14 @@ namespace VitaSharp.Mobile.Core.Storage;
 /// <param name="HasRoot">The device is rooted (<see cref="RootDetector"/>).</param>
 /// <param name="HasAllFilesAccess">"All files access" (MANAGE_EXTERNAL_STORAGE, Android 11+) or the storage permission
 /// (WRITE_EXTERNAL_STORAGE, Android 8-10) is granted.</param>
+/// <param name="Choice">The folder the user picked earlier (<see cref="StorageChoice"/>).</param>
 public readonly record struct DataRootInputs(
     string? AppSpecificDir,
     string InternalDir,
     string? SharedStorageDir,
     bool HasRoot,
-    bool HasAllFilesAccess);
+    bool HasAllFilesAccess,
+    StorageChoice Choice = StorageChoice.None);
 
 /// <summary>The data folder to use now and what the app still has to do to reach the visible one.</summary>
 /// <param name="Root">The folder the app uses in this process (<see cref="DataLayout.Root"/>).</param>
@@ -25,7 +58,17 @@ public readonly record struct DataRootInputs(
 /// <param name="MigrateFrom">The app-specific folder still holds data (or a migration was interrupted): it is moved to
 /// <see cref="VisibleRoot"/> by <see cref="DataMigration"/> before <see cref="VisibleRoot"/> is used. <see cref="Root"/>
 /// is the old folder until then.</param>
-public readonly record struct DataRootPlan(string Root, string? VisibleRoot, bool NeedsPermission, string? MigrateFrom)
+/// <param name="Question">What the user has to answer first (<see cref="StorageQuestion"/>); <see cref="Root"/> is the
+/// app-specific folder until then.</param>
+/// <param name="SharedDataUnused">The user picked the app-specific folder (<see cref="StorageChoice.AppFolder"/>) and
+/// the visible folder still holds data: the library says so and lets the user pick again.</param>
+public readonly record struct DataRootPlan(
+    string Root,
+    string? VisibleRoot,
+    bool NeedsPermission,
+    string? MigrateFrom,
+    StorageQuestion Question = StorageQuestion.None,
+    bool SharedDataUnused = false)
 {
     public bool NeedsMigration => MigrateFrom != null;
 }
@@ -34,9 +77,14 @@ public readonly record struct DataRootPlan(string Root, string? VisibleRoot, boo
 /// The one place that decides the Android app's data folder (docs/android/README.md, "Storage"):
 /// <list type="bullet">
 /// <item>rooted device: the app-specific folder (Android/data/&lt;package&gt;/files), where it always was;</item>
+/// <item>the user picked a folder (<see cref="StorageChoice"/>): that one;</item>
+/// <item>no root, no access: the app-specific folder, with <see cref="DataRootPlan.NeedsPermission"/>, and
+/// <see cref="StorageQuestion.GrantForSharedData"/> when the visible folder already holds data (the app must not start
+/// empty in silence while the user's games and saves wait in /storage/emulated/0/.vitasharp);</item>
 /// <item>no root, all-files access granted: <c>/storage/emulated/0/.vitasharp</c>, visible and editable in any file
-/// manager, after the old folder's content was moved there (<see cref="DataMigration"/>);</item>
-/// <item>no root, no access yet: the app-specific folder, with <see cref="DataRootPlan.NeedsPermission"/>.</item>
+/// manager, after the old folder's content was moved there (<see cref="DataMigration"/>, which never overwrites a file
+/// of the visible folder), or <see cref="StorageQuestion.ChooseBetweenFolders"/> when both folders hold the user's
+/// data.</item>
 /// </list>
 /// Without shared storage mounted, the app-specific folder or the internal one, as before.
 /// </summary>
@@ -59,17 +107,37 @@ public static class DataRoot
             return new DataRootPlan(old, visible, false, null);
         }
 
-        if (!inputs.HasAllFilesAccess)
+        if (inputs.Choice == StorageChoice.AppFolder)
         {
-            return new DataRootPlan(old, visible, true, null);
+            return new DataRootPlan(old, visible, false, null, SharedDataUnused: DataInventory.LooksLikeData(visible));
         }
 
-        if (inputs.AppSpecificDir is { Length: > 0 } source && DataMigration.IsPending(source, visible))
+        if (!inputs.HasAllFilesAccess)
         {
+            StorageQuestion question = DataInventory.LooksLikeData(visible) ? StorageQuestion.GrantForSharedData : StorageQuestion.None;
+            return new DataRootPlan(old, visible, true, null, question);
+        }
+
+        string? source = inputs.AppSpecificDir is { Length: > 0 } appSpecific ? appSpecific : null;
+        if (source != null && DataMigration.IsInterrupted(visible))
+        {
+            // a move or merge that stopped: it resumes (it overwrites nothing, whatever started it)
             return new DataRootPlan(old, visible, false, source);
         }
 
-        return new DataRootPlan(visible, visible, false, null);
+        if (inputs.Choice == StorageChoice.SharedFolder || source == null || !DataMigration.IsPending(source, visible))
+        {
+            return new DataRootPlan(visible, visible, false, null);
+        }
+
+        if (DataInventory.LooksLikeData(visible) && DataInventory.HasUserData(source))
+        {
+            return new DataRootPlan(old, visible, false, null, StorageQuestion.ChooseBetweenFolders);
+        }
+
+        // the first move, or only what the app wrote by itself (empty folders, its log) since a reinstall: merged in,
+        // nothing of the visible folder replaced
+        return new DataRootPlan(old, visible, false, source);
     }
 }
 

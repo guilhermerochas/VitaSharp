@@ -8,6 +8,7 @@ using VitaSharp.Core.Package;
 using VitaSharp.Core.Util;
 using VitaSharp.Mobile.Core.Firmware;
 using VitaSharp.Mobile.Core.Library;
+using VitaSharp.Mobile.Core.Storage;
 
 namespace VitaSharp.Android.Pages;
 
@@ -112,7 +113,7 @@ public sealed class LibraryView : Screen<LibraryState>
                         Chip(Loc.Get("MPlayable"), State.Filter == GameLibrary.Filter.Playable, () => SetState(s => s.Filter = GameLibrary.Filter.Playable))
                     ).Padding(20, 14, 20, 0),
                     last != null && State.Search.Length == 0 ? ContinueCard(last) : null,
-                    AppServices.StoragePlan.NeedsPermission ? StorageCard() : null,
+                    AppServices.StoragePlan.NeedsPermission || AppServices.StoragePlan.SharedDataUnused ? StorageCard() : null,
                     SystemCard(),
                     State.Installing != null ? InstallCard() : null,
                     SectionTitle(State.Filter switch
@@ -165,22 +166,42 @@ public sealed class LibraryView : Screen<LibraryState>
             .OnTapped(() => OpenGame(g));
     }
 
-    /// <summary>No root and no "All files access": the data is still in the hidden Android/data folder (StorageSetup).</summary>
-    VisualNode StorageCard() =>
-        Border(
+    /// <summary>No root and no "All files access": the data is still in the hidden Android/data folder, or the user's
+    /// data waits in /sdcard/.vitasharp (a reinstall reset the permission), or the user picked the app folder while
+    /// .vitasharp still holds data (StorageSetup).</summary>
+    VisualNode StorageCard()
+    {
+        DataRootPlan plan = AppServices.StoragePlan;
+        bool unused = plan.SharedDataUnused;
+        bool waiting = plan.Question == StorageQuestion.GrantForSharedData;
+        string title = unused ? Loc.Get("MStorageSharedUnused") : waiting ? Loc.Get("MStorageSharedFoundTitle") : Loc.Get("MStorageWarning");
+        string detail = unused ? Loc.Format("MStorageSharedUnusedDetail", plan.VisibleRoot ?? "")
+            : waiting ? Loc.Format("MStorageSharedWaitingDetail", plan.VisibleRoot ?? "")
+            : Loc.Get("MStorageWarningDetail");
+        return Border(
                 VStack(
-                    Label(Loc.Get("MStorageWarning")).FontFamily(Fonts.InterSemiBold).FontSize(14),
-                    Label(Loc.Get("MStorageWarningDetail")).FontSize(12).TextColor(Palette.Muted)
+                    Label(title).FontFamily(Fonts.InterSemiBold).FontSize(14),
+                    Label(detail).FontSize(12).TextColor(Palette.Muted)
                 ).Spacing(2).Padding(14, 12))
             .StrokeShape(new RoundRectangle().CornerRadius(18)).Stroke(Palette.HighlightBorder).StrokeThickness(1)
             .BackgroundColor(Palette.Surface).Margin(20, 12, 20, 0)
             .OnTapped(() =>
             {
-                if (MainActivity.Current is { } activity)
+                if (MainActivity.Current is not { } activity)
+                {
+                    return;
+                }
+
+                if (unused)
+                {
+                    StorageSetup.ChooseAgain(activity);
+                }
+                else
                 {
                     StorageSetup.RequestAllFilesAccess(activity);
                 }
             });
+    }
 
     VisualNode SystemCard()
     {
