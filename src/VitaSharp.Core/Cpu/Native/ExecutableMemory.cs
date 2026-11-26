@@ -130,13 +130,20 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
     /// <see cref="PlaceSlack"/>) is reserved and the code is encoded again for it, so the lock only ever covers the
     /// bump of the allocation pointer. <paramref name="assemble"/> may therefore run more than once.
     /// </summary>
-    public byte* Place(Func<ulong, byte[]> assemble)
+    public byte* Place(Func<ulong, byte[]> assemble) => Place(new CodeEncoder(rip => assemble(rip)), reuseFreed: false);
+
+    /// <summary>Encodes code for execution at the given address into a buffer of the encoder's that stays valid until
+    /// its next call (the JIT's emitters reuse one per thread: nothing is allocated per block).</summary>
+    public delegate ReadOnlySpan<byte> CodeEncoder(ulong rip);
+
+    /// <summary><see cref="Place(Func{ulong, byte[]})"/> with an encoder that returns its own buffer.</summary>
+    public byte* Place(CodeEncoder assemble)
     {
         int start = (Volatile.Read(ref _used) + 15) & ~15;
         int reserved = 0; // 0: nothing reserved yet, the encoding is for a guessed address
         while (true)
         {
-            byte[] code = assemble((ulong)(_exec + start));
+            ReadOnlySpan<byte> code = assemble((ulong)(_exec + start));
             if (reserved != 0 && code.Length <= reserved)
             {
                 Write(_exec + start, code);
@@ -204,15 +211,18 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
     /// placed at the end. Meant for work that is not waited for (the precompilation's background threads): the second
     /// encoding costs time, and only when a range was freed.
     /// </summary>
-    public byte* Place(Func<ulong, byte[]> assemble, bool reuseFreed)
+    public byte* Place(Func<ulong, byte[]> assemble, bool reuseFreed) => Place(new CodeEncoder(rip => assemble(rip)), reuseFreed);
+
+    /// <summary><see cref="Place(Func{ulong, byte[]}, bool)"/> with an encoder that returns its own buffer.</summary>
+    public byte* Place(CodeEncoder assemble, bool reuseFreed)
     {
         if (!reuseFreed || Volatile.Read(ref _freeCount) == 0)
         {
             return Place(assemble);
         }
 
-        byte[] guess = assemble((ulong)(_exec + ((Volatile.Read(ref _used) + 15) & ~15)));
-        int reserved = (guess.Length + 15) & ~15; // most encodings keep their length at another address
+        int guessLength = assemble((ulong)(_exec + ((Volatile.Read(ref _used) + 15) & ~15))).Length;
+        int reserved = (guessLength + 15) & ~15; // most encodings keep their length at another address
         int start;
         lock (_lock)
         {
@@ -224,7 +234,7 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
             return Place(assemble);
         }
 
-        byte[] code = assemble((ulong)(_exec + start));
+        ReadOnlySpan<byte> code = assemble((ulong)(_exec + start));
         if (code.Length > reserved)
         {
             Free(_exec + start, reserved);

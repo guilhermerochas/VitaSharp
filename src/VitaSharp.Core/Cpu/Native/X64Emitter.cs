@@ -78,6 +78,21 @@ public sealed unsafe partial class X64Emitter
         public ulong DispatchTable;
     }
 
+    private nint* _slotBase;
+    private int _slotStride;
+    private Func<int, nint>? _slotFromBase;
+
+    private nint SlotFromBase(int exit) => (nint)(_slotBase + exit * _slotStride);
+
+    /// <summary><see cref="Prepare"/> with the link slot of the k-th exit at <paramref name="slots"/> + k *
+    /// <paramref name="stride"/>, through one delegate made per emitter (no closure per block).</summary>
+    public bool PrepareWithSlots(IrBlock ir, Runtime rt, nint* slots, int stride, nint tierUpCounter = 0)
+    {
+        _slotBase = slots;
+        _slotStride = stride;
+        return Prepare(ir, rt, _slotFromBase ??= SlotFromBase, tierUpCounter);
+    }
+
     /// <summary>
     /// Allocates registers and lowers the block into the assembler. <paramref name="slotFor"/> returns the address of
     /// the link slot for the k-th static exit. Returns false when the block needs more spill slots than the frame has.
@@ -163,21 +178,48 @@ public sealed unsafe partial class X64Emitter
     }
 
     /// <summary>Encodes the prepared code for execution at <paramref name="rip"/>.</summary>
-    public byte[] Assemble(ulong rip)
+    public byte[] Assemble(ulong rip) => AssembleSpan(rip).ToArray();
+
+    /// <summary>
+    /// <see cref="Assemble"/> into this emitter's buffer, without allocating: the bytes stay valid until the next
+    /// encoding on it. Records the length and the time it took (<see cref="LastEncodeTicks"/>); <see cref="PlaceEncoder"/>
+    /// is this method as a delegate made once, for <see cref="ExecutableMemory.Place(ExecutableMemory.CodeEncoder, bool)"/>.
+    /// </summary>
+    public ReadOnlySpan<byte> AssembleSpan(ulong rip)
     {
-        if (FastEncode)
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        ReadOnlySpan<byte> code;
+        if (FastEncode && TryFastAssemble(rip, out int length))
         {
-            if (TryFastAssemble(rip, out byte[]? fast))
+            code = _fCode.AsSpan(0, length);
+        }
+        else
+        {
+            if (FastEncode)
             {
-                return fast;
+                Interlocked.Increment(ref FastEncodeFallbacks);
             }
 
-            Interlocked.Increment(ref FastEncodeFallbacks);
+            _code.SetLength(0);
+            Asm.Assemble(_writer ??= new StreamCodeWriter(_code), rip);
+            code = _code.GetBuffer().AsSpan(0, (int)_code.Length);
         }
-        _code.SetLength(0);
-        Asm.Assemble(_writer ??= new StreamCodeWriter(_code), rip);
-        return _code.ToArray();
+
+        LastEncodeTicks = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+        LastLength = code.Length;
+        return code;
     }
+
+    /// <summary>Stopwatch ticks of the last <see cref="AssembleSpan"/>.</summary>
+    public long LastEncodeTicks;
+
+    /// <summary>Bytes of the last <see cref="AssembleSpan"/> (the one placed: the arena encodes again only for another address).</summary>
+    public int LastLength;
+
+    private ExecutableMemory.CodeEncoder? _placeEncoder;
+
+    /// <summary><see cref="AssembleSpan"/> as a delegate, made once per emitter.</summary>
+    public ExecutableMemory.CodeEncoder PlaceEncoder => _placeEncoder ??= AssembleSpan;
 
     // ------------------------------------------------------------------ register allocation
 
@@ -379,7 +421,19 @@ public sealed unsafe partial class X64Emitter
     }
 
     /// <summary>Stores 0/1 of the current host condition into flag temp t (setcc + movzx: flags preserved).</summary>
-    private void SetFlagOut(int t, Action<AssemblerRegister8> setcc)
+    /// <summary>The x86 condition a flag output is set from (<see cref="SetFlagOut"/>).</summary>
+    private enum FlagCondition
+    {
+        Sign,
+        Zero,
+        AboveOrEqual,
+        Below,
+        Overflow,
+    }
+
+    /// <summary>Sets the flag temp <paramref name="t"/> (if used) from the host flags: a condition, not a delegate, so
+    /// lowering a flag-setting instruction allocates nothing.</summary>
+    private void SetFlagOut(int t, FlagCondition condition)
     {
         if (t < 0)
         {
@@ -387,7 +441,26 @@ public sealed unsafe partial class X64Emitter
         }
 
         int r = Def(t, RDX);
-        setcc(s_g8[r]);
+        AssemblerRegister8 low = s_g8[r];
+        switch (condition)
+        {
+            case FlagCondition.Sign:
+                Asm.sets(low);
+                break;
+            case FlagCondition.Zero:
+                Asm.sete(low);
+                break;
+            case FlagCondition.AboveOrEqual:
+                Asm.setae(low);
+                break;
+            case FlagCondition.Below:
+                Asm.setb(low);
+                break;
+            default:
+                Asm.seto(low);
+                break;
+        }
+
         Asm.movzx(s_g32[r], s_g8[r]);
         Commit(t, r);
     }
@@ -693,8 +766,8 @@ public sealed unsafe partial class X64Emitter
             {
                 int s = Use(x.A, RAX);
                 a.test(s_g32[s], s_g32[s]);
-                SetFlagOut(x.Fn, r => a.sets(r));
-                SetFlagOut(x.Fz, r => a.sete(r));
+                SetFlagOut(x.Fn, FlagCondition.Sign);
+                SetFlagOut(x.Fz, FlagCondition.Zero);
                 return;
             }
             case IrOp.ShiftReg:
@@ -1932,18 +2005,18 @@ public sealed unsafe partial class X64Emitter
         }
         AluOp(k, d, x.B);
         // flags are preserved by setcc/movzx/mov from here on
-        SetFlagOut(x.Fn, r => a.sets(r));
-        SetFlagOut(x.Fz, r => a.sete(r));
+        SetFlagOut(x.Fn, FlagCondition.Sign);
+        SetFlagOut(x.Fz, FlagCondition.Zero);
         if (sub)
         {
-            SetFlagOut(x.Fc, r => a.setae(r));
+            SetFlagOut(x.Fc, FlagCondition.AboveOrEqual);
         }
         else
         {
-            SetFlagOut(x.Fc, r => a.setb(r));
+            SetFlagOut(x.Fc, FlagCondition.Below);
         }
 
-        SetFlagOut(x.Fv, r => a.seto(r));
+        SetFlagOut(x.Fv, FlagCondition.Overflow);
         if (x.D >= 0)
         {
             Commit(x.D, d);

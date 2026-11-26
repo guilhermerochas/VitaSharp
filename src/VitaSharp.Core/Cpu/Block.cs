@@ -88,9 +88,15 @@ public static unsafe class BlockBuilder
         return d;
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static List<DecodedInst>? t_decoded;
+
     public static Block Build(uint pc, bool thumb)
     {
-        var list = new List<DecodedInst>(16);
+        // the decoding thread's buffer: a block's instructions are copied out (Insts), so only that array and the block
+        // are allocated per decode (the precompilation of a large game decodes ~700k blocks in the background)
+        List<DecodedInst> list = t_decoded ??= new List<DecodedInst>(MaxInstructions + 8);
+        list.Clear();
         uint addr = pc;
         if (!thumb)
         {

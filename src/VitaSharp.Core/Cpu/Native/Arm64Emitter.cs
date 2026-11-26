@@ -233,6 +233,21 @@ public sealed unsafe partial class Arm64Emitter
     private bool _count = true;
     private bool _pin, _backEdge, _fuse, _pair, _vcache, _lazyFpcr, _fastFpCheck, _dirtyReg, _storeLit;
 
+    private nint* _slotBase;
+    private int _slotStride;
+    private Func<int, nint>? _slotFromBase;
+
+    private nint SlotFromBase(int exit) => (nint)(_slotBase + exit * _slotStride);
+
+    /// <summary><see cref="Prepare"/> with the link slot of the k-th exit at <paramref name="slots"/> + k *
+    /// <paramref name="stride"/>, through one delegate made per emitter (no closure per block).</summary>
+    public bool PrepareWithSlots(IrBlock ir, Runtime rt, nint* slots, int stride, nint tierUpCounter = 0)
+    {
+        _slotBase = slots;
+        _slotStride = stride;
+        return Prepare(ir, rt, _slotFromBase ??= SlotFromBase, tierUpCounter);
+    }
+
     /// <summary>
     /// Allocates registers and lowers the block. <paramref name="slotFor"/> returns the address of the link slot of
     /// the k-th static exit. Returns false when the block needs more spill slots than the frame has.
@@ -497,6 +512,9 @@ public sealed unsafe partial class Arm64Emitter
 
     /// <summary>Encodes the prepared code (position independent: <paramref name="address"/> is not needed).</summary>
     public byte[] Assemble(ulong address) => _assembler.Finish();
+
+    /// <summary><see cref="Assemble"/> into the assembler's buffer (valid until the next encoding on this emitter).</summary>
+    public ReadOnlySpan<byte> AssembleSpan() => _assembler.FinishSpan();
 
     /// <summary>The words of the prepared block (tests).</summary>
     public IReadOnlyList<uint> Words => _assembler.Words;
