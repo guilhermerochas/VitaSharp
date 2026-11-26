@@ -116,10 +116,10 @@ public sealed partial class EmulationSession : IDisposable
             KernelPlugins = prefs.KernelPlugins,
             SystemLanguage = _settings.SystemLanguageValue, // "Idioma do sistema" of this game
             // "Carregar o cache de shaders antes de jogar" (global and per game): the progress and "Cancelar" are the game
-            // screen's banner (GameActivity.ShaderCacheLoad.cs)
+            // screen's loading screen (GameActivity.LoadingScreen.cs)
             LoadShaderCacheBeforeStart = _settings.LoadShaderCacheBeforePlaying,
             // "Precompilar codigo ARM" (global and per game): the boot step waits for the code as on the desktop, with
-            // the progress and "Cancelar" in the game screen's banner (GameActivity.CodePrecompile.cs)
+            // the progress and "Cancelar" on the game screen's loading screen (GameActivity.LoadingScreen.cs)
             CodeCacheDir = data.CodeCache,
             PrecompileCode = _settings.PrecompileCode,
         });

@@ -603,7 +603,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
       o jogo rodando entram em segundo plano do mesmo jeito. Tetos por plataforma (`Jit.AheadBudget`,
       `Jit.SpeculativeBudget`): todo o código pré-compilado 128 MiB no desktop / 64 MiB no Android (arena de 256 MiB);
       dentro dele, o especulativo que ainda não rodou 64 / 24 MiB, com despejo (ver feat/aot4 e feat/aot5).
-      Android: o mesmo modelo, tudo em segundo plano (`PrecompileCodeWaits = false`) até a tela do jogo ter a barra.
+      Android: o mesmo modelo; a etapa de boot espera como no desktop, com a barra e o "Cancelar" na tela de
+      carregamento do jogo (`GameActivity.LoadingScreen.cs`).
     - Invalidação: os blocos pré-compilados são blocos normais do cache do processo; escrita em código
       (DirtyPages/`InvalidateCode`), carga/descarga de módulo e save state continuam derrubando a tradução.
     - UI: a mesma barra do "Precompilar shaders" no launcher, com o texto "Precompilando código ARM: x de y" (linhas
@@ -728,6 +729,33 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
       causa das faixas devolvidas e das recodificações do x64; no Killzone a fronteira mais larga do aot4 custa
       ~6-8 MB a mais de código pré-compilado. Próximo passo: o atraso das threads do pré-compilador (prioridade do
       trabalho `Running` igual à dos workers do JIT) e medir com a máquina livre e no celular.
+    - Feito (perf/arm1, 25/11/2026; inclui feat/aot4 + feat/aot5, que não estavam na main), medido no Native AOT
+      (headless, 4 núcleos 0xF0, BelowNormal, outros agentes nos núcleos 0x0F; A/B intercalado, ≥3 rodadas):
+      (1) linha `Startup:` em toda sessão, desktop e Android (`StartupMeter`): segundos do clique até o 1º quadro e,
+      no 1º minuto, quadros >50/>100 ms e quantos tiveram >5 ms de JIT em volta, no tempo da emulação.
+      Base (release + aot5), 1ª sessão: JIT quase não pesa no PC — interpretador 0,06-0,14% dos ciclos; no 1º minuto
+      JIT 15-250 ms e 0-3 quadros lentos com JIT (KZ, AC3L, Uncharted). 1º quadro 3,2-3,5 s (KZ), 6,6-7,8 s (AC3L),
+      7,4-8,2 s (Uncharted), dos quais a etapa de pré-compilação é 0,3-1,1 s; o resto é a inicialização do Vulkan
+      (~1,3 s) e o carregamento do próprio jogo (I/O no ritmo do cartão de memória).
+      (2) o bloco que o jogo alcança primeiro (1ª execução no interpretador) vai na hora para o topo do trabalho
+      `Running`, como código que rodou (fora do orçamento especulativo, nunca despejado): 94% do que o JIT ainda
+      compilava no jogo estava na fila do pré-compilador quando o jogo chegou. AC3L 1ª sessão: 12,5-13,8k → 3,1-3,9k
+      blocos compilados no jogo (93% → 98,5% pré-compilado, 6+6 rodadas); KZ 474-508 → 356-399; Uncharted 1.392 →
+      821. Com a pré-compilação desligada nada muda (não há pré-compilador para receber o bloco).
+      Medido e descartado: o trabalho `Running` na prioridade dos workers do JIT (sem ganho sobre (2); numa rodada
+      com a máquina carregada tirou os núcleos do jogo: 87 quadros lentos no 1º minuto).
+      Com a máquina compartilhada as sessões do AC3L saíram bimodais (boas: 25-45 quadros >50 ms em 4.500; ruins:
+      200-580, o guest sem CPU e o GC nos engasgos, inclusive numa 2ª sessão com ~0 JIT); com a máquina livre, 0 de
+      12 ruins: era contenção do host, não o código. Com a pré-compilação ligada a sessão aloca o dobro (PERF
+      allocated ~5,2 GB = 1,2 MB/quadro contra 2,7 GB desligada): ~700k traduções em segundo plano.
+      (3) a tradução de um bloco deixou de gerar lixo (vale para o JIT durante o jogo também): 2.397 → 692 B por
+      bloco no x64 (`PrecompileAllocationTests`, limite 1.000) — buffer de decodificação por thread, código
+      codificado no buffer do emissor e colocado como span (`ExecutableMemory.CodeEncoder`), sem closure de slots,
+      e sem a closure que os lambdas de flag faziam o `Lower` do x64 alocar em toda instrução IR. AC3L 1ª sessão,
+      máquina livre, 6+6 intercaladas: PERF allocated 5,1-5,3 → 3,9-4,0 GB (-23%), GC gen0 ~850 → ~625, gen1 ~215 →
+      ~155, pausa 2,0% → 1,7%; quadros >50 ms 19-24 → 19-21, p99 ~37 ms nos dois.
+      Falta: medir no celular (a linha `Startup:` já existe no Android; lá o JIT é 2-4x mais lento) e, no PC, o
+      resto do que o JIT compila no jogo no AC3L (3k blocos; em funções que a pré-compilação nunca alcançou).
     - Parte 3 (bytes de máquina) avaliada e não feita agora: só reduz a etapa de boot das sessões com cache (0,6 s no
       Killzone, 1,1 s no AC3L, já ≤ ~1 s) e não muda nada na 1ª sessão, que é o que sobra. Custo: tabela de relocações
       nos 3 codificadores (x64 Iced, x64 fast-encode, ARM64) para ~7 tipos de endereço absoluto (slots de link de cada
@@ -4444,7 +4472,7 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   de executável sem relocações, fronteira de 1 chamada, teto de metade da arena, etapa de boot que espera só os primeiros
   blocos. Medido: AC3L 63% -> 90% do código pré-compilado, Killzone 2ª sessão 100%. Testar: Killzone ou AC III Liberation,
   ligar "Precompilar código ARM", 1º boot com a barra e o Cancelar; na 2ª sessão o jogo não deve engasgar por compilação.
-- [ ] (23/11/2026, na main, falta testar) [P2][G] Pré-compilação do código ARM com orçamento próprio para o código
+- [ ] (23/11/2026, na branch perf/arm1 — não estava na main —, falta testar) [P2][G] Pré-compilação do código ARM com orçamento próprio para o código
   especulativo (feat/aot4 + feat/aot5): os palpites que ainda não rodaram têm teto de 64 MiB no desktop (24 MiB no
   Android) e saem os mais fracos primeiro; casos de switch com instruções agendadas antes do TBB/TBH; a fronteira abre
   já na 1ª execução interpretada. Medido: AC3L 1ª sessão 90,2% -> 93,7% pré-compilado, Killzone 1ª sessão 982 -> 758
