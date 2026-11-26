@@ -1471,6 +1471,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
     384x192: 0,8 -> 0,6 MB; no modelo -0,56 ms, mais o draw de carga das amostras em tela cheia e a leitura de 4 MB da
     cópia, que o modelo não conta. Nenhuma GPU do PC tem a extensão: no PC vale o caminho atual (replay --compare
     idêntico com a chave ligada); fidelidade e tempo só no celular (bench do dump com imagem comparada)
+    Celular (v4, KZ slot 1 na escada, 2 corridas por variante): `VITASHARP_MAPPED_SCENE_START=1` sem ganho (28,5/28,3
+    fps, GPU 30,6-30,7 ms contra 24,4-28,7 fps e 30,4-33,6 ms sem). O dump da escada (presents 2400-2460) explica: lá a
+    cena 240x136 tem 1 draw e 1 rendering por quadro (o padrão de 9 leituras do próprio depth é do trecho do primeiro
+    dump); modelo 16,05 ms nos dois, 1.470 -> 1.468 renderings. Na escada os maiores são a cena principal MSAA 7,3 ms (46%)
+    e o atlas 384x512 3,2 ms (20%); celular ~30,5 ms, fator de calibração ~1,9
+    Bench no celular (v5, 4x3, imagem igual): MAPPED_SCENE_START kz_game2703 33,3 -> 30,1 ms (-9,5%), escada 27,1 ->
+    26,4 ms; ligado por padrão nos tile-based (perf/andgpu-mss-default). MSAA_RTSS ligado de fato (linha [boot]): 33,3 ->
+    33,1 ms, no ruído: a cena principal não é limitada por banda; fica desligado. Cena principal ~12,9 ms no celular
+    (metade do quadro na escada): próximo, separar vértice e fragmento dela (bench de seleção, fragment=discard)
   - [x] Feitos até 31/10/2026 (detalhes em `docs/android/README.md` e `docs/notes/native-jit.md`): threads do jogo e
     da GPU nos núcleos rápidos + sessão ADPF, logcat só com avisos, `Surface.setFrameRate` com o fps do jogo, ajuste
     do JIT nativo ARM64, AOT do código gerenciado (hoje o Release é NativeAOT, desde 09/11/2026)

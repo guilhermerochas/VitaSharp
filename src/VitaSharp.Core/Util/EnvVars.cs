@@ -306,10 +306,10 @@ public static class EnvVars
     /// (post-processing passes into regions of one surface; VulkanRenderer.Tiler.cs). Default on for tile-based GPUs
     /// (0 turns it off, 1 forces it elsewhere).</summary>
     public const string RenderAreaTrim = "VITASHARP_RENDER_AREA_TRIM";
-    /// <summary>1: a mapped (memory) read of the colour or depth/stencil surface of the scene being rendered keeps the copy
+    /// <summary>A mapped (memory) read of the colour or depth/stencil surface of the scene being rendered keeps the copy
     /// of it already taken in that scene instead of refreshing it after each of the scene's renderings, as the Vita's
     /// memory holds the surface as it was before the scene until the scene stores it (VulkanRenderer.Mapped.cs); every
-    /// such read used to end the rendering. 0 (the default for now): refreshed each time.</summary>
+    /// such read used to end the rendering. Default on for tile-based GPUs (0 turns it off, 1 forces it elsewhere).</summary>
     public const string MappedSceneStart = "VITASHARP_MAPPED_SCENE_START";
     /// <summary>1: native MSAA scenes render with VK_EXT_multisampled_render_to_single_sampled where the device has it:
     /// the samples live in tile memory only, the surface itself is loaded into every sample and resolved on store, with
