@@ -200,6 +200,12 @@ for now (no x86_64 artifact).
   flags, each backend's availability and the selected chain to the log at startup; Desempenho shows the same.
 - Trimming: `TrimMode=partial` with `VitaSharp.Core` and `VitaSharp.Renderer.Vulkan` rooted (the HLE tables and
   Silk.NET are not trim-annotated). JSON uses source-generated contexts.
+- **GC gen0 budget** (Native AOT): `-p:VitaSharpGcGen0Size=0x400000` embeds the GC's `GCgen0size` in the library
+  (ILC `--runtimeopt`); unset, the runtime picks it. It is a build property, not an `env.txt` key: the GC starts
+  before any of the app's code. Killzone gameplay on the Redmi Note 14 (25/11/2026) ran ~19 gen0 GCs/s with ~190 KB
+  allocated per GC and 12% of the time in GC pauses, the pattern of the 256 KB floor the GC uses when it cannot read
+  the CPU's cache size (the desktop picks ~4 MB). The `PERF allocated` line ends with the GC pause per collection and
+  the young generation before the last GC, so a log shows which budget ran.
 
 ## CPU cores and ADPF
 
