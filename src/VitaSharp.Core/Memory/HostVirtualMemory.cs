@@ -81,6 +81,43 @@ internal static unsafe partial class HostVirtualMemory
         }
     }
 
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool VirtualProtect(void* addr, nuint size, uint protect, uint* old);
+
+    /// <summary>
+    /// Windows: the committed pages of [<paramref name="addr"/>, + <paramref name="size"/>) (a view of shared memory, which
+    /// cannot be decommitted through one of its views) become inaccessible (<paramref name="accessible"/> = false) or
+    /// read/write again; pages not committed are left alone (they fault already, and commit read/write). Other hosts:
+    /// nothing (their reservations are never made inaccessible).
+    /// </summary>
+    public static void ProtectCommitted(byte* addr, nuint size, bool accessible)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        nuint at = (nuint)addr, end = at + size;
+        while (at < end)
+        {
+            MemoryBasicInformation info;
+            if (VirtualQuery((void*)at, &info, (nuint)sizeof(MemoryBasicInformation)) == 0)
+            {
+                return;
+            }
+
+            nuint regionEnd = Math.Min(end, (nuint)info.BaseAddress + info.RegionSize);
+            if (info.State == MEM_COMMIT)
+            {
+                uint old;
+                VirtualProtect((void*)at, regionEnd - at, accessible ? PAGE_READWRITE : PAGE_NOACCESS, &old);
+            }
+
+            at = regionEnd;
+        }
+    }
+
     public static void Decommit(byte* addr, nuint size)
     {
         if (OperatingSystem.IsWindows())
@@ -566,49 +603,13 @@ internal static unsafe partial class HostVirtualMemory
             return false;
         }
 
-        var code = new List<byte>();
-        void B(params byte[] b) => code.AddRange(b);
-        void Q(ulong v) => code.AddRange(BitConverter.GetBytes(v));
-
-        B(0x48, 0x83, 0xEC, 0x28);                         // sub rsp, 40
-        B(0x48, 0x8B, 0x01);                               // mov rax, [rcx]          ; ExceptionRecord
-        B(0x81, 0x38, 0x05, 0x00, 0x00, 0xC0);             // cmp dword [rax], 0xC0000005
-        int jne1 = code.Count;
-        B(0x0F, 0x85, 0, 0, 0, 0);  // jne notours
-        B(0x48, 0x8B, 0x50, 0x28);                         // mov rdx, [rax+0x28]     ; faulting address
-        B(0x49, 0xB8);
-        Q((ulong)@base);                    // mov r8, base
-        B(0x4C, 0x29, 0xC2);                               // sub rdx, r8
-        B(0x49, 0xB9);
-        Q(size);                            // mov r9, size
-        B(0x4C, 0x39, 0xCA);                               // cmp rdx, r9
-        int jae = code.Count;
-        B(0x0F, 0x83, 0, 0, 0, 0);   // jae notours
-        B(0x48, 0x8B, 0x48, 0x28);                         // mov rcx, [rax+0x28]
-        B(0x48, 0x81, 0xE1, 0x00, 0xF0, 0xFF, 0xFF);       // and rcx, -4096
-        B(0xBA, 0x00, 0x10, 0x00, 0x00);                   // mov edx, 0x1000
-        B(0x41, 0xB8, 0x00, 0x10, 0x00, 0x00);             // mov r8d, MEM_COMMIT
-        B(0x41, 0xB9, 0x04, 0x00, 0x00, 0x00);             // mov r9d, PAGE_READWRITE
-        B(0x48, 0xB8);
-        Q((ulong)va);                       // mov rax, VirtualAlloc
-        B(0xFF, 0xD0);                                     // call rax
-        B(0x48, 0x85, 0xC0);                               // test rax, rax
-        int jz = code.Count;
-        B(0x0F, 0x84, 0, 0, 0, 0);    // jz notours
-        B(0xB8, 0xFF, 0xFF, 0xFF, 0xFF);                   // mov eax, -1 (CONTINUE_EXECUTION)
-        B(0x48, 0x83, 0xC4, 0x28);                         // add rsp, 40
-        B(0xC3);                                           // ret
-        int notours = code.Count;
-        B(0x31, 0xC0);                                     // xor eax, eax (CONTINUE_SEARCH)
-        B(0x48, 0x83, 0xC4, 0x28);                         // add rsp, 40
-        B(0xC3);                                           // ret
-
-        byte[] arr = code.ToArray();
-        foreach (int at in new[] { jne1, jae, jz })
+        nint vp = GetProcAddress(GetModuleHandleW("kernel32.dll"), "VirtualProtect");
+        if (vp == 0)
         {
-            BitConverter.GetBytes(notours - (at + 6)).CopyTo(arr, at + 2);
+            return false;
         }
 
+        byte[] arr = Cpu.Native.X64Emitter.EmitLazyCommitHandler((ulong)@base, size, (ulong)va, (ulong)vp);
         byte* exec = AllocExecutable(arr.Length);
         if (exec == null)
         {

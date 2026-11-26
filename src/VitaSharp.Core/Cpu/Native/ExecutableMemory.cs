@@ -453,6 +453,8 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
             _freeCount = 0;
             _freeBytes = 0;
         }
+
+        HostFaultAborts.ForgetFrom((ulong)(_exec + keepBytes)); // the code there is gone with its fault sites
     }
 
     private void CommitMore()

@@ -45,7 +45,9 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
     {
         long t0 = Stopwatch.GetTimestamp();
         // per compile thread, reusing its IR buffers: the IR is consumed before this thread translates another block
-        IrBlock ir = (t_frontend ??= new ArmFrontend(X64Emitter.SupportsVec, tinyCheck: true, reuseIr: true)).Translate(b);
+        // data aborts found by host faults where the host allows it: fault exits instead of guards (HostFaultAborts)
+        t_frontend ??= new ArmFrontend(X64Emitter.SupportsVec, tinyCheck: true, reuseIr: true) { HostFaultExits = HostFaultAborts.Supported };
+        IrBlock ir = t_frontend.Translate(b);
         long t1 = Stopwatch.GetTimestamp();
         IrPasses.DeadCode(ir);
         if (ValidateIr)
@@ -98,6 +100,7 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
         int size = x64Emitter.LastLength;
         long encode = x64Emitter.LastEncodeTicks;
         Interlocked.Add(ref CodeBytes, size);
+        HostFaultAborts.Register((ulong)code, x64Emitter.FaultSites);
         rt.Register((nint)code, size, b);
         Stats.Phases!.Add(t1 - t0, t2 - t1, x64Emitter.AllocTicks, t3 - t2 - x64Emitter.AllocTicks, encode, Stopwatch.GetTimestamp() - t3 - encode);
         CompilePhases.Record(b);
