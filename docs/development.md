@@ -1,4 +1,4 @@
-<!-- pair: development.pt-BR.md sha256=afd3becf6c80753fccc6ff454674cdac412a170b7d8ceb4c2e760183cd3dd910 -->
+<!-- pair: development.pt-BR.md sha256=715fd6dd8e399021ca5afecdf46ea19d404103126323616fc2552299611d545c -->
 # Development
 
 **English** | [Português](development.pt-BR.md)
@@ -85,6 +85,16 @@ Shell scripts follow the Google Shell Style Guide and must pass ShellCheck (CI j
   (Windows, Linux, macOS), or on Linux the distribution package (`vulkan-validationlayers` / `vulkan-validation-layers`);
   on macOS the SDK also brings MoltenVK. Frame captures: [RenderDoc](https://renderdoc.org) (Windows, Linux) and
   GPU dumps (`replay-gpu`, [`docs/notes/gpu-dump.md`](notes/gpu-dump.md)) on every OS.
+- Precise wait timeouts (`VITASHARP_PRECISE_TIMEOUTS=0` turns them off, A/B): a timed wait on a kernel object
+  (sceKernelWaitSema, WaitEventFlag and the other `timeout` arguments, sceKernelDelayThreadCB) ends at its microsecond
+  deadline, as threadmgr's timer does on the Vita, instead of at `Monitor.Wait`'s next whole millisecond (a 500 us
+  timeout used to last 1.1-1.3 ms). One host thread, "HLE timeouts", sleeps on a high-resolution timer and wakes the
+  waiter: a `timerfd` on Linux and Android, a high-resolution waitable timer on Windows (it fires on a 0.5 ms tick, so
+  a timeout there can still end up to 0.5 ms late). Nothing spins. macOS keeps the millisecond rounding: it has no
+  timerfd, and the equivalent (a kqueue `EVFILT_TIMER` with `NOTE_USECONDS`, re-armed while the thread waits) is not
+  written yet. Short host sleeps (`PreciseSleep`) spin only the timer's measured lateness on the desktop (tens of
+  microseconds on Linux and macOS, ~0.5 ms on Windows) and never on phones; on Linux and Android the threads that
+  sleep get a 1 us timer slack.
 - Graphics pipeline libraries (off by default, measured slower with cold caches): `VITASHARP_PIPELINE_LIBRARY=1`
   links first-use pipelines from shader libraries and optimises them in the background where the driver has
   `VK_EXT_graphics_pipeline_library` with fast linking (desktop NVIDIA/AMD/Intel, Mesa); without it (MoltenVK,
