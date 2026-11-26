@@ -617,4 +617,7 @@ public static class EnvVars
     /// <summary>Interface language: "en" or "pt-BR" (default: the system's; Localization/Loc.cs). The launcher sets it
     /// for the games it starts from Configurações > Idioma.</summary>
     public const string Language = "VITASHARP_LANGUAGE";
+    /// <summary>=0: the guest clock counts the host's garbage-collector pauses again (A/B); default: they are left out,
+    /// as on the console no time passes while the whole emulated machine is stopped (Util/GuestClock.cs HostElapsed).</summary>
+    public const string GcPauseClock = "VITASHARP_GC_PAUSE_CLOCK";
 }

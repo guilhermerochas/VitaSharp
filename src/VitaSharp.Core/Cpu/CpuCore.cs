@@ -1030,6 +1030,68 @@ public sealed unsafe class CpuCore : IDisposable
 
     private static bool s_vectorModeSeen;
 
+    /// <summary>Test seam: short-vector expansions compile on the thread that runs them instead of in the background, so
+    /// a test knows when the code is there.</summary>
+    internal static bool CompileVectorBlocksInline { get; set; }
+
+    private static int s_vectorCompilesPending;
+
+    /// <summary>Waits until the short-vector expansions queued for compilation are compiled (tests).</summary>
+    internal static bool WaitVectorCompiles(TimeSpan timeout) => SpinWait.SpinUntil(() => Volatile.Read(ref s_vectorCompilesPending) == 0, timeout);
+
+    private static void CompileVectorQueued((Block Vector, Memory.AddressSpace? Space) work)
+    {
+        try
+        {
+            CompileVector(work.Vector, work.Space);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref s_vectorCompilesPending);
+        }
+    }
+
+    /// <summary>Compiles a short-vector expansion (<see cref="BlockBuilder.ForVectorMode"/>) with the first backend of the
+    /// chain that takes it, in the address space of the process that runs it; the code is set last, so a thread that
+    /// sees it sees all of it. No backend: the interpreter keeps running it.</summary>
+    private static void CompileVector(Block vector, Memory.AddressSpace? space)
+    {
+        using Memory.AddressSpace.Activation activation = Memory.AddressSpace.Use(space);
+        Backends.CompiledBlock? code = null;
+        try
+        {
+            foreach (Backends.IBlockCompiler backend in Jit.Chain)
+            {
+                code = backend.Compile(vector);
+                if (code != null)
+                {
+                    break;
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            Util.Log.WarnOnce("vector-compile", $"VFP short-vector mode: block 0x{vector.Start:X8} not compiled ({e.GetType().Name}: {e.Message}); the interpreter runs it");
+            code = null;
+        }
+
+        if (code == null)
+        {
+            vector.JitState = 3; // no backend takes it: the interpreter runs it
+            return;
+        }
+
+        vector.NativeEntry = code.NativeEntry;
+        vector.Compiled = code.Managed;
+        Volatile.Write(ref vector.JitState, 2);
+        if (Interlocked.Increment(ref VectorBlocksCompiled) == 1)
+        {
+            Util.Log.Info($"VFP short-vector mode: block 0x{vector.Start:X8} compiled for FPSCR 0x{vector.VectorFpscr:X8} by {code.Backend.Name} ({vector.Insts.Length} expanded instructions)");
+        }
+
+        Volatile.Write(ref vector.Code, code); // last: RunVectorBlock runs the code once it sees it
+    }
+
     /// <summary>Executions of a short-vector expansion before it is compiled (<see cref="RunVectorBlock"/>).</summary>
     public const int VectorCompileExecutions = 2;
 
@@ -1039,7 +1101,7 @@ public sealed unsafe class CpuCore : IDisposable
     /// <summary>
     /// Runs <paramref name="scalar"/> in VFP short-vector mode as compiled code: its expansion for the current mode
     /// (<see cref="BlockBuilder.ForVectorMode"/>, kept on the block) is compiled by the first backend of the chain that
-    /// takes it on its second run (<see cref="VectorCompileExecutions"/>), and then runs alone (the pacing window is
+    /// takes it in the background from its second run (<see cref="VectorCompileExecutions"/>), and then runs alone (the pacing window is
     /// closed for the run, so every exit returns here and none is linked: the blocks after it may run in another mode).
     /// Returns false when the caller must interpret the block (its first run, no backend, or debugging hooks that need
     /// the interpreter).
@@ -1059,7 +1121,7 @@ public sealed unsafe class CpuCore : IDisposable
             scalar.VectorVariant = vector;
         }
 
-        if (vector.Code == null)
+        if (Volatile.Read(ref vector.Code) == null)
         {
             // compiled on its second run, not once as hot as any block: interpreted, each vector element goes through
             // the managed VFP handler (~2000 host cycles per vector instruction), and a vector loop's blocks run few
@@ -1071,32 +1133,26 @@ public sealed unsafe class CpuCore : IDisposable
 
             if (Interlocked.CompareExchange(ref vector.JitState, 1, 0) != 0)
             {
-                return false; // another core is compiling it
+                return false; // being compiled
             }
 
-            Backends.CompiledBlock? code = null;
-            foreach (Backends.IBlockCompiler backend in Jit.Chain)
+            // compiled off the guest thread: a compile takes from hundreds of microseconds to milliseconds of host time
+            // (13 ms for the first one of a thread, its compiler buffers created), which the guest clock would count as
+            // time the thread spent running (Dead Space's audio thread woke from its 11 ms sleep in the middle of it). The
+            // thread interprets the block meanwhile; nothing is published, so no other path finds this code
+            if (CompileVectorBlocksInline)
             {
-                code = backend.Compile(vector);
-                if (code != null)
-                {
-                    break;
-                }
+                CompileVector(vector, Memory.AddressSpace.Current);
+            }
+            else
+            {
+                Interlocked.Increment(ref s_vectorCompilesPending);
+                ThreadPool.UnsafeQueueUserWorkItem(static work => CompileVectorQueued(work), (vector, Memory.AddressSpace.Current), preferLocal: false);
             }
 
-            if (code == null)
+            if (Volatile.Read(ref vector.Code) == null)
             {
-                vector.JitState = 3; // no backend takes it: the interpreter runs it
                 return false;
-            }
-
-            vector.NativeEntry = code.NativeEntry;
-            vector.Compiled = code.Managed;
-            vector.Code = code;
-            vector.JitState = 2;
-            if (Interlocked.Increment(ref VectorBlocksCompiled) == 1)
-            {
-                Util.Log.Info($"VFP short-vector mode: block 0x{vector.Start:X8} compiled for FPSCR 0x{mode:X8} by {code.Backend.Name} ({scalar.Insts.Length} instructions, {vector.Insts.Length} expanded)");
             }
         }
 

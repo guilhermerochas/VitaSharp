@@ -18,7 +18,55 @@ public static partial class GuestClock
     /// <summary>Guest time runs this many times faster than real time (tests; 1 = normal).</summary>
     public static double Speed { get; set; } = 1.0;
 
-    private static long RealElapsed => Speed == 1.0 ? Stopwatch.GetTimestamp() - s_start : (long)((Stopwatch.GetTimestamp() - s_start) * Speed);
+    private static long RealElapsed => Speed == 1.0 ? HostElapsed() : (long)(HostElapsed() * Speed);
+
+    /// <summary>
+    /// Host time since the start that the emulated machine lived through: real time minus the host's stop-the-world
+    /// pauses (the .NET garbage collector's, <see cref="GC.GetTotalPauseDuration"/>). While the runtime has every thread
+    /// stopped no guest thread can run, so on the console's clock that time never passed, as the time spent paused in
+    /// the emulator's menu never passes (<see cref="Freeze"/>). Counted, a 9 ms collection in the middle of Dead Space's
+    /// audio mixing let the port's audio thread wake from its 11 ms sleep while the mixer, stopped with everything else,
+    /// was still in its round, and its audio stopped for good. The pause total is read on both sides of the timestamp,
+    /// so a reading never mixes a timestamp from after a collection with the pause total from before it.
+    /// VITASHARP_GC_PAUSE_CLOCK=0 counts the pauses again (A/B).
+    /// </summary>
+    private static long HostElapsed()
+    {
+        if (!s_excludeHostPauses)
+        {
+            return HostTimestamp() - s_start;
+        }
+
+        while (true)
+        {
+            long pause = HostPauseTicks();
+            long now = HostTimestamp();
+            if (HostPauseTicks() == pause)
+            {
+                return now - s_start - pause;
+            }
+        }
+    }
+
+    private static readonly bool s_excludeHostPauses = Environment.GetEnvironmentVariable(EnvVars.GcPauseClock) != "0";
+
+    /// <summary>Test seams: the host timestamp and the host pause total (Stopwatch ticks) the clock reads (null: the real
+    /// ones), so a test decides when time passes and when the host pauses instead of measuring the host.</summary>
+    internal static Func<long>? HostTimestampForTest { get; set; }
+    internal static Func<long>? HostPauseForTest { get; set; }
+
+    private static long HostTimestamp() => HostTimestampForTest?.Invoke() ?? Stopwatch.GetTimestamp();
+
+    private static long HostPauseTicks()
+    {
+        if (HostPauseForTest is { } pause)
+        {
+            return pause();
+        }
+
+        long ticks = GC.GetTotalPauseDuration().Ticks;
+        return Stopwatch.Frequency == TimeSpan.TicksPerSecond ? ticks : (long)(ticks * ((double)Stopwatch.Frequency / TimeSpan.TicksPerSecond));
+    }
 
     /// <summary>The clock's reading while the emulation is paused (<see cref="EmulationPause"/>); NotFrozen otherwise.</summary>
     private static long s_frozen = NotFrozen;

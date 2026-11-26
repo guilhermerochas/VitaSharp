@@ -214,7 +214,16 @@ public sealed unsafe class VfpShortVectorJitTests(GuestMemoryFixture fx)
         s->Fpscr = BaseFpscr;
         long compiled = CpuCore.VectorBlocksCompiled;
         long run = CpuCore.VectorBlocksRun;
-        Assert.Equal(ExitReason.Svc, core.Run());
+        CpuCore.CompileVectorBlocksInline = true;
+        try
+        {
+            Assert.Equal(ExitReason.Svc, core.Run());
+        }
+        finally
+        {
+            CpuCore.CompileVectorBlocksInline = false;
+        }
+
         Assert.True(CpuCore.VectorBlocksCompiled > compiled, "the vector-mode block was not compiled on its second run");
         Assert.True(CpuCore.VectorBlocksRun > run, "the compiled vector-mode block never ran");
     }
@@ -248,7 +257,16 @@ public sealed unsafe class VfpShortVectorJitTests(GuestMemoryFixture fx)
         s->Cpsr = 0x10;
         s->Fpscr = BaseFpscr;
         long compiled = CpuCore.VectorBlocksCompiled;
-        Assert.Equal(ExitReason.Svc, core.Run());
+        CpuCore.CompileVectorBlocksInline = true;
+        try
+        {
+            Assert.Equal(ExitReason.Svc, core.Run());
+        }
+        finally
+        {
+            CpuCore.CompileVectorBlocksInline = false;
+        }
+
         Assert.Equal(BaseFpscr, s->Fpscr);
         for (int i = 0; i < 4; i++)
         {
@@ -260,5 +278,50 @@ public sealed unsafe class VfpShortVectorJitTests(GuestMemoryFixture fx)
         // most of the 20 000 iterations ran as compiled code, not in the interpreter
         Assert.True(core.NativeCycles + core.IlCycles > core.InterpCycles * 4,
             $"compiled {core.NativeCycles + core.IlCycles} cycles, interpreted {core.InterpCycles}");
+    }
+
+    /// <summary>
+    /// The compile of a vector-mode block runs off the guest thread: a compile costs from hundreds of microseconds to
+    /// milliseconds of host time (13 ms for a thread's first), which the guest clock would count as the thread's own
+    /// time (Dead Space's audio thread woke from its 11 ms sleep in the middle of one). The thread interprets the block
+    /// until the code is there, with the same results, and runs the code from then on.</summary>
+    [Fact]
+    public void VectorModeBlockCompilesInTheBackgroundAndRunsOnceReady()
+    {
+        if (!Jit.Enabled || Jit.Chain.Length == 0)
+        {
+            return;
+        }
+
+        MapCode([0xEEE10A10, 0xEE384A0C, 0xE2522001, 0x1AFFFFFC, 0xEEE11A10, Svc]);
+        using var core = new CpuCore(new BlockCache());
+        CpuState* s = core.State;
+        for (int i = 0; i < 32; i++)
+        {
+            ((float*)s->D)[i] = i + 1;
+        }
+
+        void RunLoop(uint iterations)
+        {
+            s->R[0] = BaseFpscr | (3 << 16);
+            s->R[1] = BaseFpscr;
+            s->R[2] = iterations;
+            s->R[15] = CodeBase;
+            s->Cpsr = 0x10;
+            s->Fpscr = BaseFpscr;
+            Assert.Equal(ExitReason.Svc, core.Run());
+        }
+
+        long compiled = CpuCore.VectorBlocksCompiled;
+        RunLoop(3); // the second run queues the compile; the thread goes on interpreting
+        Assert.True(CpuCore.WaitVectorCompiles(TimeSpan.FromSeconds(60)), "the background compile did not finish");
+        Assert.True(CpuCore.VectorBlocksCompiled > compiled, "the vector-mode block was not compiled in the background");
+        long run = CpuCore.VectorBlocksRun;
+        RunLoop(3);
+        Assert.True(CpuCore.VectorBlocksRun >= run + 3, "the compiled vector-mode block did not run once ready");
+        for (int i = 0; i < 4; i++)
+        {
+            Assert.Equal((17f + i) + (25f + i), ((float*)s->D)[8 + i]);
+        }
     }
 }
