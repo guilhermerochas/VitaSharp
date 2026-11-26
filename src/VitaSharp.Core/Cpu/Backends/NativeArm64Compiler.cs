@@ -74,7 +74,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
             DropDeadStores(b, ir, armFrontend, successors!, coldPc: stubs.PinnedCounters && stubs.PatchLinks && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.ExitStubs) != 0, deps);
         }
 
-        b._deps = deps.Count > 0 ? deps.ToArray() : null;
+        b.SetDependencies(deps.Count > 0 ? deps.ToArray() : null);
         if ((Arm64Emitter.Opts & Arm64Emitter.A64Opt.MergeFences) != 0)
         {
             IrPasses.MergeFences(ir);
