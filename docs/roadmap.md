@@ -2055,7 +2055,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   (.PUP) pelo seletor (30/10/2026: pasta específica do app como raiz de dados, VPK/PUP/driver pelo seletor do sistema,
   lidos no lugar; o motivo de não usar uma pasta do SAF como raiz está em `docs/android/README.md`)
 
-- [x] (15/11/2026, trabalho contínuo, segue nas regras/ferramentas) Ferramentas de desenvolvedor (`-p:VitaSharpDeveloper=true`, `tools/dev/README.md`): bench da GPU com fixtures e
+- [x] (15/11/2026, trabalho contínuo, segue nas regras/ferramentas) Ferramentas de desenvolvedor (`-p:VitaSharpDeveloper=true`, `docs/notes/developer-tools.md`): bench da GPU com fixtures e
   variantes em tempo de execução, teste de flicker no aparelho (replay e `VITASHARP_FLICKER_CHECK` no jogo), Perfetto,
   snapshots de desenvolvedor e o gravador de voo (últimos N s com um botão)
 - [x] (16/11/2026, usuário: removido da lista; era um plano) Próxima fase, quando Uncharted e F1 estiverem sólidos no celular (fps nativo, sem flicker nem quadro escuro, som
@@ -3438,7 +3438,7 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   `VITASHARP_NATIVE_CORPUS`, para o agente do IL), `CpuDispatchBenchmarks` (CpuCore.Run em interp/il/native),
   `HleSyncBenchmarks` (lwmutex, mutex, semáforo sem disputa), `Atrac9Benchmarks` (superframe; `-At9` ou superframes
   gerados com cabeçalhos válidos), `TextureBenchmarks`. `build/bench.ps1`/`.sh`: filtro, resultado em
-  `<out>/<nome>.md` com o commit, `-Compare` imprime as razões contra um resultado anterior (tools/dev/README.md).
+  `<out>/<nome>.md` com o commit, `-Compare` imprime as razões contra um resultado anterior (docs/notes/developer-tools.md).
   O projeto gerado compila com `-m:2` sem servidor de compilação, o plano de energia do Windows não é trocado e os
   processos rodam abaixo do normal (o BenchmarkDotNet os põe em High). Primeira rodada (PC, `--job short`, máquina
   dividida): lwmutex lock+unlock 102 ns, mutex 113 ns, semáforo 143 ns; aluguel+slot+liberação de uniforms 57/279/565 ns

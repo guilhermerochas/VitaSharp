@@ -556,14 +556,14 @@ exception, so a Play build would keep the app-specific folder.
 **Scripts and agents using adb:** ask the app instead of guessing from what exists. Every app process writes the
 folder it opened to `/sdcard/Android/data/io.github.vitasharp/data-root.txt` (`DataRootPointer`, beside the app folder,
 so it is never part of the data; it goes away with an uninstall). The phone-side command in
-`tools/dev/android-data-root.txt` prints that folder, except that a `.vitasharp` answer without "All files access"
+`build/android-data-root.txt` prints that folder, except that a `.vitasharp` answer without "All files access"
 (`appops get io.github.vitasharp MANAGE_EXTERNAL_STORAGE` not `allow`: the permission was taken away and the app falls
 back at its next start) gives the app folder; with no answer yet (the app has not started since the install) it is
 `/sdcard/.vitasharp` only when the permission is granted and no move is pending, else the app folder. The
 `build/android-*.ps1`/`.sh` scripts all run it (`DATA_ROOT`/`$dataRoot`); in commands below, `<data>` is that folder:
 
 ```
-adb shell "$(cat tools/dev/android-data-root.txt)"                                  # Linux/macOS (bash)
+adb shell "$(cat build/android-data-root.txt)"                                  # Linux/macOS (bash)
 adb shell (Get-Content -Raw tools\dev\android-data-root.txt).Trim()                   # Windows PowerShell
 ```
 

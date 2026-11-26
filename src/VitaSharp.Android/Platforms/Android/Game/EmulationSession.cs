@@ -478,7 +478,7 @@ public sealed partial class EmulationSession : IDisposable
     /// sees them), fps and the renderer's PERF lines at the stop. "Gravar conteudo" (conteudo): a GPU dump of the
     /// next frames (up to 600) for the bench and replay-gpu, with every guest memory range the GPU read (texture data
     /// and descriptors, so the texture uploads), and the guest audio ports as WAVs (audio/). Output:
-    /// files/captures/TITLE_DATE_KIND/ with info.txt and the log; pulled with adb (tools/dev/README.md).
+    /// files/captures/TITLE_DATE_KIND/ with info.txt and the log; pulled with adb (docs/notes/developer-tools.md).
     /// </summary>
     public void StartCapture(string kind)
     {

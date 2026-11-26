@@ -9,7 +9,7 @@ namespace VitaSharp.Core.Util.Developer;
 /// VITASHARP_TRACE=1 (build/android-trace.* writes it to env.txt). Off — the default, and always off outside Android —
 /// every hook is one static test (the pause menu's "Gravar tempo" turns it on in a developer APK). Markers: guest frames (sceDisplaySetFrameBuf, a counter and an instant
 /// slice), the GPU worker's frame recording and vkQueueSubmit, sampled HLE calls (one in VITASHARP_TRACE_HLE, default
-/// 64, named after the function), native JIT compiles and audio output grains. See tools/dev/README.md.
+/// 64, named after the function), native JIT compiles and audio output grains. See docs/notes/developer-tools.md.
 /// </summary>
 public static unsafe class DevTrace
 {

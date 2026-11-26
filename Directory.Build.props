@@ -2,7 +2,7 @@
 
   <!--
     Developer flavour: -c Release -p:VitaSharpDeveloper=true defines VITASHARP_DEVELOPER in every project. The bench,
-    trace markers and fixture runners (namespaces *.Developer, tools/dev/README.md) are compiled only then; optimisation,
+    trace markers and fixture runners (namespaces *.Developer, docs/notes/developer-tools.md) are compiled only then; optimisation,
     AOT mode and trimming are those of the normal build. Without the property none of that code is in the binaries
     (tests/VitaSharp.Tests DeveloperGatingTests, build/check-dev-gating.*).
     Developer builds use their own obj-dev/bin-dev folders: generated files of one flavour (the Android Java wrappers of

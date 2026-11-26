@@ -12,7 +12,7 @@ namespace VitaSharp.Renderer.Vulkan.Developer;
 /// <summary>
 /// One GPU bench run (developer builds): a fixture (a GPU dump cut after its target frame, <see cref="GpuBench.Cut"/>),
 /// the variant to apply and the bench parameters. Text form: <c>key=value</c> pairs separated by ';' (the Android
-/// launch extra <c>bench=...</c>, <c>vitasharp-perf bench --child</c>). See tools/dev/README.md.
+/// launch extra <c>bench=...</c>, <c>vitasharp-perf bench --child</c>). See docs/notes/developer-tools.md.
 /// </summary>
 public sealed class GpuBenchSpec
 {

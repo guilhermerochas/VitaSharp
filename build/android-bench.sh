@@ -3,7 +3,7 @@
 # GPU bench on a USB-connected Android phone with the developer APK (-p:VitaSharpDeveloper=true): pushes the fixtures
 # and variants, runs every (fixture, variant) ROUNDS times interleaved A/B/B/A (one process per run, REPS timed
 # repetitions each), pulls the results and prints fixture x variant -> median GPU ms, spread and delta
-# (tools/dev/README.md).
+# (docs/notes/developer-tools.md).
 # Usage: build/android-bench.sh FIXTURES VARIANTS [ROUNDS] [REPS]   (same as build/android-bench.ps1)
 #   FIXTURES, VARIANTS: comma-separated names (BENCH_DIR/fixtures/NAME.vsgd, BENCH_DIR/variants/NAME; "base" = none).
 #   env: BENCH_DIR (local folder with fixtures/ and variants/, default ./bench), PARAM (more bench parameters,
@@ -17,8 +17,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly HERE
 readonly PKG=io.github.vitasharp
 # the app's data folder (docs/android/README.md, "Storage"): the app's own answer (data-root.txt), checked
-# against "All files access" (appops), by the phone-side command in tools/dev/android-data-root.txt
-DATA_ROOT="$(adb shell "$(cat "$(dirname "${BASH_SOURCE[0]}")/../tools/dev/android-data-root.txt")" 2>/dev/null | tr -d '' || true)"
+# against "All files access" (appops), by the phone-side command in build/android-data-root.txt
+DATA_ROOT="$(adb shell "$(cat "$(dirname "${BASH_SOURCE[0]}")/android-data-root.txt")" 2>/dev/null | tr -d '' || true)"
 DATA_ROOT="${DATA_ROOT:-/sdcard/Android/data/${PKG}/files}"
 readonly DATA_ROOT
 readonly REMOTE="${DATA_ROOT}/bench"

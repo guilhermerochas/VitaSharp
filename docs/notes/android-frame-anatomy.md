@@ -8,7 +8,7 @@ Branch perf/vk-direct (a73acbc), LLVM developer APK, VSync on, default switches.
 - **Scenes.** Uncharted: Golden Abyss (PCSA00029) gameplay after the journal-tutorial tap. F1 2011 (PCSE00002) Quick
   Race, Albert Park, race start. Navigation uses `VITASHARP_ANDROID_INPUT_LIVE`, a file of ScriptedPad steps that the
   app polls while it runs, pushed from the PC after reading a screenshot. The phone refuses `adb shell input`.
-- **Perfetto.** 30 s, `tools/dev/perfetto-vitasharp.pbtx`, with `VITASHARP_TRACE=1` and `VITASHARP_TRACE_HLE=64`.
+- **Perfetto.** 30 s, `tools/VitaSharp.PerfTools/perfetto-vitasharp.pbtx`, with `VITASHARP_TRACE=1` and `VITASHARP_TRACE_HLE=64`.
   Thread states come from the sched events. Frames are the `guest frame` counter (one `sceDisplaySetFrameBuf` each).
 - **simpleperf.** `simpleperf record --app io.github.vitasharp -e cpu-clock -f 2000 --call-graph fp`, 30 s, on the
   game's main thread and the GPU worker.

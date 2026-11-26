@@ -4,7 +4,7 @@
 # "Gravar tempo/conteúdo" in the developer APK): pulls it from the phone (or takes a local folder) and prints one
 # summary: for "Gravar tudo", the report of vitasharp-perf capture; fps and the timing part, the PERF lines, the busiest
 # HLE functions and threads the log reports, the audio check of every guest port WAV, and, from a replay of the GPU
-# dump on this PC, the flicker check over every frame and the GPU ms per scene of one frame (tools/dev/README.md,
+# dump on this PC, the flicker check over every frame and the GPU ms per scene of one frame (docs/notes/developer-tools.md,
 # "Captures").
 # Usage: build/android-capture-analyze.sh [CAPTURE_NAME|LOCAL_FOLDER]   (same as .ps1; no argument = newest on the phone)
 #   env: OUT (default ./captures), PERF (vitasharp-perf built with -p:VitaSharpDeveloper=true; default dotnet run),
@@ -17,8 +17,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly HERE
 readonly PKG=io.github.vitasharp
 # the app's data folder (docs/android/README.md, "Storage"): the app's own answer (data-root.txt), checked
-# against "All files access" (appops), by the phone-side command in tools/dev/android-data-root.txt
-DATA_ROOT="$(adb shell "$(cat "$(dirname "${BASH_SOURCE[0]}")/../tools/dev/android-data-root.txt")" 2>/dev/null | tr -d '' || true)"
+# against "All files access" (appops), by the phone-side command in build/android-data-root.txt
+DATA_ROOT="$(adb shell "$(cat "$(dirname "${BASH_SOURCE[0]}")/android-data-root.txt")" 2>/dev/null | tr -d '' || true)"
 DATA_ROOT="${DATA_ROOT:-/sdcard/Android/data/${PKG}/files}"
 readonly DATA_ROOT
 readonly REMOTE="${DATA_ROOT}/captures"
