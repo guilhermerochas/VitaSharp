@@ -375,6 +375,51 @@ public sealed class AndroidAppTests : IDisposable
     }
 
     [Fact]
+    public void RoundControlsAreHitAsTheirCirclesAndTheirCornersAreFrontTouch()
+    {
+        // a 2400x1080 phone: the image placed as the game screen places it
+        const float W = 2400, H = 1080;
+        var pad = new OnScreenPad { Aspect = W / H };
+        float scale = Math.Min(W / 960f, H / 544f);
+        float iw = 960 * scale / W, ih = 544 * scale / H;
+        pad.Image = ((1 - iw) / 2, (1 - ih) / 2, iw, ih);
+        OnScreenControl rstick = pad.Layout.Single(c => c.Control == VitaControl.RStickUp);
+        OnScreenControl lstick = pad.Layout.Single(c => c.Control == VitaControl.LStickUp);
+        OnScreenControl cross = pad.Layout.Single(c => c.Control == VitaControl.Cross);
+
+        // Uncharted's journal icon at (2080, 680): inside the right stick's rectangle, outside its circle
+        (float X, float Y) icon = (2080 / W, 680 / H);
+        Assert.True(rstick.Contains(icon.X, icon.Y));
+        Update(pad, (1, icon.X, icon.Y));
+        Assert.Single(pad.GetTouches(false));
+        Assert.False(pad.IsPressed(rstick));
+        Update(pad);
+
+        // on each stick's circle, up to the margin, the stick; past it, the game
+        foreach (OnScreenControl stick in new[] { rstick, lstick })
+        {
+            float radius = Math.Min(stick.Width * pad.Aspect, stick.Height) / 2;
+            float cx = stick.X + stick.Width / 2, cy = stick.Y + stick.Height / 2;
+            Update(pad, (2, cx + radius * 1.05f / pad.Aspect, cy));
+            Assert.True(pad.IsPressed(stick));
+            Assert.Empty(pad.GetTouches(false));
+            Update(pad);
+            Update(pad, (3, cx + radius * 0.8f / pad.Aspect, cy - radius * 0.8f)); // the corner of its rectangle
+            Assert.False(pad.IsPressed(stick));
+            Update(pad);
+        }
+
+        // a round button: its centre presses it, the corner of its rectangle is a front touch
+        Update(pad, Finger(cross));
+        Assert.Equal(VitaButtons.Cross, pad.GetController(0).Buttons);
+        Update(pad);
+        Update(pad, (4, cross.X + cross.Width * 0.03f, cross.Y + cross.Height * 0.03f));
+        Assert.Equal(VitaButtons.None, pad.GetController(0).Buttons);
+        Assert.Single(pad.GetTouches(false));
+        Update(pad);
+    }
+
+    [Fact]
     public void OnScreenButtonsVibrateWhileTheStickIsHeld()
     {
         var pad = new OnScreenPad();
