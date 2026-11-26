@@ -356,6 +356,17 @@ internal sealed class MaliCost(MaliCost.Settings s)
             sb.AppendLine(s_inv, $"  {x.D.Serial,4} {x.Ms,6:F3} {x.Ms / worst.Ms * 100,4:F1} {x.D.Vertices,9} {(x.D.Samples < 0 ? "?" : (x.D.Samples / Math.Max(1, x.D.SampleCount)).ToString(s_inv)),10}  {(fsHeavy ? "frag" : "vert")} {bound,-5} {x.D.VsHash:x16}  {x.D.FsHash:x16}  {string.Join("/", x.Fs.Cycles.Select(c => c.ToString("F2", s_inv)))}");
         }
 
+        // every draw of the reported frames (draws.tsv): bench selections (draws=A-B, vs=HASH) are picked from it
+        var tsv = new StringBuilder("present\tdraw\tscene\tprim\tindices\tunique\tfragments\tvs\tfs\tvertex_ms\tfragment_ms\n");
+        foreach (DrawCostRecord d in draws)
+        {
+            DrawCost c = Cost(d, "");
+            tsv.Append(s_inv, $"{d.Present}\t{d.Serial}\t{d.Scene}\t{d.PrimitiveType}\t{d.Vertices}\t{d.UniqueVertices}\t{(d.Samples < 0 ? -1 : d.Samples / Math.Max(1, d.SampleCount))}\t{d.VsHash:x16}\t{d.FsHash:x16}\t{c.VsMs:F4}\t{c.FsMs:F4}\n");
+        }
+
+        Directory.CreateDirectory(s.OutDir);
+        File.WriteAllText(Path.Combine(s.OutDir, "draws.tsv"), tsv.ToString());
+
         // the draws with the most vertex work in that frame: how many shader invocations the indices really need
         var frameCosts = frames.First(g => g.Key == worst.Present).Select(d => Cost(d, "")).ToList();
         long heavyScene = frameCosts.GroupBy(x => x.D.Scene).OrderByDescending(g => g.Sum(x => x.VsMs)).First().Key;
