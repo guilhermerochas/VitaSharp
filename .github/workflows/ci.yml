@@ -268,8 +268,10 @@ jobs:
   # without lib/arm64-v8a/libshaderc_shared.so, libadrenotools and its hooks, or with a Mono/CoreCLR runtime inside).
   # ubuntu-latest: the image has the Android SDK (sdkmanager, ANDROID_HOME writable by the runner) and bash for the
   # ndk-build scripts, its runners are the fastest, and .NET for Android builds Native AOT from a Linux host. The APK
-  # is signed with the debug keystore .NET makes on the fly (no secret, nothing kept): installable with adb, not a
-  # store release. Caches: NuGet packages, the NDK (about 2 GB) and the compiled libshaderc/libadrenotools
+  # is signed with the keystore in the ANDROID_KEYSTORE_BASE64 secret (password ANDROID_KEYSTORE_PASS, key
+  # ANDROID_KEY_ALIAS; docs/android/README.md, "Signing"), so every APK updates the last one in place and the phone keeps
+  # its data; a fork without the secret signs with a debug keystore made on the fly (a new key each run: installing it
+  # over another build needs an uninstall, which deletes the app's data). Installable with adb, not a store release. Caches: NuGet packages, the NDK (about 2 GB) and the compiled libshaderc/libadrenotools
   # (third_party, keyed on their build files and the NDK version: the shaderc compile is the longest step). About
   # 15-20 min with warm caches, 25-35 min on a cold run.
   android-arm64:
@@ -335,7 +337,20 @@ jobs:
 
       - name: Build and check the APK
         shell: bash
-        run: OUT=artifacts/android VERSION="$PACKAGE_VERSION" JOBS=4 bash build/build-android-apk.sh
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [[ -n "${ANDROID_KEYSTORE_BASE64}" ]]; then
+            export ANDROID_KEYSTORE="${RUNNER_TEMP}/vitasharp.keystore"
+            printf '%s' "${ANDROID_KEYSTORE_BASE64}" | base64 -d > "${ANDROID_KEYSTORE}"
+          else
+            echo "::warning::no ANDROID_KEYSTORE_BASE64 secret: the APK gets a new debug key (it cannot update an installed build)"
+          fi
+          [[ -n "${ANDROID_KEYSTORE_PASS}" ]] || unset ANDROID_KEYSTORE_PASS
+          [[ -n "${ANDROID_KEY_ALIAS}" ]] || unset ANDROID_KEY_ALIAS
+          OUT=artifacts/android VERSION="$PACKAGE_VERSION" JOBS=4 bash build/build-android-apk.sh
 
       - name: Summary
         shell: bash
@@ -344,7 +359,8 @@ jobs:
             echo "### Publish Android APK (android-arm64, Native AOT)"
             echo
             for f in artifacts/android/packages/*.apk; do
-              echo "- \`$(basename "$f")\`: $(wc -c < "$f" | tr -d ' ') bytes, runtime nativeaot, NDK ${NDK_VERSION}, debug-keystore signed"
+              signer="$(keytool -printcert -jarfile "$f" | grep -m1 'SHA256:' | sed 's/.*SHA256: *//')"
+              echo "- \`$(basename "$f")\`: $(wc -c < "$f" | tr -d ' ') bytes, runtime nativeaot, NDK ${NDK_VERSION}, signer SHA-256 ${signer}"
             done
           } >> "$GITHUB_STEP_SUMMARY"
 

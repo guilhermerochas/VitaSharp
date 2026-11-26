@@ -210,7 +210,8 @@ public class DataMigration(string source, string target)
     {
         try
         {
-            return new DriveInfo(Path.GetPathRoot(path) is { Length: > 0 } root ? root : path).AvailableFreeSpace;
+            // the file system that holds the target, not the root of its path (Android: "/" is full and read-only)
+            return (long)Math.Min(VitaSharp.Core.Util.HostDisk.Of(path).Free, long.MaxValue);
         }
         catch (Exception e) when (e is IOException or ArgumentException or UnauthorizedAccessException)
         {
