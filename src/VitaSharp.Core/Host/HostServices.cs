@@ -200,6 +200,9 @@ public sealed class HostServices : IDisposable
     /// <see cref="Util.EnvVars.EmmcImage"/>); null = no image, the sector commands reach no device (the partitions
     /// are served at the file level either way).</summary>
     public BlockImage? EmmcImage { get; set; } = BlockImage.FromEnvironment(Util.EnvVars.EmmcImage);
+    /// <summary>The Wi-Fi's ad hoc mode between emulator instances (the LAN medium, <see cref="UdpAdhocMedium"/>); null =
+    /// off (the default: ad hoc finds no one, as a Vita alone).</summary>
+    public AdhocMedium? Adhoc { get; set; }
 
     /// <summary>Where the controllers' vibration goes (the host's gamepads); null = dropped.</summary>
     public IControllerVibration? Vibration { get; set; }
@@ -301,6 +304,7 @@ public sealed class HostServices : IDisposable
         Microphone?.Dispose();
         Location?.Dispose();
         EmmcImage?.Dispose();
+        Adhoc?.Dispose();
         lock (CameraStreams)
         {
             foreach (ICameraStream cameraStream in CameraStreams)

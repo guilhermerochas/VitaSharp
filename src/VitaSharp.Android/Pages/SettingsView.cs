@@ -96,6 +96,11 @@ public sealed class SettingsView : Screen<SettingsState>
                     ToggleRow(Loc.Get("BluetoothKeyboardMouse"), p.BluetoothKeyboardMouse, v => Change(x => x.BluetoothKeyboardMouse = v),
                         detail: Loc.Get("MBluetoothKeyboardMouseDetail"))
                 ),
+                SectionTitle(Loc.Get("AdhocLan")),
+                Card(
+                    ToggleRow(Loc.Get("AdhocLan"), p.AdhocLan, v => Change(x => x.AdhocLan = v),
+                        detail: Loc.Get("MAdhocLanDetail"))
+                ),
                 SectionTitle(Loc.Get("Location")),
                 Card(
                     Row(Loc.Get("Location"), LocationSettings.Label(p.Location),

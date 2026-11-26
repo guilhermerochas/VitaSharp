@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=eb1aa60adad6b4761787233e15e6476d4426d5398e53e6039817d0c83e125149 -->
+<!-- pair: README.pt-BR.md sha256=54971a9c7188291c9f38194adcacf75a1b250894daa993425d94545f04642fd7 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -203,6 +203,13 @@ emulated yet.
 pairs the PC keyboard and mouse with the Vita, for games and apps that read a keyboard or mouse (SceHid: the browser,
 chat). Off by default; the keys still work as the controller while it is on. The keyboard's media keys (play/pause,
 tracks, volume) also reach the Vita as its consumer controls, on Windows, Linux (X11), macOS and Android.
+
+**Ad hoc (local multiplayer).** **Settings > Emulation > Ad hoc over the local network** (or `--adhoc-lan=on`; Android:
+Settings) puts the Vita's ad hoc Wi-Fi on the local network: other VitaSharp instances with it on, on the same network or
+the same PC, find each other with no server. The firewall must allow UDP port 30860 in on the local network (Windows asks
+the first time). Where multicast does not pass (a VPN, some routers), `--adhoc-peer=host[:port],...` reaches the other
+PCs by address. Off by default. Today: the PSP ad hoc groups (`pspnet_adhoc`: the network check dialog's create/join,
+peer list, PDP datagrams); PTP, Matching and the Vita's own ad hoc mode come next.
 
 Data lives in `%APPDATA%\VitaSharp` on Windows (`~/.local/share/VitaSharp` on Linux,
 `~/Library/Application Support/VitaSharp` on macOS; `--data=<folder>` or `VITASHARP_DATA` change the folder): games in

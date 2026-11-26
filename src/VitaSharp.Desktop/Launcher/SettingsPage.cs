@@ -401,6 +401,8 @@ public sealed class SettingsPage : UserControl
                 _settings.Model == "pstv" ? 1 : 0, i => Set(() => _settings.Model = i == 1 ? "pstv" : ""), 300)),
             _k.Row("key", S.BluetoothKeyboardMouse, S.BluetoothKeyboardMouseDetail,
                 _k.Switch(_settings.BluetoothKeyboardMouse, v => Set(() => _settings.BluetoothKeyboardMouse = v))),
+            _k.Row("wifi", S.AdhocLan, S.AdhocLanDetail,
+                _k.Switch(_settings.AdhocLan, v => Set(() => _settings.AdhocLan = v))),
             CameraRow(webcams, back: false),
             CameraRow(webcams, back: true)));
 

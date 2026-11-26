@@ -31,6 +31,9 @@ public sealed class LauncherSettings
     /// <summary>"Teclado e mouse Bluetooth" (--bt-keyboard-mouse=on): the PC keyboard and mouse are paired with the Vita
     /// (SceHid) for games and apps that read a keyboard or mouse; off by default (the keyboard is the controller).</summary>
     public bool BluetoothKeyboardMouse { get; set; }
+    /// <summary>"Ad hoc pela rede local" (--adhoc-lan=on): the Vita's ad hoc Wi-Fi reaches other instances on the LAN
+    /// (local multiplayer); off by default.</summary>
+    public bool AdhocLan { get; set; }
     /// <summary>CPU backend: "" = best supported on this PC, or "native", "il", "interp" (--cpu=).</summary>
     public string CpuBackend { get; set; } = "";
     /// <summary>Emulated ARM clock in MHz (--cpu-mhz=): 0 = the Vita's default for applications (333), 444 = the
@@ -353,6 +356,11 @@ public sealed class LauncherSettings
         if (BluetoothKeyboardMouse)
         {
             yield return "--bt-keyboard-mouse=on";
+        }
+
+        if (AdhocLan)
+        {
+            yield return "--adhoc-lan=on";
         }
 
         if (!string.IsNullOrWhiteSpace(AudioDevice))

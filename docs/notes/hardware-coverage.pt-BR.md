@@ -61,7 +61,7 @@ registrado, não é para emular); **ok** coberto.
 | GPS / localização | `SceGps` (driver do modem), `liblocation`, `location_provider` | desligada por padrão ("aplicativo sem permissão"); posição fixa (PC) ou a do celular (Android) quando a opção dá uma | **(b)** |
 | Modem 3G (PCH-1100) | `SceBbmc`, modem USB | ausente, como no modelo Wi-Fi que a unidade é (`0x80330003`) | (c) (fiel ao modelo; o serviço 3G acabou) |
 | Wi-Fi infraestrutura | `SceWlanBt`, `SceNetPs`, `wlanbt_robin_img_ax.skprx` | sockets do host (`--net=real`); perfil offline senão | ok |
-| Wi-Fi ad hoc | ad hoc do `SceNetPs`, `pspnet_adhoc`, `sceNetAdhocctl*`, Matching | perfil offline: a biblioteca funciona, nenhum par é achado | **(b)** |
+| Wi-Fi ad hoc | ad hoc do `SceNetPs`, `pspnet_adhoc`, `sceNetAdhocctl*`, Matching | desligado por padrão; com `--adhoc-lan=on` grupos ad hoc do PSP e PDP entre instâncias na rede local | **(b)**, 1ª parte feita |
 | Bluetooth | `SceBt`, `SceHid` | nada pareado: sem fone, teclado ou mouse (`NoHardware.KernelServices.cs`) | **(b)** (teclado/mouse; controles no item PS TV) |
 | Porta USB de dispositivo (conector multiuso) | `SceUdcd`, `usbstor*`, `SceUsbMtp`, `usbpspcm`, `usbdev_serial` | cabo sempre desconectado (`0x10`) | **(b)** (Content Manager, armazenamento USB) |
 | Portas USB de host (PS TV) | `SceUsbd`, `SceUsbMass`, `SceUsbAudio`, `SceUsbEtherRtl/Smsc`, `SceUsbServ` | nada conectado | **(b)**, parte do modelo PS TV |
@@ -149,13 +149,25 @@ compatibilidade PSP". Impacto: todo título de PSP e PSone, homebrew de PSP, Adr
 
 ### (b) Wi-Fi ad hoc
 
-- **Hoje:** o `pspnet_adhoc` e o Matching iniciam e respondem como sem nenhum par por perto
-  (`Hle/Modules/NetAdhoc*.cs`).
+- **O que o firmware faz (3.74):** o `sceNetAdhocInit` abre um socket de enlace de EtherType 0x88C8
+  ("SceNetPspAdhoc", tipo 9 do `SceNetPs`) e roda PDP e PTP na própria biblioteca; um grupo é o IBSS cujo SSID o
+  NID_F87F9518 monta (prefixo do registro, letra do tipo de id, o id ad hoc de 9 bytes, `_L_`, o nome do grupo); o
+  jogo cria ou entra nele pelos modos ad hoc do PSP do diálogo de checagem de rede (CONN 5, CREATE 6, JOIN 7, com o
+  nome do grupo). Num IBSS toda estação manda beacons, então a lista de pares são as estações ouvidas.
+- **Hoje:** desligado por padrão, como sem par por perto. Com "Ad hoc pela rede local" (`--adhoc-lan=on`; Android:
+  Ajustes) o Wi-Fi vira um meio ad hoc compartilhado pelas instâncias (`Host/AdhocNetwork.cs`: UDP para um grupo
+  multicast da rede local, TTL 1, e para os endereços de `--adhoc-peer=`; porta 30860, que o firewall precisa
+  liberar; sem servidor; cada instância com seu MAC). Os modos PSP do diálogo criam/entram no IBSS do grupo, a lista
+  de pares, nome/endereço e o parâmetro seguem o grupo, e os datagramas PDP viajam como quadros de EtherType 0x88C8
+  (portas, depois os dados; o cabeçalho do PSP no ar é a conferir). Falta: PTP pelo meio, Matching, o modo ad hoc do
+  próprio Vita (`ADHOC_CONN`, `sceNetCtlAdhoc*`, sockets P2P), os títulos de PSP no ScePspemu, servidores da
+  comunidade.
 - **Impacto:** multijogador local entre duas unidades (`docs/notes/online-features.md` lista Persona 4 Golden,
   Minecraft, Sakatsuku e Soul Sacrifice Delta entre os usuários); depois o ad hoc dos títulos de PSP pelo canal WLAN
   do ScePspemu.
-- **Tamanho:** [G]. **Primeira entrega testável:** duas pilhas emuladas num teste sobre UDP de loopback do host: uma
-  cria um grupo, a outra o acha com `sceNetAdhocctlScan`, entra, e um datagrama PDP vai e volta.
+- **Tamanho:** [G]. **Primeira entrega (feita):** duas instâncias do emulador num teste (`AdhocLanTests`) sobre UDP
+  de loopback: uma cria o grupo pelo diálogo, a outra ouve o beacon e entra, as duas se listam e um datagrama PDP vai
+  e volta.
 
 ### (b) GPS / localização
 

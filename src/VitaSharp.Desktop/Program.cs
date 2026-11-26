@@ -1062,6 +1062,8 @@ public static class Program
         Console.WriteLine("               --location=<none|lat,lon[,alt[,accuracy]]>  position of the Vita (SceLibLocation; default: off)");
         Console.WriteLine("               --model=<vita|pstv>  console model: a PlayStation TV takes up to 4 controllers on ports 1-4, with vibration");
         Console.WriteLine("               --bt-keyboard-mouse=on  the PC keyboard and mouse as the Vita's paired Bluetooth keyboard and mouse (SceHid)");
+        Console.WriteLine("               --adhoc-lan=on  ad hoc Wi-Fi with other VitaSharp instances on the local network (UDP 30860; default: off)");
+        Console.WriteLine("               --adhoc-peer=<host[:port],...>  with --adhoc-lan: stations reached by address too (VPN, filtered multicast)");
         Console.WriteLine("               --ime-text=<text>  answer every IME dialog / in-game keyboard with this text and Enter, no UI");
         Console.WriteLine("               --dialogs=auto     answer message / save data dialogs at once (no panel over the game)");
         Console.WriteLine("               --overlay-dump=<dir>  also write every panel drawn over the game (dialogs, save state picker) as PNG");

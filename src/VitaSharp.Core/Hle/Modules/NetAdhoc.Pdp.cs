@@ -1,3 +1,4 @@
+using VitaSharp.Core.Host;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.SaveState;
@@ -36,6 +37,14 @@ public sealed partial class NetAdhoc
         public uint BufferSize;
         public uint AlertFlags;
         public bool Deleted;
+
+        /// <summary>Datagrams received and not read yet (in flight on the network: not kept in save states).</summary>
+        [SnapshotIgnore]
+        public Queue<PdpDatagram> Inbox = new();
+
+        /// <summary>The data bytes in <see cref="Inbox"/> (they count against the socket's buffer size).</summary>
+        [SnapshotIgnore]
+        public int QueuedBytes;
     }
 
     readonly Dictionary<int, PdpSocket> _pdp = new();
@@ -60,7 +69,18 @@ public sealed partial class NetAdhoc
     [Hle]
     int sceNetAdhocctlTerm()
     {
-        lock (_lock) _ctlInited = false;
+        bool wasInited;
+        lock (_lock)
+        {
+            wasInited = _ctlInited;
+            _ctlInited = false;
+        }
+
+        if (wasInited)
+        {
+            LeaveGroup();
+        }
+
         return 0;
     }
 
@@ -73,7 +93,7 @@ public sealed partial class NetAdhoc
             if (!_ctlInited) return CTL_ERR_NOT_INITIALIZED;
             if (addr == 0) return CTL_ERR_INVALID_ARG;
         }
-        VitaSharp.Core.Hle.Modules.Net.MacAddress.CopyTo(GuestMemory.Span(addr, 6));
+        UnitMac.CopyTo(GuestMemory.Span(addr, 6));
         return 0;
     }
 
@@ -98,6 +118,7 @@ public sealed partial class NetAdhoc
             while (_pdp.ContainsKey(id)) id++;
             if (id > MaxSockets) return ERR_SOCKET_ID_NOT_AVAIL;
             _pdp[id] = new PdpSocket { Port = port, BufferSize = bufsize };
+            ListenToMedium();
             return id;
         }
     }
@@ -117,7 +138,8 @@ public sealed partial class NetAdhoc
     }
 
     /// <summary>(int id, const SceNetEtherAddr *daddr, SceUShort16 dport, const void *data, int len, unsigned int
-    /// timeout, int flag): no peer can be reached, so the datagram goes nowhere; it is accepted whole.</summary>
+    /// timeout, int flag): the datagram goes to the peer (or to all, ff:ff:ff:ff:ff:ff) on the joined ad hoc network;
+    /// with no network around it goes nowhere. It is accepted whole either way.</summary>
     [Hle]
     int sceNetAdhocPdpSend(int id, uint daddr, uint dport, uint data, int len, uint timeout, int flag)
     {
@@ -130,12 +152,22 @@ public sealed partial class NetAdhoc
         if (daddr == 0) return ERR_INVALID_ADDR;
         if ((ushort)dport == 0) return ERR_INVALID_PORT;
         if (len < 0 || (len > 0 && data == 0)) return ERR_INVALID_DATALEN;
+        if (len > AdhocMedium.PayloadMax - PdpHeaderSize) return ERR_INVALID_DATALEN;
+        ushort sourcePort;
+        lock (_lock)
+        {
+            sourcePort = _pdp.TryGetValue(id, out var socket) ? socket.Port : (ushort)0;
+        }
+
+        SendPdp(GuestMemory.ReadSpan(daddr, 6), (ushort)dport, sourcePort, len > 0 ? GuestMemory.ReadSpan(data, len) : []);
         return len;
     }
 
     /// <summary>(int id, SceNetEtherAddr *saddr, SceUShort16 *sport, void *buf, int *len, unsigned int timeout, int
-    /// flag): nothing ever arrives. Non-blocking: WOULD_BLOCK; blocking: TIMEOUT after the timeout (0 waits until the
-    /// socket is deleted or its receive is alerted).</summary>
+    /// flag): the oldest datagram received: its sender's MAC and port, its data, and *len its size; a buffer smaller
+    /// than the datagram gets NOT_ENOUGH_SPACE with *len the size needed, and the datagram stays (pspnet_adhoc 3.74).
+    /// None yet: non-blocking WOULD_BLOCK; blocking waits for one, TIMEOUT after the timeout (0 waits until one
+    /// arrives, the socket is deleted or its receive is alerted).</summary>
     [Hle]
     int sceNetAdhocPdpRecv(int id, uint saddr, uint sport, uint buf, Ptr<int> len, uint timeout, int flag)
     {
@@ -146,11 +178,30 @@ public sealed partial class NetAdhoc
             if (saddr == 0 || sport == 0 || buf == 0 || len.IsNull) return ERR_INVALID_ARG;
             if (len.Value <= 0) return ERR_INVALID_BUFLEN;
             if ((s.AlertFlags & AlertRecv) != 0) return ERR_SOCKET_ALERTED;
-            if ((flag & FlagNonBlock) != 0) return ERR_WOULD_BLOCK;
-            int r = Kernel.Wait.Until(_lock, () => s.Deleted || (s.AlertFlags & AlertRecv) != 0, timeout == 0 ? null : (long)timeout,
-                null, "adhoc pdp recv");
-            if (r == SceError.WAIT_TIMEOUT) return ERR_TIMEOUT;
-            return s.Deleted ? ERR_SOCKET_DELETED : ERR_SOCKET_ALERTED;
+            if (s.Inbox.Count == 0)
+            {
+                if ((flag & FlagNonBlock) != 0) return ERR_WOULD_BLOCK;
+                int r = Kernel.Wait.Until(_lock, () => s.Deleted || (s.AlertFlags & AlertRecv) != 0 || s.Inbox.Count > 0,
+                    timeout == 0 ? null : (long)timeout, null, "adhoc pdp recv");
+                if (r == SceError.WAIT_TIMEOUT) return ERR_TIMEOUT;
+                if (s.Deleted) return ERR_SOCKET_DELETED;
+                if (s.Inbox.Count == 0) return ERR_SOCKET_ALERTED;
+            }
+
+            PdpDatagram datagram = s.Inbox.Peek();
+            if (len.Value < datagram.Data.Length)
+            {
+                len.Value = datagram.Data.Length;
+                return ERR_NOT_ENOUGH_SPACE;
+            }
+
+            s.Inbox.Dequeue();
+            s.QueuedBytes -= datagram.Data.Length;
+            datagram.Source.CopyTo(GuestMemory.Span(saddr, 6));
+            GuestMemory.Write(sport, datagram.SourcePort);
+            datagram.Data.CopyTo(GuestMemory.Span(buf, datagram.Data.Length));
+            len.Value = datagram.Data.Length;
+            return 0;
         }
     }
 

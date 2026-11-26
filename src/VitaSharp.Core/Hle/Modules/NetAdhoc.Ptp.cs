@@ -1,3 +1,4 @@
+using VitaSharp.Core.Host;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.SaveState;
@@ -218,8 +219,9 @@ public sealed partial class NetAdhoc
                     uint r = stat + (uint)used;
                     GuestMemory.Fill(r, 0, 0x14);
                     GuestMemory.W32(r + 4, (uint)id);
-                    Net.MacAddress.CopyTo(GuestMemory.Span(r + 8, 6));
+                    UnitMac.CopyTo(GuestMemory.Span(r + 8, 6));
                     GuestMemory.Write(r + 0xE, s.Port);
+                    GuestMemory.W32(r + 0x10, (uint)s.QueuedBytes);
                     if (prev != 0) GuestMemory.W32(prev, r);
                     prev = r;
                 }
@@ -250,7 +252,7 @@ public sealed partial class NetAdhoc
                     uint r = stat + (uint)used;
                     GuestMemory.Fill(r, 0, 0x24);
                     GuestMemory.W32(r + 4, (uint)id);
-                    Net.MacAddress.CopyTo(GuestMemory.Span(r + 8, 6));
+                    UnitMac.CopyTo(GuestMemory.Span(r + 8, 6));
                     s.Peer.CopyTo(GuestMemory.Span(r + 0xE, 6));
                     GuestMemory.Write(r + 0x14, s.Port);
                     GuestMemory.Write(r + 0x16, s.PeerPort);
@@ -280,39 +282,60 @@ public sealed partial class NetAdhoc
         }
     }
 
-    /// <summary>(int *buflen, SceNetAdhocctlPeerInfo *buf): the peers seen (0x98 bytes each): none.</summary>
+    /// <summary>(int *buflen, SceNetAdhocctlPeerInfo *buf): the other stations of the joined group (0x98 bytes each,
+    /// linked by next); a NULL buf gives the size they need; none when no group is joined.</summary>
     [Hle]
     int sceNetAdhocctlGetPeerList(Ptr<int> buflen, uint buf)
     {
         if (buflen.IsNull) return CTL_ERR_INVALID_ARG;
         lock (_lock) { if (!_ctlInited) return CTL_ERR_NOT_INITIALIZED; }
-        buflen.Value = 0;
+        buflen.Value = WritePeers(Medium?.Peers() ?? [], buf, buflen.Value);
         return 0;
     }
 
+    /// <summary>(const SceNetEtherAddr *addr, int size, SceNetAdhocctlPeerInfo *info): the peer with that MAC; NO_ENTRY
+    /// when it is not in the group.</summary>
     [Hle]
     int sceNetAdhocctlGetPeerInfo(uint addr, int size, uint info)
     {
         if (addr == 0 || info == 0) return CTL_ERR_INVALID_ARG;
-        lock (_lock) return _ctlInited ? ERR_NO_ENTRY : CTL_ERR_NOT_INITIALIZED;
+        lock (_lock) { if (!_ctlInited) return CTL_ERR_NOT_INITIALIZED; }
+        AdhocPeer? peer = PeerAt(addr);
+        if (peer == null) return ERR_NO_ENTRY;
+        if (size < PeerInfoSize) return CTL_ERR_INVALID_ARG;
+        WritePeers([peer], info, PeerInfoSize);
+        return 0;
     }
 
+    /// <summary>(const SceNetAdhocctlNickname *nickname, int *buflen, SceNetAdhocctlPeerInfo *buf): the peers with that
+    /// nickname, as GetPeerList; NO_ENTRY when none.</summary>
     [Hle]
     int sceNetAdhocctlGetAddrByName(uint nickname, Ptr<int> buflen, uint buf)
     {
         if (nickname == 0 || buflen.IsNull) return CTL_ERR_INVALID_ARG;
-        lock (_lock) return _ctlInited ? ERR_NO_ENTRY : CTL_ERR_NOT_INITIALIZED;
+        lock (_lock) { if (!_ctlInited) return CTL_ERR_NOT_INITIALIZED; }
+        string name = GuestMemory.ReadCString(nickname, 128);
+        List<AdhocPeer> peers = (Medium?.Peers() ?? []).Where(p => p.Nickname == name).ToList();
+        if (peers.Count == 0) return ERR_NO_ENTRY;
+        buflen.Value = WritePeers(peers, buf, buflen.Value);
+        return 0;
     }
 
+    /// <summary>(const SceNetEtherAddr *addr, SceNetAdhocctlNickname *nickname): the nickname of the peer with that
+    /// MAC; NO_ENTRY when it is not in the group.</summary>
     [Hle]
     int sceNetAdhocctlGetNameByAddr(uint addr, uint nickname)
     {
         if (addr == 0 || nickname == 0) return CTL_ERR_INVALID_ARG;
-        lock (_lock) return _ctlInited ? ERR_NO_ENTRY : CTL_ERR_NOT_INITIALIZED;
+        lock (_lock) { if (!_ctlInited) return CTL_ERR_NOT_INITIALIZED; }
+        AdhocPeer? peer = PeerAt(addr);
+        if (peer == null) return ERR_NO_ENTRY;
+        WriteNickname(nickname, peer.Nickname);
+        return 0;
     }
 
     /// <summary>(SceNetAdhocctlParameter *param 0x94): {channel, group name[8], nickname[128], bssid[6]}: the Wi-Fi
-    /// channel 1, no group, the unit's nickname, the unit's MAC.</summary>
+    /// channel 1, the joined group's name and BSSID (no group: empty and the unit's MAC), the unit's nickname.</summary>
     [Hle]
     int sceNetAdhocctlGetParameter(uint param)
     {
@@ -322,7 +345,23 @@ public sealed partial class NetAdhoc
         GuestMemory.W32(param, 1);
         byte[] nick = System.Text.Encoding.UTF8.GetBytes(AppUtil.UserName);
         nick.AsSpan(0, Math.Min(nick.Length, 127)).CopyTo(GuestMemory.Span(param + 0xC, 127));
-        Net.MacAddress.CopyTo(GuestMemory.Span(param + 0x8C, 6));
+        AdhocMedium? medium = Medium;
+        string? ssid = medium?.Ssid;
+        if (medium != null && ssid != null)
+        {
+            string group = GroupNameOf(ssid);
+            for (int i = 0; i < Math.Min(group.Length, SsidNameMax); i++)
+            {
+                GuestMemory.Write(param + 4 + (uint)i, (byte)group[i]);
+            }
+
+            medium.Bssid.CopyTo(GuestMemory.Span(param + 0x8C, 6));
+        }
+        else
+        {
+            UnitMac.CopyTo(GuestMemory.Span(param + 0x8C, 6));
+        }
+
         return 0;
     }
 }
