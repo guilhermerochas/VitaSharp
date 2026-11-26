@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=7dbee541f7141f6feb70f76c0943f4a81c9a7132a7a2cb6b38dd01b05560fdcb -->
+<!-- pair: README.md sha256=bc4e0bdca987bf6968bc140bbfcdd9ec682ce22d80689f887b11f78a58ab0448 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -529,14 +529,23 @@ O que o `dotnet test tests/VitaSharp.Tests` precisa em cada sistema; um teste se
 - O `RendererPipelineLibraryTests` confere os pipelines ligados onde o dispositivo por software tem a extensão com
   ligação rápida (SwiftShader, Mesa lavapipe) e a compilação inteira em todos os outros.
 - Firmware: sem ele os testes dos módulos reais do firmware (`libSceJson`, `libSceXml`, `libpaf`, a instalação do
-  arquivo de atualização) são pulados. `VITASHARP_FIRMWARE_PUP` aponta um `PSVUPDAT.PUP`, `VITASHARP_FIRMWARE_DIR` uma
-  pasta `vs0` ou de dados do Vita3K; os testes do compilador do Piglet precisam do `libshacccg.suprx` em `ur0:data`.
+  arquivo de atualização, as fontes do `sa0`; o `dbutil` então roda só o lado HLE) são pulados. `VITASHARP_FIRMWARE_PUP`
+  aponta um `PSVUPDAT.PUP`, `VITASHARP_FIRMWARE_DIR` uma pasta `vs0` ou de dados do Vita3K; os testes do compilador do
+  Piglet precisam do `libshacccg.suprx` em `ur0:data` da pasta de dados do Vita3K ou da pasta indicada por
+  `VITASHARP_TEST_INSTALLED_DATA`.
+- `VITASHARP_TEST_INSTALLED_DATA` (opcional, só leitura): uma pasta de dados do VitaSharp com jogos e firmware
+  instalados, para os testes dos módulos reais instalados (`LleLibrariesTests`, o compilador do Piglet); sem ela, eles
+  são pulados.
 - Os testes do microfone (`MicrophoneTests`) usam um tom roteirizado num relógio que o próprio teste avança: nenhum
   dispositivo de captura, permissão ou placa de som é preciso em nenhum sistema.
 - Os testes de localização (`LocationSourceTests`) usam uma posição fixa e uma fonte que o teste move: nenhum
   serviço de localização nem permissão em nenhum sistema.
-- Os testes nunca usam a sua pasta de dados: cada um cria uma pasta temporária (`VITASHARP_DATA` nos processos filhos);
-  os testes de jogo rodando iniciam um executável pequeno que os próprios testes escrevem.
+- Os testes nunca usam a sua pasta de dados: antes de qualquer teste, o assembly de testes aponta o `VITASHARP_DATA`
+  para uma pasta temporária nova da execução (também por cima de um valor definido no seu shell), então `input.json`,
+  `launcher.json`, logs, cache de shaders e save states são da execução; os testes que precisam de uma pasta própria
+  criam uma, e os processos filhos recebem `--data=`. A detecção do Vita3K do launcher não acha nada nos testes. O
+  `TestDataIsolationTests` falha se algum teste resolver ou montar o caminho da sua pasta de dados. Os testes de jogo
+  rodando iniciam um executável pequeno que os próprios testes escrevem.
 - Opcional: as camadas de validação do Vulkan SDK da LunarG rodam as cargas do renderizador sob validação com
   `dotnet test tests/VitaSharp.Tests --filter Category=Slow` (`RendererValidationTests`; pulado sem a camada).
 - O teste de janela abre uma janela oculta (`VITASHARP_HIDDEN_WINDOW=1`): no Linux precisa de um display (`DISPLAY`), no

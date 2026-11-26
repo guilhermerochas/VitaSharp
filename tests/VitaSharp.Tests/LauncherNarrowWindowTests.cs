@@ -21,6 +21,7 @@ public sealed class LauncherNarrowWindowTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-narrow-" + Guid.NewGuid().ToString("N"));
     private readonly string? _savedData = Environment.GetEnvironmentVariable(EnvVars.Data);
+    private readonly Func<string?> _savedFindVita3K = FirmwarePanel.FindVita3K;
 
     // the launcher switches the process-wide language to the one each case asks for: put back the one before
     private readonly LanguageScope _language = new();
@@ -29,7 +30,7 @@ public sealed class LauncherNarrowWindowTests : IDisposable
     {
         Environment.SetEnvironmentVariable(EnvVars.Data, _savedData);
         _language.Dispose();
-        FirmwarePanel.FindVita3K = VitaSharp.Core.Firmware.FirmwareInstaller.FindVita3KFirmware;
+        FirmwarePanel.FindVita3K = _savedFindVita3K;
         try
         {
             Directory.Delete(_root, true);

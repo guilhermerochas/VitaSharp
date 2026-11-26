@@ -421,13 +421,10 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
     }
 
     /// <summary>Against the firmware font when a local Vita3K install has it ('A' of ltn0 is 15x15, see the spec).</summary>
-    [Fact]
+    [FirmwareFontFact("pgf")]
     public void FirmwareLatinFont()
     {
-        if (FontTestData.FirmwareFontDir("pgf") is not { } dir)
-        {
-            return;
-        }
+        string dir = FontTestData.FirmwareFontDir("pgf")!;
 
         (Pgf? m, uint lib) = NewLib(files: name => File.Exists(Path.Combine(dir, name)) ? File.ReadAllBytes(Path.Combine(dir, name)) : null);
         uint f = Open(m, lib, 1);

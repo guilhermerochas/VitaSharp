@@ -51,7 +51,7 @@ and stayed open ~75 s with only "Salvando a gravação..." in its title. Now:
 
 - **Limit:** a recording stops and saves by itself after `SessionCaptureOptions.MaxSeconds` (60 s; `--capture-max=S`
   or `VITASHARP_CAPTURE_MAX_SECONDS`, 0 = none) or `MaxBytes` of pictures (1 GB), with the `CaptureLimit` notice and
-  a `note:` in `session.txt`. `--capture-at` and re-runs record exactly their range (`Start(limit: false)`).
+  a `note:` in `session.txt`. `--capture-at` and re-runs record exactly their range (`Start(limit: false)`). `--capture-at=A:B` starts and stops on the presenting guest thread (`Display.Presented`): the guest waits at frame A until the recording records (its HLE call trace and input), so the range is the guest's frames whatever the host's load.
 - **Progress:** `SavePercent` / `SaveStep` (frames 0-10%, GPU dump, files 15-20%, analysis 20-60%, zip 60-100%); the
   desktop shows it in the top-left badge (renderer status overlay, never in the captured frames) and the title bar,
   and the badge shows *"● REC mm:ss"* while recording (fullscreen has no title bar).

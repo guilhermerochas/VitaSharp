@@ -13,13 +13,15 @@ namespace VitaSharp.Tests;
 /// SceDbutil HLE (Dbutil.ObjectMembers.cs) against the firmware's dbutil.suprx 3.74: each scenario builds the same object in
 /// two buffers, runs the module's export on one and the HLE on the other (both through guest calls, the RMutex at the
 /// object's offset made by libpaf's constructor) and compares the result and the bytes. The module comes from the
-/// installed firmware (VITASHARP_DATA or %APPDATA%\VitaSharp, read only); without it the test only runs the HLE.
+/// firmware the other firmware-module tests use (<see cref="JsonFirmware"/>: VITASHARP_FIRMWARE_DIR, Vita3K's data
+/// folder or the official PSVUPDAT.PUP, read only), never the user's VitaSharp data folder; without it the test only
+/// runs the HLE.
 /// </summary>
 [Collection("guest")]
 public sealed class DbutilHleTests(GuestMemoryFixture fixture, ITestOutputHelper output)
 {
-    private static string FsRoot => Path.Combine(Environment.GetEnvironmentVariable(EnvVars.Data) is { Length: > 0 } d ? d
-        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VitaSharp"), "fs");
+    /// <summary>vs0:sys/external/dbutil.suprx of the test firmware, next to its libSceJson.suprx; null without one.</summary>
+    private static string? ModulePath => JsonFirmware.ModulePath is { } json ? Path.Combine(Path.GetDirectoryName(json)!, "dbutil.suprx") : null;
 
     private const string Lib = "SceDbutil";
     private const uint ObjSize = 0x120;
@@ -38,11 +40,11 @@ public sealed class DbutilHleTests(GuestMemoryFixture fixture, ITestOutputHelper
         {
             _root = Path.Combine(Path.GetTempPath(), "vitasharp-dbutil-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Path.Combine(_root, "vs0", "sys", "external"));
-            string src = Path.Combine(FsRoot, "vs0", "sys", "external", "dbutil.suprx");
-            HasModule = File.Exists(src);
+            string? src = ModulePath;
+            HasModule = src != null && File.Exists(src);
             if (HasModule)
             {
-                File.Copy(src, Path.Combine(_root, "vs0", "sys", "external", "dbutil.suprx"));
+                File.Copy(src!, Path.Combine(_root, "vs0", "sys", "external", "dbutil.suprx"));
             }
 
             Emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });

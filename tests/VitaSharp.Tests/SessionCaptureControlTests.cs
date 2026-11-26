@@ -230,6 +230,47 @@ public sealed class SessionCaptureControlTests(GuestMemoryFixture fixture) : IDi
         }
     }
 
+    /// <summary>--capture-at=START:STOP is taken on the guest's frames, not on the host's time: the recording records
+    /// from the moment the guest presents START (the guest waits there for it to begin) and is stopped when it
+    /// presents STOP, however late the host's other threads run. A host thread polling the frame count started it
+    /// late on a loaded machine, past STOP, and the capture had no HLE call (SessionCaptureRerunTests under the suite).
+    /// The frames are presented here by hand, back to back, as a guest that runs far ahead of the host.</summary>
+    [Fact]
+    public void AScheduledCaptureRecordsExactlyTheGuestFramesItNames()
+    {
+        long framesBefore = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
+        Action? presentedBefore = VitaSharp.Core.Hle.Modules.Display.Presented;
+        try
+        {
+            VitaSharp.Core.Hle.Modules.Display.FramesPresented = 0;
+            using var control = new SessionCaptureControl(_harness.Emu, new VulkanRendererOptions(), () => null, [], null, null, Options());
+            control.StartScheduled(["--capture-at=3:6"]);
+            for (long frame = 1; frame <= 6; frame++)
+            {
+                VitaSharp.Core.Hle.Modules.Display.FramesPresented = frame;
+                VitaSharp.Core.Hle.Modules.Display.Presented?.Invoke();
+                if (frame < 3)
+                {
+                    Assert.False(control.Capture.IsRecording, $"recording before the start frame (frame {frame})");
+                }
+                else if (frame < 6)
+                {
+                    Assert.True(control.Capture.IsRecording, $"not recording at guest frame {frame}");
+                    Assert.True(HleCallTrace.Active, $"no HLE call trace at guest frame {frame}");
+                }
+            }
+
+            Assert.True(control.Capture.Idle.Wait(120_000), "the recording was not saved");
+            Assert.False(control.Capture.IsRecording);
+            Assert.True(File.Exists(Path.Combine(control.Capture.Dir!, "hle_calls.tsv")), control.Capture.Dir);
+        }
+        finally
+        {
+            VitaSharp.Core.Hle.Modules.Display.FramesPresented = framesBefore;
+            VitaSharp.Core.Hle.Modules.Display.Presented = presentedBefore;
+        }
+    }
+
     private SessionCaptureOptions Options() =>
         new() { Root = Path.Combine(_harness.Root, "captures"), SetPresentTap = null!, StartState = false, GpuDump = false, Zip = false };
 

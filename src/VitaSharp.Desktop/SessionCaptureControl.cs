@@ -114,7 +114,17 @@ sealed class SessionCaptureControl : IDisposable
     /// <summary>The pre-roll follows debug mode unless it was set explicitly.</summary>
     public void UpdatePreRoll() => Capture.SetPreRoll(PreRollFor(_explicitPreRoll, DebugMode.Enabled));
 
-    /// <summary>--capture-at=START:STOP (guest frames, or VITASHARP_CAPTURE_AT): a recording over those frames.</summary>
+    /// <summary>The longest a guest waits at the scheduled start frame for the recording to begin (a safety bound: the
+    /// start normally takes milliseconds; it never decides what is recorded).</summary>
+    const int ScheduledStartWaitMs = 60_000;
+
+    Action? _presentedBefore;
+    Action? _scheduledPresented;
+
+    /// <summary>--capture-at=START:STOP (guest frames, or VITASHARP_CAPTURE_AT): a recording over those frames. Both ends
+    /// are taken on the presenting guest thread (<see cref="Core.Hle.Modules.Display.Presented"/>) and the guest waits
+    /// at START until the recording records, so it covers exactly those guest frames however late the host's threads
+    /// run (a host thread polling the frame count started it late on a loaded machine, past STOP: an empty recording).</summary>
     public void StartScheduled(string[] options)
     {
         string? spec = Runner.Opt(options, "--capture-at") ?? Environment.GetEnvironmentVariable(EnvVars.CaptureAt);
@@ -129,32 +139,41 @@ sealed class SessionCaptureControl : IDisposable
             Log.Warn($"--capture-at={spec} not recognised (use START:STOP guest frames)");
             return;
         }
-        new Thread(() =>
+        int phase = 0; // 0: before START, 1: recording, 2: stopped (only the presenting thread changes it)
+        Action? before = Core.Hle.Modules.Display.Presented;
+        _presentedBefore = before;
+        _scheduledPresented = () =>
         {
-            while (Core.Hle.Modules.Display.FramesPresented < a)
+            before?.Invoke();
+            long frame = Core.Hle.Modules.Display.FramesPresented;
+            if (phase == 0 && frame >= a)
             {
-                Thread.Sleep(5);
+                phase = 1;
+                if (!Capture.Start("--capture-at", limit: false) || !Capture.WaitUntilRecording(ScheduledStartWaitMs))
+                {
+                    Log.Warn($"--capture-at: the recording did not begin at guest frame {frame}");
+                }
             }
-
-            Capture.Start("--capture-at", limit: false);
-            while (Core.Hle.Modules.Display.FramesPresented < b)
+            else if (phase == 1 && frame >= b)
             {
-                Thread.Sleep(5);
+                phase = 2;
+                // a start still taking its save state keeps the stop and does it when it completes
+                if (!Capture.Stop("--capture-at"))
+                {
+                    Log.Warn($"--capture-at: no recording to stop at guest frame {frame}");
+                }
             }
-            // the start may still be running (save state); Stop is refused while it is
-            for (int i = 0; i < 400 && !Capture.Stop("--capture-at"); i++)
-            {
-                Thread.Sleep(25);
-            }
-        })
-        {
-            IsBackground = true,
-            Name = "capture-at"
-        }.Start();
+        };
+        Core.Hle.Modules.Display.Presented = _scheduledPresented;
     }
 
     public void Dispose()
     {
+        if (_scheduledPresented != null && Core.Hle.Modules.Display.Presented == _scheduledPresented)
+        {
+            Core.Hle.Modules.Display.Presented = _presentedBefore;
+        }
+
         Capture.StopAndWait();
         Capture.Dispose();
     }

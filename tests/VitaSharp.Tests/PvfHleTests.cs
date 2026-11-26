@@ -426,13 +426,10 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
     }
 
     /// <summary>Against the firmware fonts when a local Vita3K install has them.</summary>
-    [Fact]
+    [FirmwareFontFact("pvf")]
     public void FirmwareFonts()
     {
-        if (FontTestData.FirmwareFontDir("pvf") is not { } dir)
-        {
-            return;
-        }
+        string dir = FontTestData.FirmwareFontDir("pvf")!;
 
         (Pvf? m, uint lib) = NewLib(files: name => File.Exists(Path.Combine(dir, name)) ? File.ReadAllBytes(Path.Combine(dir, name)) : null);
         uint latin = Open(m, lib, 4), japanese = Open(m, lib, 0);
