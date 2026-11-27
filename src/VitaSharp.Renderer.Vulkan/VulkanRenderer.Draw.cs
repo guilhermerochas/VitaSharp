@@ -306,6 +306,7 @@ public sealed unsafe partial class VulkanRenderer
             ModuleEntry r = job.RunOrWait(this);
             FrameLedger.AddSince(FrameLedger.Cat.ShaderWait, t0);
             NoteShaderTime(System.Diagnostics.Stopwatch.GetTimestamp() - t0);
+            NoteStallWhat(ShaderName(program, hintKey) + " new (waited for its background translation)", System.Diagnostics.Stopwatch.GetTimestamp() - t0);
             Interlocked.Increment(ref _statAsyncWaited);
             return r;
         }
@@ -320,6 +321,7 @@ public sealed unsafe partial class VulkanRenderer
         {
             FrameLedger.AddSince(FrameLedger.Cat.ShaderWait, t0);
             NoteShaderTime(System.Diagnostics.Stopwatch.GetTimestamp() - t0);
+            NoteStallWhat(ShaderName(program, hintKey) + " (waited for the program-load prefetch)", System.Diagnostics.Stopwatch.GetTimestamp() - t0);
             return loaded;
         }
 
@@ -327,12 +329,14 @@ public sealed unsafe partial class VulkanRenderer
         {
             Interlocked.Increment(ref _statShaderPackHits);
             NoteShaderTime(System.Diagnostics.Stopwatch.GetTimestamp() - t0);
+            NoteStallWhat(ShaderName(program, hintKey) + " from the shader pack", System.Diagnostics.Stopwatch.GetTimestamp() - t0);
             FrameLedger.AddSince(FrameLedger.Cat.ShaderPackLoad, t0);
             return PublishModule(key, packed);
         }
         Interlocked.Increment(ref _statShaderMisses);
         ModuleEntry entry = TranslateAndCompile(program, hintKey, hints(d, colorFormat), background: false);
         NoteShaderTime(System.Diagnostics.Stopwatch.GetTimestamp() - t0);
+        NoteStallWhat(ShaderName(program, hintKey) + " new (translated on the GPU thread)", System.Diagnostics.Stopwatch.GetTimestamp() - t0);
         return PublishModule(key, entry);
     }
 
@@ -885,6 +889,7 @@ public sealed unsafe partial class VulkanRenderer
         FrameLedger.Add(FrameLedger.Cat.PipelineCreate, dt);
         _statGpuPipelineTicks += dt;
         _frameStallTicks += dt;
+        NoteStallWhat(PipelineName(in key) + " built on the GPU thread", dt);
         if (dt > _statGpuPipelineMaxTicks)
         {
             _statGpuPipelineMaxTicks = dt;

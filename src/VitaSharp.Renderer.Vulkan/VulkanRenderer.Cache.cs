@@ -110,11 +110,30 @@ public sealed unsafe partial class VulkanRenderer
         _frameStallTicks += ticks;
     }
 
+    /// <summary>What stalled the current frame (GPU thread; the shaders and pipelines that took at least 5 ms, at most
+    /// 6), printed with the frame's stall line so a log or capture names them: new to this title (translated now), or
+    /// known (from the pack, the program-load prefetch, a worker's queue).</summary>
+    private readonly List<string> _frameStallWhat = new();
+
+    private void NoteStallWhat(string what, long ticks)
+    {
+        if (Ms(ticks) >= 5 && _frameStallWhat.Count < 6)
+        {
+            _frameStallWhat.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{what} {Ms(ticks):F0} ms"));
+        }
+    }
+
+    private static string ShaderName(GxpProgram program, ulong hintKey) => $"{(program.IsVertex ? "vs" : "fs")} {program.Hash:X16}/{hintKey:X16}";
+
+    private static string PipelineName(in PipelineKey key) =>
+        $"pipeline {key.ColorFormat} x{(int)key.Samples}{(key.TileWord1 != 0 ? " tile-word" : "")}{(key.InputPass ? " fetch-pass" : "")}{(key.Static != 0 ? " static-state" : "")}";
+
     /// <summary>Called once per presented frame (GPU thread): counts frames stalled by shader/pipeline work.</summary>
     private void EndFrameStallStats()
     {
         if (_frameStallTicks == 0)
         {
+            _frameStallWhat.Clear();
             return;
         }
 
@@ -131,7 +150,8 @@ public sealed unsafe partial class VulkanRenderer
         if (Ms(_frameStallTicks) >= SevereHitchMs)
         {
             _statSevereHitchFrames++;
-            Log.Info($"[shadercache] present {_presentCount}: stalled {Ms(_frameStallTicks):F0} ms by shader/pipeline work");
+            Log.Info($"[shadercache] present {_presentCount}: stalled {Ms(_frameStallTicks):F0} ms by shader/pipeline work"
+                + (_frameStallWhat.Count > 0 ? ": " + string.Join(", ", _frameStallWhat) : ""));
         }
 
         if (_frameStallTicks > _statWorstFrameStallTicks)
@@ -140,6 +160,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         _frameStallTicks = 0;
+        _frameStallWhat.Clear();
     }
 
     // =================================================================== title setup
