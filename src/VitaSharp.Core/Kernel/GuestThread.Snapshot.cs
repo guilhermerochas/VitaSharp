@@ -162,6 +162,9 @@ public sealed unsafe partial class GuestThread
 
     private string InWhat() => (_hleSeq & 1) == 1 ? _emu.Hle.GetFunction(Core.State->SvcImm).Name : "guest code";
 
+    /// <summary>The status and, inside an HLE call, its name ("Running in sceKernelLoadStartModule"), for wait graphs.</summary>
+    internal string ShortState() => (_hleSeq & 1) == 1 ? $"{Status} in {InWhat()}" : Status.ToString();
+
     internal void WriteSnapshot(SnapshotWriter w, SafeKind kind)
     {
         w.Write(Uid);

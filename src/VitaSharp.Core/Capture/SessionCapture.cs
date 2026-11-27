@@ -1679,6 +1679,10 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                     sb.AppendLine($"mutex '{m.Name}' held by '{m.Owner.Name}' ({m.Owner.Status}) count {m.LockCount}, {m.Waiters} waiting");
                 }
             }
+            foreach (string line in Kernel.WaitGraph.Lines(emu.Kernel.Threads))
+            {
+                sb.AppendLine(line);
+            }
         }
         catch (Exception e)
         {

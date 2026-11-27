@@ -41,6 +41,11 @@ public static class SessionReport
         {
             yield return "  thread " + t.Describe();
         }
+
+        foreach (string line in Kernel.WaitGraph.Lines(emu.Kernel.Threads))
+        {
+            yield return "  " + line;
+        }
         // the other processes of the system (applications the shell started)
         foreach (Emulator? p in emu.Vita?.Processes.Where(p => !ReferenceEquals(p, emu)) ?? [])
         {
@@ -198,6 +203,11 @@ public static class SessionReport
         foreach (Kernel.GuestThread t in emu.Kernel.Threads)
         {
             lines.Add("PERF stall:   " + t.Describe());
+        }
+
+        foreach (string line in Kernel.WaitGraph.Lines(emu.Kernel.Threads))
+        {
+            lines.Add("PERF stall:   " + line);
         }
 
         return lines;
