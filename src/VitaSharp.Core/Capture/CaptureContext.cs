@@ -71,6 +71,9 @@ public static class CaptureContext
             sb.AppendLine(l);
         }
 
+        // the guest clock's time left out for late threads (Util/GuestClock.Lag.cs)
+        sb.AppendLine(GuestClock.LagLine());
+
         // the plugin hooks and their counters (report.txt's "Plugin hooks" compares the start and the stop)
         foreach (string l in Hle.Modules.PluginFramework.HookContextLines(emu))
         {

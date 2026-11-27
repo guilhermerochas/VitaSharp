@@ -4,7 +4,7 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Core.Cpu;
 
 /// <summary>Executes one guest thread's CPU state: block lookup → (JIT-compiled | interpreted) → exit handling.</summary>
-public sealed unsafe class CpuCore : IDisposable
+public sealed unsafe partial class CpuCore : IDisposable
 {
     public CpuState* State { get; }
     private readonly BlockCache _cache;
@@ -65,6 +65,7 @@ public sealed unsafe class CpuCore : IDisposable
         _memBase = memBase != null ? memBase : State->MemBase;
         State->MemBase = _memBase;
         HandlerTable.EnsureInitialized();
+        RegisterLagLedger();
     }
 
     private readonly byte* _memBase;
@@ -349,6 +350,7 @@ public sealed unsafe class CpuCore : IDisposable
             return;
         }
 
+        ReportLag(0);
         long now = Util.GuestClock.Ticks, freq = System.Diagnostics.Stopwatch.Frequency;
         if (_throttleStart < 0)
         {
@@ -410,6 +412,7 @@ public sealed unsafe class CpuCore : IDisposable
     /// </summary>
     public void ResetThrottle()
     {
+        BeginLagLedger();
         long rate = InstructionsPerSecond, now = Util.GuestClock.Ticks;
         if (rate <= 0 || Util.GuestClock.Turbo)
         {
@@ -479,6 +482,7 @@ public sealed unsafe class CpuCore : IDisposable
     /// </summary>
     public void SettleThrottle(long pendingInstructions)
     {
+        EndLagLedger(pendingInstructions);
         long rate = InstructionsPerSecond;
         if (rate <= 0 || Util.GuestClock.Turbo || _throttleStart < 0)
         {
@@ -516,6 +520,7 @@ public sealed unsafe class CpuCore : IDisposable
         if (InstructionsPerSecond > 0)
         {
             _throttleInstrs += n;
+            _lagInstructions += n;
             _chargedSinceCheck += n;
             if (_chargedSinceCheck >= _checkWindow)
             {
@@ -683,12 +688,14 @@ public sealed unsafe class CpuCore : IDisposable
     {
         CpuCore? outer = s_running;
         s_running = this;
+        LeaveHostWork();
         try
         {
             return RunBlocks();
         }
         finally
         {
+            EnterHostWork();
             s_running = outer;
             FlushTierCounts();
         }
@@ -997,6 +1004,7 @@ public sealed unsafe class CpuCore : IDisposable
             if (sinceCheck >= checkWindow || _chargedSinceCheck >= checkWindow)
             {
                 _throttleInstrs += sinceCheck;
+                _lagInstructions += sinceCheck;
                 sinceCheck = 0;
                 _chargedSinceCheck = 0;
                 long throttleStart = Stamp(turnStart);
@@ -1026,7 +1034,9 @@ public sealed unsafe class CpuCore : IDisposable
 
                 s->Exit = ExitReason.None;
                 long hleStart = Stamp(turnStart);
+                EnterHostWork();
                 bool handled = svc.TryHandleSvc(s);
+                LeaveHostWork();
                 if (hleStart != 0)
                 {
                     phases.AddTime(CpuPhase.Hle, System.Diagnostics.Stopwatch.GetTimestamp() - hleStart, sampleEvery);
@@ -1362,5 +1372,9 @@ public sealed unsafe class CpuCore : IDisposable
         }
     }
 
-    public void Dispose() => CpuState.Free(State);
+    public void Dispose()
+    {
+        UnregisterLagLedger();
+        CpuState.Free(State);
+    }
 }
