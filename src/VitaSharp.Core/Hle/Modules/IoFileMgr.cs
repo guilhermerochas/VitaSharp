@@ -25,6 +25,18 @@ public sealed partial class IoFileMgr : HleModule
         public int Priority = -1;
         /// <summary>A file on a guest driver's mount: its vnode and file object (0: a host file).</summary>
         public uint GuestVnode, GuestFile;
+
+        /// <summary>
+        /// Where the read now waiting for its device time (<see cref="IoTiming.Read"/>) started, or -1. The host read is
+        /// done before that wait, so the stream is already past it; a state saved meanwhile reissues the call after a
+        /// load (the thread is blocked in it), and the saved position must be this one for the reissued read to read
+        /// the same bytes again instead of the ones after them (a pre-roll state of Dead Space saved inside the 4.5 MB
+        /// read of its game library reissued it at the end of the file: 0 bytes, "could not load").
+        /// </summary>
+        public long ReadStart = -1;
+
+        /// <summary>The position a save state keeps for this file.</summary>
+        public long SavedPosition => ReadStart >= 0 ? ReadStart : Stream?.Position ?? 0;
     }
 
     sealed class OpenDir
@@ -195,7 +207,16 @@ public sealed partial class IoFileMgr : HleModule
                 Interlocked.Add(ref BytesRead, n);
             }
         }
-        IoTiming.Read(f, pos, n);
+        f.ReadStart = pos;
+        try
+        {
+            IoTiming.Read(f, pos, n);
+        }
+        finally
+        {
+            f.ReadStart = -1;
+        }
+
         return n;
     }
 
