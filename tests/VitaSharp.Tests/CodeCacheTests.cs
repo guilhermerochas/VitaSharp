@@ -458,7 +458,14 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
     }
 
     [Fact]
-    public void TheFrontierFollowsTheTablesAFixedAddressExecutableBuildsWithMovwMovt()
+    public void TheFrontierFollowsTheTablesAFixedAddressExecutableBuildsWithMovwMovt() => FrontierFollowsFixedAddressTables(translationLandsLate: false);
+
+    /// <summary>The interleaving the test above meets under load, forced: the precompile worker holds F mid-translation
+    /// through every run, and its translation lands after the last one (translated ahead, not reached yet).</summary>
+    [Fact]
+    public void TheFrontierFollowsTheTablesOfAFunctionWhoseTranslationLandsAfterItsLastRun() => FrontierFollowsFixedAddressTables(translationLandsLate: true);
+
+    private void FrontierFollowsFixedAddressTables(bool translationLandsLate)
     {
         if (!NativeHost)
         {
@@ -495,6 +502,12 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
 
             using var core = new CpuCore(cache);
             core.State->R[2] = code + 0x400;
+            Block function = cache.Get(code + 0x400, false);
+            if (translationLandsLate)
+            {
+                function.JitState = 1; // the precompile worker holds F mid-translation: the core interprets it and cannot queue it
+            }
+
             for (int i = 0; i < 2 * Jit.MinExecutions; i++)
             {
                 Assert.Equal(5u, Run(core, code));
@@ -502,6 +515,25 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
 
             Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)));
             Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+            if (translationLandsLate)
+            {
+                function.JitState = 0;
+                Assert.True(Jit.CompileAheadOne(function, (byte)CodePrecompiler.Priority.Running));
+            }
+
+            // the frontier widens when F's compiled code first runs. F ran interpreted first, which queued its
+            // translation on the (lowest priority) precompile worker; under load that translation can finish after the
+            // last run above, leaving it translated ahead but not reached yet: run F until its code is published
+            function = cache.Get(code + 0x400, false);
+            for (int i = 0; i < 8 && function.JitState != 2; i++)
+            {
+                Assert.Equal(5u, Run(core, code));
+                Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)));
+                Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+                function = cache.Get(code + 0x400, false);
+            }
+
+            Assert.Equal(2, function.JitState);
             // once F runs, the function of the table it builds, before anything calls it
             Block pointed = cache.Get(code + 0x600, false);
             Assert.True(pointed.Ahead);
