@@ -134,7 +134,7 @@ public static class PhoneProfile
         {
             if (OperatingSystem.IsWindows())
             {
-                using Process self = Process.GetCurrentProcess();
+                using var self = Process.GetCurrentProcess();
                 self.ProcessorAffinity = (nint)mask;
             }
             else if (OperatingSystem.IsLinux())
@@ -155,7 +155,7 @@ public static class PhoneProfile
         }
     }
 
-    static void PinLinuxThreads(ulong mask)
+    private static void PinLinuxThreads(ulong mask)
     {
         ulong set = mask;
         foreach (string task in Directory.EnumerateDirectories("/proc/self/task"))
