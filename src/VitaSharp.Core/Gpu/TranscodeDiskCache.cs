@@ -23,7 +23,10 @@ public sealed class TranscodeDiskCache
     /// <summary>The keys on disk (null until the folder was listed once, on a background thread).</summary>
     private HashSet<ulong>? _index;
     private int _indexing;
-    /// <summary>Entries read ahead by <see cref="StartPreload"/> (whole files, header included), taken out on first use.</summary>
+    /// <summary>Entries read ahead by <see cref="StartPreload"/> (whole files, header included). They stay for the
+    /// session: the same level is asked for again whenever the in-memory transcode cache in front of this one dropped
+    /// it (Killzone: ~1200 of the levels its first weapon change and aim asked for had been read ahead and used once
+    /// during the load, then read again from the file on the GPU thread).</summary>
     private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, byte[]> _preloaded = new();
     private long _preloadedBytes;
     public long Preloaded, PreloadHits;
@@ -104,8 +107,8 @@ public sealed class TranscodeDiskCache
     /// Title start: reads the most recently used entries into memory on a background thread, up to
     /// <paramref name="maxBytes"/>, so the first use of a texture the title has transcoded before costs no file system
     /// call on the GPU thread (on Android's shared storage each one goes through FUSE: a weapon change that brought in
-    /// ~100 levels stalled the frame 0.2-0.5 s in texture uploads). An entry leaves memory when it is used; entries the
-    /// title never asks for are dropped with the cache. The content and its checks are those of a file read.
+    /// ~100 levels stalled the frame 0.2-0.5 s in texture uploads). Entries stay in memory for the session (up to the
+    /// budget) and are dropped with the cache. The content and its checks are those of a file read.
     /// </summary>
     public void StartPreload(long maxBytes)
     {
@@ -176,10 +179,9 @@ public sealed class TranscodeDiskCache
         try
         {
             byte[] data;
-            if (_preloaded.TryRemove(key, out byte[]? ahead))
+            if (_preloaded.TryGetValue(key, out byte[]? ahead))
             {
                 data = ahead;
-                Interlocked.Add(ref _preloadedBytes, -ahead.Length);
                 Interlocked.Increment(ref PreloadHits);
                 Interlocked.Increment(ref FrameLedger.AstcDiskReadAheadHits);
                 // the use time (the LRU order) is refreshed off the caller's thread
@@ -222,6 +224,10 @@ public sealed class TranscodeDiskCache
                         File.Delete(p);
                         _bytes = -1;
                         _index?.Remove(key);
+                        if (_preloaded.TryRemove(key, out byte[]? torn))
+                        {
+                            Interlocked.Add(ref _preloadedBytes, -torn.Length);
+                        }
                     }
                     catch (IOException) { }
                 }
@@ -335,5 +341,5 @@ public sealed class TranscodeDiskCache
         }
     }
 
-    public string Summary() => $"disk cache {Hits} hits ({PreloadHits} read ahead at the title start: {Preloaded} entries read, {Interlocked.Read(ref _preloadedBytes) / 1048576.0:F1} MB still waiting), {Misses} misses, {Writes} written, {Evictions} evicted, {Bytes / 1048576.0:F1} of {_limit / 1048576} MB";
+    public string Summary() => $"disk cache {Hits} hits ({PreloadHits} read ahead at the title start: {Preloaded} entries read, {Interlocked.Read(ref _preloadedBytes) / 1048576.0:F1} MB held), {Misses} misses, {Writes} written, {Evictions} evicted, {Bytes / 1048576.0:F1} of {_limit / 1048576} MB";
 }

@@ -49,6 +49,22 @@ public sealed class TranscodeDiskCachePreloadTests : IDisposable
     }
 
     [Fact]
+    public void AReadAheadEntryServesItsLevelAgainWithoutTheFile()
+    {
+        // the in-memory transcode cache in front drops levels; asked again, the level must not cost a file read
+        Directory.CreateDirectory(_dir);
+        new TranscodeDiskCache(_dir, 1 << 20).Put(0x42, 0x7, Payload(5, 96));
+        var cache = new TranscodeDiskCache(_dir, 1 << 20);
+        cache.StartPreload(1 << 20);
+        Assert.True(cache.PreloadDone.Wait(10_000));
+        Assert.Equal(Payload(5, 96), cache.TryGet(0x42, 0x7, 96));
+        File.Delete(Path.Combine(_dir, "0000000000000042.astc"));
+
+        Assert.Equal(Payload(5, 96), cache.TryGet(0x42, 0x7, 96));
+        Assert.Equal(2, cache.PreloadHits);
+    }
+
+    [Fact]
     public void AReadAheadEntryKeepsTheTagAndLengthChecks()
     {
         Directory.CreateDirectory(_dir);

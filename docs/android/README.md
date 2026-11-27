@@ -269,8 +269,7 @@ The game process places its hot threads itself (`Platforms/Android/Game/GamePerf
 - **ASTC disk cache read ahead** (`VITASHARP_ASTC_PRELOAD_MB`, default 160, `0` off): at the title start a background
   thread reads the most recently used entries of the title's ASTC cache into memory, so the first use of a texture
   the title transcoded before costs no file read on the GPU thread (shared storage goes through FUSE: Killzone's first
-  weapon change and first aim spent 0.2-0.5 s of a frame in texture uploads reading the cache). An entry leaves memory
-  when it is used; the `PERF mobile` line counts the hits served from the read-ahead, and a `[texcache] read ahead`
+  weapon change and first aim spent 0.2-0.5 s of a frame in texture uploads reading the cache). Entries stay in memory for the session (a level the in-memory transcode cache dropped is asked for again); the `PERF mobile` line counts the hits served from the read-ahead, and a `[texcache] read ahead`
   line says how many entries of how many were read and when the read-ahead ended.
 - **Hitches in the log** (`[hitch]` lines, `VITASHARP_HITCH_MS`, default 100 ms, `0` off): a present that comes more
   than that after the previous one (emulation time, pauses left out) logs the host time of the interval by cause,
