@@ -588,7 +588,19 @@ games, firmware and saves. The app does not start empty in silence then:
 | a move or merge was interrupted (`.migration-journal` in `.vitasharp`) | it resumes |
 
 The choice is kept in the app's private preferences until it is uninstalled (`StorageChoice`, `DataRoot.Resolve`;
-tests in `AndroidDataRootTests`). The detection only looks for folders on purpose: without the permission Android 11+
+tests in `AndroidDataRootTests`).
+
+**Picking the folder.** **Ajustes > Armazenamento > Trocar a pasta de dados** offers **Automática** (the rules above),
+**Pasta do app** (`Android/data/io.github.vitasharp/files`) or **Outra pasta...**: the system's folder picker
+(`ACTION_OPEN_DOCUMENT_TREE`). The emulator reads its data with plain file calls, so the picked tree is turned into
+the path the device storage provider names (`primary:Games/VitaSharp` is `/storage/emulated/0/Games/VitaSharp`, an SD
+card's `1234-ABCD:VitaSharp` is `/storage/1234-ABCD/VitaSharp`; `SafTreePath`), the way PPSSPP uses its picked
+memstick folder; cloud folders have no path and are refused, and a folder outside the app's own needs "All files
+access" first. The data in use is then copied, moved (confirmed) or left (`DataFolderTransfer`, shared with the
+desktop: free space checked first, nothing in the new folder overwritten, progress dialog), the choice is saved
+(`StorageChoice.CustomFolder` and the path, in the app's private preferences) and the app restarts. A picked folder
+that is gone at start (SD card taken out) falls back to the rules above with a warning in Ajustes and the log;
+`data-root.txt` keeps answering the folder actually in use. Tests in `DataFolderTests`. The detection only looks for folders on purpose: without the permission Android 11+
 still answers whether a folder exists in the shared storage, but hides the files another install wrote. On Android
 8-10 without the storage permission nothing of the shared storage is visible, so the dialog cannot appear there.
 

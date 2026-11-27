@@ -8,8 +8,10 @@ namespace VitaSharp.Desktop;
 
 public static class Program
 {
+    /// <summary>--data / VITASHARP_DATA, else portable.txt, the folder picked in the settings or the default
+    /// (<see cref="DataPaths.Current"/>).</summary>
     public static string DataRoot => Environment.GetEnvironmentVariable(EnvVars.Data)
-        ?? DataPaths.DefaultRoot();
+        ?? DataPaths.Current.Root;
 
     public static string FsRoot => Path.Combine(DataRoot, "fs");
     public static string Ux0 => Path.Combine(FsRoot, "ux0");
@@ -28,6 +30,10 @@ public static class Program
             args = args.Where(a => a != data).ToArray();
             DataFromCommandLine = true;
         }
+
+        // the data folder of this process (portable.txt, the folder picked in the settings, the default): the F8
+        // capture and the log say which one
+        VitaSharp.Core.Storage.DataFolder.Active = DataPaths.Current;
         // the update swap runs from the downloaded package and touches nothing else (no Vulkan, no window)
         if (args.Length > 0 && args[0] == "apply-update")
         {

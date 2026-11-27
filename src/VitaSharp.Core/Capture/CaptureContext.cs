@@ -47,6 +47,8 @@ public static class CaptureContext
         sb.AppendLine($"where: {Where(emu)}");
         // waiting for the player, loading or busy (Input/InputWaitMonitor.cs): report.txt's "Screen state"
         sb.AppendLine($"screen: {Input.InputWaitMonitor.Describe()}");
+        // where the data is (default, portable, chosen in the settings, --data), never the path itself
+        sb.AppendLine(Storage.DataFolder.CaptureLine());
         Emulator fg = vitaSystem.Foreground ?? emu;
         foreach (Emulator p in vitaSystem.Processes)
         {

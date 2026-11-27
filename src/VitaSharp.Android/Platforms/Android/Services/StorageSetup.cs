@@ -7,6 +7,7 @@ using Android.Widget;
 using AndroidX.Core.App;
 using AndroidX.Core.Content;
 using VitaSharp.Core.Localization;
+using VitaSharp.Core.Storage;
 using VitaSharp.Core.Util;
 using VitaSharp.Mobile.Core.Storage;
 
@@ -28,6 +29,7 @@ public static class StorageSetup
     const string StateFile = "storage_setup";
     const string AskedKey = "all_files_asked";
     const string ChoiceKey = "data_folder_choice";
+    const string CustomFolderKey = "data_folder_custom";
 
     static bool _migrating;
     static AlertDialog? _question;
@@ -42,7 +44,13 @@ public static class StorageSetup
         }
 
         return new DataRootInputs(context.GetExternalFilesDir(null)?.AbsolutePath, context.FilesDir!.AbsolutePath, shared,
-            RootDetector.HasSu(), HasAllFilesAccess(context), ReadChoice(context));
+            RootDetector.HasSu(), HasAllFilesAccess(context), ReadChoice(context), ReadCustomFolder(context));
+    }
+
+    /// <summary>The folder of <see cref="StorageChoice.CustomFolder"/> (kept beside the choice).</summary>
+    public static string? ReadCustomFolder(Context context)
+    {
+        return context.GetSharedPreferences(StateFile, FileCreationMode.Private)?.GetString(CustomFolderKey, null);
     }
 
     /// <summary>The folder the user picked (<see cref="StorageChoice"/>), kept in the app's private preferences until
@@ -53,11 +61,111 @@ public static class StorageSetup
         return Enum.TryParse(value, out StorageChoice choice) ? choice : StorageChoice.None;
     }
 
-    static void SaveChoice(Context context, StorageChoice choice)
+    static void SaveChoice(Context context, StorageChoice choice, string? customFolder = null)
     {
         Log.Info($"Storage: data folder choice {choice}");
         // Commit, not Apply: the restart that may follow kills the process
-        context.GetSharedPreferences(StateFile, FileCreationMode.Private)?.Edit()?.PutString(ChoiceKey, choice.ToString())?.Commit();
+        context.GetSharedPreferences(StateFile, FileCreationMode.Private)?.Edit()?.PutString(ChoiceKey, choice.ToString())
+            ?.PutString(CustomFolderKey, choice == StorageChoice.CustomFolder ? customFolder : null)?.Commit();
+    }
+
+    /// <summary>Where a choice of Ajustes &gt; "Pasta de dados" puts the data (the rules of <see cref="DataRoot"/>
+    /// without a pick, the app-specific folder, or <paramref name="customFolder"/>).</summary>
+    public static string TargetOf(Context context, StorageChoice choice, string? customFolder)
+    {
+        DataRootInputs inputs = Inputs(context) with { Choice = choice, CustomFolder = customFolder };
+        return choice == StorageChoice.CustomFolder && customFolder != null
+            ? Path.GetFullPath(customFolder)
+            : DataRoot.ResolveDefault(inputs).Root;
+    }
+
+    /// <summary>
+    /// Ajustes &gt; "Pasta de dados": copies or moves the data in use to the new folder (<see cref="DataFolderTransfer"/>:
+    /// free space checked first, nothing overwritten, progress), or leaves it (<paramref name="mode"/> null), then
+    /// saves the choice and restarts the app on it. The old folder is never deleted: a copy leaves it as it is, a move
+    /// empties it file by file after each copy. A failed copy saves nothing: the app stays on the folder in use.
+    /// </summary>
+    public static void SwitchFolder(Activity activity, StorageChoice choice, string? customFolder, DataTransferMode? mode)
+    {
+        string source = AppServices.Data.Root;
+        string target = TargetOf(activity, choice, customFolder);
+        if (mode is not { } transfer)
+        {
+            Directory.CreateDirectory(target);
+            SaveChoice(activity, choice, customFolder);
+            Restart(activity);
+            return;
+        }
+
+        _migrating = true;
+        var bar = new global::Android.Widget.ProgressBar(activity, null, global::Android.Resource.Attribute.ProgressBarStyleHorizontal) { Max = 1000 };
+        var text = new TextView(activity);
+        var layout = new LinearLayout(activity) { Orientation = global::Android.Widget.Orientation.Vertical };
+        int padding = (int)(20 * activity.Resources!.DisplayMetrics!.Density);
+        layout.SetPadding(padding, padding / 2, padding, 0);
+        layout.AddView(bar);
+        layout.AddView(text);
+        AlertDialog dialog = new AlertDialog.Builder(activity)
+            .SetTitle(Loc.Get(transfer == DataTransferMode.Move ? "DataFolderMoving" : "DataFolderCopying"))!
+            .SetMessage(target)!
+            .SetView(layout)!
+            .SetCancelable(false)!
+            .Create()!;
+        dialog.Show();
+        var progress = new Progress<DataTransferProgress>(p =>
+        {
+            bar.Progress = p.BytesTotal > 0 ? (int)(p.BytesDone * 1000 / p.BytesTotal) : 0;
+            text.Text = Loc.Format("DataFolderProgress", p.FilesDone, p.FilesTotal, p.BytesDone >> 20, p.BytesTotal >> 20);
+        });
+        Log.Info($"Storage: {transfer} {source} to {target}");
+        Task.Run(() =>
+        {
+            try
+            {
+                return new DataFolderTransfer(source, target, transfer).Run(progress);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                return new DataTransferResult(DataTransferStatus.Failed, e.Message, 0, 0, []);
+            }
+        }).ContinueWith(task =>
+        {
+            DataTransferResult result = task.Result;
+            Log.Info($"Storage: {transfer} {result.Status}, {result.Files} files, {result.Bytes} bytes {result.Message}");
+            activity.RunOnUiThread(() =>
+            {
+                dialog.Dismiss();
+                _migrating = false;
+                if (result.Status == DataTransferStatus.Done)
+                {
+                    SaveChoice(activity, choice, customFolder);
+                    if (result.Kept.Count == 0)
+                    {
+                        Restart(activity);
+                        return;
+                    }
+                }
+
+                string message = result.Status switch
+                {
+                    DataTransferStatus.Done => Loc.Format("DataFolderKept", result.Kept.Count, string.Join("\n", result.Kept.Take(10))),
+                    DataTransferStatus.NoSpace => Loc.Format("DataFolderNoSpace", result.Message),
+                    _ => Loc.Format("DataFolderFailed", result.Message),
+                };
+                new AlertDialog.Builder(activity)
+                    .SetTitle(Loc.Get("DataFolderChange"))!
+                    .SetMessage(message)!
+                    .SetPositiveButton(Loc.Get("MOk"), (_, _) =>
+                    {
+                        if (result.Status == DataTransferStatus.Done)
+                        {
+                            Restart(activity);
+                        }
+                    })!
+                    .SetCancelable(false)!
+                    .Show();
+            });
+        });
     }
 
     /// <summary>The library's card after "use the app folder": forgets the choice and asks again.</summary>

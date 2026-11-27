@@ -3558,4 +3558,101 @@
   <data name="MFontsMissingToast" xml:space="preserve">
     <value>Faltam as fontes do firmware: o Sistema do Vita fica sem texto. Instale o pacote de fontes (.PUP) em Ajustes > Firmware.</value>
   </data>
+  <data name="DataFolderChange" xml:space="preserve">
+    <value>Trocar a pasta de dados</value>
+  </data>
+  <data name="DataFolderChangeButton" xml:space="preserve">
+    <value>Alterar</value>
+  </data>
+  <data name="DataFolderCloseGame" xml:space="preserve">
+    <value>Feche o jogo primeiro: ele está gravando na pasta de dados.</value>
+  </data>
+  <data name="DataFolderOverridden" xml:space="preserve">
+    <value>Esta sessão usa --data / VITASHARP_DATA, que vence a escolha das configurações. Abra o VitaSharp sem isso para trocar a pasta de dados aqui.</value>
+  </data>
+  <data name="DataFolderPickTitle" xml:space="preserve">
+    <value>Escolha a nova pasta de dados</value>
+  </data>
+  <data name="DataFolderAlreadyInUse" xml:space="preserve">
+    <value>{0} já é a pasta de dados em uso.</value>
+  </data>
+  <data name="DataFolderNested" xml:space="preserve">
+    <value>{0} fica dentro da pasta de dados em uso (ou o contrário): escolha uma pasta fora dela.</value>
+  </data>
+  <data name="DataFolderSaveFailed" xml:space="preserve">
+    <value>Não foi possível gravar a escolha (sem permissão). A pasta de dados em uso não mudou.</value>
+  </data>
+  <data name="DataFolderRestarting" xml:space="preserve">
+    <value>O VitaSharp reinicia agora usando {0}.</value>
+  </data>
+  <data name="DataFolderChangeText" xml:space="preserve">
+    <value>Jogos, firmware, saves, save states, configurações e logs estão em {0}. Onde o VitaSharp deve guardá-los?</value>
+  </data>
+  <data name="DataFolderDefault" xml:space="preserve">
+    <value>Pasta padrão</value>
+  </data>
+  <data name="DataFolderPortable" xml:space="preserve">
+    <value>Portátil (ao lado do executável)</value>
+  </data>
+  <data name="DataFolderPortableUnavailable" xml:space="preserve">
+    <value>Indisponível: a pasta do executável não pode ser gravada (instalado numa pasta protegida ou num pacote de app).</value>
+  </data>
+  <data name="DataFolderCustom" xml:space="preserve">
+    <value>Outra pasta...</value>
+  </data>
+  <data name="DataFolderCopy" xml:space="preserve">
+    <value>Copiar</value>
+  </data>
+  <data name="DataFolderMove" xml:space="preserve">
+    <value>Mover</value>
+  </data>
+  <data name="DataFolderLeave" xml:space="preserve">
+    <value>Não copiar</value>
+  </data>
+  <data name="DataFolderTransferText" xml:space="preserve">
+    <value>Nova pasta: {1}
+Os dados em uso ({0}) têm {2} arquivos, {3} MiB; o disco da nova pasta tem {4} MiB livres.
+
+Copiar: a pasta antiga fica como está. Mover: cada arquivo sai da pasta antiga depois que a cópia é conferida. Não copiar: a nova pasta é usada como está. Nada da nova pasta é sobrescrito.</value>
+  </data>
+  <data name="DataFolderMoveConfirm" xml:space="preserve">
+    <value>Mover esvazia a pasta antiga {0} (cada arquivo é apagado lá depois que a cópia é conferida). Continuar?</value>
+  </data>
+  <data name="DataFolderCounting" xml:space="preserve">
+    <value>Contando os arquivos...</value>
+  </data>
+  <data name="DataFolderMoving" xml:space="preserve">
+    <value>Movendo os dados</value>
+  </data>
+  <data name="DataFolderCopying" xml:space="preserve">
+    <value>Copiando os dados</value>
+  </data>
+  <data name="DataFolderProgress" xml:space="preserve">
+    <value>{0} de {1} arquivos, {2} de {3} MiB</value>
+  </data>
+  <data name="DataFolderKept" xml:space="preserve">
+    <value>Pronto. {0} arquivos já estavam na nova pasta com outro conteúdo: os da nova pasta foram mantidos e estes ficaram na pasta antiga:
+{1}</value>
+  </data>
+  <data name="DataFolderNoSpace" xml:space="preserve">
+    <value>Espaço livre insuficiente: {0}. Nada foi copiado e a pasta de dados não mudou.</value>
+  </data>
+  <data name="DataFolderFailed" xml:space="preserve">
+    <value>A cópia parou: {0}. Nada que não esteja na nova pasta foi apagado, e a pasta de dados não mudou. Tente de novo para continuar.</value>
+  </data>
+  <data name="DataFolderWarning" xml:space="preserve">
+    <value>A pasta de dados escolhida não pôde ser usada, então a padrão está em uso: {0}</value>
+  </data>
+  <data name="MDataFolderAuto" xml:space="preserve">
+    <value>Automática (padrão)</value>
+  </data>
+  <data name="MDataFolderApp" xml:space="preserve">
+    <value>Pasta do app (Android/data)</value>
+  </data>
+  <data name="MDataFolderNeedsAccess" xml:space="preserve">
+    <value>Essa pasta fica fora do armazenamento do app: o VitaSharp precisa do "Acesso a todos os arquivos" para usá-la.</value>
+  </data>
+  <data name="MDataFolderNotAPath" xml:space="preserve">
+    <value>A pasta escolhida não está no armazenamento do aparelho nem num cartão SD (pasta de nuvem?): escolha uma pasta do armazenamento do celular.</value>
+  </data>
 </root>

@@ -13,6 +13,11 @@ public enum StorageChoice
 
     /// <summary>The visible folder, with the app-specific folder's own data left there untouched (not merged).</summary>
     SharedFolder,
+
+    /// <summary>A folder the user picked in Ajustes &gt; "Pasta de dados" (<see cref="DataRootInputs.CustomFolder"/>):
+    /// used as it is when it exists and can be written; otherwise the rules above, with
+    /// <see cref="DataRootPlan.Warning"/>.</summary>
+    CustomFolder,
 }
 
 /// <summary>What the app has to ask before it may use a data folder (<see cref="DataRootPlan.Question"/>).</summary>
@@ -41,13 +46,16 @@ public enum StorageQuestion
 /// <param name="HasAllFilesAccess">"All files access" (MANAGE_EXTERNAL_STORAGE, Android 11+) or the storage permission
 /// (WRITE_EXTERNAL_STORAGE, Android 8-10) is granted.</param>
 /// <param name="Choice">The folder the user picked earlier (<see cref="StorageChoice"/>).</param>
+/// <param name="CustomFolder">The folder of <see cref="StorageChoice.CustomFolder"/> (a real path: the system picker's
+/// tree converted by <see cref="SafTreePath"/>).</param>
 public readonly record struct DataRootInputs(
     string? AppSpecificDir,
     string InternalDir,
     string? SharedStorageDir,
     bool HasRoot,
     bool HasAllFilesAccess,
-    StorageChoice Choice = StorageChoice.None);
+    StorageChoice Choice = StorageChoice.None,
+    string? CustomFolder = null);
 
 /// <summary>The data folder to use now and what the app still has to do to reach the visible one.</summary>
 /// <param name="Root">The folder the app uses in this process (<see cref="DataLayout.Root"/>).</param>
@@ -62,13 +70,16 @@ public readonly record struct DataRootInputs(
 /// app-specific folder until then.</param>
 /// <param name="SharedDataUnused">The user picked the app-specific folder (<see cref="StorageChoice.AppFolder"/>) and
 /// the visible folder still holds data: the library says so and lets the user pick again.</param>
+/// <param name="Warning">The picked folder (<see cref="StorageChoice.CustomFolder"/>) could not be used (missing, an SD
+/// card taken out, no permission): why, while the default rules decide.</param>
 public readonly record struct DataRootPlan(
     string Root,
     string? VisibleRoot,
     bool NeedsPermission,
     string? MigrateFrom,
     StorageQuestion Question = StorageQuestion.None,
-    bool SharedDataUnused = false)
+    bool SharedDataUnused = false,
+    string Warning = "")
 {
     public bool NeedsMigration => MigrateFrom != null;
 }
@@ -94,6 +105,33 @@ public static class DataRoot
     public const string VisibleFolderName = ".vitasharp";
 
     public static DataRootPlan Resolve(DataRootInputs inputs)
+    {
+        if (inputs.Choice != StorageChoice.CustomFolder)
+        {
+            return ResolveDefault(inputs);
+        }
+
+        string? visibleRoot = inputs.SharedStorageDir is { Length: > 0 } sharedDir ? Path.Combine(sharedDir, VisibleFolderName) : null;
+        string why;
+        if (inputs.CustomFolder is not { Length: > 0 } custom || !Path.IsPathFullyQualified(custom))
+        {
+            why = "no folder was saved with the choice";
+        }
+        else if (VitaSharp.Core.Storage.DataFolder.WhyUnusable(custom) is { } unusable)
+        {
+            why = $"{custom} {unusable}";
+        }
+        else
+        {
+            return new DataRootPlan(Path.GetFullPath(custom), visibleRoot, false, null);
+        }
+
+        // the default rules, without the pick (a missing card must not look like an empty install in silence)
+        return ResolveDefault(inputs with { Choice = StorageChoice.None }) with { Warning = $"the chosen data folder: {why}; using the default folder" };
+    }
+
+    /// <summary>The rules without a picked folder (<see cref="StorageChoice.CustomFolder"/> is handled above).</summary>
+    public static DataRootPlan ResolveDefault(DataRootInputs inputs)
     {
         string old = inputs.AppSpecificDir is { Length: > 0 } ext ? ext : inputs.InternalDir;
         if (inputs.SharedStorageDir is not { Length: > 0 } shared)

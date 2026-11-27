@@ -281,6 +281,12 @@ public static class Runner
             LogFiles.OpenSession(Path.Combine(Program.DataRoot, "logs"), LogFiles.TitleOf(appPath));
         }
 
+        Log.Info("Data folder: " + DataPaths.Current.Describe());
+        if (DataPaths.Current.Warning.Length > 0)
+        {
+            Log.Warn("Data folder: " + DataPaths.Current.Warning);
+        }
+
         if (DebugMode.Enabled)
         {
             Log.Info("[dbg] debug mode on (first-use logging, HLE errors, anomaly checks, periodic PERF, deduplicated warnings)");

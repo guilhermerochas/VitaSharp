@@ -142,6 +142,16 @@ public static class AppServices
             }
             // the adb scripts ask the app which folder it uses (Android/data/<package>/data-root.txt), not guess it
             DataRootPointer.Write(context.GetExternalFilesDir(null)?.AbsolutePath, Data.Root);
+            // the F8 capture says which kind of folder is in use (never its path)
+            VitaSharp.Core.Storage.DataFolder.Active = new VitaSharp.Core.Storage.DataFolderResolution(Data.Root,
+                StorageSetup.ReadChoice(context) == StorageChoice.CustomFolder && StoragePlan.Warning.Length == 0
+                    ? VitaSharp.Core.Storage.DataFolderKind.Custom
+                    : VitaSharp.Core.Storage.DataFolderKind.Default,
+                StoragePlan.Warning);
+            if (StoragePlan.Warning.Length > 0)
+            {
+                Log.Warn("Storage: " + StoragePlan.Warning);
+            }
             // config/env.txt: the desktop's VITASHARP_* switches, set before anything below reads them
             List<KeyValuePair<string, string>> env = [];
             try

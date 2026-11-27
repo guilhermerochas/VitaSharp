@@ -170,6 +170,9 @@ public sealed class SettingsView : Screen<SettingsState>
                 Card(
                     Row(Loc.Get("MDataFolder"), null, Copy(AppServices.Data.Root), detail: AppServices.Data.Root),
                     Divider(),
+                    Row(Loc.Get("DataFolderChange"), null, ChangeDataFolder,
+                        detail: AppServices.StoragePlan.Warning.Length > 0 ? Loc.Format("DataFolderWarning", AppServices.StoragePlan.Warning) : null),
+                    Divider(),
                     Row(Loc.Get("MInstalledGames"), null, Copy(AppServices.Data.Apps), detail: Loc.Format("MInstalledGamesDetail", VitaSharp.Core.Io.FirmwareLayout.Applications.Relative(), VitaSharp.Core.Io.FirmwareLayout.SaveData.Relative()))
                 ),
                 Note(Loc.Get("MStorageNote")),
@@ -189,6 +192,100 @@ public sealed class SettingsView : Screen<SettingsState>
 
                 Note($"VitaSharp \u00B7 {RuntimeReport.Runtime}")
             ));
+    }
+
+    /// <summary>Ajustes &gt; "Trocar a pasta de dados": automatic (the default rules), the app folder (Android/data) or a
+    /// folder picked with the system's folder picker; then copy, move or leave the data, and the app restarts on it
+    /// (StorageSetup.SwitchFolder).</summary>
+    async void ChangeDataFolder()
+    {
+        string title = Loc.Get("DataFolderChange");
+        string? kind = await Choose(title,
+        [
+            new Choice(nameof(Mobile.Core.Storage.StorageChoice.None), Loc.Get("MDataFolderAuto")),
+            new Choice(nameof(Mobile.Core.Storage.StorageChoice.AppFolder), Loc.Get("MDataFolderApp")),
+            new Choice(nameof(Mobile.Core.Storage.StorageChoice.CustomFolder), Loc.Get("DataFolderCustom")),
+        ]);
+        if (kind == null || MainActivity.Current is not { } activity)
+        {
+            return;
+        }
+
+        var choice = Enum.Parse<Mobile.Core.Storage.StorageChoice>(kind);
+        string? custom = null;
+        if (choice == Mobile.Core.Storage.StorageChoice.CustomFolder)
+        {
+            custom = await Saf.PickFolderAsync();
+            if (custom == null)
+            {
+                return;
+            }
+
+            if (custom.Length == 0)
+            {
+                await Alert(title, Loc.Get("MDataFolderNotAPath"));
+                return;
+            }
+
+            string?[] appFolders = [.. (activity.GetExternalFilesDirs(null) ?? []).Select(f => f?.AbsolutePath), activity.FilesDir?.AbsolutePath];
+            if (Mobile.Core.Storage.SafTreePath.NeedsAllFilesAccess(custom, appFolders) && !StorageSetup.HasAllFilesAccess(activity))
+            {
+                if (await Confirm(title, Loc.Get("MDataFolderNeedsAccess"), Loc.Get("MStorageGrantAccess"), Loc.Get("MCancel")))
+                {
+                    StorageSetup.RequestAllFilesAccess(activity);
+                }
+
+                return;
+            }
+        }
+
+        string current = AppServices.Data.Root;
+        string target = StorageSetup.TargetOf(activity, choice, custom);
+        if (VitaSharp.Core.Storage.DataFolder.IsSameOrInside(target, current) && VitaSharp.Core.Storage.DataFolder.IsSameOrInside(current, target))
+        {
+            await Alert(title, Loc.Format("DataFolderAlreadyInUse", target));
+            return;
+        }
+
+        if (VitaSharp.Core.Storage.DataFolder.IsSameOrInside(target, current) || VitaSharp.Core.Storage.DataFolder.IsSameOrInside(current, target))
+        {
+            await Alert(title, Loc.Format("DataFolderNested", target));
+            return;
+        }
+
+        (long files, long bytes) = await Task.Run(() => VitaSharp.Core.Storage.DataFolderTransfer.Measure(current));
+        long free = -1;
+        try
+        {
+            free = (long)Math.Min(HostDisk.Of(target).Free, long.MaxValue);
+        }
+        catch (Exception e) when (e is IOException or ArgumentException or UnauthorizedAccessException)
+        {
+        }
+
+        string? step = await Choose(Loc.Format("DataFolderTransferText", current, target, files, bytes >> 20, free < 0 ? "?" : (free >> 20).ToString(System.Globalization.CultureInfo.CurrentCulture)),
+        [
+            new Choice("copy", Loc.Get("DataFolderCopy")),
+            new Choice("move", Loc.Get("DataFolderMove")),
+            new Choice("leave", Loc.Get("DataFolderLeave")),
+        ]);
+        if (step == null)
+        {
+            return;
+        }
+
+        if (step == "move" && !await Confirm(title, Loc.Format("DataFolderMoveConfirm", current), Loc.Get("DataFolderMove"), Loc.Get("MCancel")))
+        {
+            return;
+        }
+
+        VitaSharp.Core.Storage.DataTransferMode? mode = step switch
+        {
+            "copy" => VitaSharp.Core.Storage.DataTransferMode.Copy,
+            "move" => VitaSharp.Core.Storage.DataTransferMode.Move,
+            _ => null,
+        };
+        StorageSetup.SwitchFolder(activity, choice, custom, mode);
     }
 
     async void Pick(string title, IReadOnlyList<Choice> choices, Action<string> apply)
