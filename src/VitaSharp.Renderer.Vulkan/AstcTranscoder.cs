@@ -486,6 +486,19 @@ public static class AstcTranscoder
             return Copy(known);
         }
 
+        // the disk cache's read-ahead (native memory): copied straight into the pooled texels, no array per hit
+        if (Disk is { } ahead && ahead.IsPreloaded(key))
+        {
+            Texels t = Texels.Rent(length);
+            if (ahead.TryCopyPreloaded(key, tag, t.Span))
+            {
+                Interlocked.Increment(ref DiskHits);
+                return t;
+            }
+
+            t.Dispose();
+        }
+
         // the disk cache: through the folder index once it is built (no file system call for a level that is not
         // there: on Android's shared storage each one goes through FUSE), a direct lookup until then
         if (Disk is { } disk && disk.Contains(key) != false && disk.TryGet(key, tag, length) is { } cached)

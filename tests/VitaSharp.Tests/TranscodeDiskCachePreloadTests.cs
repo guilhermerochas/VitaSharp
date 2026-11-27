@@ -106,6 +106,43 @@ public sealed class TranscodeDiskCachePreloadTests : IDisposable
     }
 
     [Fact]
+    public void AReadAheadHitAllocatesNoManagedMemory()
+    {
+        // the read-ahead lives in native memory and is copied straight into the caller's buffer: 110 MB of managed
+        // arrays plus one array per hit made a collection during Killzone's first aim cost 810 ms
+        Directory.CreateDirectory(_dir);
+        new TranscodeDiskCache(_dir, 1 << 20).Put(0x77, 0x3, Payload(2, 4096));
+        var cache = new TranscodeDiskCache(_dir, 1 << 20);
+        cache.StartPreload(1 << 20);
+        Assert.True(cache.PreloadDone.Wait(10_000));
+        byte[] destination = new byte[4096];
+        Assert.True(cache.TryCopyPreloaded(0x77, 0x3, destination));
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        bool hit = cache.TryCopyPreloaded(0x77, 0x3, destination);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.True(hit);
+        Assert.Equal(Payload(2, 4096), destination);
+        Assert.Equal(0, allocated);
+    }
+
+    [Fact]
+    public void ReleasedReadAheadEntriesAreGone()
+    {
+        Directory.CreateDirectory(_dir);
+        new TranscodeDiskCache(_dir, 1 << 20).Put(0x31, 0x2, Payload(4, 64));
+        var cache = new TranscodeDiskCache(_dir, 1 << 20);
+        cache.StartPreload(1 << 20);
+        Assert.True(cache.PreloadDone.Wait(10_000));
+
+        cache.ReleasePreloaded();
+
+        Assert.False(cache.IsPreloaded(0x31));
+        Assert.False(cache.TryCopyPreloaded(0x31, 0x2, new byte[64]));
+    }
+
+    [Fact]
     public void NothingIsReadAheadWithoutABudget()
     {
         Directory.CreateDirectory(_dir);

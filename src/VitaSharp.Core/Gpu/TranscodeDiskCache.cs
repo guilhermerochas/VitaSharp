@@ -23,11 +23,25 @@ public sealed class TranscodeDiskCache
     /// <summary>The keys on disk (null until the folder was listed once, on a background thread).</summary>
     private HashSet<ulong>? _index;
     private int _indexing;
-    /// <summary>Entries read ahead by <see cref="StartPreload"/> (whole files, header included). They stay for the
-    /// session: the same level is asked for again whenever the in-memory transcode cache in front of this one dropped
-    /// it (Killzone: ~1200 of the levels its first weapon change and aim asked for had been read ahead and used once
-    /// during the load, then read again from the file on the GPU thread).</summary>
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, byte[]> _preloaded = new();
+    /// <summary>
+    /// Entries read ahead by <see cref="StartPreload"/>: the checked payload in native memory (outside the GC heap: a
+    /// whole title's cache, 110 MB for Killzone, held as managed arrays made a collection during the first aim cost
+    /// 810 ms), with its tag. They stay for the session, since the same level is asked for again whenever the in-memory
+    /// transcode cache in front dropped it, and are freed by <see cref="ReleasePreloaded"/> when the title's cache is
+    /// replaced. Guarded by <see cref="_nativeLock"/>.
+    /// </summary>
+    private readonly Dictionary<ulong, NativeEntry> _preloaded = new();
+    private readonly object _nativeLock = new();
+    private bool _released;
+
+    private struct NativeEntry
+    {
+        public nint Ptr;
+        public int Length;
+        public ulong Tag;
+        public bool Touched;
+    }
+
     private long _preloadedBytes;
     public long Preloaded, PreloadHits;
     /// <summary>Default read-ahead budget: large enough for a whole title's cache seen so far (Killzone: 110 MB) so the
@@ -152,12 +166,7 @@ public sealed class TranscodeDiskCache
                     break;
                 }
 
-                byte[] data = File.ReadAllBytes(path);
-                if (_preloaded.TryAdd(key, data))
-                {
-                    Interlocked.Add(ref _preloadedBytes, data.Length);
-                    Interlocked.Increment(ref Preloaded);
-                }
+                ReadAhead(path, key);
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
@@ -171,30 +180,138 @@ public sealed class TranscodeDiskCache
         }
     }
 
+    /// <summary>One file into native memory, straight from the file (no managed buffer); a torn or foreign file is
+    /// left to the file path of <see cref="TryGet"/>, which deletes it.</summary>
+    private unsafe void ReadAhead(string path, ulong key)
+    {
+        using Microsoft.Win32.SafeHandles.SafeFileHandle handle = File.OpenHandle(path);
+        long fileLength = RandomAccess.GetLength(handle);
+        if (fileLength < HeaderSize || fileLength > int.MaxValue)
+        {
+            return;
+        }
+
+        Span<byte> header = stackalloc byte[HeaderSize];
+        if (RandomAccess.Read(handle, header, 0) != HeaderSize || BinaryPrimitives.ReadUInt32LittleEndian(header) != Magic
+            || BinaryPrimitives.ReadUInt32LittleEndian(header[4..]) != fileLength - HeaderSize || BinaryPrimitives.ReadUInt64LittleEndian(header[8..]) != key)
+        {
+            return;
+        }
+
+        int length = (int)(fileLength - HeaderSize);
+        nint ptr = (nint)System.Runtime.InteropServices.NativeMemory.Alloc((nuint)Math.Max(length, 1));
+        var payload = new Span<byte>((void*)ptr, length);
+        int read = 0;
+        while (read < length)
+        {
+            int n = RandomAccess.Read(handle, payload[read..], HeaderSize + read);
+            if (n <= 0)
+            {
+                break;
+            }
+
+            read += n;
+        }
+
+        lock (_nativeLock)
+        {
+            if (read == length && !_released && !_preloaded.ContainsKey(key))
+            {
+                _preloaded[key] = new NativeEntry { Ptr = ptr, Length = length, Tag = BinaryPrimitives.ReadUInt64LittleEndian(header[16..]) };
+                _preloadedBytes += fileLength;
+                Preloaded++;
+                return;
+            }
+        }
+
+        System.Runtime.InteropServices.NativeMemory.Free((void*)ptr);
+    }
+
+    /// <summary>Whether <paramref name="key"/> was read ahead (no file system call).</summary>
+    public bool IsPreloaded(ulong key)
+    {
+        lock (_nativeLock)
+        {
+            return _preloaded.ContainsKey(key);
+        }
+    }
+
+    /// <summary>
+    /// Copies the read-ahead payload of <paramref name="key"/> into <paramref name="destination"/> when it has the
+    /// expected <paramref name="tag"/> and exactly the destination's length: the GPU thread's lookup, with no managed
+    /// allocation and no file system call. The first use refreshes the entry's use time (the LRU order) off-thread.
+    /// </summary>
+    public unsafe bool TryCopyPreloaded(ulong key, ulong tag, Span<byte> destination)
+    {
+        string? touch = null;
+        lock (_nativeLock)
+        {
+            if (!_preloaded.TryGetValue(key, out NativeEntry e) || e.Tag != tag || e.Length != destination.Length)
+            {
+                return false;
+            }
+
+            new ReadOnlySpan<byte>((void*)e.Ptr, e.Length).CopyTo(destination);
+            if (!e.Touched)
+            {
+                e.Touched = true;
+                _preloaded[key] = e;
+                touch = PathOf(key);
+            }
+        }
+
+        Interlocked.Increment(ref Hits);
+        Interlocked.Increment(ref PreloadHits);
+        Interlocked.Increment(ref FrameLedger.AstcDiskReadAheadHits);
+        if (touch != null)
+        {
+            ThreadPool.UnsafeQueueUserWorkItem(static path =>
+            {
+                try
+                {
+                    File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+            }, touch, false);
+        }
+
+        return true;
+    }
+
+    /// <summary>Frees the read-ahead entries (the title's cache is being replaced); later reads ahead are dropped.</summary>
+    public unsafe void ReleasePreloaded()
+    {
+        lock (_nativeLock)
+        {
+            _released = true;
+            foreach (NativeEntry e in _preloaded.Values)
+            {
+                System.Runtime.InteropServices.NativeMemory.Free((void*)e.Ptr);
+            }
+
+            _preloaded.Clear();
+            _preloadedBytes = 0;
+        }
+    }
+
     /// <summary>The cached payload of <paramref name="key"/> when it exists, has the expected <paramref name="tag"/>
-    /// (format and size of what was transcoded) and length; null otherwise.</summary>
+    /// (format and size of what was transcoded) and length; null otherwise. A read-ahead entry is copied out of native
+    /// memory (the GPU thread uses <see cref="TryCopyPreloaded"/> instead, without the array).</summary>
     public byte[]? TryGet(ulong key, ulong tag, int expectedLength)
     {
+        if (IsPreloaded(key))
+        {
+            byte[] ahead = new byte[expectedLength];
+            if (TryCopyPreloaded(key, tag, ahead))
+            {
+                return ahead;
+            }
+        }
+
         string p = PathOf(key);
         try
         {
             byte[] data;
-            if (_preloaded.TryGetValue(key, out byte[]? ahead))
-            {
-                data = ahead;
-                Interlocked.Increment(ref PreloadHits);
-                Interlocked.Increment(ref FrameLedger.AstcDiskReadAheadHits);
-                // the use time (the LRU order) is refreshed off the caller's thread
-                ThreadPool.UnsafeQueueUserWorkItem(static path =>
-                {
-                    try
-                    {
-                        File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
-                    }
-                    catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
-                }, p, false);
-            }
-            else
             {
                 lock (_lock)
                 {
@@ -224,10 +341,6 @@ public sealed class TranscodeDiskCache
                         File.Delete(p);
                         _bytes = -1;
                         _index?.Remove(key);
-                        if (_preloaded.TryRemove(key, out byte[]? torn))
-                        {
-                            Interlocked.Add(ref _preloadedBytes, -torn.Length);
-                        }
                     }
                     catch (IOException) { }
                 }

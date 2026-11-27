@@ -40,6 +40,7 @@ public sealed unsafe partial class VulkanRenderer
             return;
         }
 
+        AstcTranscoder.Disk?.ReleasePreloaded();
         AstcTranscoder.Disk = new TranscodeDiskCache(dir, s_astcCacheBytes);
         AstcTranscoder.Disk.StartPreload(s_astcPreloadBytes);
         Log.Info($"[texcache] BC/PVRTC textures are transcoded to ASTC 4x4; disk cache {AstcTranscoder.Disk.Directory} (limit {s_astcCacheBytes >> 20} MB, {AstcTranscoder.Disk.Bytes >> 20} MB used)");
