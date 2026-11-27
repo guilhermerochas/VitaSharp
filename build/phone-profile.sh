@@ -130,6 +130,11 @@ main() {
   if ((publish == 1)) || [[ ! -x "${exe}" ]]; then
     echo "phone-profile.sh: publishing the Native AOT build (${rid}) to ${out}"
     mkdir -p "${out}"
+    # the Native AOT linker step finds the MSVC tools with vswhere, which the Visual Studio installer does not put on PATH
+    local installer="/c/Program Files (x86)/Microsoft Visual Studio/Installer"
+    if [[ "${rid}" == win-* ]] && ! command -v vswhere.exe >/dev/null && [[ -x "${installer}/vswhere.exe" ]]; then
+      PATH="${installer}:${PATH}"
+    fi
     dotnet publish "${ROOT}/src/VitaSharp.Desktop" -c Release -r "${rid}" -p:VitaSharpRelease=true \
       -p:VitaSharpAot=true -p:UseSharedCompilation=false -m:2 -o "${out}" >"${out}.publish.log" 2>&1 \
       || die "the publish failed: ${out}.publish.log"

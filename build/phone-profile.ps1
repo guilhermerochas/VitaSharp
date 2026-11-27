@@ -92,8 +92,17 @@ if ($rid -like 'win-*') {
 if ($Publish -or -not (Test-Path $exe)) {
     Write-Host "phone-profile.ps1: publishing the Native AOT build ($rid) to $Out"
     New-Item -ItemType Directory -Force $Out | Out-Null
+    # the Native AOT linker step finds the MSVC tools with vswhere, which the Visual Studio installer does not put on PATH
+    if (-not $IsLinux -and -not $IsMacOS -and -not (Get-Command vswhere.exe -ErrorAction SilentlyContinue)) {
+        $installer = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer'
+        if (Test-Path (Join-Path $installer 'vswhere.exe')) {
+            $env:PATH = "$installer;$env:PATH"
+        }
+    }
+    $ErrorActionPreference = 'Continue' # dotnet's stderr lines must not stop the script
     dotnet publish (Join-Path $root 'src/VitaSharp.Desktop') -c Release -r $rid -p:VitaSharpRelease=true `
-        -p:VitaSharpAot=true -p:UseSharedCompilation=false -m:2 -o $Out *> "$Out.publish.log"
+        -p:VitaSharpAot=true -p:UseSharedCompilation=false -m:2 -o $Out 2>&1 | Out-File -Encoding utf8 "$Out.publish.log"
+    $ErrorActionPreference = 'Stop'
     if ($LASTEXITCODE -ne 0) {
         throw "the publish failed: $Out.publish.log"
     }
