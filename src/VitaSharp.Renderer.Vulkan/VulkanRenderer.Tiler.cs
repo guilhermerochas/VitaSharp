@@ -80,11 +80,35 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
+    /// <summary>
+    /// "per presented frame: renderings R, mid-scene breaks B, depth stores S, depth loads L" for the PERF gpu line: the
+    /// tile traffic of a frame on a tile-based GPU at a glance (FIFA 13's match: 5 renderings, 3 breaks and 3 depth
+    /// stores and loads per frame, from the breaks for its own depth sampled as a texture).
+    /// </summary>
+    public static string PerFrameTileTraffic(long presents, long renderings, long breaks, long depthStores, long depthLoads)
+    {
+        double frames = Math.Max(1, presents);
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"per presented frame: renderings {renderings / frames:F2}, mid-scene breaks {breaks / frames:F2}, depth stores {depthStores / frames:F2}, depth loads {depthLoads / frames:F2}");
+    }
+
+    private long BreakCount()
+    {
+        long total = 0;
+        foreach (long count in _breakReasons.Values)
+        {
+            total += count;
+        }
+
+        return total;
+    }
+
     /// <summary>"load/store: colour L/C/D a/b/c S/D d/e, depth ..." for the PERF gpu line.</summary>
     private string LoadStoreReport() =>
         $"load/store ops{(TiledRenderings ? " (tile-based" : " (desktop")}, {_tileDeferred} deferred single-sampled renderings{(RenderAreaTrim ? $", {_statTrimmed} begun over {100 * _statTrimFraction / Math.Max(1, _statTrimmed):F0}% of their surface on average" : "")}): colour load {_colorLoads[0]}/clear {_colorLoads[1]}/dont-care {_colorLoads[2]}, store {_colorStores[0]}/dont-care {_colorStores[1]}; " +
         $"depth load {_depthLoads[0]}/clear {_depthLoads[1]}/dont-care {_depthLoads[2]}, store {_depthStores[0]}/dont-care {_depthStores[1]}" +
-        (DepthOpsNone ? $" (NONE: {_statDepthNone} untouched, {_statDepthReadOnly} read-only)" : "") + $"; region copies {_statRegionOwn} of the scene's surface, {_statRegionOther} of others; {SceneBreakReport()}; region copies reused {_statRegionReused}; renderings waiting for an earlier one's attachment writes {_statAttachmentBarriers}; scene-start mirrors kept {_statMirrorKept}";
+        (DepthOpsNone ? $" (NONE: {_statDepthNone} untouched, {_statDepthReadOnly} read-only)" : "") +
+        $"; {PerFrameTileTraffic(_presentCount - Math.Max(0, _options.FirstPresent), _statRenderings - _statMerged, BreakCount(), _depthStores[0], _depthLoads[0])}; region copies {_statRegionOwn} of the scene's surface, {_statRegionOther} of others; {SceneBreakReport()}; region copies reused {_statRegionReused}; renderings waiting for an earlier one's attachment writes {_statAttachmentBarriers}; scene-start mirrors kept {_statMirrorKept}";
 
     /// <summary>Opens a single-sampled scene rendering in a secondary command buffer.</summary>
     /// <param name="wordView">the scene's tile-word attachment (colour attachment 1), default = none</param>

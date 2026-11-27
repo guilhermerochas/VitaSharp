@@ -102,6 +102,28 @@ open, which always ends the rendering); its depth-texture copies (7638) are now 
 renderings 17281 → 2750, GPU time 6.24 → 5.08 ms per presented frame (-19%); fps 20.9 → 28.6, but other agents
 used the machine during these runs, so the fps numbers are only indicative.
 
+### A scene's own depth sampled as a texture (perf/fifa4)
+
+On the Vita a texture fetch reads memory, and the SGX543 is tile-based: a scene's depth reaches the depth surface
+only when each tile is stored at the end of the scene (FORCE_STORE), and is read back only by a scene that loads it
+(FORCE_LOAD). A draw that samples the depth surface of its own scene therefore sees what the last store left there,
+the depth as the scene began, never what the scene has drawn so far (tiles already finished are stored in an
+undefined order, so a game cannot rely on more). Vita3K's Vulkan renderer does the same: `retrieve_depth_stencil_as_texture`
+copies the surface once per scene (`scene_timestamp`) into the pre-render command buffer, before the render pass.
+
+The renderer ended the open rendering for every draw that sampled a forced-stored multisampled depth
+(`UnpackedDepthTexture`): the next rendering bumped the depth's version, so the next sampling draw broke it again.
+FIFA 13's match on the Mali-G57: 2.5 renderings per scene, 15,087 such breaks in 10,058 scenes, each a store and a load
+of the samples and the depth (15,189 depth stores, 15,188 loads), 24 ms of GPU time per presented frame (~41 fps).
+Now the unpack is hoisted before the open rendering (recorded renderings: tile-based GPUs and the render-pass path)
+and done once per scene for the scene's own depth. With renderings begun directly (desktop) it still ends the
+rendering once per scene at most. No device capability is needed, so no feedback-loop layout or depth input
+attachment either: those would show the depth drawn so far, which the Vita does not.
+
+The PERF gpu line (and the F8 report) gives the tile traffic per presented frame: `per presented frame: renderings R,
+mid-scene breaks B, depth stores S, depth loads L`. Test: `RendererOwnDepthSampleTests` (4X and 2X, tile-based and
+desktop: the sampling draws see scene 1's depth after scene 2 drew over it, no break as tile-based).
+
 ## 2. ASTC transcoding with a disk cache (`Core/Gpu/Astc.cs`, `AstcTranscoder.cs`, `Core/Gpu/TranscodeDiskCache.cs`)
 
 Before: without `textureCompressionBC` (`--gpu-profile=adreno|mali`, most phones) BC levels were decoded to RGBA8 on

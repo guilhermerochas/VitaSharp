@@ -21,6 +21,8 @@ public sealed unsafe partial class VulkanRenderer
         public ImageMemoryPool.Allocation Mem;
         public uint W, H;
         public long Version = -1;
+        /// <summary>The scene whose own depth this texture was unpacked in (<see cref="UnpackedDepthTexture"/>).</summary>
+        public long OwnScene = -1;
         public long LastUsedFrame;
     }
 
@@ -183,6 +185,16 @@ public sealed unsafe partial class VulkanRenderer
         _imagePool.Free(depthTex.Mem);
     }
 
+    /// <summary>
+    /// The unpacked samples of <paramref name="dt"/> as a depth texture. A texture fetch reads the depth surface in
+    /// memory, and on the Vita's tile-based GPU a scene's depth only reaches memory at the end of each tile (the forced
+    /// store): a draw that samples the depth surface of its own scene sees what the last store left there, the depth
+    /// as the scene began, not what the scene has drawn so far (Vita3K likewise copies such a surface once per scene,
+    /// before the render pass). So the unpack is recorded before the open rendering (hoisted, VulkanRenderer.SceneBreaks.cs)
+    /// and done once per scene for the scene's own depth, instead of ending the rendering for every sampling draw:
+    /// FIFA 13's match scenes sample a forced-stored 2X depth surface, and each break stored and reloaded the samples and
+    /// depth (2.5 renderings per scene, ~15,000 depth stores and loads per 10,000 scenes on a Mali-G57).
+    /// </summary>
     private (ImageView, ImageLayout) UnpackedDepthTexture(DepthTarget dt, uint w, uint h)
     {
         // above native the multisampled image is scaled too: every sample of it is unpacked, at the scaled size, like
@@ -211,20 +223,26 @@ public sealed unsafe partial class VulkanRenderer
                 new ComponentMapping(ComponentSwizzle.R, ComponentSwizzle.R, ComponentSwizzle.R, ComponentSwizzle.R));
             _depthTextures[dt] = depthTex;
             BeginFrameIfNeeded();
-            EndRendering();
-            Barrier(depthTex.Image, ImageLayout.Undefined, ImageLayout.DepthStencilReadOnlyOptimal, DepthStencilAspect,
-                PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
+            using (BeginOutside(depthTex.View))
+            {
+                Barrier(depthTex.Image, ImageLayout.Undefined, ImageLayout.DepthStencilReadOnlyOptimal, DepthStencilAspect,
+                    PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
+            }
             Log.Info($"[gpu] depth surface 0x{dt.Address:X8} of a {(layout == 0 ? "4X" : "2X")} multisampled scene (forced store) is read as a {w}x{h} texture: the samples are unpacked");
         }
         depthTex.LastUsedFrame = FrameCount;
-        if (depthTex.Version == dt.Version)
+        // the scene's own depth surface: memory keeps what the last store left until this scene stores it at its end
+        bool ownDepth = dt == _depth;
+        if (depthTex.Version == dt.Version || (ownDepth && depthTex.OwnScene == _sceneSerial))
         {
             return (depthTex.View, ImageLayout.DepthStencilReadOnlyOptimal);
         }
 
         depthTex.Version = dt.Version;
+        depthTex.OwnScene = ownDepth ? _sceneSerial : -1;
 
-        EndRendering();
+        // before the open rendering (its depth as the scene began, see the summary above), else it ends here
+        using OutsideScope outside = BeginOutside(depthTex.View);
         dt.SampledView = dt.SampledView.Handle != 0 ? dt.SampledView : CreateView(dt.Image, _core.DepthFormat, ImageAspectFlags.DepthBit, 1, 1, false, default);
         Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilReadOnlyOptimal, DepthStencilAspect,
             PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.FragmentShaderBit,
