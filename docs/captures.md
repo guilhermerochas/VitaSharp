@@ -83,6 +83,11 @@ the recording kept them, with the bytes it read, so it reads the same bytes with
 as hashes only: the re-run reads zeros there). `report.txt` lists what was read and whether its bytes left with the
 capture.
 
+`report.txt`'s "CPU phases" section says where each guest thread's host time went during the recording (ns of host
+time per guest cycle by dispatcher phase: interpreter, VFP vector interpreter, native code, block switches, HLE,
+pacing; blocks decoded and compiled on the thread) and lists the last `[phase-alert]` lines: a thread over its budget
+and the phase to blame. See [docs/notes/cpu-phases.md](notes/cpu-phases.md).
+
 What still needs the game: the bytes of a recording made without `--capture-files-mb`, firmware modules the game
 loads for the first time during the recording (they come from the analyst's firmware), and captures of the system
 shell with applications open (several processes; booting them from the state is not supported yet).

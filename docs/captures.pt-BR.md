@@ -83,6 +83,11 @@ quando a gravação guardou, com os bytes lidos, então ela lê os mesmos bytes 
 `files:`) diz se ela leu algo que a gravação não leu e quais leituras não pôde repor (guardadas só com hash: a
 reexecução lê zeros ali). O `report.txt` lista o que foi lido e se os bytes saíram junto com a gravação.
 
+A seção "CPU phases" do `report.txt` diz para onde foi o tempo do host de cada thread do guest durante a gravação (ns
+de tempo do host por ciclo do guest por fase do despachante: interpretador, interpretador vetorial VFP, código nativo,
+troca de bloco, HLE, ritmo; blocos decodificados e compilados na thread) e lista as últimas linhas `[phase-alert]`:
+uma thread acima do orçamento e a fase culpada. Veja [docs/notes/cpu-phases.pt-BR.md](notes/cpu-phases.pt-BR.md).
+
 O que ainda precisa do jogo: os bytes de uma gravação feita sem `--capture-files-mb`, módulos do firmware
 que o jogo carrega pela primeira vez durante a gravação (vêm do firmware de quem analisa), e gravações do shell do
 sistema com aplicativos abertos (vários processos; subir esses a partir do estado ainda não é suportado).

@@ -8,6 +8,15 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
 
 ## Diagnóstico
 
+- [ ] [P3][M] **Modo celular no PC, o que falta** (o perfil de fases e os testes de orçamento estão em "Corrigido,
+  falta o usuário testar"; o build Native AOT do desktop já existe, `-p:VitaSharpRelease=true -p:VitaSharpAot=true`,
+  e docs/notes/cpu-phases.md diz como montar o tempo do celular no PC):
+  - `HostTuning.AvoidBusyWaits` por variável de ambiente no desktop (esperas sem giro, como no celular), com teste;
+  - um roteiro `.ps1`/`.sh` que publica o Native AOT uma vez numa pasta fixa e roda um cenário com 2 núcleos fixados,
+    333 MHz e `VITASHARP_PHASE_PROF=1`, e resume as linhas `PERF phases`/`[phase-alert]`;
+  - o código do backend ARM64 no PC: medir no sandbox ARM64 dos testes (`Arm64Runner`) os blocos quentes de uma
+    captura (ns por ciclo do guest), já que o x64 não mostra o custo do código ARM64.
+
 - [ ] [P2][G] **Gravar tudo: estados de vários processos sobem sem os programas, o que falta** (a 1ª entrega, cada
   processo com a sua seção `process<N>/boot`, está em "Corrigido, falta o usuário testar"):
   - o load confere os pids: o primeiro processo do estado precisa ter o pid que o primeiro processo do boot recebe
@@ -3641,6 +3650,16 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- (26/11/2026, falta testar) [P2][M] Perfil de fases da CPU por thread e alertas de orçamento (feat/perfdiag1): cada
+  thread do guest conta ciclos por fase do despachante (interpretador, interpretador vetorial VFP, código vetorial,
+  nativo, IL, troca de bloco, HLE, ritmo) e tempo do host amostrado (1 volta em 31), ligado durante a gravação/pré-roll
+  do F8, com --debug-mode ou `VITASHARP_PHASE_PROF=1` (toda volta cronometrada); desligado fora disso (custa 1,3% em
+  código nativo e 26% em código interpretado); blocos decodificados/compilados na thread do guest e chamadas ao
+  interpretador contados. `[phase-alert]` no log quando a thread passa de 70 ns por ciclo do guest numa janela, interpreta
+  blocos quentes, compila na própria thread por mais de 1 ms ou tem uma volta de mais de 2 ms. Linhas `PERF phases`
+  no resumo periódico e no fim; seção "CPU phases" no report.txt do F8. Testes de orçamento (categoria `Budget`) e o
+  caso `mixer_round_deadline` do TestGame. O que testar: uma gravação F8 no Dead Space (som) e ver no report.txt a
+  seção "CPU phases" (as threads do mixer e dos workers, alertas se houver). Docs: docs/notes/cpu-phases.md.
 - (26/11/2026, falta testar) [P2][M] O F8 "Gravar tudo" é a única ferramenta de depuração do jogador (feat/f8only1).
   Saíram da interface e da documentação do usuário: F9 (modo de depuração), F10 (captura de diagnóstico), Ctrl+F8
   (dump da GPU sozinho), o "Modo de depuração" das Configurações do launcher e dos Ajustes do Android, a pasta de
