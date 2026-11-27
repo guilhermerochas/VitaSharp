@@ -191,7 +191,7 @@ public sealed class CameraHleTests(GuestMemoryFixture fixture)
             ulong first = GuestMemory.Read<ulong>(read + 0x10);
 
             // a 60 ms collection 1 ms into the wait for the next frame
-            HostPauseDuringTheNextWait pause = HostPauseDuringTheNextWait.Arm(System.Diagnostics.Stopwatch.Frequency * 60 / 1000);
+            var pause = HostPauseDuringTheNextWait.Arm(System.Diagnostics.Stopwatch.Frequency * 60 / 1000);
             try
             {
                 pause.Start();

@@ -97,7 +97,7 @@ public sealed class GuestClockHostPauseTests : IDisposable
     public void AWaitOutlivesAHostPauseInTheMiddleOfIt()
     {
         long pauseTicks = System.Diagnostics.Stopwatch.Frequency / 50; // 20 ms with the runtime stopped
-        HostPauseDuringTheNextWait pause = HostPauseDuringTheNextWait.Arm(pauseTicks);
+        var pause = HostPauseDuringTheNextWait.Arm(pauseTicks);
         long deadline = GuestClock.Ticks + System.Diagnostics.Stopwatch.Frequency / 25; // 40 ms ahead
         pause.Start();
         GuestClock.WaitUntil(deadline);
