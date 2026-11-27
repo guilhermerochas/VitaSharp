@@ -145,6 +145,7 @@ public sealed unsafe partial class NativeJitTests
                 BitConverter.GetBytes(prog[i]).CopyTo(code[(i * 4)..]);
             }
 
+            ForgetPublishedCode(sb);
             var blocks = new Dictionary<(uint, bool), Block>();
             Block BlockAt(uint pc, bool t)
             {
@@ -242,6 +243,29 @@ public sealed unsafe partial class NativeJitTests
         {
             Arm64Emitter.Opts = saved;
             CpuState.Free(s);
+        }
+    }
+
+    /// <summary>
+    /// On an ARM64 host the runner uses the process's indirect-exit table, where earlier tests published their blocks at
+    /// the same guest addresses: their entries are dropped so a return that misses the stack really goes back to the
+    /// dispatcher instead of into another test's code (the sandbox has a table of its own per runner).
+    /// </summary>
+    private static void ForgetPublishedCode(IArm64Runner sb)
+    {
+        if (sb is not Arm64HostRunner)
+        {
+            return;
+        }
+
+        NativeRuntime.DispatchEntry* table = NativeRuntime.Instance.Dispatch;
+        for (int i = 0; i < 1 << NativeRuntime.DispatchBits; i++)
+        {
+            uint key = Volatile.Read(ref table[i].Key);
+            if (key >= CodeBase && key < CodeBase + 0x1000)
+            {
+                Volatile.Write(ref table[i].Key, NativeRuntime.NoKey);
+            }
         }
     }
 
