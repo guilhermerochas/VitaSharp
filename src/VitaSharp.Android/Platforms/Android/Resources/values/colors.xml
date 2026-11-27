@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app's colour tokens for Android resources: the same values as Ui/Theme.cs Palette (checked by
+     AndroidDialogThemeTests). The screens are always dark, so there is no values-night variant: the system's light
+     and dark modes give the same dialogs. -->
+<resources>
+    <color name="vs_surface">#171B22</color>
+    <color name="vs_text">#E8ECF2</color>
+    <color name="vs_text_soft">#C9D1DC</color>
+    <color name="vs_muted">#9AA4B2</color>
+    <color name="vs_accent">#6E9BFF</color>
+</resources>

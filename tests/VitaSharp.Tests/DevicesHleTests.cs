@@ -188,28 +188,28 @@ public sealed class DevicesHleTests(GuestMemoryFixture fixture)
     public void AudioOutSilentCountsZeroFilledGrainsWithoutAHostStream()
     {
         var a = new Audio();
-        const int grain = 64;
-        uint buf = fixture.Memory.Alloc(grain * 4 + 4, "aout");
-        GuestMemory.Span<short>(buf, grain * 2 + 2).Clear();
-        int stereo = Call(a, "sceAudioOutOpenPort", 1, grain, 48000, 1);
-        int mono = Call(a, "sceAudioOutOpenPort", 1, grain, 48000, 0);
-        var stereoStats = PortStats(a, stereo);
-        var monoStats = PortStats(a, mono);
+        const int Grain = 64;
+        uint buf = fixture.Memory.Alloc(Grain * 4 + 4, "aout");
+        GuestMemory.Span<short>(buf, Grain * 2 + 2).Clear();
+        int stereo = Call(a, "sceAudioOutOpenPort", 1, Grain, 48000, 1);
+        int mono = Call(a, "sceAudioOutOpenPort", 1, Grain, 48000, 0);
+        VitaSharp.Core.Util.AudioDiagnostics.PortStats stereoStats = PortStats(a, stereo);
+        VitaSharp.Core.Util.AudioDiagnostics.PortStats monoStats = PortStats(a, mono);
 
-        Assert.Equal(grain, Call(a, "sceAudioOutOutput", stereo, buf));     // zeros
-        Assert.Equal(grain, Call(a, "sceAudioOutOutput", stereo, 0u));      // null buffer: silence
-        GuestMemory.Write<short>(buf + (grain * 2 - 1) * 2, 1); // the last sample of a stereo grain
-        Assert.Equal(grain, Call(a, "sceAudioOutOutput", stereo, buf));
+        Assert.Equal(Grain, Call(a, "sceAudioOutOutput", stereo, buf));     // zeros
+        Assert.Equal(Grain, Call(a, "sceAudioOutOutput", stereo, 0u));      // null buffer: silence
+        GuestMemory.Write<short>(buf + (Grain * 2 - 1) * 2, 1); // the last sample of a stereo grain
+        Assert.Equal(Grain, Call(a, "sceAudioOutOutput", stereo, buf));
         Assert.Equal(3, stereoStats.Outputs);
         Assert.Equal(2, stereoStats.Silent);
         Assert.Equal(3, stereoStats.FirstSound);
 
         // a mono grain ends at sample Grain - 1: the sample after it is not part of the grain
-        GuestMemory.Write<short>(buf + (grain * 2 - 1) * 2, 0);
-        GuestMemory.Write<short>(buf + grain * 2, 1);
-        Assert.Equal(grain, Call(a, "sceAudioOutOutput", mono, buf));
-        GuestMemory.Write<short>(buf + (grain - 1) * 2, 1);
-        Assert.Equal(grain, Call(a, "sceAudioOutOutput", mono, buf));
+        GuestMemory.Write<short>(buf + (Grain * 2 - 1) * 2, 0);
+        GuestMemory.Write<short>(buf + Grain * 2, 1);
+        Assert.Equal(Grain, Call(a, "sceAudioOutOutput", mono, buf));
+        GuestMemory.Write<short>(buf + (Grain - 1) * 2, 1);
+        Assert.Equal(Grain, Call(a, "sceAudioOutOutput", mono, buf));
         Assert.Equal(1, monoStats.Silent);
         Assert.Equal(2, monoStats.FirstSound);
         Assert.Equal(0, Call(a, "sceAudioOutReleasePort", stereo));

@@ -18,7 +18,7 @@ internal static unsafe partial class Neon
     /// hosts, where those encodings take the generic reference implementation. Tests clear it on x64 so the CPU fuzz
     /// also checks the path the phone runs.
     /// </summary>
-    internal static bool X86Paths = Sse2.IsSupported;
+    internal static bool X86Paths { get; set; } = Sse2.IsSupported;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector128<byte> LoadD(CpuState* state, uint r) => Vector128.Create(*(ulong*)Reg(state, r), 0UL).AsByte();

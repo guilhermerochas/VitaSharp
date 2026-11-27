@@ -85,6 +85,8 @@ public sealed unsafe class PrecompileAllocationTests(GuestMemoryFixture fixture,
             // measured on x64: 2,396 B per block before (a decode list, the code array, the encoder closure, a closure
             // per lowered instruction from the flag lambdas), 692 B after: what remains is what the block keeps (the
             // block, its instructions, its compiled code record) and its share of the runtime's tables
+            // (grown to ~980 B by 27/11/2026, 1,001 B in the full suite: the cache's dictionary keyed by the plain address
+            // grew its table over and over for aligned block starts; 804 B with the mixed key, BlockCache.Key)
             Assert.True(perBlock <= MaxBytesPerBlock, $"{perBlock} B per block translated ahead (decode {decode / count}, compile {compile / count})");
         }
         finally

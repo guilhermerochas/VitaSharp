@@ -139,6 +139,49 @@ public sealed class TrophyPackage
         }
     }
 
+    /// <summary>The entries <see cref="LoadTexts"/> left on disk whose names pass <paramref name="which"/>, read with
+    /// one open of the TRP (the Android trophy list extracts a set's pictures in one pass instead of one open per
+    /// row). Entries kept in <see cref="Files"/> are included too. Empty when the file cannot be read.</summary>
+    public List<(string Name, byte[] Data)> ReadEntries(Func<string, bool> which)
+    {
+        var entries = new List<(string Name, byte[] Data)>();
+        foreach (KeyValuePair<string, byte[]> kept in Files)
+        {
+            if (which(kept.Key))
+            {
+                entries.Add((kept.Key, kept.Value));
+            }
+        }
+
+        if (_sourcePath == null || _onDisk.Count == 0)
+        {
+            return entries;
+        }
+
+        try
+        {
+            using FileStream stream = File.OpenRead(_sourcePath);
+            foreach (KeyValuePair<string, (long Offset, int Length)> entry in _onDisk.OrderBy(e => e.Value.Offset))
+            {
+                if (!which(entry.Key))
+                {
+                    continue;
+                }
+
+                stream.Position = entry.Value.Offset;
+                byte[] data = new byte[entry.Value.Length];
+                stream.ReadExactly(data);
+                entries.Add((entry.Key, data));
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Log.Warn($"Trophy: {_sourcePath}: {e.Message}");
+        }
+
+        return entries;
+    }
+
     /// <summary>
     /// A set's structure and texts only (the SFM entries), for lists that show many sets at once (the launcher's
     /// library counts every game's trophies): the icons stay in the TRP and <see cref="FileBytes"/> reads one when it

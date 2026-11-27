@@ -97,7 +97,7 @@ public static class AllocLedger
 
         deltas.Sort((a, b) => b.Bytes.CompareTo(a.Bytes));
         var sb = new System.Text.StringBuilder(256);
-        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        System.Globalization.CultureInfo inv = System.Globalization.CultureInfo.InvariantCulture;
         sb.Append(inv, $"PERF allocators: {totalBytes / 1024.0 / frames:F1} KB/frame over {frames} frames;");
         for (int i = 0; i < deltas.Count && i < top; i++)
         {
