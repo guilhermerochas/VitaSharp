@@ -379,6 +379,36 @@ public sealed class SessionCaptureTests : IDisposable
         Assert.Contains("no continuous audio stream (music) during the recording", CaptureAnalyzer.Analyze(dir, quiet: true));
     }
 
+    /// <summary>
+    /// The report says the internal resolution the recording ran at (context.txt's "gpu:" line at the start and the
+    /// stop), and both when it changed: a picture problem reported at 2x (Assassin's Creed III Liberation's flickering
+    /// wall) is replayed at the scale the player saw, and a capture said nothing about it before.
+    /// </summary>
+    [Fact]
+    public void Analyzer_reports_the_internal_resolution_of_the_recording()
+    {
+        Assert.Equal("gpu: internal resolution native (960x544)", CaptureContext.ResolutionLine(1f));
+        Assert.Equal("gpu: internal resolution 2x (1920x1088)", CaptureContext.ResolutionLine(2f));
+        Assert.Equal("gpu: internal resolution 0.75x (720x408)", CaptureContext.ResolutionLine(0.75f));
+
+        string dir = SimpleCapture("resolution", 60);
+        File.WriteAllText(Path.Combine(dir, "context.txt"),
+            "[start of the recording]\nwhere: game PCSE00053 'X' in front\n" + CaptureContext.ResolutionLine(2f) + "\n" +
+            "\n[stop of the recording]\nwhere: game PCSE00053 'X' in front\n" + CaptureContext.ResolutionLine(2f) + "\n");
+        string report = CaptureAnalyzer.Analyze(dir, quiet: true);
+        Assert.Contains("  internal resolution: 2x (1920x1088)\n", report.Replace("\r\n", "\n"));
+
+        // changed during the recording (the hotkey): both
+        File.WriteAllText(Path.Combine(dir, "context.txt"),
+            "[start of the recording]\nwhere: game PCSE00053 'X' in front\n" + CaptureContext.ResolutionLine(1f) + "\n" +
+            "\n[stop of the recording]\nwhere: game PCSE00053 'X' in front\n" + CaptureContext.ResolutionLine(3f) + "\n");
+        Assert.Contains("internal resolution: native (960x544) at the start, 3x (2880x1632) at the stop", CaptureAnalyzer.Analyze(dir, quiet: true));
+
+        // a capture from an older build: no line
+        File.WriteAllText(Path.Combine(dir, "context.txt"), "[start of the recording]\nwhere: game PCSE00053 'X' in front\n");
+        Assert.DoesNotContain("internal resolution", CaptureAnalyzer.Analyze(dir, quiet: true));
+    }
+
     /// <summary>A port that is simply idle between short sounds (the shell's UI sounds) drains its host queue: that
     /// is not an underrun; a port that keeps outputting grains on time and still runs dry is.</summary>
     [Fact]

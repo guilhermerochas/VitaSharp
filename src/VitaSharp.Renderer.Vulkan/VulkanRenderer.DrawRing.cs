@@ -73,6 +73,7 @@ public sealed unsafe partial class VulkanRenderer
         public uint SrcAddr;        // the render/depth target it came from (0 = memory)
         public byte Unit;           // binding, | 0x80 = vertex texture
         public TexSource Src;
+        public float Scale, ReadScale; // the source target's internal resolution scale and the scale the texture reads
     }
 
     private struct DrScene
@@ -82,6 +83,7 @@ public sealed unsafe partial class VulkanRenderer
         public uint Ds, St, DsFormat;
         public float BgDepth;
         public byte BgStencil, GxmMsaa, Msaa, Flags; // DrSc*
+        public float Scale;         // internal resolution scale of the scene's attachments
     }
 
     private const byte DrScDownscale = 1, DrScLoad = 2, DrScStore = 4, DrScDepth = 8, DrScGamma = 16, DrScColor = 32;
@@ -112,6 +114,11 @@ public sealed unsafe partial class VulkanRenderer
     private DrawRing? _drawRing;
     private TexSource _texSrc;
     private uint _texSrcAddr;
+    /// <summary>Internal resolution scale of the colour/depth target the texture came from (1 for guest memory).</summary>
+    private float _texSrcScale = 1f;
+    /// <summary>Scale of the pixels the texture actually reads: below <see cref="_texSrcScale"/> when a path goes through
+    /// the target's guest-size copy (the native mirror, a mip chain), which loses the internal resolution.</summary>
+    private float _texSrcReadScale = 1f;
 
     /// <summary>"\nPERF drawring: ..." when the ring ran this session, else empty.</summary>
     private string DrawRingReport() => _drawRingFramesTotal == 0 ? "" :
@@ -193,6 +200,8 @@ public sealed unsafe partial class VulkanRenderer
         t.SrcAddr = _texSrcAddr;
         t.Unit = (byte)(unit | (vertex ? 0x80 : 0));
         t.Src = _texSrc | (failed ? TexSource.Failed : 0);
+        t.Scale = _texSrcScale;
+        t.ReadScale = _texSrcReadScale;
         e.TexCount++;
         if (r.Timing)
         {
@@ -226,6 +235,7 @@ public sealed unsafe partial class VulkanRenderer
         s.BgStencil = depthSurfaceInfo?.BackgroundStencil ?? 0;
         s.GxmMsaa = (byte)beginSceneCommand.Multisample;
         s.Msaa = (byte)(_multisampled ? (int)_msSamples : _supersampled ? 1 : 0);
+        s.Scale = RtScale;
         s.Flags = (byte)((beginSceneCommand.Color?.Downscale == true ? DrScDownscale : 0) | (depthSurfaceInfo?.ForceLoad == true ? DrScLoad : 0) | (depthSurfaceInfo?.ForceStore == true ? DrScStore : 0)
             | (depthSurfaceInfo != null ? DrScDepth : 0) | (beginSceneCommand.Color?.GammaMode is > 0 ? DrScGamma : 0) | (beginSceneCommand.Color != null ? DrScColor : 0));
     }
@@ -509,6 +519,27 @@ public sealed unsafe partial class VulkanRenderer
         return kind;
     }
 
+    /// <summary>
+    /// The internal resolution of a texture source for the draw ring and the draw trace: "" for a native source,
+    /// "*2x" for a 2x target read at 2x, "*2x>1x" when a 2x target is read through its guest-size copy (the native
+    /// mirror, a mip chain), so the texture lost the internal resolution and looks like the native picture enlarged.
+    /// </summary>
+    internal static string ScaleTag(float scale, float readScale)
+    {
+        if (scale == 1f && readScale == 1f)
+        {
+            return "";
+        }
+
+        string tag = string.Create(CultureInfo.InvariantCulture, $"*{scale:0.##}x");
+        if (readScale != scale)
+        {
+            tag += string.Create(CultureInfo.InvariantCulture, $">{readScale:0.##}x");
+        }
+
+        return tag;
+    }
+
     private static string MsaaName(byte m) => m switch { 0 => "off", 1 => "ss2x", _ => $"{m}x" };
 
     private static int WriteDrawRing(string dir, List<DrFrameShot> shots, long trigger, long armed, int evicted)
@@ -579,7 +610,7 @@ public sealed unsafe partial class VulkanRenderer
 
         var diff = new StringBuilder();
         diff.AppendLine("# VitaSharp draw ring: each frame against the previous one (programs, targets, textures that switched source)");
-        diff.AppendLine("# texture sources: mem = guest memory, rt@A = colour target A used directly, region@A = a region of A, reinterp@A = A read with another format, rtmip@A = A with generated mips, depth@A = depth target A; +scenestart = the target being rendered, read through its scene-start copy");
+        diff.AppendLine("# texture sources: mem = guest memory, rt@A = colour target A used directly, region@A = a region of A, reinterp@A = A read with another format, rtmip@A = A with generated mips, depth@A = depth target A; +scenestart = the target being rendered, read through its scene-start copy; *2x = a target at 2x internal resolution, *2x>1x = read through its guest-size copy (the internal resolution is lost)");
         for (int i = 0; i < shots.Count; i++)
         {
             DrFrame f = shots[i].Frame;
@@ -635,7 +666,7 @@ public sealed unsafe partial class VulkanRenderer
         bool depth = (drScene.Flags & DrScDepth) != 0;
         sb.Append(invariant, $"[scene] begin present={present} rt=0x{drScene.RtAddr:X8} {drScene.W}x{drScene.H} msaa={drScene.GxmMsaa} downscale={((drScene.Flags & DrScColor) != 0 ? ((drScene.Flags & DrScDownscale) != 0).ToString() : "")} ds=0x{drScene.Ds:X8}");
         sb.Append(invariant, $" load={(depth ? ((drScene.Flags & DrScLoad) != 0).ToString() : "")} bgDepth={(depth ? drScene.BgDepth.ToString(invariant) : "")} (next draw id={drScene.FirstDrawId})");
-        sb.Append(invariant, $" fmt=0x{drScene.RtFormat:X8} rtsize={drScene.RtW}x{drScene.RtH} st=0x{drScene.St:X8} dsfmt=0x{drScene.DsFormat:X8} store={(drScene.Flags & DrScStore) != 0} bgStencil={drScene.BgStencil} gamma={(drScene.Flags & DrScGamma) != 0} path={MsaaName(drScene.Msaa)}\n");
+        sb.Append(invariant, $" fmt=0x{drScene.RtFormat:X8} rtsize={drScene.RtW}x{drScene.RtH} st=0x{drScene.St:X8} dsfmt=0x{drScene.DsFormat:X8} store={(drScene.Flags & DrScStore) != 0} bgStencil={drScene.BgStencil} gamma={(drScene.Flags & DrScGamma) != 0} path={MsaaName(drScene.Msaa)} scale={drScene.Scale:0.##}\n");
     }
 
     private static void AppendDraw(StringBuilder sb, CultureInfo invariant, in DrDraw drDraw, DrFrameShot drFrameShot, long texBase, long present)
@@ -655,7 +686,7 @@ public sealed unsafe partial class VulkanRenderer
 
             DrTex drTex = drFrameShot.Texs[ti];
             GxmTextureDesc x = drTex.Desc;
-            sb.Append(invariant, $" {((drTex.Unit & 0x80) != 0 ? "vt" : "t")}{drTex.Unit & 0x7F}=0x{x.DataAddress:X8}:{x.Format:X8}:{x.Width}x{x.Height}:T{x.TextureType >> 29}:S{x.StrideBytes}:G{x.GammaMode}:F{x.MagFilter}{x.MinFilter}{x.MipFilter}:B{x.LodBias}:L{x.LodMin}:M{x.MipCount}:A{x.UAddr}{x.VAddr}:W0={x.W0:X8}:Z{x.Swizzle}:K{SrcName(drTex.Src, drTex.SrcAddr)}");
+            sb.Append(invariant, $" {((drTex.Unit & 0x80) != 0 ? "vt" : "t")}{drTex.Unit & 0x7F}=0x{x.DataAddress:X8}:{x.Format:X8}:{x.Width}x{x.Height}:T{x.TextureType >> 29}:S{x.StrideBytes}:G{x.GammaMode}:F{x.MagFilter}{x.MinFilter}{x.MipFilter}:B{x.LodBias}:L{x.LodMin}:M{x.MipCount}:A{x.UAddr}{x.VAddr}:W0={x.W0:X8}:Z{x.Swizzle}:K{SrcName(drTex.Src, drTex.SrcAddr)}{ScaleTag(drTex.Scale, drTex.ReadScale)}");
         }
         sb.Append(invariant, $" vh={drDraw.VsHint:X16} fh={drDraw.FsHint:X16} scene={(drDraw.Scene == 0xFFFF ? "-" : drDraw.Scene.ToString(invariant))} rtsize={drDraw.RtW}x{drDraw.RtH}");
         if ((drDraw.Flags & (DrVsFailed | DrFsFailed)) != 0)

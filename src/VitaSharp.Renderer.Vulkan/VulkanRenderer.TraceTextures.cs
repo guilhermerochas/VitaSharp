@@ -19,6 +19,17 @@ public sealed unsafe partial class VulkanRenderer
     private long _traceTextureFrame = -1;
 
     private bool TracingThisFrame => _traceDir != null && (_traceManual || _traceFrame == _presentCount);
+
+    /// <summary>
+    /// The traced draw's texture unit after it was resolved: where the texture came from (guest memory, a colour or
+    /// depth target used directly, a region, a reinterpretation, a mip chain) and at which internal resolution, so a
+    /// trace taken at 2x shows the textures that read a 2x target through its guest-size copy ("*2x>1x").
+    /// </summary>
+    private void TraceTextureSource(bool vertexStage, int unit, GxmTextureDesc desc, bool failed)
+    {
+        TexSource src = _texSrc | (failed ? TexSource.Failed : 0);
+        TraceLine($"[tex] id={NextDrawId - 1}{(vertexStage ? "vt" : "t")}{unit}=0x{desc.DataAddress:X8}:{desc.Format:X8}:{desc.Width}x{desc.Height} src={SrcName(src, _texSrcAddr)}{ScaleTag(_texSrcScale, _texSrcReadScale)}");
+    }
     /// <summary>Scene begins and mid-scene flushes are logged for the traced frame and the one after it (a frame's
     /// post-processing often runs after the previous frame was presented).</summary>
     private bool TracingScenes => _traceDir != null && (_traceManual || (_traceFrame >= 0 && _presentCount >= _traceFrame && _presentCount <= _traceFrame + 1));

@@ -1354,6 +1354,23 @@ public static class CaptureAnalyzer
     private static double ParseSeconds(string? recorded) =>
         recorded != null && double.TryParse(recorded.Split(' ')[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double s) ? s : 0;
 
+    /// <summary>
+    /// The internal resolution of the recording from context.txt's start and stop sections ("2x (1920x1088)", or
+    /// "native (960x544) at the start, 2x (1920x1088) at the stop" when it changed); null for a capture from an older
+    /// build. A picture problem reported at one scale is then replayed at that scale (replay-gpu --res-scale=).
+    /// </summary>
+    internal static string? ResolutionText(List<string> start, List<string> stop)
+    {
+        string? atStart = start.FirstOrDefault(l => l.StartsWith(CaptureContext.ResolutionPrefix, StringComparison.Ordinal))?[CaptureContext.ResolutionPrefix.Length..];
+        string? atStop = stop.FirstOrDefault(l => l.StartsWith(CaptureContext.ResolutionPrefix, StringComparison.Ordinal))?[CaptureContext.ResolutionPrefix.Length..];
+        if (atStart == null || atStop == null || atStart == atStop)
+        {
+            return atStart ?? atStop;
+        }
+
+        return $"{atStart} at the start, {atStop} at the stop";
+    }
+
     /// <summary>The report's "Where" part: the screen at the start and every change (input.tsv kind ctx), the
     /// processes, the contact sheet (frames.png) and the last input before the recording (input_before.tsv).</summary>
     private static List<string> ContextLines(string dir, List<InputEvent> input, long startNs, List<FrameStat> stats, SortedDictionary<int, byte[]> sheet)
@@ -1383,10 +1400,16 @@ public static class CaptureAnalyzer
             o.Add("  " + l);
         }
 
-        string? stopWhere = ContextSection(dir, true).FirstOrDefault(l => l.StartsWith("where: ", StringComparison.Ordinal));
+        List<string> stop = ContextSection(dir, true);
+        string? stopWhere = stop.FirstOrDefault(l => l.StartsWith("where: ", StringComparison.Ordinal));
         if (stopWhere != null)
         {
             o.Add($"  at the stop: {stopWhere["where: ".Length..]}");
+        }
+
+        if (ResolutionText(start, stop) is { } resolution)
+        {
+            o.Add("  internal resolution: " + resolution);
         }
 
         if (sheet.Count > 0)

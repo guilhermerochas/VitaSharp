@@ -290,12 +290,14 @@ public sealed unsafe partial class VulkanRenderer
         // each, in a loop the exception handler kept out of registers) was the GPU worker's largest own cost in F1 2011
         // races on the phone.
         uint mask = units >= 32 ? used : used & ((1u << units) - 1);
-        if (s_texSetReuse && !s_texLookupOld && _drawRing == null && ReusedTextureSet(vertexStage, textures, mask, cubeSamplers, units) is { } reused)
+        // the draw ring and the draw trace record where each unit's texture came from: every unit is resolved
+        bool recordSources = _drawRing != null || TracingThisFrame;
+        if (s_texSetReuse && !s_texLookupOld && !recordSources && ReusedTextureSet(vertexStage, textures, mask, cubeSamplers, units) is { } reused)
         {
             ProfMark(ProfPhase.TexHit);
             return reused;
         }
-        _reuseOk = s_texSetReuse && !s_texLookupOld && _drawRing == null;
+        _reuseOk = s_texSetReuse && !s_texLookupOld && !recordSources;
         _reuseDeps = 0;
         _reuseMem = 0;
         if (s_texLookupOld)
@@ -367,6 +369,11 @@ public sealed unsafe partial class VulkanRenderer
                 if (_drawRing != null)
                 {
                     DrawRingTexture(vertexStage, i, desc, v.Handle == 0);
+                }
+
+                if (TracingThisFrame)
+                {
+                    TraceTextureSource(vertexStage, i, desc, v.Handle == 0);
                 }
 
                 if (_reuseOk)
@@ -615,6 +622,8 @@ public sealed unsafe partial class VulkanRenderer
         _texSrcAddr = 0;
         _texSrcRt = null;
         _texSrcTex = null;
+        _texSrcScale = 1f;
+        _texSrcReadScale = 1f;
         if (asCube && (w != h || RenderTargetContaining(addr) != null))
         {
             _texSrc = TexSource.None;
@@ -652,6 +661,8 @@ public sealed unsafe partial class VulkanRenderer
             {
                 _texSrc = TexSource.Depth;
                 _texSrcAddr = depthSrc.Address;
+                _texSrcScale = depthSrc.Scale;
+                _texSrcReadScale = depthSrc.Scale;
                 return DepthTexture(depthSrc, w, h);
             }
         }
@@ -661,6 +672,8 @@ public sealed unsafe partial class VulkanRenderer
         {
             _texSrc = TexSource.Depth;
             _texSrcAddr = stencilSrc.StencilAddress;
+            _texSrcScale = stencilSrc.Scale;
+            _texSrcReadScale = stencilSrc.Scale;
             return StencilTexture(stencilSrc, gxmTextureDesc);
         }
         if (DebugMode.Enabled)
@@ -697,6 +710,8 @@ public sealed unsafe partial class VulkanRenderer
 
             _texSrcAddr = target.Address;
             _texSrcRt = target;
+            _texSrcScale = rt.Scale;
+            _texSrcReadScale = rt.Scale;
             TexSource sceneStart = rt != target ? TexSource.SceneStart : 0;
             if (linear && ReinterpretRenderTarget(rt, gxmTextureDesc, gamma) is { } alias)
             {
@@ -707,6 +722,7 @@ public sealed unsafe partial class VulkanRenderer
                 && RenderTargetMipmapped(rt, gxmTextureDesc, x0, y0, gamma) is { } mipped)
             {
                 _texSrc = TexSource.RtMipmapped | sceneStart;
+                _texSrcReadScale = 1f; // level 0 is copied from the target's guest-size image (VulkanRenderer.RtMips.cs)
                 return (mipped, ImageLayout.ShaderReadOnlyOptimal);
             }
             if (addr != rt.Address || w != rt.Width || h != rt.Height)
@@ -772,6 +788,8 @@ public sealed unsafe partial class VulkanRenderer
         }
         _texSrc = TexSource.Memory;
         _texSrcAddr = 0;
+        _texSrcScale = 1f;
+        _texSrcReadScale = 1f;
         return ResolveMemoryTexture(gxmTextureDesc, addr, w, h, gamma, false);
     }
 
@@ -1508,6 +1526,8 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         uint aw = geo?.W ?? w, ah = geo?.H ?? h;
+        // the trace's texture source: through the native mirror the target is read at guest size
+        _texSrcReadScale = geo != null ? rt.Scale : 1f;
 
         (uint addr, uint Format, uint w, uint h, uint texRow, bool gamma) key = (addr, gxmTextureDesc.Format, w, h, texRow, gamma);
         if (_rtAliases.TryGetValue(key, out RtAlias? stale) && (stale.W != aw || stale.H != ah))

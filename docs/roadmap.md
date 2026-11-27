@@ -5164,6 +5164,15 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   não é dado da captura (o dump e o `--trace-draws` já trazem vértices, MVP, código e estado): é o comportamento do
   SGX543 em z/w e no ISP (precisão da divisão e da equação de plano, regra de empate), que só se mede no aparelho
   (homebrew que desenha duas faces coplanares de triangulações diferentes com LESS_EQUAL e lê a profundidade).
+  Andamento (ac3l1, 27/11/2026; não resolvido): nada muda entre 1x e 2x nessa cena. Replay do dump de 23/11 a 1x e a
+  2x: o pisca cai nos mesmos quadros (célula 2,0: 17 e 15 trocas em 34 quadros, 3637/3639/3641.../3660 nos dois), e o
+  `--trace-draws=3637` a 2x mostra todas as cenas a 2x (pré-passe, sombra, G-buffer, luz, cena, final) e todas as
+  texturas lidas de alvos na escala deles (5 depth, 10 reinterpretações do G-buffer de 8 bytes por pixel como U8U8U8U8/S8S8S8S8, 3
+  regiões, 2 scene-start, 2 alvos diretos; 767 da memória), nenhuma pela cópia em tamanho do Vita. O borrão é o do
+  jogo (cena 704x384 ampliada para 960x544, também no aparelho). O F8 agora diz a resolução interna (context.txt
+  "gpu:" e report.txt "internal resolution:"), e o trace e o draw ring dizem a escala de cada cena e a origem e a
+  escala de cada textura ("*2x", "*2x>1x" quando a resolução interna se perde). Achado à parte: uma textura com mips
+  cujo nível 0 é um alvo (VulkanRenderer.RtMips.cs) lê o nível 0 pela cópia nativa acima de 1x (não é o caso do AC3L).
 - [ ] [P1][G] PSM em Unity não abre (relato do usuário, 22/11/2026; log de 19:33, NPOA00239): o título traz o próprio
   runtime (`ux0:psm/<título>/runtime/eboot.bin`, PCSI00010 "Unity Runtime for PlayStation Mobile", mais mono_prx e
   bridge_prx), que está cifrado com a chave do conteúdo, e o carregador o lê como SELF comum: `InvalidDataException: Not

@@ -36,6 +36,22 @@ public static class CaptureContext
 
     private static string Kind(Emulator emulator) => emulator.IsShell ? "shell" : emulator.IsGameProgram && !emulator.IsSystemProgram ? "game" : emulator.IsSystemProgram ? "system app" : "application";
 
+    /// <summary>Prefix of context.txt's internal resolution line.</summary>
+    internal const string ResolutionPrefix = "gpu: internal resolution ";
+
+    /// <summary>context.txt's internal resolution line: "gpu: internal resolution 2x (1920x1088)", or "native (960x544)".</summary>
+    internal static string ResolutionLine(float scale)
+    {
+        if (scale == 1f)
+        {
+            return ResolutionPrefix + "native (960x544)";
+        }
+
+        int width = (int)Math.Max(1, MathF.Round(960 * scale));
+        int height = (int)Math.Max(1, MathF.Round(544 * scale));
+        return ResolutionPrefix + string.Create(CultureInfo.InvariantCulture, $"{scale:0.##}x ({width}x{height})");
+    }
+
     internal static string Name(Emulator emulator) => emulator.Title.Length > 0 ? $"{emulator.TitleId} '{emulator.Title}'" : emulator.TitleId.Length > 0 ? emulator.TitleId : $"process 0x{emulator.Pid:X}";
 
     /// <summary>context.txt: the screen, the processes and the audio (ports, the BGM port, decoders).</summary>
@@ -49,6 +65,8 @@ public static class CaptureContext
         sb.AppendLine($"screen: {Input.InputWaitMonitor.Describe()}");
         // where the data is (default, portable, chosen in the settings, --data), never the path itself
         sb.AppendLine(Storage.DataFolder.CaptureLine());
+        // the internal resolution (report.txt's "Where"): a picture problem may exist only at one scale
+        sb.AppendLine(ResolutionLine(emu.Gpu.Backend?.InternalScale ?? 1f));
         Emulator fg = vitaSystem.Foreground ?? emu;
         foreach (Emulator p in vitaSystem.Processes)
         {
