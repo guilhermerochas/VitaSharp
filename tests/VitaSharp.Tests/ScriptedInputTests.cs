@@ -115,7 +115,10 @@ public sealed class ScriptedInputTests
         Assert.False(idle.HasSensors);
         Assert.Equal(0, idle.ReadSamples(new MotionSample[4]));
 
-        var s = new ScriptedInput("tilt@0:30:0:600");
+        // the script clock is the test's: time passes only when the test says (a loaded CI host once spent 16 ms
+        // between the first sample and the test's own stopwatch, which a bound measured on the host could not see)
+        double seconds = 0;
+        var s = new ScriptedInput("tilt@0:30:0:600", () => seconds);
         Assert.True(s.HasSensors);
         var samples = new MotionSample[4];
         Assert.Equal(0, s.ReadSamples(Span<MotionSample>.Empty));
@@ -124,21 +127,37 @@ public sealed class ScriptedInputTests
         Assert.Equal(0f, samples[0].Acceleration.X, 4);
         Assert.Equal(0f, samples[0].Acceleration.Y, 4);
         Assert.Equal(-1f, samples[0].Acceleration.Z, 4);
-        var clock = System.Diagnostics.Stopwatch.StartNew();
-        Thread.Sleep(50);
-        int n = s.ReadSamples(samples);
-        double elapsed = clock.Elapsed.TotalSeconds;
-        Assert.Equal(1, n);
-        // raising the top edge (pitch about x): gravity leaves -z, the rotation rate is about +x and bounded by 180
-        // degrees/s, so after ~50 ms the Vita is part of the way to 30 degrees, not there yet
+        Assert.Equal(System.Numerics.Vector3.Zero, samples[0].AngularVelocity);
+
+        // 50 ms later: raising the top edge (pitch about x), gravity leaves -z and the Vita has turned at the 180
+        // degrees/s limit, 9 of its 30 degrees
+        seconds = 0.05;
+        Assert.Equal(1, s.ReadSamples(samples));
         MotionSample m = samples[0];
-        float pitch = MathF.Atan2(MathF.Abs(m.Acceleration.Y), -m.Acceleration.Z);
-        Assert.InRange(pitch, 0.001f, (float)(Math.PI * (elapsed + 0.01)));
-        Assert.True(pitch < 30 * MathF.PI / 180 || elapsed > 0.16, $"pitch {pitch} after {elapsed} s");
-        Assert.True(m.AngularVelocity.X > 0, $"gyro {m.AngularVelocity}");
-        Assert.InRange(m.AngularVelocity.X, 0f, MathF.PI * 1.001f);
+        Assert.Equal(MathF.PI * 0.05f, Pitch(m), 3);
+        Assert.Equal(MathF.PI, m.AngularVelocity.X, 3);
         Assert.Equal(0f, m.AngularVelocity.Y, 4);
         Assert.Equal(1f, m.Acceleration.Length(), 3);
+
+        // under 2 ms later: no new sample (the sensor runs at ~500 Hz at most)
+        seconds = 0.051;
+        Assert.Equal(0, s.ReadSamples(samples));
+
+        // a late sample (a slow host frame, 300 ms on): the turn is still bounded by 180 degrees/s over the time that
+        // really passed, so the Vita reaches its 30 degrees and stops there, never past them
+        seconds = 0.35;
+        Assert.Equal(1, s.ReadSamples(samples));
+        m = samples[0];
+        Assert.Equal(30 * MathF.PI / 180, Pitch(m), 3);
+        Assert.InRange(m.AngularVelocity.X, 0f, MathF.PI * 1.001f);
+
+        // at rest at the target: no rotation
+        seconds = 0.4;
+        Assert.Equal(1, s.ReadSamples(samples));
+        Assert.Equal(30 * MathF.PI / 180, Pitch(samples[0]), 3);
+        Assert.Equal(0f, samples[0].AngularVelocity.X, 4);
+
+        static float Pitch(MotionSample sample) => MathF.Atan2(MathF.Abs(sample.Acceleration.Y), -sample.Acceleration.Z);
     }
 
     [Fact]

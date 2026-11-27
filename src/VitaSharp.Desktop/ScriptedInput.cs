@@ -62,10 +62,22 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
     readonly Dictionary<Step, float> _mouseStickDone = new();
 
     readonly List<Step> _steps = new();
-    readonly Stopwatch _clock = Stopwatch.StartNew();
+    readonly Stopwatch _wallClock = Stopwatch.StartNew();
+
+    /// <summary>The script clock, seconds since the script started (the wall clock; a test passes its own).</summary>
+    readonly Func<double> _seconds;
 
     public ScriptedInput(string script)
+        : this(script, null)
     {
+    }
+
+    /// <param name="script">The script (see the class summary).</param>
+    /// <param name="clockSeconds">The script clock in seconds (null: the wall clock), so a test decides when time
+    /// passes instead of measuring the host.</param>
+    internal ScriptedInput(string script, Func<double>? clockSeconds)
+    {
+        _seconds = clockSeconds ?? (() => _wallClock.Elapsed.TotalSeconds);
         var steps = script.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         for (int i = 0; i < steps.Length; i++)
         {
@@ -157,10 +169,10 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
     {
         if (double.IsNaN(s.AfterSeconds))
         {
-            return (s.Frames ? VitaSharp.Core.Hle.Modules.Display.FramesPresented : _clock.Elapsed.TotalSeconds, s.Start);
+            return (s.Frames ? VitaSharp.Core.Hle.Modules.Display.FramesPresented : _seconds(), s.Start);
         }
 
-        double wall = _clock.Elapsed.TotalSeconds;
+        double wall = _seconds();
         double seen;
         lock (_frameSeenAt)
         {
@@ -421,9 +433,9 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
             if (!HasTiltSteps)
             {
                 UpdateVirtual();
-                return _virtual.Generate((long)(_clock.Elapsed.TotalMilliseconds * 1000), dest);
+                return _virtual.Generate((long)(_seconds() * 1_000_000), dest);
             }
-            long now = (long)(_clock.Elapsed.TotalMilliseconds * 1000);
+            long now = (long)(_seconds() * 1_000_000);
             if (_motionLastUs >= 0 && now - _motionLastUs < 2000)
             {
                 return 0; // ~500 Hz at most
