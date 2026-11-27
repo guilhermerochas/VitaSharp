@@ -523,8 +523,11 @@ happened with `mono-aot` and in the earlier phone runs, so it is a driver issue,
   Média = click, Forte = heavy click), tuned by the maker for its motor; before Android 10 a 20/30/45 ms one-shot at
   the strength's amplitude when the motor supports it. It plays with the media/game vibration usage, so the system's
   touch-vibration switch does not silence it (a short one-shot at the default amplitude was not felt on a linear motor).
-- **Hide the on-screen controls**: the small button by the fps counter and the pause chip (top centre; it hides and
-  comes back with the pause chip, also when the fps counter is off) shows or hides the on-screen controls with one
+- **Top row** (`GameChromeLayout`, tests `GameChromeLayoutTests`): the fps counter in the top centre, the pause chip
+  at the top right and the on-screen controls button at the top left; the two buttons hide and come back together
+  (`ChromeAutoHide`).
+- **Hide the on-screen controls**: the small button at the top left (it hides and comes back with the pause chip,
+  also when the fps counter is off) shows or hides the on-screen controls with one
   tap, and so does the pause menu's **Controles na tela** (the same code, `OnScreenVisibility`). The choice is saved
   for every game (`ShowOnScreenControls` in the app settings, like the controls' opacity and "hide with a
   controller"); hidden, the whole screen is the game's touch. A connected controller still hides them when "Esconder
@@ -772,6 +775,22 @@ The design mockups (below) are rendered from HTML, not taken from the phone:
 | Biblioteca | Detalhes do jogo | Troféus | Controles |
 | --- | --- | --- | --- |
 | <img src="screens/biblioteca.png" width="200" alt="Game library"> | <img src="screens/detalhes.png" width="200" alt="Game details"> | <img src="screens/trofeus.png" width="200" alt="Trophy list"> | <img src="screens/controles.png" width="200" alt="Controller settings"> |
+
+**Troféus cache.** The trophy screen loads through `Mobile.Core/Library/TrophyListCache.cs`, kept in the internal
+storage (`<internal>/cache/trophies/<COMMID>/`): the set's texts per language (`texts_<lang>.json`) and its pictures
+extracted from the TRP in one pass (`TROPnnn.PNG`, `icons.stamp`). Both are rebuilt when the TRP's path, size or write
+time changes; the user's progress (`ux0:user/00/trophy/<COMMID>.json`) is read again only when it changes, without the
+TRP. A second opening (also after a restart) reads no TRP: the rows point at the extracted files, which the image loader
+decodes off the UI thread at the view's size, the list is a CollectionView (only the rows on screen are built, recycled while scrolling). Each opening logs
+`Trophies: <TITLEID>: N rows in X ms (TRP reads, picture extractions, sets from disk)` in the app log (and so in the F8
+capture). Tests: `TrophyListCacheTests`. Deleting the folder is safe (the next opening rebuilds it).
+
+**Dialogs.** Every dialog (MAUI `DisplayAlert`/`DisplayActionSheet`/`DisplayPrompt` behind `Choose`, `Confirm`,
+`Alert`, `Prompt`; the framework `AlertDialog`s of the pad capture, storage setup, in-game keyboard and fatal error)
+uses the app's palette whatever the system's light or dark mode: `Platforms/Android/Resources/values/styles.xml`
+overrides `Maui.MainTheme`'s dialog themes and gives `GameActivity` `VitaSharp.GameTheme`, all through the colour
+tokens of `values/colors.xml` (the values of `Ui/Theme.cs` `Palette`; no fixed colour in a dialog). Tests:
+`AndroidDialogThemeTests` (tokens = palette, WCAG contrast in both system modes).
 
 | Menu de pausa | Ajustes | Firmware | Conta PSN e rede |
 | --- | --- | --- | --- |
@@ -1257,7 +1276,7 @@ runs, Devious Dungeon 11.2 M); Devious Dungeon town 49.3-49.8 fps against 47.2-4
 
 The 960×544 image is scaled to the screen height and centred. Translucent controls sit over the side margins: L/R in
 the corners, D-pad and left stick on the left, face buttons and right stick on the right, SELECT/PS/START at the
-bottom, a rear-touch toggle (TRÁS) and a small FPS + pause bar at the top. Pressed controls switch to the accent
+bottom, a rear-touch toggle (TRÁS) and along the top the controls button (left), the FPS counter (centre) and the pause chip (right). Pressed controls switch to the accent
 colour. A trophy unlock shows a toast ("Troféu desbloqueado", name and grade) at the top right. In a game started on
 its own (no shell running) the PS button opens the pause menu.
 

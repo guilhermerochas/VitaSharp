@@ -5,14 +5,32 @@ using VitaSharp.Mobile.Core.Storage;
 namespace VitaSharp.Mobile.Core.Library;
 
 /// <summary>One row of the Trofeus list. Hidden trophies keep their text secret until unlocked, as on the console. The
-/// picture stays in the TRP (<paramref name="Set"/>, texts only) and <see cref="LoadIcon"/> reads it when the row is shown.</summary>
-public sealed record TrophyRow(string CommId, int Id, TrophyGrade Grade, string Name, string Detail, bool Hidden, DateTime? UnlockedUtc, TrophyPackage? Set)
+/// picture stays in the TRP (<paramref name="Set"/>, texts only) and <see cref="LoadIcon"/> reads it when the row is shown;
+/// a row from the <see cref="TrophyListCache"/> has no set and points at the picture already extracted
+/// (<paramref name="IconFile"/>), which the screen loads as a file (decoded off the UI thread, at the view's size).</summary>
+public sealed record TrophyRow(string CommId, int Id, TrophyGrade Grade, string Name, string Detail, bool Hidden, DateTime? UnlockedUtc, TrophyPackage? Set,
+    string? IconFile = null)
 {
     /// <summary>The set has a picture for this trophy.</summary>
-    public bool HasIcon => Set?.HasTrophyIcon(Id) == true;
+    public bool HasIcon => IconFile != null || Set?.HasTrophyIcon(Id) == true;
 
-    /// <summary>The trophy's PNG, read from the TRP now (not kept); null when there is none.</summary>
-    public byte[]? LoadIcon() => Set?.TrophyIcon(Id);
+    /// <summary>The trophy's PNG, read now (not kept) from the extracted file or the TRP; null when there is none.</summary>
+    public byte[]? LoadIcon()
+    {
+        if (IconFile != null)
+        {
+            try
+            {
+                return File.ReadAllBytes(IconFile);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                return null;
+            }
+        }
+
+        return Set?.TrophyIcon(Id);
+    }
 
     public bool Unlocked => UnlockedUtc != null;
     public string ShownName => Hidden && !Unlocked ? Loc.Get("MHiddenTrophy") : Name;
@@ -31,6 +49,9 @@ public sealed class TrophyList
     {
         All, Earned, Missing
     }
+
+    /// <summary>A list from rows already built (<see cref="TrophyListCache"/>).</summary>
+    internal static TrophyList FromRows(string title, IReadOnlyList<TrophyRow> rows) => new(title, rows, Summarize(rows));
 
     private TrophyList(string title, IReadOnlyList<TrophyRow> rows, TrophyProgress progress)
     {

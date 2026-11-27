@@ -28,7 +28,7 @@ namespace VitaSharp.Android.Game;
 /// desktop launcher's "run", so no emulator state carries over between games and a GPU driver change applies on the
 /// next start. Leaving the game ends the process.
 /// </summary>
-[Activity(Label = "VitaSharp", Process = ":game", Theme = "@android:style/Theme.Black.NoTitleBar.Fullscreen",
+[Activity(Label = "VitaSharp", Process = ":game", Theme = "@style/VitaSharp.GameTheme",
     ScreenOrientation = ScreenOrientation.SensorLandscape, LaunchMode = LaunchMode.SingleTask, Exported = false,
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize
         | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden | ConfigChanges.Navigation | ConfigChanges.UiMode | ConfigChanges.Density)]
@@ -187,7 +187,7 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         _controls = new OnScreenControlsView(this, _pad) { ControlsOpacity = prefs.OnScreenOpacity, Haptics = prefs.Haptics, HapticStrength = prefs.HapticStrength };
         root.AddView(_controls, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
         _controls.FingerDown += OnFingerDown;
-        root.AddView(TopBar(), new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent, GravityFlags.Top | GravityFlags.CenterHorizontal));
+        root.AddView(TopBar(), new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent, GravityFlags.Top));
         _toast = Chip("", 14);
         _toast.Visibility = ViewStates.Gone;
         root.AddView(_toast, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent, GravityFlags.Top | GravityFlags.Right)
@@ -598,31 +598,48 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
 
     // ------------------------------------------------------------------ chrome: FPS bar, pause menu, toasts
 
+    /// <summary>The top row (<see cref="GameChromeLayout"/>): the fps counter in the centre, the pause chip on the right
+    /// and the on-screen controls chip on the left.</summary>
     AView TopBar()
     {
-        var bar = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-        bar.SetPadding(Dp(4), Dp(6), Dp(4), 0);
-        _fps = Chip("\u2014 FPS", 12);
-        bar.AddView(_fps);
-        var pause = Chip("\u275A\u275A", 12);
+        var bar = new FrameLayout(this);
+        _fps = Chip("— FPS", 12);
+        bar.AddView(_fps, ChromeSlot(GameChromeItem.Fps));
+        var pause = Chip("❚❚", 12);
         _pauseChip = pause;
         pause.Click += (_, _) => OpenMenu();
         // not focusable: arrow keys of a keyboard (or a D-pad that is not a game controller) moved the focus onto it
         // and drew Android's focus highlight over the game
         pause.Focusable = false;
-        var lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { LeftMargin = Dp(8) };
-        bar.AddView(pause, lp);
+        bar.AddView(pause, ChromeSlot(GameChromeItem.Pause));
         pause.PostDelayed(UpdatePauseChip, ChromeAutoHide.HideAfterMs);
         // shows/hides the on-screen controls; it hides and comes back with the pause chip (ChromeAutoHide), also
         // when the fps counter is off (the counter keeps its place, invisible)
-        var controlsChip = Chip("\U0001F3AE", 12);
+        var controlsChip = Chip("🎮", 12);
         _controlsChip = controlsChip;
         controlsChip.ContentDescription = Loc.Get("MOnScreenControls");
         controlsChip.Focusable = false;
         controlsChip.Click += (_, _) => SetControlsShown(!_pad.Visible);
-        bar.AddView(controlsChip, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { LeftMargin = Dp(8) });
+        bar.AddView(controlsChip, ChromeSlot(GameChromeItem.Controls));
         OnControlsVisibilityChanged();
         return bar;
+    }
+
+    /// <summary>A chip's place along the top edge (<see cref="GameChromeLayout.SlotOf"/>).</summary>
+    FrameLayout.LayoutParams ChromeSlot(GameChromeItem item)
+    {
+        GravityFlags horizontal = GameChromeLayout.SlotOf(item) switch
+        {
+            GameChromeSlot.Left => GravityFlags.Left,
+            GameChromeSlot.Right => GravityFlags.Right,
+            _ => GravityFlags.CenterHorizontal,
+        };
+        return new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent, GravityFlags.Top | horizontal)
+        {
+            TopMargin = Dp(GameChromeLayout.TopMarginDp),
+            LeftMargin = Dp(GameChromeLayout.EdgeMarginDp),
+            RightMargin = Dp(GameChromeLayout.EdgeMarginDp),
+        };
     }
 
     /// <summary>A finger went down on the game screen (the controls' view coordinates): the pause chip shows again
