@@ -431,7 +431,39 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     private readonly ConcurrentQueue<PipelineJob> _pipelineJobs = new();
+    /// <summary>
+    /// The pipelines predicted when the game creates a program (VulkanRenderer.ProgramLoad.cs): speculative, so they run
+    /// after the ones of draws already submitted (<see cref="_pipelineJobs"/>) and not at all while the GPU thread
+    /// builds a pipeline itself. In one queue, a new Killzone area's program loads (up to 256 predictions each) put
+    /// the pipelines of the draws just submitted behind them: the GPU thread built those itself, 300-557 ms each
+    /// against 75-139 ms with the workers idle (the phone's compiler shares the cores), 3.6 s in one frame.
+    /// </summary>
+    private readonly ConcurrentQueue<PipelineJob> _speculativePipelineJobs = new();
     private int _pipelineJobsRunning;
+    /// <summary>The GPU thread is building a pipeline itself (speculative jobs wait).</summary>
+    private int _gpuThreadBuildingPipeline;
+    private int _statSpeculativeHeld;
+
+    /// <summary>
+    /// The next pipeline job for a worker: the jobs of submitted draws first, then the speculative ones, which also
+    /// wait while <paramref name="gpuThreadBuilding"/> (unit-tested: <c>AsyncShaderQueueTests</c>).
+    /// </summary>
+    internal static bool TryNextPipelineJob<T>(ConcurrentQueue<T> needed, ConcurrentQueue<T> speculative, bool gpuThreadBuilding, out T? job)
+        where T : class
+    {
+        if (needed.TryDequeue(out job))
+        {
+            return true;
+        }
+
+        if (!gpuThreadBuilding && speculative.TryDequeue(out job))
+        {
+            return true;
+        }
+
+        job = null;
+        return false;
+    }
 
     private sealed record PipelineJob(GxmVertexProgram Vp, ulong Vk, GxpProgram Fs, ulong Fk, ulong FetchKey, ShaderHints? FetchHints,
         PredictedScene Scene, GxmBlendInfo? Blend, bool FragEnabled, byte PrimitiveType, byte PolygonMode, ulong Static, bool ProgramLoad = false);
@@ -861,8 +893,14 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Worker: runs the oldest pipeline job (false when there is none).</summary>
     private bool TryRunPipelineJob()
     {
-        if (!_pipelineJobs.TryDequeue(out PipelineJob? pipelineJob))
+        bool gpuThreadBuilding = Volatile.Read(ref _gpuThreadBuildingPipeline) != 0;
+        if (!TryNextPipelineJob(_pipelineJobs, _speculativePipelineJobs, gpuThreadBuilding, out PipelineJob? pipelineJob) || pipelineJob == null)
         {
+            if (gpuThreadBuilding && !_speculativePipelineJobs.IsEmpty)
+            {
+                Interlocked.Increment(ref _statSpeculativeHeld);
+            }
+
             return false;
         }
 
@@ -923,6 +961,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         _pipelineJobs.Clear();
+        _speculativePipelineJobs.Clear();
         DrainRebuildQueue();
         foreach (ShaderJob job in _inflight.Values)
         {

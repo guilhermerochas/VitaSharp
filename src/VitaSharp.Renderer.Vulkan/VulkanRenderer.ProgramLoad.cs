@@ -421,7 +421,7 @@ public sealed unsafe partial class VulkanRenderer
             var job = new PipelineJob(vp, vertexKey, fragmentProgram.Info.Program, fragmentKey, fetchHints.Key(), fetchHints, scene, fragmentProgram.Blend,
                 FragEnabled: true, PrimitiveType: 0, PolygonMode: 0, Static: 0, ProgramLoad: true);
             Interlocked.Increment(ref _statLoadPipelines);
-            _pipelineJobs.Enqueue(job);
+            _speculativePipelineJobs.Enqueue(job);
             _workAvailable.Release();
         }
     }
@@ -551,7 +551,7 @@ public sealed unsafe partial class VulkanRenderer
         try
         {
             var spin = new SpinWait();
-            while (!_shaderJobs.IsEmpty || !_pipelineJobs.IsEmpty || !_inflight.IsEmpty || !_pipelineInflight.IsEmpty || Volatile.Read(ref _pipelineJobsRunning) != 0)
+            while (!_shaderJobs.IsEmpty || !_pipelineJobs.IsEmpty || !_speculativePipelineJobs.IsEmpty || !_inflight.IsEmpty || !_pipelineInflight.IsEmpty || Volatile.Read(ref _pipelineJobsRunning) != 0)
             {
                 if (cancel.IsCancellationRequested || _stopShaderJobs || _deviceLost)
                 {
@@ -618,7 +618,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         Dbg($"pipeline built on the GPU thread: vs {vs.ProgramHash:X16} hints {vs.HintKey:X16} fs {fs.ProgramHash:X16} hints {fs.HintKey:X16} {key}; predicted: {predicted}; "
-            + $"pipeline jobs queued {_pipelineJobs.Count}, running {Volatile.Read(ref _pipelineJobsRunning)}");
+            + $"pipeline jobs queued {_pipelineJobs.Count} (+{_speculativePipelineJobs.Count} predicted at program load), running {Volatile.Read(ref _pipelineJobsRunning)}");
     }
 
     private static List<string> PipelineKeyDiff(in PipelineKey a, in PipelineKey b)
@@ -652,6 +652,6 @@ public sealed unsafe partial class VulkanRenderer
     private static string DbgTextureFormats(uint[] formats, GxpProgram program) => string.Join(",", formats.Select((f, unit) => (f, unit)).Where(t => (program.TexturesUsed() & (1u << t.unit)) != 0 || t.f != 0x0C000000u).Select(t => $"{t.unit}:{t.f:X8}"));
 
     private string ProgramLoadReport() => _compileOnProgramLoad
-        ? $"; at program load: {_statLoadShaders} shaders and {_statLoadPipelines} pipelines queued for {_loadedFragmentPrograms.Count} fragment programs x {_statKnownScenes + 1} surfaces ({_statLoadPipelinesBuilt} built), {_statLoadAliases} draws served by a module of the same canonical hints; ceiling: {_programLoadSurfaces} recent surfaces ({_statSurfacesDropped} dropped), {_programLoadBudget} pipelines per load ({_statLoadBudgetSkipped} combinations left out)"
+        ? $"; at program load: {_statLoadShaders} shaders and {_statLoadPipelines} pipelines queued for {_loadedFragmentPrograms.Count} fragment programs x {_statKnownScenes + 1} surfaces ({_statLoadPipelinesBuilt} built, after the pipelines of submitted draws; held {Volatile.Read(ref _statSpeculativeHeld)} times while the GPU thread built one), {_statLoadAliases} draws served by a module of the same canonical hints; ceiling: {_programLoadSurfaces} recent surfaces ({_statSurfacesDropped} dropped), {_programLoadBudget} pipelines per load ({_statLoadBudgetSkipped} combinations left out)"
         : "; at program load: off";
 }

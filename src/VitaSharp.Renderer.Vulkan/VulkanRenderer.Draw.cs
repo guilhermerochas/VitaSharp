@@ -871,6 +871,8 @@ public sealed unsafe partial class VulkanRenderer
             }
         }
 
+        // the speculative (program-load) pipeline jobs wait meanwhile: they would share the cores with this build
+        Interlocked.Increment(ref _gpuThreadBuildingPipeline);
         try
         {
             p = CreatePipeline(key, vs.Module, fs.Module, vs.Bindings, vs.Attributes, topology);
@@ -883,6 +885,10 @@ public sealed unsafe partial class VulkanRenderer
                 claim.Set();
             }
             throw;
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _gpuThreadBuildingPipeline);
         }
         long dt = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
         _statGpuPipelines++;
