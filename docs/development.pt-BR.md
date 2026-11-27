@@ -1,4 +1,4 @@
-<!-- pair: development.md sha256=b5520cf69a919fcc9eaf2feedcd4df833429226fe22327821fa04f6fb5db83fc -->
+<!-- pair: development.md sha256=3a507478ffbc3d80c3840298affacd7a2c0f129293824dc71114649bc6f561fc -->
 # Desenvolvimento
 
 [English](development.md) | **Português**
@@ -192,6 +192,31 @@ O que o `dotnet test tests/VitaSharp.Tests` precisa em cada sistema; um teste se
   `maui-android` dele e da plataforma Android API 37; o .NET 11 não tem Mono, então só `VitaSharpAndroidRuntime=coreclr`
   ou `nativeaot` compilam). Com o SDK instalado fora do local padrão, o app do desktop roda com `DOTNET_ROOT`
   apontando para ele.
+
+### Código ARM64 num PC x64 (qemu-user)
+
+Os caminhos ARM64 (o backend nativo ARM64 do JIT, o runtime .NET ARM64 que o celular usa) rodam num PC x64, sem o
+celular, sob o qemu-user: `build/qemu-arm64.sh` (Linux) / `build/qemu-arm64.ps1` (Windows, pelo WSL) compila o
+projeto de testes para `linux-arm64` e o roda com um test host arm64 sob o `qemu-aarch64`; lá os testes do backend
+ARM64 executam o código gerado nativamente (`Arm64HostRunner`) em vez do sandbox Unicorn das execuções x64 (filtro
+padrão: `NativeJit`, `Vfp`, `Neon`, `Arm64`; `--filter` / `-Filter` escolhe outros). `--testgame <vpk>` / `-TestGame`
+também publica o `VitaSharp.Desktop` para `linux-arm64` (self-contained) e inicia o test game sem janela sob o qemu
+(`--seconds`, padrão 300; o log ganha uma linha `# run under qemu-user`). Logs, o `.trx` e o `results.txt` do test
+game vão para `--out` / `-Out`. O qemu emula o processador, então os tempos não são os do celular; só os resultados
+contam.
+
+| | Windows | Linux | macOS |
+|---|---|---|---|
+| Requisitos | WSL 2 (Debian/Ubuntu) com um SDK do .NET 10 em `~/.dotnet`; `-Install` faz o resto (como root no WSL, sem senha) | Debian/Ubuntu x64 com SDK do .NET 10; `--install` (sudo): `qemu-user-static binfmt-support` e as bibliotecas `arm64` (`libc6 libstdc++6 libgcc-s1 libicu libssl3 zlib1g`, multiarch), mais o runtime .NET arm64 em `~/.dotnet-arm64` (`DOTNET_ARM64_ROOT`) | não se aplica: não há qemu-user; o Apple silicon roda o `dotnet test` nativamente em ARM64 |
+
+O WSL sem systemd perde a entrada binfmt do `qemu-aarch64` quando a distribuição reinicia: o `.ps1` a registra de novo
+a cada execução (`wsl -u root -- update-binfmts --enable qemu-aarch64`). `QEMU_CPU` escolhe o modelo de processador
+do qemu (padrão `max`). Os testes rodam na plataforma de testes portátil (`Microsoft.TestPlatform.Portable`, em
+`~/.vstest-portable`) iniciada pelo runtime arm64: o `vstest.console.dll` do SDK é compilado para x64, e o x64 não acha
+host arm64 no Linux. O script define `DOTNET_EnableWriteXorExecute=0` (o qemu-user roda código velho que o JIT do .NET
+escreve pelo segundo mapeamento da sua área de código W^X) (o próprio assembly de testes pede ao runtime ARM64 do
+host o trampolim que conta blocos, `Arm64Runner.CountBlocksOnArm64Hosts`). O `/Blame` diz em que teste um crash
+parou.
 
 ## Releases
 
