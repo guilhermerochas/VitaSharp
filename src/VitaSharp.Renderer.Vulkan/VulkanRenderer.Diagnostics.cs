@@ -433,7 +433,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         _deviceLostReported = true;
-        Log.Error($"[gpu] VULKAN DEVICE LOST in {where} at present #{_presentCount} (guest frame {DebugMode.Frame})\n{DebugState()}\nlast frames:\n{RecentFrames(20)}");
+        Log.Error($"[gpu] VULKAN DEVICE LOST in {where} at present #{_presentCount} (guest frame {DebugMode.Frame})\n{DebugState()}\nlast frames:\n{RecentFrames(20)}\nprograms in flight:\n{string.Join('\n', ProgramsInFlight())}");
         Log.Flush();
         try
         {

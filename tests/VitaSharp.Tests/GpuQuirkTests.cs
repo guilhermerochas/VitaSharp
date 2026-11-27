@@ -51,6 +51,22 @@ public sealed class GpuQuirkTests
             FramebufferSampleCounts = 1 | 2 | 4
         }, unified: true);
 
+    /// <summary>The split uniform slots (dynamic storage buffers holding the large bound uniform buffers) are avoided on
+    /// the ARM proprietary driver only: on a Mali-G57 a vertex shader reading its bone palette from one lost the device
+    /// (FIFA 13). Desktop drivers, the Qualcomm blob and Turnip keep them (they save the GPU worker ~2 ms a frame).</summary>
+    [Fact]
+    public void SplitUniformSlotsAreAvoidedOnTheArmDriverOnly()
+    {
+        GpuCapabilities mali = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorArm, GpuQuirkTable.DriverArmProprietary, GpuQuirkTable.MakeVersion(54, 1)));
+        Assert.True(mali.Has(GpuQuirk.AvoidSplitUniformSlots));
+        Assert.False(GpuQuirkTable.Select(s_nvidia).Has(GpuQuirk.AvoidSplitUniformSlots));
+        Assert.False(GpuQuirkTable.Select(s_adrenoBlob).Has(GpuQuirk.AvoidSplitUniformSlots));
+        Assert.False(GpuQuirkTable.Select(Device(GpuQuirkTable.VendorQualcomm, GpuQuirkTable.DriverTurnip, GpuQuirkTable.MakeVersion(24, 1)))
+            .Has(GpuQuirk.AvoidSplitUniformSlots));
+        Assert.False(GpuQuirkTable.Select(Device(GpuQuirkTable.VendorImagination, GpuQuirkTable.DriverImaginationProprietary, GpuQuirkTable.MakeVersion(1, 0)))
+            .Has(GpuQuirk.AvoidSplitUniformSlots));
+    }
+
     /// <summary>Graphics pipeline libraries: kept on desktop drivers that report fast linking, off on the phone
     /// blobs (precautionary quirk) and removed by the mobile profiles, so those paths compile whole pipelines.</summary>
     [Fact]

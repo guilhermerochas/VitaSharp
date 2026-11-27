@@ -75,4 +75,39 @@ public sealed class RendererDeviceLostTests(GuestMemoryFixture fx)
             renderer.Dispose();
         }
     }
+
+    /// <summary>Every frame keeps the programs it drew with (vertex and fragment program hashes, surface, draws), the
+    /// device-lost report's "programs in flight": one pair, drawn once into the workload's surface.</summary>
+    [Fact]
+    public void AFrameKeepsTheProgramsItDrewWith()
+    {
+        var renderer = new VulkanRenderer(new VulkanRendererOptions
+        {
+            VSync = false,
+            AsyncShaders = false,
+            AsyncPipelines = false,
+            CompileOnProgramLoad = false,
+        });
+        using var h = new HleHarness(fx, "lostdraws");
+        try
+        {
+            h.Emu.Gpu.Backend = renderer;
+            var w = new RendererTextureTests.Workload(h);
+            Frame(h, w);
+            List<string> lines = renderer.ProgramsInFlight(includeRetired: true);
+            string pair = Assert.Single(lines, l => l.Contains("draws=1", StringComparison.Ordinal));
+            Assert.Contains($"rt=0x{GuestColorAddress(w):X8}(64x64)", pair);
+            Assert.Matches(@"vs=[0-9A-F]{16} fs=[0-9A-F]{16}", pair);
+            Assert.Contains(lines, l => l.StartsWith("frame slot ", StringComparison.Ordinal) && l.Contains("1 program pairs", StringComparison.Ordinal));
+            w.Terminate();
+        }
+        finally
+        {
+            h.Emu.Gpu.WaitIdle();
+            h.Emu.Gpu.Backend = null;
+            renderer.Dispose();
+        }
+    }
+
+    private static uint GuestColorAddress(RendererTextureTests.Workload w) => w.Data;
 }

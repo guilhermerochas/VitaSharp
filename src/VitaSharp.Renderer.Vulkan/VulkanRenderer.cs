@@ -192,6 +192,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public readonly List<RtWriteback> StoreWritebacks = new();
         /// <summary>Notifications and other sync points (in submission order) signalled once this frame completed and its results are published.</summary>
         public readonly List<Action> Signals = new();
+        /// <summary>The programs this frame drew with (VulkanRenderer.LostDraws.cs): what a lost device was running.</summary>
+        public readonly ProgramUse[] Programs = new ProgramUse[MaxProgramUses];
+        public int ProgramCount, ProgramsDropped;
         public bool Retired;
         /// <summary>Submission order (frames retire oldest first so results are published in GPU order).</summary>
         public long SubmitSeq;
@@ -295,7 +298,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         Core.Gxm.Shader.ShaderGenerator.VectorLoads = Environment.GetEnvironmentVariable(EnvVars.ShaderVec4Loads)?.Trim() == "1";
         // split uniform slots need six dynamic storage buffers in set 0 (two more per stage)
         Core.Gxm.Shader.ShaderGenerator.SplitUniformSlots = Environment.GetEnvironmentVariable(EnvVars.UbShare)?.Trim() != "0"
-            && _core.Properties.Limits.MaxDescriptorSetStorageBuffersDynamic >= 6;
+            && _core.Properties.Limits.MaxDescriptorSetStorageBuffersDynamic >= 6
+            && !_core.Caps.Has(GpuQuirk.AvoidSplitUniformSlots);
         for (int i = 0; i < s_framesInFlight; i++)
         {
             _frames[i] = CreateFrame();
@@ -374,6 +378,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _vk.BeginCommandBuffer(f.Cmd, in bi);
         f.Recording = true;
         ResetVisibility(f);
+        f.ProgramCount = 0;
+        f.ProgramsDropped = 0;
         ResetCost(f);
         BeginGpuTime(f);
         _boundPipeline = default;
