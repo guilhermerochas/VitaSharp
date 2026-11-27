@@ -334,15 +334,17 @@ public sealed class SessionCaptureControlTests(GuestMemoryFixture fixture) : IDi
     /// present, so it is written with the commands up to the failure instead of waiting for frames that a game which
     /// lost its GPU device presents once a second, if ever.</summary>
     [Fact]
-    public void AFailureEndsAGpuDumpRecordingOnItsOwn()
+    public async Task AFailureEndsAGpuDumpRecordingOnItsOwn()
     {
         string path = Path.Combine(_harness.Root, "failure" + GpuDumpFormat.Extension);
-        GpuDumpRecorder? dump = GpuDumpRecorder.Start(new GpuDumpOptions { Path = path, Queue = _harness.Emu.Gpu, MaxFrames = 1_000_000 });
+        var dump = GpuDumpRecorder.Start(new GpuDumpOptions { Path = path, Queue = _harness.Emu.Gpu, MaxFrames = 1_000_000 });
         Assert.NotNull(dump);
-        var cap = new SessionCapture(_harness.Emu, Options());
+        SessionCaptureOptions options = Options();
+        options.SetPresentTap = _ => { };
+        var cap = new SessionCapture(_harness.Emu, options);
         try
         {
-            var frame = new Core.Hle.Modules.DisplayFrame(_harness.Alloc(8 * 8 * 4), 8, 8, 8, Core.Hle.Modules.DisplayPixelFormat.A8B8G8R8);
+            var frame = new DisplayFrame(_harness.Alloc(8 * 8 * 4), 8, 8, 8, DisplayPixelFormat.A8B8G8R8);
             _harness.Emu.Gpu.Submit(new PresentCommand { Frame = frame });
             _harness.Emu.Gpu.WaitIdle();
             Assert.True(dump!.Recording, "the dump must be recording for the check below to mean anything");
@@ -350,8 +352,8 @@ public sealed class SessionCaptureControlTests(GuestMemoryFixture fixture) : IDi
             Assert.False(cap.SaveOnFailure("GPU device lost in test")); // no capture to save: the dump still ends
             _harness.Emu.Gpu.Submit(new PresentCommand { Frame = frame });
             _harness.Emu.Gpu.WaitIdle();
-            Assert.True(dump.Completion.Wait(60_000), "the dump did not end at the present after the failure");
-            Assert.Null(dump.Completion.Result.Error);
+            GpuDumpResult result = await dump.Completion.WaitAsync(TimeSpan.FromSeconds(60)); // throws when the dump did not end
+            Assert.Null(result.Error);
             Assert.True(File.Exists(path));
         }
         finally
