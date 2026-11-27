@@ -28,7 +28,7 @@ namespace VitaSharp.Android.Game;
 /// desktop launcher's "run", so no emulator state carries over between games and a GPU driver change applies on the
 /// next start. Leaving the game ends the process.
 /// </summary>
-[Activity(Label = "VitaSharp", Process = ":game", Theme = "@android:style/Theme.Black.NoTitleBar.Fullscreen",
+[Activity(Label = "VitaSharp", Process = ":game", Theme = "@style/VitaSharp.GameTheme",
     ScreenOrientation = ScreenOrientation.SensorLandscape, LaunchMode = LaunchMode.SingleTask, Exported = false,
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize
         | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden | ConfigChanges.Navigation | ConfigChanges.UiMode | ConfigChanges.Density)]

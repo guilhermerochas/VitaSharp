@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dialogs (Choose, Confirm, Alert, Prompt, action sheets, the in-game keyboard and error dialogs) in the app's
+     palette (colors.xml tokens), whatever the system's light or dark mode: the screens are always dark, while the
+     stock dialogs followed the system theme. Checked by AndroidDialogThemeTests. -->
+<resources>
+    <!-- the MAUI library's Maui.MainTheme (the app's resource of the same name wins): MainActivity's dialogs -->
+    <style name="Maui.MainTheme" parent="Maui.MainTheme.Base">
+        <item name="alertDialogTheme">@style/VitaSharp.AlertDialog</item>
+        <item name="materialAlertDialogTheme">@style/VitaSharp.AlertDialog</item>
+        <item name="android:alertDialogTheme">@style/VitaSharp.FrameworkAlertDialog</item>
+    </style>
+
+    <!-- GameActivity: the old full-screen black theme, with the same dialogs -->
+    <style name="VitaSharp.GameTheme" parent="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+        <item name="android:alertDialogTheme">@style/VitaSharp.FrameworkAlertDialog</item>
+    </style>
+
+    <!-- AndroidX dialogs (MAUI DisplayAlert, DisplayActionSheet, DisplayPrompt) -->
+    <style name="VitaSharp.AlertDialog" parent="ThemeOverlay.MaterialComponents.Dialog.Alert">
+        <item name="colorSurface">@color/vs_surface</item>
+        <item name="android:colorBackground">@color/vs_surface</item>
+        <item name="colorOnSurface">@color/vs_text</item>
+        <item name="android:textColorPrimary">@color/vs_text</item>
+        <item name="android:textColorSecondary">@color/vs_text_soft</item>
+        <item name="android:textColorAlertDialogListItem">@color/vs_text</item>
+        <item name="android:textColorHint">@color/vs_muted</item>
+        <item name="colorPrimary">@color/vs_accent</item>
+        <item name="colorAccent">@color/vs_accent</item>
+        <item name="colorControlNormal">@color/vs_muted</item>
+        <item name="colorControlActivated">@color/vs_accent</item>
+    </style>
+
+    <!-- framework dialogs (android.app.AlertDialog: pad capture, storage setup, in-game keyboard, fatal error) -->
+    <style name="VitaSharp.FrameworkAlertDialog" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorBackground">@color/vs_surface</item>
+        <item name="android:textColorPrimary">@color/vs_text</item>
+        <item name="android:textColorSecondary">@color/vs_text_soft</item>
+        <item name="android:textColorAlertDialogListItem">@color/vs_text</item>
+        <item name="android:textColorHint">@color/vs_muted</item>
+        <item name="android:colorAccent">@color/vs_accent</item>
+        <item name="android:colorControlNormal">@color/vs_muted</item>
+        <item name="android:colorControlActivated">@color/vs_accent</item>
+    </style>
+</resources>
