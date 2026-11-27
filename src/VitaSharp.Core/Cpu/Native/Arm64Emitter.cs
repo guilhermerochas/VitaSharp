@@ -138,10 +138,15 @@ public sealed unsafe partial class Arm64Emitter
         /// live in the SIMD register cache too (4-byte entries in lane 0; odd S registers of a cached D register read
         /// with one DUP), instead of a store and a reload of the register file per operation.</summary>
         SingleCache = 2097152,
-        All = 4194303,
+        /// <summary>The abort exit of a data abort guard (<see cref="IrBuilder.GuardBranch"/>) is laid out after the
+        /// block's code: the guarded access costs the mapping-table load and a <c>cbz</c> not taken, instead of a
+        /// taken branch over an inline exit of a dozen instructions per access (blocks of a title whose kernel module
+        /// registered a data abort handler were twice their size).</summary>
+        ColdGuards = 4194304,
+        All = 8388607,
     }
 
-    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub", "succ", "count", "fence", "group", "fpentry", "packed", "chain", "vlazy", "assoc", "scache"];
+    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub", "succ", "count", "fence", "group", "fpentry", "packed", "chain", "vlazy", "assoc", "scache", "guard"];
 
     /// <summary>Enabled optimisations (tests may change it; the trampoline's pinned-counter mode is fixed per runtime).</summary>
     public static A64Opt Opts = ParseOpts(Environment.GetEnvironmentVariable(Util.EnvVars.NativeA64NoOpt));
@@ -300,6 +305,7 @@ public sealed unsafe partial class Arm64Emitter
         _coldExits.Clear();
         _coldUnlinked.Clear();
         _coldMarks.Clear();
+        _guardRegions.Clear();
         ForgetHostFlags();
         _fpcrHost = false;
         Array.Fill(_vcOff, -1);
@@ -387,6 +393,12 @@ public sealed unsafe partial class Arm64Emitter
                 continue;
             }
 
+            if (insts[i].Op == IrOp.BranchIf && insts[i].Imm == IrBuilder.GuardBranch && On(A64Opt.ColdGuards))
+            {
+                i = ColdGuard(insts, i);
+                continue;
+            }
+
             if (_pair && i + 1 < insts.Length && TryPair(insts[i], insts[i + 1]))
             {
                 i++;
@@ -463,6 +475,26 @@ public sealed unsafe partial class Arm64Emitter
             FaultSites.Add(((uint)start * 4, (uint)end * 4, (uint)stub * 4));
         }
 
+        foreach ((int label, int irFrom, int irTo, int hfN, int hfZ, int hfC, int hfV) in _guardRegions)
+        {
+            // a guard's abort exit, entered by the cbz with the state of the guard's branch: the SIMD cache written back
+            // (its registers are not relied on), the guest FPCR and the host flags of that point
+            _assembler.Bind(label);
+            Array.Fill(_vcOff, -1);
+            Array.Clear(_vcDirty);
+            _vcAny = _vcAnyDirty = false;
+            _hfN = hfN;
+            _hfZ = hfZ;
+            _hfC = hfC;
+            _hfV = hfV;
+            _fpcrHost = false;
+            for (int k = irFrom; k < irTo; k++)
+            {
+                _cur = k;
+                Lower(insts[k], slotFor, ref exitIndex);
+            }
+        }
+
         foreach ((int cold, int back) in _coldMarks)
         {
             // the first store to a clean page: set its byte (x16 = page index, kept from the check)
@@ -490,6 +522,41 @@ public sealed unsafe partial class Arm64Emitter
     private readonly List<(int Label, nint Slot, uint? Pc)> _coldUnlinked = new();
     /// <summary>Dirty-page marks of clean pages, laid out after the block (<see cref="MarkDirtyReg"/>).</summary>
     private readonly List<(int Cold, int Back)> _coldMarks = new();
+
+    // data abort guards laid out of line (A64Opt.ColdGuards): the exit's label, its IR range and the host flags at the
+    // guard's branch
+    private readonly List<(int Label, int IrFrom, int IrTo, int HfN, int HfZ, int HfC, int HfV)> _guardRegions = new();
+
+    /// <summary>
+    /// The guard branch at <paramref name="i"/> (<see cref="IrBuilder.GuardBranch"/>): the branch's own preamble (SIMD
+    /// cache written back, guest FPCR), a <c>cbz</c> of the mapping-table byte to the abort exit, which is laid out after
+    /// the block, and the IR index to go on from: the region's end label, lowered next as after an inline exit.
+    /// </summary>
+    private int ColdGuard(Span<IrInst> insts, int i)
+    {
+        _cur = i;
+        if (_vcAnyDirty)
+        {
+            VcFlushAll();
+        }
+
+        if (_fpcrHost)
+        {
+            EnsureGuestFpcr();
+        }
+
+        int mapped = UseZ(insts[i].A, X0);
+        int exit = _assembler.NewLabel();
+        _assembler.Cbz(mapped, exit);
+        int end = i + 1;
+        while (insts[end].Op != IrOp.Label || insts[end].Imm != insts[i].Imm2)
+        {
+            end++;
+        }
+
+        _guardRegions.Add((exit, i + 1, end, _hfN, _hfZ, _hfC, _hfV));
+        return end - 1;
+    }
 
     /// <summary>Stores a static exit's target to R15 (<see cref="StateLiveness.ColdPc"/>).</summary>
     private void StorePc(uint pc)

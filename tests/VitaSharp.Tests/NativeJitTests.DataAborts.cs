@@ -318,4 +318,64 @@ public sealed unsafe partial class NativeJitTests
 
         return best;
     }
+
+    /// <summary>
+    /// ARM64 data abort guards keep their abort exits out of the hot path (<see cref="Arm64Emitter.A64Opt.ColdGuards"/>):
+    /// with the guards armed, the code up to the last of a block's four guest stores grows by the guards alone (the
+    /// mapping-table load and a <c>cbz</c> per access; 34 words here), not by an inline exit per access (72 more).
+    /// FIFA 13 on the phone (a kernel module registers a data abort handler, so every access is guarded) ran blocks
+    /// twice their size with a taken branch over each exit. <c>VITASHARP_NATIVE_A64_NOOPT=guard</c> puts them inline.
+    /// </summary>
+    [Fact]
+    public void Arm64GuardExitsAreLaidOutAfterTheBlock()
+    {
+        EnsureGuestPages();
+        // str r1,[r0]; str r2,[r0,#4]; str r3,[r0,#8]; str r4,[r0,#12]; b .
+        uint[] stores = [0xE5801000, 0xE5802004, 0xE5803008, 0xE580400C, 0xEAFFFFFE];
+        int plain = LastGuestAccessWord(AbortBlock(thumb: false, armed: false, stores), Arm64Emitter.Opts);
+        int cold = LastGuestAccessWord(AbortBlock(thumb: false, armed: true, stores), Arm64Emitter.Opts);
+        int inline = LastGuestAccessWord(AbortBlock(thumb: false, armed: true, stores), Arm64Emitter.Opts & ~Arm64Emitter.A64Opt.ColdGuards);
+        output.WriteLine($"word of the last guest store: unguarded {plain}, cold guard exits {cold}, inline exits {inline}");
+        // per access: the guard (lsr, sub, ldrb, cbz) and its own dirty-page mark (guarded stores do not share marks);
+        // an inline exit adds a dozen words and a taken branch per access on top
+        Assert.True(cold - plain <= 4 * 10, $"guarded hot path grew by {cold - plain} words for 4 accesses");
+        Assert.True(inline - cold >= 4 * 12, $"inline exits: {inline - cold} words more than cold ones");
+    }
+
+    /// <summary>The index of the last guest store word (<c>str wT, [x20, wN, uxtw]</c>) in the ARM64 code of a block.</summary>
+    private static int LastGuestAccessWord(Block b, Arm64Emitter.A64Opt opts)
+    {
+        Arm64Emitter.A64Opt saved = Arm64Emitter.Opts;
+        Arm64Emitter.Opts = opts;
+        nint* slots = (nint*)System.Runtime.InteropServices.NativeMemory.AllocZeroed(64 * 8);
+        try
+        {
+            ArmFrontend frontend = NativeArm64Compiler.NewFrontend();
+            frontend.DynamicExitOperands = true;
+            IrBlock ir = frontend.Translate(b);
+            IrPasses.DeadCode(ir);
+            var stubs = new Arm64Emitter.Runtime { Epilogue = 0x7F00_0010_0000, Callout = 0x7F00_0020_0000, DispatchTable = 0x7F00_0030_0000 };
+            var emitter = new Arm64Emitter();
+            Assert.True(emitter.Prepare(ir, stubs, k => (nint)(slots + (k & 63))));
+            ReadOnlySpan<byte> code = emitter.AssembleSpan();
+            int last = -1;
+            for (int w = 0; w + 4 <= code.Length; w += 4)
+            {
+                uint word = BitConverter.ToUInt32(code[w..]);
+                // STR (register, 32-bit), option UXTW, S = 0, base x20 (the guest window)
+                if ((word & 0xFFE0FC00) == 0xB8204800 && ((word >> 5) & 31) == 20)
+                {
+                    last = w / 4;
+                }
+            }
+
+            Assert.True(last >= 0, "no guest store in the code");
+            return last;
+        }
+        finally
+        {
+            Arm64Emitter.Opts = saved;
+            System.Runtime.InteropServices.NativeMemory.Free(slots);
+        }
+    }
 }

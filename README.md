@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=4162e6b1c89035b9c5f15e68517bdea980265c2b6da4cfef16ac0c564d9828aa -->
+<!-- pair: README.pt-BR.md sha256=94a8a7340255fba5e45b7d3e704c183afbcb7bb7744a4f0ff4f610f7c3309528 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)

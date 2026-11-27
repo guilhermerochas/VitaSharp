@@ -280,7 +280,7 @@ public static class EnvVars
     public const string NativeMemmove = "VITASHARP_NATIVE_MEMMOVE";
     /// <summary>ARM64 backend: comma-separated optimisations to turn off for bisection on a device (all, or any of
     /// pin, backedge, fuse, pair, vcache, fpcr, fpcheck, dirty, lit, patch, cond, stub, succ, count, fence, group, fpentry,
-    /// packed, chain, vlazy, assoc, scache; see Arm64Emitter.A64Opt and docs/notes/native-jit.md).</summary>
+    /// packed, chain, vlazy, assoc, scache, guard; see Arm64Emitter.A64Opt and docs/notes/native-jit.md).</summary>
     public const string NativeA64NoOpt = "VITASHARP_NATIVE_A64_NOOPT";
     public const string NativeNoinline = "VITASHARP_NATIVE_NOINLINE";
     public const string NativeNolink = "VITASHARP_NATIVE_NOLINK";
@@ -633,6 +633,9 @@ public static class EnvVars
     /// <summary>=0: the guest clock counts the host's garbage-collector pauses again (A/B); default: they are left out,
     /// as on the console no time passes while the whole emulated machine is stopped (Util/GuestClock.cs HostElapsed).</summary>
     public const string GcPauseClock = "VITASHARP_GC_PAUSE_CLOCK";
+    /// <summary>=0: the guest clock goes on while a guest thread holding an emulated core falls behind its emulated CPU
+    /// (A/B); default: that time is left out, within a budget (Util/GuestClock.Lag.cs).</summary>
+    public const string LagClock = "VITASHARP_LAG_CLOCK";
     /// <summary>The CPU phase profile (Cpu/PhaseProfile.cs): unset = on while an F8 capture records or with --debug-mode
     /// (one dispatcher turn in 31 timed), 1 = on for the whole run with every turn timed, 0 = never on.</summary>
     public const string PhaseProf = "VITASHARP_PHASE_PROF";
