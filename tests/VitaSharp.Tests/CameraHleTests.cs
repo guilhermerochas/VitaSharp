@@ -168,6 +168,53 @@ public sealed class CameraHleTests(GuestMemoryFixture fixture)
         }
     }
 
+    /// <summary>A host pause (a garbage collection) while a read waits for the next frame: the guest clock lives
+    /// through less than the host sleep, and the read still waits until the frame is there and delivers it, never the
+    /// previous frame as already read (the coverage run on CI, OpenStartReadStopClose: status 1 from a waiting read).</summary>
+    [Fact]
+    public void AWaitingReadDeliversTheNextFrameThroughAHostPause()
+    {
+        GuestMemory mem = fixture.Memory;
+        uint info = mem.Alloc(0x1000, "caminfo");
+        uint read = mem.Alloc(0x1000, "camread");
+        const int Width = 160, Height = 120, Size = Width * Height * 4;
+        uint buf = mem.Alloc(Size + 0x1000, "cambuf");
+        var cam = new Camera { HostOverride = new HostServices { Camera = new FakeSource() } };
+        try
+        {
+            WriteInfo(info, 5 /* ABGR */, 3 /* 160x120 */, 7 /* 7.5 fps: 133 ms per frame */, buf, Size);
+            Assert.Equal(0, Call(cam, "sceCameraOpen", 0, info));
+            Assert.Equal(0, Call(cam, "sceCameraStart", 0));
+            GuestMemory.W32(read + 0x00, 0x48);
+            GuestMemory.W32(read + 0x04, 0); // WAIT_NEXTFRAME_ON
+            Assert.Equal(0, Call(cam, "sceCameraRead", 0, read));
+            ulong first = GuestMemory.Read<ulong>(read + 0x10);
+
+            // a 60 ms collection 1 ms into the wait for the next frame
+            HostPauseDuringTheNextWait pause = HostPauseDuringTheNextWait.Arm(System.Diagnostics.Stopwatch.Frequency * 60 / 1000);
+            try
+            {
+                pause.Start();
+                Assert.Equal(0, Call(cam, "sceCameraRead", 0, read));
+            }
+            finally
+            {
+                VitaSharp.Core.Util.GuestClock.HostTimestampForTest = null;
+                VitaSharp.Core.Util.GuestClock.HostPauseForTest = null;
+            }
+            Assert.True(pause.Happened, "the pause was not injected");
+            Assert.Equal(0u, GuestMemory.R32(read + 0x0C)); // ACTIVE: a new frame
+            Assert.True(GuestMemory.Read<ulong>(read + 0x10) > first, $"frame {GuestMemory.Read<ulong>(read + 0x10)} after {first}");
+            Assert.Equal(0, Call(cam, "sceCameraClose", 0));
+        }
+        finally
+        {
+            mem.Free(info);
+            mem.Free(read);
+            mem.Free(buf);
+        }
+    }
+
     [Fact]
     public void GreyFramesWithoutHostCamera()
     {
