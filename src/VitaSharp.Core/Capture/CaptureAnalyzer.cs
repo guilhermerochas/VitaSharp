@@ -1042,8 +1042,16 @@ public static class CaptureAnalyzer
         }
 
         var hitches = new List<(double Ms, string Text)>();
+        var stalls = new List<string>();
         foreach (string l in File.ReadLines(log))
         {
+            int stall = l.IndexOf("[shadercache] present ", StringComparison.Ordinal);
+            if (stall >= 0 && l.Contains(" by shader/pipeline work", StringComparison.Ordinal))
+            {
+                stalls.Add(l[(stall + "[shadercache] ".Length)..]);
+                continue;
+            }
+
             int at = l.IndexOf("[hitch] ", StringComparison.Ordinal);
             if (at < 0)
             {
@@ -1057,7 +1065,7 @@ public static class CaptureAnalyzer
             hitches.Add((ms, text));
         }
 
-        if (hitches.Count == 0)
+        if (hitches.Count == 0 && stalls.Count == 0)
         {
             return lines;
         }
@@ -1067,6 +1075,15 @@ public static class CaptureAnalyzer
         foreach ((double _, string text) in hitches.OrderByDescending(h => h.Ms).Take(20))
         {
             lines.Add("  " + text);
+        }
+
+        if (stalls.Count > 0)
+        {
+            lines.Add($"  shader/pipeline stalls of the GPU thread ({stalls.Count}; what it waited for):");
+            foreach (string st in stalls.Take(20))
+            {
+                lines.Add("    " + st);
+            }
         }
 
         return lines;

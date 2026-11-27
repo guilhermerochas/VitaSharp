@@ -61,14 +61,17 @@ public sealed class FrameLedgerHitchTests
                 "[20:26:01.000] [Info ] [Guest:killzone_vita] [hitch] present 10: 120 ms since the previous one; gc 30 ms (1 collections)",
                 "[20:26:02.000] [Info ] [Guest:killzone_vita] something else",
                 "[20:26:03.000] [Info ] [Guest:killzone_vita] [hitch] present 40: 900 ms since the previous one; texUpload 850 ms",
+                "[20:26:03.100] [Info ] [GPU worker] [shadercache] present 1523: stalled 877 ms by shader/pipeline work: fs 0123456789ABCDEF/0000000000000001 new (waited for its background translation) 600 ms",
             ]);
 
             List<string> lines = VitaSharp.Core.Capture.CaptureAnalyzer.HitchLines(dir);
 
-            Assert.Equal(4, lines.Count);
+            Assert.Equal(6, lines.Count);
             Assert.StartsWith("Hitches in the log (2,", lines[1]);
             Assert.Equal("  present 40: 900 ms since the previous one; texUpload 850 ms", lines[2]);
             Assert.Equal("  present 10: 120 ms since the previous one; gc 30 ms (1 collections)", lines[3]);
+            Assert.StartsWith("  shader/pipeline stalls of the GPU thread (1;", lines[4]);
+            Assert.Equal("    present 1523: stalled 877 ms by shader/pipeline work: fs 0123456789ABCDEF/0000000000000001 new (waited for its background translation) 600 ms", lines[5]);
         }
         finally
         {
