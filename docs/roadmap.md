@@ -5144,6 +5144,20 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   (z/w por vértice e interpolação do driver) dá 1-2 ulps de diferença. Próximo passo possível: descobrir no USSE/ISP
   como a profundidade sai do vértice (ex.: z e w do mesmo registro, divisão, precisão) a partir do código do shader e
   de testes; sem isso, qualquer viés de profundidade seria chute.
+  Andamento (ac3w2, 26/11/2026; não resolvido): o código USSE dos dois shaders (`--trace-draws=3637` do dump de
+  23/11) calcula a posição igual: atributo UNTYPED (f10) desempacotado pelo próprio shader (VPCK S16 normalizado para
+  xyz, o w S16 cru = ±11 como escala), xyz·w e a MVP com VMAD (fma) z, y, x; z e w saem de cadeias separadas e a
+  profundidade é z/w ≈ 1 - 0,1/w (projeção de far infinito), então cada vértice tem ~1-2 passos de D24 de ruído de
+  arredondamento. A parede guarda 32 dos 45 vértices do plano com o sinal trocado (xyz e w negativos: -11916·-11),
+  o oclusor todos positivos; com a conversão simétrica x/32767 (a nossa e a do Vita3K) os dois dão o mesmo ponto.
+  Testado no replay a conversão do GLES2/SGX (2x+1)/65535, que não é simétrica (`ac3w2/snorm-experiment.patch` no
+  scratchpad): a parede passa a perder sempre (retângulo preto estável em 33/33 quadros, contra o pisca de 17 trocas
+  na base), ao contrário do vídeo do aparelho, então o Vita não converte assim; nenhuma conversão plausível
+  (x/32767, x/32768, (2x+1)/65535) deixa a parede sempre na frente. Medido também: a MVP da parede não tem jitter
+  (a câmera anda suave de quadro a quadro), então a troca par/ímpar não vem da projeção. O que falta para decidir
+  não é dado da captura (o dump e o `--trace-draws` já trazem vértices, MVP, código e estado): é o comportamento do
+  SGX543 em z/w e no ISP (precisão da divisão e da equação de plano, regra de empate), que só se mede no aparelho
+  (homebrew que desenha duas faces coplanares de triangulações diferentes com LESS_EQUAL e lê a profundidade).
 - [ ] [P1][G] PSM em Unity não abre (relato do usuário, 22/11/2026; log de 19:33, NPOA00239): o título traz o próprio
   runtime (`ux0:psm/<título>/runtime/eboot.bin`, PCSI00010 "Unity Runtime for PlayStation Mobile", mais mono_prx e
   bridge_prx), que está cifrado com a chave do conteúdo, e o carregador o lê como SELF comum: `InvalidDataException: Not
