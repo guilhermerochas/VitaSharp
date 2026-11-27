@@ -133,6 +133,13 @@ program runs in 1 entry into native code with `rsb`, 3 without; registers, cycle
 `Arm64ReturnStackMatchesInterpreter` (Thumb recursion 12 deep with POP {pc}, deeper than the stack; a callee that changes
 LR; conditional BL taken and not taken; ARM -> Thumb BLX; on and off).
 
+**Measured on the phone (27/11, FIFA 13 practice arena from a save state, one A/B pair, 3 windows of 30 s each).**
+fps 41.0/40.9/41.3 (on) vs 41.3/40.6/41.3 (`NOOPT=rsb`): no fps change, the scene is GPU-bound (PERF gpu: 24.07 ms of
+GPU time per presented frame; 2.5 renderings per scene, 15,087 mid-scene breaks for depth textures). Generated code on
+the main thread 11.3-11.4 vs 12.0-12.4 ms/frame (-7%), RenderThread unchanged; 50,230 call exits and 20,133 returns
+compiled with the stack. The main thread's other ~11 ms of "native time" is sceKernelDelayThread (the game's own
+sleep), not work: its CPU time is 9.5 ms/frame.
+
 **Device plan.** FIFA 13 gameplay (match), A/B `VITASHARP_NATIVE_A64_NOOPT=rsb` alternating 3x: ms/frame of main and
 RenderThread, word-0 share of the simpleperf samples (`pos.py`), branch-miss counter (`simpleperf stat -e
 branch-misses,instructions` on the two threads). Killzone (validation title) to gameplay with the same A/B.
