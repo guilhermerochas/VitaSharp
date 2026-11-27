@@ -80,6 +80,25 @@ qemu_version() {
 }
 
 #######################################
+# Prints the file a path's symbolic links lead to (Debian's binfmt interpreter, aarch64-binfmt-P, is a link to
+# qemu-aarch64-static: run by that name, qemu takes its first argument as the program, so --version needs the target).
+# Arguments:
+#   The path.
+#######################################
+resolve_links() {
+  local path="$1" target
+  while [[ -L "${path}" ]]; do
+    target="$(readlink "${path}")"
+    if [[ "${target}" == /* ]]; then
+      path="${target}"
+    else
+      path="$(dirname "${path}")/${target}"
+    fi
+  done
+  echo "${path}"
+}
+
+#######################################
 # Prints the interpreter of the qemu-aarch64 binfmt entry, or nothing.
 #######################################
 binfmt_interpreter() {
@@ -97,6 +116,7 @@ binfmt_interpreter() {
 install_qemu() {
   local version deb work
   version="$(qemu_version "$1/qemu-aarch64")"
+  # a qemu-aarch64 already there of another version is replaced
   if [[ -n "${version}" && "${version%%.*}" -ge "${QEMU_MIN_MAJOR}" ]]; then
     return 0
   fi
@@ -183,10 +203,12 @@ check_requirements() {
   fi
   [[ -x "$1/dotnet" ]] || die "no arm64 .NET runtime in $1 (run with --install)"
   "$1/dotnet" --list-runtimes >/dev/null || die "the arm64 runtime in $1 does not start under qemu"
-  VITASHARP_QEMU_USER="$(qemu_version "$(binfmt_interpreter)")"
+  # never empty under qemu: the tests read it as "this run is emulated"
+  VITASHARP_QEMU_USER="$(qemu_version "$(resolve_links "$(binfmt_interpreter)")")"
+  VITASHARP_QEMU_USER="${VITASHARP_QEMU_USER:-unknown}"
   export VITASHARP_QEMU_USER
-  echo "qemu-arm64: arm64 processes run under qemu-user ${VITASHARP_QEMU_USER:-?} ($(binfmt_interpreter))"
-  if [[ -n "${VITASHARP_QEMU_USER}" && "${VITASHARP_QEMU_USER%%.*}" -lt "${QEMU_MIN_MAJOR}" ]]; then
+  echo "qemu-arm64: arm64 processes run under qemu-user ${VITASHARP_QEMU_USER} ($(binfmt_interpreter))"
+  if [[ "${VITASHARP_QEMU_USER}" == unknown || "${VITASHARP_QEMU_USER%%.*}" -lt "${QEMU_MIN_MAJOR}" ]]; then
     echo "qemu-arm64: qemu ${VITASHARP_QEMU_USER} runs stale rewritten code: the ARM64 host tests skip (--install-qemu)" >&2
   fi
 }
@@ -231,7 +253,7 @@ run_testgame() {
   set -e
   # the log says the run was under qemu-user (the arm64 code was emulated, its timings are not the phone's)
   {
-    echo "# run under qemu-user: ${VITASHARP_QEMU_USER:-?} ($(binfmt_interpreter)), cpu ${QEMU_CPU:-max}"
+    echo "# run under qemu-user: ${VITASHARP_QEMU_USER} ($(binfmt_interpreter)), cpu ${QEMU_CPU:-max}"
     echo "# test game exit ${code} after $(($(date +%s) - start)) s"
   } >>"$4/testgame.log"
   echo "qemu-arm64: test game exit ${code} in $(($(date +%s) - start)) s (log $4/testgame.log)"
