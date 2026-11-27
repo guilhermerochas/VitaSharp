@@ -37,6 +37,8 @@ public static class AudioDiagnostics
         internal readonly object _lock = new();
         // totals
         public long Outputs, Silent, Underruns, Gaps;
+        /// <summary>The output (1-based) whose grain first had a non-zero sample; 0 = none yet.</summary>
+        public long FirstSound;
         public double GapSum, GapMax, LastOutput, LastGap;
         internal int _streamUnderrunsSeen;
         // current interval (periodic debug lines)
@@ -128,9 +130,11 @@ public static class AudioDiagnostics
         s_streams.Clear();
     }
 
-    /// <summary>One guest output of a grain (called on entry to sceAudioOutOutput, before it blocks).</summary>
-    public static void Output(PortStats portStats, bool silent)
+    /// <summary>One guest output of a grain (called on entry to sceAudioOutOutput, before it blocks);
+    /// <paramref name="sound"/>: the grain has a non-zero sample.</summary>
+    public static void Output(PortStats portStats, bool sound)
     {
+        bool silent = !sound;
         double now = Now;
         lock (portStats._lock)
         {
@@ -159,6 +163,10 @@ public static class AudioDiagnostics
             {
                 portStats.Silent++;
                 portStats._iSilent++;
+            }
+            else if (portStats.FirstSound == 0)
+            {
+                portStats.FirstSound = portStats.Outputs;
             }
         }
     }
@@ -418,7 +426,20 @@ public static class AudioDiagnostics
         return $"{portStats.Outputs} outputs in {secs:F1} s ({(portStats.Gaps >= 10 && active > 0 ? $"{portStats.Gaps / active:F1}" : "-")}/s while active, expected {portStats.ExpectedPerSecond:F1}), " +
                $"gap avg {(portStats.Gaps > 0 ? portStats.GapSum / portStats.Gaps * 1000 : 0):F2} ms max {portStats.GapMax * 1000:F1} ms, " +
                $"underruns {portStats.Underruns} ({portStats.Underruns / secs * 60:F1}/min) in {portStats._burstNumber} bursts, silent {portStats.Silent}" +
+               SoundStart(portStats) +
                (portStats.IdleResumes > 0 ? $", {portStats.IdleResumes} starts after an idle pause (not underruns)" : "");
+    }
+
+    /// <summary>Where the port's sound started: the first output with a non-zero sample, or none (every grain the game
+    /// gave was zeros: the silence comes from the game's side, not from the host device).</summary>
+    private static string SoundStart(PortStats portStats)
+    {
+        if (portStats.Outputs == 0)
+        {
+            return "";
+        }
+
+        return portStats.FirstSound > 0 ? $" (sound from output {portStats.FirstSound})" : " (no output had sound: every grain was zeros)";
     }
 
     /// <summary>End of session (always): device and every port of the session.</summary>

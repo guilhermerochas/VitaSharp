@@ -96,6 +96,19 @@ public sealed partial class Audio : HleModule
 
     Port? Get(int port) { lock (_ports) return _ports.GetValueOrDefault(port); }
 
+    /// <summary>Whether a grain of <paramref name="samples"/> 16-bit samples at <paramref name="buf"/> has any non-zero
+    /// sample (a null buffer is silence, as the hardware outputs for it).</summary>
+    internal static bool HasSound(uint buf, int samples)
+    {
+        if (buf == 0)
+        {
+            return false;
+        }
+
+        ReadOnlySpan<short> src = GuestMemory.ReadSpan<short>(buf, samples);
+        return src.IndexOfAnyExcept((short)0) >= 0;
+    }
+
     [Hle(Cost = HleCost.SchedulerWait)]
     int sceAudioOutOutput(int port, uint buf)
     {
@@ -140,7 +153,7 @@ public sealed partial class Audio : HleModule
                 p.Dump?.Write(p.Buffer);
                 if (p.Stream != null)
                 {
-                    if (p.Stats != null) AudioDiagnostics.Output(p.Stats, any == 0);
+                    if (p.Stats != null) AudioDiagnostics.Output(p.Stats, any != 0);
                     using (Scheduler.Block()) p.Stream.Submit(p.Buffer); // blocks while the host buffer is full: not CPU time
                     SpaceOutputs(p);
                     if (p.Stats != null) AudioDiagnostics.AfterSubmit(p.Stats);
@@ -148,7 +161,12 @@ public sealed partial class Audio : HleModule
                 }
             }
             {
-                if (p.Stats != null) AudioDiagnostics.Output(p.Stats, buf == 0);
+                if (p.Stats != null)
+                {
+                    // no host stream (headless, no device): the grain's samples still say whether the game output
+                    // sound; counting only a null buffer as silent reported zero-filled grains as sound
+                    AudioDiagnostics.Output(p.Stats, HasSound(buf, p.Grain * p.Channels));
+                }
                 // no audio device: keep real-time pacing so games run at the right speed (none in turbo mode)
                 if (GuestClock.Turbo) return p.Grain;
                 double now = GuestClock.Seconds;
