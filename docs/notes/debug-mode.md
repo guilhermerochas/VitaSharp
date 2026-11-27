@@ -192,8 +192,8 @@ shaderc, shPack, pipeline, texUpload, fence, writeback, guestGpuWait, fileIo, sh
 
 ## Hang / stall watchdog (always on)
 
-Checked once per second. When no frame was presented for 5 s (after the first frame), or the GPU worker did not
-complete a command for 5 s while commands are pending, it logs a warning
+Checked once per second. When no frame was presented for 5 s (after the first frame), no frame at all 20 s after the
+boot, or the GPU worker did not complete a command for 5 s while commands are pending, it logs a warning
 
 ```
 [watchdog] STALL: no frame presented for 5 s (frame 1275)
@@ -203,12 +203,17 @@ renderer: present #1275, GPU frames ..., in scene True, rt 0x..., draws this fra
 thread 'main' uid=0x... Waiting wait=[sema ...] pc=... lr=... bt:...
     hle f1275 sceGxmNotificationWait(0x81A5C84C, ...) lr=0x... (not returned)
 mutex 'X' held by 'Y' (Waiting) count 1, 2 waiting
+wait 'main' 0x400100F5 -> end of 'pthread' 0x4001022F (Running in sceKernelLoadStartModule)
+wait 'a' 0x... -> mutex 'm2' held by 'b' 0x... (Waiting) -> mutex 'm1' held by 'a' 0x... (Waiting) (DEADLOCK: cycle)
 last frames: ...
 ```
 
 and repeats it at 30 s and 120 s of the same stall. `executing` is the GPU command the worker is inside (stuck in the
 backend when it stays the same), `(not returned)` marks the HLE call a thread is blocked in (debug mode only; the last 6 calls per thread here, 16 in
-a capture's state.txt).
+a capture's state.txt). The `wait` lines are the wait graph (`Kernel/WaitGraph.cs`): each waiting thread, the object
+it waits on and the thread that holds it (mutex owner) or that it waits for (thread end), followed to the end of the
+chain; a chain back to a thread already in it is a deadlock. Semaphores and event flags name their last signaller. The
+same lines are in the F8 capture's thread state and in the end-of-run report.
 
 ## Waiting for input / loading / busy (`[input-wait]`)
 

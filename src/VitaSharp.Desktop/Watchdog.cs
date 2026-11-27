@@ -15,6 +15,8 @@ namespace VitaSharp.Desktop;
 public sealed class Watchdog : IDisposable
 {
     const double StallSeconds = 5;
+    /// <summary>No frame at all since the boot for this long: the boot is reported as a stall (the first dump).</summary>
+    const double BootStallSeconds = 20;
     readonly Emulator _emu;
     readonly Func<VulkanRenderer?> _renderer;
     readonly Timer _timer;
@@ -72,8 +74,10 @@ public sealed class Watchdog : IDisposable
             }
             _goodRuns.NoteFrames(frames);
             double frameStall = (now - _frameAt).TotalSeconds, gpuStall = (now - _gpuAt).TotalSeconds;
-            // only once the game presents (boot and loading before the first frame can take long)
-            double stall = Math.Max(frames > 0 ? frameStall : 0, gpuStall);
+            // a frame stall counts once the game presents (boot and loading before the first frame can take long); a
+            // boot with no frame at all after BootStallSeconds is reported too (a boot hang has no other dump)
+            double bootStall = frames == 0 && frameStall >= BootStallSeconds ? frameStall : 0;
+            double stall = Math.Max(frames > 0 ? frameStall : bootStall, gpuStall);
             double[] thresholds = [StallSeconds, 30, 120];
             if (_reportsThisStall < thresholds.Length && stall >= thresholds[_reportsThisStall])
             {
@@ -183,6 +187,11 @@ public sealed class Watchdog : IDisposable
                 {
                     sb.AppendLine($"mutex '{m.Name}' held by '{m.Owner.Name}' ({m.Owner.Status}) count {m.LockCount}, {m.Waiters} waiting");
                 }
+            }
+            // who waits for whom: thread -> object -> the thread that holds or ends it, to the end of the chain
+            foreach (string line in Core.Kernel.WaitGraph.Lines(emu.Kernel.Threads))
+            {
+                sb.AppendLine(line);
             }
         }
         catch (Exception e)
