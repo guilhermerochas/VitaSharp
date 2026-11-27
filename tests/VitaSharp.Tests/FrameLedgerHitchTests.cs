@@ -83,8 +83,7 @@ public sealed class FrameLedgerHitchTests
         Directory.CreateDirectory(dir);
         try
         {
-            File.WriteAllText(Path.Combine(dir, "log.txt"), "[20:26:01.000] [Info ] [1] nothing
-");
+            File.WriteAllText(Path.Combine(dir, "log.txt"), "[20:26:01.000] [Info ] [1] nothing");
 
             Assert.Empty(VitaSharp.Core.Capture.CaptureAnalyzer.HitchLines(dir));
         }
