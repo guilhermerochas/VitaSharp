@@ -69,7 +69,7 @@ public static class DebugMode
         bool now = s_explicit || s_captures > 0;
         Enabled = now;
         Log.DedupeWarnings = now;
-        Cpu.PhaseProfile.SetDetailed(now); // every dispatcher turn timed: slow single turns are seen (Cpu/PhaseProfile.cs)
+        Cpu.PhaseProfile.SetDetailed(now); // the CPU phase profile counts while the detailed log is on (Cpu/PhaseProfile.cs)
         if (now && !was)
         {
             AudioDiagnostics.OnDebugModeChanged(true); // snapshot of the ports and streams opened before

@@ -62,22 +62,36 @@ public sealed class PhaseProfile
     /// <summary>Short names of the phases in the reports.</summary>
     private static readonly string[] s_names = ["dispatch", "interp", "interp-vector", "vector-code", "native", "il", "verify", "hle", "throttle"];
 
-    /// <summary>False: nothing is counted (<c>VITASHARP_PHASE_PROF=0</c>; A/B of the profile's own cost).</summary>
-    public static bool Enabled { get; set; } = Environment.GetEnvironmentVariable(EnvVars.PhaseProf) != "0";
+    /// <summary><c>VITASHARP_PHASE_PROF</c>: "1" on for the whole run with every turn timed, "0" never on.</summary>
+    private static readonly string? s_env = Environment.GetEnvironmentVariable(EnvVars.PhaseProf);
 
-    /// <summary><c>VITASHARP_PHASE_PROF=1</c>: every turn timed for the whole run.</summary>
-    private static readonly bool s_everyTurn = Environment.GetEnvironmentVariable(EnvVars.PhaseProf) == "1";
+    /// <summary>
+    /// The profile counts: while the detailed log is on (an F8 capture recording or keeping its pre-roll,
+    /// <c>--debug-mode</c>: <see cref="SetDetailed"/>) or with <c>VITASHARP_PHASE_PROF=1</c>. Off by default: measured
+    /// on x64, the counting and the sampled clock reads cost 1.3% of a native-code loop and 26% of an interpreted one
+    /// (blocks of two instructions), over the 1% an always-on diagnostic may take.
+    /// </summary>
+    public static bool Enabled { get; set; } = s_env == "1";
 
-    /// <summary>One dispatcher turn in this many is timed (1: every turn, <c>VITASHARP_PHASE_PROF=1</c> or the detailed
-    /// log, which is on while an F8 capture records: <see cref="DebugMode"/>).</summary>
-    public static int SampleEvery { get; set; } = s_everyTurn ? 1 : DefaultSampleEvery;
+    /// <summary>One dispatcher turn in this many is timed (1: every turn, <c>VITASHARP_PHASE_PROF=1</c>). An F8 capture
+    /// keeps the sampling: timing every turn doubles the host time of interpreted code, which the guest clock counts,
+    /// so the recording would no longer show the timing it was made to diagnose.</summary>
+    public static int SampleEvery { get; set; } = s_env == "1" ? 1 : DefaultSampleEvery;
 
     /// <summary>The sampling period when not every turn is timed (prime: a loop of a power-of-two period does not alias).</summary>
     public const int DefaultSampleEvery = 31;
 
-    /// <summary>The detailed log turned on or off (an F8 capture recording, --debug-mode): every turn is timed while it
-    /// is on, so the capture sees every slow turn; off, the sampling comes back (unless <c>VITASHARP_PHASE_PROF=1</c>).</summary>
-    public static void SetDetailed(bool on) => SampleEvery = on || s_everyTurn ? 1 : DefaultSampleEvery;
+    /// <summary>The detailed log turned on or off (an F8 capture recording or keeping its pre-roll, --debug-mode): the
+    /// profile counts while it is on, unless <c>VITASHARP_PHASE_PROF</c> decides for the whole run.</summary>
+    public static void SetDetailed(bool on)
+    {
+        if (s_env is "0" or "1")
+        {
+            return;
+        }
+
+        Enabled = on;
+    }
 
     /// <summary>Host time per guest cycle above which a window raises an alert: 70 ns, about 200 host cycles at the
     /// 3 GHz of a desktop core or a phone's big core (<c>VITASHARP_PHASE_BUDGET_NS</c>). Native code runs at 1-5 ns
@@ -256,7 +270,7 @@ public sealed class PhaseProfile
                      $"{s_names[worstPhase]} took {100.0 * worst / Math.Max(1, budgeted):F0}% ({phaseRate})");
         }
 
-        if (hot * 4 >= windowCycles)
+        if (hot * 4 >= windowCycles && Jit.Enabled && Jit.Chain.Length > 0) // without a backend every block is interpreted
         {
             Alert(3, $"{100.0 * hot / windowCycles:F0}% of {windowCycles / 1e3:F0} K guest cycles ran interpreted in hot blocks (run {HotExecutions}+ times without compiled code: rejected by every backend, or a mode the code was not compiled for)");
         }

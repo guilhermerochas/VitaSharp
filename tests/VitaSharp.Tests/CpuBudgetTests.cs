@@ -16,28 +16,40 @@ namespace VitaSharp.Tests;
 /// </summary>
 [Collection("guest")]
 [Trait("Category", "Budget")]
-public sealed unsafe class CpuBudgetTests(GuestMemoryFixture fx)
+public sealed unsafe class CpuBudgetTests : IDisposable
 {
+    private readonly GuestMemoryFixture _fx;
+    private readonly bool _profileWas = PhaseProfile.Enabled;
+
+    /// <summary>The profile is off by default (it counts during an F8 capture): on for these tests.</summary>
+    public CpuBudgetTests(GuestMemoryFixture fixture)
+    {
+        _fx = fixture;
+        PhaseProfile.Enabled = true;
+    }
+
+    public void Dispose() => PhaseProfile.Enabled = _profileWas;
+
     private const uint CodeBase = 0x0011_0000;
     private const uint BaseFpscr = 0x0300_0000; // DN + FZ (the Vita runtime's mode)
     private const uint Svc = 0xEF000000;
 
     /// <summary>vmsr fpscr, r0; loop: vadd.f32 s8, s16, s24; subs r2, r2, #1; bne loop; vmsr fpscr, r1; svc.</summary>
-    private static readonly uint[] VectorLoop = [0xEEE10A10, 0xEE384A0C, 0xE2522001, 0x1AFFFFFC, 0xEEE11A10, Svc];
+    private static readonly uint[] s_vectorLoop = [0xEEE10A10, 0xEE384A0C, 0xE2522001, 0x1AFFFFFC, 0xEEE11A10, Svc];
 
     /// <summary>loop: vadd.f32 s8, s16, s24; add r3, r3, #1; subs r2, r2, #1; bne loop; svc.</summary>
-    private static readonly uint[] ScalarLoop = [0xEE384A0C, 0xE2833001, 0xE2522001, 0x1AFFFFFB, Svc];
+    private static readonly uint[] s_scalarLoop = [0xEE384A0C, 0xE2833001, 0xE2522001, 0x1AFFFFFB, Svc];
 
     /// <summary>Three blocks per iteration: add r3; b next; add r4; b next; subs r2; bne first; svc.</summary>
-    private static readonly uint[] SwitchLoop = [0xE2833001, 0xEAFFFFFF, 0xE2844001, 0xEAFFFFFF, 0xE2522001, 0x1AFFFFF9, Svc];
+    private static readonly uint[] s_switchLoop = [0xE2833001, 0xEAFFFFFF, 0xE2844001, 0xEAFFFFFF, 0xE2522001, 0x1AFFFFF9, Svc];
 
-    private static bool HasBackend => Jit.Enabled && Jit.Chain.Length > 0 && PhaseProfile.Enabled;
+    private static bool HasBackend => Jit.Enabled && Jit.Chain.Length > 0;
 
     private void MapCode(uint[] words)
     {
-        if (fx.Memory.FindBlock(CodeBase) == null)
+        if (_fx.Memory.FindBlock(CodeBase) == null)
         {
-            fx.Memory.MapFixed(CodeBase, 0x1000, "budget code");
+            _fx.Memory.MapFixed(CodeBase, 0x1000, "budget code");
         }
 
         byte[] bytes = words.SelectMany(BitConverter.GetBytes).ToArray();
@@ -78,7 +90,7 @@ public sealed unsafe class CpuBudgetTests(GuestMemoryFixture fx)
             return; // no backend on this host: only the interpreter exists
         }
 
-        MapCode(ScalarLoop);
+        MapCode(s_scalarLoop);
         using var core = new CpuCore(new BlockCache());
         WarmUp(core);
         PhaseProfile p = core.Phases;
@@ -102,10 +114,10 @@ public sealed unsafe class CpuBudgetTests(GuestMemoryFixture fx)
             return;
         }
 
-        MapCode(ScalarLoop);
+        MapCode(s_scalarLoop);
         using var core = new CpuCore(new BlockCache());
         WarmUp(core);
-        MapCode(VectorLoop);
+        MapCode(s_vectorLoop);
         using var vectorCore = new CpuCore(new BlockCache());
         RunLoop(vectorCore, 3); // the second run of the vector block queues its compile
         Assert.True(CpuCore.WaitVectorCompiles(TimeSpan.FromSeconds(60)), "the background compile did not finish");
@@ -124,7 +136,7 @@ public sealed unsafe class CpuBudgetTests(GuestMemoryFixture fx)
             return;
         }
 
-        MapCode(VectorLoop);
+        MapCode(s_vectorLoop);
         using var core = new CpuCore(new BlockCache());
         long budget = PhaseProfile.CompileBudgetTicks;
         CpuCore.CompileVectorBlocksInline = true;
@@ -152,7 +164,7 @@ public sealed unsafe class CpuBudgetTests(GuestMemoryFixture fx)
             return;
         }
 
-        MapCode(VectorLoop);
+        MapCode(s_vectorLoop);
         using var core = new CpuCore(new BlockCache());
         RunLoop(core, 3);
         Assert.True(CpuCore.WaitVectorCompiles(TimeSpan.FromSeconds(60)), "the background compile did not finish");
@@ -178,7 +190,7 @@ public sealed unsafe class CpuBudgetTests(GuestMemoryFixture fx)
             return; // linking is a native-code feature
         }
 
-        MapCode(SwitchLoop);
+        MapCode(s_switchLoop);
         using var core = new CpuCore(new BlockCache());
         WarmUp(core);
         PhaseProfile p = core.Phases;
@@ -230,6 +242,31 @@ public sealed unsafe class CpuBudgetTests(GuestMemoryFixture fx)
         p.CheckWindow();
         Assert.Equal(300_000, p.HotInterpretedCycles);
         Assert.Equal(1, p.AlertCount);
+    }
+
+    /// <summary>The profile counts while an F8 capture records or keeps its pre-roll (the detailed log), with the
+    /// sampled clock (timing every turn would change the guest timing the capture records), and stops after it.</summary>
+    [Fact]
+    public void TheProfileCountsWhileACaptureRecords()
+    {
+        if (Core.Util.DebugMode.Enabled || Environment.GetEnvironmentVariable(Core.Util.EnvVars.PhaseProf) is "0" or "1")
+        {
+            return; // decided for the whole run
+        }
+
+        PhaseProfile.Enabled = false;
+        Core.Util.DebugMode.CaptureStarted();
+        try
+        {
+            Assert.True(PhaseProfile.Enabled, "the profile is off during a capture");
+            Assert.Equal(PhaseProfile.DefaultSampleEvery, PhaseProfile.SampleEvery);
+        }
+        finally
+        {
+            Core.Util.DebugMode.CaptureStopped();
+        }
+
+        Assert.False(PhaseProfile.Enabled, "the profile stayed on after the capture");
     }
 
     /// <summary>F8: the context.txt lines of the start and the stop give report.txt's "CPU phases" for the recording.</summary>

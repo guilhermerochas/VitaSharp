@@ -50,10 +50,10 @@ public sealed unsafe class CpuCore : IDisposable
 
     /// <summary>The core whose <see cref="Run"/> is on this host thread now (null outside a run): the block decoder and
     /// the compilers charge the work they do on a guest thread to its <see cref="Phases"/>.</summary>
-    [ThreadStatic] private static CpuCore? t_running;
+    [ThreadStatic] private static CpuCore? s_running;
 
     /// <summary>The profile of the guest thread running on this host thread, or null (a compile worker, a test outside Run).</summary>
-    internal static PhaseProfile? RunningProfile => PhaseProfile.Enabled ? t_running?.Phases : null;
+    internal static PhaseProfile? RunningProfile => PhaseProfile.Enabled ? s_running?.Phases : null;
 
     /// <param name="cache">The process's translated code.</param>
     /// <param name="memBase">Guest address 0 of the process's address space (<see cref="Memory.AddressSpace.Base"/>);
@@ -681,15 +681,15 @@ public sealed unsafe class CpuCore : IDisposable
 
     public ExitReason Run()
     {
-        CpuCore? outer = t_running;
-        t_running = this;
+        CpuCore? outer = s_running;
+        s_running = this;
         try
         {
             return RunBlocks();
         }
         finally
         {
-            t_running = outer;
+            s_running = outer;
             FlushTierCounts();
         }
     }
