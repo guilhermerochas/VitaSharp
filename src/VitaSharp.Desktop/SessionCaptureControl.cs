@@ -40,6 +40,7 @@ sealed class SessionCaptureControl : IDisposable
             sb.AppendLine($"runtime: .NET {Environment.Version}, {System.Runtime.InteropServices.RuntimeInformation.OSDescription} {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture}, {Environment.ProcessorCount} logical CPUs");
             sb.AppendLine($"cpu: {Core.Cpu.Jit.Describe()}, {Core.Cpu.CpuCore.InstructionsPerSecond / 1_000_000} MHz pacing (0 = unpaced)");
             sb.AppendLine($"debug-mode: {(DebugMode.Enabled ? "on" : "off")}");
+            sb.AppendLine($"phone-profile: {PhoneProfile.Describe(Environment.GetEnvironmentVariable)}");
             if (hostInfo?.Invoke() is { Length: > 0 } h)
             {
                 sb.AppendLine($"host: {h}");

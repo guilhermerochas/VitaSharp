@@ -635,4 +635,10 @@ public static class EnvVars
     /// <summary>Host nanoseconds per guest cycle above which a guest thread raises a [phase-alert] (default 70, ~200 host
     /// cycles at 3 GHz).</summary>
     public const string PhaseBudgetNs = "VITASHARP_PHASE_BUDGET_NS";
+    /// <summary>=1: the desktop runs with what the Android build turns on (Util/PhoneProfile.cs, --phone-profile,
+    /// build/phone-profile): waits without spinning, Mali GPU profile, 333 MHz, two host cores, 4 MB GC gen0 budget.</summary>
+    public const string PhoneProfile = "VITASHARP_PHONE_PROFILE";
+    /// <summary>The phone profile's host cores: a mask, hex (0x30) or decimal; 0 = not pinned; default two cores of the
+    /// upper half (CPUs n-4 and n-2).</summary>
+    public const string PhoneAffinity = "VITASHARP_PHONE_AFFINITY";
 }

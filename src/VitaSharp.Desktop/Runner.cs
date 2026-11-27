@@ -281,6 +281,11 @@ public static class Runner
             LogFiles.OpenSession(Path.Combine(Program.DataRoot, "logs"), LogFiles.TitleOf(appPath));
         }
 
+        if (PhoneProfile.Active)
+        {
+            Log.Info($"Phone profile: {PhoneProfile.Describe(Environment.GetEnvironmentVariable)}");
+        }
+
         if (DebugMode.Enabled)
         {
             Log.Info("[dbg] debug mode on (first-use logging, HLE errors, anomaly checks, periodic PERF, deduplicated warnings)");

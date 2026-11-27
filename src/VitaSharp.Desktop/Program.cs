@@ -20,6 +20,7 @@ public static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        string[] commandLine = args;
         // --data=<root> overrides the data folder for any command (same as VITASHARP_DATA)
         var data = args.FirstOrDefault(a => a.StartsWith("--data="));
         if (data != null)
@@ -32,6 +33,27 @@ public static class Program
         if (args.Length > 0 && args[0] == "apply-update")
         {
             return Updater.ApplyCli(args.Skip(1).ToArray());
+        }
+
+        // --phone-profile (or VITASHARP_PHONE_PROFILE=1): what the Android build turns on (Core/Util/PhoneProfile.cs)
+        if (args.Contains("--phone-profile"))
+        {
+            Environment.SetEnvironmentVariable(EnvVars.PhoneProfile, "1");
+            args = args.Where(a => a != "--phone-profile").ToArray();
+        }
+
+        if (PhoneProfile.IsRequested(Environment.GetEnvironmentVariable(EnvVars.PhoneProfile)))
+        {
+            bool restart = PhoneProfile.NeedsRestartForGc(Environment.GetEnvironmentVariable);
+            PhoneProfile.Apply(Environment.GetEnvironmentVariable, Environment.SetEnvironmentVariable);
+            if (restart)
+            {
+                // the GC reads its gen0 budget when the runtime starts: the same command again, with it
+                return RunAgainWithEnvironment(commandLine);
+            }
+
+            PhoneProfile.ApplyAffinity(PhoneProfile.ParseAffinity(Environment.GetEnvironmentVariable(EnvVars.PhoneAffinity), Environment.ProcessorCount));
+            PhoneProfile.CheckDataFolder(FsRoot);
         }
 
         if (OperatingSystem.IsMacOS() && MacVulkanLoader.RelaunchIfNeeded(args) is { } rc)
@@ -1055,6 +1077,28 @@ public static class Program
         return 0;
     }
 
+    /// <summary>Starts this program again with the same arguments and the current environment and returns its exit
+    /// code (the phone profile's GC setting is only read when a runtime starts).</summary>
+    static int RunAgainWithEnvironment(string[] commandLine)
+    {
+        string exe = Environment.ProcessPath ?? throw new InvalidOperationException("the executable's path is unknown");
+        var start = new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = false };
+        // the name is fixed by the .NET host ("dotnet VitaSharp.Desktop.dll"): the assembly path goes first then
+        if (Path.GetFileNameWithoutExtension(exe).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+        {
+            start.ArgumentList.Add(Environment.GetCommandLineArgs()[0]);
+        }
+
+        foreach (string arg in commandLine)
+        {
+            start.ArgumentList.Add(arg);
+        }
+
+        using var child = System.Diagnostics.Process.Start(start) ?? throw new InvalidOperationException($"could not start {exe}");
+        child.WaitForExit();
+        return child.ExitCode;
+    }
+
     static void PrintUsage()
     {
         Console.WriteLine("VitaSharp - PS Vita emulator");
@@ -1133,6 +1177,7 @@ public static class Program
         Console.WriteLine("               --async-pipelines=on|off  background pipelines only (default on), --shader-workers=N (fixed; default from the CPU budget: 90% of the processors, 2 left to the emulation while the GPU thread works)");
         Console.WriteLine("               --host-prio=on|off  guest threads and GPU worker above normal host priority (default on)");
         Console.WriteLine("               --gpu-profile=adreno|mali|desktop  emulate a mobile GPU class: its missing features, limits and driver quirks");
+        Console.WriteLine("               --phone-profile  run as the Android build does: waits without spinning, Mali GPU profile, 333 MHz, two host cores, 4 MB GC gen0 (VITASHARP_PHONE_PROFILE=1; build/phone-profile)");
         Console.WriteLine("               --res-scale=0.75|0.5|2|3|4  internal resolution: below native (faster on GPU-bound games, softer) or 2x-4x (sharper, costs GPU)");
         Console.WriteLine("               --env=KEY=VALUE  set an environment switch for this run (repeatable; e.g. --env=VITASHARP_RES_SCALE=2)");
         Console.WriteLine("               --msaa=native|ss|off  MSAA scenes: real multisampling (default), 2x supersampling or off (F3 cycles them in game)");
