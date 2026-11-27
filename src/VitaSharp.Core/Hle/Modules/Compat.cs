@@ -44,6 +44,9 @@ public sealed partial class Compat : HleModule, IDisposable, Hle.IFirmwareIntern
 
     const uint WindowSize = 0x4000000, DatSize = 0x1038, LoaderScratchSize = 0x110;
 
+    /// <summary>The window's guest memory block.</summary>
+    const string WindowBlockName = "SceCompat window";
+
     /// <summary>The start path's arguments: the activation data, then the license (0x200) and the key query's outputs.</summary>
     const uint StartLicenseOffset = 0x1040, LicenseMaxSize = 0x200, StartScratchSize = StartLicenseOffset + LicenseMaxSize + 0x40;
 
@@ -250,7 +253,7 @@ public sealed partial class Compat : HleModule, IDisposable, Hle.IFirmwareIntern
         }
 
         _owner = Emu.Pid;
-        _window = Mem.Alloc(WindowSize, "SceCompat window", MemoryRegion.User, 0x100000);
+        _window = Mem.Alloc(WindowSize, WindowBlockName, MemoryRegion.User, 0x100000);
         _seed = (uint)Random.Shared.NextInt64(0, 1L << 32);
         CreateSemaphores();
         if (outBases != 0)
@@ -602,6 +605,31 @@ public sealed partial class Compat : HleModule, IDisposable, Hle.IFirmwareIntern
     {
         StopRunner();
         _hardware.Ge?.Dispose();
+        ReleaseWindow();
+    }
+
+    /// <summary>
+    /// The owner's end (SceCompat 3.74 0x81000488, the process event of the window's owner): the window's memory goes
+    /// back and the window is no longer taken. Only the block this module allocated is freed (a re-exec may have
+    /// freed it already and handed its range to another block).
+    /// </summary>
+    void ReleaseWindow()
+    {
+        if (_window == 0)
+        {
+            return;
+        }
+
+        using (ProcessScope.Enter(Emu))
+        {
+            if (Mem.FindBlock(_window) is { } block && block.Address == _window && block.Name == WindowBlockName)
+            {
+                Mem.Free(_window);
+            }
+        }
+
+        _window = 0;
+        _owner = -1;
     }
 
     [Hle]
