@@ -489,7 +489,7 @@ public static class AstcTranscoder
         // the disk cache's read-ahead (native memory): copied straight into the pooled texels, no array per hit
         if (Disk is { } ahead && ahead.IsPreloaded(key))
         {
-            Texels t = Texels.Rent(length);
+            var t = Texels.Rent(length);
             if (ahead.TryCopyPreloaded(key, tag, t.Span))
             {
                 Interlocked.Increment(ref DiskHits);
