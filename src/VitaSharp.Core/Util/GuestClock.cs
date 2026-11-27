@@ -181,26 +181,37 @@ public static partial class GuestClock
     public static long FromMicroseconds(long microseconds) => (long)Math.Ceiling(microseconds * (Stopwatch.Frequency / 1_000_000.0));
 
     /// <summary>Waits until the clock reaches <paramref name="deadline"/> (ticks); in turbo mode jumps there. While the
-    /// emulation is paused it first waits for the resume (see <see cref="EmulationPause.WaitWhilePaused"/>).</summary>
+    /// emulation is paused it first waits for the resume (see <see cref="EmulationPause.WaitWhilePaused"/>).
+    /// The host sleep is the time left at the start; the guest clock can live through less of it (a host pause or a
+    /// late thread's time left out, <see cref="HostElapsed"/>, <see cref="LeaveOutLag"/>), so the wait goes on until
+    /// the clock is really there: a camera read waiting for the next frame woke with the clock short of the frame and
+    /// handed back the previous one as already read.</summary>
     public static void WaitUntil(long deadline, bool allowSpin = true)
     {
-        if (EmulationPause.IsPaused && EmulationPause.WaitWhilePaused())
+        while (true)
         {
-            Thread.Sleep(1);
-            return;
-        } // the thread finishing a GPU scene: the frozen clock never gets there
-        long now = WaitTicks;
-        if (now >= deadline)
-        {
-            return;
-        }
+            if (EmulationPause.IsPaused && EmulationPause.WaitWhilePaused())
+            {
+                Thread.Sleep(1);
+                return;
+            } // the thread finishing a GPU scene: the frozen clock never gets there
+            long now = WaitTicks;
+            if (now >= deadline)
+            {
+                return;
+            }
 
-        if (Turbo)
-        {
-            AdvanceTo(deadline);
-            return;
+            if (Turbo)
+            {
+                AdvanceTo(deadline);
+                return;
+            }
+            PreciseSleep.Until(Stopwatch.GetTimestamp() + (long)((deadline - now) / Speed), allowSpin);
+            if (Frozen)
+            {
+                return; // a clock stopped by hand (tests) moves only when its owner moves it
+            }
         }
-        PreciseSleep.Until(Stopwatch.GetTimestamp() + (long)((deadline - now) / Speed), allowSpin);
     }
 
     /// <summary>Moves the clock forward so that it reads at least <paramref name="deadline"/>. Never moves it back,
