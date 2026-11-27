@@ -20,7 +20,7 @@ namespace VitaSharp.Core.Cpu.Native;
 /// </summary>
 public sealed unsafe partial class Arm64Emitter
 {
-    private const int X0 = 0, X1 = 1, X2 = 2, X3 = 3, X4 = 4, X5 = 5, X6 = 6, X7 = 7, X8 = 8, X16 = 16, X17 = 17;
+    private const int X0 = 0, X1 = 1, X2 = 2, X3 = 3, X4 = 4, X5 = 5, X6 = 6, X7 = 7, X8 = 8, X9 = 9, X10 = 10, X16 = 16, X17 = 17;
     private const int State = 19, MemBase = 20;
 
     /// <summary>Callee-saved registers available for temps (survive callouts).</summary>
@@ -55,6 +55,8 @@ public sealed unsafe partial class Arm64Emitter
     private static readonly int s_offNInstr = StateLayout.Of(nameof(CpuState.NInstr));
     private static readonly int s_offLastExitSlot = StateLayout.Of(nameof(CpuState.LastExitSlot));
     private static readonly int s_offLinkBreak = StateLayout.Of(nameof(CpuState.LinkBreak));
+    private static readonly int s_offRsbTop = StateLayout.Of(nameof(CpuState.RsbTop));
+    private static readonly int s_offRsb = StateLayout.Of(nameof(CpuState.Rsb));
     private static readonly int s_offThumb = StateLayout.Of(nameof(CpuState.Thumb));
     private static readonly int s_offFpscr = StateLayout.Of(nameof(CpuState.Fpscr));
     private static readonly int s_offMemBase = StateLayout.Of(nameof(CpuState.MemBase));
@@ -143,10 +145,16 @@ public sealed unsafe partial class Arm64Emitter
         /// taken branch over an inline exit of a dozen instructions per access (blocks of a title whose kernel module
         /// registered a data abort handler were twice their size).</summary>
         ColdGuards = 4194304,
-        All = 8388607,
+        /// <summary>With <see cref="PatchLinks"/> and <see cref="ExitStubs"/>: a return stack for guest calls and returns
+        /// (<see cref="CpuState.Rsb"/>). A BL/BLX imm exit pushes its return key and the host address right after its patch
+        /// site and links with a host BL; a guest return (BX LR, POP {pc}) whose target matches the top entry returns
+        /// there with a host RET, which the core predicts from its own return address stack. Before, every return was a
+        /// dispatch-table lookup and an indirect BR, mispredicted whenever the function has more than one caller.</summary>
+        ReturnStack = 8388608,
+        All = 16777215,
     }
 
-    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub", "succ", "count", "fence", "group", "fpentry", "packed", "chain", "vlazy", "assoc", "scache", "guard"];
+    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub", "succ", "count", "fence", "group", "fpentry", "packed", "chain", "vlazy", "assoc", "scache", "guard", "rsb"];
 
     /// <summary>Enabled optimisations (tests may change it; the trampoline's pinned-counter mode is fixed per runtime).</summary>
     public static A64Opt Opts = ParseOpts(Environment.GetEnvironmentVariable(Util.EnvVars.NativeA64NoOpt));
@@ -235,6 +243,32 @@ public sealed unsafe partial class Arm64Emitter
     /// <summary>An unlinked patch site: B to the next instruction (the link-slot path).</summary>
     public const uint UnlinkedSiteWord = 0x14000001;
 
+    /// <summary>Kind of a patch site, in the low two bits of its <see cref="PatchSites"/> offset and of its link slot's
+    /// second word (<see cref="A64Opt.ReturnStack"/>): a call site links with a BL, and both a call site and the return
+    /// landing right after it go to their slot paths through a B two words ahead when unlinked.</summary>
+    public const int SiteCall = 1, SiteLanding = 2, SiteKindMask = 3;
+
+    /// <summary>An unlinked call or landing site: B +2 (the word after the next one, which branches to its slot path).</summary>
+    public const uint UnlinkedPairSiteWord = 0x14000002;
+
+    /// <summary>The word a patch site of the given kind (<see cref="SiteCall"/>, <see cref="SiteLanding"/>, 0) holds
+    /// linked to <paramref name="target"/> (0: unlinked); 0 when the target is out of B range.</summary>
+    public static uint SiteWord(long site, int kind, long target)
+    {
+        if (target == 0)
+        {
+            return kind == 0 ? UnlinkedSiteWord : UnlinkedPairSiteWord;
+        }
+
+        uint b = BranchWord(site, target);
+        return b != 0 && kind == SiteCall ? b | 0x80000000u : b; // BL = B with bit 31
+    }
+
+    /// <summary>Whether blocks compiled for <paramref name="rt"/> use the return stack (<see cref="A64Opt.ReturnStack"/>):
+    /// it needs patched exits with out-of-line stubs, and the differential verifier runs blocks one at a time.</summary>
+    public static bool UsesReturnStack(Runtime rt) =>
+        On(A64Opt.ReturnStack) && On(A64Opt.ExitStubs) && rt.PinnedCounters && rt.PatchLinks && !NativeVerifier.Enabled;
+
     private bool _count = true;
     private bool _pin, _backEdge, _fuse, _pair, _vcache, _lazyFpcr, _fastFpCheck, _dirtyReg, _storeLit;
 
@@ -278,6 +312,7 @@ public sealed unsafe partial class Arm64Emitter
         _dirtyReg = (opts & A64Opt.DirtyReg) != 0;
         _storeLit = (opts & A64Opt.StoreLiteral) != 0;
         _stub = (opts & A64Opt.ExitStubs) != 0;
+        _rsb = UsesReturnStack(rt);
         _abortUsed = _slotPathUsed = _tailZeroUsed = false;
         bool fpEntry = false, calls = false, faultExits = false;
         {
@@ -515,7 +550,7 @@ public sealed unsafe partial class Arm64Emitter
 
     /// <summary><see cref="A64Opt.ExitStubs"/>: the block's exit paths end in tails shared by all its exits, and the
     /// cold paths of patched exits (window full, link break, unlinked) are laid out after the block's code.</summary>
-    private bool _stub, _abortUsed, _slotPathUsed, _tailZeroUsed;
+    private bool _stub, _rsb, _abortUsed, _slotPathUsed, _tailZeroUsed;
     private int _tail, _tailZero, _slotPath;
     private readonly List<(int Label, nint Slot, uint? Pc)> _coldExits = new();
     /// <summary>Unlinked paths of patched exits (the site's B to the next word leads here): the slot path.</summary>
@@ -1342,10 +1377,16 @@ public sealed unsafe partial class Arm64Emitter
                         PatchSites.Add(-1);
                     }
 
-                    PatchSites.Add(assembler.Count * 4);
-                    assembler.Emit(UnlinkedSiteWord);
                     // StateLiveness.ColdPc: the IR left R15 to this exit, which stores it on the paths to the dispatcher only
                     bool coldPc = _stub && x.Imm3 == StateLiveness.ColdPc;
+                    if (_rsb && x.Imm5 != 0)
+                    {
+                        CallExit(x.Imm5, slot, slotFor(exitIndex++), ret, coldPc ? x.Imm : null);
+                        return;
+                    }
+
+                    PatchSites.Add(assembler.Count * 4);
+                    assembler.Emit(UnlinkedSiteWord);
                     if (_stub)
                     {
                         // linked, only the accounting, the checks and the patched B are on the hot path (plus one B
@@ -1454,6 +1495,11 @@ public sealed unsafe partial class Arm64Emitter
                         assembler.Mov(X0, pc);
                     }
 
+                    if (_rsb && x.Imm5 == 1)
+                    {
+                        ReturnThroughStack();
+                    }
+
                     bool packed = _rt.CodeBase != 0 && (Opts & A64Opt.PackedDispatch) != 0;
                     if (packed && _rt.TwoWayDispatch)
                     {
@@ -1505,6 +1551,63 @@ public sealed unsafe partial class Arm64Emitter
             default:
                 throw new NotSupportedException($"IR op {x.Op}");
         }
+    }
+
+    /// <summary>
+    /// The linked path of a guest call exit (<see cref="A64Opt.ReturnStack"/>), after its accounting and checks: pushes
+    /// {<paramref name="returnKey"/>, the landing's host address} on the return stack, then the call site (a BL to the
+    /// target once linked) and right after it the landing, the site the callee's return comes back to with a host RET: a
+    /// B to the block at the return address once linked (the return already accounted and checked the window). Both
+    /// unlinked sites branch two words ahead, to the B words of their slot paths.
+    /// </summary>
+    private void CallExit(uint returnKey, nint slot, nint landingSlot, int ret, uint? coldPc)
+    {
+        Arm64Assembler assembler = _assembler;
+        int landing = assembler.NewLabel();
+        int unlinked = assembler.NewLabel();
+        int landingUnlinked = assembler.NewLabel();
+        assembler.Ldr(X8, State, s_offRsbTop);
+        assembler.AddImm(X8, X8, 1);
+        assembler.AndImm(X8, X8, CpuState.RsbEntries - 1);
+        assembler.Str(X8, State, s_offRsbTop);
+        assembler.Add(X9, State, X8, Shift.Lsl, 4, x: true);
+        assembler.MovImm(X10, returnKey);
+        assembler.Str(X10, X9, s_offRsb);
+        assembler.Adr(X17, landing);
+        assembler.StrX(X17, X9, s_offRsb + 8);
+        PatchSites.Add(assembler.Count * 4 | SiteCall);
+        assembler.Emit(UnlinkedPairSiteWord);
+        assembler.Bind(landing);
+        PatchSites.Add(assembler.Count * 4 | SiteLanding);
+        assembler.Emit(UnlinkedPairSiteWord);
+        assembler.B(unlinked);
+        assembler.B(landingUnlinked);
+        _slotPathUsed = true;
+        _coldUnlinked.Add((unlinked, slot, coldPc));
+        _coldUnlinked.Add((landingUnlinked, landingSlot, null)); // the return stored R15 (the return address)
+        _coldExits.Add((ret, slot, coldPc));
+    }
+
+    /// <summary>
+    /// A guest return (<see cref="A64Opt.ReturnStack"/>), with the target key in w1 after the window checks: pops the
+    /// return stack and, when the popped key is the target's, returns to its landing with a host RET. Otherwise the
+    /// indirect-exit lookup that follows runs as before.
+    /// </summary>
+    private void ReturnThroughStack()
+    {
+        Arm64Assembler assembler = _assembler;
+        int miss = assembler.NewLabel();
+        assembler.Ldr(X8, State, s_offRsbTop);
+        assembler.Add(X9, State, X8, Shift.Lsl, 4, x: true);
+        assembler.SubImm(X8, X8, 1);
+        assembler.AndImm(X8, X8, CpuState.RsbEntries - 1);
+        assembler.Str(X8, State, s_offRsbTop);
+        assembler.Ldr(X10, X9, s_offRsb);
+        assembler.Cmp(X10, X1);
+        assembler.BCond(Cond.NE, miss);
+        assembler.LdrX(LR, X9, s_offRsb + 8);
+        assembler.Ret(LR);
+        assembler.Bind(miss);
     }
 
     /// <summary>
@@ -2806,6 +2909,14 @@ public sealed unsafe partial class Arm64Emitter
         a.SubImm(SP, SP, FrameSize, true);
         a.MovSp(State, X0);
         a.LdrX(MemBase, State, s_offMemBase); // the state's guest memory base: its process's address space
+        // the return stack starts empty at every entry (A64Opt.ReturnStack): the host addresses it holds never outlive
+        // the native run that pushed them
+        a.MovImm(X16, NativeRuntime.NoKey);
+        for (int k = 0; k < CpuState.RsbEntries; k++)
+        {
+            a.Str(X16, State, s_offRsb + 16 * k);
+        }
+
         if (pinnedCounters)
         {
             // x28 = CycleAcc - CheckWindow (the window is full when it reaches 0), x26/x27 = NBlocks/NInstr

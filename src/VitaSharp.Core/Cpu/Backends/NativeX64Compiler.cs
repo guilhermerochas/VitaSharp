@@ -100,6 +100,7 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
         int size = x64Emitter.LastLength;
         long encode = x64Emitter.LastEncodeTicks;
         Interlocked.Add(ref CodeBytes, size);
+        CountBlock(b.Insts.Length);
         HostFaultAborts.Register((ulong)code, x64Emitter.FaultSites);
         rt.Register((nint)code, size, b);
         Stats.Phases!.Add(t1 - t0, t2 - t1, x64Emitter.AllocTicks, t3 - t2 - x64Emitter.AllocTicks, encode, Stopwatch.GetTimestamp() - t3 - encode);
@@ -127,6 +128,20 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
     /// <summary>Total generated machine code (diagnostics).</summary>
     public static long CodeBytes;
 
+    /// <summary>Native blocks compiled and their guest instructions (both native backends; the report's average block size).</summary>
+    public static long CompiledBlocks, CompiledGuestInstructions;
+
+    /// <summary>ARM64 return stack (<see cref="Arm64Emitter.A64Opt.ReturnStack"/>): compiled call exits with a return
+    /// landing and compiled returns that check the stack.</summary>
+    public static long ReturnStackCalls, ReturnStackReturns;
+
+    /// <summary>Counts one compiled block of <paramref name="guestInstructions"/> instructions (<see cref="Report"/>).</summary>
+    public static void CountBlock(int guestInstructions)
+    {
+        Interlocked.Increment(ref CompiledBlocks);
+        Interlocked.Add(ref CompiledGuestInstructions, guestInstructions);
+    }
+
     /// <summary>One-line summary: code size, links, and the guest ops most often left to interpreter callouts.</summary>
     public static string Report()
     {
@@ -137,7 +152,9 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
         long[] hits = NativeRuntime.CalloutHits;
         IEnumerable<string> hot = Enumerable.Range(0, (int)Op.Count).Where(i => hits[i] > 0).OrderByDescending(i => hits[i]).Take(10)
             .Select(i => $"{(Op)i} {hits[i] / 1000}K");
-        return $"Native backend: {CodeBytes / 1024} KB code, {NativeRuntime.Links} links ({NativeRuntime.Unlinks} undone), {NativeRuntime.TieredUp} blocks tiered up to IL, " +
+        long blocks = Math.Max(1, CompiledBlocks);
+        return $"Native backend: {CodeBytes / 1024} KB code, {CompiledBlocks} blocks ({(double)CompiledGuestInstructions / blocks:F1} guest instructions, " +
+               $"{CodeBytes / blocks} bytes each), return stack: {ReturnStackCalls} calls, {ReturnStackReturns} returns; {NativeRuntime.Links} links ({NativeRuntime.Unlinks} undone), {NativeRuntime.TieredUp} blocks tiered up to IL, " +
                $"static instructions inline {inl} / callout {call} ({100.0 * inl / Math.Max(1, inl + call):F1}% inline); top callouts: {string.Join(", ", top)}; " +
                $"executed callouts {hits.Sum() / 1000}K: {string.Join(", ", hot)}; by class: {string.Join(", ", CalloutClasses.Top(40))}";
     }

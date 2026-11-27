@@ -96,6 +96,54 @@ some Android kernels) and macOS keep the guards.
   x86-64 handler through a System V thunk on Windows). Only a device / Linux host runs the install, the chaining to the
   real runtime handler, the `mprotect` path and the default action. Tests: `NativeJitTests.DataAbortMatrix` (the same 23
 forms with guards and with host faults, the fault counter, a freed shared page in both modes and a host read of it).
+## perf/fifa3 (2026-11-27): return stack for guest calls and returns (`rsb`)
+
+Branch `perf/fifa3` (from perf/fifa2b 00b1f436). Not merged, not pushed. x64 output unchanged (ARM64 emitter only; the
+frontend's call/return hints are ignored by the x64 emitter).
+
+**What the ARM64 JIT already did, against the references.** Direct block linking: yes (patch sites rewritten into a B,
+like Dynarmic's patched `b` and Box64's `jmp` to the linked block). Indirect exits: a two-way packed dispatch table
+looked up inline, one BR per exit site (Dynarmic's fast dispatch hint, Box64's jump table). Superblocks across
+conditional branches (`chain`) and cold exits/guards after the block (`stub`, `guard`). Missing: anything for returns.
+Every guest return (BX LR, POP {pc}) was a table lookup (~12 instructions) and an indirect BR, which the core predicts
+by site, so it mispredicts whenever the function has more than one caller; the mispredict lands on the first word of
+the return target, which is where FIFA 13's samples pile up (word 0: 14% main, 22% render thread). On the main thread
+only ~150 entries/frame reach the dispatcher (p1 run, PERF cycles line), so the dispatcher is not the cost.
+
+**The change (`VITASHARP_NATIVE_A64_NOOPT=rsb` turns it off).** The approach of Dynarmic's A32 RSB (`PushRSB` on BL,
+`PopRSBHint` on returns, an 8-entry ring of {location, host code}) combined with Box64's CALLRET (host BL for the guest
+call, host RET for the return, so the core's return address stack predicts it):
+- The frontend marks the exit of BL/BLX imm with its return key (`IrInst.Imm5` = return address | Thumb) and returns
+  (BX LR, POP {..., pc}, LDM/LDM.W sp with pc, LDR pc, [sp], #4) with 1 (`ArmFrontend.CallReturnKey`, `IsReturn`).
+- A call exit, after its accounting and window checks, pushes {key, host address of its landing} on
+  `CpuState.Rsb` (8 entries, `RsbTop`), then its patch site, linked as a **BL** (`Arm64Emitter.SiteWord`, site kind in
+  the low bits of the link slot's second word), and right after it the landing: a second patch site with its own link
+  slot, a B to the block at the return address. Unlinked, both sites branch two words ahead to their slot paths.
+- A return exit, after its window checks, pops the top entry; when the key equals the target's it does `ldr x30` +
+  `ret`, otherwise the table lookup runs as before. The landing does no accounting: the return already charged it.
+- The trampoline empties the stack at every entry into native code, so a host address never outlives the native run
+  that pushed it (code is only freed by a cache clear, with no thread in native code). A stale or overwritten entry is
+  harmless: the landing only continues at the return address, which the key check guarantees.
+- Cost: a call exit +10 words, a return +10 instructions before the table (a miss pays them on top of the lookup).
+- F8/report: the "CPU backend report" line now has the number of compiled blocks, guest instructions and bytes per block,
+  and the compiled calls/returns using the stack.
+
+Tests: `Arm64ReturnStackReturnsWithoutTheDispatcher` (two calls to a leaf, nothing in the dispatch table: the linked
+program runs in 1 entry into native code with `rsb`, 3 without; registers, cycles and blocks equal to the interpreter),
+`Arm64ReturnStackMatchesInterpreter` (Thumb recursion 12 deep with POP {pc}, deeper than the stack; a callee that changes
+LR; conditional BL taken and not taken; ARM -> Thumb BLX; on and off).
+
+**Measured on the phone (27/11, FIFA 13 practice arena from a save state, one A/B pair, 3 windows of 30 s each).**
+fps 41.0/40.9/41.3 (on) vs 41.3/40.6/41.3 (`NOOPT=rsb`): no fps change, the scene is GPU-bound (PERF gpu: 24.07 ms of
+GPU time per presented frame; 2.5 renderings per scene, 15,087 mid-scene breaks for depth textures). Generated code on
+the main thread 11.3-11.4 vs 12.0-12.4 ms/frame (-7%), RenderThread unchanged; 50,230 call exits and 20,133 returns
+compiled with the stack. The main thread's other ~11 ms of "native time" is sceKernelDelayThread (the game's own
+sleep), not work: its CPU time is 9.5 ms/frame.
+
+**Device plan.** FIFA 13 gameplay (match), A/B `VITASHARP_NATIVE_A64_NOOPT=rsb` alternating 3x: ms/frame of main and
+RenderThread, word-0 share of the simpleperf samples (`pos.py`), branch-miss counter (`simpleperf stat -e
+branch-misses,instructions` on the two threads). Killzone (validation title) to gameplay with the same A/B.
+
 ## perf/android-jit-13 (2026-11-13): worker time, dispatcher returns, single precision in the SIMD cache
 
 Branch `perf/android-jit-13` (from main 5d2597ec). Not merged, not pushed. x64 output unchanged.

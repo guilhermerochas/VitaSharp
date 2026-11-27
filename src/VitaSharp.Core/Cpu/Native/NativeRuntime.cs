@@ -169,9 +169,10 @@ public sealed unsafe partial class NativeRuntime
     public readonly bool PatchLinks;
 
     /// <summary>
-    /// Rewrites the patch site of a two-word link slot (target, site): a direct B to <paramref name="target"/>, or the
-    /// unlinked B to the slot path when it is 0. A B replaced by another B is one of the instructions the architecture
-    /// allows to be modified while other cores execute it; a target out of B range keeps the slot path.
+    /// Rewrites the patch site of a two-word link slot (target, site): a direct B to <paramref name="target"/> (a BL at
+    /// a call site, <see cref="Arm64Emitter.SiteCall"/>), or the unlinked B to the slot path when it is 0. B and BL
+    /// replaced by B or BL are among the instructions the architecture allows to be modified while other cores execute
+    /// them; a target out of B range keeps the slot path. The site's kind is in the low bits of the slot's second word.
     /// </summary>
     private void PatchSite(nint slot, nint target)
     {
@@ -181,7 +182,9 @@ public sealed unsafe partial class NativeRuntime
             return;
         }
 
-        uint word = target == 0 ? Arm64Emitter.UnlinkedSiteWord : Arm64Emitter.BranchWord(site, target);
+        int kind = (int)(site & Arm64Emitter.SiteKindMask);
+        site &= ~(nint)Arm64Emitter.SiteKindMask;
+        uint word = Arm64Emitter.SiteWord(site, kind, target);
         if (word != 0)
         {
             Code.PatchWord((byte*)site, word);

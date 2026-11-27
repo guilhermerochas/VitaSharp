@@ -91,6 +91,16 @@ public unsafe struct CpuState
     public uint Ifsr, Ifar;            // ... and of the last prefetch abort
     public uint Adfsr, Aifsr;          // auxiliary fault status registers (IMPLEMENTATION DEFINED, kept as written)
 
+    // ---- ARM64 return stack (Arm64Emitter.A64Opt.ReturnStack): a guest call (BL/BLX imm) pushes {return key, host
+    // address of the code that continues there}, a guest return (BX LR, POP {pc}) pops the top and, when the key matches
+    // its target, returns there with a host RET (predicted by the core's return address stack). The trampoline empties
+    // it at every entry into native code, so a host address never outlives the native run that pushed it.
+    public uint RsbTop;                // index of the top entry (RsbEntries - 1 mask)
+    public fixed ulong Rsb[2 * RsbEntries]; // entry k: word 2k = key (pc | thumb, NativeRuntime.NoKey when empty) in its low half, word 2k + 1 = host address
+
+    /// <summary>Entries of the ARM64 return stack (a power of two).</summary>
+    public const int RsbEntries = 8;
+
     /// <summary>CPSR bits 9:6 and 4:0 (endianness, A/I/F masks, mode).</summary>
     public readonly uint Control => ControlXor ^ ExceptionModes.User;
 
