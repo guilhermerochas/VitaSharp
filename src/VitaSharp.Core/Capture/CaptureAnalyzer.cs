@@ -159,6 +159,13 @@ public static class CaptureAnalyzer
             sb.AppendLine($"input: {input.Count(e => e.Kind == "pad")} pad, {input.Count(e => e.Kind == "touch")} touch, {input.Count(e => e.Kind == "motion")} motion, {input.Count(e => e.Kind == "rng")} random, {input.Count(e => e.Kind == "key")} hotkey events");
         }
 
+        // a lost GPU device ends what the game shows: said first, with where it happened (a capture saved by itself at
+        // the failure, SessionCapture.SaveOnFailure, said nothing of why it was saved)
+        foreach (string l in GpuFailureLines(dir))
+        {
+            sb.AppendLine(l);
+        }
+
         // where the player is, what the screen showed, what they did just before
         sb.AppendLine();
         foreach (string l in ContextLines(dir, input, startNs, stats, sheet))
@@ -1042,6 +1049,45 @@ public static class CaptureAnalyzer
 
     /// <summary>The <c>[hitch]</c> lines of the capture's log (a present long after the previous one, by cause; at most
     /// 20, the longest first), or nothing.</summary>
+    /// <summary>
+    /// "GPU device lost": the renderer's VK_ERROR_DEVICE_LOST report in log.txt (VulkanRenderer.ReportDeviceLost: the
+    /// Vulkan call, the present and guest frame, then the renderer's state) with the state line under it. Empty when the
+    /// device was not lost.
+    /// </summary>
+    internal static List<string> GpuFailureLines(string dir)
+    {
+        var lines = new List<string>();
+        string log = Path.Combine(dir, "log.txt");
+        if (!File.Exists(log))
+        {
+            return lines;
+        }
+
+        const string Marker = "[gpu] VULKAN DEVICE LOST in ";
+        bool takeState = false;
+        foreach (string l in File.ReadLines(log))
+        {
+            if (takeState)
+            {
+                if (l.StartsWith("renderer: ", StringComparison.Ordinal))
+                {
+                    lines.Add("  " + l);
+                }
+
+                break;
+            }
+
+            int at = l.IndexOf(Marker, StringComparison.Ordinal);
+            if (at >= 0)
+            {
+                lines.Add("GPU DEVICE LOST (the game draws nothing after it; the capture may have been saved by itself here): in " + l[(at + Marker.Length)..]);
+                takeState = true;
+            }
+        }
+
+        return lines;
+    }
+
     internal static List<string> HitchLines(string dir)
     {
         var lines = new List<string>();
