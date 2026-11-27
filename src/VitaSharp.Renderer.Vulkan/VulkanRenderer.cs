@@ -705,6 +705,21 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     // =================================================================== command dispatch
 
+    /// <summary>Allocation counters per GPU command type (GPU worker only).</summary>
+    private readonly Dictionary<Type, System.Runtime.CompilerServices.StrongBox<long>> _allocSites = new();
+
+    private System.Runtime.CompilerServices.StrongBox<long> AllocSite(GpuCommand command)
+    {
+        Type type = command.GetType();
+        if (!_allocSites.TryGetValue(type, out System.Runtime.CompilerServices.StrongBox<long>? site))
+        {
+            site = Core.Util.AllocLedger.Site("GPU worker " + type.Name);
+            _allocSites[type] = site;
+        }
+
+        return site;
+    }
+
     public void Execute(GpuCommand command)
     {
         // out of GPU memory even after eviction (VulkanRenderer.Memory.cs): the command is skipped, not the renderer
@@ -716,7 +731,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             }
             else
             {
+                long alloc0 = GC.GetAllocatedBytesForCurrentThread();
                 ExecuteCommand(command);
+                Core.Util.AllocLedger.Add(AllocSite(command), GC.GetAllocatedBytesForCurrentThread() - alloc0);
             }
         }
         catch (VkOutOfMemoryException e)

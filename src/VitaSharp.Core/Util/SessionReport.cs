@@ -158,6 +158,8 @@ public static class SessionReport
         Add(CpuBackendLines);
         Add(() => CycleLines(emu, window: true));
         Add(() => [HleCallsLine(emu)]);
+        Add(() => AllocLedger.Line(VitaSharp.Core.Hle.Modules.Display.FramesPresented,
+            emu.Hle.Functions.Where(f => f.AllocatedBytes > 0).Select(f => ("HLE " + f.Name, f.AllocatedBytes))) is { } allocators ? [allocators] : []);
         Add(() => HleTimeReport.Lines(emu));
         Add(() => GpuLines(emu));
         Add(AudioDiagnostics.SummaryLines);

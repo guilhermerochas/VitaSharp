@@ -189,6 +189,8 @@ public sealed class HleFunction
     /// <summary>The callback-processing variant of a wait (<see cref="HleAttribute.CallbackWait"/>).</summary>
     public bool IsCallbackWait;
     public long CallCount;
+    /// <summary>Managed bytes the calling thread allocated inside this function (Util.AllocLedger).</summary>
+    public long AllocatedBytes;
     /// <summary>The "unimplemented" warning was issued (skips building its key on every later call).</summary>
     public bool WarnedUnimplemented;
     /// <summary>The implementation returns a value, not an error code (<see cref="HleAttribute.ReturnsValue"/>).</summary>
