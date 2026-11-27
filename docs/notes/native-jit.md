@@ -116,6 +116,14 @@ the dispatch table), IndirectNoCode. This gives the cause of the game thread's ~
 `NativeReturnReasonTests` (every entry has exactly one reason; on a loop through linked and indirect exits only the window,
 the exit to a cold block and at most one miss per indirect target come back).
 
+**`guard` (A64Opt.ColdGuards, 27/11).** With a data abort handler registered (a kernel module such as the one FIFA 13
+loads), every guest access gets a guard: the page's mapping-table byte, and an abort exit when it is zero. The exit was
+inline, a dozen instructions behind a branch taken at every access, so a guarded block was about twice its size
+(simpleperf of FIFA 13's main thread: 90% of the samples in generated code spread over 6,100 blocks, a 3,888-byte Thumb
+block among the hottest). The exits now go after the block: the access costs the byte load and a `cbz` not taken (four
+stores: 34 words to the last store instead of 106, `Arm64GuardExitsAreLaidOutAfterTheBlock`). The data abort matrix
+tests run the new layout. Device A/B: `VITASHARP_NATIVE_A64_NOOPT=guard`.
+
 **`scache` (A64Opt.SingleCache).** Before, single-precision VFP went through the register file in memory at every
 operation. The result was `str s`, the containing D entry was invalidated, the next op reloaded it, odd S registers
 were never cached, and VMOV Sn/Rt and VLDR/VSTR S flushed every dirty cache entry. Now:
@@ -241,6 +249,27 @@ guest registers in temps (loads at first use, stores only at exits, callouts and
 What a mapping would save per linked block is the entry loads and register stores (about 6 of ~29 host instructions on
 ARM sum); the flags need CSET + STP regardless (the accounting ADDS clobbers NZCV). Measure `cond`/`stub` on the phone
 first.
+
+**Measured on the phone (27/11, FIFA 13 gameplay, simpleperf 20 s + `VITASHARP_NATIVE_MAP`).** Of the generated-code
+samples, accesses to the guest state (x19) are 30% on the game's main thread and 37% on its render thread, but most of
+them sit on the first word of a block: 14% (main) and 22% (render) of all generated-code samples fall on word 0, which
+is the entry stall of the branch into the block (instruction fetch: L1I/iTLB, sampled with skid on the block's first
+instruction, usually a state load), not the load itself. State accesses inside blocks are spread out (SP 4%, r0 2%, LR
+1%, flags 1.5%). A fixed mapping of the five registers the callee-saved budget allows would remove part of those ~15%,
+not the entry stalls; code size and layout (fewer, denser blocks on the hot path) are the bigger lever, as on Killzone.
+
+Design for a fixed mapping, if it is done (Box64/FEX map x86 GPRs statically to host registers; Dynarmic's A32 keeps
+the state in memory and allocates per block, as here):
+- Pin the guest registers with the most accesses (SP, LR, r0-r2 in the profiles) in x21-x25 for the whole run of native
+  code: the trampoline loads them from `CpuState` on entry and the epilogue stores them back, so the dispatcher, HLE
+  calls, the interpreter and the callouts keep reading the state in memory (store before every callout and HLE call,
+  reload after; data abort and fault exits store them with the rest of the instruction's state).
+- `GetReg`/`SetReg` of a pinned register become register moves (the IR keeps its slots; the emitter maps the slot to its
+  host register), static exits store nothing for them, linked blocks need no entry loads.
+- Cost: x21-x25 stop being temps that survive callouts (temps live across a callout spill), so blocks with callouts
+  (NEON/VFP handler paths) get slower; measure with a `NOOPT` switch on the phone before keeping it.
+- Equivalence: the `Arm64*MatchInterpreter` matrices in the sandbox and under qemu, plus a test that runs a chain of
+  linked blocks with a callout and an HLE call in the middle and compares the state with the interpreter.
 
 ### Device plan
 1. `VITASHARP_NATIVE_VERIFY=1` session, `--speed=0.25`, Knightin'+ and Devious Dungeon to gameplay: 0 mismatches

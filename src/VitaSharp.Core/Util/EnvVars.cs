@@ -280,7 +280,7 @@ public static class EnvVars
     public const string NativeMemmove = "VITASHARP_NATIVE_MEMMOVE";
     /// <summary>ARM64 backend: comma-separated optimisations to turn off for bisection on a device (all, or any of
     /// pin, backedge, fuse, pair, vcache, fpcr, fpcheck, dirty, lit, patch, cond, stub, succ, count, fence, group, fpentry,
-    /// packed, chain, vlazy, assoc, scache; see Arm64Emitter.A64Opt and docs/notes/native-jit.md).</summary>
+    /// packed, chain, vlazy, assoc, scache, guard; see Arm64Emitter.A64Opt and docs/notes/native-jit.md).</summary>
     public const string NativeA64NoOpt = "VITASHARP_NATIVE_A64_NOOPT";
     public const string NativeNoinline = "VITASHARP_NATIVE_NOINLINE";
     public const string NativeNolink = "VITASHARP_NATIVE_NOLINK";

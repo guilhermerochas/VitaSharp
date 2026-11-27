@@ -55,6 +55,11 @@ public sealed unsafe class IrBuilder
 
     /// <summary><see cref="IrOp.Nop"/> Imm marking where the host code range of the next fault exit starts.</summary>
     public const uint FaultMark = 1;
+
+    /// <summary><see cref="IrOp.BranchIf"/> Imm of a data abort guard: branches over the abort exit when A (the page's
+    /// mapping-table byte) is not zero, as Imm 1 does; emitters that know it lay the exit out of line, after the block,
+    /// so the common path is the byte load and a branch not taken (ARM64: <c>cbz</c> to the exit).</summary>
+    public const uint GuardBranch = 3;
     // the cache at the start of the instruction being translated (MarkInstruction): what a data abort exit stores
     private readonly int[] _instVal = new int[Slots];
     private readonly bool[] _instDirty = new bool[Slots];
@@ -712,7 +717,7 @@ public sealed unsafe class IrBuilder
         int mapped = Block.NewTemp();
         Emit(new IrInst(IrOp.PageMapped) { D = mapped, A = addr });
         int ok = NewLabel();
-        Emit(new IrInst(IrOp.BranchIf) { A = mapped, Imm = 1, Imm2 = (uint)ok });
+        Emit(new IrInst(IrOp.BranchIf) { A = mapped, Imm = GuardBranch, Imm2 = (uint)ok });
         for (int s = 0; s < Slots; s++)
         {
             if (s != 15 && _instDirty[s])
