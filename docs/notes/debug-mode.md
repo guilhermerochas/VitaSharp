@@ -121,12 +121,18 @@ also keeps a compact record of every draw and scene of the last 128 presented fr
   without the vertex data and uniforms (`a[]`, `st[]`, `v0/v1`, `vu/fu`, `fub`, `vuf/fuh`, `fu0`), which are not
   recorded. Added fields: `vh=`/`fh=` hint keys (the `shaders/<hash>_<hint>` names; GLSL exists only for programs of
   the traced frame), `scene=` (index in the file), `rtsize=`, failed shaders as `FAILED=vs|fs`; on textures `:Z<swizzle>`
-  and `:K<source>`; vertex textures as `vtN=`; scenes add `fmt= rtsize= st= dsfmt= store= bgStencil= gamma= path=`.
+  and `:K<source>`; vertex textures as `vtN=`; scenes add `fmt= rtsize= st= dsfmt= store= bgStencil= gamma= path=
+  scale=` (the internal resolution of the scene's attachments).
   Numbers are culture-invariant (draws.txt still uses the current culture for floats).
 - Texture sources (`K`): `mem` guest memory, `rt@A` colour target A used directly, `region@A` a region of A copied
   out, `reinterp@A` A read with another format, `rtmip@A` A with generated mips, `depth@A` a depth/stencil target,
   `memcube` a 2D texture read as a cube, `none` nothing bound; `+scenestart` = the target being rendered, read through
-  its scene-start copy, `+lodmin` = LOD min over a rendered surface, `+FAILED` = the dummy texture was bound.
+  its scene-start copy, `+lodmin` = LOD min over a rendered surface, `+FAILED` = the dummy texture was bound. Above
+  or below native, `*2x` = the source target renders at 2x and is read at 2x, `*2x>1x` = it is read through its
+  guest-size copy (the internal resolution is lost there). The draw trace (draws.txt of F8/F10 and
+  `replay-gpu --trace-draws=N`) has the same source after each draw as `[tex] id=<draw> tN=<addr>:<fmt>:<w>x<h>
+  src=<source>`, and `scale=` on its `[scene] begin` lines. The F8 report's "Where" says the session's internal
+  resolution (context.txt `gpu: internal resolution ...` at the start and the stop).
 - `index.txt`, one line per frame:
 
 ```

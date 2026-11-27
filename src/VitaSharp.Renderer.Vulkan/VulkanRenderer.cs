@@ -1380,7 +1380,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         ProfMark(ProfPhase.BsTarget);
         if (TracingScenes || s_traceVis)
         {
-            TraceLine($"[scene] begin present={_presentCount} rt=0x{_renderTarget?.Address ?? 0:X8} {beginSceneCommand.Width}x{beginSceneCommand.Height} msaa={beginSceneCommand.Multisample} downscale={beginSceneCommand.Color?.Downscale} ds=0x{beginSceneCommand.Depth?.DepthData ?? 0:X8} loadDs=0x{beginSceneCommand.Depth?.LoadDepthData ?? 0:X8} load={beginSceneCommand.Depth?.ForceLoad} store={beginSceneCommand.Depth?.ForceStore} bgDepth={beginSceneCommand.Depth?.BackgroundDepth} (next draw id={NextDrawId})");
+            TraceLine($"[scene] begin present={_presentCount} rt=0x{_renderTarget?.Address ?? 0:X8} {beginSceneCommand.Width}x{beginSceneCommand.Height} msaa={beginSceneCommand.Multisample} downscale={beginSceneCommand.Color?.Downscale} ds=0x{beginSceneCommand.Depth?.DepthData ?? 0:X8} loadDs=0x{beginSceneCommand.Depth?.LoadDepthData ?? 0:X8} load={beginSceneCommand.Depth?.ForceLoad} store={beginSceneCommand.Depth?.ForceStore} bgDepth={beginSceneCommand.Depth?.BackgroundDepth} scale={RtScale.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)} (next draw id={NextDrawId})");
         }
         // MSAA: real multisampling (VulkanRenderer.MsaaNative.cs), else 2x supersampling (VulkanRenderer.Msaa.cs);
         // MSAA without downscale renders at 2x into the sample-sized surface

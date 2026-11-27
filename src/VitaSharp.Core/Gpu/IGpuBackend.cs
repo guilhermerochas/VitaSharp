@@ -30,6 +30,11 @@ public interface IGpuBackend : IDisposable
     /// (<see cref="DisplayScanout"/>), so the next vblank is not missed.</summary>
     int IdleWakeMs => 50;
 
+    /// <summary>The internal resolution factor the colour and depth targets render at (1 = the Vita's own size; 2-4
+    /// above it, 0.5/0.75 below): the F8 capture's context.txt and report.txt say it, since a picture problem may
+    /// exist only at one scale.</summary>
+    float InternalScale => 1f;
+
     /// <summary>The backend was installed on <paramref name="queue"/> (lets <see cref="Idle"/> notice newly queued work).</summary>
     void Attach(GpuQueue queue)
     {
