@@ -89,6 +89,10 @@ public static class FrameLedger
         System.Globalization.CultureInfo.InvariantCulture, out double hitchMs) ? hitchMs : 100;
     private static readonly long[] s_hitchLast = new long[(int)Cat.Count];
     private static long s_hitchPresentTicks, s_hitchGcCount;
+    /// <summary>Texture levels served by the ASTC disk cache from a file read on the caller's (GPU) thread, and from
+    /// the title-start read-ahead (TranscodeDiskCache): the [hitch] line counts them next to the texture uploads.</summary>
+    public static long AstcDiskFileReads, AstcDiskReadAheadHits;
+    private static long s_hitchDiskFile, s_hitchDiskAhead;
     private static int s_hitchLogged;
 
     /// <summary>
@@ -117,7 +121,8 @@ public static class FrameLedger
         s_totals[(int)Cat.GcPause] = GC.GetTotalPauseDuration().Ticks * Stopwatch.Frequency / TimeSpan.TicksPerSecond;
         s_totals[(int)Cat.PacingSleep] = Cpu.CpuCore.SleepStats[0].Actual + Cpu.CpuCore.SleepStats[1].Actual;
         int gcs = GC.CollectionCount(0) - (int)s_hitchGcCount;
-        string? line = HitchLine(frame, ms, s_totals, s_hitchLast, gcs);
+        string? line = HitchLine(frame, ms, s_totals, s_hitchLast, gcs,
+            (int)(Interlocked.Read(ref AstcDiskFileReads) - s_hitchDiskFile), (int)(Interlocked.Read(ref AstcDiskReadAheadHits) - s_hitchDiskAhead));
         SnapshotHitch();
         // a long run of them (a load) is summarised by the periodic report: the first 200 only
         if (line != null && Interlocked.Increment(ref s_hitchLogged) <= 200)
@@ -136,11 +141,13 @@ public static class FrameLedger
         }
 
         s_hitchGcCount = GC.CollectionCount(0);
+        s_hitchDiskFile = Interlocked.Read(ref AstcDiskFileReads);
+        s_hitchDiskAhead = Interlocked.Read(ref AstcDiskReadAheadHits);
     }
 
     /// <summary>The <c>[hitch]</c> line: the interval, then each cause that took at least 1 ms of it, largest first.
     /// Pure, unit-tested (FrameLedgerHitchTests).</summary>
-    internal static string? HitchLine(long frame, double intervalMs, ReadOnlySpan<long> totals, ReadOnlySpan<long> last, int gcs)
+    internal static string? HitchLine(long frame, double intervalMs, ReadOnlySpan<long> totals, ReadOnlySpan<long> last, int gcs, int diskFileReads = 0, int diskReadAhead = 0)
     {
         if (totals.Length < (int)Cat.Count || last.Length < (int)Cat.Count)
         {
@@ -180,6 +187,11 @@ public static class FrameLedger
             if (best == (int)Cat.GcPause && gcs > 0)
             {
                 sb.Append(System.Globalization.CultureInfo.InvariantCulture, $" ({gcs} collections)");
+            }
+
+            if (best == (int)Cat.TextureUpload && diskFileReads + diskReadAhead > 0)
+            {
+                sb.Append(System.Globalization.CultureInfo.InvariantCulture, $" ({diskFileReads} levels read from the ASTC disk cache on the GPU thread, {diskReadAhead} from its read-ahead)");
             }
 
             sb.Append(',');

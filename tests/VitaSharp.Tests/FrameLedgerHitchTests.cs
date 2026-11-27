@@ -95,4 +95,17 @@ public sealed class FrameLedgerHitchTests
             Directory.Delete(dir, true);
         }
     }
+
+    [Fact]
+    public void TextureUploadsNameHowManyLevelsCameFromTheAstcDiskCache()
+    {
+        long[] last = new long[(int)FrameLedger.Cat.Count];
+        long[] totals = new long[(int)FrameLedger.Cat.Count];
+        totals[(int)FrameLedger.Cat.TextureUpload] = Stopwatch.Frequency / 4;
+
+        string? line = FrameLedger.HitchLine(7, 300, totals, last, 0, 96, 4);
+
+        Assert.NotNull(line);
+        Assert.Contains("(96 levels read from the ASTC disk cache on the GPU thread, 4 from its read-ahead)", line);
+    }
 }

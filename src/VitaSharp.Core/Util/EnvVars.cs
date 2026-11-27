@@ -309,6 +309,10 @@ public static class EnvVars
     /// <summary>Milliseconds between two presents (emulation time) that log a <c>[hitch]</c> line with the host time of
     /// the interval by cause (Util/FrameLedger.cs); default 100, 0 turns it off.</summary>
     public const string HitchMs = "VITASHARP_HITCH_MS";
+    /// <summary>Megabytes of the title's ASTC disk cache read into memory at the title start, most recently used first,
+    /// so the first use of a known texture costs no file read on the GPU thread (VulkanRenderer.Astc.cs,
+    /// TranscodeDiskCache.StartPreload); default 96, 0 off.</summary>
+    public const string AstcPreloadMb = "VITASHARP_ASTC_PRELOAD_MB";
     /// <summary>A mapped (memory) read of the colour or depth/stencil surface of the scene being rendered keeps the copy
     /// of it already taken in that scene instead of refreshing it after each of the scene's renderings, as the Vita's
     /// memory holds the surface as it was before the scene until the scene stores it (VulkanRenderer.Mapped.cs); every
