@@ -64,6 +64,13 @@ public static class CaptureContext
             sb.AppendLine(t.Core.Phases.ContextLine());
         }
 
+        // the storage model: each thread's read waits against the device time of the same reads (a wait far past the
+        // device time is the host waking the thread late)
+        foreach (string l in IoTiming.SummaryLines())
+        {
+            sb.AppendLine(l);
+        }
+
         // the plugin hooks and their counters (report.txt's "Plugin hooks" compares the start and the stop)
         foreach (string l in Hle.Modules.PluginFramework.HookContextLines(emu))
         {

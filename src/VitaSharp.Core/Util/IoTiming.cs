@@ -12,6 +12,10 @@ namespace VitaSharp.Core.Util;
 /// time. Without it every small sequential read paid the full access latency: Sonic Mania's loader reads its 200 MB
 /// Data.rsdk in thousands of small pieces (18,600 reads in the `mania_boot` run), 0.5 ms each, and stood still for
 /// seconds on each stage load. Vita3K has no storage timing at all (every read instant).
+/// A read takes the device's time, not the host's lateness in waking the thread after it: the time a thread's wait
+/// ran past the device's completion (up to <see cref="MaxLateCreditSeconds"/>) is credited to its next read, which is
+/// issued that much earlier on the device timeline (never before the previous read completed). Without it a loaded
+/// host added its wake-up latency to every read: Dead Space's boot waited 18.3 s for 4.7 s of device time.
 /// </summary>
 public static class IoTiming
 {
@@ -88,6 +92,8 @@ public static class IoTiming
         }
 
         long done;
+        long cost = GuestClock.FromSeconds(LatencySeconds + bytes / BytesPerSecond);
+        long t0 = GuestClock.Ticks;
         lock (s_lock)
         {
             if (file != null && ReadAheadBytes > 0)
@@ -101,9 +107,18 @@ public static class IoTiming
                 w.Start = offset;
                 w.End = offset + Math.Max(bytes, ReadAheadBytes);
             }
-            long now = t_deferring ? t_deferFrom : GuestClock.Ticks;
-            long start = Math.Max(now, s_deviceFreeAt);
-            done = start + GuestClock.FromSeconds(LatencySeconds + bytes / BytesPerSecond);
+            long now = t_deferring ? t_deferFrom : t0;
+            long issued = now;
+            if (!t_deferring)
+            {
+                // the host woke this thread late from its previous read (t_lateCredit): on the Vita that time never
+                // passed between the two reads, so this one is issued that much earlier on the device timeline, never
+                // before the previous one completed (the guest code between the two keeps its time)
+                issued = Math.Max(now - t_lateCredit, Math.Min(t_lastDone, now));
+            }
+
+            long start = Math.Max(issued, s_deviceFreeAt);
+            done = start + cost;
             s_deviceFreeAt = done;
             TimedReads++;
             DeviceTicks += done - start;
@@ -111,28 +126,66 @@ public static class IoTiming
             {
                 // an asynchronous request: nobody waits here, the request completes when the device is done
                 t_deferDone = Math.Max(t_deferDone, done);
-                (long Reads, long Ticks, long Bytes, long Regain) s = s_waitsByThread.GetValueOrDefault(AsyncRequests);
-                s_waitsByThread[AsyncRequests] = (s.Reads + 1, s.Ticks + (done - now), s.Bytes + bytes, s.Regain);
+                Account(AsyncRequests, done - now, bytes, 0, done - start);
                 return;
             }
         }
-        long t0 = GuestClock.Ticks;
         long woke = t0;
         if (t0 < done)
         {
             Scheduler.Blocked blocked = Kernel.Scheduler.Block();
-            GuestClock.WaitUntil(done);
+            if (WaitUntilForTest is { } wait)
+            {
+                wait(done);
+            }
+            else
+            {
+                GuestClock.WaitUntil(done);
+            }
+
             woke = GuestClock.Ticks;
             blocked.Dispose();
         }
-        long waited = GuestClock.Ticks - t0, regain = GuestClock.Ticks - woke;
+        long end = GuestClock.Ticks;
+        // what the host added past the device's completion, for the thread's next read (bounded: a long host stall is
+        // not paid back by reads that are far apart)
+        t_lateCredit = Math.Clamp(end - done, 0, GuestClock.FromSeconds(MaxLateCreditSeconds));
+        t_lastDone = done;
         string who = (Kernel.GuestThread.Current?.Name ?? "host") + (InAsyncRequest ? " (async)" : "");
         lock (s_lock)
         {
-            (long Reads, long Ticks, long Bytes, long Regain) s = s_waitsByThread.GetValueOrDefault(who);
-            s_waitsByThread[who] = (s.Reads + 1, s.Ticks + waited, s.Bytes + bytes, s.Regain + regain);
+            Account(who, end - t0, bytes, end - woke, cost);
         }
     }
+
+    /// <summary>The most host lateness one read hands to the thread's next read, in seconds.</summary>
+    internal const double MaxLateCreditSeconds = 0.1;
+
+    /// <summary>Tests: replaces the host wait of a read (the deadline in guest clock ticks), to model a host that wakes
+    /// the thread late.</summary>
+    internal static Action<long>? WaitUntilForTest { get; set; }
+
+    /// <summary>Tests: forgets the calling thread's lateness credit and last completion.</summary>
+    internal static void ResetThreadTimeline()
+    {
+        t_lateCredit = 0;
+        t_lastDone = 0;
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static long t_lateCredit;
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static long t_lastDone;
+
+    /// <summary>Adds one read to <paramref name="who"/>'s totals (the caller holds <see cref="s_lock"/>).</summary>
+    private static void Account(string who, long waitedTicks, long bytes, long regainTicks, long deviceTicks)
+    {
+        ReadTotals s = s_waitsByThread.GetValueOrDefault(who);
+        s_waitsByThread[who] = new ReadTotals(s.Reads + 1, s.Ticks + waitedTicks, s.Bytes + bytes, s.Regain + regainTicks, s.Device + deviceTicks);
+    }
+
+    private readonly record struct ReadTotals(long Reads, long Ticks, long Bytes, long Regain, long Device);
 
     /// <summary>Set while an sceIoXxxAsync request runs (session report attribution).</summary>
     [ThreadStatic] public static bool InAsyncRequest;
@@ -176,23 +229,43 @@ public static class IoTiming
         {
             s_deviceFreeAt = 0;
         }
+
+        ResetThreadTimeline();
     }
 
     /// <summary>Per guest thread: device reads, guest time spent blocked in them, bytes (session report).</summary>
-    private static readonly Dictionary<string, (long Reads, long Ticks, long Bytes, long Regain)> s_waitsByThread = new();
+    private static readonly Dictionary<string, ReadTotals> s_waitsByThread = new();
 
-    /// <summary>The threads that waited longest for the device, longest first (session report).</summary>
+    /// <summary>The threads that waited longest for the device, longest first (session report, F8 context.txt): the
+    /// time waited against the device time of the same reads (waiting well past it: the host woke the thread late).</summary>
     public static IEnumerable<string> WaitLines(int max = 6)
     {
-        List<KeyValuePair<string, (long Reads, long Ticks, long Bytes, long Regain)>> all;
+        List<KeyValuePair<string, ReadTotals>> all;
         lock (s_lock)
         {
             all = s_waitsByThread.ToList();
         }
 
-        foreach ((string? name, (long Reads, long Ticks, long Bytes, long Regain) s) in all.OrderByDescending(e => e.Value.Ticks).Take(max))
+        double frequency = System.Diagnostics.Stopwatch.Frequency;
+        foreach ((string name, ReadTotals s) in all.OrderByDescending(e => e.Value.Ticks).Take(max))
         {
-            yield return $"    {name}: {s.Ticks / (double)System.Diagnostics.Stopwatch.Frequency:0.0} s waiting, {s.Reads} reads, {s.Bytes / 1e6:0.0} MB, {s.Regain / (double)System.Diagnostics.Stopwatch.Frequency:0.0} s of it getting a core back";
+            yield return FormattableString.Invariant($"    {name}: {s.Ticks / frequency:0.0} s waiting for {s.Device / frequency:0.0} s of device time, {s.Reads} reads, {s.Bytes / 1e6:0.0} MB, {s.Regain / frequency:0.0} s of it getting a core back");
+        }
+    }
+
+    /// <summary>The storage line and the per-thread wait lines (F8 context.txt, end of run).</summary>
+    public static IEnumerable<string> SummaryLines()
+    {
+        if (FastLoading)
+        {
+            yield return "storage: fast loading (no read speed limit)";
+            yield break;
+        }
+
+        yield return FormattableString.Invariant($"storage: {BytesPerSecond / 1e6:0.#} MB/s, {TimedReads} device reads, {DeviceTicks / (double)System.Diagnostics.Stopwatch.Frequency:0.0} s of device time");
+        foreach (string line in WaitLines())
+        {
+            yield return line;
         }
     }
 }
