@@ -15,6 +15,13 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
     captura (ns por ciclo do guest), já que o x64 não mostra o custo do código ARM64;
   - núcleos mais lentos: um núcleo do PC roda o código do guest várias vezes mais rápido que o A76 do celular; falta
     um jeito de simular o clock (limite de CPU por cota divide o tempo em fatias e não equivale a um núcleo lento).
+  - medido em 27/11 (Windows, i5-11300H, núcleos 0x50): o custo de CPU por quadro fica ~7x menor que no celular (Killzone
+    `killzone_vita` 2,7 ms/quadro contra 21,5; GPU worker 4,6 contra 31,2), então o perfil mostra os mesmos caminhos
+    lentos, mas não o fps do celular. No Windows, as esperas sem giro acordam na granularidade de ~0,5 ms do timer
+    (`delay_late_500us` p50 529 us contra 89 us no celular): o TestGame tem 7 FAIL contra 2 do celular (o mutex de
+    duas threads estoura os 5 s). Falta um modo de espera do perfil que imite o nanosleep do Linux no Windows;
+  - o TestGame no perfil (Native AOT) termina com 0xC0000005 numa DLL nativa depois de "Run finished" (Dead Space e
+    Killzone saem com 0): achar o módulo (endereço 0x7FF9BC2BF6D2 no log) e corrigir o encerramento.
 
 - [ ] [P2][G] **Gravar tudo: estados de vários processos sobem sem os programas, o que falta** (a 1ª entrega, cada
   processo com a sua seção `process<N>/boot`, está em "Corrigido, falta o usuário testar"):
