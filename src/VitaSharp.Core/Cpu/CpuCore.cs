@@ -1083,7 +1083,7 @@ public sealed unsafe class CpuCore : IDisposable
 
         vector.NativeEntry = code.NativeEntry;
         vector.Compiled = code.Managed;
-        Volatile.Write(ref vector.JitState, 2);
+        vector.JitState = 2; // volatile field: the write is already a release
         if (Interlocked.Increment(ref VectorBlocksCompiled) == 1)
         {
             Util.Log.Info($"VFP short-vector mode: block 0x{vector.Start:X8} compiled for FPSCR 0x{vector.VectorFpscr:X8} by {code.Backend.Name} ({vector.Insts.Length} expanded instructions)");
