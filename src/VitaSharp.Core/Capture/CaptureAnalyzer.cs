@@ -1064,24 +1064,40 @@ public static class CaptureAnalyzer
         }
 
         const string Marker = "[gpu] VULKAN DEVICE LOST in ";
-        bool takeState = false;
+        // after the marker: the renderer's state line, then (VulkanRenderer.LostDraws.cs) "programs in flight:" and its
+        // indented lines, the work the GPU was running; the report ends at the next timestamped log line
+        bool inReport = false, inPrograms = false;
         foreach (string l in File.ReadLines(log))
         {
-            if (takeState)
+            if (inReport)
             {
+                if (l.StartsWith('[') || l.StartsWith("last frames:", StringComparison.Ordinal) && inPrograms)
+                {
+                    break;
+                }
+
                 if (l.StartsWith("renderer: ", StringComparison.Ordinal))
                 {
                     lines.Add("  " + l);
                 }
+                else if (l.StartsWith("programs in flight:", StringComparison.Ordinal))
+                {
+                    inPrograms = true;
+                    lines.Add("  programs the GPU was running (vertex/fragment program, surface, uniform bytes, draws):");
+                }
+                else if (inPrograms && l.Length > 0)
+                {
+                    lines.Add("    " + l.TrimStart());
+                }
 
-                break;
+                continue;
             }
 
             int at = l.IndexOf(Marker, StringComparison.Ordinal);
             if (at >= 0)
             {
                 lines.Add("GPU DEVICE LOST (the game draws nothing after it; the capture may have been saved by itself here): in " + l[(at + Marker.Length)..]);
-                takeState = true;
+                inReport = true;
             }
         }
 

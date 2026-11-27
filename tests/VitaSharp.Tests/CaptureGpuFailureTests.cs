@@ -35,6 +35,31 @@ public sealed class CaptureGpuFailureTests : IDisposable
         Assert.Contains("GPU DEVICE LOST", CaptureAnalyzer.Analyze(_dir, quiet: true));
     }
 
+    /// <summary>The programs the GPU was running (VulkanRenderer.ProgramsInFlight, after the "last frames" table) are in
+    /// the report, so a player's capture names the vertex program and its uniform size without a GPU dump.</summary>
+    [Fact]
+    public void TheProgramsInFlightAreReported()
+    {
+        File.WriteAllLines(Path.Combine(_dir, "log.txt"),
+        [
+            "[15:21:27.586] [Error] [GPU worker] [gpu] VULKAN DEVICE LOST in vkQueueSubmit at present #5856 (guest frame 6608)",
+            "renderer: present #5856, GPU frames 6844, frame slot 4, in scene False, rt 0x65406000, draws this frame 572, device lost True, shader jobs in flight 0",
+            "last frames:",
+            "p5855 f6607 35,0ms draws=89 scenes=2 newSh=0 newPipe=0 newRT=0 newTex=0 hitch=- fb=0x65802000 960x544",
+            "programs in flight:",
+            "frame slot 4 (recording): 2 program pairs",
+            "  vs=E05AF95937F44FD8 fs=395C969A7F9C2061 rt=0x64402F00(2048x1024) vu=32800 fu=16 draws=252",
+            "  vs=3FA0D8DA7398509E fs=43E4D84729D91B9B rt=0x64402F00(2048x1024) vu=16 fu=16 draws=4",
+            "[15:21:27.600] [Error] [GPU worker] GPU backend signal failed",
+        ]);
+
+        List<string> lines = CaptureAnalyzer.GpuFailureLines(_dir);
+
+        Assert.Contains(lines, l => l.Contains("vs=E05AF95937F44FD8", StringComparison.Ordinal) && l.Contains("vu=32800", StringComparison.Ordinal) && l.Contains("draws=252", StringComparison.Ordinal));
+        Assert.Contains(lines, l => l.Contains("frame slot 4 (recording)", StringComparison.Ordinal));
+        Assert.DoesNotContain(lines, l => l.Contains("p5855", StringComparison.Ordinal) || l.Contains("signal failed", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void NothingIsSaidWhenTheDeviceWasNotLost()
     {

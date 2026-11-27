@@ -121,6 +121,11 @@ public enum GpuQuirk : long
     /// <summary>VK_EXT_graphics_pipeline_library is not used even when the driver reports fast linking: every pipeline
     /// is compiled whole, as without the extension.</summary>
     AvoidPipelineLibrary = 1L << 14,
+    /// <summary>Large bound uniform buffers are not read from dynamic storage buffers of their own (the split uniform
+    /// slots, bindings 5-8): they stay in the per-draw uniform data, as with VITASHARP_UB_SHARE=0. On the Mali-G57 (r54
+    /// driver) a vertex shader reading its bone palette from such a binding lost the device (FIFA 13 match start,
+    /// reproduced with one draw replayed on the phone; VITASHARP_UB_SHARE=0 runs the same frame).</summary>
+    AvoidSplitUniformSlots = 1L << 15,
 }
 
 /// <summary>Driver limits the renderer checks (a subset of VkPhysicalDeviceLimits).</summary>
@@ -402,6 +407,9 @@ public static class GpuQuirkTable
         new(GpuQuirk.AvoidPipelineLibrary, "Qualcomm, ARM and Imagination proprietary, all versions",
             "precautionary: the libraries and the fast link are not measured on these drivers (the phone path keeps whole pipelines); DXVK also needs graphicsPipelineLibraryFastLinking",
             (v, d, _) => MobileProprietary(d)),
+        new(GpuQuirk.AvoidSplitUniformSlots, "ARM proprietary (Mali), all versions",
+            "measured: Mali-G57 r54 loses the device on a vertex shader reading 32 KB of uniforms from a dynamic storage buffer binding (FIFA 13; one draw replayed on the phone, fixed by VITASHARP_UB_SHARE=0); Vita3K and yuzu read uniforms from uniform/storage buffers bound per draw, without such shared bindings",
+            (v, d, _) => d == GpuDriver.ArmProprietary),
         new(GpuQuirk.CustomDriverCapable, "Qualcomm (stock or Turnip), Android",
             "Vita3K support_custom_drivers(): 'vendor ID 0x5143 is Qualcomm, being stock or turnip'",
             (v, d, _) => v == GpuVendor.Qualcomm),
