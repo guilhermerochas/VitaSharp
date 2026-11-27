@@ -136,6 +136,11 @@ public sealed unsafe partial class VulkanRenderer
     /// </summary>
     public void Idle()
     {
+        if (DroppedAfterDeviceLost())
+        {
+            return;
+        }
+
         if (VitaSharp.Core.EmulationPause.IsPaused)
         {
             PresentWhilePaused();
