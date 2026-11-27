@@ -36,7 +36,7 @@ public sealed class WakeLatencyStatsTests
     public void HostPlacementReadsCoreAndNiceFromTheStatLine()
     {
         // pid (comm with spaces) state ... field 19 nice = 10, field 39 processor = 6
-        var fields = new string[50];
+        string[] fields = new string[50];
         for (int i = 0; i < fields.Length; i++)
         {
             fields[i] = "0";

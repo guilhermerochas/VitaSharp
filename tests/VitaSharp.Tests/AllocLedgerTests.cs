@@ -19,7 +19,7 @@ public sealed class AllocLedgerTests
     [Fact]
     public void ASiteKeepsWhatItsThreadAllocates()
     {
-        var site = AllocLedger.Site("test site " + Guid.NewGuid());
+        System.Runtime.CompilerServices.StrongBox<long> site = AllocLedger.Site("test site " + Guid.NewGuid());
         long a0 = GC.GetAllocatedBytesForCurrentThread();
         GC.KeepAlive(new byte[10_000]);
         AllocLedger.Add(site, GC.GetAllocatedBytesForCurrentThread() - a0);
