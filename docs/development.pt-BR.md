@@ -199,7 +199,7 @@ Os caminhos ARM64 (o backend nativo ARM64 do JIT, o runtime .NET ARM64 que o cel
 celular, sob o qemu-user: `build/qemu-arm64.sh` (Linux) / `build/qemu-arm64.ps1` (Windows, pelo WSL) compila o
 projeto de testes para `linux-arm64` e o roda com um test host arm64 sob o `qemu-aarch64`; lá os testes do backend
 ARM64 executam o código gerado nativamente (`Arm64HostRunner`) em vez do sandbox Unicorn das execuções x64 (filtro
-padrão: `NativeJit`, `Vfp`, `Neon`, `Arm64`; `--filter` / `-Filter` escolhe outros). `--testgame <vpk>` / `-TestGame`
+padrão: `NativeJit`, `Vfp`, `Neon`, `Arm64`, `HostCodeCoherence`; `--filter` / `-Filter` escolhe outros). `--testgame <vpk>` / `-TestGame`
 também publica o `VitaSharp.Desktop` para `linux-arm64` (self-contained) e inicia o test game sem janela sob o qemu
 (`--seconds`, padrão 300; o log ganha uma linha `# run under qemu-user`). Logs, o `.trx` e o `results.txt` do test
 game vão para `--out` / `-Out`. O qemu emula o processador, então os tempos não são os do celular; só os resultados
@@ -207,10 +207,23 @@ contam.
 
 | | Windows | Linux | macOS |
 |---|---|---|---|
-| Requisitos | WSL 2 (Debian/Ubuntu) com um SDK do .NET 10 em `~/.dotnet`; `-Install` faz o resto (como root no WSL, sem senha) | Debian/Ubuntu x64 com SDK do .NET 10; `--install` (sudo): `qemu-user-static binfmt-support` e as bibliotecas `arm64` (`libc6 libstdc++6 libgcc-s1 libicu libssl3 zlib1g`, multiarch), mais o runtime .NET arm64 em `~/.dotnet-arm64` (`DOTNET_ARM64_ROOT`) | não se aplica: não há qemu-user; o Apple silicon roda o `dotnet test` nativamente em ARM64 |
+| Requisitos | WSL 2 (Debian/Ubuntu) com um SDK do .NET 10 em `~/.dotnet`; `-Install` faz o resto (como root no WSL, sem senha) | Debian/Ubuntu x64 com SDK do .NET 10; `--install` (sudo): `qemu-user-static binfmt-support` e as bibliotecas `arm64` (`libc6 libstdc++6 libgcc-s1 libicu libssl3 zlib1g`, multiarch), o qemu-user 10 em `~/.qemu-arm64` (`QEMU_ARM64_DIR`; `--install-qemu`, sem sudo), mais o runtime .NET arm64 em `~/.dotnet-arm64` (`DOTNET_ARM64_ROOT`) | não se aplica: não há qemu-user; o Apple silicon roda o `dotnet test` nativamente em ARM64 |
 
+**qemu 10, não 7.2:** o qemu-user 7.2 (o `qemu-user-static` do Debian bookworm) continua rodando a sua tradução do
+código que o JIT reescreve pelo segundo mapeamento (leitura/escrita) da área de código W^X (uma faixa reaproveitada
+depois do `ExecutableMemory.Free`, uma palavra trocada pela ligação de blocos): ele só percebe escritas no endereço em
+que o código roda, e o IC IVAU não faz nada lá. As leituras literais do código velho leem então os bytes novos e
+saltam para um par de instruções tomado como endereço (SIGSEGV, ex.: pc `0x806b01009f` com x16 = `0x540000806b01009f`
+no `Arm64SuperblocksMatchInterpreter`; também `Arm64GroupedDirtyMarksCoverStores`, `Arm64MediaMatchesInterpreter`, os
+testes de vetor curto do VFP e do cache de vetores). No hardware a manutenção de cache da área (DC CVAU, DSB ISH, IC
+IVAU, DSB ISH, ISB) faz o código novo rodar; o `HostCodeCoherenceTests` confere essas reescritas em todo host. O
+`--install` / `-Install` põe o qemu-user 10 estático do Debian trixie (testado o 10.0.13; o 10.0.2 também) em
+`~/.qemu-arm64` e o script o registra como interpretador binfmt do arm64; ele exporta `VITASHARP_QEMU_USER` (a versão),
+e sob um qemu que roda código velho os testes ARM64 do host se pulam com esse motivo em vez de derrubar o test host
+(só aí: sem qemu, código velho rodando é falha).
 O WSL sem systemd perde a entrada binfmt do `qemu-aarch64` quando a distribuição reinicia: o `.ps1` a registra de novo
-a cada execução (`wsl -u root -- update-binfmts --enable qemu-aarch64`). `QEMU_CPU` escolhe o modelo de processador
+a cada execução (`qemu-arm64.sh --register-binfmt` como root, ou `update-binfmts --enable qemu-aarch64` sem o
+qemu 10). `QEMU_CPU` escolhe o modelo de processador
 do qemu (padrão `max`). Os testes rodam na plataforma de testes portátil (`Microsoft.TestPlatform.Portable`, em
 `~/.vstest-portable`) iniciada pelo runtime arm64: o `vstest.console.dll` do SDK é compilado para x64, e o x64 não acha
 host arm64 no Linux. O script define `DOTNET_EnableWriteXorExecute=0` (o qemu-user roda código velho que o JIT do .NET

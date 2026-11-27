@@ -195,7 +195,7 @@ public sealed unsafe class VfpShortVectorJitTests(GuestMemoryFixture fx)
     /// element goes through the managed VFP handler, and the blocks of a vector loop run only a few times each per pass
     /// (Dead Space's mixer). Three iterations of the loop are enough (before: at least 64 executions and 2000
     /// instructions).</summary>
-    [Fact]
+    [HostCodeFact] // generated code on this host: skipped under a qemu-user that runs stale code
     public void VectorModeBlockCompilesOnItsSecondRun()
     {
         if (!Jit.Enabled || Jit.Chain.Length == 0)
@@ -233,7 +233,7 @@ public sealed unsafe class VfpShortVectorJitTests(GuestMemoryFixture fx)
     /// vmsr; svc) is compiled for the mode once hot and then runs as that code, with the interpreter's results. Before,
     /// every vector-mode block ran in the interpreter however hot it was.
     /// </summary>
-    [Fact]
+    [HostCodeFact] // generated code on this host: skipped under a qemu-user that runs stale code
     public void HotVectorModeLoopRunsAsCompiledCode()
     {
         if (!Jit.Enabled || Jit.Chain.Length == 0)

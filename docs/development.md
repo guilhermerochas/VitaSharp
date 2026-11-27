@@ -188,17 +188,29 @@ The ARM64 code paths (the native ARM64 JIT backend, the .NET ARM64 runtime the p
 phone under qemu-user: `build/qemu-arm64.sh` (Linux) / `build/qemu-arm64.ps1` (Windows, through WSL) builds the test
 project for `linux-arm64` and runs it with an arm64 test host under `qemu-aarch64`; there the ARM64 backend's tests
 execute the generated code natively (`Arm64HostRunner`) instead of in the Unicorn sandbox of the x64 runs (default
-filter: `NativeJit`, `Vfp`, `Neon`, `Arm64`; `--filter` / `-Filter` picks others). `--testgame <vpk>` / `-TestGame`
+filter: `NativeJit`, `Vfp`, `Neon`, `Arm64`, `HostCodeCoherence`; `--filter` / `-Filter` picks others). `--testgame <vpk>` / `-TestGame`
 also publishes `VitaSharp.Desktop` for `linux-arm64` (self-contained) and boots the test game headless under qemu
 (`--seconds`, default 300; the log gets a `# run under qemu-user` line). Logs, the `.trx` and the test game's
 `results.txt` go to `--out` / `-Out`. qemu emulates the processor, so times are not the phone's; only results count.
 
 | | Windows | Linux | macOS |
 |---|---|---|---|
-| Requirements | WSL 2 (Debian/Ubuntu) with a .NET 10 SDK in `~/.dotnet`; `-Install` does the rest (as root in WSL, no password) | x64 Debian/Ubuntu with a .NET 10 SDK; `--install` (sudo): `qemu-user-static binfmt-support` and the `arm64` libraries (`libc6 libstdc++6 libgcc-s1 libicu libssl3 zlib1g`, multiarch), plus the arm64 .NET runtime in `~/.dotnet-arm64` (`DOTNET_ARM64_ROOT`) | not applicable: no qemu-user; Apple silicon runs `dotnet test` natively on ARM64 |
+| Requirements | WSL 2 (Debian/Ubuntu) with a .NET 10 SDK in `~/.dotnet`; `-Install` does the rest (as root in WSL, no password) | x64 Debian/Ubuntu with a .NET 10 SDK; `--install` (sudo): `qemu-user-static binfmt-support` and the `arm64` libraries (`libc6 libstdc++6 libgcc-s1 libicu libssl3 zlib1g`, multiarch), qemu-user 10 in `~/.qemu-arm64` (`QEMU_ARM64_DIR`; `--install-qemu`, no sudo), plus the arm64 .NET runtime in `~/.dotnet-arm64` (`DOTNET_ARM64_ROOT`) | not applicable: no qemu-user; Apple silicon runs `dotnet test` natively on ARM64 |
 
+**qemu 10, not 7.2:** qemu-user 7.2 (Debian bookworm's `qemu-user-static`) keeps running its translation of code
+that the JIT rewrites through the second (read/write) mapping of its W^X code arena (a range reused after
+`ExecutableMemory.Free`, a word patched by linking): it only notices writes to the address the code runs at, and IC
+IVAU does nothing there. The old code's literal loads then read the new bytes and branch to an instruction pair taken
+as an address (SIGSEGV, e.g. pc `0x806b01009f` with x16 = `0x540000806b01009f` in `Arm64SuperblocksMatchInterpreter`;
+also `Arm64GroupedDirtyMarksCoverStores`, `Arm64MediaMatchesInterpreter`, the VFP short-vector and vector-cache tests).
+On hardware the arena's cache maintenance (DC CVAU, DSB ISH, IC IVAU, DSB ISH, ISB) makes the new code run;
+`HostCodeCoherenceTests` checks those rewrites on every host. `--install` / `-Install` put Debian trixie's static
+qemu-user 10 (10.0.13 tested; 10.0.2 too) in `~/.qemu-arm64` and the script registers it as the arm64 binfmt
+interpreter; it exports `VITASHARP_QEMU_USER` (the version), and under a qemu that runs stale code the ARM64 host tests
+skip themselves with that reason instead of crashing the test host (only then: without qemu a stale run fails).
 WSL without systemd loses the `qemu-aarch64` binfmt entry when the distribution restarts: the `.ps1` registers it
-again on each run (`wsl -u root -- update-binfmts --enable qemu-aarch64`). `QEMU_CPU` picks qemu's processor model
+again on each run (`qemu-arm64.sh --register-binfmt` as root, or `update-binfmts --enable qemu-aarch64` without
+qemu 10). `QEMU_CPU` picks qemu's processor model
 (default `max`). The tests run on the portable test platform (`Microsoft.TestPlatform.Portable`, in
 `~/.vstest-portable`) started by the arm64 runtime: the SDK's `vstest.console.dll` is built for x64, and the x64 one
 finds no arm64 host on Linux. The script sets `DOTNET_EnableWriteXorExecute=0` (qemu-user runs stale code that the .NET
