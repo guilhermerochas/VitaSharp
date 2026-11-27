@@ -25,7 +25,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// configuration and LCDC sync, rif name, title list, ID storage, secure tick, update state, peripheral state).
 /// Every entry is for the PSP emulator or a system program (0x80010058 otherwise).
 /// </summary>
-public sealed partial class Compat : HleModule, IDisposable
+public sealed partial class Compat : HleModule, IDisposable, Hle.IFirmwareInternalFunctions
 {
     const int ERR_PERM = unchecked((int)0x80010058), ERR_NOT_STARTED = unchecked((int)0x80027205),
         ERR_NOT_OWNER = unchecked((int)0x8002F001), ERR_ARG = unchecked((int)0x80020005), ERR_INVAL = unchecked((int)0x80010016),
@@ -58,6 +58,21 @@ public sealed partial class Compat : HleModule, IDisposable
 
     /// <summary>The handshake word's states.</summary>
     internal const uint HandshakeReady = 1, HandshakeAcknowledged = 2, HandshakeRunning = 3, HandshakeIdle = 0;
+
+    /// <summary>The firmware module's name (module_info of bootimage's SceCompat; fixed by the firmware), which its
+    /// import stubs are known by.</summary>
+    const string FirmwareModuleName = "SceCompat";
+
+    /// <summary>SceSblAIMgrForDriver and its ksceSblAimgrIsDEX, as SceCompat 3.74 imports them.</summary>
+    const uint AimgrForDriverNid = 0xFD00C69A, IsDexNid = 0xF4B98F66;
+
+    /// <summary>SceGrabForDriver and its ksceGrabSetMemoryBankAddress, as SceCompat 3.74 imports them.</summary>
+    const uint GrabForDriverNid = 0x81C54BED, SetMemoryBankAddressNid = 0xE9C25A28;
+
+    /// <summary>SceCompat 3.74's module NID (module_info +0x34), the build its internal offsets are of, and its
+    /// function at +0x2AE8 (Thumb) that loads os0:sm/compat_sm.self into the secure processor and sends it command
+    /// 0x30006, which the boot handshake runs once the core reached state 1.</summary>
+    const uint Compat374ModuleNid = 0x0ED0A986, SecureHandshakeOffset = 0x2AE9;
 
     static readonly string PcffPath = Io.FirmwareLayout.SystemApplications.Guest("NPXS10028", "pcff.skprx");
     static readonly string PcbcPath = Io.FirmwareLayout.KernelModules.Guest("pcbc.skprx");
@@ -307,14 +322,11 @@ public sealed partial class Compat : HleModule, IDisposable
             return ERR_NOT_STARTED;
         }
 
-        _bus.SetBank(0, _window | 1);
-        _bus.SetBank(1, (_window + PspBus.BankSize) | 1);
-        _bus.SetBank(2, (_window + PspBus.BankSize) | 1);
-        _bus.SetBank(3, (_window + PcffOffset) | 1);
-
+        MapBanks();
         int loaded = LoadBlob(PcffPath, _window + PcffOffset, PcffMaxSize);
         if (loaded < 0)
         {
+            Log.Info($"SceCompat: InitEx({bootParam}): SceSblFwLoader did not load {PcffPath} (0x{loaded:X8}): the PSP core is not taken");
             return loaded;
         }
 
@@ -322,6 +334,7 @@ public sealed partial class Compat : HleModule, IDisposable
         GuestMemory.W32(_window + SeedOffset, _seed);
         if (loaded < 0)
         {
+            Log.Info($"SceCompat: InitEx({bootParam}): SceSblFwLoader did not load {PcbcPath} (0x{loaded:X8}): the PSP core is not taken");
             return loaded;
         }
 
@@ -346,6 +359,44 @@ public sealed partial class Compat : HleModule, IDisposable
         _sram.Clear();
         _mailbox.Reset();
         return 0;
+    }
+
+    /// <summary>
+    /// The core's four RAM banks over the window, as InitEx sets them (SceCompat 3.74 0x810003f0): bank 0 the window,
+    /// 1 and 2 window + 0x1000000, 3 window + 0x3000000, each by its physical address (ksceKernelVAtoPA) through
+    /// SceCompat's import of ksceGrabSetMemoryBankAddress, so a kernel plugin's import hook there sees and may change
+    /// each bank.
+    /// </summary>
+    void MapBanks()
+    {
+        if (_loaderScratch == 0)
+        {
+            _loaderScratch = Mem.Alloc(LoaderScratchSize, "SceCompat loader arguments");
+        }
+
+        Hle.FirmwareKernelModules? firmware = Emu.FirmwareKernelIfShown;
+        SysmemKernel sysmem = Emu.Hle.Modules.OfType<SysmemKernel>().First();
+        SystemServicesVsh services = Services;
+        ReadOnlySpan<uint> offsets = [0, PspBus.BankSize, PspBus.BankSize, PcffOffset];
+        for (int bank = 0; bank < offsets.Length; bank++)
+        {
+            uint physical = _window + offsets[bank];
+            if (sysmem.ksceKernelVAtoPAThroughEntry(_window + offsets[bank], _loaderScratch) >= 0)
+            {
+                physical = GuestMemory.R32(_loaderScratch);
+            }
+
+            int bankIndex = bank;
+            uint value = physical | 1;
+            if (firmware == null)
+            {
+                services.ksceGrabSetMemoryBankAddressThroughEntry(bankIndex, value);
+                continue;
+            }
+
+            firmware.CallImport(FirmwareModuleName, GrabForDriverNid, SetMemoryBankAddressNid,
+                () => (uint)services.ksceGrabSetMemoryBankAddressThroughEntry(bankIndex, value), (uint)bankIndex, value);
+        }
     }
 
     /// <summary>One blob through SceSblFwLoader's exports (lock, load, unlock), as InitEx calls them: the loader's
@@ -409,24 +460,40 @@ public sealed partial class Compat : HleModule, IDisposable
         }
 
         SystemServicesVsh services = Services;
-        bool testingKit = services.ksceSblAimgrIsDEXThroughEntry() != 0;
         GuestMemory.Fill(_startScratch, 0, StartScratchSize);
         int activation = services.ksceNpDrmReadActDataThroughEntry(_startScratch);
         GuestMemory.ReadSpan(_startScratch, (int)DatSize).CopyTo(_dat);
-        if (activation < 0 && !testingKit)
+        if (activation < 0 && !IsTestingKit())
         {
             Log.Info($"SceCompat: Start: no activation data (ksceNpDrmReadActData 0x{activation:X8}): the PSP core is not started");
             return activation;
         }
 
         int license = LicenseCheck();
-        if (license != 0 && !testingKit)
+        if (license != 0 && !IsTestingKit())
         {
             Log.Info($"SceCompat: Start: the title's license {(_rif.Length == 0 ? "(none set)" : _rif)} does not pass (0x{license:X8}): the PSP core is not started");
             return ERR_LICENSE;
         }
 
         return ReleaseCore();
+    }
+
+    /// <summary>
+    /// ksceSblAimgrIsDEX as the start path asks it (SceCompat 3.74 0x81000228, only after a failed step): through
+    /// SceCompat's own import of it, so code written over that import stub (a kernel plugin's import hook on the
+    /// module) answers, as on the console; otherwise the export (its own hook, else the HLE).
+    /// </summary>
+    bool IsTestingKit()
+    {
+        SystemServicesVsh services = Services;
+        Hle.FirmwareKernelModules? firmware = Emu.FirmwareKernelIfShown;
+        if (firmware == null)
+        {
+            return services.ksceSblAimgrIsDEXThroughEntry() != 0;
+        }
+
+        return firmware.CallImport(FirmwareModuleName, AimgrForDriverNid, IsDexNid, () => (uint)services.ksceSblAimgrIsDEXThroughEntry()) != 0;
     }
 
     /// <summary>The core out of reset at the boot code on its thread, state 2 (after the start path's checks).</summary>
@@ -721,6 +788,12 @@ public sealed partial class Compat : HleModule, IDisposable
             return 0;
         }
 
+        int secure = (int)SecureHandshake();
+        if (secure != 0)
+        {
+            return secure;
+        }
+
         lock (_apiLock)
         {
             _coreReady = HandshakeReady;
@@ -743,6 +816,31 @@ public sealed partial class Compat : HleModule, IDisposable
 
         WriteHandshake(HandshakeIdle);
         return 0;
+    }
+
+    /// <summary>The boot handshake's secure processor step (SceCompat 3.74 +0x2AE8) called at its address, so an offset
+    /// hook written over it runs; its HLE is <see cref="SecureHandshakeCommand"/>.</summary>
+    uint SecureHandshake()
+    {
+        Hle.FirmwareKernelModules? firmware = Emu.FirmwareKernelIfShown;
+        if (firmware == null)
+        {
+            return SecureHandshakeCommand();
+        }
+
+        return firmware.CallInternal(Compat374ModuleNid, SecureHandshakeOffset, SecureHandshakeCommand);
+    }
+
+    /// <summary>SceCompat 3.74 +0x2AE8(): compat_sm.self into the secure processor (when the module may load it) and
+    /// its command 0x30006, which gives no data back: status 0 (there is no secure processor to answer otherwise).</summary>
+    static uint SecureHandshakeCommand()
+    {
+        return 0;
+    }
+
+    public void RegisterInternalFunctions(Hle.FirmwareKernelModules firmware)
+    {
+        firmware.RegisterInternal(Compat374ModuleNid, SecureHandshakeOffset, (_, _) => SecureHandshakeCommand());
     }
 
     uint ReadHandshake()

@@ -82,7 +82,6 @@ public sealed class CsiKernelTests(GuestMemoryFixture fixture) : IDisposable
     [InlineData(0xF13C63DDu)]
     [InlineData(0xB22EE8BCu)]
     [InlineData(0x1F292554u)]
-    [InlineData(0xE9C25A28u)]
     [InlineData(0x5F36ABC4u)]
     [InlineData(0x188BBCC8u)]
     public void TheGrabberCallsAreAcceptedDefaults(uint nid)
@@ -92,5 +91,16 @@ public sealed class CsiKernelTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Single(bindings);
         Assert.True(bindings[0].Default);
         Assert.Equal(0, Call(Services, "GrabSecureMonitorCall"));
+    }
+
+    /// <summary>ksceGrabSetMemoryBankAddress is not a default: it maps a bank of the PSP compat core's RAM (the
+    /// grabber's bank register), which SceCompat's InitEx programs (CompatImportHookTests).</summary>
+    [Fact]
+    public void TheGrabberBankCallMapsTheCompatCoresBank()
+    {
+        var bindings = HleBindings.Modules.SelectMany(m => m.Bindings())
+            .Where(b => b.Nid == 0xE9C25A28u && b.Library == "SceGrabForDriver").ToList();
+        Assert.Single(bindings);
+        Assert.False(bindings[0].Default);
     }
 }
