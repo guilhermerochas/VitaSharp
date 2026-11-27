@@ -7,7 +7,7 @@
     Usage: .\build\qemu-arm64.ps1 [-Install] [-Filter <filter>] [-NoTests] [-TestGame <vpk>] [-Seconds <n>]
                                   [-Out <folder>] [-Distro <name>]
       -Install   installs qemu-user-static, binfmt-support, the arm64 libraries (apt, as root in WSL) and the arm64
-                 .NET runtime in ~/.dotnet-arm64 inside WSL
+                 .NET runtime in ~/.dotnet-arm64 and the portable test platform in ~/.vstest-portable inside WSL
       -Filter    dotnet test filter (default: the ARM64 backend tests, see qemu-arm64.sh)
       -NoTests   runs no tests
       -TestGame  also boots the test game headless (VitaSharp.Desktop run) under qemu
@@ -50,7 +50,7 @@ function ConvertTo-WslPath([string]$windowsPath)
 if ($Install)
 {
     # apt needs root; wsl -u root needs no password
-    $packages = "qemu-user-static binfmt-support libc6:arm64 libstdc++6:arm64 libgcc-s1:arm64 libssl3:arm64 zlib1g:arm64"
+    $packages = "unzip qemu-user-static binfmt-support libc6:arm64 libstdc++6:arm64 libgcc-s1:arm64 libssl3:arm64 zlib1g:arm64"
     $aptCommand = "dpkg --add-architecture arm64 && apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends $packages `$(apt-cache search --names-only '^libicu[0-9]+`$' | awk '{print `$1; exit}'):arm64"
     wsl -d $Distro -u root -- bash -c $aptCommand
     if ($LASTEXITCODE -ne 0)
@@ -67,6 +67,8 @@ if ($Install)
 {
     # the arm64 runtime (the apt part is done above)
     wsl -d $Distro -- bash -lc "test -x ~/.dotnet-arm64/dotnet || (curl -sSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 10.0 --runtime dotnet --architecture arm64 --install-dir ~/.dotnet-arm64)"
+    # the portable test platform (the version of the test project's Microsoft.NET.Test.Sdk; see qemu-arm64.sh)
+    wsl -d $Distro -- bash -lc "test -f ~/.vstest-portable/tools/net8.0/vstest.console.dll || (mkdir -p ~/.vstest-portable && cd ~/.vstest-portable && curl -sSL -o platform.zip https://www.nuget.org/api/v2/package/Microsoft.TestPlatform.Portable/17.14.1 && unzip -q -o platform.zip && rm -f platform.zip)"
 }
 if ($NoTests)
 {

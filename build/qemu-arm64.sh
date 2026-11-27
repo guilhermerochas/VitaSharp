@@ -3,7 +3,8 @@
 # Runs the ARM64 code of VitaSharp (the native ARM64 JIT backend, the .NET ARM64 runtime) on an x64 Linux PC under
 # qemu-user, without a phone. Usage: build/qemu-arm64.sh [options]   (same as build/qemu-arm64.ps1, which runs it in WSL)
 #   --install           installs what is missing first: qemu-user-static, binfmt-support and the arm64 libraries
-#                       (apt, needs sudo) and the arm64 .NET runtime in ~/.dotnet-arm64 (dotnet-install.sh)
+#                       (apt, needs sudo), the arm64 .NET runtime in ~/.dotnet-arm64 (dotnet-install.sh) and the
+#                       portable test platform in ~/.vstest-portable (NuGet)
 #   --tests-dir DIR     test binaries already built for linux-arm64 (skips the build; build/qemu-arm64.ps1 builds them
 #                       on Windows): dotnet build tests/VitaSharp.Tests -c Release -r linux-arm64 --self-contained false -o DIR
 #   --filter F          dotnet test filter of the tests (default: the ARM64 backend, see DEFAULT_FILTER)
@@ -13,7 +14,8 @@
 #   --seconds N         how long the test game runs (default 300: under qemu the emulator is ~10x slower)
 #   --out DIR           where logs, the test results and the test game's data folder go (default: a temp folder)
 #   env: DOTNET (x64 dotnet with an SDK; default dotnet in PATH or ~/.dotnet/dotnet), DOTNET_ARM64_ROOT (arm64
-#   runtime; default ~/.dotnet-arm64), QEMU_CPU (qemu -cpu model for the arm64 processes; default qemu's max).
+#   runtime; default ~/.dotnet-arm64), VSTEST_PORTABLE (portable test platform; default ~/.vstest-portable), QEMU_CPU
+#   (qemu -cpu model for the arm64 processes; default qemu's max).
 # Needs Linux on x64 (Debian/Ubuntu; Windows: WSL 2). macOS has no qemu-user: on Apple silicon run the tests natively.
 
 set -euo pipefail
@@ -23,7 +25,9 @@ readonly ROOT
 # The ARM64 backend's tests: on an ARM64 process they run the generated code natively (Arm64HostRunner), not in the
 # Unicorn sandbox they use on x64.
 readonly DEFAULT_FILTER='FullyQualifiedName~NativeJit|FullyQualifiedName~Vfp|FullyQualifiedName~Neon|FullyQualifiedName~Arm64'
-readonly APT_PACKAGES='qemu-user-static binfmt-support libc6:arm64 libstdc++6:arm64 libgcc-s1:arm64 libssl3:arm64 zlib1g:arm64'
+# the portable test platform (Microsoft.TestPlatform.Portable), the version of the test project's Microsoft.NET.Test.Sdk
+readonly VSTEST_VERSION='17.14.1'
+readonly APT_PACKAGES='unzip qemu-user-static binfmt-support libc6:arm64 libstdc++6:arm64 libgcc-s1:arm64 libssl3:arm64 zlib1g:arm64'
 
 die() {
   echo "qemu-arm64: $*" >&2
@@ -57,9 +61,9 @@ host_dotnet() {
 }
 
 #######################################
-# Installs qemu-user, the binfmt entry, the arm64 libraries and the arm64 .NET runtime.
+# Installs qemu-user, the binfmt entry, the arm64 libraries, the arm64 .NET runtime and the portable test platform.
 # Arguments:
-#   The arm64 runtime folder.
+#   The arm64 runtime folder, the portable test platform folder.
 #######################################
 install_requirements() {
   if ! dpkg --print-foreign-architectures | grep -qx arm64; then
@@ -76,6 +80,11 @@ install_requirements() {
     bash "${installer}" --channel 10.0 --runtime dotnet --architecture arm64 --install-dir "$1"
     rm -f "${installer}"
   fi
+  if [[ ! -f "$2/tools/net8.0/vstest.console.dll" ]]; then
+    mkdir -p "$2"
+    curl -sSL -o "$2/platform.zip" "https://www.nuget.org/api/v2/package/Microsoft.TestPlatform.Portable/${VSTEST_VERSION}"
+    (cd "$2" && unzip -q -o platform.zip && rm -f platform.zip)
+  fi
 }
 
 #######################################
@@ -89,27 +98,32 @@ check_requirements() {
   if [[ ! -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]]; then
     # WSL without systemd does not register the entries at boot
     if command -v update-binfmts >/dev/null 2>&1; then
-      sudo update-binfmts --enable qemu-aarch64 || true
+      sudo -n update-binfmts --enable qemu-aarch64 || true
     fi
-    [[ -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]] || die "no qemu-aarch64 binfmt entry (run with --install)"
+    [[ -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]] ||
+      die "no qemu-aarch64 binfmt entry (sudo update-binfmts --enable qemu-aarch64; WSL: wsl -u root -- update-binfmts --enable qemu-aarch64)"
   fi
   [[ -x "$1/dotnet" ]] || die "no arm64 .NET runtime in $1 (run with --install)"
   "$1/dotnet" --list-runtimes >/dev/null || die "the arm64 runtime in $1 does not start under qemu"
 }
 
 #######################################
-# Runs the tests of a linux-arm64 build with the x64 test platform and an arm64 test host (under qemu).
+# Runs the tests of a linux-arm64 build with the portable test platform on the arm64 runtime (under qemu).
 # Arguments:
-#   Test binaries folder, filter, output folder, arm64 runtime folder.
+#   Test binaries folder, filter, output folder, arm64 runtime folder, portable test platform folder.
 #######################################
 run_tests() {
-  local dotnet start code
-  dotnet="$(host_dotnet)"
+  local vstest="$5/tools/net8.0/vstest.console.dll" start code
+  # the portable test platform on the arm64 runtime: the whole run (test host included) is arm64. The x64 vstest
+  # finds no arm64 host on Linux ("Could not find 'dotnet' host for the 'ARM64' architecture") and the SDK's
+  # vstest.console.dll is built for x64 (BadImageFormatException on arm64). /Blame names the test a crash stopped in
+  # (Sequence.xml in the results folder; no dump).
+  [[ -f "${vstest}" ]] || die "no portable test platform in $5 (run with --install)"
   start="$(date +%s)"
   set +e
-  DOTNET_ROOT_ARM64="$4" "${dotnet}" vstest "$1/VitaSharp.Tests.dll" --Platform:arm64 \
-    --TestCaseFilter:"$2" --ResultsDirectory:"$3/tests" --logger:'trx;LogFileName=arm64.trx' \
-    --logger:'console;verbosity=normal' -- RunConfiguration.MaxCpuCount=1 2>&1 | tee "$3/tests.log"
+  DOTNET_ROOT="$4" "$4/dotnet" "${vstest}" "$1/VitaSharp.Tests.dll" \
+    /TestCaseFilter:"$2" /ResultsDirectory:"$3/tests" /logger:'trx;LogFileName=arm64.trx' \
+    /logger:'console;verbosity=normal' /Blame -- RunConfiguration.MaxCpuCount=1 2>&1 | tee "$3/tests.log"
   code="${PIPESTATUS[0]}"
   set -e
   echo "qemu-arm64: tests exit ${code} in $(($(date +%s) - start)) s (log $3/tests.log)"
@@ -131,6 +145,11 @@ run_testgame() {
     --ime-text=VitaSharp --log="$4/testgame.log" >"$4/testgame.out" 2>&1
   code=$?
   set -e
+  # the log says the run was under qemu-user (the arm64 code was emulated, its timings are not the phone's)
+  {
+    echo "# run under qemu-user: $(qemu-aarch64-static --version 2>/dev/null | head -n 1), cpu ${QEMU_CPU:-max}"
+    echo "# test game exit ${code} after $(($(date +%s) - start)) s"
+  } >>"$4/testgame.log"
   echo "qemu-arm64: test game exit ${code} in $(($(date +%s) - start)) s (log $4/testgame.log)"
   if [[ -f "${data}/fs/ux0/data/VSTEST/results.txt" ]]; then
     cp "${data}/fs/ux0/data/VSTEST/results.txt" "$4/testgame-results.txt"
@@ -144,10 +163,11 @@ run_testgame() {
 main() {
   local install=0 tests_dir="" filter="${DEFAULT_FILTER}" tests=1 vpk="" desktop_dir="" seconds=300 out=""
   local runtime="${DOTNET_ARM64_ROOT:-${HOME}/.dotnet-arm64}"
+  local vstest_dir="${VSTEST_PORTABLE:-${HOME}/.vstest-portable}"
   while (($# > 0)); do
     case "$1" in
       -h | --help)
-        sed -n '3,19s/^# \{0,1\}//p' "${BASH_SOURCE[0]}"
+        sed -n '3,22s/^# \{0,1\}//p' "${BASH_SOURCE[0]}"
         return 0
         ;;
       --install) install=1 ;;
@@ -163,8 +183,15 @@ main() {
     shift
   done
   no_core_dumps
+  # qemu-user does not see code the .NET JIT writes through the writable alias of its dual-mapped (W^X) code heap: the
+  # stale translation runs instead (NullReferenceException in reflection stubs, SIGSEGV). Single-mapped RWX code is
+  # written and run at one address, which qemu tracks.
+  export DOTNET_EnableWriteXorExecute=0
+  # the ARM64 backend's tests check the block/instruction counts, which the ARM64 host runtime only keeps with this
+  # (the Unicorn sandbox always keeps them)
+  export VITASHARP_NATIVE_COUNTERS=1
   if ((install == 1)); then
-    install_requirements "${runtime}"
+    install_requirements "${runtime}" "${vstest_dir}"
   fi
   check_requirements "${runtime}"
   if [[ -n "${QEMU_CPU:-}" ]]; then
@@ -180,7 +207,7 @@ main() {
       "${dotnet}" build "${ROOT}/tests/VitaSharp.Tests" -c Release -r linux-arm64 --self-contained false \
         -o "${tests_dir}" -m:2 -p:UseSharedCompilation=false -nologo -v:q
     fi
-    run_tests "${tests_dir}" "${filter}" "${out}" "${runtime}" || code=$?
+    run_tests "${tests_dir}" "${filter}" "${out}" "${runtime}" "${vstest_dir}" || code=$?
   fi
   if [[ -n "${vpk}" ]]; then
     if [[ -z "${desktop_dir}" ]]; then
@@ -188,7 +215,7 @@ main() {
       "${dotnet}" publish "${ROOT}/src/VitaSharp.Desktop" -c Release -r linux-arm64 --self-contained true \
         -o "${desktop_dir}" -m:2 -p:UseSharedCompilation=false -nologo -v:q
     fi
-    VITASHARP_QEMU_USER=1 run_testgame "${desktop_dir}" "${vpk}" "${seconds}" "${out}" || code=$?
+    run_testgame "${desktop_dir}" "${vpk}" "${seconds}" "${out}" || code=$?
   fi
   echo "qemu-arm64: output in ${out}"
   return "${code}"
