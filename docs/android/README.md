@@ -781,7 +781,7 @@ storage (`<internal>/cache/trophies/<COMMID>/`): the set's texts per language (`
 extracted from the TRP in one pass (`TROPnnn.PNG`, `icons.stamp`). Both are rebuilt when the TRP's path, size or write
 time changes; the user's progress (`ux0:user/00/trophy/<COMMID>.json`) is read again only when it changes, without the
 TRP. A second opening (also after a restart) reads no TRP: the rows point at the extracted files, which the image loader
-decodes off the UI thread at the view's size, and the rows are laid out a screenful at a time. Each opening logs
+decodes off the UI thread at the view's size, the list is a CollectionView (only the rows on screen are built, recycled while scrolling). Each opening logs
 `Trophies: <TITLEID>: N rows in X ms (TRP reads, picture extractions, sets from disk)` in the app log (and so in the F8
 capture). Tests: `TrophyListCacheTests`. Deleting the folder is safe (the next opening rebuilds it).
 

@@ -14,8 +14,6 @@ public sealed class TrophiesState
     public TrophyList.Filter Filter { get; set; }
     /// <summary>The rows of the current filter (sorted once, not at every render).</summary>
     public IReadOnlyList<TrophyRow> Rows { get; set; } = [];
-    /// <summary>Rows laid out so far: the first screenful at once, the rest in steps (<see cref="TrophiesPage.RowStep"/>).</summary>
-    public int Shown { get; set; }
 }
 
 /// <summary>
@@ -24,9 +22,6 @@ public sealed class TrophiesState
 /// </summary>
 public sealed class TrophiesPage : Screen<TrophiesState, GameProps>
 {
-    /// <summary>Rows added per step: about one screenful, so the first one shows at once and the rest follow.</summary>
-    internal const int RowStep = 12;
-
     protected override void OnMounted()
     {
         _ = Task.Run(() =>
@@ -48,34 +43,9 @@ public sealed class TrophiesPage : Screen<TrophiesState, GameProps>
             {
                 s.List = list;
                 s.Rows = rows;
-                s.Shown = Math.Min(rows.Count, RowStep);
             });
-            ShowMoreLater();
         });
         base.OnMounted();
-    }
-
-    /// <summary>Lays out the next rows after the current ones are on screen (a long list no longer holds the first
-    /// frame until every row is measured).</summary>
-    void ShowMoreLater() =>
-        MainThread.BeginInvokeOnMainThread(async () =>
-        {
-            await Task.Delay(16);
-            if (_unmounted || State.Shown >= State.Rows.Count)
-            {
-                return;
-            }
-
-            SetState(s => s.Shown = Math.Min(s.Rows.Count, s.Shown + RowStep));
-            ShowMoreLater();
-        });
-
-    bool _unmounted;
-
-    protected override void OnWillUnmount()
-    {
-        _unmounted = true;
-        base.OnWillUnmount();
     }
 
     void SetFilter(TrophyList.Filter filter)
@@ -87,9 +57,7 @@ public sealed class TrophiesPage : Screen<TrophiesState, GameProps>
         {
             s.Filter = filter;
             s.Rows = rows;
-            s.Shown = Math.Min(rows.Count, RowStep);
         });
-        ShowMoreLater();
     }
 
     public override VisualNode Render()
@@ -97,28 +65,35 @@ public sealed class TrophiesPage : Screen<TrophiesState, GameProps>
         if (State.List is not { } list)
             return ContentPage(ActivityIndicator().IsRunning(true).Center()).HasNavigationBar(false).BackgroundColor(Palette.Background);
         var p = list.Progress;
-        var rows = State.Rows.Take(State.Shown);
-        return Page(list.Title,
-            VStack(
-                Border(
-                    VStack(
-                        Grid("Auto", "*,Auto",
-                            Label(Loc.Format("MTrophiesOf", p.Earned, p.Total)).FontFamily(Fonts.SoraSemiBold).FontSize(17),
-                            Label($"{p.Percent}%").FontFamily(Fonts.SoraBold).FontSize(17).TextColor(Palette.Accent).GridColumn(1)
-                        ),
-                        Bar(p.Fraction).Margin(0, 12, 0, 12),
-                        Grid("Auto", "*,*,*,*",
-                            GradeCount(TrophyGrade.Platinum, p, 0), GradeCount(TrophyGrade.Gold, p, 1),
-                            GradeCount(TrophyGrade.Silver, p, 2), GradeCount(TrophyGrade.Bronze, p, 3))
-                    ).Padding(16))
-                .StrokeShape(new RoundRectangle().CornerRadius(20)).StrokeThickness(0).BackgroundColor(Palette.Surface).Margin(20, 8, 20, 0),
-                ChipRow(
-                    Chip(Loc.Get("MAll"), State.Filter == TrophyList.Filter.All, () => SetFilter(TrophyList.Filter.All)),
-                    Chip(Loc.Get("MEarned"), State.Filter == TrophyList.Filter.Earned, () => SetFilter(TrophyList.Filter.Earned)),
-                    Chip(Loc.Get("MMissingTrophies"), State.Filter == TrophyList.Filter.Missing, () => SetFilter(TrophyList.Filter.Missing))
-                ).Padding(20, 16, 20, 0),
-                VStack(rows.Select(TrophyRowView).ToArray()).Spacing(10).Padding(20, 0)
-            ), kicker: Loc.Get("MTrophies"));
+        // a CollectionView: only the rows on screen are built and laid out, and they are recycled while scrolling (a
+        // long list in a stack built every row and loaded every picture before the screen showed)
+        return ContentPage(
+            Grid("Auto,*", "*",
+                Header(list.Title, back: true, kicker: Loc.Get("MTrophies")),
+                CollectionView()
+                    .ItemsSource(State.Rows, TrophyRowView)
+                    .Header(VStack(
+                        Border(
+                            VStack(
+                                Grid("Auto", "*,Auto",
+                                    Label(Loc.Format("MTrophiesOf", p.Earned, p.Total)).FontFamily(Fonts.SoraSemiBold).FontSize(17),
+                                    Label($"{p.Percent}%").FontFamily(Fonts.SoraBold).FontSize(17).TextColor(Palette.Accent).GridColumn(1)
+                                ),
+                                Bar(p.Fraction).Margin(0, 12, 0, 12),
+                                Grid("Auto", "*,*,*,*",
+                                    GradeCount(TrophyGrade.Platinum, p, 0), GradeCount(TrophyGrade.Gold, p, 1),
+                                    GradeCount(TrophyGrade.Silver, p, 2), GradeCount(TrophyGrade.Bronze, p, 3))
+                            ).Padding(16))
+                        .StrokeShape(new RoundRectangle().CornerRadius(20)).StrokeThickness(0).BackgroundColor(Palette.Surface).Margin(20, 8, 20, 0),
+                        ChipRow(
+                            Chip(Loc.Get("MAll"), State.Filter == TrophyList.Filter.All, () => SetFilter(TrophyList.Filter.All)),
+                            Chip(Loc.Get("MEarned"), State.Filter == TrophyList.Filter.Earned, () => SetFilter(TrophyList.Filter.Earned)),
+                            Chip(Loc.Get("MMissingTrophies"), State.Filter == TrophyList.Filter.Missing, () => SetFilter(TrophyList.Filter.Missing))
+                        ).Padding(20, 16, 20, 10)))
+                    .Footer(BoxView().HeightRequest(24).Color(Colors.Transparent))
+                    .ItemsLayout(new VerticalLinearItemsLayout().ItemSpacing(10))
+                    .GridRow(1)
+            )).HasNavigationBar(false).BackgroundColor(Palette.Background);
     }
 
     VisualNode GradeCount(TrophyGrade g, TrophyProgress p, int column)
@@ -155,6 +130,6 @@ public sealed class TrophiesPage : Screen<TrophiesState, GameProps>
                     ).Spacing(3).GridColumn(1).Margin(12, 0, 0, 0).VCenter()
                 ).Padding(12))
             .StrokeShape(new RoundRectangle().CornerRadius(16)).StrokeThickness(0).BackgroundColor(Palette.Surface)
-            .Opacity(opacity);
+            .Opacity(opacity).Margin(20, 0);
     }
 }
