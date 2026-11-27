@@ -13,30 +13,19 @@ public enum GameChromeItem
     Controls,
 }
 
-/// <summary>Where a chip sits along the top edge of the game screen.</summary>
-public enum GameChromeSlot
-{
-    Left,
-    Center,
-    Right,
-}
-
 /// <summary>
-/// The game screen's top row: the fps counter in the top centre, the pause chip at the top right and the on-screen
-/// controls chip at the top left. Sizes, style and auto-hide (<see cref="ChromeAutoHide"/>) are the chips' own.
+/// The game screen's top row: the chips sit together in one group at the top centre of the screen, with the fps counter
+/// in the middle of the group, the on-screen controls chip on its left and the pause chip on its right. Sizes, style
+/// and auto-hide (<see cref="ChromeAutoHide"/>) are the chips' own.
 /// </summary>
 public static class GameChromeLayout
 {
-    /// <summary>The chips' distance from the screen's left and right edges (dp).</summary>
-    public const int EdgeMarginDp = 12;
+    /// <summary>The space between two chips of the group (dp).</summary>
+    public const int GapDp = 8;
 
-    /// <summary>The chips' distance from the screen's top edge (dp).</summary>
+    /// <summary>The group's distance from the screen's top edge (dp).</summary>
     public const int TopMarginDp = 6;
 
-    public static GameChromeSlot SlotOf(GameChromeItem item) => item switch
-    {
-        GameChromeItem.Fps => GameChromeSlot.Center,
-        GameChromeItem.Pause => GameChromeSlot.Right,
-        _ => GameChromeSlot.Left,
-    };
+    /// <summary>The chips from left to right; the group is centred on the screen.</summary>
+    public static IReadOnlyList<GameChromeItem> Order { get; } = [GameChromeItem.Controls, GameChromeItem.Fps, GameChromeItem.Pause];
 }

@@ -598,20 +598,20 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
 
     // ------------------------------------------------------------------ chrome: FPS bar, pause menu, toasts
 
-    /// <summary>The top row (<see cref="GameChromeLayout"/>): the fps counter in the centre, the pause chip on the right
-    /// and the on-screen controls chip on the left.</summary>
+    /// <summary>The top row (<see cref="GameChromeLayout"/>): the chips together at the top centre, the fps counter in
+    /// the middle of the group, the on-screen controls chip on its left and the pause chip on its right.</summary>
     AView TopBar()
     {
-        var bar = new FrameLayout(this);
+        var bar = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+        bar.SetGravity(GravityFlags.CenterHorizontal | GravityFlags.Top);
+        bar.SetPadding(0, Dp(GameChromeLayout.TopMarginDp), 0, 0);
         _fps = Chip(Loc.Format("MFpsCount", "\u2014"), 12);
-        bar.AddView(_fps, ChromeSlot(GameChromeItem.Fps));
         var pause = Chip("\u275A\u275A", 12);
         _pauseChip = pause;
         pause.Click += (_, _) => OpenMenu();
         // not focusable: arrow keys of a keyboard (or a D-pad that is not a game controller) moved the focus onto it
         // and drew Android's focus highlight over the game
         pause.Focusable = false;
-        bar.AddView(pause, ChromeSlot(GameChromeItem.Pause));
         pause.PostDelayed(UpdatePauseChip, ChromeAutoHide.HideAfterMs);
         // shows/hides the on-screen controls; it hides and comes back with the pause chip (ChromeAutoHide), also
         // when the fps counter is off (the counter keeps its place, invisible)
@@ -620,26 +620,25 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         controlsChip.ContentDescription = Loc.Get("MOnScreenControls");
         controlsChip.Focusable = false;
         controlsChip.Click += (_, _) => SetControlsShown(!_pad.Visible);
-        bar.AddView(controlsChip, ChromeSlot(GameChromeItem.Controls));
+        var chips = new Dictionary<GameChromeItem, AView>
+        {
+            [GameChromeItem.Controls] = controlsChip,
+            [GameChromeItem.Fps] = _fps,
+            [GameChromeItem.Pause] = pause,
+        };
+        bool first = true;
+        foreach (GameChromeItem item in GameChromeLayout.Order)
+        {
+            var lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent)
+            {
+                LeftMargin = first ? 0 : Dp(GameChromeLayout.GapDp),
+            };
+            bar.AddView(chips[item], lp);
+            first = false;
+        }
+
         OnControlsVisibilityChanged();
         return bar;
-    }
-
-    /// <summary>A chip's place along the top edge (<see cref="GameChromeLayout.SlotOf"/>).</summary>
-    FrameLayout.LayoutParams ChromeSlot(GameChromeItem item)
-    {
-        GravityFlags horizontal = GameChromeLayout.SlotOf(item) switch
-        {
-            GameChromeSlot.Left => GravityFlags.Left,
-            GameChromeSlot.Right => GravityFlags.Right,
-            _ => GravityFlags.CenterHorizontal,
-        };
-        return new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent, GravityFlags.Top | horizontal)
-        {
-            TopMargin = Dp(GameChromeLayout.TopMarginDp),
-            LeftMargin = Dp(GameChromeLayout.EdgeMarginDp),
-            RightMargin = Dp(GameChromeLayout.EdgeMarginDp),
-        };
     }
 
     /// <summary>A finger went down on the game screen (the controls' view coordinates): the pause chip shows again
