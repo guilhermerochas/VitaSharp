@@ -116,6 +116,14 @@ the dispatch table), IndirectNoCode. This gives the cause of the game thread's ~
 `NativeReturnReasonTests` (every entry has exactly one reason; on a loop through linked and indirect exits only the window,
 the exit to a cold block and at most one miss per indirect target come back).
 
+**`guard` (A64Opt.ColdGuards, 27/11).** With a data abort handler registered (a kernel module such as the one FIFA 13
+loads), every guest access gets a guard: the page's mapping-table byte, and an abort exit when it is zero. The exit was
+inline, a dozen instructions behind a branch taken at every access, so a guarded block was about twice its size
+(simpleperf of FIFA 13's main thread: 90% of the samples in generated code spread over 6,100 blocks, a 3,888-byte Thumb
+block among the hottest). The exits now go after the block: the access costs the byte load and a `cbz` not taken (four
+stores: 34 words to the last store instead of 106, `Arm64GuardExitsAreLaidOutAfterTheBlock`). The data abort matrix
+tests run the new layout. Device A/B: `VITASHARP_NATIVE_A64_NOOPT=guard`.
+
 **`scache` (A64Opt.SingleCache).** Before, single-precision VFP went through the register file in memory at every
 operation. The result was `str s`, the containing D entry was invalidated, the next op reloaded it, odd S registers
 were never cached, and VMOV Sn/Rt and VLDR/VSTR S flushed every dirty cache entry. Now:
