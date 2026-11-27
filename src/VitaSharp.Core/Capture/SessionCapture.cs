@@ -1669,6 +1669,15 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             foreach (GuestThread? t in emu.Kernel.Threads.ToArray())
             {
                 sb.AppendLine("thread " + t.Describe());
+                if (t.WakeLatency.Describe() is { } wake)
+                {
+                    sb.AppendLine("    " + wake);
+                }
+
+                if (Util.HostThreadPlacement.Describe(t.HostTid) is { } placement)
+                {
+                    sb.AppendLine("    " + placement);
+                }
                 foreach (string call in t.RecentHleCalls(16))
                 {
                     sb.AppendLine("    hle " + call);

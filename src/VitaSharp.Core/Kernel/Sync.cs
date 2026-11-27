@@ -132,6 +132,12 @@ public static class Wait
                         Latency();
                     }
 
+                    // statistics only (the F8 thread list): how long after its signal this thread runs again
+                    if (waited && self != null && sync is KernelObject woke && woke.SignalTicks != long.MinValue)
+                    {
+                        self.WakeLatency.Record(GuestClock.Ticks - woke.SignalTicks);
+                    }
+
                     // a wait that slept ended at the object's last signal, if it came during the wait
                     long signalled = waited && sync is KernelObject signalledObject ? signalledObject.SignalTicks : long.MinValue;
                     WriteRemaining(timeout, limitUs, start, signalled);
