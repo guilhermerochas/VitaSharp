@@ -1,6 +1,7 @@
 using System.Reflection;
 using VitaSharp.Core;
 using VitaSharp.Core.Capture;
+using VitaSharp.Core.Gpu;
 using VitaSharp.Core.SaveState;
 using VitaSharp.Core.Util;
 using VitaSharp.Desktop;
@@ -267,6 +268,96 @@ public sealed class SessionCaptureControlTests(GuestMemoryFixture fixture) : IDi
         {
             VitaSharp.Core.Hle.Modules.Display.FramesPresented = framesBefore;
             VitaSharp.Core.Hle.Modules.Display.Presented = presentedBefore;
+        }
+    }
+
+    /// <summary>
+    /// A failure the game does not come back from (the GPU device lost, FIFA 13 on a Mali-G57): "Gravar tudo" saves by
+    /// itself what it holds of the moment. With the pre-roll armed and no recording, the capture has the frames before
+    /// the failure; a running recording is stopped and saved; with neither, nothing is saved.
+    /// </summary>
+    [Fact]
+    public void AFailureSavesThePreRollOrTheRecordingByItself()
+    {
+        IPresentTap? tap = null;
+        var cap = new SessionCapture(_harness.Emu, new SessionCaptureOptions
+        {
+            Root = Path.Combine(_harness.Root, "failure"),
+            SetPresentTap = t => tap = t,
+            StartState = false,
+            GpuDump = false,
+            Zip = false,
+            Threads = () => "no threads",
+            Info = () => "test info",
+        });
+        try
+        {
+            Assert.False(cap.SaveOnFailure("GPU device lost in test"), "no pre-roll and no recording: nothing to save");
+            Assert.Null(cap.Dir);
+
+            // pre-roll armed: the frames before the failure are in the capture it saves
+            cap.SetPreRoll(5);
+            HleHarness.Until(() => tap != null, "the pre-roll to take the presents");
+            const int Width = 32, Height = 16;
+            byte[] px = new byte[Width * Height * 4];
+            for (int f = 0; f < 5; f++)
+            {
+                Array.Fill(px, (byte)(f * 40));
+                tap!.OnPresent(new PresentInfo { Present = f + 1, Flip = f, VBlank = f * 2, PresentNs = CaptureClock.NowNs, IntervalMs = 16.7f, Hitch = "" }, px, Width, Height);
+            }
+
+            Assert.True(cap.SaveOnFailure("GPU device lost in test"));
+            Assert.True(cap.Idle.Wait(120_000), "the capture was not saved");
+            Assert.False(cap.IsRecording);
+            string first = cap.Dir!;
+            List<FramesFile.Frame> frames = FramesFile.ReadIndex(Path.Combine(first, "frames.vsfr"));
+            Assert.Equal(5, frames.Count(f => f.PreRoll));
+
+            // a running recording: stopped and saved at the failure
+            Assert.True(cap.Start("test"));
+            HleHarness.Until(() => cap.IsRecording, "the recording to start");
+            Assert.True(cap.SaveOnFailure("GPU device lost in test"));
+            Assert.True(cap.Idle.Wait(120_000), "the recording was not saved");
+            Assert.False(cap.IsRecording);
+            Assert.NotEqual(first, cap.Dir);
+            Assert.True(File.Exists(Path.Combine(cap.Dir!, "frames.vsfr")));
+        }
+        finally
+        {
+            cap.SetPreRoll(0);
+            cap.Hurry();
+            cap.Dispose();
+        }
+    }
+
+    /// <summary>A GPU dump recording on its own (Ctrl+F8, VITASHARP_GPU_DUMP_AT) ends at the failure, at the next
+    /// present, so it is written with the commands up to the failure instead of waiting for frames that a game which
+    /// lost its GPU device presents once a second, if ever.</summary>
+    [Fact]
+    public void AFailureEndsAGpuDumpRecordingOnItsOwn()
+    {
+        string path = Path.Combine(_harness.Root, "failure" + GpuDumpFormat.Extension);
+        GpuDumpRecorder? dump = GpuDumpRecorder.Start(new GpuDumpOptions { Path = path, Queue = _harness.Emu.Gpu, MaxFrames = 1_000_000 });
+        Assert.NotNull(dump);
+        var cap = new SessionCapture(_harness.Emu, Options());
+        try
+        {
+            var frame = new Core.Hle.Modules.DisplayFrame(_harness.Alloc(8 * 8 * 4), 8, 8, 8, Core.Hle.Modules.DisplayPixelFormat.A8B8G8R8);
+            _harness.Emu.Gpu.Submit(new PresentCommand { Frame = frame });
+            _harness.Emu.Gpu.WaitIdle();
+            Assert.True(dump!.Recording, "the dump must be recording for the check below to mean anything");
+
+            Assert.False(cap.SaveOnFailure("GPU device lost in test")); // no capture to save: the dump still ends
+            _harness.Emu.Gpu.Submit(new PresentCommand { Frame = frame });
+            _harness.Emu.Gpu.WaitIdle();
+            Assert.True(dump.Completion.Wait(60_000), "the dump did not end at the present after the failure");
+            Assert.Null(dump.Completion.Result.Error);
+            Assert.True(File.Exists(path));
+        }
+        finally
+        {
+            dump?.StopNow();
+            cap.Dispose();
         }
     }
 

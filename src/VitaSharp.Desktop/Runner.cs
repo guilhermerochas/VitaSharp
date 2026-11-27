@@ -758,8 +758,12 @@ public static class Runner
         GpuDumpControl.StartScheduled(emu, () => renderer, options);
 
         // the GPU driver reset (TDR) or lost the device: the game stops drawing, the process stays up and says so; a state load
-        // or a restart makes a new device
-        void OnDeviceLost(string where) => ShowStatus(Loc.Get("GameDeviceLost"), 600_000);
+        // or a restart makes a new device; "Gravar tudo" saves what it holds of the moment by itself
+        void OnDeviceLost(string where)
+        {
+            ShowStatus(Loc.Get("GameDeviceLost"), 600_000);
+            capture?.Capture.SaveOnFailure($"GPU device lost in {where}");
+        }
 
         // pause hotkey (Controles > "Pausar emulacao": P by default, or a controller combination): freezes every guest
         // process, the guest clock and the audio; the window keeps the last frame with a "Pausado" badge

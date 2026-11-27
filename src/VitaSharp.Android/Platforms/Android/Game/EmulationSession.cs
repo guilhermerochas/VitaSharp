@@ -459,11 +459,15 @@ public sealed partial class EmulationSession : IDisposable
     public event Action<string>? CaptureStatus;
 
     /// <summary>A renderer for this session: a lost GPU device is told to the player (the renderer draws nothing more),
-    /// as the desktop's status line does.</summary>
+    /// as the desktop's status line does, and "Gravar tudo" saves what it holds of the moment by itself.</summary>
     private VulkanRenderer NewRenderer()
     {
         var renderer = new VulkanRenderer(_rendererOptions);
-        renderer.DeviceLost += _ => CaptureStatus?.Invoke(Loc.Get("GameDeviceLost"));
+        renderer.DeviceLost += where =>
+        {
+            CaptureStatus?.Invoke(Loc.Get("GameDeviceLost"));
+            Capture.SaveOnFailure($"GPU device lost in {where}");
+        };
         return renderer;
     }
 
