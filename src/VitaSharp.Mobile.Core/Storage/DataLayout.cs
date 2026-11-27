@@ -15,6 +15,7 @@ namespace VitaSharp.Mobile.Core.Storage;
 /// &lt;root&gt;/gpu_driver.json           GPU driver choice and libadrenotools options (GpuDriverScreen)
 /// &lt;internal&gt;/gpu_drivers/TITLE    installed GPU driver packages, &lt;internal&gt;/gpu_driver_files the driver's redirected files
 /// &lt;internal&gt;/run/game.json         the running game process (GameProcessMarker)
+/// &lt;internal&gt;/cache/trophies/COMMID the Trofeus screen's cache: texts and extracted pictures (TrophyListCache)
 /// </code>
 /// The root is chosen by <see cref="DataRoot"/>: /storage/emulated/0/.vitasharp (no root, all-files access), else the
 /// app-specific external storage (Context.GetExternalFilesDir(null), /sdcard/Android/data/&lt;package&gt;/files), else
@@ -30,6 +31,8 @@ public sealed class DataLayout(string root, string? internalRoot = null)
     public string GpuDrivers => Path.Combine(InternalRoot, "gpu_drivers");
     public string GpuDriverFiles => Path.Combine(InternalRoot, "gpu_driver_files");
     public string GameProcessFile => Path.Combine(InternalRoot, "run", "game.json");
+    /// <summary>The Trofeus screen's cache (<see cref="Library.TrophyListCache"/>): internal storage, rebuilt from the TRPs.</summary>
+    public string TrophyCache => Path.Combine(InternalRoot, "cache", "trophies");
     public string Fs => Path.Combine(Root, "fs");
     public string Ux0 => Path.Combine(Fs, "ux0");
     public string Apps => VitaSharp.Core.Io.FirmwareLayout.Applications.Host(Fs);

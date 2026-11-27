@@ -27,6 +27,25 @@ public static class AppServices
     /// <summary>The trophy sets' texts the library and the trophy screens read (icons stay in the TRP files), kept
     /// while a TRP is unchanged, so coming back to the library reads no TRP again.</summary>
     public static VitaSharp.Core.Hle.Np.TrophyTextsCache TrophyTexts { get; } = new();
+    static TrophyListCache? _trophyLists;
+
+    /// <summary>The Trofeus screen's disk cache (texts and extracted pictures, <see cref="DataLayout.TrophyCache"/>),
+    /// for the current data folder.</summary>
+    public static TrophyListCache TrophyLists
+    {
+        get
+        {
+            lock (Lock)
+            {
+                if (_trophyLists == null || _trophyLists.Directory != Data.TrophyCache)
+                {
+                    _trophyLists = new TrophyListCache(Data.TrophyCache);
+                }
+
+                return _trophyLists;
+            }
+        }
+    }
     public static AndroidGamepads Gamepads { get; private set; } = new();
     public static bool Initialized { get; private set; }
 

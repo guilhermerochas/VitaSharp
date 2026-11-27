@@ -773,6 +773,22 @@ The design mockups (below) are rendered from HTML, not taken from the phone:
 | --- | --- | --- | --- |
 | <img src="screens/biblioteca.png" width="200" alt="Game library"> | <img src="screens/detalhes.png" width="200" alt="Game details"> | <img src="screens/trofeus.png" width="200" alt="Trophy list"> | <img src="screens/controles.png" width="200" alt="Controller settings"> |
 
+**Troféus cache.** The trophy screen loads through `Mobile.Core/Library/TrophyListCache.cs`, kept in the internal
+storage (`<internal>/cache/trophies/<COMMID>/`): the set's texts per language (`texts_<lang>.json`) and its pictures
+extracted from the TRP in one pass (`TROPnnn.PNG`, `icons.stamp`). Both are rebuilt when the TRP's path, size or write
+time changes; the user's progress (`ux0:user/00/trophy/<COMMID>.json`) is read again only when it changes, without the
+TRP. A second opening (also after a restart) reads no TRP: the rows point at the extracted files, which the image loader
+decodes off the UI thread at the view's size, and the rows are laid out a screenful at a time. Each opening logs
+`Trophies: <TITLEID>: N rows in X ms (TRP reads, picture extractions, sets from disk)` in the app log (and so in the F8
+capture). Tests: `TrophyListCacheTests`. Deleting the folder is safe (the next opening rebuilds it).
+
+**Dialogs.** Every dialog (MAUI `DisplayAlert`/`DisplayActionSheet`/`DisplayPrompt` behind `Choose`, `Confirm`,
+`Alert`, `Prompt`; the framework `AlertDialog`s of the pad capture, storage setup, in-game keyboard and fatal error)
+uses the app's palette whatever the system's light or dark mode: `Platforms/Android/Resources/values/styles.xml`
+overrides `Maui.MainTheme`'s dialog themes and gives `GameActivity` `VitaSharp.GameTheme`, all through the colour
+tokens of `values/colors.xml` (the values of `Ui/Theme.cs` `Palette`; no fixed colour in a dialog). Tests:
+`AndroidDialogThemeTests` (tokens = palette, WCAG contrast in both system modes).
+
 | Menu de pausa | Ajustes | Firmware | Conta PSN e rede |
 | --- | --- | --- | --- |
 | <img src="screens/pausa.png" width="200" alt="Pause menu"> | <img src="screens/ajustes.png" width="200" alt="Settings"> | <img src="screens/firmware.png" width="200" alt="Firmware"> | <img src="screens/psn.png" width="200" alt="PSN account and network"> |
