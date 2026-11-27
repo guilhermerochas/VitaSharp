@@ -10,6 +10,10 @@ namespace VitaSharp.Core.Util;
 public static partial class GuestClock
 {
     private static readonly long s_start = Stopwatch.GetTimestamp();
+
+    /// <summary>The host pause total when the clock started: only the pauses after it are left out (the process may
+    /// have collected before the clock existed, which would put the reading below zero).</summary>
+    private static readonly long s_startPause = RealPauseTicks();
     private static long s_offset; // Stopwatch ticks added to real elapsed time
 
     /// <summary>Skip frame pacing (vblank and audio-without-device waits).</summary>
@@ -43,10 +47,14 @@ public static partial class GuestClock
             long now = HostTimestamp();
             if (HostPauseTicks() == pause)
             {
-                return now - s_start - pause;
+                return ElapsedWithoutPauses(s_start, s_startPause, now, pause);
             }
         }
     }
+
+    /// <summary>Host time from <paramref name="start"/> to <paramref name="now"/> minus the pauses between them (the
+    /// pause totals at both points).</summary>
+    internal static long ElapsedWithoutPauses(long start, long startPause, long now, long pause) => now - start - (pause - startPause);
 
     private static readonly bool s_excludeHostPauses = Environment.GetEnvironmentVariable(EnvVars.GcPauseClock) != "0";
 
@@ -64,6 +72,11 @@ public static partial class GuestClock
             return pause();
         }
 
+        return RealPauseTicks();
+    }
+
+    private static long RealPauseTicks()
+    {
         long ticks = GC.GetTotalPauseDuration().Ticks;
         return Stopwatch.Frequency == TimeSpan.TicksPerSecond ? ticks : (long)(ticks * ((double)Stopwatch.Frequency / TimeSpan.TicksPerSecond));
     }

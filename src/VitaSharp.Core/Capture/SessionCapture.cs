@@ -1428,6 +1428,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             }
         });
         Step(r, AudioInputRecorder.Folder + "/", () => r.AudioInputsSummary = r.AudioInputs?.Write(dir, r.PreRoll?.StartNs ?? r.StartNs));
+        Step(r, "io_failures.txt", () => File.WriteAllLines(Path.Combine(dir, "io_failures.txt"), _emu.Hle.Modules.OfType<Hle.Modules.IoFileMgr>().FirstOrDefault()?.Failures.Lines() ?? ["(no IoFileMgr)"]));
         Step(r, "hle_errors.txt", () => File.WriteAllLines(Path.Combine(dir, "hle_errors.txt"), DebugMode.HleSummary().DefaultIfEmpty("(no HLE error returns or unimplemented calls recorded)").Concat(callSummary)));
         if (wavs.Count > 0)
         {
@@ -1609,6 +1610,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         sb.AppendLine($"  gpu{GpuDumpFormat.Extension}              GPU dump from the start (replay-gpu)");
         sb.AppendLine("  audio/, audio_mix.wav guest audio ports and NGS voices as WAVs (files.txt: start times), and their mix");
         sb.AppendLine("  threads_*.txt         guest threads at the start and stop; hle_errors.txt; log.txt");
+        sb.AppendLine("  io_failures.txt       every failed open/dopen/getstat/chstat/remove/mkdir/rmdir/rename since the boot (guest path, error, count)");
         sb.AppendLine("  files/                what the game read from its own mounts (app0, savedata0, addcont0...): files.tsv, blobs.bin");
         sb.AppendLine($"  {HleCallTrace.FileName}         every HLE call of the recording: thread, function, r0-r3, result, return address");
         sb.AppendLine("  context.txt           where the player is (screen, application in front, processes) and the audio ports with");
@@ -1667,6 +1669,15 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             foreach (GuestThread? t in emu.Kernel.Threads.ToArray())
             {
                 sb.AppendLine("thread " + t.Describe());
+                if (t.WakeLatency.Describe() is { } wake)
+                {
+                    sb.AppendLine("    " + wake);
+                }
+
+                if (Util.HostThreadPlacement.Describe(t.HostTid) is { } placement)
+                {
+                    sb.AppendLine("    " + placement);
+                }
                 foreach (string call in t.RecentHleCalls(16))
                 {
                     sb.AppendLine("    hle " + call);

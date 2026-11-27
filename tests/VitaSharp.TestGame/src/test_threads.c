@@ -3,6 +3,7 @@
  * condition variables, event flags, message pipes, and timer accuracy (sceKernelDelayThread against the clock).
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <psp2/kernel/processmgr.h>
@@ -579,6 +580,111 @@ static void check_mixer_deadline(void)
                  MIXER_PERIOD_US, busySignals);
 }
 
+/*
+ * Wake-up latency, in guest time: how long after a sceKernelSignalSema the thread waiting on that semaphore runs
+ * again (a plain wait and pthread-embedded's 500 us polling wait), and how late sceKernelDelayThread of 500 / 1000 us
+ * returns. A mixer round is four signals to workers and four waits for them: on the console a wake-up costs tens of
+ * microseconds, so a round fits its 11 ms period many times over; a host that wakes guest threads a millisecond late
+ * per wait (timer slack, a thread on a slow core) makes every round miss it (Dead Space's audio on the phone).
+ */
+#define WAKE_SAMPLES 100
+#define WAKE_P99_LIMIT_US 1000
+
+static SceUID g_wakeSema;
+static volatile SceUInt64 g_wakeSignalAt;
+static SceUInt64 g_wakeLatency[WAKE_SAMPLES];
+static volatile int g_wakeCount;
+static volatile int g_wakeStop;
+
+static int wake_waiter(SceSize argumentSize, void *argument)
+{
+    int polling = *(int *)argument;
+    while (true)
+    {
+        if (polling)
+        {
+            embedded_sem_wait(g_wakeSema);
+        }
+        else
+        {
+            sceKernelWaitSema(g_wakeSema, 1, NULL);
+        }
+        if (g_wakeStop)
+        {
+            return 0;
+        }
+        SceUInt64 now = sceKernelGetProcessTimeWide();
+        if (g_wakeCount < WAKE_SAMPLES)
+        {
+            g_wakeLatency[g_wakeCount] = now - g_wakeSignalAt;
+            g_wakeCount++;
+        }
+    }
+}
+
+static int compare_u64(const void *a, const void *b)
+{
+    SceUInt64 x = *(const SceUInt64 *)a;
+    SceUInt64 y = *(const SceUInt64 *)b;
+    return x < y ? -1 : x > y ? 1 : 0;
+}
+
+/* p50 / p99 / max of the first `count` samples (sorted in place). */
+static void percentiles(SceUInt64 *samples, int count, SceUInt64 *p50, SceUInt64 *p99, SceUInt64 *max)
+{
+    qsort(samples, count, sizeof(samples[0]), compare_u64);
+    *p50 = count > 0 ? samples[count / 2] : 0;
+    *p99 = count > 0 ? samples[(count * 99) / 100 < count ? (count * 99) / 100 : count - 1] : 0;
+    *max = count > 0 ? samples[count - 1] : 0;
+}
+
+static void check_signal_wake(const char *name, int polling)
+{
+    g_wakeSema = sceKernelCreateSema("vstest_wake", 0, 0, 1000, NULL);
+    g_wakeCount = 0;
+    g_wakeStop = 0;
+    SceUID waiter = start_thread("vstest_waker", wake_waiter, polling);
+    for (int sample = 0; sample < WAKE_SAMPLES; sample++)
+    {
+        sceKernelDelayThread(2000); /* the waiter is blocked again */
+        g_wakeSignalAt = sceKernelGetProcessTimeWide();
+        sceKernelSignalSema(g_wakeSema, 1);
+        for (int poll = 0; poll < 1000 && g_wakeCount <= sample; poll++)
+        {
+            sceKernelDelayThread(100);
+        }
+    }
+    int count = g_wakeCount;
+    g_wakeStop = 1;
+    sceKernelSignalSema(g_wakeSema, 1);
+    wait_and_delete(waiter);
+    sceKernelDeleteSema(g_wakeSema);
+
+    SceUInt64 p50, p99, max;
+    percentiles(g_wakeLatency, count, &p50, &p99, &max);
+    result_check(AREA, name, count == WAKE_SAMPLES && p99 <= WAKE_P99_LIMIT_US,
+                 "%d wakes: p50 %llu us, p99 %llu us, max %llu us (limit p99 %d us)", count, (unsigned long long)p50,
+                 (unsigned long long)p99, (unsigned long long)max, WAKE_P99_LIMIT_US);
+}
+
+static void check_delay_lateness(const char *name, SceUInt delayUs)
+{
+    SceUInt64 late[WAKE_SAMPLES];
+    for (int sample = 0; sample < WAKE_SAMPLES; sample++)
+    {
+        SceUInt64 start = sceKernelGetProcessTimeWide();
+        sceKernelDelayThread(delayUs);
+        SceUInt64 elapsed = sceKernelGetProcessTimeWide() - start;
+        late[sample] = elapsed > delayUs ? elapsed - delayUs : 0;
+    }
+    SceUInt64 p50, p99, max;
+    percentiles(late, WAKE_SAMPLES, &p50, &p99, &max);
+    result_check(AREA, name, p99 <= WAKE_P99_LIMIT_US,
+                 "%d delays of %u us, late by: p50 %llu us, p99 %llu us, max %llu us (limit p99 %d us)", WAKE_SAMPLES,
+                 delayUs, (unsigned long long)p50, (unsigned long long)p99, (unsigned long long)max,
+                 WAKE_P99_LIMIT_US);
+}
+
 void test_threads_run(void)
 {
     results_clear_area(AREA);
@@ -594,4 +700,9 @@ void test_threads_run(void)
     check_timing();
     app_show_progress("Threads and sync", "mixer round deadline (VFP vector jobs) ...");
     check_mixer_deadline();
+    app_show_progress("Threads and sync", "wake-up latency (signal to wait, short delays) ...");
+    check_signal_wake("wake_latency_sema", 0);
+    check_signal_wake("wake_latency_sema_polling", 1);
+    check_delay_lateness("delay_late_500us", 500);
+    check_delay_lateness("delay_late_1000us", 1000);
 }

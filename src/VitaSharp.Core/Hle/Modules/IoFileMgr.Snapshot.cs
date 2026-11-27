@@ -20,7 +20,7 @@ public sealed partial class IoFileMgr
             w.Write(fd); w.Write(f.VitaPath); w.Write(f.Tty); w.Write(f.Priority);
             w.Write(f.Stream != null);
             if (f.Stream == null) continue;
-            w.Write(f.Stream.CanRead); w.Write(f.Stream.CanWrite); w.Write(f.Stream.Position);
+            w.Write(f.Stream.CanRead); w.Write(f.Stream.CanWrite); w.Write(f.SavedPosition);
         }
         var dirs = _dirs.ToArray();
         w.Write(dirs.Length);

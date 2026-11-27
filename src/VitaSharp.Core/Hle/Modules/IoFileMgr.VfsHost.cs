@@ -47,6 +47,9 @@ public sealed partial class IoFileMgr
     [SnapshotIgnore]
     HleGuestStubs? _hostVopStubs;
 
+    /// <summary>The name prefix of the host vnodes' op functions (rebuilt after a load: <see cref="HleRegistry.RebuiltAfterLoad"/>).</summary>
+    internal const string HostVnodeStubPrefix = "SceIofilemgrHostVnode";
+
     [SnapshotIgnore]
     uint _hostVops;
 
@@ -264,7 +267,7 @@ public sealed partial class IoFileMgr
             return _hostVops;
         }
 
-        _hostVopStubs ??= new HleGuestStubs(this, "SceIofilemgrHostVnode");
+        _hostVopStubs ??= new HleGuestStubs(this, HostVnodeStubPrefix);
         uint table = Emu.Memory.Alloc(0x80, "vfs host vops", MemoryRegion.Kernel, 16);
         GuestMemory.Fill(table, 0, 0x80);
         GuestMemory.W32(table + 0x00, HostOp("open", HostOpen));

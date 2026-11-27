@@ -45,6 +45,11 @@ public sealed partial class HleRegistry
         }
     }
 
+    /// <summary>Host functions of tables a module builds on first use and again after every load (the host vnodes'
+    /// op table: <see cref="VitaSharp.Core.Hle.Modules.IoFileMgr.HostVnodeStubPrefix"/>): a session booted from a state has not built
+    /// them yet when the function table loads, and nothing calls the saved ones.</summary>
+    internal static bool RebuiltAfterLoad(string name) => name.StartsWith(VitaSharp.Core.Hle.Modules.IoFileMgr.HostVnodeStubPrefix + ":", StringComparison.Ordinal);
+
     internal void LoadState(SnapshotReader r)
     {
         lock (_functions)
@@ -77,6 +82,12 @@ public sealed partial class HleRegistry
                         // a host function every process serves, declared but not yet given an index in this session
                         list.Add(SharedHostRecord(name, body));
                         shared.Add((list.Count - 1, name));
+                    }
+                    else if (RebuiltAfterLoad(name))
+                    {
+                        // a table its module builds on first use and builds again after a load, pointing the guest
+                        // objects at the new one: the saved index is never called (a session booted from the state)
+                        list.Add(s_unbound);
                     }
                     else
                     {

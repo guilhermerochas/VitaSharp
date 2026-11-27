@@ -38,6 +38,15 @@ public sealed class GuestClockHostPauseTests : IDisposable
         Assert.Equal(2_000, after - before);
     }
 
+    /// <summary>The process may collect before the clock starts (a test run, the launcher): those pauses are not the
+    /// guest's, or the clock reads below zero at its start and "guest time 0" has not passed yet.</summary>
+    [Fact]
+    public void PausesFromBeforeTheClockStartedAreNotSubtracted()
+    {
+        Assert.Equal(5_000, GuestClock.ElapsedWithoutPauses(start: 1_000, startPause: 40_000, now: 6_000, pause: 40_000));
+        Assert.Equal(2_000, GuestClock.ElapsedWithoutPauses(start: 1_000, startPause: 40_000, now: 6_000, pause: 43_000));
+    }
+
     [Fact]
     public void TimeWithoutPausesPassesInFull()
     {

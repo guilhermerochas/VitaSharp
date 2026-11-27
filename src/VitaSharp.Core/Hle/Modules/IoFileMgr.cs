@@ -25,6 +25,18 @@ public sealed partial class IoFileMgr : HleModule
         public int Priority = -1;
         /// <summary>A file on a guest driver's mount: its vnode and file object (0: a host file).</summary>
         public uint GuestVnode, GuestFile;
+
+        /// <summary>
+        /// Where the read now waiting for its device time (<see cref="IoTiming.Read"/>) started, or -1. The host read is
+        /// done before that wait, so the stream is already past it; a state saved meanwhile reissues the call after a
+        /// load (the thread is blocked in it), and the saved position must be this one for the reissued read to read
+        /// the same bytes again instead of the ones after them (a pre-roll state of Dead Space saved inside the 4.5 MB
+        /// read of its game library reissued it at the end of the file: 0 bytes, "could not load").
+        /// </summary>
+        public long ReadStart = -1;
+
+        /// <summary>The position a save state keeps for this file.</summary>
+        public long SavedPosition => ReadStart >= 0 ? ReadStart : Stream?.Position ?? 0;
     }
 
     sealed class OpenDir
@@ -70,9 +82,17 @@ public sealed partial class IoFileMgr : HleModule
         Emu.Vita.NoteShellLiveArea(id, title);
     }
 
+    /// <summary>The path calls that failed since the boot (the F8 capture's io_failures.txt).</summary>
+    public Io.IoFailureLog Failures { get; } = new();
+
     [Hle("sceIoOpen")]
     [Hle("ksceIoOpen", Cost = HleCost.KernelEntry)]
     internal int sceIoOpen(string path, int flags, int mode)
+    {
+        return Failures.Note("sceIoOpen", path, sceIoOpenCore(path, flags, mode));
+    }
+
+    private int sceIoOpenCore(string path, int flags, int mode)
     {
         // the libc opens tty0:/tty1: as stdin/stdout/stderr; on retail the open succeeds and output is discarded
         if (Io.Vfs.IsTty(path, out int tty))
@@ -186,7 +206,7 @@ public sealed partial class IoFileMgr : HleModule
             lock (f)
             {
                 pos = f.Stream.Position;
-                n = f.Stream.Read(GuestMemory.Span(buf, (int)size));
+                n = ReadFully(new StreamRead(f.Stream), GuestMemory.Span(buf, (int)size), pos, f.VitaPath);
                 Capture.CaptureHooks.Files?.Read(Emu, f.VitaPath, f.Stream.Length, pos, GuestMemory.Span(buf, Math.Max(n, 0)));
                 DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
                 Interlocked.Add(ref BytesRead, n);
@@ -197,7 +217,16 @@ public sealed partial class IoFileMgr : HleModule
             Input.InputWaitMonitor.FileRead(n);
         }
 
-        IoTiming.Read(f, pos, n);
+        f.ReadStart = pos;
+        try
+        {
+            IoTiming.Read(f, pos, n);
+        }
+        finally
+        {
+            f.ReadStart = -1;
+        }
+
         return n;
     }
 
@@ -250,6 +279,59 @@ int fd, long offset, int whence)
 
     [Hle] int sceIoLseek32(int fd, int offset, int whence) => (int)sceIoLseekThroughEntry(fd, offset, whence);
 
+    private readonly struct StreamRead(Stream stream) : IHostFileRead
+    {
+        public int Read(Span<byte> destination, long offset) => stream.Read(destination);
+    }
+
+    private readonly struct HandleRead(Microsoft.Win32.SafeHandles.SafeFileHandle handle) : IHostFileRead
+    {
+        public int Read(Span<byte> destination, long offset) => RandomAccess.Read(handle, destination, offset);
+    }
+
+    /// <summary>Host reads that returned less than asked before the end of the file and were completed (the first
+    /// ones are logged).</summary>
+    internal static long ShortHostReads;
+
+    /// <summary>
+    /// A read of a regular file on the Vita returns the bytes asked for, or all that is left before the end of the
+    /// file: a game reads a whole bank or stream in one call and uses the buffer without checking the count (Dead
+    /// Space reads its 5.5 MB menu theme in one sceIoRead). A host read(2) may legally return less (Linux and
+    /// Android, FUSE storage such as /sdcard; Windows reads regular files whole), and the rest of the guest buffer
+    /// stayed as it was. The host is read again until the request is filled or the file ends (a read of 0).
+    /// </summary>
+    internal static int ReadFully<T>(T reader, Span<byte> destination, long offset, string path) where T : IHostFileRead
+    {
+        int total = 0;
+        int first = -1;
+        while (total < destination.Length)
+        {
+            int n = reader.Read(destination[total..], offset + total);
+            if (first < 0)
+            {
+                first = n;
+            }
+
+            if (n <= 0)
+            {
+                break;
+            }
+
+            total += n;
+        }
+
+        if (first >= 0 && first < total)
+        {
+            long count = Interlocked.Increment(ref ShortHostReads);
+            if (Util.DebugMode.ShouldLog((int)Math.Min(count, int.MaxValue)))
+            {
+                Log.Info($"sceIoRead({path}): the host read returned {first} of {destination.Length} bytes; read again to {total} (as the Vita does) (#{count})");
+            }
+        }
+
+        return total;
+    }
+
     [Hle]
     internal int sceIoPread(int fd, uint buf, uint size, long offset)
     {
@@ -258,7 +340,7 @@ int fd, long offset, int whence)
         // the host read only, as in sceIoRead: the device model's wait is not a hitch of the frame
         using (FrameLedger.Time(FrameLedger.Cat.FileIo))
         {
-            n = RandomAccess.Read(f.Stream.SafeFileHandle, GuestMemory.Span(buf, (int)size), offset);
+            n = ReadFully(new HandleRead(f.Stream.SafeFileHandle), GuestMemory.Span(buf, (int)size), offset, f.VitaPath);
             Capture.CaptureHooks.Files?.Read(Emu, f.VitaPath, f.Stream.Length, offset, GuestMemory.Span(buf, Math.Max(n, 0)));
             DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
             Interlocked.Add(ref BytesRead, n);
@@ -314,6 +396,11 @@ int fd, long offset, int whence)
     [Hle]
     internal int sceIoRemove(string path)
     {
+        return Failures.Note("sceIoRemove", path, sceIoRemoveCore(path));
+    }
+
+    private int sceIoRemoveCore(string path)
+    {
         if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
         {
             return GuestRemove(guestMount, guestPath, directoryToo: false);
@@ -346,6 +433,11 @@ int fd, long offset, int whence)
 
     [Hle]
     internal int sceIoMkdir(string path, int mode)
+    {
+        return Failures.Note("sceIoMkdir", path, sceIoMkdirCore(path, mode));
+    }
+
+    private int sceIoMkdirCore(string path, int mode)
     {
         if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
         {
@@ -380,6 +472,11 @@ int fd, long offset, int whence)
 
     [Hle]
     internal int sceIoRmdir(string path)
+    {
+        return Failures.Note("sceIoRmdir", path, sceIoRmdirCore(path));
+    }
+
+    private int sceIoRmdirCore(string path)
     {
         if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
         {
@@ -418,6 +515,12 @@ int fd, long offset, int whence)
 
     [Hle]
     internal int sceIoRename(string oldPath, string newPath)
+    {
+        int result = sceIoRenameCore(oldPath, newPath);
+        return result < 0 ? Failures.Note("sceIoRename", oldPath + " -> " + newPath, result) : result;
+    }
+
+    private int sceIoRenameCore(string oldPath, string newPath)
     {
         // iofilemgr walks the old path, then the new one
         int walk = HostWalk(ref oldPath);
@@ -498,6 +601,11 @@ int fd, long offset, int whence)
 
     [Hle]
     internal int sceIoDopen(string path)
+    {
+        return Failures.Note("sceIoDopen", path, sceIoDopenCore(path));
+    }
+
+    private int sceIoDopenCore(string path)
     {
         if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
         {
@@ -592,6 +700,11 @@ int fd, long offset, int whence)
 
     [Hle]
     internal int sceIoGetstat(string path, uint stat)
+    {
+        return Failures.Note("sceIoGetstat", path, sceIoGetstatCore(path, stat));
+    }
+
+    private int sceIoGetstatCore(string path, uint stat)
     {
         if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
         {
@@ -716,6 +829,11 @@ int fd, long offset, int whence)
     [Hle]
     internal int sceIoChstat(string path, uint stat, int bits)
     {
+        return Failures.Note("sceIoChstat", path, sceIoChstatCore(path, stat, bits));
+    }
+
+    private int sceIoChstatCore(string path, uint stat, int bits)
+    {
         if (stat == 0) return SceError.IO_EINVAL;
         if (IsReadOnlyDevice(path)) return IO_EROFS;
         int walk = HostWalk(ref path);
@@ -793,4 +911,11 @@ int fd, long offset, int whence)
 
     /// <summary>The length of an open file, or a sceIo error code.</summary>
     internal long Length(int fd) => _files.TryGetValue(fd, out var f) && f.Stream != null ? f.Stream.Length : SceError.IO_EBADF;
+}
+
+/// <summary>One host read into a guest buffer for <see cref="IoFileMgr.ReadFully{T}"/>: at the offset (positional
+/// readers) or at the stream's position.</summary>
+internal interface IHostFileRead
+{
+    int Read(Span<byte> destination, long offset);
 }

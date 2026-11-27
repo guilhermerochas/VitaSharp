@@ -160,6 +160,9 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     /// (<see cref="Util.GpuSubmitterThread"/>).</summary>
     public int HostTid { get; private set; }
 
+    /// <summary>Wake-up latency of this thread's waits, in guest time (the F8 thread list).</summary>
+    public WakeLatencyStats WakeLatency { get; } = new();
+
     /// <summary>Set by an HLE function that loaded a whole new register context (e.g. a fiber switch): the dispatcher
     /// then resumes at the loaded PC instead of returning to LR.</summary>
     public bool ContextReplaced;
