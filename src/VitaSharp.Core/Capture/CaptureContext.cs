@@ -90,6 +90,9 @@ public static class CaptureContext
     {
         VitaSystem vitaSystem = emu.Vita;
         var lines = new List<string>();
+        // the host backend (rate, period, each stream's buffering and underruns): the phone's AAudio, OpenAL
+        string device = AudioDiagnostics.DeviceInfo?.Invoke() ?? "";
+        lines.Add(device.Length > 0 ? "audio: device " + device : "audio: device: none (the ports are paced by the clock)");
         List<AudioDiagnostics.PortStats> ports = AudioDiagnostics.AllPorts();
         foreach (AudioDiagnostics.PortStats p in ports)
         {
@@ -101,9 +104,9 @@ public static class CaptureContext
             double since = AudioDiagnostics.SecondsSinceOutput(p);
             string activity = since < 0 ? "no output yet" : since < 0.5 ? "outputting now" : FormattableString.Invariant($"idle (last output {since:F1} s ago)");
             string muted = p.Type == 1 && p.Owner is { } o && vitaSystem.BgmMuted(o) ? ", muted: another application is in front" : "";
-            lines.Add(FormattableString.Invariant($"audio: {p.Name} ({p.DumpName}.wav): {Role(p)}; opened by {(p.Owner is { } ow ? Name(ow) : "?")} thread '{p.OwnerThread}'; {p.Freq} Hz grain {p.Grain}; {activity}{muted}"));
+            lines.Add(FormattableString.Invariant($"audio: {p.Name} ({p.DumpName}.wav): {Role(p)}; opened by {(p.Owner is { } ow ? Name(ow) : "?")} thread '{p.OwnerThread}'; {p.Freq} Hz grain {p.Grain}; {activity}{muted}; {AudioDiagnostics.HostState(p)}"));
         }
-        if (lines.Count == 0)
+        if (lines.Count == 1)
         {
             lines.Add("audio: no audio port open");
         }

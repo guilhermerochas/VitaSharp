@@ -473,6 +473,28 @@ public static class AudioDiagnostics
     /// <summary>The decoder and NGS streams that exist now (descriptions).</summary>
     public static List<string> StreamDescriptions() => s_streams.OrderBy(k => k.Key).Select(k => k.Value).ToList();
 
+    /// <summary>The host side of a port for a capture: the host stream's queue, its underruns and the silent grains
+    /// (F8 context.txt; a capture is analysed without the session's end summary).</summary>
+    public static string HostState(PortStats portStats)
+    {
+        long underruns;
+        long bursts;
+        long idle;
+        long silent;
+        long outputs;
+        lock (portStats._lock)
+        {
+            underruns = portStats.Underruns;
+            bursts = portStats._burstNumber;
+            idle = portStats.IdleResumes;
+            silent = portStats.Silent;
+            outputs = portStats.Outputs;
+        }
+
+        string host = portStats.Stream == null ? "no host stream (paced by the clock)" : $"host queue {Pending(portStats)} samples";
+        return $"{host}, underruns {underruns} in {bursts} bursts{(idle > 0 ? $" (+{idle} starts after an idle pause)" : "")}, silent {silent}/{outputs}";
+    }
+
     /// <summary>Seconds since the port's last output (host time without pauses), -1 when it never output.</summary>
     public static double SecondsSinceOutput(PortStats portStats) => portStats.LastOutput > 0 ? Now - portStats.LastOutput : -1;
 
