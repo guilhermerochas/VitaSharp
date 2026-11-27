@@ -495,6 +495,38 @@ public sealed class FirmwareKernelModules(Emulator emu)
         return RunGuest(thread, ImportStubOf(module, libNid, nid), args);
     }
 
+    /// <summary>
+    /// A call the firmware module with NID <paramref name="moduleNid"/> makes of its own internal function at
+    /// <paramref name="offset"/> of its code segment (Thumb bit set for Thumb code): when guest code was written over
+    /// the function's start (an offset hook), the call runs that code on the calling thread, whose continue reaches
+    /// the function's HLE (<see cref="RegisterInternal"/>) through the moved trap fill; otherwise it is
+    /// <paramref name="direct"/>, as when the module is not shown.
+    /// </summary>
+    public uint CallInternal(uint moduleNid, uint offset, Func<uint> direct, params ReadOnlySpan<uint> args)
+    {
+        if (GuestThread.Current is not { } thread)
+        {
+            return direct();
+        }
+
+        uint function = 0;
+        foreach ((uint start, uint end, _, uint nid) in Volatile.Read(ref _codeSegments))
+        {
+            if (nid == moduleNid && start + (offset & ~1u) < end)
+            {
+                function = start + offset;
+                break;
+            }
+        }
+
+        if (function == 0 || IsTrapFill(function & ~3u, 4))
+        {
+            return direct();
+        }
+
+        return RunGuest(thread, function, args);
+    }
+
     /// <summary>Runs the kernel code at <paramref name="address"/> on the calling thread. A kernel thread stays the
     /// kernel's; a user thread in a syscall stays its process's, as on the Vita, where kernel code a syscall runs sees
     /// the calling process as the current one (ksceKernelGetProcessId, the user/kernel copies, the access level).

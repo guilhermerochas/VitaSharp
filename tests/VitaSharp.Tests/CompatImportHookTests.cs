@@ -22,6 +22,9 @@ namespace VitaSharp.Tests;
 public sealed class CompatImportHookTests : IDisposable
 {
     private const uint AimgrForDriver = 0xFD00C69A, IsDex = 0xF4B98F66;
+    private const uint GrabForDriver = 0x81C54BED, SetMemoryBankAddress = 0xE9C25A28;
+    private const uint Compat374ModuleNid = 0x0ED0A986, SecureHandshakeOffset = 0x2AE8;
+    private const uint ThumbLdrPc = 0xF000F8DF; // ldr.w pc, [pc, #0]
     private const uint LdrPcMinus4 = 0xE51FF004;
     private const int BadLicense = unchecked((int)0x8001000D);
 
@@ -30,7 +33,9 @@ public sealed class CompatImportHookTests : IDisposable
     public CompatImportHookTests(GuestMemoryFixture fixture)
     {
         _harness = new HleHarness(fixture, "compatimport", kernelPlugins: true);
-        SceModuleBuilder compat = new SceModuleBuilder("SceCompat").Start(0).Import("SceSblAIMgrForDriver", AimgrForDriver, IsDex);
+        SceModuleBuilder compat = new SceModuleBuilder("SceCompat").ModuleNid(Compat374ModuleNid).SegmentSizes(0x5000, 0x1000).Start(0)
+            .Import("SceSblAIMgrForDriver", AimgrForDriver, IsDex)
+            .Import("SceGrabForDriver", GrabForDriver, SetMemoryBankAddress);
         string kd = Path.Combine(_harness.Root, "os0", "kd");
         Directory.CreateDirectory(kd);
         File.WriteAllBytes(Path.Combine(kd, "compat.skprx"), compat.Build());
@@ -69,25 +74,31 @@ public sealed class CompatImportHookTests : IDisposable
         return SceModuleBuilder.FunctionAddress(loaded.Segments[0].Address, function);
     }
 
-    /// <summary>"ldr pc, [pc, #-4]; target" written over SceCompat's import stub of ksceSblAimgrIsDEX, with
+    /// <summary>"ldr pc, [pc, #-4]; target" written over SceCompat's import stub of a function, with
     /// ksceKernelCpuUnrestrictedMemcpy and the cache flushes, as kernel code patches kernel memory.</summary>
-    private void HookTheImport(uint target)
+    private void HookTheImport(uint target, uint libNid = AimgrForDriver, uint nid = IsDex)
     {
-        uint stub = _harness.Emu.FirmwareKernel.ImportStubOf("SceCompat", AimgrForDriver, IsDex);
+        uint stub = _harness.Emu.FirmwareKernel.ImportStubOf("SceCompat", libNid, nid);
         Assert.NotEqual(0u, stub);
+        WritePatch(stub, LdrPcMinus4, target);
+        Assert.True(_harness.Emu.FirmwareKernel.IsImportPatched("SceCompat", libNid, nid));
+    }
+
+    /// <summary>Two words written over kernel code the way a kernel plugin does it.</summary>
+    private void WritePatch(uint at, uint first, uint second)
+    {
         SysmemKernel sysmem = _harness.Module<SysmemKernel>();
         uint patch = _harness.Alloc(8);
-        GuestMemory.W32(patch, LdrPcMinus4);
-        GuestMemory.W32(patch + 4, target);
-        Assert.Equal(0, Call(sysmem, "ksceKernelCpuUnrestrictedMemcpy", stub, patch, 8u));
-        Invoke(sysmem, "ksceKernelCpuDcacheWritebackInvalidateRange", stub, 8u);
-        Invoke(sysmem, "ksceKernelCpuIcacheAndL2WritebackInvalidateRange", stub, 8u);
-        Assert.True(_harness.Emu.FirmwareKernel.IsImportPatched("SceCompat", AimgrForDriver, IsDex));
+        GuestMemory.W32(patch, first);
+        GuestMemory.W32(patch + 4, second);
+        Assert.Equal(0, Call(sysmem, "ksceKernelCpuUnrestrictedMemcpy", at, patch, 8u));
+        Invoke(sysmem, "ksceKernelCpuDcacheWritebackInvalidateRange", at, 8u);
+        Invoke(sysmem, "ksceKernelCpuIcacheAndL2WritebackInvalidateRange", at, 8u);
     }
 
     /// <summary>The window taken and InitEx done on a retail unit, with the boot images in place but no activation
     /// data and no license for the title.</summary>
-    private void InitWithoutLicense()
+    private uint InitWithoutLicense()
     {
         _harness.Emu.IsSystemProgram = true;
         byte[] pcbc = new byte[0x200];
@@ -98,6 +109,48 @@ public sealed class CompatImportHookTests : IDisposable
         uint bases = _harness.Alloc(8);
         Assert.Equal(0, Call(Compat, "sceCompatAllocCdramWithHole", bases));
         Assert.Equal(0, Call(Compat, "sceCompatInitEx", 1));
+        return GuestMemory.R32(bases);
+    }
+
+    /// <summary>InitEx maps each bank through SceCompat's import of ksceGrabSetMemoryBankAddress (SceCompat 3.74
+    /// 0x810003f0): a hook there that answers without going on to the grabber leaves the core's banks unmapped; without
+    /// it the grabber maps them over the window.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void InitExMapsTheBanksThroughSceCompatsGrabImport(bool hooked)
+    {
+        uint answerZero = LoadAnsweringModule(0);
+        _harness.OnGuest(_ =>
+        {
+            if (hooked)
+            {
+                HookTheImport(answerZero, GrabForDriver, SetMemoryBankAddress);
+            }
+
+            uint window = InitWithoutLicense();
+            Assert.Equal(hooked ? 0u : window, Compat.Bus.Bank(0));
+            Assert.Equal(hooked ? 0u : window + 0x1000000, Compat.Bus.Bank(2));
+            Assert.Equal(hooked ? 0u : window + 0x3000000, Compat.Bus.Bank(3));
+        });
+    }
+
+    /// <summary>The boot handshake calls SceCompat's function at +0x2AE8 (compat_sm.self and the secure processor's
+    /// command 0x30006) at its address once the core reached state 1, and stops with what it returns: an offset hook
+    /// written over it that answers 5 makes sceCompatWaitSpecialRequest(1) return 5 and leave the word at 1.</summary>
+    [Fact]
+    public void AnOffsetHookOnTheSecureHandshakeStepAnswersTheBootHandshake()
+    {
+        uint answerFive = LoadAnsweringModule(5);
+        LoadedModule shell = _harness.Emu.FirmwareKernel.Modules.Single(m => m.Name == "SceCompat");
+        WritePatch(shell.Segments[0].Address + SecureHandshakeOffset, ThumbLdrPc, answerFive);
+        _harness.OnGuest(_ =>
+        {
+            uint window = InitWithoutLicense();
+            GuestMemory.W32(window + 0x3D78000, 1); // the core's state 1
+            Assert.Equal(5, Call(Compat, "sceCompatWaitSpecialRequest", 1));
+            Assert.Equal(1u, GuestMemory.R32(window + 0x3D78000));
+        });
     }
 
     /// <summary>With SceCompat's IsDEX import answering 1, a retail unit without activation data nor license starts the

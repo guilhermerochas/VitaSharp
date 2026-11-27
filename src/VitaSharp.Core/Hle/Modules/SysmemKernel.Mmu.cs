@@ -157,7 +157,7 @@ public sealed partial class SysmemKernel
 
     /// <summary>ksceKernelVAtoPA(void *va, uintptr_t *pa): ksceKernelMMUVAtoPA after a NULL check (0x80020005).</summary>
     [Hle(Nid = 0x8D160E65, Library = "SceSysmemForDriver")]
-    int ksceKernelVAtoPA(uint address, uint physicalOut)
+    internal int ksceKernelVAtoPA(uint address, uint physicalOut)
     {
         if (physicalOut == 0)
         {

@@ -5221,12 +5221,16 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   "SceCompat: InitEx(1): SceSblFwLoader did not load os0:kd/pcbc.skprx (0x...)"). Feito (fix/adr1): o caminho do
   sceCompatStart pergunta o ksceSblAimgrIsDEX pelo import do próprio SceCompat (3.74 0x81000228, só depois de um
   passo que falhou), então o import hook que o AdrenalineKernel instala ali (hook 13) responde, como no Vita: sem
-  isso um aparelho de varejo nunca passava da licença (0x8001000D). Teste: `CompatImportHookTests`. Falta: (8) o
-  `pcbc.bin` do usuário; (9) os outros hooks do AdrenalineKernel no SceCompat também não rodam no HLE: os imports
-  ksceKernelAllocMemBlock/FreeMemBlock/UnmapMemBlock (blocos "SceCompatCached/Uncached/Cdram" do AllocCdramWithHole
-  e os do module_start), ksceGrabSetMemoryBankAddress (bancos do InitEx; o HLE do Grab teria de programar o
-  barramento do núcleo) e a função interna +0x2AE8 (o comando 0x30006 do processador seguro no aperto de mão):
-  passar cada chamada do HLE pelo import (`FirmwareKernelModules.CallImport`) ou pelo endereço da função interna.
+  isso um aparelho de varejo nunca passava da licença (0x8001000D). Teste: `CompatImportHookTests`.
+  Feito também (fix/adr1): o InitEx mapeia os 4 bancos como o 3.74 (0x810003f0: ksceKernelVAtoPA e
+  ksceGrabSetMemoryBankAddress pelo import do SceCompat, hook 12), e o HLE do Grab programa o banco no barramento
+  do núcleo (deixou de ser default); o aperto de mão de boot chama a função interna +0x2AE8 (compat_sm.self e o
+  comando 0x30006) pelo endereço dela (`FirmwareKernelModules.CallInternal`, HLE registrada para o continue do hook
+  8) e para com o que ela devolver. Falta: (8) o `pcbc.bin` do usuário; (9) os hooks 9-11 (ksceKernelAllocMemBlock/
+  FreeMemBlock/UnmapMemBlock do SceCompat): o sceCompatAllocCdramWithHole do 3.74 aloca 3x3 blocos
+  ("SceCompatCached" 32/16/16 MB, "SceCompatUncached" e "SceCompatCdram" como espelhos do Cached pelo opt +0x18),
+  confere que são contíguos (base + 0x3000000) e desmapeia o par do meio para abrir o buraco; o HLE do sysmem não
+  tem blocos espelho nem desmapeamento de verdade, então passar essas chamadas pelo import precisa antes disso.
 - [ ] [P2][M] (precisa do usuário/aparelho) Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
   capturas de 21/11/2026, e um engasgo de 132 ms por leitura de arquivo (fileIo 134 ms; quadro 302 do dump da
   `_232150_tudo`). Achado (perf/ac3pace): fora das gravações o jogo fica em 30 fps (linhas `FPS frame` da sessão) e
