@@ -189,7 +189,7 @@ public sealed partial class IoFileMgr : HleModule
             lock (f)
             {
                 pos = f.Stream.Position;
-                n = f.Stream.Read(GuestMemory.Span(buf, (int)size));
+                n = ReadFully(new StreamRead(f.Stream), GuestMemory.Span(buf, (int)size), pos, f.VitaPath);
                 Capture.CaptureHooks.Files?.Read(Emu, f.VitaPath, f.Stream.Length, pos, GuestMemory.Span(buf, Math.Max(n, 0)));
                 DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
                 Interlocked.Add(ref BytesRead, n);
@@ -248,6 +248,59 @@ int fd, long offset, int whence)
 
     [Hle] int sceIoLseek32(int fd, int offset, int whence) => (int)sceIoLseekThroughEntry(fd, offset, whence);
 
+    private readonly struct StreamRead(Stream stream) : IHostFileRead
+    {
+        public int Read(Span<byte> destination, long offset) => stream.Read(destination);
+    }
+
+    private readonly struct HandleRead(Microsoft.Win32.SafeHandles.SafeFileHandle handle) : IHostFileRead
+    {
+        public int Read(Span<byte> destination, long offset) => RandomAccess.Read(handle, destination, offset);
+    }
+
+    /// <summary>Host reads that returned less than asked before the end of the file and were completed (the first
+    /// ones are logged).</summary>
+    internal static long ShortHostReads;
+
+    /// <summary>
+    /// A read of a regular file on the Vita returns the bytes asked for, or all that is left before the end of the
+    /// file: a game reads a whole bank or stream in one call and uses the buffer without checking the count (Dead
+    /// Space reads its 5.5 MB menu theme in one sceIoRead). A host read(2) may legally return less (Linux and
+    /// Android, FUSE storage such as /sdcard; Windows reads regular files whole), and the rest of the guest buffer
+    /// stayed as it was. The host is read again until the request is filled or the file ends (a read of 0).
+    /// </summary>
+    internal static int ReadFully<T>(T reader, Span<byte> destination, long offset, string path) where T : IHostFileRead
+    {
+        int total = 0;
+        int first = -1;
+        while (total < destination.Length)
+        {
+            int n = reader.Read(destination[total..], offset + total);
+            if (first < 0)
+            {
+                first = n;
+            }
+
+            if (n <= 0)
+            {
+                break;
+            }
+
+            total += n;
+        }
+
+        if (first >= 0 && first < total)
+        {
+            long count = Interlocked.Increment(ref ShortHostReads);
+            if (Util.DebugMode.ShouldLog((int)Math.Min(count, int.MaxValue)))
+            {
+                Log.Info($"sceIoRead({path}): the host read returned {first} of {destination.Length} bytes; read again to {total} (as the Vita does) (#{count})");
+            }
+        }
+
+        return total;
+    }
+
     [Hle]
     internal int sceIoPread(int fd, uint buf, uint size, long offset)
     {
@@ -256,7 +309,7 @@ int fd, long offset, int whence)
         // the host read only, as in sceIoRead: the device model's wait is not a hitch of the frame
         using (FrameLedger.Time(FrameLedger.Cat.FileIo))
         {
-            n = RandomAccess.Read(f.Stream.SafeFileHandle, GuestMemory.Span(buf, (int)size), offset);
+            n = ReadFully(new HandleRead(f.Stream.SafeFileHandle), GuestMemory.Span(buf, (int)size), offset, f.VitaPath);
             Capture.CaptureHooks.Files?.Read(Emu, f.VitaPath, f.Stream.Length, offset, GuestMemory.Span(buf, Math.Max(n, 0)));
             DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
             Interlocked.Add(ref BytesRead, n);
@@ -822,4 +875,11 @@ int fd, long offset, int whence)
 
     /// <summary>The length of an open file, or a sceIo error code.</summary>
     internal long Length(int fd) => _files.TryGetValue(fd, out var f) && f.Stream != null ? f.Stream.Length : SceError.IO_EBADF;
+}
+
+/// <summary>One host read into a guest buffer for <see cref="IoFileMgr.ReadFully{T}"/>: at the offset (positional
+/// readers) or at the stream's position.</summary>
+internal interface IHostFileRead
+{
+    int Read(Span<byte> destination, long offset);
 }
