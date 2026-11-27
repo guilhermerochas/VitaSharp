@@ -246,7 +246,9 @@ public static class AppServices
         }
     }
 
-    public static GameEntry? FindGame(string titleId) => GameLibrary.Scan(Data).FirstOrDefault(g => g.TitleId == titleId);
+    /// <summary>An installed game by id; <paramref name="withSize"/> false skips measuring its folder (screens that do
+    /// not show the size).</summary>
+    public static GameEntry? FindGame(string titleId, bool withSize = true) => GameLibrary.Find(Data, titleId, withSize);
 
     /// <summary>The RPCN password, kept in the Android Keystore (MAUI SecureStorage: EncryptedSharedPreferences).</summary>
     public static async Task<string> RpcnPasswordAsync()

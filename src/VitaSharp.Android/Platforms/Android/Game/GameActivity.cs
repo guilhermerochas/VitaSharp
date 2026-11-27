@@ -143,7 +143,7 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
 
         string titleId = Intent?.GetStringExtra(ExtraTitleId) ?? "";
         bool system = titleId == SystemTitleId;
-        var game = system ? SystemShell() : AppServices.FindGame(titleId);
+        var game = system ? SystemShell() : AppServices.FindGame(titleId, withSize: false);
         if (game == null)
         {
             Log.Error($"Game {titleId} is not installed");

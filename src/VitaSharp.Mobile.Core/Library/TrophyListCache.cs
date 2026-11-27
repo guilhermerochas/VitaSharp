@@ -67,6 +67,26 @@ public sealed class TrophyListCache(string directory)
         return TrophyList.FromRows(title, rows);
     }
 
+    /// <summary>Every set of the game was loaded by this cache in this language (a <see cref="Load"/> now only checks
+    /// the files' sizes and dates: quick enough for the UI thread).</summary>
+    public bool IsLoaded(GameEntry game, int language = -1)
+    {
+        bool any = false;
+        foreach ((string commId, _) in TrophyPackage.FindSets(game.AppDir))
+        {
+            any = true;
+            lock (_lock)
+            {
+                if (!_sets.ContainsKey((commId, language)))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return any;
+    }
+
     private static string IconName(int id) => $"TROP{id:D3}.PNG";
 
     private string SetDirectory(string commId) => Path.Combine(Directory, Path.GetFileName(commId));

@@ -794,8 +794,12 @@ extracted from the TRP in one pass (`TROPnnn.PNG`, `icons.stamp`). Both are rebu
 time changes; the user's progress (`ux0:user/00/trophy/<COMMID>.json`) is read again only when it changes, without the
 TRP. A second opening (also after a restart) reads no TRP: the rows point at the extracted files, which the image loader
 decodes off the UI thread at the view's size, the list is a CollectionView (only the rows on screen are built, recycled while scrolling). Each opening logs
-`Trophies: <TITLEID>: N rows in X ms (TRP reads, picture extractions, sets from disk)` in the app log (and so in the F8
-capture). Tests: `TrophyListCacheTests`. Deleting the folder is safe (the next opening rebuilds it).
+`Trophies: <TITLEID>: N rows in X ms (TRP reads, picture extractions, sets from disk); from the tap: mount, spinner,
+appearing, data, render, built, frame, drawn` (ms from the tap; `OpenPhases`) in the app log (and so in the F8 capture).
+A list already in memory loads before the first render (no spinner page). The screen finds its game with
+`GameLibrary.Find` without measuring folders (the whole-library scan measured every game's size on the UI thread:
+~1.3 s on the phone; now ~170-270 ms from the tap to the drawn list on a second opening, ~320 ms after a restart).
+`VITASHARP_ANDROID_TROPHIES_OPEN=async|noanim` are the A/B variants used for that measurement. Tests: `TrophyListCacheTests`. Deleting the folder is safe (the next opening rebuilds it).
 
 **Dialogs.** Every dialog (MAUI `DisplayAlert`/`DisplayActionSheet`/`DisplayPrompt` behind `Choose`, `Confirm`,
 `Alert`, `Prompt`; the framework `AlertDialog`s of the pad capture, storage setup, in-game keyboard and fatal error)

@@ -232,7 +232,7 @@ public sealed class GamePage : Screen<GameState, GameProps>
                 ).Padding(16))
             .StrokeShape(new RoundRectangle().CornerRadius(20)).StrokeThickness(0).BackgroundColor(Palette.Surface)
             .Margin(20, 16, 20, 0)
-            .OnTapped(() => { if (t.HasTrophies) Navigation?.PushAsync<TrophiesPage, GameProps>(p => p.TitleId = Props.TitleId); });
+            .OnTapped(() => { if (t.HasTrophies) TrophiesPage.Open(Navigation, Props.TitleId); });
     }
 
     /// <summary>Slots 1-6 with their picture and date; a tap opens the game already in that state (the desktop's game
@@ -384,7 +384,7 @@ public sealed class GamePage : Screen<GameState, GameProps>
         switch (pick)
         {
             case var tr when tr == Loc.Get("MTrophies"):
-                await (Navigation?.PushAsync<TrophiesPage, GameProps>(p => p.TitleId = g.TitleId) ?? Task.CompletedTask);
+                await TrophiesPage.Open(Navigation, g.TitleId);
                 break;
             case var c when c == Loc.Get("MCopyFolderPath"):
                 await Clipboard.Default.SetTextAsync(g.AppDir);

@@ -4,6 +4,7 @@ using MauiReactor.Shapes;
 using VitaSharp.Android.Services;
 using VitaSharp.Android.Ui;
 using VitaSharp.Core.Hle.Np;
+using VitaSharp.Core.Util;
 using VitaSharp.Mobile.Core.Library;
 
 namespace VitaSharp.Android.Pages;
@@ -22,30 +23,91 @@ public sealed class TrophiesState
 /// </summary>
 public sealed class TrophiesPage : Screen<TrophiesState, GameProps>
 {
+    // the tap that opened the screen (GamePage): the phases of the opening are measured from it
+    static long s_openedAt;
+
+    /// <summary>The variant of the opening (<see cref="EnvVars.AndroidTrophiesOpen"/>): async (worker thread behind a
+    /// spinner) or the default (from the cache on the UI thread); "noanim" pushes without the transition.</summary>
+    static string OpenVariant => System.Environment.GetEnvironmentVariable(EnvVars.AndroidTrophiesOpen) ?? "";
+
+    /// <summary>Opens the screen for a game, measured from now.</summary>
+    public static Task Open(Microsoft.Maui.Controls.INavigation? navigation, string titleId)
+    {
+        if (navigation == null)
+            return Task.CompletedTask;
+        s_openedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+        return navigation.PushAsync<TrophiesPage, GameProps>(!OpenVariant.Contains("noanim", StringComparison.Ordinal), p => p.TitleId = titleId);
+    }
+
+    OpenPhases _phases = new(System.Diagnostics.Stopwatch.GetTimestamp());
+    string _loadInfo = "";
+
     protected override void OnMounted()
     {
-        _ = Task.Run(() =>
+        _phases = new OpenPhases(s_openedAt != 0 ? s_openedAt : System.Diagnostics.Stopwatch.GetTimestamp());
+        s_openedAt = 0;
+        _phases.Mark("mount");
+        var game = AppServices.FindGame(Props.TitleId, withSize: false);
+        TrophyListCache cache = AppServices.TrophyLists;
+        // pt-BR texts when the set has them (TROP_17.SFM)
+        const int Language = 17;
+        if (game != null && !OpenVariant.Contains("async", StringComparison.Ordinal) && cache.IsLoaded(game, Language))
         {
-            var game = AppServices.FindGame(Props.TitleId);
-            TrophyListCache cache = AppServices.TrophyLists;
-            int trpReads = cache.TrpReads;
-            int extractions = cache.IconExtractions;
-            int diskHits = cache.DiskHits;
-            var watch = System.Diagnostics.Stopwatch.StartNew();
-            // pt-BR texts when the set has them (TROP_17.SFM); texts and pictures from the disk cache when unchanged
-            var list = game != null ? cache.Load(game, AppServices.Data, language: 17) : null;
-            watch.Stop();
-            // in the app log (and so in the F8 capture): how long the list took and what it had to read
-            VitaSharp.Core.Util.Log.Info($"Trophies: {Props.TitleId}: {list?.Rows.Count ?? 0} rows in {watch.ElapsedMilliseconds} ms " +
-                $"(TRP reads {cache.TrpReads - trpReads}, picture extractions {cache.IconExtractions - extractions}, sets from disk {cache.DiskHits - diskHits})");
-            var rows = list?.Filtered(TrophyList.Filter.All) ?? [];
-            SetState(s =>
-            {
-                s.List = list;
-                s.Rows = rows;
-            });
-        });
+            // opened before: the list is in memory (a Load only checks the files' dates), so the first render already
+            // shows it, without a spinner page built and replaced
+            Load(game, cache, Language);
+        }
+        else
+        {
+            _ = Task.Run(() => Load(game, cache, Language));
+        }
         base.OnMounted();
+    }
+
+    void Load(GameEntry? game, TrophyListCache cache, int language)
+    {
+        int trpReads = cache.TrpReads;
+        int extractions = cache.IconExtractions;
+        int diskHits = cache.DiskHits;
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        // texts and pictures from the disk cache when unchanged
+        var list = game != null ? cache.Load(game, AppServices.Data, language) : null;
+        watch.Stop();
+        _loadInfo = $"{list?.Rows.Count ?? 0} rows in {watch.ElapsedMilliseconds} ms (TRP reads {cache.TrpReads - trpReads}, " +
+            $"picture extractions {cache.IconExtractions - extractions}, sets from disk {cache.DiskHits - diskHits})";
+        var rows = list?.Filtered(TrophyList.Filter.All) ?? [];
+        _phases.Mark("data");
+        SetState(s =>
+        {
+            s.List = list;
+            s.Rows = rows;
+        });
+    }
+
+    /// <summary>After the render that shows the list: marks the first frame (its layout starts) and the next one (the
+    /// list was drawn), then writes the "Trophies:" line to the app log (and so to the F8 capture).</summary>
+    void MeasureDrawn()
+    {
+        OpenPhases phases = _phases;
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            phases.Mark("built");
+            global::Android.Views.Choreographer.Instance?.PostFrameCallback(new FrameCallback(() =>
+            {
+                phases.Mark("frame");
+                global::Android.Views.Choreographer.Instance?.PostFrameCallback(new FrameCallback(() =>
+                {
+                    phases.Mark("drawn");
+                    string variant = OpenVariant.Length > 0 ? $" [{OpenVariant}]" : "";
+                    VitaSharp.Core.Util.Log.Info($"Trophies: {Props.TitleId}: {_loadInfo}; from the tap{variant}: {phases.Format()}");
+                }));
+            }));
+        });
+    }
+
+    sealed class FrameCallback(Action action) : Java.Lang.Object, global::Android.Views.Choreographer.IFrameCallback
+    {
+        public void DoFrame(long frameTimeNanos) => action();
     }
 
     void SetFilter(TrophyList.Filter filter)
@@ -63,7 +125,16 @@ public sealed class TrophiesPage : Screen<TrophiesState, GameProps>
     public override VisualNode Render()
     {
         if (State.List is not { } list)
-            return ContentPage(ActivityIndicator().IsRunning(true).Center()).HasNavigationBar(false).BackgroundColor(Palette.Background);
+        {
+            _phases.Mark("spinner");
+            return ContentPage(ActivityIndicator().IsRunning(true).Center()).HasNavigationBar(false).BackgroundColor(Palette.Background)
+                .OnAppearing(() => _phases.Mark("appearing"));
+        }
+        if (!_phases.Reached("render"))
+        {
+            _phases.Mark("render");
+            MeasureDrawn();
+        }
         var p = list.Progress;
         // a CollectionView: only the rows on screen are built and laid out, and they are recycled while scrolling (a
         // long list in a stack built every row and loaded every picture before the screen showed)
@@ -93,7 +164,8 @@ public sealed class TrophiesPage : Screen<TrophiesState, GameProps>
                     .Footer(BoxView().HeightRequest(24).Color(Colors.Transparent))
                     .ItemsLayout(new VerticalLinearItemsLayout().ItemSpacing(10))
                     .GridRow(1)
-            )).HasNavigationBar(false).BackgroundColor(Palette.Background);
+            )).HasNavigationBar(false).BackgroundColor(Palette.Background)
+            .OnAppearing(() => _phases.Mark("appearing"));
     }
 
     VisualNode GradeCount(TrophyGrade g, TrophyProgress p, int column)

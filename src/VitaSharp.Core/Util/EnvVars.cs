@@ -20,6 +20,10 @@ public static class EnvVars
     public const string AndroidInputLive = "VITASHARP_ANDROID_INPUT_LIVE";
     /// <summary>Android developer builds: a file polled every 250 ms on the UI thread, also while the game is paused (the app screens poll the path, the game screen the path + ".game"; Platforms/Android/Developer/UiScript.cs); each line ("key:dpad_down", "key:button_a", "touch:x:y" in 0..1 of the screen, "drag:x1:y1:x2:y2:ms") is injected into the game activity as a controller key or a touch, then the file is deleted (drives the pause menu where the phone refuses adb shell input).</summary>
     public const string AndroidUiInput = "VITASHARP_ANDROID_UI_INPUT";
+    /// <summary>Android A/B switch for the Trofeus screen's opening (measured on the phone, phases in the "Trophies:" log
+    /// line): =async loads the list on a worker thread behind a spinner (the old way); default: from the cache on the UI
+    /// thread before the first render; =noanim also pushes the page without the transition animation.</summary>
+    public const string AndroidTrophiesOpen = "VITASHARP_ANDROID_TROPHIES_OPEN";
     /// <summary>A/B switch: =old builds the per-draw texture sets the way main b29e26a did (all 16 units visited, render
     /// targets scanned through the dictionary); default new (only the sampled units, flat render-target range table).</summary>
     public const string TexLookup = "VITASHARP_TEXLOOKUP";

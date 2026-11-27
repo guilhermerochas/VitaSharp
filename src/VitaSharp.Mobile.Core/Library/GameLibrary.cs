@@ -60,8 +60,28 @@ public static class GameLibrary
     /// <summary>A PS Vita application folder (an install, a folder copied in); null when it is not one.</summary>
     public static GameEntry? Read(string dir) => InstalledContent.ReadApplication(dir) is { } t ? From(t) : null;
 
-    private static GameEntry From(LibraryTitle t) =>
-        new(t.TitleId, t.Title, t.Version, t.Category, t.Dir, t.IconPath, DirectorySize(t.Dir)) { Kind = t.Kind, LicenseMissing = t.LicenseMissing };
+    /// <summary>
+    /// One installed title by id, or null. Only that title's folder is measured (<see cref="GameEntry.SizeBytes"/>), and
+    /// none when <paramref name="withSize"/> is false: <see cref="Scan"/> walks every game's files for their sizes,
+    /// which took about a second on the phone's shared storage before a screen of one game could show.
+    /// </summary>
+    public static GameEntry? Find(DataLayout data, string titleId, bool withSize = true)
+    {
+        foreach (LibraryTitle title in InstalledContent.Scan(data.Fs, Loc.Culture.Name))
+        {
+            if (title.TitleId == titleId)
+            {
+                return From(title, withSize);
+            }
+        }
+
+        return null;
+    }
+
+    private static GameEntry From(LibraryTitle t) => From(t, withSize: true);
+
+    private static GameEntry From(LibraryTitle t, bool withSize) =>
+        new(t.TitleId, t.Title, t.Version, t.Category, t.Dir, t.IconPath, withSize ? DirectorySize(t.Dir) : 0) { Kind = t.Kind, LicenseMissing = t.LicenseMissing };
 
     /// <summary>Trophy progress over every set the game ships (usually one).</summary>
     public static TrophyProgress Trophies(GameEntry game, DataLayout data, TrophyTextsCache? cache = null)

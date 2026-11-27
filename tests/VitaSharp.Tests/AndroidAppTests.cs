@@ -270,6 +270,25 @@ public sealed class AndroidAppTests : IDisposable
         return dir;
     }
 
+    /// <summary>A screen of one game finds it by id without measuring the other games (and without its own size when
+    /// the screen does not show it).</summary>
+    [Fact]
+    public void FindReadsOneGameAndItsSizeOnlyWhenAsked()
+    {
+        var data = new DataLayout(_root);
+        data.EnsureCreated();
+        InstallFakeGame(data, "PCSC00045", "Killzone Mercenary", true);
+        InstallFakeGame(data, "PCSA00029", "Uncharted: Golden Abyss", false);
+
+        GameEntry withSize = GameLibrary.Find(data, "PCSA00029")!;
+        Assert.Equal("Uncharted: Golden Abyss", withSize.Title);
+        Assert.True(withSize.SizeBytes > 0);
+        GameEntry noSize = GameLibrary.Find(data, "PCSC00045", withSize: false)!;
+        Assert.Equal(("Killzone Mercenary", 0L), (noSize.Title, noSize.SizeBytes));
+        Assert.EndsWith("PCSC00045", noSize.AppDir);
+        Assert.Null(GameLibrary.Find(data, "PCSE99999"));
+    }
+
     [Fact]
     public void LibraryScansInstalledGamesWithTrophyProgress()
     {
