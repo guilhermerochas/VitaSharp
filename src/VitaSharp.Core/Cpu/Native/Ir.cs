@@ -72,6 +72,10 @@ public struct IrInst
     public int D = -1, D2 = -1, Fn = -1, Fz = -1, Fc = -1, Fv = -1;
     public int A = -1, B = -1, C = -1, E = -1;
     public uint Imm, Imm2, Imm3, Imm4;
+    /// <summary>Guest call and return hints of exits (ARM64 return stack, <see cref="Arm64Emitter.A64Opt.ReturnStack"/>):
+    /// ExitStatic of a BL/BLX imm: the return key (return address | Thumb), 0 otherwise; ExitDynamic of a return (BX LR,
+    /// POP {pc}, LDR pc, [sp], #4): 1. Other backends ignore it.</summary>
+    public uint Imm5;
 
     public IrInst(IrOp op)
     {

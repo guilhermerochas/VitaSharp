@@ -90,12 +90,24 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         long t2 = Stopwatch.GetTimestamp();
         NativeRuntime rt = NativeRuntime.Instance;
         int exits = 0;
+        bool returnStack = Arm64Emitter.UsesReturnStack(stubs);
         foreach (IrInst x in ir.Insts)
         {
             if (x.Op == IrOp.ExitStatic)
             {
                 exits++;
                 Jit.StaticExits?.Add((x.Imm, x.Imm2 != 0));
+                if (returnStack && x.Imm5 != 0)
+                {
+                    // a call exit has a second link slot: its return landing (Arm64Emitter.A64Opt.ReturnStack)
+                    exits++;
+                    Jit.StaticExits?.Add((x.Imm5 & ~1u, (x.Imm5 & 1) != 0));
+                    Interlocked.Increment(ref NativeX64Compiler.ReturnStackCalls);
+                }
+            }
+            else if (returnStack && x.Op == IrOp.ExitDynamic && x.Imm5 == 1 && x.Imm == 0)
+            {
+                Interlocked.Increment(ref NativeX64Compiler.ReturnStackReturns);
             }
         }
         // patched links: two words per exit, the target and the patch site (Arm64Emitter.Runtime.PatchLinks)
@@ -134,6 +146,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         byte* code = rt.Code.Place(bytes, Jit.ReuseFreedCode);
         HostFaultAborts.Register((ulong)code, arm64Emitter.FaultSites);
         Interlocked.Add(ref NativeX64Compiler.CodeBytes, size); // one counter for both native backends (Report)
+        NativeX64Compiler.CountBlock(b.Insts.Length);
         if (stubs.PatchLinks)
         {
             for (int k = 0; k < arm64Emitter.PatchSites.Count; k++)

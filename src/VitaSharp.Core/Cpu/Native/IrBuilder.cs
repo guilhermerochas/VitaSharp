@@ -360,19 +360,22 @@ public sealed unsafe class IrBuilder
     // ------------------------------------------------------------------ exits / callouts
 
     /// <summary>Leaves the block with the current state: a linkable static exit when PC and Thumb are known.</summary>
-    public void Exit(bool neverLink = false)
+    /// <param name="callReturnKey">The exit is a guest call (BL/BLX imm) returning to this key (address | Thumb).</param>
+    /// <param name="isReturn">The exit is a guest return (BX LR, POP {pc}).</param>
+    public void Exit(bool neverLink = false, uint callReturnKey = 0, bool isReturn = false)
     {
         if (!neverLink && KnownConst(15, out uint pc) && KnownConst(SlotThumb, out uint t))
         {
             Flush();
-            Emit(new IrInst(IrOp.ExitStatic) { Imm = pc, Imm2 = t });
+            Emit(new IrInst(IrOp.ExitStatic) { Imm = pc, Imm2 = t, Imm5 = callReturnKey });
             return;
         }
         Flush();
+        uint hint = isReturn && !neverLink ? 1u : 0u;
         // the target pc and Thumb state as temps (also in the state now): the dispatch-table lookup needs no reload
         Emit(DynamicExitOperands
-            ? new IrInst(IrOp.ExitDynamic) { Imm = neverLink ? 1u : 0u, A = _val[15], B = _val[SlotThumb] }
-            : new IrInst(IrOp.ExitDynamic) { Imm = neverLink ? 1u : 0u });
+            ? new IrInst(IrOp.ExitDynamic) { Imm = neverLink ? 1u : 0u, A = _val[15], B = _val[SlotThumb], Imm5 = hint }
+            : new IrInst(IrOp.ExitDynamic) { Imm = neverLink ? 1u : 0u, Imm5 = hint });
     }
 
     /// <summary>

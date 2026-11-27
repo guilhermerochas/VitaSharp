@@ -73,6 +73,30 @@ public sealed unsafe partial class ArmFrontend
     public IrBlock Translate(Block block) => Translate(block, null);
 
     /// <summary>
+    /// The return key (return address | Thumb) of a guest call with an immediate target (BL, BLX imm), 0 for anything
+    /// else: the hint of the ARM64 return stack (<see cref="IrInst.Imm5"/>). A hint only: the return is checked against it.
+    /// </summary>
+    public static uint CallReturnKey(in DecodedInst d, bool thumb) =>
+        d.Op is Op.A32_Bl or Op.A32_BlxImm or Op.T32_Bl or Op.T32_BlxImm ? (d.Address + d.Size) | (thumb ? 1u : 0u) : 0;
+
+    /// <summary>
+    /// Whether <paramref name="d"/> is a guest function return: BX LR, POP {..., pc} (T16, LDM/LDM.W from SP) or the
+    /// single-register pop LDR pc, [sp], #4 (A32 and T32). A hint for the ARM64 return stack: a wrong guess only costs a
+    /// failed check before the dispatch-table lookup.
+    /// </summary>
+    public static bool IsReturn(in DecodedInst d) => d.Op switch
+    {
+        Op.A32_Bx => (d.Raw & 0x0FFFFFFF) == 0x012FFF1E,
+        Op.T16_BxBlx => (d.Raw & 0xFFFF) == 0x4770,
+        Op.T16_Pop => (d.Raw & 0x100) != 0,
+        // LDM (L = 1) with base SP and PC in the list; the same bits in A32 and in T32 (hw1:hw2)
+        Op.A32_LdmStm or Op.T32_LdmStm => (d.Raw & 0x00108000) == 0x00108000 && ((d.Raw >> 16) & 0xF) == 13,
+        Op.A32_LdStImm => (d.Raw & 0x0FFFFFFF) == 0x049DF004,
+        Op.T32_LdSt => d.Raw == 0xF85DFB04,
+        _ => false,
+    };
+
+    /// <summary>
     /// Whether a block ending in <paramref name="d"/> can be continued by its fall-through block in one translation
     /// (<see cref="Translate(Block, IReadOnlyList{Block}?)"/>): a conditional direct branch or CBZ/CBNZ, whose taken path
     /// exits and whose other path goes on at the next address.
@@ -160,7 +184,7 @@ public sealed unsafe partial class ArmFrontend
                         }
                         break;
                     }
-                    _builder.Exit(neverLink: exitNow);
+                    _builder.Exit(neverLink: exitNow, CallReturnKey(d, _thumb), IsReturn(d));
                     if (cond)
                     {
                         _builder.EndRegion(terminated: true);
