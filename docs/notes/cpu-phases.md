@@ -73,18 +73,39 @@ block in the loop body, no interpreter callouts), nothing is compiled on the gue
 native code (dispatcher turns only at the pacing checks), a VFP vector-mode loop interprets nothing once warm. Short
 wait timeouts are covered by `PreciseTimeoutTests`.
 
-## Reproducing the phone's timing on the PC
+## Reproducing the phone's timing on the PC (the phone profile)
 
-The phone runs ahead-of-time compiled .NET (no JIT at run time) on slower cores. The closest PC setup:
+The phone runs ahead-of-time compiled .NET (no JIT at run time) on slower cores, with waits that never spin, the Mali
+GPU and a 4 MB GC gen0 budget. The desktop's phone profile turns all of that on at once:
 
-1. Publish the Native AOT desktop build (no .NET JIT at run time, as on the phone; first-use JIT pauses go away):
-   `dotnet publish src/VitaSharp.Desktop -c Release -r win-x64 -p:VitaSharpRelease=true -p:VitaSharpAot=true -o <dir>`
-   (`linux-x64` / `osx-arm64` on those systems; the requirements are in `VitaSharp.Desktop.csproj`). The IL CPU
-   backend does not exist there, as on the phone.
-2. Keep the guest clock as the phone's: the default 333 MHz (`VITASHARP_CPU_MHZ`), no `--speed`.
-3. Give it fewer host cores: pin the process to two cores (Windows: `start /affinity 3`; Linux: `taskset -c 0,1`).
-4. Read the `PERF phases` lines and the `[phase-alert]` lines: a phase that runs at more ns per guest cycle on the PC
-   than its budget runs slower still on the phone.
+```
+build/phone-profile.sh  --data <empty folder> -- run <game or .vpk> [run options]   # Linux, macOS (Git Bash too)
+build/phone-profile.ps1 -Data <empty folder> run <game or .vpk> [run options]       # Windows
+```
 
-What it does not reproduce: the ARM64 backend's code (the PC runs the x64 backend), the phone's timers (Linux
-nanosleep, no spinning: `HostTuning.AvoidBusyWaits`) and its thermal clocks.
+The script publishes the Native AOT desktop build once into a fixed folder (`<temp>/vitasharp-phone-profile`;
+`--publish` / `-Publish` again after a code change; the AOT requirements are in `VitaSharp.Desktop.csproj`: MSVC build
+tools on Windows, clang + zlib on Linux, the Xcode command-line tools on macOS), makes a new data folder
+case-sensitive as Android's (Windows: `fsutil file setCaseSensitiveInfo`, on an empty folder, no administrator rights
+needed; Linux always is; macOS only on a case-sensitive volume), runs with `VITASHARP_PHASE_PROF=1` and prints the
+`Phone profile:`, fps, `PERF phases` and `[phase-alert]` lines of the log.
+
+`--phone-profile` (or `VITASHARP_PHONE_PROFILE=1`) on any `VitaSharp.Desktop` command (`Core/Util/PhoneProfile.cs`):
+
+| Option | Phone profile | Android |
+|---|---|---|
+| waits | `HostTuning.AvoidBusyWaits` (sleep, never spin) | the same (GamePerformance) |
+| GPU | `VITASHARP_GPU_PROFILE=mali` (no BCn: ASTC transcoding, tile-based quirks, Mali limits) | the real Mali-G57 |
+| guest clock | `VITASHARP_CPU_MHZ=333` | 333 MHz |
+| host cores | two (`VITASHARP_PHONE_AFFINITY`, default CPUs n-4 and n-2; `0` = not pinned) | two fast cores + six slow ones |
+| GC | `DOTNET_GCgen0size=0x400000` (the process starts itself again when it is missing: the GC reads it at start) | the same, built into the library |
+| runtime | Native AOT when run from the script (the log says "runtime with JIT" otherwise) | Native AOT |
+
+A value already in the environment wins over the profile's. The log has one `Phone profile:` line with what the
+process really got (cores, gen0, runtime, whether the data folder is case-sensitive), and an F8 capture's notes have
+the same as `phone-profile:` (`off` without it).
+
+What it does not reproduce: the ARM64 backend's code (the PC runs the x64 backend), the phone's slower cores (a PC
+core runs the same guest code several times faster; the phone's six slow cores, where the helper threads go, do not
+exist either), Linux's timers and the phone's thermal clocks. A game's own folder linked into a test data folder
+keeps the case sensitivity of the folder it points to.

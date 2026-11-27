@@ -370,6 +370,8 @@ O resto para quem contribui está em [`docs/development.pt-BR.md`](docs/developm
 pacotes, os requisitos dos testes por sistema, o estilo de código, as opções de desenvolvedor e o processo de release.
 Também: [ferramentas de desenvolvimento](docs/notes/developer-tools.md), o [build do app Android](docs/android/README.md#building),
 as especificações das funções do sistema em [`docs/hle`](docs/hle/README.md) e o [roadmap](docs/roadmap.md).
+Para ver no PC os caminhos lentos do celular, `build/phone-profile.ps1` / `.sh` roda o build Native AOT com o perfil
+celular ([cpu-phases.pt-BR.md](docs/notes/cpu-phases.pt-BR.md#reproduzir-o-tempo-do-celular-no-pc-o-perfil-celular)).
 
 ## Licença e créditos
 

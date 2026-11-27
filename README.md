@@ -369,7 +369,9 @@ what is committed it runs script parity, the scripts' `--help`, ShellCheck, the 
 Everything else for contributors is in [`docs/development.md`](docs/development.md): the command line, packages, the
 test requirements per system, the code style, the developer options and the release process. Also:
 [developer tools](docs/notes/developer-tools.md), the [Android app build](docs/android/README.md#building), the system
-function specifications in [`docs/hle`](docs/hle/README.md) and the [roadmap](docs/roadmap.md).
+function specifications in [`docs/hle`](docs/hle/README.md) and the [roadmap](docs/roadmap.md). To see the phone's
+slow paths on the PC, `build/phone-profile.ps1` / `.sh` runs the Native AOT build with the phone profile
+([cpu-phases.md](docs/notes/cpu-phases.md#reproducing-the-phones-timing-on-the-pc-the-phone-profile)).
 
 ## License and credits
 

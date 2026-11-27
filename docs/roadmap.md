@@ -8,14 +8,13 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
 
 ## Diagnóstico
 
-- [ ] [P3][M] **Modo celular no PC, o que falta** (o perfil de fases e os testes de orçamento estão em "Corrigido,
-  falta o usuário testar"; o build Native AOT do desktop já existe, `-p:VitaSharpRelease=true -p:VitaSharpAot=true`,
-  e docs/notes/cpu-phases.md diz como montar o tempo do celular no PC):
-  - `HostTuning.AvoidBusyWaits` por variável de ambiente no desktop (esperas sem giro, como no celular), com teste;
-  - um roteiro `.ps1`/`.sh` que publica o Native AOT uma vez numa pasta fixa e roda um cenário com 2 núcleos fixados,
-    333 MHz e `VITASHARP_PHASE_PROF=1`, e resume as linhas `PERF phases`/`[phase-alert]`;
+- [ ] [P3][M] **Modo celular no PC, o que falta** (o perfil de fases, os testes de orçamento e o perfil celular do
+  desktop, `--phone-profile` / `VITASHARP_PHONE_PROFILE=1` com `build/phone-profile.ps1`/`.sh`, estão em "Corrigido,
+  falta o usuário testar"; docs/notes/cpu-phases.md diz o que ele liga e o que não reproduz):
   - o código do backend ARM64 no PC: medir no sandbox ARM64 dos testes (`Arm64Runner`) os blocos quentes de uma
-    captura (ns por ciclo do guest), já que o x64 não mostra o custo do código ARM64.
+    captura (ns por ciclo do guest), já que o x64 não mostra o custo do código ARM64;
+  - núcleos mais lentos: um núcleo do PC roda o código do guest várias vezes mais rápido que o A76 do celular; falta
+    um jeito de simular o clock (limite de CPU por cota divide o tempo em fatias e não equivale a um núcleo lento).
 
 - [ ] [P2][G] **Gravar tudo: estados de vários processos sobem sem os programas, o que falta** (a 1ª entrega, cada
   processo com a sua seção `process<N>/boot`, está em "Corrigido, falta o usuário testar"):
