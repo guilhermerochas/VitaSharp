@@ -143,6 +143,19 @@ public sealed class TrophyListCacheTests : IDisposable
         Assert.Equal(s_icon1, list.Rows.Single(r => r.Id == 1).LoadIcon());
     }
 
+    /// <summary>The screen loads on the UI thread only what this cache already holds (in that language).</summary>
+    [Fact]
+    public void IsLoadedOnlyAfterALoadInThatLanguage()
+    {
+        (GameEntry game, DataLayout data, _) = InstallGame();
+        var cache = new TrophyListCache(data.TrophyCache);
+        Assert.False(cache.IsLoaded(game, 17));
+        cache.Load(game, data, 17);
+        Assert.True(cache.IsLoaded(game, 17));
+        Assert.False(cache.IsLoaded(game, -1));
+        Assert.False(new TrophyListCache(data.TrophyCache).IsLoaded(game, 17));
+    }
+
     /// <summary>Each language has its own texts file; the pictures are shared.</summary>
     [Fact]
     public void LanguagesAreCachedApartAndShareThePictures()
