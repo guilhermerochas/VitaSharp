@@ -620,8 +620,19 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     }
 #endif
 
+    /// <summary>The thread's allocated bytes when its last HLE call returned (Util.AllocLedger: guest code between
+    /// calls).</summary>
+    private long _allocAtHleReturn = -1;
+    private static readonly System.Runtime.CompilerServices.StrongBox<long> s_guestCodeAlloc = Util.AllocLedger.Site("guest code (CPU backend)");
+
     private void DispatchHle(CpuState* s)
     {
+        long alloc0 = GC.GetAllocatedBytesForCurrentThread();
+        if (_allocAtHleReturn >= 0)
+        {
+            Util.AllocLedger.Add(s_guestCodeAlloc, alloc0 - _allocAtHleReturn);
+        }
+
         NoteHleEntry(Environment.TickCount64);
         WaitForWaker();
         Volatile.Write(ref _hleEntryCycles, OwnCycles);
@@ -698,6 +709,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
             }
 
             hleFunction.ChargedCycles += Core.ChargedCycles - charged0;
+            hleFunction.AllocatedBytes += GC.GetAllocatedBytesForCurrentThread() - alloc0;
             if (dbg)
             {
                 DebugHleReturn(hleFunction, s->R[0], a0, a1, a2, a3, lr);
@@ -722,6 +734,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
                 ContextReplaced = false;
                 _hleSeq++;
                 NoteHleReturn(Environment.TickCount64);
+                _allocAtHleReturn = GC.GetAllocatedBytesForCurrentThread();
                 return;
             }
         }
@@ -754,6 +767,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         _hleSeq++;
         NoteHleReturn(Environment.TickCount64);
         HleReturned?.Invoke(this, hleFunction);
+        _allocAtHleReturn = GC.GetAllocatedBytesForCurrentThread();
     }
 
     /// <summary>

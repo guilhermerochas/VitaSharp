@@ -1053,8 +1053,16 @@ public static class CaptureAnalyzer
 
         var hitches = new List<(double Ms, string Text)>();
         var stalls = new List<string>();
+        string? allocators = null;
         foreach (string l in File.ReadLines(log))
         {
+            int alloc = l.IndexOf("PERF allocators: ", StringComparison.Ordinal);
+            if (alloc >= 0)
+            {
+                allocators = l[(alloc + "PERF allocators: ".Length)..];
+                continue;
+            }
+
             int stall = l.IndexOf("[shadercache] present ", StringComparison.Ordinal);
             if (stall >= 0 && l.Contains(" by shader/pipeline work", StringComparison.Ordinal))
             {
@@ -1075,7 +1083,7 @@ public static class CaptureAnalyzer
             hitches.Add((ms, text));
         }
 
-        if (hitches.Count == 0 && stalls.Count == 0)
+        if (hitches.Count == 0 && stalls.Count == 0 && allocators == null)
         {
             return lines;
         }
@@ -1094,6 +1102,12 @@ public static class CaptureAnalyzer
             {
                 lines.Add("    " + st);
             }
+        }
+
+        if (allocators != null)
+        {
+            // the young collections a hitch line names come from these
+            lines.Add("  who allocates managed memory (the last PERF allocators line, KB per frame): " + allocators);
         }
 
         return lines;
