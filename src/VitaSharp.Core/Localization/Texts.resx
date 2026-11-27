@@ -3558,4 +3558,101 @@
   <data name="MFontsMissingToast" xml:space="preserve">
     <value>The firmware fonts are missing: the Vita system has no text. Install the font package (.PUP) in Settings > Firmware.</value>
   </data>
+  <data name="DataFolderChange" xml:space="preserve">
+    <value>Change the data folder</value>
+  </data>
+  <data name="DataFolderChangeButton" xml:space="preserve">
+    <value>Change</value>
+  </data>
+  <data name="DataFolderCloseGame" xml:space="preserve">
+    <value>Close the game first: it is writing into the data folder.</value>
+  </data>
+  <data name="DataFolderOverridden" xml:space="preserve">
+    <value>This session uses --data / VITASHARP_DATA, which wins over the choice in the settings. Start VitaSharp without it to change the data folder here.</value>
+  </data>
+  <data name="DataFolderPickTitle" xml:space="preserve">
+    <value>Pick the new data folder</value>
+  </data>
+  <data name="DataFolderAlreadyInUse" xml:space="preserve">
+    <value>{0} is already the data folder in use.</value>
+  </data>
+  <data name="DataFolderNested" xml:space="preserve">
+    <value>{0} is inside the data folder in use (or the other way round): pick a folder outside it.</value>
+  </data>
+  <data name="DataFolderSaveFailed" xml:space="preserve">
+    <value>The choice could not be saved (no permission to write it). The data folder in use did not change.</value>
+  </data>
+  <data name="DataFolderRestarting" xml:space="preserve">
+    <value>VitaSharp starts again now on {0}.</value>
+  </data>
+  <data name="DataFolderChangeText" xml:space="preserve">
+    <value>Games, firmware, saves, save states, settings and logs are in {0}. Where should VitaSharp keep them?</value>
+  </data>
+  <data name="DataFolderDefault" xml:space="preserve">
+    <value>Default folder</value>
+  </data>
+  <data name="DataFolderPortable" xml:space="preserve">
+    <value>Portable (beside the executable)</value>
+  </data>
+  <data name="DataFolderPortableUnavailable" xml:space="preserve">
+    <value>Not available: the executable's folder cannot be written (installed in a protected folder or an app bundle).</value>
+  </data>
+  <data name="DataFolderCustom" xml:space="preserve">
+    <value>Another folder...</value>
+  </data>
+  <data name="DataFolderCopy" xml:space="preserve">
+    <value>Copy</value>
+  </data>
+  <data name="DataFolderMove" xml:space="preserve">
+    <value>Move</value>
+  </data>
+  <data name="DataFolderLeave" xml:space="preserve">
+    <value>Don't copy</value>
+  </data>
+  <data name="DataFolderTransferText" xml:space="preserve">
+    <value>New folder: {1}
+The data in use ({0}) has {2} files, {3} MiB; the new folder's disk has {4} MiB free.
+
+Copy: the old folder stays as it is. Move: each file leaves the old folder after its copy is checked. Don't copy: the new folder is used as it is. Nothing in the new folder is ever overwritten.</value>
+  </data>
+  <data name="DataFolderMoveConfirm" xml:space="preserve">
+    <value>Moving empties the old folder {0} (each file is deleted there after its copy is checked). Continue?</value>
+  </data>
+  <data name="DataFolderCounting" xml:space="preserve">
+    <value>Counting the files...</value>
+  </data>
+  <data name="DataFolderMoving" xml:space="preserve">
+    <value>Moving the data</value>
+  </data>
+  <data name="DataFolderCopying" xml:space="preserve">
+    <value>Copying the data</value>
+  </data>
+  <data name="DataFolderProgress" xml:space="preserve">
+    <value>{0} of {1} files, {2} of {3} MiB</value>
+  </data>
+  <data name="DataFolderKept" xml:space="preserve">
+    <value>Done. {0} files were already in the new folder with other content: the new folder's files were kept and these stay in the old folder:
+{1}</value>
+  </data>
+  <data name="DataFolderNoSpace" xml:space="preserve">
+    <value>Not enough free space: {0}. Nothing was copied and the data folder did not change.</value>
+  </data>
+  <data name="DataFolderFailed" xml:space="preserve">
+    <value>The copy stopped: {0}. Nothing was deleted that is not in the new folder, and the data folder did not change. Try again to resume.</value>
+  </data>
+  <data name="DataFolderWarning" xml:space="preserve">
+    <value>The chosen data folder could not be used, so the default one is in use: {0}</value>
+  </data>
+  <data name="MDataFolderAuto" xml:space="preserve">
+    <value>Automatic (default)</value>
+  </data>
+  <data name="MDataFolderApp" xml:space="preserve">
+    <value>App folder (Android/data)</value>
+  </data>
+  <data name="MDataFolderNeedsAccess" xml:space="preserve">
+    <value>That folder is outside the app's own storage: VitaSharp needs "All files access" to use it.</value>
+  </data>
+  <data name="MDataFolderNotAPath" xml:space="preserve">
+    <value>The picked folder is not on the device storage or an SD card (a cloud folder?): pick a folder in the phone's storage.</value>
+  </data>
 </root>

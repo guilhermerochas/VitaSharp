@@ -143,6 +143,14 @@ public sealed partial class MainWindow : Window
             Opened += (_, _) => LaunchSystem(ask: false);
         }
         // "Procurar atualizacoes ao iniciar": the GitHub releases, in the background (quiet when nothing is new)
+        // the folder picked in "Pasta de dados" could not be used (a drive not connected, no permission): say it
+        // instead of looking like an empty install
+        if (_saveSettings && DataPaths.Current.Warning.Length > 0)
+        {
+            string warning = DataPaths.Current.Warning;
+            Opened += (_, _) => _ = ShowMessage(S.DataFolder, S.DataFolderWarning(warning));
+        }
+
         if (_saveSettings)
         {
             Updater.CleanDownloads();

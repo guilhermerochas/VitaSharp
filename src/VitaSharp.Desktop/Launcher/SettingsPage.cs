@@ -40,6 +40,8 @@ public sealed class SettingsPage : UserControl
     public event Action? CheckUpdatesNow;
     /// <summary>The interface language was picked (the launcher rebuilds itself in it).</summary>
     public event Action? LanguageChanged;
+    /// <summary>"Alterar" of "Pasta de dados" was pressed (the launcher asks where, copies or moves, restarts).</summary>
+    public event Action? ChangeDataFolder;
 
     /// <summary>The controller page (created when first shown, so SDL only starts when needed).</summary>
     public ControllerSettingsPanel? Controls { get; private set; }
@@ -299,6 +301,22 @@ public sealed class SettingsPage : UserControl
                 }, (S.ThemeSystem, null, null), (S.ThemeDark, "moon", null), (S.ThemeLight, "sun", null))));
     }
 
+    /// <summary>The folder in use, what chose it (default, portable, picked, --data) and the warning of a pick that
+    /// could not be used.</summary>
+    static string DataFolderDetail()
+    {
+        VitaSharp.Core.Storage.DataFolderResolution current = DataPaths.Current;
+        string kind = current.Kind switch
+        {
+            VitaSharp.Core.Storage.DataFolderKind.Portable => S.DataFolderPortable,
+            VitaSharp.Core.Storage.DataFolderKind.Custom => S.DataFolderCustom,
+            VitaSharp.Core.Storage.DataFolderKind.Override => "--data",
+            _ => S.DataFolderDefault,
+        };
+        string detail = Program.DataRoot + " \u00B7 " + kind;
+        return current.Warning.Length > 0 ? detail + "\n" + S.DataFolderWarning(current.Warning) : detail;
+    }
+
     Control BuildList()
     {
         var s = new StackPanel { Spacing = 10, MaxWidth = 900, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 32) };
@@ -454,14 +472,16 @@ public sealed class SettingsPage : UserControl
         s.Children.Add(_k.Group(
             _k.Row("camera", S.PreRoll, S.PreRollDetail, _k.Switch(_settings.CapturePreRoll, v => Set(() => _settings.CapturePreRoll = v))),
             _k.Row("layers", S.KernelPlugins, S.KernelPluginsDetail, _k.Switch(_settings.KernelPlugins, v => Set(() => _settings.KernelPlugins = v))),
-            _k.Row("hdd", S.DataFolder, Program.DataRoot, _k.Secondary(S.Open, null, () =>
-            {
-                try
+            _k.Row("hdd", S.DataFolder, DataFolderDetail(), _k.HStack(8,
+                _k.Secondary(S.Open, null, () =>
                 {
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Program.DataRoot) { UseShellExecute = true });
-                }
-                catch (Exception) { }
-            }, 36))));
+                    try
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Program.DataRoot) { UseShellExecute = true });
+                    }
+                    catch (Exception) { }
+                }, 36),
+                _k.Secondary(S.DataFolderChangeButton, null, () => ChangeDataFolder?.Invoke(), 36)))));
         s.Children.Add(_k.GroupTitle(S.Shortcuts));
         s.Children.Add(_k.Card(_k.Wrap(S.ShortcutsText, 13, static p => p.TextSoft), 18, new Thickness(18, 14)));
         return s;

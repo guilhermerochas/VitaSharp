@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=6013c33ea4b6967271a6936497e9c2336c4ff26d89a9ce66ca8aae82ee799a18 -->
+<!-- pair: README.md sha256=a43c355a9c025e7293a7244b0f79d154c746d3f8cc4a6380f2042bfc4fe58245 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -347,6 +347,25 @@ Dentro dela: `fs/` é o armazenamento do Vita (jogos em `fs/ux0/app`, saves em `
 `fs/os0`, `fs/vs0`...), mais `logs/`, `savestates/`, `captures/` (Gravar tudo) e `shadercache/`. `--data=<pasta>` ou a variável `VITASHARP_DATA` usam outra pasta. Atualizar o VitaSharp nunca muda
 essa pasta. Antes de desinstalar o app Android sem "Acesso a todos os arquivos", copie o `fs/ux0/user/00/savedata`
 para fora.
+
+**Trocar a pasta de dados.** **Configurações > Avançado > Pasta de dados > Alterar** (Android: **Ajustes >
+Armazenamento > Trocar a pasta de dados**) escolhe onde ficam os dados:
+
+| Opção | Onde |
+| --- | --- |
+| Pasta padrão | a tabela acima |
+| Portátil (desktop) | uma pasta `data` ao lado do executável, marcada por um arquivo `portable.txt` ali (como no Dolphin e no PPSSPP); não aparece quando a pasta do executável não pode ser gravada |
+| Outra pasta | qualquer pasta, escolhida no seletor de pastas do sistema (Android: uma pasta do armazenamento do celular ou do cartão SD; fora da pasta do próprio app, precisa do "Acesso a todos os arquivos") |
+
+Depois os dados em uso são **copiados** (a pasta antiga fica como está), **movidos** (cada arquivo só sai da pasta
+antiga depois que a cópia é conferida; com confirmação antes) ou **não copiados** (a nova pasta é usada como está). O
+espaço livre é conferido antes de copiar qualquer coisa, um arquivo que a nova pasta já tem nunca é sobrescrito (os
+diferentes são listados e ficam na pasta antiga), e o VitaSharp reinicia na nova pasta. A pasta antiga nunca é
+apagada. A escolha fica fora de qualquer pasta de dados: `data-root.txt` em `%LOCALAPPDATA%\VitaSharp` (Windows),
+`~/.config/VitaSharp` (Linux, ou `$XDG_CONFIG_HOME/VitaSharp`) ou `~/Library/Preferences/VitaSharp` (macOS); no
+Android, nas configurações privadas do app. Se a pasta escolhida não existir ao abrir (um disco desconectado, um cartão
+SD removido), o VitaSharp avisa e usa a pasta padrão. `--data` / `VITASHARP_DATA` vencem qualquer escolha, e o
+`portable.txt` vence o `data-root.txt`.
 
 ## Desenvolvimento
 

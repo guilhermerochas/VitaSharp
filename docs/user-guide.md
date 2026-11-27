@@ -1,4 +1,4 @@
-<!-- pair: user-guide.pt-BR.md sha256=4050acd501f900f1ef1c14bdc02154ad5faeb0a901a642f927bdde0fcae3c326 -->
+<!-- pair: user-guide.pt-BR.md sha256=7bfa332734ef83555a91017b91eea71dbf566bdbc5e953d5c0c70f6b675668d5 -->
 # User guide
 
 **English** | [Português](user-guide.pt-BR.md)
@@ -31,7 +31,9 @@ library shows it too), and the firmware's own apps take none. A Unity PSM game k
 left in `RO/runtime` moves there by itself at the next start.
 
 On the host, `ux0:` is `fs/ux0` inside the data folder (see the README's
-[Where your data lives](../README.md#where-your-data-lives)); `--data=<folder>` or `VITASHARP_DATA` change the folder.
+[Where your data lives](../README.md#where-your-data-lives)); `--data=<folder>` or `VITASHARP_DATA` change the folder,
+and **Settings > Advanced > Data folder > Change** moves it for good (default, portable beside the executable, or any
+folder; the data is copied or moved without overwriting anything, then VitaSharp restarts).
 
 **PlayStation Mobile (PSM).** A PSM game `.pkg` installs like a PS Vita one, with the license of your own account: the
 1024-byte PSM `.rif` (or its zRIF) that your console has for that game; a PS Vita license or another game's is refused.

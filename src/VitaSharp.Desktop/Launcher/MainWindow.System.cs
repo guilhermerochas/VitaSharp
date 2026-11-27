@@ -89,6 +89,7 @@ public sealed partial class MainWindow
         _settingsPage.OpenSystem += () => Navigate(PageSystem);
         _settingsPage.LanguageChanged += () => RebuildAll();
         _settingsPage.CheckUpdatesNow += () => _ = CheckForUpdates(manual: true);
+        _settingsPage.ChangeDataFolder += () => _ = ChangeDataFolder();
         return _settingsPage;
     }
 }

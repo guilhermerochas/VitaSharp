@@ -1,4 +1,4 @@
-<!-- pair: user-guide.md sha256=c3934feb3f83cf759824c1a41c12fa1ad7a1a7c2eaf15c629e604dc6e43ba077 -->
+<!-- pair: user-guide.md sha256=a326a9cda4a2b1db6d00d16d40193c690bbfad73c987548201d96c3de8ca19b4 -->
 # Guia do usuário
 
 [English](user-guide.md) | **Português**
@@ -33,7 +33,9 @@ seguinte.
 
 No computador, o `ux0:` é o `fs/ux0` dentro da pasta de dados (veja
 [Onde ficam os seus dados](../README.pt-BR.md#onde-ficam-os-seus-dados) no README); `--data=<pasta>` ou
-`VITASHARP_DATA` trocam a pasta.
+`VITASHARP_DATA` trocam a pasta, e **Configurações > Avançado > Pasta de dados > Alterar** a troca de vez (padrão,
+portátil ao lado do executável, ou qualquer pasta; os dados são copiados ou movidos sem sobrescrever nada, e o
+VitaSharp reinicia).
 
 **PlayStation Mobile (PSM).** Um `.pkg` de jogo de PSM se instala como um do PS Vita, com a licença da sua própria
 conta: o `.rif` de PSM de 1024 bytes (ou o zRIF dele) que o seu console tem para o jogo; licença de PS Vita ou de

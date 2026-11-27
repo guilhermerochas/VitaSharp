@@ -69,9 +69,60 @@ public static class Saf
         return tcs.Task;
     }
 
+    static readonly HashSet<int> TreeRequests = new();
+
+    /// <summary>The folder picker (ACTION_OPEN_DOCUMENT_TREE): the picked tree's file path
+    /// (<see cref="Mobile.Core.Storage.SafTreePath"/>), "" when the folder has no path (a cloud provider), null when
+    /// cancelled.</summary>
+    public static async Task<string?> PickFolderAsync()
+    {
+        var activity = MainActivity.Current ?? throw new InvalidOperationException("no activity");
+        var intent = new Intent(Intent.ActionOpenDocumentTree);
+        int code;
+        var tcs = new TaskCompletionSource<PickedDocument?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (Pending)
+        {
+            code = RequestBase + (_next++ & 0xFF);
+            Pending[code] = tcs;
+            TreeRequests.Add(code);
+        }
+
+        activity.StartActivityForResult(intent, code);
+        PickedDocument? picked = await tcs.Task;
+        if (picked == null)
+        {
+            return null;
+        }
+
+        string? treeId = DocumentsContract.GetTreeDocumentId(picked.Uri);
+        string primary = global::Android.OS.Environment.ExternalStorageDirectory?.AbsolutePath ?? "/storage/emulated/0";
+        return Mobile.Core.Storage.SafTreePath.ToPath(picked.Uri.Authority, treeId, primary) ?? "";
+    }
+
     public static void OnActivityResult(int requestCode, Result resultCode, Intent? data)
     {
         TaskCompletionSource<PickedDocument?>? tcs;
+        bool tree;
+        lock (Pending)
+        {
+            tree = TreeRequests.Remove(requestCode);
+        }
+
+        if (tree)
+        {
+            lock (Pending)
+            {
+                if (!Pending.Remove(requestCode, out tcs))
+                {
+                    return;
+                }
+            }
+
+            // a tree has no display name or size to query: the URI is all the caller needs
+            tcs.TrySetResult(resultCode == Result.Ok && data?.Data is { } treeUri ? new PickedDocument(treeUri, "", -1) : null);
+            return;
+        }
+
         lock (Pending)
         {
             if (!Pending.Remove(requestCode, out tcs))

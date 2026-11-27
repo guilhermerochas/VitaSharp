@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=0196caa76645f0bc7747307c3bbfb26e3b46af30e4d91a6e78272beec33250bb -->
+<!-- pair: README.pt-BR.md sha256=4162e6b1c89035b9c5f15e68517bdea980265c2b6da4cfef16ac0c564d9828aa -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -347,6 +347,25 @@ Inside it: `fs/` is the Vita's storage (games in `fs/ux0/app`, saves in `fs/ux0/
 `fs/os0`, `fs/vs0`...), plus `logs/`, `savestates/`, `captures/` (Record everything) and `shadercache/`. `--data=<folder>` or the `VITASHARP_DATA` variable use another folder. Updating VitaSharp never
 changes this folder. Before uninstalling the Android app without "All files access", copy `fs/ux0/user/00/savedata`
 out.
+
+**Changing the data folder.** **Settings > Advanced > Data folder > Change** (Android: **Ajustes > Armazenamento >
+Trocar a pasta de dados**) picks where the data lives:
+
+| Choice | Where |
+| --- | --- |
+| Default folder | the table above |
+| Portable (desktop) | a `data` folder beside the executable, marked by a `portable.txt` file there (as in Dolphin and PPSSPP); not offered when the executable's folder cannot be written |
+| Another folder | any folder, picked with the system's folder picker (Android: a folder of the phone's storage or SD card; outside the app's own folder it needs "All files access") |
+
+Then the data in use is **copied** (the old folder stays as it is), **moved** (each file leaves the old folder only
+after its copy is checked; confirmed first) or **not copied** (the new folder is used as it is). The free space is
+checked before anything is copied, a file the new folder already has is never overwritten (the different ones are
+listed and stay in the old folder), and VitaSharp restarts on the new folder. The old folder is never deleted. The
+choice is kept outside every data folder: `data-root.txt` in `%LOCALAPPDATA%\VitaSharp` (Windows),
+`~/.config/VitaSharp` (Linux, or `$XDG_CONFIG_HOME/VitaSharp`) or `~/Library/Preferences/VitaSharp` (macOS); on
+Android in the app's private settings. If the chosen folder is missing at start (a drive not connected, an SD card
+taken out), VitaSharp says so and uses the default folder. `--data` / `VITASHARP_DATA` win over every choice, and
+`portable.txt` wins over `data-root.txt`.
 
 ## Development
 
