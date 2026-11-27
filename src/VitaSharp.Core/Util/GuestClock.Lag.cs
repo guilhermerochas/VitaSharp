@@ -18,13 +18,27 @@ namespace VitaSharp.Core.Util;
 /// one had left out).
 /// The time left out has a budget, a burst of 100 ms that refills at a tenth of real time: a cold start or a host
 /// stall is absorbed whole, and a game that is slower than the console throughout still sees its clock at no less than
-/// ~90% of real time. VITASHARP_LAG_CLOCK=0 turns it off (A/B).
+/// ~90% of real time. The time left out is given back at a tenth of real time while it is not growing (the clock runs at
+/// up to 110%): a late burst still finds the clock waiting for it, but over a run the clock keeps real time, so the
+/// audio a game paces by its sleeps still comes out at the device's rate (a phone whose code ran bursts at ~160 MHz left
+/// 2 s a minute out and played Dead Space's audio at 89% of its rate, with underruns). VITASHARP_LAG_CLOCK=0 turns it
+/// off (A/B).
 /// </para>
 /// </summary>
 public static partial class GuestClock
 {
-    /// <summary>Ticks of real time left out for threads that fell behind (only grows).</summary>
+    /// <summary>Ticks of real time left out for threads that fell behind, as of <see cref="s_lagGrewAt"/>; given back
+    /// since then at <see cref="LagRepayDivisor"/> (<see cref="LagAt"/>).</summary>
     private static long s_lag;
+
+    /// <summary>The real time (<see cref="RealElapsed"/>) when the time left out last grew.</summary>
+    private static long s_lagGrewAt;
+
+    /// <summary>Real time left out in all, ticks (diagnostics; the part given back is this minus the current lag).</summary>
+    private static long s_lagTotal;
+
+    /// <summary>The time left out is given back at real time divided by this (a tenth: the clock runs at up to 110%).</summary>
+    internal const int LagRepayDivisor = 10;
 
     /// <summary>The reading when the time left out last grew: the clock reads no less than this (monotonic) and stands
     /// still there until real time minus the new total passes it.</summary>
@@ -46,8 +60,26 @@ public static partial class GuestClock
 
     internal static bool LagClockEnabled { get; set; } = Environment.GetEnvironmentVariable(EnvVars.LagClock) != "0";
 
-    /// <summary>Total real time left out so far, ticks (diagnostics: the end-of-run line and the F8 report).</summary>
-    public static long LagTicks => Volatile.Read(ref s_lag);
+    /// <summary>The time left out now (after what was given back), ticks.</summary>
+    public static long LagTicks => LagAt(RealElapsed);
+
+    /// <summary>Real time left out in all so far, ticks (diagnostics: the end-of-run line and the F8 report).</summary>
+    public static long LagTotalTicks => Volatile.Read(ref s_lagTotal);
+
+    /// <summary>The time left out at real time <paramref name="realElapsed"/>: what it was when it last grew, minus a
+    /// tenth of the real time since then, never below zero.</summary>
+    private static long LagAt(long realElapsed)
+    {
+        long lag = Volatile.Read(ref s_lag);
+        if (lag == 0)
+        {
+            return 0;
+        }
+
+        long since = realElapsed - Volatile.Read(ref s_lagGrewAt);
+        long repaid = since > 0 ? since / LagRepayDivisor : 0;
+        return repaid >= lag ? 0 : lag - repaid;
+    }
 
     /// <summary>How many times the time left out grew (diagnostics).</summary>
     public static long LagEvents;
@@ -59,7 +91,8 @@ public static partial class GuestClock
     /// never below the reading the clock stood at when the time left out last grew.</summary>
     private static long Live()
     {
-        long reading = RealElapsed + Interlocked.Read(ref s_offset) - Volatile.Read(ref s_lag);
+        long realElapsed = RealElapsed;
+        long reading = realElapsed + Interlocked.Read(ref s_offset) - LagAt(realElapsed);
         long floor = Volatile.Read(ref s_lagFloor);
         return reading > floor ? reading : floor;
     }
@@ -75,7 +108,13 @@ public static partial class GuestClock
         get
         {
             long f = Volatile.Read(ref s_frozen);
-            return f != NotFrozen ? f : RealElapsed + Interlocked.Read(ref s_offset) - Volatile.Read(ref s_lag);
+            if (f != NotFrozen)
+            {
+                return f;
+            }
+
+            long realElapsed = RealElapsed;
+            return realElapsed + Interlocked.Read(ref s_offset) - LagAt(realElapsed);
         }
     }
 
@@ -92,14 +131,15 @@ public static partial class GuestClock
     internal static long LeaveOutLag(long target, out bool cut)
     {
         cut = false;
-        if (!LagClockEnabled || Turbo || Frozen || target <= Volatile.Read(ref s_lag))
+        if (!LagClockEnabled || Turbo || Frozen || target <= LagTicks)
         {
             return 0;
         }
 
         lock (s_lagLock)
         {
-            long lag = s_lag;
+            long realElapsed = RealElapsed;
+            long lag = LagAt(realElapsed); // what was given back since the last growth is folded in first
             if (target <= lag)
             {
                 return 0;
@@ -133,7 +173,9 @@ public static partial class GuestClock
                 Volatile.Write(ref s_lagFloor, reading);
             }
 
+            Volatile.Write(ref s_lagGrewAt, realElapsed);
             Volatile.Write(ref s_lag, lag + grow);
+            s_lagTotal += grow;
             LagEvents++;
             return grow;
         }
@@ -145,7 +187,7 @@ public static partial class GuestClock
     {
         double ms = 1000.0 / Stopwatch.Frequency;
         string state = LagClockEnabled ? "" : " (off: VITASHARP_LAG_CLOCK=0)";
-        return $"PERF lag clock: {LagTicks * ms:F1} ms left out for guest threads behind their emulated CPU, in {Volatile.Read(ref LagEvents)} steps; {Volatile.Read(ref LagRefusals)} asks cut by the budget{state}{Cpu.CpuCore.LagTop()}";
+        return $"PERF lag clock: {LagTotalTicks * ms:F1} ms left out for guest threads behind their emulated CPU ({LagTicks * ms:F1} ms not given back yet), in {Volatile.Read(ref LagEvents)} steps; {Volatile.Read(ref LagRefusals)} asks cut by the budget{state}{Cpu.CpuCore.LagTop()}";
     }
 
     /// <summary>Tests: starts the lag accounting over (no time left out, a full budget).</summary>
@@ -154,8 +196,10 @@ public static partial class GuestClock
         lock (s_lagLock)
         {
             // the offset takes the time left out over, so the reading goes on from where it is
-            Interlocked.Exchange(ref s_offset, Interlocked.Read(ref s_offset) - Volatile.Read(ref s_lag));
+            Interlocked.Exchange(ref s_offset, Interlocked.Read(ref s_offset) - LagTicks);
             Volatile.Write(ref s_lag, 0);
+            Volatile.Write(ref s_lagGrewAt, 0);
+            s_lagTotal = 0;
             Volatile.Write(ref s_lagFloor, long.MinValue);
             s_lagTokens = LagBurstTicks;
             s_lagRefilledAt = 0;

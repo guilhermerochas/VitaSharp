@@ -118,7 +118,7 @@ public static partial class GuestClock
             return;
         }
 
-        Interlocked.Exchange(ref s_offset, f - RealElapsed + Volatile.Read(ref s_lag));
+        Interlocked.Exchange(ref s_offset, f - RealElapsed + LagTicks);
         Volatile.Write(ref s_frozen, NotFrozen);
     }
 
@@ -210,7 +210,7 @@ public static partial class GuestClock
         while (true)
         {
             long off = Interlocked.Read(ref s_offset);
-            long needed = deadline - RealElapsed + Volatile.Read(ref s_lag);
+            long needed = deadline - RealElapsed + LagTicks;
             if (needed <= off)
             {
                 return;

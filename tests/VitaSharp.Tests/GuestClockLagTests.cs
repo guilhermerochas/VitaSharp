@@ -88,8 +88,10 @@ public sealed unsafe class GuestClockLagTests : IDisposable
         Assert.True(GuestClock.LagTicks > 0);
         Assert.Equal(before, GuestClock.Ticks); // stands at the reading it had
         Assert.True(GuestClock.WaitTicks < before);
-        Advance(GuestClock.LagTicks + Ms);
-        Assert.Equal(before + Ms, GuestClock.Ticks); // real time caught up: it goes on from there
+        long leftOut = GuestClock.LagTicks;
+        Advance(leftOut + Ms);
+        // real time caught up (and gave a tenth of itself back): it goes on from there
+        Assert.Equal(before + Ms + (leftOut + Ms) / GuestClock.LagRepayDivisor, GuestClock.Ticks);
     }
 
     [Fact]
@@ -137,10 +139,34 @@ public sealed unsafe class GuestClockLagTests : IDisposable
         Assert.Equal(GuestClock.LagBurstTicks, GuestClock.LagTicks);
         Assert.True(GuestClock.LagRefusals > 0);
 
-        long leftOut = GuestClock.LagTicks;
+        long leftOut = GuestClock.LagTotalTicks;
         Advance(100 * Ms); // 100 ms more behind: 10 ms of budget came back
         CpuCore.SettleLagClock();
-        Assert.Equal(leftOut + 10 * Ms, GuestClock.LagTicks);
+        Assert.Equal(leftOut + 10 * Ms, GuestClock.LagTotalTicks);
+    }
+
+    /// <summary>The time left out comes back at a tenth of real time once nobody is late: over a run the clock keeps
+    /// real time (the audio a game paces by its sleeps comes out at the device's rate), and while it gives time back it
+    /// runs no faster than 110%.</summary>
+    [Fact]
+    public void TimeLeftOutIsGivenBackOnceNobodyIsLate()
+    {
+        long start = GuestClock.Ticks;
+        using (CpuCore worker = RunningCore())
+        {
+            Advance(20 * Ms);
+            CpuCore.SettleLagClock();
+            worker.SettleThrottle(0); // the late burst ends: the thread blocks
+        }
+
+        Assert.Equal(19 * Ms, GuestClock.LagTicks);
+        long waitStart = GuestClock.WaitTicks;
+        Advance(100 * Ms);
+        Assert.Equal(110 * Ms, GuestClock.WaitTicks - waitStart); // at most 110% while giving back
+        Advance(200 * Ms);
+        Assert.Equal(0, GuestClock.LagTicks);
+        Assert.Equal(320 * Ms, GuestClock.Ticks - start); // all of it given back: real time again
+        Assert.Equal(19 * Ms, GuestClock.LagTotalTicks);
     }
 
     [Fact]
