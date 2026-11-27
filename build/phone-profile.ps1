@@ -12,6 +12,7 @@
 #     default two cores of the upper half); -NoRun: publish and prepare only.
 #   Example: build/phone-profile.ps1 -Data $env:TEMP\pp run tests/VitaSharp.TestGame/build/VitaSharpTest.vpk
 #     --reinstall --vulkan --seconds=150 --dialogs=auto
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [string]$Out = '',
     [switch]$Publish,
