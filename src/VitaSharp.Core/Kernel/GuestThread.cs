@@ -289,6 +289,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         Util.NativeThread.Register(Name, Util.NativeThread.Role.Guest);
         HostTid = Util.NativeThread.CurrentId();
         Util.HostThreads.Apply(Util.HostThreads.Role.Guest);
+        Util.HostThreads.ApplyGuestPriority(Priority);
         int status = 0;
         bool delete = false;
         Core.ShouldYield = () => Scheduler.ShouldYield(this);

@@ -490,6 +490,9 @@ public static class EnvVars
     /// <summary>Linux and Android: =0 leaves the background threads (speculative JIT precompile, spare shader workers,
     /// texture transcoders) at nice 0 instead of 5-10, to compare (Core Util/HostThreads.cs LowerCurrent).</summary>
     public const string BackgroundNice = "VITASHARP_BG_NICE";
+    /// <summary>=0: guest threads keep nice 0 on Linux and Android instead of the nice of their guest priority
+    /// (Util/HostThreads.cs, GuestNiceOf; A/B).</summary>
+    public const string GuestNice = "VITASHARP_GUEST_NICE";
     /// <summary>Android, A/B: =big moves the guest thread recording the GXM scenes (the last one to call
     /// sceGxmBeginScene) to the fast cores as soon as it changes, beyond the hot-thread slots; default: placed by its load
     /// (Mobile.Core Performance/ThreadPlacement.cs, Core Util/GpuSubmitterThread.cs).</summary>

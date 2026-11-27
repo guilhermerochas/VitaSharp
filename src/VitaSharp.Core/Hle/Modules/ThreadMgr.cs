@@ -120,6 +120,11 @@ public sealed partial class ThreadMgr : HleModule
         if (t == null) return SceError.UNKNOWN_THREAD_ID;
         if (priority == 0) priority = t.InitPriority;
         t.Priority = ResolvePriority(priority);
+        if (t.HostTid > 0)
+        {
+            Util.HostThreads.ApplyGuestPriority(t.Priority, t.HostTid); // its host nice follows (Linux, Android)
+        }
+
         return 0;
     }
 

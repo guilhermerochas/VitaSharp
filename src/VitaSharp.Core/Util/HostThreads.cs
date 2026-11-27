@@ -149,6 +149,51 @@ public static class HostThreads
         }
     }
 
+    /// <summary>
+    /// The nice value a guest thread of Vita priority <paramref name="guestPriority"/> (64 highest .. 191 lowest for
+    /// user threads; the default is 160) gets on Linux and Android: -8 above 128 (Android's THREAD_PRIORITY_URGENT_DISPLAY:
+    /// a game's audio and its job threads run there), -4 otherwise (THREAD_PRIORITY_DISPLAY). On the Vita a game's
+    /// threads run at real priorities above the system's background work; at nice 0 on a phone they shared the cores
+    /// as equals with the emulator's own workers and the other apps, and a woken guest thread waited for its turn:
+    /// semaphore wake-ups of 0.2-0.3 ms median and 2-4 ms p99 (TestGame wake_latency_sema), enough for Dead Space's
+    /// mixer (eight wake-ups a round) to miss its 11 ms period. Android lets an app lower its own threads' nice to
+    /// these values without a privilege (Process.setThreadPriority does the same). 0 when it is off
+    /// (VITASHARP_GUEST_NICE=0 or --host-prio=off).
+    /// </summary>
+    public static int GuestNiceOf(int guestPriority) => guestPriority < 128 ? -8 : -4;
+
+    private static bool GuestNiceOn => On && Environment.GetEnvironmentVariable(EnvVars.GuestNice) is not ("0" or "off" or "false" or "no");
+
+    /// <summary>
+    /// Sets host thread <paramref name="tid"/> (Linux and Android; the calling thread when 0) to the nice of guest
+    /// priority <paramref name="guestPriority"/> (<see cref="GuestNiceOf"/>), at a guest thread's start and when its
+    /// priority changes. Returns the nice value set, or null when nothing was set (other systems, off, refused).
+    /// </summary>
+    public static int? ApplyGuestPriority(int guestPriority, int tid = 0)
+    {
+        if (!(OperatingSystem.IsLinux() || OperatingSystem.IsAndroid()) || !GuestNiceOn)
+        {
+            return null;
+        }
+
+        int nice = GuestNiceOf(guestPriority);
+        try
+        {
+            if (setpriority(PRIO_PROCESS, (uint)tid, nice) == 0)
+            {
+                return nice;
+            }
+
+            Log.WarnOnce("guest-nice", $"guest thread nice {nice} not set: errno {Marshal.GetLastPInvokeError()}");
+        }
+        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException)
+        {
+            Log.WarnOnce("guest-nice", $"guest thread nice not set: {e.Message}");
+        }
+
+        return null;
+    }
+
     private static bool BackgroundNiceOn => Environment.GetEnvironmentVariable(EnvVars.BackgroundNice) is not ("0" or "off" or "false" or "no");
 
     private const int PRIO_PROCESS = 0;
