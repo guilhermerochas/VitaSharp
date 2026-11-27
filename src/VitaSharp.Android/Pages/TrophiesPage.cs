@@ -47,7 +47,7 @@ public sealed class TrophiesPage : Screen<TrophiesState, GameProps>
         _phases = new OpenPhases(s_openedAt != 0 ? s_openedAt : System.Diagnostics.Stopwatch.GetTimestamp());
         s_openedAt = 0;
         _phases.Mark("mount");
-        var game = AppServices.FindGame(Props.TitleId);
+        var game = AppServices.FindGame(Props.TitleId, withSize: false);
         TrophyListCache cache = AppServices.TrophyLists;
         // pt-BR texts when the set has them (TROP_17.SFM)
         const int Language = 17;
