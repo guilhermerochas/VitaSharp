@@ -266,6 +266,12 @@ The game process places its hot threads itself (`Platforms/Android/Game/GamePerf
   Refreshing it after each rendering ended the rendering for every such draw (Killzone Mercenary: nine 240x136 passes
   per frame at one spot, each copying the depth). Mali-G57 bench (4 rounds x 3): Killzone gameplay fixture 33.3 ->
   30.1 ms of GPU per frame, the stairs fixture 27.1 -> 26.4 ms, same picture.
+- **Hitches in the log** (`[hitch]` lines, `VITASHARP_HITCH_MS`, default 100 ms, `0` off): a present that comes more
+  than that after the previous one (emulation time, pauses left out) logs the host time of the interval by cause,
+  largest first: texture uploads (`texUpload`), shader translation/compilation and pipeline creation on the GPU thread,
+  the GC (with the collection count), ARM code compilation (`jit`), guest file reads, the guest waiting for the GPU,
+  the GPU worker's idle time. A stutter the player sees (a weapon change, the first aim) then names its cause in
+  `last.log` without a capture; at most 200 lines per session.
 - **BC1 mapped straight to ASTC** (`AstcEncoder.EncodeFromBc1`, `VITASHARP_ASTC_BC1_DIRECT=0` to compare): a
   four-colour BC1 block (its two RGB565 endpoints and the thirds between them) is exactly an ASTC RGB-direct block with
   8-bit endpoints and 4 weight levels, so it is written without the encoder's search; only BC1's three-colour blocks

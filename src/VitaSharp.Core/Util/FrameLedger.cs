@@ -83,9 +83,124 @@ public static class FrameLedger
 
     public static long Total(Cat c) => Interlocked.Read(ref s_totals[(int)c]);
 
+    /// <summary>VITASHARP_HITCH_MS: a present this long after the previous one (emulation time, pauses excluded) logs a
+    /// <c>[hitch]</c> line with the per-cause host time of the interval (default 100 ms; 0 turns it off).</summary>
+    private static readonly double s_hitchMs = double.TryParse(Environment.GetEnvironmentVariable(EnvVars.HitchMs), System.Globalization.NumberStyles.Float,
+        System.Globalization.CultureInfo.InvariantCulture, out double hitchMs) ? hitchMs : 100;
+    private static readonly long[] s_hitchLast = new long[(int)Cat.Count];
+    private static long s_hitchPresentTicks, s_hitchGcCount;
+    private static int s_hitchLogged;
+
+    /// <summary>
+    /// Every present (guest thread), whether or not per-frame rows are kept: a present that comes more than
+    /// <see cref="s_hitchMs"/> after the previous one logs what the host did in between, by cause (texture uploads,
+    /// shader and pipeline work, the GC, JIT compilation, file reads, the guest waiting for the GPU), so a hitch the
+    /// player sees is in the log without a capture. Costs one timestamp per present; a line only on a hitch.
+    /// </summary>
+    private static void NoteHitch(long frame)
+    {
+        if (s_hitchMs <= 0)
+        {
+            return;
+        }
+
+        long now = EmulationPause.ActiveHostTicks;
+        long prev = s_hitchPresentTicks;
+        s_hitchPresentTicks = now;
+        double ms = (now - prev) * 1000.0 / Stopwatch.Frequency;
+        if (prev == 0 || ms < s_hitchMs)
+        {
+            SnapshotHitch();
+            return;
+        }
+
+        s_totals[(int)Cat.GcPause] = GC.GetTotalPauseDuration().Ticks * Stopwatch.Frequency / TimeSpan.TicksPerSecond;
+        s_totals[(int)Cat.PacingSleep] = Cpu.CpuCore.SleepStats[0].Actual + Cpu.CpuCore.SleepStats[1].Actual;
+        int gcs = GC.CollectionCount(0) - (int)s_hitchGcCount;
+        string? line = HitchLine(frame, ms, s_totals, s_hitchLast, gcs);
+        SnapshotHitch();
+        // a long run of them (a load) is summarised by the periodic report: the first 200 only
+        if (line != null && Interlocked.Increment(ref s_hitchLogged) <= 200)
+        {
+            Log.Info(line);
+        }
+    }
+
+    private static void SnapshotHitch()
+    {
+        s_totals[(int)Cat.GcPause] = GC.GetTotalPauseDuration().Ticks * Stopwatch.Frequency / TimeSpan.TicksPerSecond;
+        s_totals[(int)Cat.PacingSleep] = Cpu.CpuCore.SleepStats[0].Actual + Cpu.CpuCore.SleepStats[1].Actual;
+        for (int i = 0; i < (int)Cat.Count; i++)
+        {
+            s_hitchLast[i] = Interlocked.Read(ref s_totals[i]);
+        }
+
+        s_hitchGcCount = GC.CollectionCount(0);
+    }
+
+    /// <summary>The <c>[hitch]</c> line: the interval, then each cause that took at least 1 ms of it, largest first.
+    /// Pure, unit-tested (FrameLedgerHitchTests).</summary>
+    internal static string? HitchLine(long frame, double intervalMs, ReadOnlySpan<long> totals, ReadOnlySpan<long> last, int gcs)
+    {
+        if (totals.Length < (int)Cat.Count || last.Length < (int)Cat.Count)
+        {
+            return null;
+        }
+
+        Span<double> ms = stackalloc double[(int)Cat.Count];
+        for (int i = 0; i < (int)Cat.Count; i++)
+        {
+            ms[i] = (totals[i] - last[i]) * 1000.0 / Stopwatch.Frequency;
+        }
+
+        var sb = new System.Text.StringBuilder(160);
+        sb.Append(System.Globalization.CultureInfo.InvariantCulture, $"[hitch] present {frame}: {intervalMs:F0} ms since the previous one;");
+        bool any = false;
+        Span<bool> done = stackalloc bool[(int)Cat.Count];
+        done.Clear(); // the assembly skips locals init: stackalloc is not zeroed
+        for (int n = 0; n < (int)Cat.Count; n++)
+        {
+            int best = -1;
+            for (int i = 0; i < (int)Cat.Count; i++)
+            {
+                if (!done[i] && ms[i] >= 1 && (best < 0 || ms[i] > ms[best]))
+                {
+                    best = i;
+                }
+            }
+
+            if (best < 0)
+            {
+                break;
+            }
+
+            done[best] = true;
+            any = true;
+            sb.Append(System.Globalization.CultureInfo.InvariantCulture, $" {Names[best]} {ms[best]:F0} ms");
+            if (best == (int)Cat.GcPause && gcs > 0)
+            {
+                sb.Append(System.Globalization.CultureInfo.InvariantCulture, $" ({gcs} collections)");
+            }
+
+            sb.Append(',');
+        }
+
+        if (!any)
+        {
+            sb.Append(" no measured cause (guest code, GPU, or an unmeasured host wait)");
+        }
+        else
+        {
+            sb.Length--;
+        }
+
+        return sb.ToString();
+    }
+
     /// <summary>Called at each present (guest thread): stores the per-cause deltas of the frame that just ended.</summary>
     public static void OnPresent(long frame)
     {
+        NoteHitch(frame);
         long[]? rows = s_rows;
         if (rows == null)
         {

@@ -175,6 +175,12 @@ public static class CaptureAnalyzer
             sb.AppendLine(FormattableString.Invariant($"marked by the player at {(mark.Ns - startNs) / 1e9:+0.000;-0.000} s (guest frame {mark.Flip}){(hasState ? $": {CaptureStates.FileName(name)}, re-run from it with rerun --from={name}" : ": no save state")}"));
         }
 
+        // the [hitch] lines of the recording (Util/FrameLedger.cs): what the host did in each long present interval
+        foreach (string l in HitchLines(dir))
+        {
+            sb.AppendLine(l);
+        }
+
         sb.AppendLine();
         sb.AppendLine($"Findings ({findings.Count}):");
         if (findings.Count == 0)
@@ -1021,6 +1027,48 @@ public static class CaptureAnalyzer
                 lines.Add(l);
             }
         }
+        return lines;
+    }
+
+    /// <summary>The <c>[hitch]</c> lines of the capture's log (a present long after the previous one, by cause; at most
+    /// 20, the longest first), or nothing.</summary>
+    internal static List<string> HitchLines(string dir)
+    {
+        var lines = new List<string>();
+        string log = Path.Combine(dir, "log.txt");
+        if (!File.Exists(log))
+        {
+            return lines;
+        }
+
+        var hitches = new List<(double Ms, string Text)>();
+        foreach (string l in File.ReadLines(log))
+        {
+            int at = l.IndexOf("[hitch] ", StringComparison.Ordinal);
+            if (at < 0)
+            {
+                continue;
+            }
+
+            string text = l[(at + "[hitch] ".Length)..];
+            int colon = text.IndexOf(": ", StringComparison.Ordinal);
+            int msEnd = colon < 0 ? -1 : text.IndexOf(" ms since", colon, StringComparison.Ordinal);
+            double ms = msEnd > colon && double.TryParse(text[(colon + 2)..msEnd], NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v : 0;
+            hitches.Add((ms, text));
+        }
+
+        if (hitches.Count == 0)
+        {
+            return lines;
+        }
+
+        lines.Add("");
+        lines.Add($"Hitches in the log ({hitches.Count}, a present more than VITASHARP_HITCH_MS after the previous one; the host time of the interval by cause):");
+        foreach ((double _, string text) in hitches.OrderByDescending(h => h.Ms).Take(20))
+        {
+            lines.Add("  " + text);
+        }
+
         return lines;
     }
 
