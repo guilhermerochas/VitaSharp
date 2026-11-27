@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Cpu.Backends;
 using VitaSharp.Core.Cpu.Native;
@@ -41,6 +42,19 @@ public sealed unsafe partial class NativeJitTests
             s->TierUpRequest = 0;
             CpuCore.Interpret(s, BlockBuilder.Build(s->R[15], s->Thumb != 0));
         }
+    }
+
+    /// <summary>
+    /// The runner of the ARM64 tests keeps the block counts on every host: the sandbox by default, and the host runtime
+    /// of an ARM64 process because the test assembly asks for it (<see cref="Arm64Runner.CountBlocksOnArm64Hosts"/>).
+    /// Without that, the count checks of every test here failed on ARM64 hosts (seen under qemu-aarch64).
+    /// </summary>
+    [Arm64SandboxFact]
+    public void Arm64RunnerKeepsBlockCounts()
+    {
+        EnsureGuestPages();
+        using IArm64Runner runner = Arm64Runner.Create();
+        Assert.True(Arm64Runner.CountsBlocks(runner), "the runner's trampoline is the budget-only one: NBlocks/NInstr stay 0");
     }
 
     [Arm64SandboxTheory]
@@ -136,6 +150,101 @@ public sealed unsafe partial class NativeJitTests
         Arm64Smoke(false, words);
     }
 
+    /// <summary>
+    /// The block of the seed 2202 difference seen under qemu-aarch64 (R3/R10 0 in the interpreter, 0x39 natively), with
+    /// the memory it touches set before each run. T32 LDMDB r12!, {r3,r4,r6,r7,r9,r10,r11,lr} loads the eight words
+    /// below r12 in register order (lowest register from the lowest address) and writes r12-32 back (Rn is not in the
+    /// list); STMIA r12, {r1-r8,r12,lr} then stores over the same words without writeback, r12 being the written-back
+    /// value. The full fuzz block adds the SMLAWB that takes the loaded r10 as its accumulator (the R3 of the report).
+    /// </summary>
+    [Arm64SandboxTheory]
+    [InlineData("E93C4ED8,E88C51FE,E7FE", DataBase + 0x1000, true)]
+    [InlineData("9736,EAFD2245,E93C4ED8,E88C51FE,EA79D72C,FB36A361,3927,1592,50FF,2C19,9E04,E7FE", DataBase + 0x1000, true)]
+    [InlineData("9736,EAFD2245,E93C4ED8,E88C51FE,EA79D72C,FB36A361,3927,1592,50FF,2C19,9E04,E7FE", 0x2C0E6AACu, true)]
+    // the reported address left unmapped, as in the fuzz run: without a data abort handler the interpreter and native
+    // code both read and write the guest window's host memory (demand-zero, never a fault)
+    [InlineData("E93C4ED8,E88C51FE,E7FE", 0x3C0E6AACu, false)]
+    [InlineData("9736,EAFD2245,E93C4ED8,E88C51FE,EA79D72C,FB36A361,3927,1592,50FF,2C19,9E04,E7FE", 0x3C0E6AACu, false)]
+    public void Arm64ThumbLdmdbWritebackThenStmMatchesInterpreter(string words, uint r12, bool mapWindow)
+    {
+        EnsureGuestPages();
+        const uint Window = 0x40;
+        uint low = r12 - 0x20;
+        Assert.True(mapWindow || fx.Memory.FindBlock(low) == null, "the unmapped cases need an unmapped window");
+        if (mapWindow && fx.Memory.FindBlock(low) == null)
+        {
+            Assert.True(fx.Memory.MapFixed(low & ~0xFFFu, 0x1000, "ldm window"), "map the LDM window");
+        }
+
+        var bytes = new List<byte>();
+        foreach (string w in words.Split(','))
+        {
+            uint v = Convert.ToUInt32(w, 16);
+            if (w.Length > 4)
+            {
+                bytes.AddRange([(byte)(v >> 16), (byte)(v >> 24), (byte)v, (byte)(v >> 8)]);
+            }
+            else
+            {
+                bytes.AddRange([(byte)v, (byte)(v >> 8)]);
+            }
+        }
+
+        bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+        Block b = BlockBuilder.Build(CodeBase, true);
+        using IArm64Runner sb = Arm64Runner.Create();
+        CompiledBlock cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs)!;
+        output.WriteLine(DescribeArm64(b, cb));
+        // the initial registers of the reported run (r12 moved into the mapped data for the first two cases)
+        uint[] regs =
+        [
+            0x00204EA0, 0x00000039, 0xB0C05857, 0x00000038, 0x002061B4, 0x00205182, 0xF617CA5B, 0x002065A5,
+            0x00204A11, 0x00205A34, 0x51056FAE, 0x002048F8, r12, 0x0020474C, 0x3464ADB4,
+        ];
+        CpuState* s = CpuState.Allocate();
+        try
+        {
+            var st = new RandomState(new Random(2202)) { Flags = 0x38040000, Fpscr = 0x03000000 };
+            regs.CopyTo(st.Regs, 0);
+            uint[] memory = new uint[Window / 4];
+            for (int i = 0; i < memory.Length; i++)
+            {
+                memory[i] = 0x1111_0000u + (uint)i;
+            }
+
+            void Init()
+            {
+                st.Apply(s, true);
+                MemoryMarshal.AsBytes(memory.AsSpan()).CopyTo(GuestMemory.Span(low, (int)Window));
+            }
+            Init();
+            Snapshot interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
+            byte[] interpWindow = GuestMemory.Span(low, (int)Window).ToArray();
+            if (b.Insts.Length == 3)
+            {
+                // the ARM semantics, independently of both backends
+                Assert.Equal(low, interp.R[12]);
+                int[] loaded = [3, 4, 6, 7, 9, 10, 11, 14];
+                for (int i = 0; i < loaded.Length; i++)
+                {
+                    Assert.Equal(memory[i], interp.R[loaded[i]]);
+                }
+
+                uint[] stored = [regs[1], regs[2], memory[0], memory[1], regs[5], memory[2], memory[3], regs[8], low, memory[7]];
+                Assert.Equal(stored, MemoryMarshal.Cast<byte, uint>(interpWindow.AsSpan(0, stored.Length * 4)).ToArray());
+            }
+
+            Init();
+            Snapshot native = Take(s, Guard(() => RunArm64(sb, s, cb.NativeEntry)));
+            Assert.Equal("", Diff(interp, native));
+            Assert.Equal(interpWindow, GuestMemory.Span(low, (int)Window).ToArray());
+        }
+        finally
+        {
+            CpuState.Free(s);
+        }
+    }
+
     [Arm64SandboxTheory]
     [InlineData(false, 1_500, 2101, false)]
     [InlineData(true, 1_500, 2102, false)]
@@ -189,6 +298,7 @@ public sealed unsafe partial class NativeJitTests
                 {
                     st.Apply(s, thumb);
                     codeSnap.CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+                    ClearAroundOutsideRegisters(st);
                 }
                 if (s_trace != null)
                 {
@@ -265,6 +375,29 @@ public sealed unsafe partial class NativeJitTests
         }
 
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
+    }
+
+    /// <summary>
+    /// Memory a random state reaches outside the data the state restores: a register with a random 32-bit value
+    /// addresses guest memory no test maps (seed 2202: LDMDB r12! / STMIA r12 at 0x2C0E6A8C), whose host memory keeps
+    /// what each run stores. The differential then compared the native run against interpreter runs that had seen other
+    /// memory (LDM loads what the previous run's STM stored over the same words). The page around each such register is
+    /// cleared before every run, so every run starts from the same memory.
+    /// </summary>
+    private static void ClearAroundOutsideRegisters(RandomState st)
+    {
+        foreach (uint value in st.Regs)
+        {
+            uint page = value & ~0xFFFu;
+            uint low = page >= 0x1000 ? page - 0x1000 : 0;
+            ulong high = Math.Min((ulong)page + 0x2000, 0x1_0000_0000UL);
+            bool overlapsCode = low < CodeBase + 0x1000 && high > CodeBase;
+            bool overlapsData = low < DataBase + DataSize && high > DataBase;
+            if (!overlapsCode && !overlapsData)
+            {
+                GuestMemory.Span(low, (int)(high - low)).Clear();
+            }
+        }
     }
 
     /// <summary>

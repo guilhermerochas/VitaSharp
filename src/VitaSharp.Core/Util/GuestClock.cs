@@ -90,7 +90,7 @@ public static partial class GuestClock
         get
         {
             long f = Volatile.Read(ref s_frozen);
-            return f != NotFrozen ? f : RealElapsed + Interlocked.Read(ref s_offset);
+            return f != NotFrozen ? f : Live();
         }
     }
 
@@ -105,7 +105,7 @@ public static partial class GuestClock
             return;
         }
 
-        Volatile.Write(ref s_frozen, RealElapsed + Interlocked.Read(ref s_offset));
+        Volatile.Write(ref s_frozen, Live());
     }
 
     /// <summary>Restarts the clock from the reading it stopped at: the time spent frozen never reaches the guest, so a
@@ -118,7 +118,7 @@ public static partial class GuestClock
             return;
         }
 
-        Interlocked.Exchange(ref s_offset, f - RealElapsed);
+        Interlocked.Exchange(ref s_offset, f - RealElapsed + LagTicks);
         Volatile.Write(ref s_frozen, NotFrozen);
     }
 
@@ -189,7 +189,7 @@ public static partial class GuestClock
             Thread.Sleep(1);
             return;
         } // the thread finishing a GPU scene: the frozen clock never gets there
-        long now = Ticks;
+        long now = WaitTicks;
         if (now >= deadline)
         {
             return;
@@ -210,7 +210,7 @@ public static partial class GuestClock
         while (true)
         {
             long off = Interlocked.Read(ref s_offset);
-            long needed = deadline - RealElapsed;
+            long needed = deadline - RealElapsed + LagTicks;
             if (needed <= off)
             {
                 return;
