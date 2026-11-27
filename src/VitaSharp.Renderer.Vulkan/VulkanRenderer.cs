@@ -298,7 +298,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         Core.Gxm.Shader.ShaderGenerator.VectorLoads = Environment.GetEnvironmentVariable(EnvVars.ShaderVec4Loads)?.Trim() == "1";
         // split uniform slots need six dynamic storage buffers in set 0 (two more per stage)
         Core.Gxm.Shader.ShaderGenerator.SplitUniformSlots = Environment.GetEnvironmentVariable(EnvVars.UbShare)?.Trim() != "0"
-            && _core.Properties.Limits.MaxDescriptorSetStorageBuffersDynamic >= 6;
+            && _core.Properties.Limits.MaxDescriptorSetStorageBuffersDynamic >= 6
+            && !_core.Caps.Has(GpuQuirk.AvoidSplitUniformSlots);
         for (int i = 0; i < s_framesInFlight; i++)
         {
             _frames[i] = CreateFrame();
