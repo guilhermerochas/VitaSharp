@@ -5172,7 +5172,9 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   jogo (cena 704x384 ampliada para 960x544, também no aparelho). O F8 agora diz a resolução interna (context.txt
   "gpu:" e report.txt "internal resolution:"), e o trace e o draw ring dizem a escala de cada cena e a origem e a
   escala de cada textura ("*2x", "*2x>1x" quando a resolução interna se perde). Achado à parte: uma textura com mips
-  cujo nível 0 é um alvo (VulkanRenderer.RtMips.cs) lê o nível 0 pela cópia nativa acima de 1x (não é o caso do AC3L).
+  cujo nível 0 é um alvo (VulkanRenderer.RtMips.cs) lia o nível 0 pela cópia nativa acima de 1x (não é o caso do AC3L);
+  corrigido (rtmips1): acima de 1x a cadeia é montada na escala do alvo (nível 0 = o alvo ampliado, níveis da memória
+  ampliados por nearest), o trace não marca mais "*2x>1x" nesse caminho; teste RendererRtMipsTests.
 - [ ] [P1][G] PSM em Unity não abre (relato do usuário, 22/11/2026; log de 19:33, NPOA00239): o título traz o próprio
   runtime (`ux0:psm/<título>/runtime/eboot.bin`, PCSI00010 "Unity Runtime for PlayStation Mobile", mais mono_prx e
   bridge_prx), que está cifrado com a chave do conteúdo, e o carregador o lê como SELF comum: `InvalidDataException: Not

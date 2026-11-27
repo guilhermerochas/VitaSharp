@@ -303,7 +303,7 @@ public sealed unsafe partial class VulkanRenderer
         foreach ((RenderTarget, uint X, uint Y, uint Format, uint W, uint H, uint Mips, bool Gamma) k in _mipKeys)
         {
             _rtMipTextures.Remove(k, out RtMipTexture? rtMipTexture);
-            ReleaseImage(rtMipTexture!.Image, rtMipTexture.View, rtMipTexture.Mem, now);
+            ReleaseRtMip(rtMipTexture!, now);
         }
         foreach (RtAlias rtAlias in _rtAliases.Values)
         {
@@ -571,7 +571,7 @@ public sealed unsafe partial class VulkanRenderer
                     }
                     {
                         var m = (RtMipTexture)candidate.Value;
-                        ReleaseImage(m.Image, m.View, m.Mem, now);
+                        ReleaseRtMip(m, now);
                     }
                     break;
                 case 4:
