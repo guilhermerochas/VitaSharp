@@ -287,6 +287,11 @@ public static class Runner
             Log.Warn("Data folder: " + DataPaths.Current.Warning);
         }
 
+        if (PhoneProfile.Active)
+        {
+            Log.Info($"Phone profile: {PhoneProfile.Describe(Environment.GetEnvironmentVariable)}");
+        }
+
         if (DebugMode.Enabled)
         {
             Log.Info("[dbg] debug mode on (first-use logging, HLE errors, anomaly checks, periodic PERF, deduplicated warnings)");

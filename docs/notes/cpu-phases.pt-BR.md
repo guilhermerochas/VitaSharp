@@ -74,19 +74,39 @@ código (nenhum bloco do corpo do laço interpretado, nenhuma chamada ao interpr
 guest, as trocas de bloco ficam no código nativo (voltas do despachante só nas checagens de ritmo), um laço em modo
 vetorial VFP não interpreta nada depois de aquecido. Tempos-limite curtos estão no `PreciseTimeoutTests`.
 
-## Reproduzir o tempo do celular no PC
+## Reproduzir o tempo do celular no PC (o perfil celular)
 
-O celular roda .NET compilado antes (sem JIT em tempo de execução) em núcleos mais lentos. O mais próximo no PC:
+O celular roda .NET compilado antes (sem JIT em tempo de execução) em núcleos mais lentos, com esperas que nunca giram,
+a GPU Mali e um orçamento de gen0 do GC de 4 MB. O perfil celular do desktop liga tudo isso de uma vez:
 
-1. Publique o build Native AOT do desktop (sem JIT do .NET em tempo de execução, como no celular; as pausas de JIT no
-   primeiro uso somem):
-   `dotnet publish src/VitaSharp.Desktop -c Release -r win-x64 -p:VitaSharpRelease=true -p:VitaSharpAot=true -o <pasta>`
-   (`linux-x64` / `osx-arm64` nesses sistemas; os requisitos estão no `VitaSharp.Desktop.csproj`). O backend IL da CPU
-   não existe nele, como no celular.
-2. Mantenha o relógio do guest como o do celular: os 333 MHz padrão (`VITASHARP_CPU_MHZ`), sem `--speed`.
-3. Dê menos núcleos do host: fixe o processo em dois núcleos (Windows: `start /affinity 3`; Linux: `taskset -c 0,1`).
-4. Leia as linhas `PERF phases` e `[phase-alert]`: uma fase que no PC já passa do orçamento em ns por ciclo do guest
-   fica ainda mais lenta no celular.
+```
+build/phone-profile.sh  --data <pasta vazia> -- run <jogo ou .vpk> [opções do run]   # Linux, macOS (Git Bash também)
+build/phone-profile.ps1 -Data <pasta vazia> run <jogo ou .vpk> [opções do run]       # Windows
+```
 
-O que isso não reproduz: o código do backend ARM64 (o PC roda o backend x64), os timers do celular (nanosleep do Linux,
-sem giro: `HostTuning.AvoidBusyWaits`) e os clocks térmicos dele.
+O roteiro publica o build Native AOT do desktop uma vez numa pasta fixa (`<temp>/vitasharp-phone-profile`;
+`--publish` / `-Publish` de novo depois de mudar o código; os requisitos do AOT estão no `VitaSharp.Desktop.csproj`:
+ferramentas de build do MSVC no Windows, clang + zlib no Linux, as ferramentas de linha de comando do Xcode no macOS),
+deixa uma pasta de dados nova sensível a maiúsculas como a do Android (Windows: `fsutil file setCaseSensitiveInfo`, numa
+pasta vazia, sem administrador; o Linux já é; macOS só num volume sensível a maiúsculas), roda com
+`VITASHARP_PHASE_PROF=1` e mostra as linhas `Phone profile:`, fps, `PERF phases` e `[phase-alert]` do log.
+
+`--phone-profile` (ou `VITASHARP_PHONE_PROFILE=1`) em qualquer comando do `VitaSharp.Desktop` (`Core/Util/PhoneProfile.cs`):
+
+| Opção | Perfil celular | Android |
+|---|---|---|
+| esperas | `HostTuning.AvoidBusyWaits` (dorme, nunca gira) | o mesmo (GamePerformance) |
+| GPU | `VITASHARP_GPU_PROFILE=mali` (sem BCn: transcodificação ASTC, quirks de tile-based, limites da Mali) | a Mali-G57 de verdade |
+| relógio do guest | `VITASHARP_CPU_MHZ=333` | 333 MHz |
+| núcleos do host | dois (`VITASHARP_PHONE_AFFINITY`, padrão CPUs n-4 e n-2; `0` = sem fixar) | dois rápidos + seis lentos |
+| GC | `DOTNET_GCgen0size=0x400000` (o processo se reinicia quando falta: o GC só lê na partida) | o mesmo, embutido na biblioteca |
+| runtime | Native AOT quando roda pelo roteiro (o log diz "runtime with JIT" senão) | Native AOT |
+
+Um valor que já está no ambiente vence o do perfil. O log tem uma linha `Phone profile:` com o que o processo recebeu
+de verdade (núcleos, gen0, runtime, se a pasta de dados é sensível a maiúsculas), e as notas de uma captura F8 têm o
+mesmo como `phone-profile:` (`off` sem ele).
+
+O que isso não reproduz: o código do backend ARM64 (o PC roda o backend x64), os núcleos mais lentos do celular (um
+núcleo do PC roda o mesmo código do guest várias vezes mais rápido; os seis núcleos lentos, onde vão as threads
+auxiliares, também não existem), os timers do Linux e os clocks térmicos do celular. A pasta de um jogo ligada (junction)
+numa pasta de dados de teste mantém a sensibilidade a maiúsculas da pasta para onde aponta.
