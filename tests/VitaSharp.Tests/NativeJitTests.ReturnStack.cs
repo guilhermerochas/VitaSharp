@@ -115,7 +115,7 @@ public sealed unsafe partial class NativeJitTests
 
     private static uint[] ToWords(ushort[] halves)
     {
-        var words = new uint[(halves.Length + 1) / 2];
+        uint[] words = new uint[(halves.Length + 1) / 2];
         for (int i = 0; i < halves.Length; i++)
         {
             words[i / 2] |= (uint)halves[i] << (16 * (i & 1));
