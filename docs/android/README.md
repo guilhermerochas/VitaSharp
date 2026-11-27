@@ -523,8 +523,11 @@ happened with `mono-aot` and in the earlier phone runs, so it is a driver issue,
   Média = click, Forte = heavy click), tuned by the maker for its motor; before Android 10 a 20/30/45 ms one-shot at
   the strength's amplitude when the motor supports it. It plays with the media/game vibration usage, so the system's
   touch-vibration switch does not silence it (a short one-shot at the default amplitude was not felt on a linear motor).
-- **Hide the on-screen controls**: the small button by the fps counter and the pause chip (top centre; it hides and
-  comes back with the pause chip, also when the fps counter is off) shows or hides the on-screen controls with one
+- **Top row** (`GameChromeLayout`, tests `GameChromeLayoutTests`): the fps counter in the top centre, the pause chip
+  at the top right and the on-screen controls button at the top left; the two buttons hide and come back together
+  (`ChromeAutoHide`).
+- **Hide the on-screen controls**: the small button at the top left (it hides and comes back with the pause chip,
+  also when the fps counter is off) shows or hides the on-screen controls with one
   tap, and so does the pause menu's **Controles na tela** (the same code, `OnScreenVisibility`). The choice is saved
   for every game (`ShowOnScreenControls` in the app settings, like the controls' opacity and "hide with a
   controller"); hidden, the whole screen is the game's touch. A connected controller still hides them when "Esconder
@@ -1273,7 +1276,7 @@ runs, Devious Dungeon 11.2 M); Devious Dungeon town 49.3-49.8 fps against 47.2-4
 
 The 960×544 image is scaled to the screen height and centred. Translucent controls sit over the side margins: L/R in
 the corners, D-pad and left stick on the left, face buttons and right stick on the right, SELECT/PS/START at the
-bottom, a rear-touch toggle (TRÁS) and a small FPS + pause bar at the top. Pressed controls switch to the accent
+bottom, a rear-touch toggle (TRÁS) and along the top the controls button (left), the FPS counter (centre) and the pause chip (right). Pressed controls switch to the accent
 colour. A trophy unlock shows a toast ("Troféu desbloqueado", name and grade) at the top right. In a game started on
 its own (no shell running) the PS button opens the pause menu.
 
