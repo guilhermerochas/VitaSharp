@@ -5344,6 +5344,12 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   parados); as threads do MGS no início da captura não estão presas em nada anormal. Falta a captura do mesmo plano
   com o MGS aberto direto (pedida ao usuário em 16/11) para separar "depende da troca" de "o plano é assim aqui".
   Entrega movida para "Corrigido, falta o usuário testar" (liberação dos recursos da GPU, vram1, 22/11/2026); o resto segue aberto aqui.
+  27/11/2026 (mgs1): a captura `shell_20261115_225727_tudo` e o dump bom de 12/11 já não existem na pasta de capturas;
+  o `replay-gpu` do quadro não pôde ser refeito. Corrigido o `[vram] pressure 198% ... evicting 0 MB`: a pressão contava
+  o heap pequeno device-local/host-visible (BAR) onde o renderer não aloca, e a cada 4 presents devolvia as páginas
+  vazias do pool sem nada a liberar; agora só contam os heaps onde o renderer aloca, e o log diz o heap, a folga do pool
+  e a reserva (`VramPressureHeapTests`). Não explica as draws que faltam. Falta: nova captura "Gravar tudo" do plano
+  depois da troca e uma do MGS aberto direto (sem o GoW), para comparar draw a draw.
 - [x] (18/11/2026, usuário: corrigido; reabre se aparecer de novo) [P1][G] Metal Gear Solid HD Collection (PCSE00020), subitem que sobrou do relato de 11/11/2026 (o resto está em "Corrigido, falta o usuário testar"):
   - **Ainda aberto: escurecimento de um quadro (cabeça do tripulante e bloom, flashes 2752-2778 da captura
     010709; são os flashes que sobram com a correção acima).** No replay do dump 010709 (quadros 2740-2790) aparecem

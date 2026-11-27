@@ -1155,6 +1155,11 @@ public sealed unsafe class VkCore : IDisposable
     private readonly long[] _directDevice = new long[MemCats];  // whole allocations in device-local heaps
     private readonly long[] _directHost = new long[MemCats];    // whole allocations in host heaps
     private long _poolPages, _peakDevice, _peakHost, _failures, _capRefusals;
+    /// <summary>Bit per memory heap the renderer has allocated device-local memory in (<see cref="DevicePressure"/>).</summary>
+    private uint _deviceHeapMask;
+
+    /// <summary>The heaps the renderer has allocated device-local memory in, one bit per heap index.</summary>
+    public uint DeviceHeapMask => Volatile.Read(ref _deviceHeapMask);
     private readonly Dictionary<ulong, (ulong Size, MemCat Cat, bool Device, bool Pooled)> _allocations = new();
 
     /// <summary>
@@ -1247,6 +1252,12 @@ public sealed unsafe class VkCore : IDisposable
 
         if (device)
         {
+            int heapIndex = (int)MemoryProperties.MemoryTypes[(int)type].HeapIndex;
+            if (heapIndex < 32)
+            {
+                Interlocked.Or(ref _deviceHeapMask, 1u << heapIndex);
+            }
+
             long d = DeviceBytes;
             if (d > _peakDevice)
             {
@@ -1389,38 +1400,71 @@ public sealed unsafe class VkCore : IDisposable
 
     /// <summary>
     /// How full device-local memory is, 0..1+: with the budget cap, the renderer's device-local bytes over the cap;
-    /// with VK_EXT_memory_budget, the fullest device-local heap's usage over its budget (the budget shrinks when other
-    /// processes use the GPU); otherwise the renderer's bytes over 80% of the largest device-local heap (50% on
-    /// mobile/unified-memory devices, <see cref="GpuQuirk.ConservativeMemoryBudget"/>).
+    /// with VK_EXT_memory_budget, the fullest device-local heap the renderer allocates in, its usage over its budget
+    /// (the budget shrinks when other processes use the GPU); otherwise the renderer's bytes over 80% of the largest
+    /// device-local heap (50% on mobile/unified-memory devices, <see cref="GpuQuirk.ConservativeMemoryBudget"/>).
     /// </summary>
-    public double DevicePressure()
+    public double DevicePressure() => DevicePressure(out _);
+
+    /// <param name="heapIndex">The heap that sets the pressure (-1: none, the budget cap or the fallback).</param>
+    public double DevicePressure(out int heapIndex)
     {
+        heapIndex = -1;
         if (BudgetCap > 0)
         {
             return DeviceBytes / (double)BudgetCap;
         }
 
-        double worst = 0;
-        ulong largest = 0;
-        foreach (HeapInfo heapInfo in Heaps())
+        HeapInfo[] heaps = Heaps();
+        if (MemoryBudgetSupported)
         {
-            if (!heapInfo.DeviceLocal)
+            return HeapPressure(heaps, DeviceHeapMask, out heapIndex);
+        }
+
+        ulong largest = 0;
+        foreach (HeapInfo heapInfo in heaps)
+        {
+            if (heapInfo.DeviceLocal)
+            {
+                largest = Math.Max(largest, heapInfo.Size);
+            }
+        }
+        return largest == 0 ? 0 : DeviceBytes / (largest * Caps.FallbackBudgetFraction);
+    }
+
+    /// <summary>
+    /// The fullest device-local heap's usage over its budget, counting only the heaps in <paramref name="usedHeapMask"/>
+    /// (the heaps the renderer allocates device-local memory in; 0 = none yet, every device-local heap counts). A
+    /// device-local heap the renderer never allocates in (the small host-visible BAR heap of a desktop GPU without
+    /// resizable BAR, filled by the driver and other processes) does not count: evicting the renderer's caches cannot
+    /// lower its usage, and counting it kept the pressure trim returning the image pool's empty pages every 4 presents
+    /// with nothing evicted ("[vram] pressure 198% ... evicting 0 MB", MGS HD after switching games through the shell).
+    /// </summary>
+    internal static double HeapPressure(ReadOnlySpan<HeapInfo> heaps, uint usedHeapMask, out int heapIndex)
+    {
+        heapIndex = -1;
+        double worst = 0;
+        foreach (HeapInfo heapInfo in heaps)
+        {
+            if (!heapInfo.DeviceLocal || heapInfo.Budget == 0)
             {
                 continue;
             }
 
-            largest = Math.Max(largest, heapInfo.Size);
-            if (heapInfo.Budget > 0)
+            bool used = heapInfo.Index < 32 && (usedHeapMask & (1u << heapInfo.Index)) != 0;
+            if (usedHeapMask != 0 && !used)
             {
-                worst = Math.Max(worst, heapInfo.Usage / (double)heapInfo.Budget);
+                continue;
+            }
+
+            double pressure = heapInfo.Usage / (double)heapInfo.Budget;
+            if (pressure > worst)
+            {
+                worst = pressure;
+                heapIndex = heapInfo.Index;
             }
         }
-        if (MemoryBudgetSupported)
-        {
-            return worst;
-        }
-
-        return largest == 0 ? 0 : DeviceBytes / (largest * Caps.FallbackBudgetFraction);
+        return worst;
     }
 
     private static string Mb(double bytes) => $"{bytes / 1048576.0:F0} MB";
@@ -1437,6 +1481,10 @@ public sealed unsafe class VkCore : IDisposable
             }
 
             sb.Append($"heap {heapInfo.Index} {(heapInfo.DeviceLocal ? "device-local" : "host")} {heapInfo.Size / 1073741824.0:F1} GB");
+            if (heapInfo.DeviceLocal && heapInfo.Index < 32 && (DeviceHeapMask & (1u << heapInfo.Index)) == 0)
+            {
+                sb.Append(" (no renderer allocations: not in the pressure)");
+            }
             if (heapInfo.Budget > 0)
             {
                 sb.Append($": budget {Mb(heapInfo.Budget)}, usage {Mb(heapInfo.Usage)} ({100.0 * heapInfo.Usage / heapInfo.Budget:F0}%)");

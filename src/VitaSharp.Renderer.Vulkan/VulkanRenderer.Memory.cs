@@ -751,12 +751,12 @@ public sealed unsafe partial class VulkanRenderer
 
     private void TrimForPressure()
     {
-        double p = _core.DevicePressure();
+        double p = _core.DevicePressure(out int pressureHeap);
         // log crossings of 75% / 90% (with hysteresis) in normal play too
         int level = p >= PressureHigh ? 2 : p >= 0.75 ? 1 : 0;
         if (level > _pressureLogged)
         {
-            Log.Info($"[vram] device-local usage at {p * 100:F0}% of the {(_core.BudgetCap > 0 ? "test cap" : "budget")}: {VramSummary()}");
+            Log.Info($"[vram] device-local usage at {p * 100:F0}% of the {(_core.BudgetCap > 0 ? "test cap" : "budget")}{PressureHeapText(pressureHeap)}: {VramSummary()}");
         }
 
         if (level > _pressureLogged || p < 0.70)
@@ -795,9 +795,13 @@ public sealed unsafe partial class VulkanRenderer
         ulong trimmed = _imagePool.TrimEmptyPages(keepSpare: 0);
         if ((freed > 0 || trimmed > 0) && (_pressureTrims <= 5 || _pressureTrims % 100 == 0))
         {
-            Log.Info($"[vram] pressure {p * 100:F0}% at present {_presentCount}: evicting {freed >> 20} MB of least recently used caches, {trimmed >> 20} MB of empty pages returned (trim #{_pressureTrims}); {VramSummary()}");
+            Log.Info($"[vram] pressure {p * 100:F0}%{PressureHeapText(pressureHeap)} at present {_presentCount}: pool free {free >> 20} MB of a {reserve >> 20} MB reserve, " +
+                     $"evicting {freed >> 20} MB of least recently used caches, {trimmed >> 20} MB of empty pages returned (trim #{_pressureTrims}); {VramSummary()}");
         }
     }
+
+    /// <summary>" (heap N)": the heap that sets the pressure, so a capture shows which budget is exceeded.</summary>
+    private static string PressureHeapText(int heapIndex) => heapIndex >= 0 ? $" (heap {heapIndex})" : "";
 
     // =================================================================== failures
 
