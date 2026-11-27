@@ -992,6 +992,39 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 
     // ------------------------------------------------------------------ start / stop
 
+    /// <summary>
+    /// A failure the game does not come back from (the GPU device was lost): a running recording stops and is saved
+    /// now, ending at the failure; with the pre-roll armed and no recording, one starts and stops at once, so the
+    /// capture keeps the seconds before the failure that the pre-roll holds. False when nothing is saved (no recording,
+    /// pre-roll off, or a capture is being saved). A GPU dump recording on its own (Ctrl+F8, VITASHARP_GPU_DUMP_AT) is
+    /// ended there too, so it is written with the commands up to the failure. Never blocks.
+    /// </summary>
+    public bool SaveOnFailure(string reason)
+    {
+        if (GpuDumpRecorder.Current is { } dump && (_rec == null || dump != _rec.Dump))
+        {
+            dump.Stop();
+            Log.Info($"[capture] {reason}: the GPU dump being recorded ends here");
+        }
+
+        bool saved;
+        if (_rec != null || _starting)
+        {
+            saved = Stop(reason);
+        }
+        else if (Armed && Start(reason))
+        {
+            saved = Stop(reason); // kept until the start completes (Stop's pending stop)
+        }
+        else
+        {
+            saved = false;
+        }
+
+        Log.Info($"[capture] {reason}: {(saved ? "the capture is saved by itself" : "no capture saved (no recording and no pre-roll)")}");
+        return saved;
+    }
+
     /// <summary>F8 / the pause menu: starts a recording, or stops the running one. Never blocks.</summary>
     public void Toggle(string reason = "hotkey")
     {

@@ -735,7 +735,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     {
         if (DroppedAfterDeviceLost())
         {
-            CommandsDroppedAfterDeviceLost++;
+            _commandsDroppedAfterDeviceLost++;
             return;
         }
 

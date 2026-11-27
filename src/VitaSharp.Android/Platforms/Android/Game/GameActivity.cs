@@ -603,9 +603,9 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     AView TopBar()
     {
         var bar = new FrameLayout(this);
-        _fps = Chip("— FPS", 12);
+        _fps = Chip(Loc.Format("MFpsCount", "\u2014"), 12);
         bar.AddView(_fps, ChromeSlot(GameChromeItem.Fps));
-        var pause = Chip("❚❚", 12);
+        var pause = Chip("\u275A\u275A", 12);
         _pauseChip = pause;
         pause.Click += (_, _) => OpenMenu();
         // not focusable: arrow keys of a keyboard (or a D-pad that is not a game controller) moved the focus onto it
@@ -615,7 +615,7 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         pause.PostDelayed(UpdatePauseChip, ChromeAutoHide.HideAfterMs);
         // shows/hides the on-screen controls; it hides and comes back with the pause chip (ChromeAutoHide), also
         // when the fps counter is off (the counter keeps its place, invisible)
-        var controlsChip = Chip("🎮", 12);
+        var controlsChip = Chip("\U0001F3AE", 12);
         _controlsChip = controlsChip;
         controlsChip.ContentDescription = Loc.Get("MOnScreenControls");
         controlsChip.Focusable = false;

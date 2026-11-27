@@ -448,7 +448,9 @@ public sealed unsafe partial class VulkanRenderer
     private bool _deviceLostDropped;
 
     /// <summary>Commands dropped since the device was lost (nothing recorded, nothing allocated).</summary>
-    internal long CommandsDroppedAfterDeviceLost;
+    internal long CommandsDroppedAfterDeviceLost => _commandsDroppedAfterDeviceLost;
+
+    private long _commandsDroppedAfterDeviceLost;
 
     /// <summary>Tests: the driver reported VK_ERROR_DEVICE_LOST (as vkCreateGraphicsPipelines does from any thread).</summary>
     internal void MarkDeviceLost() => _deviceLost = true;
