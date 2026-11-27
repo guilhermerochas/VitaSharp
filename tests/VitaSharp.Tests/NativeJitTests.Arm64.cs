@@ -158,15 +158,20 @@ public sealed unsafe partial class NativeJitTests
     /// value. The full fuzz block adds the SMLAWB that takes the loaded r10 as its accumulator (the R3 of the report).
     /// </summary>
     [Arm64SandboxTheory]
-    [InlineData("E93C4ED8,E88C51FE,E7FE", DataBase + 0x1000)]
-    [InlineData("9736,EAFD2245,E93C4ED8,E88C51FE,EA79D72C,FB36A361,3927,1592,50FF,2C19,9E04,E7FE", DataBase + 0x1000)]
-    [InlineData("9736,EAFD2245,E93C4ED8,E88C51FE,EA79D72C,FB36A361,3927,1592,50FF,2C19,9E04,E7FE", 0x2C0E6AACu)]
-    public void Arm64ThumbLdmdbWritebackThenStmMatchesInterpreter(string words, uint r12)
+    [InlineData("E93C4ED8,E88C51FE,E7FE", DataBase + 0x1000, true)]
+    [InlineData("9736,EAFD2245,E93C4ED8,E88C51FE,EA79D72C,FB36A361,3927,1592,50FF,2C19,9E04,E7FE", DataBase + 0x1000, true)]
+    [InlineData("9736,EAFD2245,E93C4ED8,E88C51FE,EA79D72C,FB36A361,3927,1592,50FF,2C19,9E04,E7FE", 0x2C0E6AACu, true)]
+    // the reported address left unmapped, as in the fuzz run: without a data abort handler the interpreter and native
+    // code both read and write the guest window's host memory (demand-zero, never a fault)
+    [InlineData("E93C4ED8,E88C51FE,E7FE", 0x3C0E6AACu, false)]
+    [InlineData("9736,EAFD2245,E93C4ED8,E88C51FE,EA79D72C,FB36A361,3927,1592,50FF,2C19,9E04,E7FE", 0x3C0E6AACu, false)]
+    public void Arm64ThumbLdmdbWritebackThenStmMatchesInterpreter(string words, uint r12, bool mapWindow)
     {
         EnsureGuestPages();
         const uint Window = 0x40;
         uint low = r12 - 0x20;
-        if (fx.Memory.FindBlock(low) == null)
+        Assert.True(mapWindow || fx.Memory.FindBlock(low) == null, "the unmapped cases need an unmapped window");
+        if (mapWindow && fx.Memory.FindBlock(low) == null)
         {
             Assert.True(fx.Memory.MapFixed(low & ~0xFFFu, 0x1000, "ldm window"), "map the LDM window");
         }
@@ -293,6 +298,7 @@ public sealed unsafe partial class NativeJitTests
                 {
                     st.Apply(s, thumb);
                     codeSnap.CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+                    ClearAroundOutsideRegisters(st);
                 }
                 if (s_trace != null)
                 {
@@ -369,6 +375,29 @@ public sealed unsafe partial class NativeJitTests
         }
 
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
+    }
+
+    /// <summary>
+    /// Memory a random state reaches outside the data the state restores: a register with a random 32-bit value
+    /// addresses guest memory no test maps (seed 2202: LDMDB r12! / STMIA r12 at 0x2C0E6A8C), whose host memory keeps
+    /// what each run stores. The differential then compared the native run against interpreter runs that had seen other
+    /// memory (LDM loads what the previous run's STM stored over the same words). The page around each such register is
+    /// cleared before every run, so every run starts from the same memory.
+    /// </summary>
+    private static void ClearAroundOutsideRegisters(RandomState st)
+    {
+        foreach (uint value in st.Regs)
+        {
+            uint page = value & ~0xFFFu;
+            uint low = page >= 0x1000 ? page - 0x1000 : 0;
+            ulong high = Math.Min((ulong)page + 0x2000, 0x1_0000_0000UL);
+            bool overlapsCode = low < CodeBase + 0x1000 && high > CodeBase;
+            bool overlapsData = low < DataBase + DataSize && high > DataBase;
+            if (!overlapsCode && !overlapsData)
+            {
+                GuestMemory.Span(low, (int)(high - low)).Clear();
+            }
+        }
     }
 
     /// <summary>
