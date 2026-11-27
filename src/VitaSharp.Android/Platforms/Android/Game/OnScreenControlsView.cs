@@ -1,5 +1,6 @@
 using Android.Content;
 using Android.Graphics;
+using Android.Media;
 using Android.OS;
 using Android.Views;
 using VitaSharp.Core.Input;
@@ -29,7 +30,7 @@ public sealed class OnScreenControlsView : View
     public OnScreenControlsView(Context context, OnScreenPad pad) : base(context)
     {
         _vibrator = VibratorOf(context);
-        _haptics = new OnScreenHaptics(pad, Pulse);
+        _haptics = new OnScreenHaptics(pad, Pulse, (int)Build.VERSION.SdkInt, _vibrator?.HasAmplitudeControl ?? false);
         _pad = pad;
         _stroke.SetStyle(Paint.Style.Stroke);
         _text.TextAlign = Paint.Align.Center;
@@ -74,17 +75,47 @@ public sealed class OnScreenControlsView : View
 #pragma warning restore CA1422
     }
 
-    /// <summary>One pulse: a one-shot vibration with the amplitude when the motor supports it, else the view's key-tap
-    /// haptic feedback (which the system may scale or skip by its own touch-feedback setting).</summary>
-    void Pulse(int amplitude)
+    /// <summary>One pulse (OnScreenHaptics.PulseFor: a predefined effect from Android 10, else a one-shot), played
+    /// with the media/game usage so the system's touch-feedback switch and intensity do not silence it; without a
+    /// vibrator, the view's key-tap haptic feedback.</summary>
+    void Pulse(HapticPulse pulse)
     {
-        if (_vibrator is { } vibrator && vibrator.HasVibrator)
+        if (_vibrator is not { } vibrator || !vibrator.HasVibrator)
         {
-            int level = vibrator.HasAmplitudeControl ? amplitude : VibrationEffect.DefaultAmplitude;
-            vibrator.Vibrate(VibrationEffect.CreateOneShot(OnScreenHaptics.PulseMilliseconds, level));
+            PerformHapticFeedback(FeedbackConstants.KeyboardTap);
             return;
         }
-        PerformHapticFeedback(FeedbackConstants.KeyboardTap);
+
+        VibrationEffect? effect = Effect(pulse);
+        if (effect == null)
+        {
+            return;
+        }
+
+        if (OperatingSystem.IsAndroidVersionAtLeast(33))
+        {
+            vibrator.Vibrate(effect, VibrationAttributes.CreateForUsage((int)VibrationAttributesUsageType.Media));
+            return;
+        }
+#pragma warning disable CA1422 // the pre-33 way to give the usage, only on the versions without VibrationAttributes
+        vibrator.Vibrate(effect, new AudioAttributes.Builder().SetUsage(AudioUsageKind.Game)!.Build());
+#pragma warning restore CA1422
+    }
+
+    static VibrationEffect? Effect(HapticPulse pulse)
+    {
+        if (pulse.Kind != HapticKind.OneShot && OperatingSystem.IsAndroidVersionAtLeast(29))
+        {
+            int id = pulse.Kind switch
+            {
+                HapticKind.Tick => VibrationEffect.EffectTick,
+                HapticKind.HeavyClick => VibrationEffect.EffectHeavyClick,
+                _ => VibrationEffect.EffectClick,
+            };
+            return VibrationEffect.CreatePredefined(id);
+        }
+
+        return VibrationEffect.CreateOneShot(Math.Max(1, pulse.Milliseconds), pulse.Amplitude);
     }
 
     /// <summary>A finger went down (view coordinates): the game screen shows its auto-hidden chrome again.</summary>

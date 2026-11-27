@@ -506,6 +506,11 @@ happened with `mono-aot` and in the earlier phone runs, so it is a driver issue,
   1920x1080 phone the centre of the icon tab at the image's lower-right corner (Uncharted's "Tutorial: Journal",
   (0.96, 0.78) and (0.98, 0.80) of the image) reaches the game; the tab's left edge is still under the right stick.
   Tests: `OnScreenLayoutTests`.
+- **Vibration** (Ajustes > Controles, `OnScreenHaptics`): one pulse for every newly pressed control, also with another
+  finger on a stick. From Android 10 a pulse is the phone's predefined effect picked by the strength (Fraca = tick,
+  Média = click, Forte = heavy click), tuned by the maker for its motor; before Android 10 a 20/30/45 ms one-shot at
+  the strength's amplitude when the motor supports it. It plays with the media/game vibration usage, so the system's
+  touch-vibration switch does not silence it (a short one-shot at the default amplitude was not felt on a linear motor).
 - **Hide the on-screen controls**: the small button by the fps counter and the pause chip (top centre; it hides and
   comes back with the pause chip, also when the fps counter is off) shows or hides the on-screen controls with one
   tap, and so does the pause menu's **Controles na tela** (the same code, `OnScreenVisibility`). The choice is saved
