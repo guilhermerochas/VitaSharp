@@ -445,6 +445,69 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
+    private bool _deviceLostDropped;
+
+    /// <summary>Commands dropped since the device was lost (nothing recorded, nothing allocated).</summary>
+    internal long CommandsDroppedAfterDeviceLost;
+
+    /// <summary>Tests: the driver reported VK_ERROR_DEVICE_LOST (as vkCreateGraphicsPipelines does from any thread).</summary>
+    internal void MarkDeviceLost() => _deviceLost = true;
+
+    /// <summary>Bytes copied into upload memory (rings, overflow buffers, vertex cache) so far.</summary>
+    internal long UploadedBytes => _uploadBytes;
+
+    /// <summary>
+    /// GPU worker, after VK_ERROR_DEVICE_LOST: true when the device is lost, so the caller records nothing. A lost
+    /// device never completes a submission again, so no frame retires and nothing recorded is ever reused: every upload
+    /// after it took a new buffer (Mali-G57, FIFA 13: the upload rings went from 176 MB to 1.8 GB in 30 s and the
+    /// process died out of memory inside the driver). The first time, the sync points waiting on frames that will never
+    /// retire are released, so the guest threads waiting for them (display queue, notifications) go on.
+    /// </summary>
+    private bool DroppedAfterDeviceLost()
+    {
+        if (!_deviceLost)
+        {
+            return false;
+        }
+
+        if (!_deviceLostDropped)
+        {
+            _deviceLostDropped = true;
+            ReportDeviceLost("an earlier Vulkan call");
+            ReleaseSignalsOfLostFrames();
+        }
+
+        return true;
+    }
+
+    /// <summary>Runs the sync points held by frames that will never retire (the device is lost), in submission order.</summary>
+    private void ReleaseSignalsOfLostFrames()
+    {
+        var pending = new List<(long Seq, Action Signal)>();
+        foreach (Frame f in _frames)
+        {
+            long seq = f.Submitted && !f.Retired ? f.SubmitSeq : long.MaxValue; // the frame being recorded comes last
+            foreach (Action signal in f.Signals)
+            {
+                pending.Add((seq, signal));
+            }
+
+            f.Signals.Clear();
+        }
+
+        foreach ((long _, Action signal) in pending.OrderBy(p => p.Seq))
+        {
+            try
+            {
+                signal();
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"[gpu] a sync point released after the device was lost failed: {e.Message}");
+            }
+        }
+    }
+
     // ================================================================ debug mode: first-use logging
 
     private readonly HashSet<string> _dbgSeen = new();

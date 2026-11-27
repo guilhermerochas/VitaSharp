@@ -201,7 +201,7 @@ public sealed unsafe partial class VulkanRenderer
     /// </summary>
     public void BeforeCallback(CallbackCommand cb)
     {
-        if (cb.ReadSize == 0)
+        if (cb.ReadSize == 0 || DroppedAfterDeviceLost())
         {
             return;
         }

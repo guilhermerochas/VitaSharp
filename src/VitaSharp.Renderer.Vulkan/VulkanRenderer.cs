@@ -613,7 +613,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     /// <summary>Sync points (notifications, display queue entries) wait for every result recorded before them.</summary>
     public bool DeferSignal(Action signal)
     {
-        if (!ResultsPending())
+        // a lost device retires nothing: the caller signals now
+        if (DroppedAfterDeviceLost() || !ResultsPending())
         {
             return false;
         }
@@ -640,7 +641,17 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         // recorded so far now, instead of once the guest has run out of work and the queue drained
         if (target == F && !_inScene)
         {
-            SubmitFrame(false, 0);
+            try
+            {
+                SubmitFrame(false, 0);
+            }
+            catch
+            {
+                // the caller signals it when this throws (GpuQueue): it must not run again with the frame's others
+                target.Signals.Remove(signal);
+                throw;
+            }
+
             _drawsSinceSubmit = 0;
         }
         return true;
@@ -722,6 +733,12 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     public void Execute(GpuCommand command)
     {
+        if (DroppedAfterDeviceLost())
+        {
+            CommandsDroppedAfterDeviceLost++;
+            return;
+        }
+
         // out of GPU memory even after eviction (VulkanRenderer.Memory.cs): the command is skipped, not the renderer
         try
         {

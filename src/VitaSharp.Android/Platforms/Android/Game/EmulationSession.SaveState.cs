@@ -162,7 +162,7 @@ public sealed partial class EmulationSession
                         EmulationPause.Pause("load state: LoadExec");
                 }
             }
-            SaveStates.Load(_emu, StatePath(slot), () => { lock (_surfaceLock) return _renderer = new VulkanRenderer(_rendererOptions); });
+            SaveStates.Load(_emu, StatePath(slot), () => { lock (_surfaceLock) return _renderer = NewRenderer(); });
             return Loc.Format("MStateLoaded", slot);
         }
         catch (Exception e) when (e is SnapshotException or IOException)

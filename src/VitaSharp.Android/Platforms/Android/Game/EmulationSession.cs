@@ -241,7 +241,7 @@ public sealed partial class EmulationSession : IDisposable
                 _emu.PerformExec(() =>
                 {
                     lock (_surfaceLock)
-                        return _renderer = new VulkanRenderer(_rendererOptions);
+                        return _renderer = NewRenderer();
                 });
             }
             catch (Exception e)
@@ -364,7 +364,7 @@ public sealed partial class EmulationSession : IDisposable
                     return;
                 }
                 VitaSharp.Core.Boot.BootProgress.Report(VitaSharp.Core.Boot.BootStep.Gpu);
-                _renderer = new VulkanRenderer(_rendererOptions);
+                _renderer = NewRenderer();
             }
             Log.Info($"Renderer: {_renderer.DeviceName}");
             _emu.Gpu.Backend = _renderer;
@@ -457,6 +457,15 @@ public sealed partial class EmulationSession : IDisposable
 
     /// <summary>"Gravar tudo" messages for the player (any thread).</summary>
     public event Action<string>? CaptureStatus;
+
+    /// <summary>A renderer for this session: a lost GPU device is told to the player (the renderer draws nothing more),
+    /// as the desktop's status line does.</summary>
+    private VulkanRenderer NewRenderer()
+    {
+        var renderer = new VulkanRenderer(_rendererOptions);
+        renderer.DeviceLost += _ => CaptureStatus?.Invoke(Loc.Get("GameDeviceLost"));
+        return renderer;
+    }
 
     /// <summary>"Gravar tudo": the session capture of this game run (pause menu).</summary>
     public Core.Capture.SessionCapture Capture { get; }
@@ -720,7 +729,7 @@ public sealed partial class EmulationSession : IDisposable
             {
                 lock (_surfaceLock)
                 {
-                    return _renderer = new VulkanRenderer(_rendererOptions);
+                    return _renderer = NewRenderer();
                 }
             });
             if (why != null)

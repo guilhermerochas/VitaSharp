@@ -72,7 +72,7 @@ public sealed unsafe partial class VulkanRenderer
 
     public bool DeferCallback(CallbackCommand cb)
     {
-        if (!TransferDeferOn)
+        if (!TransferDeferOn || DroppedAfterDeviceLost())
         {
             return false;
         }
