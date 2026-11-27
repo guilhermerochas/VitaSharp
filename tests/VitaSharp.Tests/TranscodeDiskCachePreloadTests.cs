@@ -49,6 +49,22 @@ public sealed class TranscodeDiskCachePreloadTests : IDisposable
     }
 
     [Fact]
+    public void AReadAheadEntryServesItsLevelAgainWithoutTheFile()
+    {
+        // the in-memory transcode cache in front drops levels; asked again, the level must not cost a file read
+        Directory.CreateDirectory(_dir);
+        new TranscodeDiskCache(_dir, 1 << 20).Put(0x42, 0x7, Payload(5, 96));
+        var cache = new TranscodeDiskCache(_dir, 1 << 20);
+        cache.StartPreload(1 << 20);
+        Assert.True(cache.PreloadDone.Wait(10_000));
+        Assert.Equal(Payload(5, 96), cache.TryGet(0x42, 0x7, 96));
+        File.Delete(Path.Combine(_dir, "0000000000000042.astc"));
+
+        Assert.Equal(Payload(5, 96), cache.TryGet(0x42, 0x7, 96));
+        Assert.Equal(2, cache.PreloadHits);
+    }
+
+    [Fact]
     public void AReadAheadEntryKeepsTheTagAndLengthChecks()
     {
         Directory.CreateDirectory(_dir);
@@ -58,6 +74,72 @@ public sealed class TranscodeDiskCachePreloadTests : IDisposable
         Assert.True(cache.PreloadDone.Wait(10_000));
 
         Assert.Null(cache.TryGet(0x55, 0x11, 64));
+    }
+
+    [Fact]
+    public void TheDefaultBudgetCoversAWholeTitleCache()
+    {
+        // Killzone's cache is 110 MB: a 96 MB budget left out the weapon textures (read on the GPU thread at the
+        // first weapon change)
+        Assert.True(TranscodeDiskCache.DefaultPreloadMb >= 110);
+    }
+
+    [Fact]
+    public void EveryEntryIsReadWhenTheBudgetCoversTheCache()
+    {
+        Directory.CreateDirectory(_dir);
+        var writer = new TranscodeDiskCache(_dir, 1 << 20);
+        for (ulong k = 1; k <= 8; k++)
+        {
+            writer.Put(k, 0x5, Payload((byte)k, 128));
+        }
+
+        var cache = new TranscodeDiskCache(_dir, 1 << 20);
+        cache.StartPreload(1 << 20);
+        Assert.True(cache.PreloadDone.Wait(10_000));
+        Directory.Delete(_dir, true);
+
+        for (ulong k = 1; k <= 8; k++)
+        {
+            Assert.Equal(Payload((byte)k, 128), cache.TryGet(k, 0x5, 128));
+        }
+    }
+
+    [Fact]
+    public void AReadAheadHitAllocatesNoManagedMemory()
+    {
+        // the read-ahead lives in native memory and is copied straight into the caller's buffer: 110 MB of managed
+        // arrays plus one array per hit made a collection during Killzone's first aim cost 810 ms
+        Directory.CreateDirectory(_dir);
+        new TranscodeDiskCache(_dir, 1 << 20).Put(0x77, 0x3, Payload(2, 4096));
+        var cache = new TranscodeDiskCache(_dir, 1 << 20);
+        cache.StartPreload(1 << 20);
+        Assert.True(cache.PreloadDone.Wait(10_000));
+        byte[] destination = new byte[4096];
+        Assert.True(cache.TryCopyPreloaded(0x77, 0x3, destination));
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        bool hit = cache.TryCopyPreloaded(0x77, 0x3, destination);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.True(hit);
+        Assert.Equal(Payload(2, 4096), destination);
+        Assert.Equal(0, allocated);
+    }
+
+    [Fact]
+    public void ReleasedReadAheadEntriesAreGone()
+    {
+        Directory.CreateDirectory(_dir);
+        new TranscodeDiskCache(_dir, 1 << 20).Put(0x31, 0x2, Payload(4, 64));
+        var cache = new TranscodeDiskCache(_dir, 1 << 20);
+        cache.StartPreload(1 << 20);
+        Assert.True(cache.PreloadDone.Wait(10_000));
+
+        cache.ReleasePreloaded();
+
+        Assert.False(cache.IsPreloaded(0x31));
+        Assert.False(cache.TryCopyPreloaded(0x31, 0x2, new byte[64]));
     }
 
     [Fact]

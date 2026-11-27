@@ -266,11 +266,11 @@ The game process places its hot threads itself (`Platforms/Android/Game/GamePerf
   Refreshing it after each rendering ended the rendering for every such draw (Killzone Mercenary: nine 240x136 passes
   per frame at one spot, each copying the depth). Mali-G57 bench (4 rounds x 3): Killzone gameplay fixture 33.3 ->
   30.1 ms of GPU per frame, the stairs fixture 27.1 -> 26.4 ms, same picture.
-- **ASTC disk cache read ahead** (`VITASHARP_ASTC_PRELOAD_MB`, default 96, `0` off): at the title start a background
+- **ASTC disk cache read ahead** (`VITASHARP_ASTC_PRELOAD_MB`, default 160, `0` off): at the title start a background
   thread reads the most recently used entries of the title's ASTC cache into memory, so the first use of a texture
   the title transcoded before costs no file read on the GPU thread (shared storage goes through FUSE: Killzone's first
-  weapon change and first aim spent 0.2-0.5 s of a frame in texture uploads reading the cache). An entry leaves memory
-  when it is used; the `PERF mobile` line counts the hits served from the read-ahead.
+  weapon change and first aim spent 0.2-0.5 s of a frame in texture uploads reading the cache). Entries stay for the session in native memory, outside the GC heap (a level the in-memory transcode cache dropped is asked for again; a hit is copied straight into the upload buffer, with no array), and are freed when the title's cache is replaced; the `PERF mobile` line counts the hits served from the read-ahead, and a `[texcache] read ahead`
+  line says how many entries of how many were read and when the read-ahead ended.
 - **Hitches in the log** (`[hitch]` lines, `VITASHARP_HITCH_MS`, default 100 ms, `0` off): a present that comes more
   than that after the previous one (emulation time, pauses left out) logs the host time of the interval by cause,
   largest first: texture uploads (`texUpload`), shader translation/compilation and pipeline creation on the GPU thread,
