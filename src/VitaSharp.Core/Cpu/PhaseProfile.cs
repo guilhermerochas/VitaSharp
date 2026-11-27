@@ -225,8 +225,9 @@ public sealed class PhaseProfile
     }
 
     /// <summary>Checks the budget once <see cref="WindowCycles"/> guest cycles ran since the last check (called at
-    /// the dispatcher's pacing checks).</summary>
-    internal void CheckWindow()
+    /// the dispatcher's pacing checks). <paramref name="hasBackend"/>: a JIT backend could compile the thread's blocks
+    /// (without one every block is interpreted, which is no alert).</summary>
+    internal void CheckWindow(bool hasBackend = true)
     {
         long cycles = 0;
         for (int i = 0; i < N; i++)
@@ -270,7 +271,7 @@ public sealed class PhaseProfile
                      $"{s_names[worstPhase]} took {100.0 * worst / Math.Max(1, budgeted):F0}% ({phaseRate})");
         }
 
-        if (hot * 4 >= windowCycles && Jit.Enabled && Jit.Chain.Length > 0) // without a backend every block is interpreted
+        if (hot * 4 >= windowCycles && hasBackend)
         {
             Alert(3, $"{100.0 * hot / windowCycles:F0}% of {windowCycles / 1e3:F0} K guest cycles ran interpreted in hot blocks (run {HotExecutions}+ times without compiled code: rejected by every backend, or a mode the code was not compiled for)");
         }

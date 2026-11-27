@@ -1008,7 +1008,7 @@ public sealed unsafe class CpuCore : IDisposable
 
                 if (profile)
                 {
-                    phases.CheckWindow();
+                    phases.CheckWindow(Jit.Enabled && Jit.Chain.Length > 0);
                 }
 
                 if (ShouldYield != null && ShouldYield())
