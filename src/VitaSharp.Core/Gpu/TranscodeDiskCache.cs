@@ -27,6 +27,9 @@ public sealed class TranscodeDiskCache
     private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, byte[]> _preloaded = new();
     private long _preloadedBytes;
     public long Preloaded, PreloadHits;
+    /// <summary>Default read-ahead budget: large enough for a whole title's cache seen so far (Killzone: 110 MB) so the
+    /// first weapon change finds its levels in memory, not only the most recent ones.</summary>
+    public const int DefaultPreloadMb = 160;
     /// <summary>Set when the read-ahead thread ended (tests).</summary>
     public readonly ManualResetEventSlim PreloadDone = new(false);
 
@@ -112,12 +115,14 @@ public sealed class TranscodeDiskCache
             return;
         }
 
-        var thread = new Thread(() => Preload(maxBytes)) { Name = "ASTC cache read-ahead", IsBackground = true, Priority = ThreadPriority.BelowNormal };
+        var thread = new Thread(() => Preload(maxBytes)) { Name = "ASTC cache read-ahead", IsBackground = true };
         thread.Start();
     }
 
     private void Preload(long maxBytes)
     {
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        int onDisk = 0;
         try
         {
             if (!System.IO.Directory.Exists(_dir))
@@ -136,6 +141,7 @@ public sealed class TranscodeDiskCache
 
             // most recently used first: what the last sessions played is what this one is most likely to ask for
             files.Sort((a, b) => b.Used.CompareTo(a.Used));
+            onDisk = files.Count;
             foreach ((DateTime _, string path, ulong key) in files)
             {
                 if (Interlocked.Read(ref _preloadedBytes) >= maxBytes)
@@ -158,6 +164,7 @@ public sealed class TranscodeDiskCache
         finally
         {
             PreloadDone.Set();
+            Log.Info($"[texcache] read ahead {Interlocked.Read(ref Preloaded)} of {onDisk} entries ({Interlocked.Read(ref _preloadedBytes) / 1048576.0:F1} MB, budget {maxBytes >> 20} MB) in {System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds:F0} ms; {Interlocked.Read(ref PreloadHits)} already used while it ran");
         }
     }
 

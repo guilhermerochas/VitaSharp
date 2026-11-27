@@ -61,6 +61,35 @@ public sealed class TranscodeDiskCachePreloadTests : IDisposable
     }
 
     [Fact]
+    public void TheDefaultBudgetCoversAWholeTitleCache()
+    {
+        // Killzone's cache is 110 MB: a 96 MB budget left out the weapon textures (read on the GPU thread at the
+        // first weapon change)
+        Assert.True(TranscodeDiskCache.DefaultPreloadMb >= 110);
+    }
+
+    [Fact]
+    public void EveryEntryIsReadWhenTheBudgetCoversTheCache()
+    {
+        Directory.CreateDirectory(_dir);
+        var writer = new TranscodeDiskCache(_dir, 1 << 20);
+        for (ulong k = 1; k <= 8; k++)
+        {
+            writer.Put(k, 0x5, Payload((byte)k, 128));
+        }
+
+        var cache = new TranscodeDiskCache(_dir, 1 << 20);
+        cache.StartPreload(1 << 20);
+        Assert.True(cache.PreloadDone.Wait(10_000));
+        Directory.Delete(_dir, true);
+
+        for (ulong k = 1; k <= 8; k++)
+        {
+            Assert.Equal(Payload((byte)k, 128), cache.TryGet(k, 0x5, 128));
+        }
+    }
+
+    [Fact]
     public void NothingIsReadAheadWithoutABudget()
     {
         Directory.CreateDirectory(_dir);
