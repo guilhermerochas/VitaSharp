@@ -102,15 +102,9 @@ public static class SessionReport
             }
         }
 
-        yield return IoTiming.FastLoading
-            ? "  storage: fast loading (no read speed limit)"
-            : $"  storage: {IoTiming.BytesPerSecond / 1e6:0.#} MB/s, {IoTiming.TimedReads} device reads, {IoTiming.DeviceTicks / (double)System.Diagnostics.Stopwatch.Frequency:0.0} s of device time";
-        if (!IoTiming.FastLoading)
+        foreach (string l in IoTiming.SummaryLines())
         {
-            foreach (string l in IoTiming.WaitLines())
-            {
-                yield return l;
-            }
+            yield return "  " + l;
         }
 
         foreach (string l in GpuLines(emu))
