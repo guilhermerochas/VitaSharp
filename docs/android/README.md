@@ -266,6 +266,12 @@ The game process places its hot threads itself (`Platforms/Android/Game/GamePerf
   Refreshing it after each rendering ended the rendering for every such draw (Killzone Mercenary: nine 240x136 passes
   per frame at one spot, each copying the depth). Mali-G57 bench (4 rounds x 3): Killzone gameplay fixture 33.3 ->
   30.1 ms of GPU per frame, the stairs fixture 27.1 -> 26.4 ms, same picture.
+- **Hitches in the log** (`[hitch]` lines, `VITASHARP_HITCH_MS`, default 100 ms, `0` off): a present that comes more
+  than that after the previous one (emulation time, pauses left out) logs the host time of the interval by cause,
+  largest first: texture uploads (`texUpload`), shader translation/compilation and pipeline creation on the GPU thread,
+  the GC (with the collection count), ARM code compilation (`jit`), guest file reads, the guest waiting for the GPU,
+  the GPU worker's idle time. A stutter the player sees (a weapon change, the first aim) then names its cause in
+  `last.log` without a capture; at most 200 lines per session.
 - **BC1 mapped straight to ASTC** (`AstcEncoder.EncodeFromBc1`, `VITASHARP_ASTC_BC1_DIRECT=0` to compare): a
   four-colour BC1 block (its two RGB565 endpoints and the thirds between them) is exactly an ASTC RGB-direct block with
   8-bit endpoints and 4 weight levels, so it is written without the encoder's search; only BC1's three-colour blocks
@@ -507,6 +513,11 @@ happened with `mono-aot` and in the earlier phone runs, so it is a driver issue,
   1920x1080 phone the centre of the icon tab at the image's lower-right corner (Uncharted's "Tutorial: Journal",
   (0.96, 0.78) and (0.98, 0.80) of the image) reaches the game; the tab's left edge is still under the right stick.
   Tests: `OnScreenLayoutTests`.
+- **Vibration** (Ajustes > Controles, `OnScreenHaptics`): one pulse for every newly pressed control, also with another
+  finger on a stick. From Android 10 a pulse is the phone's predefined effect picked by the strength (Fraca = tick,
+  Média = click, Forte = heavy click), tuned by the maker for its motor; before Android 10 a 20/30/45 ms one-shot at
+  the strength's amplitude when the motor supports it. It plays with the media/game vibration usage, so the system's
+  touch-vibration switch does not silence it (a short one-shot at the default amplitude was not felt on a linear motor).
 - **Hide the on-screen controls**: the small button by the fps counter and the pause chip (top centre; it hides and
   comes back with the pause chip, also when the fps counter is off) shows or hides the on-screen controls with one
   tap, and so does the pause menu's **Controles na tela** (the same code, `OnScreenVisibility`). The choice is saved

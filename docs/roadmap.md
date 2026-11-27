@@ -1430,7 +1430,13 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   tocar" (liga/desliga) e "Intensidade da vibração" (Fraca/Média/Forte: amplitude do `VibrationEffect`; sem controle
   de amplitude no motor, o pulso padrão). Os controles na tela não têm perfil próprio (os perfis são dos controles
   físicos): a opção é global, como a opacidade. Teste: AndroidAppTests.OnScreenButtonsVibrateWhileTheStickIsHeld.
-  Falta o usuário conferir no celular
+  Corrigido de novo, falta o usuário testar (26/11/2026, ovl2): no Redmi Note 14 nada vibrava — o pulso de 18 ms com a
+  amplitude padrão (o motor diz não ter controle de amplitude, a intensidade nunca chegava) era tocado pelo sistema
+  mas não se sentia, com o uso "toque" que o ajuste de vibração ao toque do sistema silencia. Agora, do Android 10 em
+  diante, o pulso é um efeito predefinido do aparelho escolhido pela intensidade (Fraca = tick, Média = click, Forte =
+  heavy click); antes do Android 10, um one-shot de 20/30/45 ms com a amplitude quando o motor a aceita; tocado com o
+  uso de mídia/jogo (`OnScreenHaptics.PulseFor`). Teste: AndroidAppTests.OnScreenPulsesAreThePhonesPredefinedEffectsPickedByTheStrength.
+  O que testar: com "Vibrar ao tocar" ligado, tocar nos analógicos e nos botões e sentir a vibração nas três intensidades.
 
 - [ ] Desempenho no Android (meta: o fps nativo do jogo no Vita, no Redmi Note 14, Helio G99 / Mali-G57; junta os
   itens "Killzone no Android a 30 fps" e "Velocidade nativa no celular"). Medidas atuais (14/11/2026, APK NativeAOT,

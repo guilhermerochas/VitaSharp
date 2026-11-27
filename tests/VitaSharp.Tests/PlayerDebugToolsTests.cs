@@ -101,7 +101,7 @@ public sealed class PlayerDebugToolsTests(GuestMemoryFixture fixture) : IDisposa
         string folder = Path.Combine(Root(), "src", "VitaSharp.Core", "Localization");
         foreach (string file in new[] { "Texts.resx", "Texts.pt-BR.resx" })
         {
-            Dictionary<string, string> texts = XDocument.Load(Path.Combine(folder, file)).Root!.Elements("data")
+            var texts = XDocument.Load(Path.Combine(folder, file)).Root!.Elements("data")
                 .ToDictionary(d => (string)d.Attribute("name")!, d => (string?)d.Element("value") ?? "");
             foreach (string key in new[] { "ShortcutsText", "NoCaptures", "NoGameCaptures" })
             {

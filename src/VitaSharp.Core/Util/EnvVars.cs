@@ -306,6 +306,9 @@ public static class EnvVars
     /// (post-processing passes into regions of one surface; VulkanRenderer.Tiler.cs). Default on for tile-based GPUs
     /// (0 turns it off, 1 forces it elsewhere).</summary>
     public const string RenderAreaTrim = "VITASHARP_RENDER_AREA_TRIM";
+    /// <summary>Milliseconds between two presents (emulation time) that log a <c>[hitch]</c> line with the host time of
+    /// the interval by cause (Util/FrameLedger.cs); default 100, 0 turns it off.</summary>
+    public const string HitchMs = "VITASHARP_HITCH_MS";
     /// <summary>A mapped (memory) read of the colour or depth/stencil surface of the scene being rendered keeps the copy
     /// of it already taken in that scene instead of refreshing it after each of the scene's renderings, as the Vita's
     /// memory holds the surface as it was before the scene until the scene stores it (VulkanRenderer.Mapped.cs); every
