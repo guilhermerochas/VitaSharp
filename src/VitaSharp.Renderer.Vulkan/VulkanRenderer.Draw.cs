@@ -1271,6 +1271,7 @@ public sealed unsafe partial class VulkanRenderer
             DrawRingDraw(d, vs, fs);
         }
 
+        NoteProgramUse(d);
         ProfMark(ProfPhase.Shader);
         if (vs.Failed || fs.Failed)
         {

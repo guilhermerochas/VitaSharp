@@ -192,6 +192,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public readonly List<RtWriteback> StoreWritebacks = new();
         /// <summary>Notifications and other sync points (in submission order) signalled once this frame completed and its results are published.</summary>
         public readonly List<Action> Signals = new();
+        /// <summary>The programs this frame drew with (VulkanRenderer.LostDraws.cs): what a lost device was running.</summary>
+        public readonly ProgramUse[] Programs = new ProgramUse[MaxProgramUses];
+        public int ProgramCount, ProgramsDropped;
         public bool Retired;
         /// <summary>Submission order (frames retire oldest first so results are published in GPU order).</summary>
         public long SubmitSeq;
@@ -374,6 +377,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _vk.BeginCommandBuffer(f.Cmd, in bi);
         f.Recording = true;
         ResetVisibility(f);
+        f.ProgramCount = 0;
+        f.ProgramsDropped = 0;
         ResetCost(f);
         BeginGpuTime(f);
         _boundPipeline = default;
