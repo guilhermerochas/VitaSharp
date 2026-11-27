@@ -59,6 +59,13 @@ public sealed partial class Compat : HleModule, IDisposable
     /// <summary>The handshake word's states.</summary>
     internal const uint HandshakeReady = 1, HandshakeAcknowledged = 2, HandshakeRunning = 3, HandshakeIdle = 0;
 
+    /// <summary>The firmware module's name (module_info of bootimage's SceCompat; fixed by the firmware), which its
+    /// import stubs are known by.</summary>
+    const string FirmwareModuleName = "SceCompat";
+
+    /// <summary>SceSblAIMgrForDriver and its ksceSblAimgrIsDEX, as SceCompat 3.74 imports them.</summary>
+    const uint AimgrForDriverNid = 0xFD00C69A, IsDexNid = 0xF4B98F66;
+
     static readonly string PcffPath = Io.FirmwareLayout.SystemApplications.Guest("NPXS10028", "pcff.skprx");
     static readonly string PcbcPath = Io.FirmwareLayout.KernelModules.Guest("pcbc.skprx");
 
@@ -315,6 +322,7 @@ public sealed partial class Compat : HleModule, IDisposable
         int loaded = LoadBlob(PcffPath, _window + PcffOffset, PcffMaxSize);
         if (loaded < 0)
         {
+            Log.Info($"SceCompat: InitEx({bootParam}): SceSblFwLoader did not load {PcffPath} (0x{loaded:X8}): the PSP core is not taken");
             return loaded;
         }
 
@@ -322,6 +330,7 @@ public sealed partial class Compat : HleModule, IDisposable
         GuestMemory.W32(_window + SeedOffset, _seed);
         if (loaded < 0)
         {
+            Log.Info($"SceCompat: InitEx({bootParam}): SceSblFwLoader did not load {PcbcPath} (0x{loaded:X8}): the PSP core is not taken");
             return loaded;
         }
 
@@ -409,24 +418,40 @@ public sealed partial class Compat : HleModule, IDisposable
         }
 
         SystemServicesVsh services = Services;
-        bool testingKit = services.ksceSblAimgrIsDEXThroughEntry() != 0;
         GuestMemory.Fill(_startScratch, 0, StartScratchSize);
         int activation = services.ksceNpDrmReadActDataThroughEntry(_startScratch);
         GuestMemory.ReadSpan(_startScratch, (int)DatSize).CopyTo(_dat);
-        if (activation < 0 && !testingKit)
+        if (activation < 0 && !IsTestingKit())
         {
             Log.Info($"SceCompat: Start: no activation data (ksceNpDrmReadActData 0x{activation:X8}): the PSP core is not started");
             return activation;
         }
 
         int license = LicenseCheck();
-        if (license != 0 && !testingKit)
+        if (license != 0 && !IsTestingKit())
         {
             Log.Info($"SceCompat: Start: the title's license {(_rif.Length == 0 ? "(none set)" : _rif)} does not pass (0x{license:X8}): the PSP core is not started");
             return ERR_LICENSE;
         }
 
         return ReleaseCore();
+    }
+
+    /// <summary>
+    /// ksceSblAimgrIsDEX as the start path asks it (SceCompat 3.74 0x81000228, only after a failed step): through
+    /// SceCompat's own import of it, so code written over that import stub (a kernel plugin's import hook on the
+    /// module) answers, as on the console; otherwise the export (its own hook, else the HLE).
+    /// </summary>
+    bool IsTestingKit()
+    {
+        SystemServicesVsh services = Services;
+        Hle.FirmwareKernelModules? firmware = Emu.FirmwareKernelIfShown;
+        if (firmware == null)
+        {
+            return services.ksceSblAimgrIsDEXThroughEntry() != 0;
+        }
+
+        return firmware.CallImport(FirmwareModuleName, AimgrForDriverNid, IsDexNid, () => (uint)services.ksceSblAimgrIsDEXThroughEntry()) != 0;
     }
 
     /// <summary>The core out of reset at the boot code on its thread, state 2 (after the start path's checks).</summary>

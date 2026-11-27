@@ -5215,6 +5215,18 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   "refused (0x90010006)". Falta: (5) o ScePspemuMain chega ao sceCompatInitEx e para ("the PSP compat core is not
   emulated"): o núcleo de compatibilidade (pcbc) é o bloqueio até o menu do Adrenaline; (6) e (7) feitos (fix/adr4,
   ver "Corrigido, falta o usuário testar": diálogo de erro e NPXS10028 em dobro).
+  Conferido (adr1, 27/11/2026, logs de 24/11): a última chamada antes do fechamento é o `sceCompatInitEx(1)` do
+  ScePspemuMain; no build da release o InitEx chega ao SceSblFwLoader, que só carrega o `pcbc` com o
+  `os0:kd/pcbc.bin` tirado do console do usuário (o usuário não tem: o log mostra o aviso do loader e agora também
+  "SceCompat: InitEx(1): SceSblFwLoader did not load os0:kd/pcbc.skprx (0x...)"). Feito (fix/adr1): o caminho do
+  sceCompatStart pergunta o ksceSblAimgrIsDEX pelo import do próprio SceCompat (3.74 0x81000228, só depois de um
+  passo que falhou), então o import hook que o AdrenalineKernel instala ali (hook 13) responde, como no Vita: sem
+  isso um aparelho de varejo nunca passava da licença (0x8001000D). Teste: `CompatImportHookTests`. Falta: (8) o
+  `pcbc.bin` do usuário; (9) os outros hooks do AdrenalineKernel no SceCompat também não rodam no HLE: os imports
+  ksceKernelAllocMemBlock/FreeMemBlock/UnmapMemBlock (blocos "SceCompatCached/Uncached/Cdram" do AllocCdramWithHole
+  e os do module_start), ksceGrabSetMemoryBankAddress (bancos do InitEx; o HLE do Grab teria de programar o
+  barramento do núcleo) e a função interna +0x2AE8 (o comando 0x30006 do processador seguro no aperto de mão):
+  passar cada chamada do HLE pelo import (`FirmwareKernelModules.CallImport`) ou pelo endereço da função interna.
 - [ ] [P2][M] (precisa do usuário/aparelho) Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
   capturas de 21/11/2026, e um engasgo de 132 ms por leitura de arquivo (fileIo 134 ms; quadro 302 do dump da
   `_232150_tudo`). Achado (perf/ac3pace): fora das gravações o jogo fica em 30 fps (linhas `FPS frame` da sessão) e
