@@ -109,6 +109,29 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fixture, ITestOutputH
     [Trait("Category", "Slow")]
     public void FuzzSimdAgainstUnicorn(bool thumb, int iterations, int seed, bool anyFpscr) => Fuzz(thumb, iterations, seed, null, simd: true, anyFpscr: anyFpscr);
 
+    /// <summary>
+    /// The same SIMD fuzz with the x86-intrinsic NEON fast paths off (<see cref="Neon.X86Paths"/>): the reference
+    /// implementations an ARM64 host (the phone) runs for VQADD/VQSUB and the saturating narrows, which an x64 run
+    /// otherwise never reaches.
+    /// </summary>
+    [UnicornTheory]
+    [InlineData(false, 40_000, 21)]
+    [InlineData(true, 40_000, 22)]
+    [Trait("Category", "Slow")]
+    public void FuzzSimdReferencePathsAgainstUnicorn(bool thumb, int iterations, int seed)
+    {
+        bool saved = Neon.X86Paths;
+        Neon.X86Paths = false;
+        try
+        {
+            Fuzz(thumb, iterations, seed, null, simd: true);
+        }
+        finally
+        {
+            Neon.X86Paths = saved;
+        }
+    }
+
     internal static uint RandomSimdInstruction(Random rng, bool thumb)
     {
         uint r = (uint)rng.NextInt64();

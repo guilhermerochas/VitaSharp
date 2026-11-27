@@ -70,9 +70,17 @@ public sealed partial class IoFileMgr : HleModule
         Emu.Vita.NoteShellLiveArea(id, title);
     }
 
+    /// <summary>The path calls that failed since the boot (the F8 capture's io_failures.txt).</summary>
+    public Io.IoFailureLog Failures { get; } = new();
+
     [Hle("sceIoOpen")]
     [Hle("ksceIoOpen", Cost = HleCost.KernelEntry)]
     internal int sceIoOpen(string path, int flags, int mode)
+    {
+        return Failures.Note("sceIoOpen", path, sceIoOpenCore(path, flags, mode));
+    }
+
+    private int sceIoOpenCore(string path, int flags, int mode)
     {
         // the libc opens tty0:/tty1: as stdin/stdout/stderr; on retail the open succeeds and output is discarded
         if (Io.Vfs.IsTty(path, out int tty))
@@ -299,6 +307,11 @@ int fd, long offset, int whence)
     [Hle]
     internal int sceIoRemove(string path)
     {
+        return Failures.Note("sceIoRemove", path, sceIoRemoveCore(path));
+    }
+
+    private int sceIoRemoveCore(string path)
+    {
         if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
         {
             return GuestRemove(guestMount, guestPath, directoryToo: false);
@@ -331,6 +344,11 @@ int fd, long offset, int whence)
 
     [Hle]
     internal int sceIoMkdir(string path, int mode)
+    {
+        return Failures.Note("sceIoMkdir", path, sceIoMkdirCore(path, mode));
+    }
+
+    private int sceIoMkdirCore(string path, int mode)
     {
         if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
         {
@@ -365,6 +383,11 @@ int fd, long offset, int whence)
 
     [Hle]
     internal int sceIoRmdir(string path)
+    {
+        return Failures.Note("sceIoRmdir", path, sceIoRmdirCore(path));
+    }
+
+    private int sceIoRmdirCore(string path)
     {
         if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
         {
@@ -403,6 +426,12 @@ int fd, long offset, int whence)
 
     [Hle]
     internal int sceIoRename(string oldPath, string newPath)
+    {
+        int result = sceIoRenameCore(oldPath, newPath);
+        return result < 0 ? Failures.Note("sceIoRename", oldPath + " -> " + newPath, result) : result;
+    }
+
+    private int sceIoRenameCore(string oldPath, string newPath)
     {
         // iofilemgr walks the old path, then the new one
         int walk = HostWalk(ref oldPath);
@@ -483,6 +512,11 @@ int fd, long offset, int whence)
 
     [Hle]
     internal int sceIoDopen(string path)
+    {
+        return Failures.Note("sceIoDopen", path, sceIoDopenCore(path));
+    }
+
+    private int sceIoDopenCore(string path)
     {
         if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
         {
@@ -577,6 +611,11 @@ int fd, long offset, int whence)
 
     [Hle]
     internal int sceIoGetstat(string path, uint stat)
+    {
+        return Failures.Note("sceIoGetstat", path, sceIoGetstatCore(path, stat));
+    }
+
+    private int sceIoGetstatCore(string path, uint stat)
     {
         if (ResolveGuestMount(path, out string guestPath) is { } guestMount)
         {
@@ -700,6 +739,11 @@ int fd, long offset, int whence)
 
     [Hle]
     internal int sceIoChstat(string path, uint stat, int bits)
+    {
+        return Failures.Note("sceIoChstat", path, sceIoChstatCore(path, stat, bits));
+    }
+
+    private int sceIoChstatCore(string path, uint stat, int bits)
     {
         if (stat == 0) return SceError.IO_EINVAL;
         if (IsReadOnlyDevice(path)) return IO_EROFS;

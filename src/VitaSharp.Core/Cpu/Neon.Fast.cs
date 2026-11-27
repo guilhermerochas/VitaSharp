@@ -13,6 +13,13 @@ namespace VitaSharp.Core.Cpu;
 /// </summary>
 internal static unsafe partial class Neon
 {
+    /// <summary>
+    /// Whether the fast paths built on x86 intrinsics (SSE2 / SSE4.1 saturating adds and packs) run: false on ARM64
+    /// hosts, where those encodings take the generic reference implementation. Tests clear it on x64 so the CPU fuzz
+    /// also checks the path the phone runs.
+    /// </summary>
+    internal static bool X86Paths = Sse2.IsSupported;
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector128<byte> LoadD(CpuState* state, uint r) => Vector128.Create(*(ulong*)Reg(state, r), 0UL).AsByte();
 
@@ -75,7 +82,7 @@ internal static unsafe partial class Neon
             case 0x0 when b:                                                        // VQADD
             case 0x2 when b:                                                        // VQSUB
             {
-                if (!Sse2.IsSupported || size > 1)
+                if (!X86Paths || size > 1)
                 {
                     return false;
                 }
@@ -383,7 +390,7 @@ internal static unsafe partial class Neon
             }
             else
             {
-                if (!Sse2.IsSupported)
+                if (!X86Paths)
                 {
                     return false;
                 }
