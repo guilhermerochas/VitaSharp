@@ -64,8 +64,10 @@ main() {
   local out="${OUT:-${PWD}/android-gpu-dump/${title}}"
   local dump="${title}.vsgd"
 
-  "${HERE}/android-awake.sh" start # the phone's screen is kept on until the end (build/android-awake.sh)
-  trap '"${HERE}/android-awake.sh" stop' EXIT
+  # the phone's screen is kept on until the end (build/android-awake.sh); a watchdog that was already running stays on
+  if "${HERE}/android-awake.sh" begin; then
+    trap '"${HERE}/android-awake.sh" stop' EXIT
+  fi
   mkdir -p "${out}"
 
   local activity

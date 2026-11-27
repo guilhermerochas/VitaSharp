@@ -9,7 +9,7 @@ namespace VitaSharp.Tests;
 /// 1/w, also the fog factor's input): translated as fi0.x * fi1.x the intro scene went off screen and only the clear
 /// colour was left.
 /// </summary>
-[Collection("shadergen")]
+[Collection("guest")]
 public class VtstDotTests
 {
     private static string Generate(ulong[] code)

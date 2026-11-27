@@ -39,7 +39,9 @@ New-Item -ItemType Directory -Force (Join-Path $Out 'shots') | Out-Null
 
 adb get-state | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'no phone connected (adb get-state failed)' }
-& "$PSScriptRoot\android-awake.ps1" start   # the phone's screen is kept on until the end (build/android-awake.ps1)
+# the phone's screen is kept on until the end (build/android-awake.ps1); a watchdog that was already running stays on
+& "$PSScriptRoot\android-awake.ps1" begin
+$awakeOwned = $LASTEXITCODE -eq 0
 $activity = (adb shell cmd package resolve-activity --brief $pkg | Select-Object -Last 1).Trim()
 if (-not $activity -or $activity -notmatch '/') { throw "VitaSharp ($pkg) is not installed on the phone" }
 
@@ -100,4 +102,6 @@ if (Test-Path $log) {
     $lines += $errors | Select-Object -First 5
 }
 $lines | Tee-Object -FilePath (Join-Path $Out 'summary.txt')
-& "$PSScriptRoot\android-awake.ps1" stop
+if ($awakeOwned) {
+    & "$PSScriptRoot\android-awake.ps1" stop
+}

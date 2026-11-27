@@ -351,7 +351,29 @@ public static unsafe class Jit
     /// <summary>Offers the block to the backend at its tier; on rejection it moves to the next tier.</summary>
     public static void Compile(Block b) => Compile(b, ahead: false);
 
+    /// <summary>Compiles <paramref name="b"/>; on a guest thread (a compile the thread waits for) the host time is charged to
+    /// its phase profile, which raises an alert past the budget (<see cref="PhaseProfile.CompiledOnGuestThread"/>).</summary>
     private static void Compile(Block b, bool ahead)
+    {
+        PhaseProfile? onGuestThread = CpuCore.RunningProfile;
+        if (onGuestThread == null)
+        {
+            CompileHere(b, ahead);
+            return;
+        }
+
+        long started = System.Diagnostics.Stopwatch.GetTimestamp();
+        try
+        {
+            CompileHere(b, ahead);
+        }
+        finally
+        {
+            onGuestThread.CompiledOnGuestThread(System.Diagnostics.Stopwatch.GetTimestamp() - started, b.Start);
+        }
+    }
+
+    private static void CompileHere(Block b, bool ahead)
     {
         IBlockCompiler[] chain = Chain;
         if (b.Tier >= chain.Length)

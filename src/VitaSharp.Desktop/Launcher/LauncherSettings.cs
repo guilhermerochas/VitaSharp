@@ -68,10 +68,9 @@ public sealed class LauncherSettings
     /// code reached from the modules' entry points; the code near what the game runs follows in the background. On by
     /// default, like RPCS3's "Compiling PPU modules".</summary>
     public bool PrecompileCode { get; set; } = true;
-    /// <summary>"Modo de depuracao": detailed diagnostic logging (--debug-mode, docs/notes/debug-mode.md).</summary>
-    public bool DebugMode { get; set; }
     /// <summary>"Pre-gravacao": F8's session capture keeps the seconds before it was pressed (--capture-preroll,
-    /// docs/notes/session-capture.md).</summary>
+    /// docs/notes/session-capture.md), with the detailed log on while it does. There is no "debug mode" switch: the
+    /// detailed log is part of the F8 capture (a launcher.json of before keeps its old "DebugMode" key unread).</summary>
     public bool CapturePreRoll { get; set; }
     /// <summary>"Simular conta PSN conectada (offline)": the emulated PSN account is signed in (--psn=on) or
     /// signed out (--psn=off, the default: no network, like Vita3K). Signed in, sign-in checks pass and PSN server requests fail as unreachable.</summary>
@@ -380,11 +379,6 @@ public sealed class LauncherSettings
 
         yield return FastShaderCompile ? "--shaderc-opt=zero" : "--shaderc-opt=perf";
         yield return BackgroundShaderCompile ? "--async-shaders=on" : "--async-shaders=off";
-        if (DebugMode)
-        {
-            yield return "--debug-mode";
-        }
-
         if (CapturePreRoll)
         {
             yield return "--capture-preroll";

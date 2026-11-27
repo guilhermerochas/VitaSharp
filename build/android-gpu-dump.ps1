@@ -17,7 +17,9 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $pkg = 'io.github.vitasharp'
-& "$PSScriptRoot\android-awake.ps1" start   # the phone's screen is kept on until the end (build/android-awake.ps1)
+# the phone's screen is kept on until the end (build/android-awake.ps1); a watchdog that was already running stays on
+& "$PSScriptRoot\android-awake.ps1" begin
+$awakeOwned = $LASTEXITCODE -eq 0
 # the app's data folder (docs/android/README.md, "Storage"): the app's own answer (data-root.txt), checked
 # against "All files access" (appops), by the phone-side command in build/android-data-root.txt
 $dataRoot = ''
@@ -74,4 +76,6 @@ if ($Desktop) {
     "validation messages: $(@($ids).Count)"
     $ids | Group-Object | Sort-Object Count -Descending | Select-Object -First 10 | ForEach-Object { "{0,7} {1}" -f $_.Count, $_.Name }
 }
-& "$PSScriptRoot\android-awake.ps1" stop
+if ($awakeOwned) {
+    & "$PSScriptRoot\android-awake.ps1" stop
+}

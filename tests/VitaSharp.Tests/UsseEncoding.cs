@@ -53,7 +53,7 @@ public static class UsseEncoding
 /// <summary>The renderer tests' shader programs (<see cref="RendererTextureTests"/>) translate to what they are meant
 /// to do: the encoder rebuilds a game's VMOV word, the vertex program passes the vertex through as position and texture
 /// coordinate, and the fragment program outputs the sampled texture.</summary>
-[Collection("shadergen")]
+[Collection("guest")]
 public sealed class TestShaderProgramTests
 {
     [Fact]

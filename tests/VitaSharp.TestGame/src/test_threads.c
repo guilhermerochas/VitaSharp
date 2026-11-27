@@ -402,6 +402,183 @@ static void check_timing(void)
     result_check(AREA, "system_time_wide", systemTime > 0, "%lld", (long long)systemTime);
 }
 
+/*
+ * Producer / consumer with a deadline, the shape of an audio port's mixer (Dead Space's Android port): an output
+ * thread sleeps one audio period (11 ms) and signals a mixer through a semaphore polled the way pthread-embedded's
+ * sem_wait does (500 us timed waits); each mixer round hands four jobs to worker threads that run VFP short-vector
+ * code (FPSCR LEN = 4) and waits for them. Every round, the first one included (cold code), must end within the
+ * period in guest time: on the console a round takes about a millisecond, and a round over the period leaves the
+ * output thread signalling a busy mixer (the port's audio stopped for good).
+ */
+#define MIXER_PERIOD_US 11000
+#define MIXER_ROUNDS 12
+#define MIXER_WORKERS 4
+#define MIXER_JOB_ITERATIONS 8000
+
+static SceUID g_mixSema;
+static SceUID g_jobSema[MIXER_WORKERS];
+static SceUID g_jobDoneSema;
+static volatile int g_mixerStop;
+static volatile unsigned int g_jobResult[MIXER_WORKERS];
+static SceUInt64 g_roundUs[MIXER_ROUNDS];
+static volatile int g_roundsDone;
+
+/* s8..s11 += s16..s19 (and s16..s19 *= s24..s27 = 1.0) in short-vector mode: s11 ends at 1 + iterations only when
+ * the vector length applied. Returns the bits of s11. */
+static unsigned int vector_job(int iterations)
+{
+    unsigned int bits;
+    __asm__ volatile(
+        "vmov.f32 s8, #1.0\n\t"
+        "vmov.f32 s9, #1.0\n\t"
+        "vmov.f32 s10, #1.0\n\t"
+        "vmov.f32 s11, #1.0\n\t"
+        "vmov.f32 s16, #1.0\n\t"
+        "vmov.f32 s17, #1.0\n\t"
+        "vmov.f32 s18, #1.0\n\t"
+        "vmov.f32 s19, #1.0\n\t"
+        "vmov.f32 s24, #1.0\n\t"
+        "vmov.f32 s25, #1.0\n\t"
+        "vmov.f32 s26, #1.0\n\t"
+        "vmov.f32 s27, #1.0\n\t"
+        "vmrs r1, fpscr\n\t"
+        "orr r2, r1, #0x30000\n\t"
+        "vmsr fpscr, r2\n\t"
+        "1:\n\t"
+        "vadd.f32 s8, s8, s16\n\t"
+        "vmul.f32 s16, s16, s24\n\t"
+        "subs %[n], %[n], #1\n\t"
+        "bne 1b\n\t"
+        "vmsr fpscr, r1\n\t"
+        "vmov %[bits], s11\n\t"
+        : [n] "+r"(iterations), [bits] "=r"(bits)
+        :
+        : "r1", "r2", "s8", "s9", "s10", "s11", "s16", "s17", "s18", "s19", "s24", "s25", "s26", "s27", "cc",
+          "memory");
+    return bits;
+}
+
+/* pthread-embedded's sem_wait: 500 us timed waits until a unit comes. */
+static void embedded_sem_wait(SceUID sema)
+{
+    while (true)
+    {
+        SceUInt timeout = 500;
+        if (sceKernelWaitSema(sema, 1, &timeout) >= 0)
+        {
+            return;
+        }
+    }
+}
+
+static int mixer_worker(SceSize argumentSize, void *argument)
+{
+    int index = *(int *)argument;
+    while (true)
+    {
+        embedded_sem_wait(g_jobSema[index]);
+        if (g_mixerStop)
+        {
+            return 0;
+        }
+        g_jobResult[index] = vector_job(MIXER_JOB_ITERATIONS);
+        sceKernelSignalSema(g_jobDoneSema, 1);
+    }
+}
+
+static int mixer_thread(SceSize argumentSize, void *argument)
+{
+    while (g_roundsDone < MIXER_ROUNDS)
+    {
+        embedded_sem_wait(g_mixSema);
+        if (g_mixerStop)
+        {
+            return 0;
+        }
+        SceUInt64 start = sceKernelGetProcessTimeWide();
+        for (int worker = 0; worker < MIXER_WORKERS; worker++)
+        {
+            sceKernelSignalSema(g_jobSema[worker], 1);
+        }
+        for (int worker = 0; worker < MIXER_WORKERS; worker++)
+        {
+            embedded_sem_wait(g_jobDoneSema);
+        }
+        g_roundUs[g_roundsDone] = sceKernelGetProcessTimeWide() - start;
+        g_roundsDone++;
+    }
+    return 0;
+}
+
+static void check_mixer_deadline(void)
+{
+    g_mixSema = sceKernelCreateSema("vstest_mix", 0, 0, 1000, NULL);
+    g_jobDoneSema = sceKernelCreateSema("vstest_jobdone", 0, 0, 1000, NULL);
+    SceUID workers[MIXER_WORKERS];
+    g_mixerStop = 0;
+    g_roundsDone = 0;
+    for (int worker = 0; worker < MIXER_WORKERS; worker++)
+    {
+        g_jobSema[worker] = sceKernelCreateSema("vstest_job", 0, 0, 1000, NULL);
+        g_jobResult[worker] = 0;
+        workers[worker] = start_thread("vstest_mixworker", mixer_worker, worker);
+    }
+    SceUID mixer = start_thread("vstest_mixer", mixer_thread, 0);
+    int busySignals = 0;
+    int signals = 0;
+    int periods = 0;
+    /* the output thread's loop (here: this thread): one period, then a signal to the mixer */
+    while (g_roundsDone < MIXER_ROUNDS && periods < MIXER_ROUNDS * 4)
+    {
+        sceKernelDelayThread(MIXER_PERIOD_US);
+        periods++;
+        if (signals > g_roundsDone)
+        {
+            busySignals++; /* the previous round is still running: the period finds the mixer busy */
+            continue;
+        }
+        sceKernelSignalSema(g_mixSema, 1);
+        signals++;
+    }
+    g_mixerStop = 1;
+    sceKernelSignalSema(g_mixSema, 1);
+    for (int worker = 0; worker < MIXER_WORKERS; worker++)
+    {
+        sceKernelSignalSema(g_jobSema[worker], 1);
+    }
+    wait_and_delete(mixer);
+    for (int worker = 0; worker < MIXER_WORKERS; worker++)
+    {
+        wait_and_delete(workers[worker]);
+        sceKernelDeleteSema(g_jobSema[worker]);
+    }
+    sceKernelDeleteSema(g_mixSema);
+    sceKernelDeleteSema(g_jobDoneSema);
+
+    SceUInt64 worst = 0;
+    for (int round = 0; round < g_roundsDone; round++)
+    {
+        if (g_roundUs[round] > worst)
+        {
+            worst = g_roundUs[round];
+        }
+    }
+    float expected = 1.0f + MIXER_JOB_ITERATIONS;
+    unsigned int expectedBits;
+    memcpy(&expectedBits, &expected, sizeof(expectedBits));
+    bool vectorOk = true;
+    for (int worker = 0; worker < MIXER_WORKERS; worker++)
+    {
+        vectorOk = vectorOk && g_jobResult[worker] == expectedBits;
+    }
+    result_check(AREA, "mixer_vector_jobs", vectorOk, "s11 0x%08X (want 0x%08X)", g_jobResult[0], expectedBits);
+    result_check(AREA, "mixer_round_deadline",
+                 g_roundsDone == MIXER_ROUNDS && worst <= MIXER_PERIOD_US && busySignals == 0,
+                 "%d rounds, first %llu us, worst %llu us (period %d us), %d signals to a busy mixer", g_roundsDone,
+                 (unsigned long long)(g_roundsDone > 0 ? g_roundUs[0] : 0), (unsigned long long)worst,
+                 MIXER_PERIOD_US, busySignals);
+}
+
 void test_threads_run(void)
 {
     results_clear_area(AREA);
@@ -415,4 +592,6 @@ void test_threads_run(void)
     check_message_pipe_size_zero();
     check_condition_variable();
     check_timing();
+    app_show_progress("Threads and sync", "mixer round deadline (VFP vector jobs) ...");
+    check_mixer_deadline();
 }

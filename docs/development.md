@@ -1,4 +1,4 @@
-<!-- pair: development.pt-BR.md sha256=ca04d087989f4d91e483eddd8e4303905488f6913e1e49000fd127a802997924 -->
+<!-- pair: development.pt-BR.md sha256=715fd6dd8e399021ca5afecdf46ea19d404103126323616fc2552299611d545c -->
 # Development
 
 **English** | [Português](development.pt-BR.md)
@@ -35,7 +35,8 @@ checked by `ExternalDocPairsTests`: the first line of each holds the SHA-256 of 
 lines to write). To contribute system functions, see the specifications in [`docs/hle`](hle/README.md).
 `build/hle-abi-check.ps1` / `build/hle-abi-check.sh` lists the HLE functions whose argument registers differ from the
 [vita-headers](https://github.com/vitasdk/vita-headers) prototypes (needs `git` and network for the clone, or a local
-checkout). `build/hle-status.ps1` / `.sh` regenerates the README's progress badges and maps.
+checkout). `build/hle-status.ps1` / `.sh` regenerates the README's progress badges and maps; `-CompatOnly` / `--compat-only`
+redoes only the Compat map, from `docs/compat/coverage.json`, without the firmware and games.
 
 ## Before a push
 
@@ -84,6 +85,16 @@ Shell scripts follow the Google Shell Style Guide and must pass ShellCheck (CI j
   (Windows, Linux, macOS), or on Linux the distribution package (`vulkan-validationlayers` / `vulkan-validation-layers`);
   on macOS the SDK also brings MoltenVK. Frame captures: [RenderDoc](https://renderdoc.org) (Windows, Linux) and
   GPU dumps (`replay-gpu`, [`docs/notes/gpu-dump.md`](notes/gpu-dump.md)) on every OS.
+- Precise wait timeouts (`VITASHARP_PRECISE_TIMEOUTS=0` turns them off, A/B): a timed wait on a kernel object
+  (sceKernelWaitSema, WaitEventFlag and the other `timeout` arguments, sceKernelDelayThreadCB) ends at its microsecond
+  deadline, as threadmgr's timer does on the Vita, instead of at `Monitor.Wait`'s next whole millisecond (a 500 us
+  timeout used to last 1.1-1.3 ms). One host thread, "HLE timeouts", sleeps on a high-resolution timer and wakes the
+  waiter: a `timerfd` on Linux and Android, a high-resolution waitable timer on Windows (it fires on a 0.5 ms tick, so
+  a timeout there can still end up to 0.5 ms late). Nothing spins. macOS keeps the millisecond rounding: it has no
+  timerfd, and the equivalent (a kqueue `EVFILT_TIMER` with `NOTE_USECONDS`, re-armed while the thread waits) is not
+  written yet. Short host sleeps (`PreciseSleep`) spin only the timer's measured lateness on the desktop (tens of
+  microseconds on Linux and macOS, ~0.5 ms on Windows) and never on phones; on Linux and Android the threads that
+  sleep get a 1 us timer slack.
 - Graphics pipeline libraries (off by default, measured slower with cold caches): `VITASHARP_PIPELINE_LIBRARY=1`
   links first-use pipelines from shader libraries and optimises them in the background where the driver has
   `VK_EXT_graphics_pipeline_library` with fast linking (desktop NVIDIA/AMD/Intel, Mesa); without it (MoltenVK,
@@ -124,6 +135,7 @@ What `dotnet test tests/VitaSharp.Tests` needs per system; a test whose requirem
 | Vulkan device (renderer, GPU dump and game-run tests) | Mesa lavapipe (Vulkan 1.4, the Linux CI's driver): unpack the `x64` folder of a [mesa-dist-win](https://github.com/pal1000/mesa-dist-win/releases) release (`vulkan_lvp.dll` + `lvp_icd.x86_64.json`) into `%LOCALAPPDATA%\VitaSharpTools\mesa\<version>\x64`; without it, or when the system loader `vulkan-1.dll` cannot take it, SwiftShader as Microsoft Edge or Google Chrome ship it (both found by themselves) | Mesa lavapipe newer than 22.3 (the CI has 25.2): `sudo apt install mesa-vulkan-drivers libvulkan1` (Fedora: `mesa-vulkan-drivers vulkan-loader`; Debian 12: `sudo apt install -t bookworm-backports mesa-vulkan-drivers`, its own 22.3 crashes the texture tests) | MoltenVK: the LunarG Vulkan SDK, or `brew install molten-vk vulkan-loader` |
 | shaderc (renderer and shader-compile tests; the renderer needs it too) | from the Silk.NET.Shaderc.Native package | from the package (found under `runtimes/linux-x64` also where Silk.NET's search misses it, as on Ubuntu); when that copy does not load: `sudo apt install libshaderc-dev` (Fedora, Arch: `shaderc`; loaded as `libshaderc.so.1`) | from the package, else Homebrew's `brew install shaderc` |
 | A desktop window (game overlay tests) | always | an X11 or Wayland display; headless: `xvfb-run dotnet test tests/VitaSharp.Tests` (`sudo apt install xvfb`) | skipped: AppKit creates windows only on the main thread, and the tests run on worker threads |
+| OCR (`screen-text`, `ScreenTextTests`, the F8 report's screen text) | the system's Windows.Media.Ocr (Windows 10/11, through Windows PowerShell 5.1) with an OCR language installed (Settings > Time & language > Language; Japanese for Japanese menus) | `sudo apt install tesseract-ocr` (`tesseract-ocr-jpn` for Japanese) | `brew install tesseract` (`tesseract-lang` for Japanese) |
 | FFmpeg (video and audio decode tests) | downloaded by the first build | downloaded by the first build | the system's: `brew install ffmpeg` |
 
 - Any system: `VK_DRIVER_FILES` (or `VK_ICD_FILENAMES`) set to the ICD manifest of a downloaded SwiftShader or Mesa

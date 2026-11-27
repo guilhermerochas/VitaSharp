@@ -306,10 +306,17 @@ public static class EnvVars
     /// (post-processing passes into regions of one surface; VulkanRenderer.Tiler.cs). Default on for tile-based GPUs
     /// (0 turns it off, 1 forces it elsewhere).</summary>
     public const string RenderAreaTrim = "VITASHARP_RENDER_AREA_TRIM";
-    /// <summary>1: a mapped (memory) read of the colour or depth/stencil surface of the scene being rendered keeps the copy
+    /// <summary>Milliseconds between two presents (emulation time) that log a <c>[hitch]</c> line with the host time of
+    /// the interval by cause (Util/FrameLedger.cs); default 100, 0 turns it off.</summary>
+    public const string HitchMs = "VITASHARP_HITCH_MS";
+    /// <summary>Megabytes of the title's ASTC disk cache read into memory at the title start, most recently used first,
+    /// so the first use of a known texture costs no file read on the GPU thread (VulkanRenderer.Astc.cs,
+    /// TranscodeDiskCache.StartPreload); default 96, 0 off.</summary>
+    public const string AstcPreloadMb = "VITASHARP_ASTC_PRELOAD_MB";
+    /// <summary>A mapped (memory) read of the colour or depth/stencil surface of the scene being rendered keeps the copy
     /// of it already taken in that scene instead of refreshing it after each of the scene's renderings, as the Vita's
     /// memory holds the surface as it was before the scene until the scene stores it (VulkanRenderer.Mapped.cs); every
-    /// such read used to end the rendering. 0 (the default for now): refreshed each time.</summary>
+    /// such read used to end the rendering. Default on for tile-based GPUs (0 turns it off, 1 forces it elsewhere).</summary>
     public const string MappedSceneStart = "VITASHARP_MAPPED_SCENE_START";
     /// <summary>1: native MSAA scenes render with VK_EXT_multisampled_render_to_single_sampled where the device has it:
     /// the samples live in tile memory only, the surface itself is loaded into every sample and resolved on store, with
@@ -442,6 +449,14 @@ public static class EnvVars
     /// <summary>=0 (A/B): sceTouchPeek always reports 1 sample, instead of 0 when sceTouchRead already consumed the newest
     /// one (Sonic & All-Stars Racing Transformed hangs draining the panel otherwise).</summary>
     public const string TouchPeekUnread = "VITASHARP_TOUCH_PEEK_UNREAD";
+    /// <summary>=1: the "waiting for input" detector runs (Input/InputWaitMonitor.cs; it also runs in debug mode and while
+    /// a "Gravar tudo" capture records): the log gets "[input-wait] WAITING FOR INPUT / LOADING / BUSY / ACTIVE" lines.</summary>
+    public const string InputWait = "VITASHARP_INPUT_WAIT";
+    /// <summary>Presented frames the "waiting for input" detector decides over (default 60).</summary>
+    public const string InputWaitFrames = "VITASHARP_INPUT_WAIT_FRAMES";
+    /// <summary>The screen knowledge base the agents' tools read (Capture/ScreenKnowledge.cs; default
+    /// docs/games/screens.json above the working folder or the program).</summary>
+    public const string Screens = "VITASHARP_SCREENS";
     /// <summary>H.264 decoding: auto (default, software), off/sw, hw (the platform's FFmpeg hwaccel) or a device type name.</summary>
     public const string VideoHw = "VITASHARP_VIDEO_HW";
     public const string VisForce = "VITASHARP_VIS_FORCE";
@@ -544,6 +559,8 @@ public static class EnvVars
     public const string DecoderHistory = "VITASHARP_DECODER_HISTORY";
     /// <summary>=1: every guest delay (sceKernelDelayThread) spins its last half millisecond (the old behaviour), =0: none does; default: only delays of 5 ms or more (Core/Kernel/Sync.cs Wait.Sleep).</summary>
     public const string DelaySpin = "VITASHARP_DELAY_SPIN";
+    /// <summary>0 (A/B): timed waits on a sync object (WaitSema/WaitEventFlag/... timeouts, DelayThreadCB) end on the host monitor's whole-millisecond timeout again instead of at their microsecond deadline (Util/HostTimeoutTimer.cs). Default on (Windows, Linux, Android).</summary>
+    public const string PreciseTimeouts = "VITASHARP_PRECISE_TIMEOUTS";
     /// <summary>0 (A/B): an ATRAC9 superframe that fails to decode is skipped (no samples) instead of playing as a superframe of silence; its bytes count as consumed either way.</summary>
     public const string At9ErrorSilence = "VITASHARP_AT9_ERROR_SILENCE";
     /// <summary>Vulkan command-buffer slots in flight (2-8, default 3, 8 on Android; each holds a host upload ring, see UploadRingMb).</summary>
@@ -612,4 +629,10 @@ public static class EnvVars
     /// <summary>=0: the guest clock counts the host's garbage-collector pauses again (A/B); default: they are left out,
     /// as on the console no time passes while the whole emulated machine is stopped (Util/GuestClock.cs HostElapsed).</summary>
     public const string GcPauseClock = "VITASHARP_GC_PAUSE_CLOCK";
+    /// <summary>The CPU phase profile (Cpu/PhaseProfile.cs): unset = on while an F8 capture records or with --debug-mode
+    /// (one dispatcher turn in 31 timed), 1 = on for the whole run with every turn timed, 0 = never on.</summary>
+    public const string PhaseProf = "VITASHARP_PHASE_PROF";
+    /// <summary>Host nanoseconds per guest cycle above which a guest thread raises a [phase-alert] (default 70, ~200 host
+    /// cycles at 3 GHz).</summary>
+    public const string PhaseBudgetNs = "VITASHARP_PHASE_BUDGET_NS";
 }

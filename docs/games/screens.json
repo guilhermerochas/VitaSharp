@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "titles": [
+    {
+      "title": "PCSC00045",
+      "name": "Killzone: Mercenary",
+      "toGameplay": [
+        "title screen: press any button",
+        "main menu: 新しいシングルプレイ (new single player)",
+        "difficulty / character: 兵士 (soldier)",
+        "SECURITY SCAN: hold the thumb still on the scan rectangle ~12 s",
+        "ARRAN DANNER profile, then the mission loads into gameplay"
+      ]
+    },
+    {
+      "title": "PCSF00001",
+      "name": "Uncharted: Golden Abyss",
+      "toGameplay": [
+        "opening film: skip it after at most 40 s",
+        "Tutorial: Journal (start of the Prologue): tap the icon-bar tab at the bottom right (see the screen below)",
+        "gameplay: the icon bar sits on the right edge (camera, journal, table of contents, the tab that shows or hides it)"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "title": "PCSC00045",
+      "screen": "SECURITY SCAN",
+      "match": ["SECURITY SCAN"],
+      "after": "main menu 新しいシングルプレイ → 兵士",
+      "expects": "the thumb held still on the front touch panel, in the centre of the scan rectangle, until the scan completes (it is not a shader compilation or a loading screen)",
+      "action": { "kind": "hold", "x": 0.51, "y": 0.46, "seconds": 12 },
+      "result": "the 'ARRAN DANNER' profile card",
+      "status": "confirmed",
+      "notes": "4.5 s of holding is not enough; without any touch the screen moves on by itself after ~110 s"
+    },
+    {
+      "title": "PCSF00001",
+      "screen": "Tutorial: Journal",
+      "match": ["Tutorial: Journal", "Drake's Journal", "Journal"],
+      "after": "the opening film, when the Prologue's gameplay starts (a real Vita shows it there too with Tutorial Hints on)",
+      "expects": "a touch on the icon-bar tab at the bottom right of the screen, the icon under the lined-paper one (\"Touch to bring up the ICON bar...\"); the game is paused meanwhile and buttons, the book icon, the lined paper (table of contents) and touches elsewhere do not close it",
+      "action": { "kind": "tap", "x": 0.98, "y": 0.8 },
+      "result": "the tutorial closes and the Prologue's gameplay goes on",
+      "status": "confirmed",
+      "notes": "the tab spans about x 0.93-0.99, y 0.72-0.84 (re-runs of a capture: taps at 0.93,0.72 / 0.95,0.75 / 0.965,0.78 / 0.98,0.80 close it at once; 0.96,0.915 below it does not). Android with the on-screen controls on: the right stick's circle covers the left two thirds of the tab on a 20:9 phone, so tap its right edge (x 0.98) or turn the on-screen controls off in the pause menu first"
+    }
+  ]
+}

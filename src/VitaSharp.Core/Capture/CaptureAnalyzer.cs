@@ -58,6 +58,7 @@ public static class CaptureAnalyzer
 
         var findings = new List<Finding>();
         var stats = new List<FrameStat>();
+        (byte[] Rgba, int W, int H)? lastPicture = null;
         // the contact sheet: SheetCells frames spread over the recording, picked by index from the frame count
         int total = CountFrames(dir, expectedFrames);
         HashSet<int> sheetAt = SheetIndices(total, SheetCells);
@@ -76,6 +77,7 @@ public static class CaptureAnalyzer
                 if (pic is { } pv)
                 {
                     (byte[]? px, int w, int h) = pv;
+                    lastPicture = pv;
                     st.Hash = XxHash64.HashToUInt64(px);
                     (st.Luma, st.Dark) = Brightness(px);
                     st.Thumb = Downscale(px, w, h, TW, TH);
@@ -171,6 +173,12 @@ public static class CaptureAnalyzer
             string name = words.Length > 1 ? CaptureStates.Mark(int.TryParse(words[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) ? n : 0) : "mark0";
             bool hasState = CaptureStates.IsValid(name) && File.Exists(Path.Combine(dir, CaptureStates.FileName(name)));
             sb.AppendLine(FormattableString.Invariant($"marked by the player at {(mark.Ns - startNs) / 1e9:+0.000;-0.000} s (guest frame {mark.Flip}){(hasState ? $": {CaptureStates.FileName(name)}, re-run from it with rerun --from={name}" : ": no save state")}"));
+        }
+
+        // the [hitch] lines of the recording (Util/FrameLedger.cs): what the host did in each long present interval
+        foreach (string l in HitchLines(dir))
+        {
+            sb.AppendLine(l);
         }
 
         sb.AppendLine();
@@ -303,6 +311,33 @@ public static class CaptureAnalyzer
         foreach (string? l in ctxStop.Where(l => l.StartsWith("audio: ", StringComparison.Ordinal)))
         {
             sb.AppendLine("    " + l["audio: ".Length..]);
+        }
+
+        List<string> screenLines = ScreenStateSection(dir, ctxStop);
+        // the text on the last frame (what the screen says: "SECURITY SCAN", "Press X"): Capture/ScreenText.cs
+        if (lastPicture is { } last && !cancel.IsCancellationRequested)
+        {
+            screenLines.Add("");
+            screenLines.AddRange(ScreenTextSection(last.Rgba, last.W, last.H));
+        }
+
+        if (screenLines.Count > 0)
+        {
+            sb.AppendLine();
+            foreach (string l in screenLines)
+            {
+                sb.AppendLine(l);
+            }
+        }
+
+        List<string> phaseLines = CpuPhasesSection(dir, ContextSection(dir, stop: false), ctxStop);
+        if (phaseLines.Count > 0)
+        {
+            sb.AppendLine();
+            foreach (string l in phaseLines)
+            {
+                sb.AppendLine(l);
+            }
         }
 
         List<string> fileLines = CaptureFileRecorder.ReportSection(dir);
@@ -1002,6 +1037,219 @@ public static class CaptureAnalyzer
                 lines.Add(l);
             }
         }
+        return lines;
+    }
+
+    /// <summary>The <c>[hitch]</c> lines of the capture's log (a present long after the previous one, by cause; at most
+    /// 20, the longest first), or nothing.</summary>
+    internal static List<string> HitchLines(string dir)
+    {
+        var lines = new List<string>();
+        string log = Path.Combine(dir, "log.txt");
+        if (!File.Exists(log))
+        {
+            return lines;
+        }
+
+        var hitches = new List<(double Ms, string Text)>();
+        var stalls = new List<string>();
+        foreach (string l in File.ReadLines(log))
+        {
+            int stall = l.IndexOf("[shadercache] present ", StringComparison.Ordinal);
+            if (stall >= 0 && l.Contains(" by shader/pipeline work", StringComparison.Ordinal))
+            {
+                stalls.Add(l[(stall + "[shadercache] ".Length)..]);
+                continue;
+            }
+
+            int at = l.IndexOf("[hitch] ", StringComparison.Ordinal);
+            if (at < 0)
+            {
+                continue;
+            }
+
+            string text = l[(at + "[hitch] ".Length)..];
+            int colon = text.IndexOf(": ", StringComparison.Ordinal);
+            int msEnd = colon < 0 ? -1 : text.IndexOf(" ms since", colon, StringComparison.Ordinal);
+            double ms = msEnd > colon && double.TryParse(text[(colon + 2)..msEnd], NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v : 0;
+            hitches.Add((ms, text));
+        }
+
+        if (hitches.Count == 0 && stalls.Count == 0)
+        {
+            return lines;
+        }
+
+        lines.Add("");
+        lines.Add($"Hitches in the log ({hitches.Count}, a present more than VITASHARP_HITCH_MS after the previous one; the host time of the interval by cause):");
+        foreach ((double _, string text) in hitches.OrderByDescending(h => h.Ms).Take(20))
+        {
+            lines.Add("  " + text);
+        }
+
+        if (stalls.Count > 0)
+        {
+            lines.Add($"  shader/pipeline stalls of the GPU thread ({stalls.Count}; what it waited for):");
+            foreach (string st in stalls.Take(20))
+            {
+                lines.Add("    " + st);
+            }
+        }
+
+        return lines;
+    }
+
+    /// <summary>
+    /// "Screen state": whether the game waits for the player (and which input it reads), loads or is busy, at the stop
+    /// of the recording (context.txt "screen:") and the detector's last changes (log.txt "[input-wait]"), so a still
+    /// picture is not taken for a loading screen (docs/notes/screens.md).
+    /// </summary>
+    internal static List<string> ScreenStateSection(string dir, List<string> ctxStop)
+    {
+        var lines = new List<string>();
+        foreach (string l in ctxStop)
+        {
+            if (l.StartsWith("screen: ", StringComparison.Ordinal))
+            {
+                lines.Add("  at the stop: " + l["screen: ".Length..]);
+            }
+        }
+
+        string log = Path.Combine(dir, "log.txt");
+        if (File.Exists(log))
+        {
+            var changes = new Queue<string>();
+            foreach (string l in File.ReadLines(log))
+            {
+                int at = l.IndexOf("[input-wait] ", StringComparison.Ordinal);
+                if (at < 0)
+                {
+                    continue;
+                }
+
+                changes.Enqueue(l[(at + "[input-wait] ".Length)..]);
+                while (changes.Count > 8)
+                {
+                    changes.Dequeue();
+                }
+            }
+
+            if (changes.Count > 0)
+            {
+                lines.Add("  last changes (log.txt [input-wait]):");
+                foreach (string c in changes)
+                {
+                    lines.Add("    " + c);
+                }
+            }
+        }
+
+        if (lines.Count > 0)
+        {
+            lines.Insert(0, "Screen state (waiting for input / loading / busy):");
+        }
+
+        return lines;
+    }
+
+    /// <summary>
+    /// "CPU phases": for every guest thread, where its host time went during the recording (context.txt "cpu-phases:"
+    /// at the start and the stop, Cpu/PhaseProfile.cs): ns of host time per guest cycle by dispatcher phase, HLE and
+    /// pacing time, blocks decoded and compiled on the thread, and the last budget alerts (log.txt "[phase-alert]").
+    /// A thread that started during the recording counts from zero.
+    /// </summary>
+    internal static List<string> CpuPhasesSection(string dir, List<string> ctxStart, List<string> ctxStop)
+    {
+        const string Prefix = "cpu-phases: ";
+        var start = new Dictionary<string, long[]>();
+        var seen = new Dictionary<string, int>();
+        foreach (string l in ctxStart)
+        {
+            if (l.StartsWith(Prefix, StringComparison.Ordinal) && Cpu.PhaseProfile.ParseContextLine(l[Prefix.Length..]) is { } parsed)
+            {
+                int n = seen[parsed.Thread] = seen.GetValueOrDefault(parsed.Thread) + 1;
+                start[$"{parsed.Thread}#{n}"] = parsed.Counters;
+            }
+        }
+
+        seen.Clear();
+        var rows = new List<(long Cycles, string Line)>();
+        foreach (string l in ctxStop)
+        {
+            if (!l.StartsWith(Prefix, StringComparison.Ordinal) || Cpu.PhaseProfile.ParseContextLine(l[Prefix.Length..]) is not { } parsed)
+            {
+                continue;
+            }
+
+            int n = seen[parsed.Thread] = seen.GetValueOrDefault(parsed.Thread) + 1;
+            long[] before = start.GetValueOrDefault($"{parsed.Thread}#{n}") ?? new long[Cpu.PhaseProfile.SnapshotLength];
+            long[] delta = Cpu.PhaseProfile.Delta(parsed.Counters, before);
+            long cycles = Cpu.PhaseProfile.TotalCycles(delta);
+            if (cycles > 0)
+            {
+                rows.Add((cycles, "  " + Cpu.PhaseProfile.Format(parsed.Thread, delta, parsed.Frequency)));
+            }
+        }
+
+        var lines = new List<string>();
+        foreach ((long _, string line) in rows.OrderByDescending(r => r.Cycles))
+        {
+            lines.Add(line);
+        }
+
+        string log = Path.Combine(dir, "log.txt");
+        if (File.Exists(log))
+        {
+            var alerts = new Queue<string>();
+            foreach (string l in File.ReadLines(log))
+            {
+                int at = l.IndexOf("[phase-alert] ", StringComparison.Ordinal);
+                if (at < 0)
+                {
+                    continue;
+                }
+
+                alerts.Enqueue(l[(at + "[phase-alert] ".Length)..]);
+                while (alerts.Count > 12)
+                {
+                    alerts.Dequeue();
+                }
+            }
+
+            if (alerts.Count > 0)
+            {
+                lines.Add("  last budget alerts (log.txt [phase-alert]):");
+                foreach (string a in alerts)
+                {
+                    lines.Add("    " + a);
+                }
+            }
+        }
+
+        if (lines.Count > 0)
+        {
+            lines.Insert(0, "CPU phases (per guest thread, during the recording; host time per guest cycle, Cpu/PhaseProfile.cs):");
+        }
+
+        return lines;
+    }
+
+    /// <summary>"Screen text (last frame)": the OCR's lines with their boxes, or why there is no OCR here.</summary>
+    internal static List<string> ScreenTextSection(byte[] rgba, int width, int height)
+    {
+        var lines = new List<string>();
+        ScreenTextResult result;
+        try
+        {
+            result = ScreenText.Recognize(rgba, width, height, timeoutMs: 30000);
+        }
+        catch (Exception e) when (e is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            result = new ScreenTextResult("ocr", [], e.Message);
+        }
+
+        lines.Add($"Screen text (last frame, {width}x{height}, {result.Backend}):");
+        lines.AddRange(ScreenText.Format(result));
         return lines;
     }
 

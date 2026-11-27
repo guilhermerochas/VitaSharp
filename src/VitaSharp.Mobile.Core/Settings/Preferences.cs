@@ -54,13 +54,15 @@ public sealed class AppPreferences
     public string GpuProfile { get; set; } = "";
     public bool VSync { get; set; } = true;
     public bool ShowFps { get; set; }
-    /// <summary>"Modo de depuracao": debug logging (Log level Debug + DebugMode, docs/notes/debug-mode.md).</summary>
-    public bool DebugMode { get; set; }
     /// <summary>The emulator option "Ativar Plugins do Kernel": the plugins of ur0:tai / ux0:tai config.txt load (off:
     /// the pure firmware, no plugin).</summary>
     public bool KernelPlugins { get; set; }
     /// <summary>Opacity of the on-screen controls, 0.1..1.</summary>
     public float OnScreenOpacity { get; set; } = 0.55f;
+    /// <summary>The on-screen controls show in the game screen: the button by the fps counter and the pause menu's
+    /// "Controles na tela" toggle it, for every game (Input.OnScreenVisibility). Off, the whole screen is the game's
+    /// touch.</summary>
+    public bool ShowOnScreenControls { get; set; } = true;
     /// <summary>Hide the on-screen controls while a physical controller is connected.</summary>
     public bool HideOnScreenWithGamepad { get; set; } = true;
     /// <summary>Vibrate briefly on every on-screen control press, also while another finger holds the stick.</summary>

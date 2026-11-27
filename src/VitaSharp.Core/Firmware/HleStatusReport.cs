@@ -164,16 +164,16 @@ public static class HleStatusReport
         static int I(string v) => int.Parse(v, s_inv);
     }
 
-    private static double Pct(int n, int total) => total == 0 ? 0 : 100.0 * n / total;
+    internal static double Pct(int n, int total) => total == 0 ? 0 : 100.0 * n / total;
 
     /// <summary>"99.1%", never rounded up to 100% while something is missing.</summary>
-    private static string PctText(int n, int total)
+    internal static string PctText(int n, int total)
     {
         double p = Math.Floor(Pct(n, total) * 10) / 10;
         return p.ToString(p == Math.Floor(p) ? "0" : "0.0", s_inv) + "%";
     }
 
-    private static string Count(int n) => n.ToString("N0", s_inv);
+    internal static string Count(int n) => n.ToString("N0", s_inv);
 
     /// <summary>Every generated file: repository-relative path (forward slashes) to its content (LF line ends).
     /// <paramref name="kernel"/>: the kernel census (<see cref="ParseKernel"/>), for the kernel badge and section.</summary>
@@ -216,10 +216,10 @@ public static class HleStatusReport
         ("overall", $"firmware {s.Firmware} exports", s.Impl, s.Total, s.Default, s.Lle),
     ];
 
-    private static string BadgeColor(double p) => p >= 95 ? "#4c1" : p >= 80 ? "#97ca00" : p >= 60 ? "#a4a61d" : p >= 40 ? "#dfb317" : p >= 20 ? "#fe7d37" : "#e05d44";
+    internal static string BadgeColor(double p) => p >= 95 ? "#4c1" : p >= 80 ? "#97ca00" : p >= 60 ? "#a4a61d" : p >= 40 ? "#dfb317" : p >= 20 ? "#fe7d37" : "#e05d44";
 
     /// <summary>Approximate advance of a string in Verdana 11 px (shields.io's font), enough to size the boxes.</summary>
-    private static double TextWidth(string t, double size = 11)
+    internal static double TextWidth(string t, double size = 11)
     {
         double w = 0;
         foreach (char ch in t)
@@ -238,12 +238,12 @@ public static class HleStatusReport
         return w * size / 11;
     }
 
-    private static string Esc(string t) => t.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;");
+    internal static string Esc(string t) => t.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;");
 
-    private static string F(double v) => Math.Round(v, 1).ToString("0.#", s_inv);
+    internal static string F(double v) => Math.Round(v, 1).ToString("0.#", s_inv);
 
     /// <summary>A flat shields.io-style badge.</summary>
-    private static string Badge(string label, string value, string color)
+    internal static string Badge(string label, string value, string color)
     {
         double lw = Math.Ceiling(TextWidth(label) + 12), vw = Math.Ceiling(TextWidth(value) + 12), w = lw + vw;
         var b = new StringBuilder();
@@ -263,7 +263,7 @@ public static class HleStatusReport
     }
 
     /// <summary>Cell colour: red (nothing) through amber to green (everything implemented).</summary>
-    private static string CellColor(double pct, bool dark)
+    internal static string CellColor(double pct, bool dark)
     {
         double hue = 120 * pct / 100;
         return Hsl(hue, dark ? 0.55 : 0.60, dark ? 0.36 : 0.62);
@@ -278,7 +278,7 @@ public static class HleStatusReport
 
     /// <summary>Squarified treemap (Bruls, Huizing, van Wijk): rows of cells along the shorter side, each row grown
     /// while it keeps the worst aspect ratio from getting worse.</summary>
-    private static List<(MapCell L, double X, double Y, double W, double H)> Treemap(IReadOnlyList<MapCell> libs, double x, double y, double w, double h)
+    internal static List<(MapCell L, double X, double Y, double W, double H)> Treemap(IReadOnlyList<MapCell> libs, double x, double y, double w, double h)
     {
         var cells = new List<(MapCell, double, double, double, double)>();
         double sum = libs.Sum(l => (double)l.Total);
@@ -331,7 +331,7 @@ public static class HleStatusReport
     }
 
     /// <summary>One cell of the progress map: a library, its exported functions and the implemented (covered) ones.</summary>
-    private sealed record MapCell(string Name, int Impl, int Total, int Default);
+    internal sealed record MapCell(string Name, int Impl, int Total, int Default);
 
     /// <summary>The progress map: one treemap region for the libraries user code imports and, with the kernel census
     /// (<paramref name="kernel"/>), one for the kernel libraries (exports to other kernel code), each region's area
@@ -420,7 +420,7 @@ public static class HleStatusReport
 
     private static readonly string[] s_kernelTableSuffixes = ["ForDriver", "ForKernel"];
 
-    private static void RegionTitle(StringBuilder b, string text, double x, double y, string fill)
+    internal static void RegionTitle(StringBuilder b, string text, double x, double y, string fill)
     {
         b.Append(s_inv, $"<text x=\"{F(x + 4)}\" y=\"{F(y + 14)}\" font-size=\"13\" font-weight=\"600\" fill=\"{fill}\">{Esc(text)}</text>\n");
     }

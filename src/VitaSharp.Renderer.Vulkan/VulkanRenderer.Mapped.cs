@@ -39,8 +39,19 @@ public sealed unsafe partial class VulkanRenderer
     private readonly Dictionary<(DepthTarget, bool Stencil), long> _mirroredDepthScene = new();
     private long _statMirrorKept;
 
-    /// <summary>VITASHARP_MAPPED_SCENE_START=1: see <see cref="KeepSceneMirror"/>.</summary>
-    private static readonly bool s_mappedSceneStart = Environment.GetEnvironmentVariable(EnvVars.MappedSceneStart)?.Trim() == "1";
+    /// <summary>VITASHARP_MAPPED_SCENE_START (0/1; unset: <see cref="MappedSceneStartOn"/>'s default).</summary>
+    private static readonly bool? s_mappedSceneStartEnv = Environment.GetEnvironmentVariable(EnvVars.MappedSceneStart)?.Trim() switch { "1" => true, "0" => false, _ => null };
+
+    /// <summary>
+    /// Whether mapped reads of the scene's own surfaces keep the copy taken in the scene (<see cref="KeepSceneMirror"/>):
+    /// the switch when set, else on for tile-based GPUs (<see cref="GpuQuirk.TileBased"/>, from the device's vendor and
+    /// driver), where every refresh ended the rendering and stored and loaded the tiles (Mali-G57 bench of the Killzone
+    /// Mercenary gameplay fixture: 33.3 -> 30.1 ms, same picture; elsewhere 27.1 -> 26.4 ms). Pure, unit-tested
+    /// (MappedSceneMirrorTests).
+    /// </summary>
+    internal static bool MappedSceneStartOn(bool? env, bool tileBased) => env ?? tileBased;
+
+    private bool MappedSceneStart => MappedSceneStartOn(s_mappedSceneStartEnv, TiledRenderings);
 
     /// <summary>
     /// A memory read of a surface of the scene being rendered sees the Vita's memory, which holds the surface as it was
@@ -827,7 +838,7 @@ public sealed unsafe partial class VulkanRenderer
             return true;
         }
 
-        if (_mirroredRt.ContainsKey(rt) && KeepSceneMirror(s_mappedSceneStart, _inScene, rt == _renderTarget, _mirroredRtScene.GetValueOrDefault(rt, -1), _sceneSerial))
+        if (_mirroredRt.ContainsKey(rt) && KeepSceneMirror(MappedSceneStart, _inScene, rt == _renderTarget, _mirroredRtScene.GetValueOrDefault(rt, -1), _sceneSerial))
         {
             _statMirrorKept++;
             return true;
@@ -874,7 +885,7 @@ public sealed unsafe partial class VulkanRenderer
             return true;
         }
 
-        if (_mirroredDepth.ContainsKey((dt, stencil)) && KeepSceneMirror(s_mappedSceneStart, _inScene, dt == _depth, _mirroredDepthScene.GetValueOrDefault((dt, stencil), -1), _sceneSerial))
+        if (_mirroredDepth.ContainsKey((dt, stencil)) && KeepSceneMirror(MappedSceneStart, _inScene, dt == _depth, _mirroredDepthScene.GetValueOrDefault((dt, stencil), -1), _sceneSerial))
         {
             _statMirrorKept++;
             return true;

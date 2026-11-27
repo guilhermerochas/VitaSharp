@@ -272,6 +272,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         InitPipelineLibrary(options.PipelineLibrary);
         ShaderCompiler.WarmProcessInBackground(); // glslang's one-time initialisation off the first new shader's frame
         InitTrace();
+        // the process-wide generator options before this renderer sets them for its device: put back by Dispose
+        _savedGeneratorOptions = Core.Gxm.Shader.ShaderGenerator.CaptureDeviceOptions();
         // programmable blending in multisampled scenes reads per sample only where sample-rate shading exists
         Core.Gxm.Shader.ShaderGenerator.PerSampleFramebufferFetch = _core.SampleRateShading;
         // Qualcomm proprietary driver: dynamically indexed register words through switch helpers (GLSL changes only then)
@@ -2095,7 +2097,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             }
             F.SplashCheck = true;
         }
-        if (DebugMode.Enabled || _options.PresentTap != null)
+        if (DebugMode.Enabled || _options.PresentTap != null || VitaSharp.Core.Input.InputWaitMonitor.Active)
         {
             DebugPresent(src, frame);
         }
@@ -2611,9 +2613,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     private bool _disposingForReplacement;
 
+    private readonly Core.Gxm.Shader.ShaderGenerator.DeviceOptions _savedGeneratorOptions;
+
     public void Dispose()
     {
         StopShaderWorkers();
+        // no shader of this renderer is generated from here on
+        Core.Gxm.Shader.ShaderGenerator.RestoreDeviceOptions(in _savedGeneratorOptions);
         CloseTitleCaches();
         StopPresentThread();
         _core.WaitIdle();

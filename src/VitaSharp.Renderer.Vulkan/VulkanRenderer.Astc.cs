@@ -20,6 +20,10 @@ public sealed unsafe partial class VulkanRenderer
 
     private static bool IsAstc(in TexFormatInfo info) => info.Convert is TexConvert.AstcFromBc or TexConvert.AstcFromPvrtc;
 
+    /// <summary>VITASHARP_ASTC_PRELOAD_MB: how much of the title's ASTC disk cache is read into memory at the title start,
+    /// most recently used first (default 96 MB; 0 off).</summary>
+    private static readonly long s_astcPreloadBytes = (long.TryParse(Environment.GetEnvironmentVariable(Core.Util.EnvVars.AstcPreloadMb), out long mb) ? mb : 96) << 20;
+
     /// <summary>Title start: the ASTC disk cache goes into the title's shader cache folder.</summary>
     private void OpenAstcCache(string titleDir)
     {
@@ -30,6 +34,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         AstcTranscoder.Disk = new TranscodeDiskCache(Path.Combine(titleDir, "astc"), s_astcCacheBytes);
+        AstcTranscoder.Disk.StartPreload(s_astcPreloadBytes);
         Log.Info($"[texcache] BC/PVRTC textures are transcoded to ASTC 4x4; disk cache {AstcTranscoder.Disk.Directory} (limit {s_astcCacheBytes >> 20} MB, {AstcTranscoder.Disk.Bytes >> 20} MB used)");
     }
 }

@@ -1,4 +1,4 @@
-<!-- pair: captures.md sha256=35c2d44a4e2694e6f6682bc4ff36e6218cc43ad5b8d0710dff289a66fde2aecb -->
+<!-- pair: captures.md sha256=59c3932cada52e3e745e6818b9b2d32186ac2fa15e2381d65bb41e9ea69513ac -->
 # Analisar uma gravação do Gravar tudo sem o jogo
 
 [English](captures.md) | **Português**
@@ -6,6 +6,12 @@
 Uma gravação do **Gravar tudo** (F8 no PC, menu de pausa no Android) é feita para ser enviada: alguém publica o
 `.zip` no GitHub e quem corrige o problema trabalha só com ele, num computador que não tem o jogo, nem a atualização
 dele, nem os plugins de quem gravou.
+
+Esta página é para desenvolvedores que analisam uma gravação: o jogador só aperta F8 (e Shift+F8 no problema), como diz
+[Relatar um bug](../README.pt-BR.md#relatar-um-bug) no README. A gravação é a única ferramenta de depuração do
+jogador, então tem tudo o que as antigas ferramentas separadas davam: o `log.txt` é o log da sessão com o log
+detalhado (as linhas de primeiro uso, erros de HLE, anomalias e PERF periódico do modo de depuração: ligado sozinho
+enquanto a gravação grava ou guarda a pré-gravação), e o `gpu.vsgd` é o dump da GPU.
 
 ## O que sai junto com a gravação
 
@@ -76,6 +82,11 @@ Os arquivos que o jogo leu durante a gravação voltam sobre as montagens dele n
 quando a gravação guardou, com os bytes lidos, então ela lê os mesmos bytes sem o jogo; o resumo da reexecução (linhas
 `files:`) diz se ela leu algo que a gravação não leu e quais leituras não pôde repor (guardadas só com hash: a
 reexecução lê zeros ali). O `report.txt` lista o que foi lido e se os bytes saíram junto com a gravação.
+
+A seção "CPU phases" do `report.txt` diz para onde foi o tempo do host de cada thread do guest durante a gravação (ns
+de tempo do host por ciclo do guest por fase do despachante: interpretador, interpretador vetorial VFP, código nativo,
+troca de bloco, HLE, ritmo; blocos decodificados e compilados na thread) e lista as últimas linhas `[phase-alert]`:
+uma thread acima do orçamento e a fase culpada. Veja [docs/notes/cpu-phases.pt-BR.md](notes/cpu-phases.pt-BR.md).
 
 O que ainda precisa do jogo: os bytes de uma gravação feita sem `--capture-files-mb`, módulos do firmware
 que o jogo carrega pela primeira vez durante a gravação (vêm do firmware de quem analisa), e gravações do shell do

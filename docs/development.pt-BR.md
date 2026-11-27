@@ -1,4 +1,4 @@
-<!-- pair: development.md sha256=eb146a5e7c7db4aba51768a45fd9e0be2b1d5a2bb7c9fd187256d3f0dc9fad11 -->
+<!-- pair: development.md sha256=b5520cf69a919fcc9eaf2feedcd4df833429226fe22327821fa04f6fb5db83fc -->
 # Desenvolvimento
 
 [English](development.md) | **Português**
@@ -37,7 +37,8 @@ falha mostra as linhas a escrever). Para contribuir com funções do sistema, ve
 [`docs/hle`](hle/README.md). `build/hle-abi-check.ps1` / `build/hle-abi-check.sh` lista as funções HLE cujos
 registradores de argumento diferem dos protótipos do [vita-headers](https://github.com/vitasdk/vita-headers) (precisa
 de `git` e rede para o clone, ou de um clone local). `build/hle-status.ps1` / `.sh` gera de novo os selos e os mapas de
-progresso do README.
+progresso do README; `-CompatOnly` / `--compat-only` refaz só o mapa do Compat, a partir de `docs/compat/coverage.json`, sem o
+firmware e os jogos.
 
 ## Antes de um push
 
@@ -81,6 +82,16 @@ Os scripts shell seguem o Google Shell Style Guide e precisam passar no ShellChe
 
 ## Opções de desenvolvedor
 
+- Tempos-limite precisos (`VITASHARP_PRECISE_TIMEOUTS=0` desliga, A/B): uma espera com tempo-limite num objeto do
+  kernel (sceKernelWaitSema, WaitEventFlag e os outros argumentos `timeout`, sceKernelDelayThreadCB) termina no prazo
+  em microssegundos, como o timer do threadmgr no Vita, e não no próximo milissegundo inteiro do `Monitor.Wait` (um
+  tempo-limite de 500 us durava 1,1-1,3 ms). Uma thread do host, "HLE timeouts", dorme num timer de alta resolução e
+  acorda quem espera: um `timerfd` no Linux e no Android, um waitable timer de alta resolução no Windows (ele dispara
+  em ticks de 0,5 ms, então lá um tempo-limite ainda pode terminar até 0,5 ms depois). Nada gira. O macOS continua
+  com o arredondamento em milissegundos: não tem `timerfd`, e o equivalente (um `EVFILT_TIMER` do kqueue com
+  `NOTE_USECONDS`, remarcado enquanto a thread espera) ainda não foi escrito. Os sleeps curtos do host
+  (`PreciseSleep`) giram só o atraso medido do timer no desktop (dezenas de microssegundos no Linux e no macOS,
+  ~0,5 ms no Windows) e nunca no celular; no Linux e no Android as threads que dormem recebem timer slack de 1 us.
 - Dump do backend IL: `VITASHARP_IL_DUMP=<pasta>` grava os blocos do jogo compilados como assemblies para ler no ILSpy
   (`dotnet tool install -g ilspycmd`, depois `ilspycmd -il <arquivo>.dll`); `DOTNET_JitDisasm=<método>` mostra o
   código de máquina que o RyuJIT gera. Veja [`docs/notes/il-jit.md`](notes/il-jit.md).
@@ -132,6 +143,7 @@ O que o `dotnet test tests/VitaSharp.Tests` precisa em cada sistema; um teste se
 | Dispositivo Vulkan (testes do renderizador, dos dumps da GPU e dos jogos rodando) | o lavapipe do Mesa (Vulkan 1.4, o mesmo do CI do Linux): descompacte a pasta `x64` de uma versão do [mesa-dist-win](https://github.com/pal1000/mesa-dist-win/releases) (`vulkan_lvp.dll` + `lvp_icd.x86_64.json`) em `%LOCALAPPDATA%\VitaSharpTools\mesa\<versão>\x64`; sem ele, ou quando o carregador do sistema `vulkan-1.dll` não pode usá-lo, o SwiftShader que vem com o Microsoft Edge ou o Google Chrome (os dois achados sozinhos) | o lavapipe de um Mesa mais novo que o 22.3 (o CI tem o 25.2): `sudo apt install mesa-vulkan-drivers libvulkan1` (Fedora: `mesa-vulkan-drivers vulkan-loader`; Debian 12: `sudo apt install -t bookworm-backports mesa-vulkan-drivers`, o 22.3 dele derruba os testes de textura) | o MoltenVK: o Vulkan SDK da LunarG, ou `brew install molten-vk vulkan-loader` |
 | shaderc (testes do renderizador e de compilação de shaders; o renderizador também precisa dele) | vem do pacote Silk.NET.Shaderc.Native | vem do pacote (achado em `runtimes/linux-x64` também onde a busca do Silk.NET não acha, como no Ubuntu); quando essa cópia não carrega: `sudo apt install libshaderc-dev` (Fedora, Arch: `shaderc`; carregado como `libshaderc.so.1`) | vem do pacote, senão o `brew install shaderc` do Homebrew |
 | Uma janela do desktop (testes do overlay do jogo) | sempre | uma tela X11 ou Wayland; sem tela: `xvfb-run dotnet test tests/VitaSharp.Tests` (`sudo apt install xvfb`) | pulados: o AppKit só cria janelas na thread principal, e os testes rodam em threads de trabalho |
+| OCR (`screen-text`, `ScreenTextTests`, o texto da tela no relatório do F8) | o Windows.Media.Ocr do sistema (Windows 10/11, pelo Windows PowerShell 5.1) com um idioma de OCR instalado (Configurações > Hora e idioma > Idioma; japonês para menus em japonês) | `sudo apt install tesseract-ocr` (`tesseract-ocr-jpn` para japonês) | `brew install tesseract` (`tesseract-lang` para japonês) |
 | FFmpeg (testes de decodificação de vídeo e áudio) | baixado pelo primeiro build | baixado pelo primeiro build | o do sistema: `brew install ffmpeg` |
 
 - Qualquer sistema: `VK_DRIVER_FILES` (ou `VK_ICD_FILENAMES`) com o manifesto ICD de um SwiftShader ou Mesa baixado é

@@ -23,6 +23,12 @@ public sealed class TranscodeDiskCache
     /// <summary>The keys on disk (null until the folder was listed once, on a background thread).</summary>
     private HashSet<ulong>? _index;
     private int _indexing;
+    /// <summary>Entries read ahead by <see cref="StartPreload"/> (whole files, header included), taken out on first use.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, byte[]> _preloaded = new();
+    private long _preloadedBytes;
+    public long Preloaded, PreloadHits;
+    /// <summary>Set when the read-ahead thread ended (tests).</summary>
+    public readonly ManualResetEventSlim PreloadDone = new(false);
 
     public string Directory => _dir;
     public long Limit => _limit;
@@ -91,6 +97,70 @@ public sealed class TranscodeDiskCache
         }
     }
 
+    /// <summary>
+    /// Title start: reads the most recently used entries into memory on a background thread, up to
+    /// <paramref name="maxBytes"/>, so the first use of a texture the title has transcoded before costs no file system
+    /// call on the GPU thread (on Android's shared storage each one goes through FUSE: a weapon change that brought in
+    /// ~100 levels stalled the frame 0.2-0.5 s in texture uploads). An entry leaves memory when it is used; entries the
+    /// title never asks for are dropped with the cache. The content and its checks are those of a file read.
+    /// </summary>
+    public void StartPreload(long maxBytes)
+    {
+        if (maxBytes <= 0)
+        {
+            PreloadDone.Set();
+            return;
+        }
+
+        var thread = new Thread(() => Preload(maxBytes)) { Name = "ASTC cache read-ahead", IsBackground = true, Priority = ThreadPriority.BelowNormal };
+        thread.Start();
+    }
+
+    private void Preload(long maxBytes)
+    {
+        try
+        {
+            if (!System.IO.Directory.Exists(_dir))
+            {
+                return;
+            }
+
+            var files = new List<(DateTime Used, string Path, ulong Key)>();
+            foreach (string file in System.IO.Directory.EnumerateFiles(_dir, "*.astc"))
+            {
+                if (ulong.TryParse(Path.GetFileNameWithoutExtension(file), System.Globalization.NumberStyles.HexNumber, null, out ulong key))
+                {
+                    files.Add((File.GetLastWriteTimeUtc(file), file, key));
+                }
+            }
+
+            // most recently used first: what the last sessions played is what this one is most likely to ask for
+            files.Sort((a, b) => b.Used.CompareTo(a.Used));
+            foreach ((DateTime _, string path, ulong key) in files)
+            {
+                if (Interlocked.Read(ref _preloadedBytes) >= maxBytes)
+                {
+                    break;
+                }
+
+                byte[] data = File.ReadAllBytes(path);
+                if (_preloaded.TryAdd(key, data))
+                {
+                    Interlocked.Add(ref _preloadedBytes, data.Length);
+                    Interlocked.Increment(ref Preloaded);
+                }
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Log.WarnOnce("astc-cache-preload", $"[texcache] cannot read {_dir} ahead: {e.Message}");
+        }
+        finally
+        {
+            PreloadDone.Set();
+        }
+    }
+
     /// <summary>The cached payload of <paramref name="key"/> when it exists, has the expected <paramref name="tag"/>
     /// (format and size of what was transcoded) and length; null otherwise.</summary>
     public byte[]? TryGet(ulong key, ulong tag, int expectedLength)
@@ -99,19 +169,40 @@ public sealed class TranscodeDiskCache
         try
         {
             byte[] data;
-            lock (_lock)
+            if (_preloaded.TryRemove(key, out byte[]? ahead))
             {
-                if (!File.Exists(p))
+                data = ahead;
+                Interlocked.Add(ref _preloadedBytes, -ahead.Length);
+                Interlocked.Increment(ref PreloadHits);
+                Interlocked.Increment(ref FrameLedger.AstcDiskReadAheadHits);
+                // the use time (the LRU order) is refreshed off the caller's thread
+                ThreadPool.UnsafeQueueUserWorkItem(static path =>
                 {
-                    Misses++;
-                    return null;
-                }
-                data = File.ReadAllBytes(p);
-                try
+                    try
+                    {
+                        File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
+                    }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+                }, p, false);
+            }
+            else
+            {
+                lock (_lock)
                 {
-                    File.SetLastWriteTimeUtc(p, DateTime.UtcNow);
+                    if (!File.Exists(p))
+                    {
+                        Misses++;
+                        return null;
+                    }
+                    data = File.ReadAllBytes(p);
+                    try
+                    {
+                        File.SetLastWriteTimeUtc(p, DateTime.UtcNow);
+                    }
+                    catch (IOException) { }
                 }
-                catch (IOException) { }
+
+                Interlocked.Increment(ref FrameLedger.AstcDiskFileReads);
             }
             if (data.Length < HeaderSize || BinaryPrimitives.ReadUInt32LittleEndian(data) != Magic
                 || BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4)) != data.Length - HeaderSize || BinaryPrimitives.ReadUInt64LittleEndian(data.AsSpan(8)) != key)
@@ -237,5 +328,5 @@ public sealed class TranscodeDiskCache
         }
     }
 
-    public string Summary() => $"disk cache {Hits} hits, {Misses} misses, {Writes} written, {Evictions} evicted, {Bytes / 1048576.0:F1} of {_limit / 1048576} MB";
+    public string Summary() => $"disk cache {Hits} hits ({PreloadHits} read ahead at the title start: {Preloaded} entries read, {Interlocked.Read(ref _preloadedBytes) / 1048576.0:F1} MB still waiting), {Misses} misses, {Writes} written, {Evictions} evicted, {Bytes / 1048576.0:F1} of {_limit / 1048576} MB";
 }

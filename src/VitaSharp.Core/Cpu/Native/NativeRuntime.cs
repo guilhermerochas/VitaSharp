@@ -224,6 +224,10 @@ public sealed unsafe partial class NativeRuntime
             }
 
             CalloutHits[op]++; // racy on purpose: statistics only
+            if (PhaseProfile.Enabled)
+            {
+                CpuCore.CurrentCore?.Phases.CalloutRan(); // the thread's own count (its phase profile)
+            }
             CalloutClasses.Hits[op * CalloutClasses.Sub + CalloutClasses.Of(op, ins)]++;
             HandlerTable.Pointers[op](s, ins, pc);
             return 0; // an exit the handler raised (UDF, SVC...) is seen by the block exits, exactly like the interpreter

@@ -8,7 +8,7 @@ using VitaSharp.Renderer.Vulkan;
 namespace VitaSharp.Desktop;
 
 /// <summary>
-/// Recording side of the GPU dump (see docs/notes/gpu-dump.md): Ctrl+F8 in the game window starts and stops a recording,
+/// Recording side of the GPU dump (see docs/notes/gpu-dump.md): an --input script's Ctrl+F8 step starts and stops a recording (the player's F8 capture records its own),
 /// <c>--gpu-dump-at=F1:F2[:file]</c> (or VITASHARP_GPU_DUMP_AT) records frames F1..F2 of a run. Dumps go to
 /// &lt;DataRoot&gt;/gpudumps/&lt;TITLEID&gt;_&lt;yyyyMMdd_HHmmss&gt;.vsgd unless a file is given.
 /// </summary>
@@ -16,7 +16,7 @@ static class GpuDumpControl
 {
     public static string Root => Path.Combine(Program.DataRoot, "gpudumps");
 
-    /// <summary>Frames recorded by Ctrl+F8 before the recording stops by itself (~60 s at 30 fps).</summary>
+    /// <summary>Frames recorded by the script's Ctrl+F8 step before the recording stops by itself (~60 s at 30 fps).</summary>
     const long InteractiveMaxFrames = 1800;
 
     static string NewPath(Emulator emu)
@@ -78,7 +78,7 @@ static class GpuDumpControl
         return h;
     }
 
-    /// <summary>Ctrl+F8: starts a recording at the next present, or stops the running one at the next present.</summary>
+    /// <summary>The script's Ctrl+F8 step: starts a recording at the next present, or stops the running one at the next present.</summary>
     public static void Toggle(Emulator emu, Func<VulkanRenderer?> renderer, string[] options, Action<string>? status, Func<string>? hostInfo)
     {
         if (GpuDumpRecorder.Current is { } active)

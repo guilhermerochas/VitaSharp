@@ -259,6 +259,24 @@ The game process places its hot threads itself (`Platforms/Android/Game/GamePerf
   Note 14 (Uncharted, 26/11/2026) showed it does not help and makes the stalls worse: the transcoders sit on the slow A55
   cores, slower than the GPU worker on an A76. Frames > 100 ms per run: 3-5 with `=0`, 5-8 with `wait`; Killzone fps
   27.7-28.0 with `=0` against 26.1-27.7 with `wait`. `VITASHARP_ASTC_BC1_DIRECT` and `VITASHARP_BG_NICE` stay on.
+- **Memory reads of the scene's own surfaces keep the scene's copy** (`VITASHARP_MAPPED_SCENE_START`, default on for
+  tile-based GPUs, chosen from the device's vendor and driver; `=0` turns it off, `=1` forces it on a desktop GPU): a
+  shader that reads the colour or depth/stencil surface of the scene being rendered as memory sees what the Vita's
+  memory holds, the surface as it was before the scene, so the copy taken in the scene stays valid for the rest of it.
+  Refreshing it after each rendering ended the rendering for every such draw (Killzone Mercenary: nine 240x136 passes
+  per frame at one spot, each copying the depth). Mali-G57 bench (4 rounds x 3): Killzone gameplay fixture 33.3 ->
+  30.1 ms of GPU per frame, the stairs fixture 27.1 -> 26.4 ms, same picture.
+- **ASTC disk cache read ahead** (`VITASHARP_ASTC_PRELOAD_MB`, default 96, `0` off): at the title start a background
+  thread reads the most recently used entries of the title's ASTC cache into memory, so the first use of a texture
+  the title transcoded before costs no file read on the GPU thread (shared storage goes through FUSE: Killzone's first
+  weapon change and first aim spent 0.2-0.5 s of a frame in texture uploads reading the cache). An entry leaves memory
+  when it is used; the `PERF mobile` line counts the hits served from the read-ahead.
+- **Hitches in the log** (`[hitch]` lines, `VITASHARP_HITCH_MS`, default 100 ms, `0` off): a present that comes more
+  than that after the previous one (emulation time, pauses left out) logs the host time of the interval by cause,
+  largest first: texture uploads (`texUpload`), shader translation/compilation and pipeline creation on the GPU thread,
+  the GC (with the collection count), ARM code compilation (`jit`), guest file reads, the guest waiting for the GPU,
+  the GPU worker's idle time. A stutter the player sees (a weapon change, the first aim) then names its cause in
+  `last.log` without a capture; at most 200 lines per session.
 - **BC1 mapped straight to ASTC** (`AstcEncoder.EncodeFromBc1`, `VITASHARP_ASTC_BC1_DIRECT=0` to compare): a
   four-colour BC1 block (its two RGB565 endpoints and the thirds between them) is exactly an ASTC RGB-direct block with
   8-bit endpoints and 4 weight levels, so it is written without the encoder's search; only BC1's three-colour blocks
@@ -290,8 +308,9 @@ The game process places its hot threads itself (`Platforms/Android/Game/GamePerf
 - **GXM scene recorder on the fast cores** (A/B, off by default): `VITASHARP_ANDROID_GXM_THREAD=big` moves the guest
   thread that began the last GXM scene (often a game's render job thread, not its main thread) to the fast cluster as
   soon as it changes, and the previous one back; the log says `GXM scenes recorded on thread N: moved to ...`.
-- **Debug mode from `config/env.txt`**: `VITASHARP_DEBUG_MODE=1` turns debug mode on as the setting does (as
-  `--debug-mode` / the variable on desktop).
+- **Detailed log for a whole run (developers)**: `VITASHARP_DEBUG_MODE=1` in `config/env.txt` keeps the detailed log
+  on from the start (as `--debug-mode` / the variable on desktop). There is no setting for it: for the player the
+  detailed log is part of the pause menu's **Gravar tudo**, on while it records or keeps its pre-recording.
 - **Where the guest threads wait** (any platform): `VITASHARP_PERF_HLE_TIME=1` times every HLE call (wall clock, two
   timestamps per call) and adds `PERF hle time` lines to each periodic summary: per busy guest thread, its time in HLE
   calls per frame since the previous summary and the functions it went to (notification, display queue, lwcond,
@@ -436,7 +455,7 @@ happened with `mono-aot` and in the earlier phone runs, so it is a driver issue,
    (the SDK's property cache does not track `EnableLLVM`; the variant attribute changes the app assembly, which
    re-runs the AOT step, but a clean intermediate folder rules out stale images).
 2. Settings for every run: CPU automatic, default clock, GPU profile native, **VSync off** (Ajustes), no
-   `config/env.txt`, debug mode off; phone on the charger, screen brightness fixed, `adb shell dumpsys thermalservice`
+   `config/env.txt`, no **Gravar tudo** recording or pre-recording (the detailed log is on during them); phone on the charger, screen brightness fixed, `adb shell dumpsys thermalservice`
    at status 0 before each run (wait otherwise), the app killed between runs (`adb shell am force-stop
    io.github.vitasharp`).
 3. Games and scenes, in this order: **Knightin'+** (title screen, then the first level, 3 minutes), **Devious
@@ -491,6 +510,25 @@ happened with `mono-aot` and in the earlier phone runs, so it is a driver issue,
   right stick on AXIS_Z/RZ or RX/RY by what the device reports). TRÁS toggles rear touch (touches on the image go to
   the rear pad). The on-screen controls hide while a controller is connected (setting). In a game on its own the
   PS button (on-screen or the controller's) opens the pause menu; in Sistema do Vita it goes to the shell.
+- **On-screen layout** (`OnScreenPad.DefaultLayout`): the overlay of `docs/android/mockups/jogo.html` on every
+  screen, with the two sticks about 15% smaller than the mockup's (`OnScreenPad.StickDp` = 106 dp of the 844x390
+  reference screen instead of 124, same centres), drawn and hit together. A finger that starts on the image outside a
+  control's drawn shape (round controls: their circle plus a tenth of the radius) is the game's front touch, and a
+  finger that starts on the image stays a touch when it slides over a control. On a 2400x1080, 2340x1080 or
+  1920x1080 phone the centre of the icon tab at the image's lower-right corner (Uncharted's "Tutorial: Journal",
+  (0.96, 0.78) and (0.98, 0.80) of the image) reaches the game; the tab's left edge is still under the right stick.
+  Tests: `OnScreenLayoutTests`.
+- **Vibration** (Ajustes > Controles, `OnScreenHaptics`): one pulse for every newly pressed control, also with another
+  finger on a stick. From Android 10 a pulse is the phone's predefined effect picked by the strength (Fraca = tick,
+  Média = click, Forte = heavy click), tuned by the maker for its motor; before Android 10 a 20/30/45 ms one-shot at
+  the strength's amplitude when the motor supports it. It plays with the media/game vibration usage, so the system's
+  touch-vibration switch does not silence it (a short one-shot at the default amplitude was not felt on a linear motor).
+- **Hide the on-screen controls**: the small button by the fps counter and the pause chip (top centre; it hides and
+  comes back with the pause chip, also when the fps counter is off) shows or hides the on-screen controls with one
+  tap, and so does the pause menu's **Controles na tela** (the same code, `OnScreenVisibility`). The choice is saved
+  for every game (`ShowOnScreenControls` in the app settings, like the controls' opacity and "hide with a
+  controller"); hidden, the whole screen is the game's touch. A connected controller still hides them when "Esconder
+  com controle conectado" is on; the button shows them over it.
 - **Gravar tudo** (pause menu, every build): records a save state, the input, the GPU dump, every presented frame
   with its timing, the audio and the log into `files/captures/TITLE_DATE_tudo/` and a `.zip`, until **Parar
   gravação**; "● REC" shows by the fps counter. **Pré-gravação: ligada** keeps the seconds before the start (a save
@@ -664,7 +702,8 @@ and follows the activity: listeners and cameras only between `onResume` and `onP
 (`sceClibPrintf`, TTY writes, `sceKernelPrintf`: the `[guest...]` lines) goes to **VitaSharp-Guest**. Lines are split
 at line breaks and at 4,000 bytes (liblog truncates near 4 KB). The console copy is off (stdout would duplicate every
 line). The file logs stay: `logs/app.log` (UI process, truncated at each start) and `logs/last.log` (the current or
-last game; the previous ones kept as `<time>_<TITLEID>.log`, 10 at most). "Modo de depuração" turns on debug level.
+last game; the previous ones kept as `<time>_<TITLEID>.log`, 10 at most). The detailed log is on while **Gravar tudo**
+records (or keeps its pre-recording).
 
 **During gameplay** (from the game's first frame) only warnings and errors go to logcat: every entry is a system call
 into logd and a slot in a buffer the whole system shares, and info lines (guest `printf` output, thread creation,
@@ -1154,8 +1193,8 @@ runs, Devious Dungeon 11.2 M); Devious Dungeon town 49.3-49.8 fps against 47.2-4
    Mono does not report per-thread times there).
 7. **Audio**: the log's `Audio:` lines (AAudio on 8.1+, low-latency and exclusive or shared, the device rate and burst;
    AudioTrack on the x86_64 emulator image if it is API 26); sound plays at the right pitch and pace (a 44.1 kHz
-   device exercises the resampler), the `AUDIO summary` device line and underruns after a session (debug mode for
-   the periodic AUDIO lines); home → back (pause/resume, no burst of stale grains); plugging/unplugging headphones and
+   device exercises the resampler), the `AUDIO summary` device line and underruns after a session (a **Gravar tudo**
+   recording, whose detailed log has the periodic AUDIO lines); home → back (pause/resume, no burst of stale grains); plugging/unplugging headphones and
    connecting a Bluetooth headset during a game ("reopening the output", sound continues on the new device, at its
    rate); writes before `requestStart` (priming) are accepted by AAudio.
 8. **Video**: SceAvcdec/SceVideodec games and SceAvPlayer movies (an intro movie, F1 2011's): the log's

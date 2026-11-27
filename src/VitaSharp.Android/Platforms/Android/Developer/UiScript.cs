@@ -14,7 +14,10 @@ namespace VitaSharp.Android.Developer;
 /// the activity's own dispatch (see <see cref="Inject"/>): "key:dpad_down" / "key:button_a" (any
 /// KEYCODE_ name, sent as a gamepad key; "key:back" is the system back), "touch:x:y" (a tap at x, y in 0..1 of the
 /// window, held 80 ms so the touch driver samples it at a vblank) or "drag:x1:y1:x2:y2:ms" (a finger moved from the
-/// first point to the second in that many milliseconds, a move every 16 ms: page scrolls, the lock screen's peel). The
+/// first point to the second in that many milliseconds, a move every 16 ms: page scrolls, the lock screen's peel),
+/// "hold:x:y:ms" (the finger kept still that long: a scan that waits for the thumb) and "waitinput:seconds" (the next
+/// lines wait until the game waits for the player, "[input-wait] WAITING FOR INPUT", Core/Input/InputWaitMonitor.cs;
+/// the actions of the known screens: docs/games/screens.json, <c>VitaSharp.Desktop screens list</c>). The
 /// file is deleted once read. Device checks of the pause menu and of the screens use it on phones that
 /// refuse <c>adb shell input</c>.
 /// </summary>
@@ -57,6 +60,29 @@ public static class UiScript
         {
             var p = raw.Trim().Split(':');
             if (p[0].Length == 0) continue;
+            if (p[0] == "waitinput")
+            {
+                double seconds = p.Length > 1 ? double.Parse(p[1], inv) : 120;
+                bool waiting = VitaSharp.Core.Input.InputWaitMonitor.WaitFor(VitaSharp.Core.Input.ScreenActivity.WaitingForInput, TimeSpan.FromSeconds(seconds), () => activity.IsDestroyed);
+                string state = VitaSharp.Core.Input.InputWaitMonitor.Describe();
+                if (waiting)
+                {
+                    Log.Info($"{EnvVars.AndroidUiInput}: {raw}: {state}");
+                }
+                else
+                {
+                    Log.Warn($"{EnvVars.AndroidUiInput}: {raw}: not waiting for input after {seconds} s: {state}");
+                }
+
+                continue;
+            }
+
+            if (p[0] == "hold" && p.Length >= 4)
+            {
+                // the finger kept still: a drag from the point to itself
+                p = ["drag", p[1], p[2], p[1], p[2], p[3]];
+            }
+
             if (p[0] is "touch" or "drag")
             {
                 string? gestureError = Gesture(activity, p, width, height, inv);

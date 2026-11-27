@@ -10,7 +10,7 @@ namespace VitaSharp.Tests;
 /// later overwrite the result, but NVIDIA's compiler let that garbage reach unrelated results (The Amazing Spider-Man's
 /// pause menu: skinned glass shards drawn somewhere else on every run). So every bank starts at zero, in both stages.
 /// </summary>
-[Collection("shadergen")]
+[Collection("guest")]
 public sealed class ShaderRegisterInitTests
 {
     /// <summary>The register banks the generator declares (primary/secondary attributes, temporaries, outputs, internal

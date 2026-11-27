@@ -96,6 +96,9 @@ public sealed class OnScreenPad : IInputBackend
     public float Aspect { get; set; } = 844f / 390f;
 
     public IReadOnlyList<OnScreenControl> Layout { get; set; } = DefaultLayout;
+
+    /// <summary>Whether the controls are drawn and take fingers. Hidden, every finger on the image is the game's touch
+    /// (front, or rear while <see cref="RearTouch"/> is on). Set by <see cref="OnScreenVisibility"/>.</summary>
     public bool Visible { get; set; } = true;
 
     /// <summary>TRAS: while on, touches on the image go to the rear touch pad instead of the screen.</summary>
@@ -321,6 +324,11 @@ public sealed class OnScreenPad : IInputBackend
     // dp of the 844x390 reference screen to a fraction (axis 0 = x, 1 = y)
     private static float DpFraction(float dp, int axis) => dp / (axis == 0 ? 844f : 390f);
 
+    /// <summary>The side of the sticks' square in dp of the reference screen: 106, about 15% under jogo.html's 124, with
+    /// the same centres (174, 298) and (670, 298), so on a 20:9 phone the right stick leaves the centre of the icon
+    /// tab at the image's lower-right corner (Uncharted's "Tutorial: Journal") to the game.</summary>
+    public const float StickDp = 106;
+
     private static IReadOnlyList<OnScreenControl> BuildDefault() =>
     [
         new(VitaControl.L, "L", DpFraction(18, 0), DpFraction(12, 1), DpFraction(108, 0), DpFraction(40, 1)),
@@ -333,8 +341,8 @@ public sealed class OnScreenPad : IInputBackend
         new(VitaControl.Square, "\u25A1", DpFraction(664, 0), DpFraction(134, 1), DpFraction(50, 0), DpFraction(50, 1)),
         new(VitaControl.Circle, "\u25CB", DpFraction(764, 0), DpFraction(134, 1), DpFraction(50, 0), DpFraction(50, 1)),
         new(VitaControl.Cross, "\u2715", DpFraction(714, 0), DpFraction(184, 1), DpFraction(50, 0), DpFraction(50, 1)),
-        new(VitaControl.LStickUp, "", DpFraction(112, 0), DpFraction(236, 1), DpFraction(124, 0), DpFraction(124, 1), OnScreenShape.Stick),
-        new(VitaControl.RStickUp, "", DpFraction(608, 0), DpFraction(236, 1), DpFraction(124, 0), DpFraction(124, 1), OnScreenShape.Stick),
+        new(VitaControl.LStickUp, "", DpFraction(174 - StickDp / 2, 0), DpFraction(298 - StickDp / 2, 1), DpFraction(StickDp, 0), DpFraction(StickDp, 1), OnScreenShape.Stick),
+        new(VitaControl.RStickUp, "", DpFraction(670 - StickDp / 2, 0), DpFraction(298 - StickDp / 2, 1), DpFraction(StickDp, 0), DpFraction(StickDp, 1), OnScreenShape.Stick),
         new(VitaControl.Select, "SELECT", DpFraction(322, 0), DpFraction(346, 1), DpFraction(76, 0), DpFraction(30, 1)),
         new(VitaControl.PS, "PS", DpFraction(410, 0), DpFraction(346, 1), DpFraction(30, 0), DpFraction(30, 1)),
         new(VitaControl.Start, "START", DpFraction(452, 0), DpFraction(346, 1), DpFraction(70, 0), DpFraction(30, 1)),

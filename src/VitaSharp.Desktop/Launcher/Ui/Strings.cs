@@ -249,16 +249,10 @@ public static class Strings
     public static string CapturesSubtitle(int count, string size) => F(T(), count, size);
     public static string DeleteOld(int n) => F(T(), n);
     public static string RecordingsFolder => T();
-    public static string GpuDumpsFolder => T();
-    public static string DiagnosticsFolder => T();
     public static string Recordings(int n) => F(T(), n);
-    public static string GpuDumps(int n) => F(T(), n);
-    public static string DiagnosticsChip(int n) => F(T(), n);
     public static string GameChip(string game) => F(T(), game);
     public static string NoCaptures => T();
     public static string RecordingBadge => T();
-    public static string GpuDumpBadge => T();
-    public static string DiagnosticBadge => T();
     public static string ShowInFolder => T();
     public static string ConfirmDeleteOne(string name) => F(T(), name);
     public static string ConfirmDeleteMany(int n, string size) => F(T(), n, size);
@@ -489,8 +483,6 @@ public static class Strings
     public static string RpcnToken => T();
     public static string RpcnTokenDetail => T();
     public static string RpcnTokenWatermark => T();
-    public static string DebugMode => T();
-    public static string DebugModeDetail => T();
     public static string KernelPlugins => T();
     public static string KernelPluginsDetail => T();
     public static string PreRoll => T();

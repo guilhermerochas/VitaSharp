@@ -387,8 +387,8 @@ public sealed class AndroidAppTests : IDisposable
         OnScreenControl lstick = pad.Layout.Single(c => c.Control == VitaControl.LStickUp);
         OnScreenControl cross = pad.Layout.Single(c => c.Control == VitaControl.Cross);
 
-        // Uncharted's journal icon at (2080, 680): inside the right stick's rectangle, outside its circle
-        (float X, float Y) icon = (2080 / W, 680 / H);
+        // a point near the top-right corner of the right stick's rectangle: inside the rectangle, outside its circle
+        (float X, float Y) icon = (rstick.X + rstick.Width * 0.95f, rstick.Y + rstick.Height * 0.05f);
         Assert.True(rstick.Contains(icon.X, icon.Y));
         Update(pad, (1, icon.X, icon.Y));
         Assert.Single(pad.GetTouches(false));
@@ -423,8 +423,9 @@ public sealed class AndroidAppTests : IDisposable
     public void OnScreenButtonsVibrateWhileTheStickIsHeld()
     {
         var pad = new OnScreenPad();
-        var pulses = new List<int>();
-        var haptics = new OnScreenHaptics(pad, pulses.Add);
+        var pulses = new List<HapticPulse>();
+        // a Redmi Note 14: Android 15, a motor that reports no amplitude control
+        var haptics = new OnScreenHaptics(pad, pulses.Add, apiLevel: 35, hasAmplitudeControl: false);
         OnScreenControl cross = pad.Layout.Single(c => c.Control == VitaControl.Cross);
         OnScreenControl square = pad.Layout.Single(c => c.Control == VitaControl.Square);
         OnScreenControl lstick = pad.Layout.Single(c => c.Control == VitaControl.LStickUp);
@@ -448,14 +449,12 @@ public sealed class AndroidAppTests : IDisposable
         Update(pad, thumbOnStick, Finger(square, id: 3)[0], Finger(cross, id: 4)[0]);
         Assert.Equal(4, pulses.Count);
 
-        // the strength sets the amplitude; off gives no pulses
-        Assert.All(pulses, p => Assert.Equal(OnScreenHaptics.Amplitude(OnScreenHaptics.Medium), p));
+        // the strength picks the effect; off gives no pulses
+        Assert.All(pulses, p => Assert.Equal(HapticKind.Click, p.Kind));
         pad.Reset();
         haptics.Strength = OnScreenHaptics.Strong;
         Update(pad, Finger(cross));
-        Assert.Equal(255, pulses[^1]);
-        Assert.True(OnScreenHaptics.Amplitude(OnScreenHaptics.Weak) < OnScreenHaptics.Amplitude(OnScreenHaptics.Medium));
-        Assert.Equal(OnScreenHaptics.Amplitude(OnScreenHaptics.Medium), OnScreenHaptics.Amplitude(7));
+        Assert.Equal(HapticKind.HeavyClick, pulses[^1].Kind);
         pad.Reset();
         haptics.Enabled = false;
         int before = pulses.Count;
@@ -465,6 +464,29 @@ public sealed class AndroidAppTests : IDisposable
         // the strength choices are the values the haptics understand
         Assert.Equal(new[] { "1", "2", "3" }, SettingsChoices.HapticStrengths.Select(c => c.Value));
         Assert.Equal(2, new AppPreferences().HapticStrength);
+    }
+
+    [Fact]
+    public void OnScreenPulsesAreThePhonesPredefinedEffectsPickedByTheStrength()
+    {
+        // Android 10+: the maker's predefined effects, whatever the motor reports (an 18 ms one-shot at the default
+        // amplitude was played but not felt on a linear motor, and the strength never reached it)
+        foreach (bool amplitudeControl in new[] { false, true })
+        {
+            Assert.Equal(new HapticPulse(HapticKind.Tick, 0, 0), OnScreenHaptics.PulseFor(OnScreenHaptics.Weak, 35, amplitudeControl));
+            Assert.Equal(new HapticPulse(HapticKind.Click, 0, 0), OnScreenHaptics.PulseFor(OnScreenHaptics.Medium, 29, amplitudeControl));
+            Assert.Equal(new HapticPulse(HapticKind.HeavyClick, 0, 0), OnScreenHaptics.PulseFor(OnScreenHaptics.Strong, 33, amplitudeControl));
+            Assert.Equal(HapticKind.Click, OnScreenHaptics.PulseFor(7, 35, amplitudeControl).Kind); // unknown = medium
+        }
+
+        // Android 8-9: a one-shot that grows with the strength, at its amplitude when the motor can set one
+        HapticPulse weak = OnScreenHaptics.PulseFor(OnScreenHaptics.Weak, 28, true);
+        HapticPulse medium = OnScreenHaptics.PulseFor(OnScreenHaptics.Medium, 28, true);
+        HapticPulse strong = OnScreenHaptics.PulseFor(OnScreenHaptics.Strong, 26, true);
+        Assert.All(new[] { weak, medium, strong }, p => Assert.Equal(HapticKind.OneShot, p.Kind));
+        Assert.True(weak.Milliseconds >= 20 && weak.Milliseconds < medium.Milliseconds && medium.Milliseconds < strong.Milliseconds);
+        Assert.True(weak.Amplitude < medium.Amplitude && medium.Amplitude < strong.Amplitude && strong.Amplitude == 255);
+        Assert.Equal(OnScreenHaptics.DefaultAmplitude, OnScreenHaptics.PulseFor(OnScreenHaptics.Strong, 26, false).Amplitude);
     }
 
     private sealed class FloatPairComparer : IEqualityComparer<(float, float)>

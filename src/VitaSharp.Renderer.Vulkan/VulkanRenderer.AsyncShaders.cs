@@ -635,6 +635,7 @@ public sealed unsafe partial class VulkanRenderer
         _statPipelineWaits++;
         _statPipelineWaitTicks += dt;
         _frameStallTicks += dt; // a frame waiting for a worker's pipeline stalls like one compiling it
+        NoteStallWhat(PipelineName(in key) + " (waited for a worker building it)", dt);
         return _sharedPipelines.TryGetValue(key, out p);
     }
 

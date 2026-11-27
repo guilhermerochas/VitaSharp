@@ -289,6 +289,28 @@ public static class ShaderGenerator
     /// </summary>
     public static bool PerSampleFramebufferFetch = true;
 
+    /// <summary>The process-wide generator options a renderer sets from its device and switches (the fields listed here): a
+    /// renderer takes a snapshot before it sets them and puts it back when it is disposed, so a renderer made for
+    /// another device profile (tests, a replaced renderer) does not leave its options to the next user.</summary>
+    public readonly record struct DeviceOptions(bool PerSampleFramebufferFetch, bool LowerDynamicIndexing, FarPlaneClip FarPlane, bool VertexStores,
+        bool FragmentStores, bool RelaxHalfPrecision, bool UncheckedUniformLoads, bool VectorLoads, bool SplitUniformSlots);
+
+    public static DeviceOptions CaptureDeviceOptions() => new(PerSampleFramebufferFetch, LowerDynamicIndexing, FarPlane, VertexStores, FragmentStores,
+        RelaxHalfPrecision, UncheckedUniformLoads, VectorLoads, SplitUniformSlots);
+
+    public static void RestoreDeviceOptions(in DeviceOptions options)
+    {
+        PerSampleFramebufferFetch = options.PerSampleFramebufferFetch;
+        LowerDynamicIndexing = options.LowerDynamicIndexing;
+        FarPlane = options.FarPlane;
+        VertexStores = options.VertexStores;
+        FragmentStores = options.FragmentStores;
+        RelaxHalfPrecision = options.RelaxHalfPrecision;
+        UncheckedUniformLoads = options.UncheckedUniformLoads;
+        VectorLoads = options.VectorLoads;
+        SplitUniformSlots = options.SplitUniformSlots;
+    }
+
     /// <summary>
     /// Set in a fragment texture's <see cref="ShaderHints.TextureFormats"/> entry (bits a GXM texture format never
     /// uses) when the texture reinterprets a render target with a larger texel (Resistance's 720x408 F16x4 G-buffer read

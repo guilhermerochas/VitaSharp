@@ -131,7 +131,7 @@ public sealed class AndroidOptionParityTests : IDisposable
         nameof(LauncherSettings.VSync), nameof(LauncherSettings.CameraFront), nameof(LauncherSettings.CameraBack),
         nameof(LauncherSettings.CpuBackend), nameof(LauncherSettings.CpuMhz), nameof(LauncherSettings.FastLoading), nameof(LauncherSettings.ResScale),
         nameof(LauncherSettings.FastShaderCompile), nameof(LauncherSettings.BackgroundShaderCompile),
-        nameof(LauncherSettings.LoadShaderCacheBeforePlaying), nameof(LauncherSettings.PrecompileCode), nameof(LauncherSettings.DebugMode),
+        nameof(LauncherSettings.LoadShaderCacheBeforePlaying), nameof(LauncherSettings.PrecompileCode),
         nameof(LauncherSettings.KernelPlugins), nameof(LauncherSettings.StartupView), nameof(LauncherSettings.TrophySound),
         nameof(LauncherSettings.Language),
     ];

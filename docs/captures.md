@@ -1,4 +1,4 @@
-<!-- pair: captures.pt-BR.md sha256=fafed6430938e184069b222e413aa6e487233ff4979983f512a89e9f8cc998aa -->
+<!-- pair: captures.pt-BR.md sha256=8ce756c9c20cfce90f379a299402292e4d0025b2a018a0501c888a7b60385df5 -->
 # Analysing a Record everything capture without the game
 
 **English** | [Português](captures.pt-BR.md)
@@ -6,6 +6,12 @@
 A **Record everything** capture (F8 on the PC, pause menu on Android) is made to be sent: someone posts the `.zip` on
 GitHub and whoever fixes the problem works from it alone, on a computer that has neither the game, nor its update,
 nor the plugins of the person who recorded it.
+
+This page is for developers who analyse a capture: the player only presses F8 (and Shift+F8 at the problem), as the
+README's [Report a bug](../README.md#report-a-bug) says. The capture is the player's only debugging tool, so it has
+everything the old separate tools gave: `log.txt` is the session log with the detailed log (the debug mode's
+first-use, HLE error, anomaly and periodic PERF lines: on by itself while the capture records or keeps its
+pre-roll), and `gpu.vsgd` is the GPU dump.
 
 ## What leaves with the capture
 
@@ -76,6 +82,11 @@ the recording kept them, with the bytes it read, so it reads the same bytes with
 (`files:` lines) says whether it read anything the recording did not, and which reads it could not put back (kept
 as hashes only: the re-run reads zeros there). `report.txt` lists what was read and whether its bytes left with the
 capture.
+
+`report.txt`'s "CPU phases" section says where each guest thread's host time went during the recording (ns of host
+time per guest cycle by dispatcher phase: interpreter, VFP vector interpreter, native code, block switches, HLE,
+pacing; blocks decoded and compiled on the thread) and lists the last `[phase-alert]` lines: a thread over its budget
+and the phase to blame. See [docs/notes/cpu-phases.md](notes/cpu-phases.md).
 
 What still needs the game: the bytes of a recording made without `--capture-files-mb`, firmware modules the game
 loads for the first time during the recording (they come from the analyst's firmware), and captures of the system

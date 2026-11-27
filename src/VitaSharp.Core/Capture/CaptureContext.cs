@@ -36,7 +36,7 @@ public static class CaptureContext
 
     private static string Kind(Emulator emulator) => emulator.IsShell ? "shell" : emulator.IsGameProgram && !emulator.IsSystemProgram ? "game" : emulator.IsSystemProgram ? "system app" : "application";
 
-    private static string Name(Emulator emulator) => emulator.Title.Length > 0 ? $"{emulator.TitleId} '{emulator.Title}'" : emulator.TitleId.Length > 0 ? emulator.TitleId : $"process 0x{emulator.Pid:X}";
+    internal static string Name(Emulator emulator) => emulator.Title.Length > 0 ? $"{emulator.TitleId} '{emulator.Title}'" : emulator.TitleId.Length > 0 ? emulator.TitleId : $"process 0x{emulator.Pid:X}";
 
     /// <summary>context.txt: the screen, the processes and the audio (ports, the BGM port, decoders).</summary>
     public static string Describe(Emulator emu, string when)
@@ -45,6 +45,8 @@ public static class CaptureContext
         var sb = new StringBuilder();
         sb.AppendLine($"[{when}]");
         sb.AppendLine($"where: {Where(emu)}");
+        // waiting for the player, loading or busy (Input/InputWaitMonitor.cs): report.txt's "Screen state"
+        sb.AppendLine($"screen: {Input.InputWaitMonitor.Describe()}");
         Emulator fg = vitaSystem.Foreground ?? emu;
         foreach (Emulator p in vitaSystem.Processes)
         {
@@ -54,6 +56,12 @@ public static class CaptureContext
         foreach (string l in AudioLines(emu))
         {
             sb.AppendLine(l);
+        }
+
+        // the CPU phase profile of every guest thread (report.txt's "CPU phases" compares the start and the stop)
+        foreach (Kernel.GuestThread t in emu.Kernel.Threads.ToArray())
+        {
+            sb.AppendLine(t.Core.Phases.ContextLine());
         }
 
         // the plugin hooks and their counters (report.txt's "Plugin hooks" compares the start and the stop)

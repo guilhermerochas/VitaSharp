@@ -1,0 +1,461 @@
+{
+  "comment": "Compat coverage: which emulated hardware the firmware 6.61 that the Vita runs on its compatibility core (SceCompat's Allegrex) (the pcff package of the PSP emulator system app, the kermit flash0) needs, and the state of each block in VitaSharp. Module names: the file table of the pcff package (names only, no firmware in the repository). Block percentages are measured: each block lists its contract items (what the firmware drives on it); an item with a 'probe' is implemented and its probe must be in one of the block's 'code' files (compat-coverage and CompatCoverageReportTests refuse it otherwise), an item with a 'gap' is not and says why. done/partial/missing follow from the items; only 'policy' and 'absent' are declared. Module roles: uOFW (core kernel), docs/notes/psp-compat.md (the kermit channels) and the PSP module lists of psdevwiki; 'to confirm' where no source gives the role. Regenerate the map with build/hle-status (VitaSharp.Desktop compat-coverage --status=<repo>).",
+  "firmware": "6.61",
+  "states": ["done", "partial", "missing", "policy", "absent"],
+  "blocks": [
+    {
+      "id": "cpu",
+      "name": { "en": "Allegrex CPU", "pt": "CPU Allegrex" },
+      "code": ["src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.cs", "src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.Blocks.cs", "src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.Il.cs", "src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.Alu.cs", "src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.Branch.cs", "src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.Memory.cs", "src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.MultiplyDivide.cs", "src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.Extensions.cs", "src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.System.cs"],
+      "note": { "en": "the integer ISA with the Allegrex additions, COP0, exceptions, interrupts, cache instructions; block cache and IL tier", "pt": "o ISA inteiro com as adições do Allegrex, COP0, exceções, interrupções, instruções de cache; cache de blocos e camada IL" },
+      "items": [
+        {"id": "integer ALU with the overflow exception", "probe": "Overflow"},
+        {"id": "shifts and rotates (rotr/rotrv)", "probe": "rotr"},
+        {"id": "branches and jumps, branch-likely annul", "probe": "BranchLikelyIf("},
+        {"id": "loads and stores, unaligned lwl/lwr/swl/swr", "probe": "lwl/lwr/swl/swr"},
+        {"id": "multiply/divide and madd/msub", "probe": "madd"},
+        {"id": "Allegrex additions (ext/ins, seb/seh, wsbh/wsbw, bitrev, clz/clo, min/max)", "probe": "bitrev"},
+        {"id": "COP0 moves and eret", "probe": "eret"},
+        {"id": "exceptions (syscall, break, address errors)", "probe": "syscall"},
+        {"id": "interrupt line IP2", "probe": "IP2"},
+        {"id": "halt and $ic (mfic/mtic)", "probe": "mfic"},
+        {"id": "decoded-block cache and IL tier", "probe": "MaxRegionBlocks"}
+      ]
+    },
+    {
+      "id": "fpu",
+      "name": { "en": "FPU (COP1)", "pt": "FPU (COP1)" },
+      "code": ["src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.Fpu.cs"],
+      "note": { "en": "exact results in software for the four rounding modes, IEEE causes, flags and enables, the Allegrex's NaN and flush-to-zero", "pt": "resultados exatos em software nos quatro modos de arredondamento, causas, flags e enables IEEE, o NaN e o flush-to-zero do Allegrex" },
+      "items": [
+        {"id": "arithmetic and sqrt, exact in every rounding mode", "probe": "sqrt"},
+        {"id": "conversions (cvt, round/trunc/ceil/floor)", "probe": "cvt.w.s"},
+        {"id": "FCR31 flags, enables and causes (cfc1/ctc1)", "probe": "Fcr31WriteMask"},
+        {"id": "compare and the condition bit", "probe": "Fcr31Condition"},
+        {"id": "flush-to-zero", "probe": "Fcr31FlushToZero"}
+      ]
+    },
+    {
+      "id": "vfpu",
+      "name": { "en": "VFPU (COP2)", "pt": "VFPU (COP2)" },
+      "code": ["src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.Vfpu.cs", "src/VitaSharp.Core/Compat/Allegrex/AllegrexVfpuMath.cs", "src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.VfpuVector.cs", "src/VitaSharp.Core/Compat/Allegrex/AllegrexCore.VfpuMatrix.cs"],
+      "note": { "en": "every opcode, prefixes, register views; the transcendental functions match pspautotests bit for bit", "pt": "todos os opcodes, prefixos, visões de registradores; as transcendentais batem bit a bit com o pspautotests" },
+      "items": [
+        {"id": "register views and COP2 moves (mfv/mtv/mfvc/mtvc)", "probe": "mfvc"},
+        {"id": "S/T/D prefixes", "probe": "vpfxs"},
+        {"id": "loads and stores (lv/sv .s/.q, unaligned)", "probe": "lv.q"},
+        {"id": "vector arithmetic and the VFPU4 table", "probe": "vsin"},
+        {"id": "matrix instructions", "probe": "vmmul"},
+        {"id": "transcendental functions bit-exact", "probe": "vrnds"},
+        {"id": "conversions and colour packing", "probe": "vt4444"},
+        {"id": "vsync/vflush/vnop", "probe": "vsync"}
+      ]
+    },
+    {
+      "id": "memory",
+      "name": { "en": "Memory (RAM, VRAM, scratchpad)", "pt": "Memória (RAM, VRAM, scratchpad)" },
+      "code": ["src/VitaSharp.Core/Compat/PspBus.cs"],
+      "note": { "en": "the four 16 MB banks of the SceCompat window, the hole, VRAM and scratchpad at the top of bank 3, the shared SRAM", "pt": "os quatro bancos de 16 MB da janela do SceCompat, o buraco, VRAM e scratchpad no topo do banco 3, a SRAM compartilhada" },
+      "items": [
+        {"id": "main RAM: four 16 MB banks", "probe": "BankSize"},
+        {"id": "VRAM 2 MB with its mirrors", "probe": "VramMirrorsEnd"},
+        {"id": "scratchpad 16 KB", "probe": "ScratchpadSize"},
+        {"id": "shared SRAM window", "probe": "CompatSharedSram"},
+        {"id": "unknown MMIO logged for the boot trace", "probe": "UnknownLogLimit"}
+      ]
+    },
+    {
+      "id": "intc",
+      "name": { "en": "Interrupt controller", "pt": "Controlador de interrupções" },
+      "code": ["src/VitaSharp.Core/Compat/Psp/PspInterruptController.cs"],
+      "note": { "en": "0xBC300000: 64 lines, masked/raw pending and enable, output on IP2", "pt": "0xBC300000: 64 linhas, pendentes mascaradas/brutas e enable, saída no IP2" },
+      "items": [
+        {"id": "low group 0x00/0x04/0x08 (lines 0..31)", "probe": "case 0x08:"},
+        {"id": "high group 0x10/0x14/0x18 (lines 32..63)", "probe": "case 0x18:"},
+        {"id": "compact group 0x20/0x24/0x28 (38, 39, 46, 47)", "probe": "case 0x28:"},
+        {"id": "latched sources acknowledged on 0x00 (vblank, ME)", "probe": "_latched &= ~(ulong)value"},
+        {"id": "output on Cause.IP2", "probe": "OutputChanged"}
+      ]
+    },
+    {
+      "id": "timers",
+      "name": { "en": "Timers and system time", "pt": "Timers e tempo do sistema" },
+      "code": ["src/VitaSharp.Core/Compat/Psp/PspHardwareTimers.cs", "src/VitaSharp.Core/Compat/Psp/PspSystemTime.cs"],
+      "note": { "en": "the four timers at 0xBC500000 (interrupts 15-18), the 1 MHz count and alarm at 0xBC600000 (interrupt 19), on the core's own time", "pt": "os quatro timers em 0xBC500000 (interrupções 15-18), a contagem de 1 MHz e o alarme em 0xBC600000 (interrupção 19), no tempo do próprio núcleo" },
+      "items": [
+        {"id": "timer status and acknowledge (+0x00)", "probe": "ResetOverflow"},
+        {"id": "timer count (+0x04)", "probe": "case 0x4:"},
+        {"id": "prescaler numerator/denominator (+0x08/+0x0C)", "probe": "case 0x8:"},
+        {"id": "status without acknowledge (+0x100)", "probe": "ReadOnlyStatus"},
+        {"id": "timer interrupts 15-18", "probe": "InterruptEnable"},
+        {"id": "system time count in microseconds (+0x00)", "probe": "case 0x00:"},
+        {"id": "system time alarm, interrupt 19 (+0x04)", "probe": "case 0x04:"},
+        {"id": "boot registers +0x08..+0x10", "probe": "case 0x10:"}
+      ]
+    },
+    {
+      "id": "dmac",
+      "name": { "en": "DMA controllers", "pt": "Controladores de DMA" },
+      "code": ["src/VitaSharp.Core/Compat/Psp/PspDmac.cs"],
+      "note": { "en": "0xBC900000/0xBCA00000 (PL080): memory-to-memory items and lists; channels that wait for a peripheral (flow control) are not emulated", "pt": "0xBC900000/0xBCA00000 (PL080): itens e listas de memória para memória; canais que esperam um periférico (controle de fluxo) não são emulados" },
+      "items": [
+        {"id": "interrupt status (0x000)", "probe": "case 0x000:"},
+        {"id": "terminal count status/clear (0x004/0x008)", "probe": "case 0x008:"},
+        {"id": "error status/clear (0x00C/0x010)", "probe": "case 0x010:"},
+        {"id": "raw status (0x014/0x018)", "probe": "case 0x018:"},
+        {"id": "enabled channels (0x01C)", "probe": "case 0x01C:"},
+        {"id": "software requests (0x020..0x02C)", "probe": "case 0x02C:"},
+        {"id": "configuration and sync (0x030/0x034)", "probe": "case 0x034:"},
+        {"id": "channel registers (source, destination, LLI, control, configuration)", "probe": "ChannelStride"},
+        {"id": "memory-to-memory items and linked lists", "probe": "ControlSourceIncrement"},
+        {"id": "terminal count interrupts 22/23", "probe": "ControlTerminalCountInterrupt"},
+        {"id": "peripheral flow control", "gap": {"en": "channels that wait for a peripheral are logged and not run", "pt": "canais que esperam um periférico são registrados no log e não rodam"}}
+      ]
+    },
+    {
+      "id": "ge",
+      "name": { "en": "GE (graphics engine)", "pt": "GE (motor gráfico)" },
+      "code": ["src/VitaSharp.Core/Compat/Ge/GeEngine.cs", "src/VitaSharp.Core/Compat/Ge/GeEngine.Draw.cs", "src/VitaSharp.Renderer.Vulkan/GeVulkanRasterizer.cs", "src/VitaSharp.Core/Compat/Ge/GeEngine.Patches.cs", "src/VitaSharp.Core/Compat/Ge/GeTextureDecoder.cs", "src/VitaSharp.Core/Compat/Ge/GeVertexTransformer.cs", "src/VitaSharp.Core/Compat/Ge/GeCommand.cs"],
+      "note": { "en": "0xBD400000/0xBD500000: display lists, command state, vertex decode, textures and CLUT, patches, rasterized on Vulkan", "pt": "0xBD400000/0xBD500000: listas de display, estado dos comandos, decodificação de vértices, texturas e CLUT, patches, rasterizados no Vulkan" },
+      "items": [
+        {"id": "list registers (EXEC, LIST, STALL, CALL return levels)", "probe": "RegisterStall"},
+        {"id": "SIGNAL/END/FINISH interrupt status, mask and acknowledge", "probe": "RegisterInterruptAcknowledge"},
+        {"id": "command words at +0x800 and matrices at +0xC00", "probe": "RegisterMatricesEnd"},
+        {"id": "EDRAM controller", "probe": "EdramPhysicalBase"},
+        {"id": "vertex decode and index buffers", "probe": "IndexAddress"},
+        {"id": "primitives (points, lines, strips, fans, rectangles)", "probe": "PrimitiveTriangleFan"},
+        {"id": "bezier and spline patches", "probe": "Spline"},
+        {"id": "bounding box test", "probe": "BoundingBoxJump"},
+        {"id": "textures, swizzle and CLUT", "probe": "ClutAddress"},
+        {"id": "DXT textures", "probe": "FormatDxt5"},
+        {"id": "lighting and materials", "probe": "MaterialSpecular"},
+        {"id": "skinning and morphing", "probe": "MorphWeight0"},
+        {"id": "fog, blending, alpha/colour/stencil/depth tests, logic op", "probe": "LogicOpEnable"},
+        {"id": "clear mode", "probe": "ClearMode"},
+        {"id": "block transfer", "probe": "TransferStart"},
+        {"id": "rasterized on Vulkan", "probe": "GeVulkanRasterizer"}
+      ]
+    },
+    {
+      "id": "display",
+      "name": { "en": "Display and LCD DMA", "pt": "Display e LCD DMA" },
+      "code": ["src/VitaSharp.Core/Compat/Psp/PspDisplayController.cs", "src/VitaSharp.Core/Compat/Psp/PspLcdc.cs", "src/VitaSharp.Core/Compat/CompatLcdDma.cs"],
+      "note": { "en": "scan timing and vblank (interrupt 30) at 0xBE740000, the scan-out channel at 0xBC800100, the LCD DMA into ScePspemu's framebuffer (its source is inferred)", "pt": "temporização e vblank (interrupção 30) em 0xBE740000, o canal de scan-out em 0xBC800100, o LCD DMA para o framebuffer do ScePspemu (a origem é inferida)" },
+      "items": [
+        {"id": "scan line (+0x04)", "probe": "case 0x04:"},
+        {"id": "vertical blanks count (+0x08)", "probe": "case 0x08:"},
+        {"id": "busy status (+0x20)", "probe": "case 0x20:"},
+        {"id": "vblank interrupt 30", "probe": "PspInterrupt"},
+        {"id": "scan-out channel address and pixel format", "probe": "case 0x00:"},
+        {"id": "scan-out width and stride", "probe": "case 0x0C:"},
+        {"id": "scan-out enable", "probe": "ScanOutEnabled"},
+        {"id": "LCD DMA into ScePspemu's framebuffer", "probe": "OnVblank"},
+        {"id": "pixel format conversion to A8B8G8R8", "probe": "ConvertLine("}
+      ]
+    },
+    {
+      "id": "sysreg",
+      "name": { "en": "System control and clocks", "pt": "Controle do sistema e clocks" },
+      "code": ["src/VitaSharp.Core/Compat/Psp/PspSystemControl.cs"],
+      "note": { "en": "0xBC100000/0xBC200000: reset, clock and IO enables, PLL, bus ratios; the compat core's chip version and fuse id are unknown (read 0)", "pt": "0xBC100000/0xBC200000: reset, enables de clock e IO, PLL, razões do barramento; versão do chip e fuse id do núcleo de compatibilidade desconhecidos (leem 0)" },
+      "items": [
+        {"id": "RAM size (0x040)", "probe": "case RamSizeRegister:"},
+        {"id": "Media Engine interrupt (0x044)", "probe": "case MeInterruptRegister:"},
+        {"id": "reset bits (0x04C)", "probe": "case ResetRegister:"},
+        {"id": "PLL (0x068)", "probe": "case PllRegister:"},
+        {"id": "USB and Memory Stick state (0x080)", "probe": "case UsbMemoryStickRegister:"},
+        {"id": "CPU/bus clock ratios (0xBC200000)", "probe": "PspClockFrequency"},
+        {"id": "fuse id and fuse configuration (0x090..0x098)", "gap": {"en": "the compat core's values are unknown: read 0", "pt": "os valores do núcleo de compatibilidade são desconhecidos: lidos como 0"}},
+        {"id": "chip version (0x040 high bits)", "gap": {"en": "the compat core's chip version is unknown: read 0", "pt": "a versão do chip do núcleo de compatibilidade é desconhecida: lida como 0"}}
+      ]
+    },
+    {
+      "id": "kermit",
+      "name": { "en": "Kermit (mailbox, shared SRAM)", "pt": "Kermit (mailbox, SRAM compartilhada)" },
+      "code": ["src/VitaSharp.Core/Compat/CompatMailbox.cs", "src/VitaSharp.Core/Compat/CompatSharedSram.cs", "src/VitaSharp.Core/Compat/Psp/PspDdrController.cs", "src/VitaSharp.Core/Hle/Modules/Compat.cs"],
+      "note": { "en": "requests, answers, virtual interrupts and the DDR flush as SceCompat 3.74 moves them; the doorbells' interrupt number on the core and pending/acknowledge registers are inferred until the boot trace", "pt": "pedidos, respostas, interrupções virtuais e o flush DDR como o SceCompat 3.74 os move; o número de interrupção das campainhas no núcleo e os registradores de pendente/confirmação são inferidos até o trace do boot" },
+      "items": [
+        {"id": "ARM-side doorbells (0xE5070000)", "probe": "ArmPhysicalBase"},
+        {"id": "core-side pending/acknowledge registers", "probe": "PspAcknowledgeRegister"},
+        {"id": "command entries in the shared SRAM (16 channels)", "probe": "CommandEntries"},
+        {"id": "requests and answers (sceCompatWaitAndGetRequest, sceCompatReturnValueEx)", "probe": "int sceCompatReturnValueEx("},
+        {"id": "virtual interrupts (sceCompatInterrupt)", "probe": "int sceCompatInterrupt("},
+        {"id": "DDR flush before the doorbell", "probe": "FlushRegister"},
+        {"id": "the doorbells' interrupt line on the core", "gap": {"en": "its PSP interrupt number is not known: the mailbox holds IP2 directly until the boot trace finds it", "pt": "o número de interrupção do PSP não é conhecido: a mailbox segura o IP2 direto até o trace de boot achá-lo"}},
+        {"id": "run end to end with the real ScePspemu", "gap": {"en": "no test or boot trace runs this channel's requests through the real ScePspemu yet", "pt": "nenhum teste nem trace de boot roda ainda os pedidos deste canal pelo ScePspemu real"}}
+      ]
+    },
+    {
+      "id": "ctrl",
+      "name": { "en": "Controller (shared SRAM)", "pt": "Controle (SRAM compartilhada)" },
+      "code": ["src/VitaSharp.Core/Hle/Modules/Compat.cs"],
+      "note": { "en": "sceCompatWriteSharedCtrl writes the three pad words the compat core reads", "pt": "sceCompatWriteSharedCtrl grava as três palavras do controle que o núcleo compat lê" },
+      "items": [
+        {"id": "the three pad words in the shared SRAM (sceCompatWriteSharedCtrl)", "probe": "int sceCompatWriteSharedCtrl("},
+        {"id": "controller area of the shared SRAM", "probe": "ControllerWords"}
+      ]
+    },
+    {
+      "id": "me",
+      "name": { "en": "Media Engine (channel 6)", "pt": "Media Engine (canal 6)" },
+      "code": ["src/VitaSharp.Core/Hle/Modules/Compat.cs", "src/VitaSharp.Core/Hle/Modules/Audiodec.cs"],
+      "note": { "en": "no ME on the compat core: kermit_me_wrapper sends the codec work to the real ScePspemu (LLE) and its Vita codecs; not run end to end yet", "pt": "sem ME no núcleo compat: o kermit_me_wrapper manda os codecs para o ScePspemu real (LLE) e os codecs do Vita; ainda não rodado de ponta a ponta" },
+      "items": [
+        {"id": "requests reach the ARM side (ring, sceCompatWaitAndGetRequest)", "probe": "int sceCompatWaitAndGetRequest("},
+        {"id": "answers return to the core (sceCompatReturnValueEx)", "probe": "int sceCompatReturnValueEx("},
+        {"id": "ME DMA virtual interrupts 4-6", "probe": "int sceCompatInterrupt("},
+        {"id": "Vita audio codecs the real ScePspemu calls", "probe": "int sceAudiodecDecode("},
+        {"id": "run end to end with the real ScePspemu", "gap": {"en": "no test or boot trace runs this channel's requests through the real ScePspemu yet", "pt": "nenhum teste nem trace de boot roda ainda os pedidos deste canal pelo ScePspemu real"}}
+      ]
+    },
+    {
+      "id": "ms",
+      "name": { "en": "Memory Stick (channel 3)", "pt": "Memory Stick (canal 3)" },
+      "code": ["src/VitaSharp.Core/Hle/Modules/Compat.cs", "src/VitaSharp.Core/Hle/Modules/IoFileMgr.cs"],
+      "note": { "en": "kermit_msfs requests served by the real ScePspemu over the Vita file system (ux0:pspemu); not run end to end yet", "pt": "pedidos do kermit_msfs atendidos pelo ScePspemu real sobre o sistema de arquivos do Vita (ux0:pspemu); ainda não rodado de ponta a ponta" },
+      "items": [
+        {"id": "requests reach the ARM side (ring, sceCompatWaitAndGetRequest)", "probe": "int sceCompatWaitAndGetRequest("},
+        {"id": "answers return to the core (sceCompatReturnValueEx)", "probe": "int sceCompatReturnValueEx("},
+        {"id": "files on the Vita file system (sceIo)", "probe": "int sceIoOpen("},
+        {"id": "run end to end with the real ScePspemu", "gap": {"en": "no test or boot trace runs this channel's requests through the real ScePspemu yet", "pt": "nenhum teste nem trace de boot roda ainda os pedidos deste canal pelo ScePspemu real"}}
+      ]
+    },
+    {
+      "id": "flash",
+      "name": { "en": "flash0/NAND and ID storage (channel 4)", "pt": "flash0/NAND e ID storage (canal 4)" },
+      "code": ["src/VitaSharp.Core/Hle/Modules/Compat.cs", "src/VitaSharp.Core/Hle/Modules/IoFileMgr.cs"],
+      "note": { "en": "kermit_flashfs served by the real ScePspemu; sceCompatIdStorageLookup answers the ID storage leaves; not run end to end yet", "pt": "kermit_flashfs atendido pelo ScePspemu real; sceCompatIdStorageLookup responde as folhas do ID storage; ainda não rodado de ponta a ponta" },
+      "items": [
+        {"id": "requests reach the ARM side (ring, sceCompatWaitAndGetRequest)", "probe": "int sceCompatWaitAndGetRequest("},
+        {"id": "answers return to the core (sceCompatReturnValueEx)", "probe": "int sceCompatReturnValueEx("},
+        {"id": "ID storage leaves (sceCompatIdStorageLookup)", "probe": "int sceCompatIdStorageLookup("},
+        {"id": "files on the Vita file system (sceIo)", "probe": "int sceIoOpen("},
+        {"id": "run end to end with the real ScePspemu", "gap": {"en": "no test or boot trace runs this channel's requests through the real ScePspemu yet", "pt": "nenhum teste nem trace de boot roda ainda os pedidos deste canal pelo ScePspemu real"}}
+      ]
+    },
+    {
+      "id": "audio",
+      "name": { "en": "Audio (channels 5 and 11)", "pt": "Áudio (canais 5 e 11)" },
+      "code": ["src/VitaSharp.Core/Hle/Modules/Compat.cs", "src/VitaSharp.Core/Hle/Modules/Audio.cs"],
+      "note": { "en": "kermit_audio posts PCM that the real ScePspemu plays with sceAudioOut (virtual interrupts 1-3); not run end to end yet", "pt": "o kermit_audio manda PCM que o ScePspemu real toca com sceAudioOut (interrupções virtuais 1-3); ainda não rodado de ponta a ponta" },
+      "items": [
+        {"id": "requests reach the ARM side (ring, sceCompatWaitAndGetRequest)", "probe": "int sceCompatWaitAndGetRequest("},
+        {"id": "answers return to the core (sceCompatReturnValueEx)", "probe": "int sceCompatReturnValueEx("},
+        {"id": "audio virtual interrupts 1-3", "probe": "int sceCompatInterrupt("},
+        {"id": "PCM played with sceAudioOut", "probe": "int sceAudioOutOutput("},
+        {"id": "run end to end with the real ScePspemu", "gap": {"en": "no test or boot trace runs this channel's requests through the real ScePspemu yet", "pt": "nenhum teste nem trace de boot roda ainda os pedidos deste canal pelo ScePspemu real"}}
+      ]
+    },
+    {
+      "id": "syscon",
+      "name": { "en": "Syscon: power, RTC, low IO (channels 7 and 9)", "pt": "Syscon: energia, RTC, IO baixo (canais 7 e 9)" },
+      "code": ["src/VitaSharp.Core/Hle/Modules/Compat.cs", "src/VitaSharp.Core/Hle/Modules/SystemMisc.cs"],
+      "note": { "en": "no syscon on the compat core: power, clock, LEDs, remote and peripherals go to the real ScePspemu as kermit requests (power: virtual interrupt 10); not run end to end yet", "pt": "sem syscon no núcleo compat: energia, relógio, LEDs, controle remoto e periféricos vão ao ScePspemu real como pedidos kermit (energia: interrupção virtual 10); ainda não rodado de ponta a ponta" },
+      "items": [
+        {"id": "requests reach the ARM side (ring, sceCompatWaitAndGetRequest)", "probe": "int sceCompatWaitAndGetRequest("},
+        {"id": "answers return to the core (sceCompatReturnValueEx)", "probe": "int sceCompatReturnValueEx("},
+        {"id": "power virtual interrupt 10", "probe": "int sceCompatInterrupt("},
+        {"id": "battery and power state (scePower)", "probe": "int scePowerGetBatteryLifePercent("},
+        {"id": "run end to end with the real ScePspemu", "gap": {"en": "no test or boot trace runs this channel's requests through the real ScePspemu yet", "pt": "nenhum teste nem trace de boot roda ainda os pedidos deste canal pelo ScePspemu real"}}
+      ]
+    },
+    {
+      "id": "wlan",
+      "name": { "en": "Wi-Fi (channel 10)", "pt": "Wi-Fi (canal 10)" },
+      "code": ["src/VitaSharp.Core/Hle/Modules/Compat.cs", "src/VitaSharp.Core/Hle/Modules/KernelTwins.cs", "src/VitaSharp.Core/Hle/Modules/Online.cs"],
+      "note": { "en": "kermit_wlan served by the real ScePspemu over the Vita network HLE (virtual interrupts 7-8); not run end to end yet", "pt": "kermit_wlan atendido pelo ScePspemu real sobre o HLE de rede do Vita (interrupções virtuais 7-8); ainda não rodado de ponta a ponta" },
+      "items": [
+        {"id": "requests reach the ARM side (ring, sceCompatWaitAndGetRequest)", "probe": "int sceCompatWaitAndGetRequest("},
+        {"id": "answers return to the core (sceCompatReturnValueEx)", "probe": "int sceCompatReturnValueEx("},
+        {"id": "WLAN virtual interrupts 7-8", "probe": "int sceCompatInterrupt("},
+        {"id": "sockets (sceNet)", "probe": "sceNetSocket("},
+        {"id": "connection state (sceNetCtl)", "probe": "int sceNetCtlInetGetState("},
+        {"id": "run end to end with the real ScePspemu", "gap": {"en": "no test or boot trace runs this channel's requests through the real ScePspemu yet", "pt": "nenhum teste nem trace de boot roda ainda os pedidos deste canal pelo ScePspemu real"}}
+      ]
+    },
+    {
+      "id": "usb",
+      "name": { "en": "USB (channels 8 and 12)", "pt": "USB (canais 8 e 12)" },
+      "code": ["src/VitaSharp.Core/Hle/Modules/Compat.cs", "src/VitaSharp.Core/Hle/Modules/MtpIf.cs"],
+      "note": { "en": "kermit_usb served by the real ScePspemu; on the Vita side the cable is always disconnected (the firmware's answer with no host)", "pt": "kermit_usb atendido pelo ScePspemu real; do lado do Vita o cabo fica sempre desconectado (a resposta do firmware sem host)" },
+      "items": [
+        {"id": "requests reach the ARM side (ring, sceCompatWaitAndGetRequest)", "probe": "int sceCompatWaitAndGetRequest("},
+        {"id": "answers return to the core (sceCompatReturnValueEx)", "probe": "int sceCompatReturnValueEx("},
+        {"id": "cable state, always disconnected (sceUdcd)", "probe": "sceUdcdGetDeviceState"},
+        {"id": "run end to end with the real ScePspemu", "gap": {"en": "no test or boot trace runs this channel's requests through the real ScePspemu yet", "pt": "nenhum teste nem trace de boot roda ainda os pedidos deste canal pelo ScePspemu real"}}
+      ]
+    },
+    {
+      "id": "utility",
+      "name": { "en": "Utility: OSK and dialogs (channel 13)", "pt": "Utilitários: OSK e diálogos (canal 13)" },
+      "code": ["src/VitaSharp.Core/Hle/Modules/Compat.cs", "src/VitaSharp.Core/Hle/Modules/CommonDialog.cs"],
+      "note": { "en": "kermit_utility requests (on-screen keyboard, network dialog) shown by the real ScePspemu with the Vita's dialogs; not run end to end yet", "pt": "pedidos do kermit_utility (teclado na tela, diálogo de rede) mostrados pelo ScePspemu real com os diálogos do Vita; ainda não rodado de ponta a ponta" },
+      "items": [
+        {"id": "requests reach the ARM side (ring, sceCompatWaitAndGetRequest)", "probe": "int sceCompatWaitAndGetRequest("},
+        {"id": "answers return to the core (sceCompatReturnValueEx)", "probe": "int sceCompatReturnValueEx("},
+        {"id": "on-screen keyboard (sceImeDialog)", "probe": "int sceImeDialogInit("},
+        {"id": "network dialog (sceNetCheckDialog)", "probe": "int sceNetCheckDialogInit("},
+        {"id": "run end to end with the real ScePspemu", "gap": {"en": "no test or boot trace runs this channel's requests through the real ScePspemu yet", "pt": "nenhum teste nem trace de boot roda ainda os pedidos deste canal pelo ScePspemu real"}}
+      ]
+    },
+    {
+      "id": "umd", "state": "absent",
+      "name": { "en": "UMD drive / ATA", "pt": "Leitor de UMD / ATA" },
+      "code": [],
+      "note": { "en": "the Vita has no UMD drive and this flash0 has no UMD or ATA driver: ISO titles are read by np9660/isofs through the Memory Stick channel", "pt": "o Vita não tem leitor de UMD e este flash0 não tem driver de UMD nem de ATA: os títulos ISO são lidos pelo np9660/isofs pelo canal do Memory Stick" }
+    },
+    {
+      "id": "kirk", "state": "policy",
+      "name": { "en": "KIRK crypto engine", "pt": "Motor criptográfico KIRK" },
+      "code": [],
+      "note": { "en": "decrypts every ~PSP module (memlmd) and the DRM; not emulated by policy (its keys are a lead decision)", "pt": "decifra todo módulo ~PSP (memlmd) e o DRM; não emulado por política (as chaves são decisão do lead)" },
+      "items": [
+        {"id": "decryption of ~PSP modules and DRM", "gap": {"en": "not emulated by policy (its keys are a lead decision)", "pt": "não emulado por política (as chaves são decisão do lead)"}}
+      ]
+    }
+  ],
+  "modules": [
+    { "path": "kd/sysmem.prx", "uses": ["cpu", "memory"], "role": { "en": "memory manager", "pt": "gerenciador de memória" } },
+    { "path": "kd/loadcore.prx", "uses": ["cpu", "memory"], "role": { "en": "module loader and linker", "pt": "carregador e ligador de módulos" } },
+    { "path": "kd/exceptionman.prx", "uses": ["cpu"], "role": { "en": "exception handlers", "pt": "tratadores de exceção" } },
+    { "path": "kd/interruptman.prx", "uses": ["cpu", "intc"], "role": { "en": "interrupt manager", "pt": "gerenciador de interrupções" } },
+    { "path": "kd/threadman.prx", "uses": ["cpu", "intc", "timers"], "role": { "en": "threads, synchronisation, alarms", "pt": "threads, sincronização, alarmes" } },
+    { "path": "kd/systimer.prx", "uses": ["timers", "intc"], "role": { "en": "hardware timer driver", "pt": "driver dos timers de hardware" } },
+    { "path": "kd/dmacman.prx", "uses": ["dmac", "intc"], "role": { "en": "DMA controller manager", "pt": "gerenciador dos controladores de DMA" } },
+    { "path": "kd/iofilemgr.prx", "uses": ["cpu"], "role": { "en": "I/O file manager", "pt": "gerenciador de arquivos de I/O" } },
+    { "path": "kd/iofilemgr_dnas.prx", "uses": ["cpu", "kirk"], "role": { "en": "I/O manager for DNAS-protected files", "pt": "gerenciador de I/O para arquivos protegidos por DNAS" } },
+    { "path": "kd/modulemgr.prx", "uses": ["cpu", "memory"], "role": { "en": "module manager", "pt": "gerenciador de módulos" } },
+    { "path": "kd/init.prx", "uses": ["cpu"], "role": { "en": "boot-time module loader", "pt": "carregador de módulos do boot" } },
+    { "path": "kd/loadexec_01g.prx", "uses": ["cpu", "memory"], "role": { "en": "executable loader and reboot", "pt": "carregador de executáveis e reboot" } },
+    { "path": "kd/memlmd_01g.prx", "uses": ["cpu", "kirk"], "role": { "en": "decrypts ~PSP modules before loading", "pt": "decifra os módulos ~PSP antes de carregar" } },
+    { "path": "kd/mesg_led_01g.prx", "uses": ["cpu", "kirk"], "role": { "en": "module decryption (game and updater modules)", "pt": "decifração de módulos (de jogos e do atualizador)" } },
+    { "path": "kd/registry.prx", "uses": ["cpu", "flash"], "role": { "en": "system registry (flash1)", "pt": "registro do sistema (flash1)" } },
+    { "path": "kd/chkreg.prx", "uses": ["flash", "kirk"], "role": { "en": "region check from the ID storage", "pt": "checagem de região pelo ID storage" } },
+    { "path": "kd/ifhandle.prx", "uses": ["cpu", "wlan"], "role": { "en": "network interface handles", "pt": "handles das interfaces de rede" } },
+    { "path": "kd/usersystemlib.prx", "uses": ["cpu"], "role": { "en": "user-mode kernel library", "pt": "biblioteca do kernel em modo usuário" } },
+    { "path": "kd/memab.prx", "uses": ["cpu", "kirk"], "role": { "en": "authentication crypto for ad hoc", "pt": "criptografia de autenticação do ad hoc" } },
+    { "path": "kd/openpsid.prx", "uses": ["flash", "kirk"], "role": { "en": "console ID (OpenPSID)", "pt": "ID do console (OpenPSID)" } },
+    { "path": "kd/npdrm.prx", "uses": ["cpu", "kirk"], "role": { "en": "PSP NPDRM (licences, EDAT)", "pt": "NPDRM do PSP (licenças, EDAT)" } },
+    { "path": "kd/amctrl.prx", "uses": ["cpu", "kirk"], "role": { "en": "DRM decryption of PSN content", "pt": "decifração do DRM do conteúdo da PSN" } },
+    { "path": "kd/chnnlsv.prx", "uses": ["cpu", "kirk"], "role": { "en": "save data encryption", "pt": "criptografia dos saves" } },
+    { "path": "kd/cert_loader.prx", "uses": ["cpu", "flash"], "role": { "en": "loads the SSL certificates from flash0", "pt": "carrega os certificados SSL do flash0" } },
+    { "path": "kd/exitgame.prx", "uses": ["cpu"], "role": { "en": "exit game callback", "pt": "callback de sair do jogo" } },
+    { "path": "kd/mediasync.prx", "uses": ["cpu", "ms"], "role": { "en": "waits for the game media", "pt": "espera a mídia do jogo" } },
+    { "path": "kd/isofs.prx", "uses": ["cpu", "ms"], "role": { "en": "ISO 9660 file system of the disc image", "pt": "sistema de arquivos ISO 9660 da imagem do disco" } },
+    { "path": "kd/np9660.prx", "uses": ["ms", "kirk"], "role": { "en": "PSN disc image (NPUMDIMG) as a UMD", "pt": "imagem de disco da PSN (NPUMDIMG) como UMD" } },
+    { "path": "kd/impose_kermit.prx", "uses": ["kermit", "syscon", "display"], "role": { "en": "HOME overlay settings (volume, brightness)", "pt": "ajustes do overlay HOME (volume, brilho)" } },
+    { "path": "kd/kermit.prx", "uses": ["kermit", "intc"], "role": { "en": "kermit request transport to the ARM", "pt": "transporte dos pedidos kermit para o ARM" } },
+    { "path": "kd/kermit_audio.prx", "uses": ["kermit", "audio"], "role": { "en": "audio out driver", "pt": "driver de saída de áudio" } },
+    { "path": "kd/kermit_ctrl.prx", "uses": ["kermit", "ctrl"], "role": { "en": "controller driver", "pt": "driver do controle" } },
+    { "path": "kd/kermit_display.prx", "uses": ["kermit", "display"], "role": { "en": "display driver", "pt": "driver do display" } },
+    { "path": "kd/kermit_flashfs.prx", "uses": ["kermit", "flash"], "role": { "en": "flash0/flash1 file system", "pt": "sistema de arquivos do flash0/flash1" } },
+    { "path": "kd/kermit_hpremote.prx", "uses": ["kermit", "syscon"], "role": { "en": "headphone remote", "pt": "controle remoto do fone" } },
+    { "path": "kd/kermit_idstorage.prx", "uses": ["kermit", "flash"], "role": { "en": "ID storage", "pt": "ID storage" } },
+    { "path": "kd/kermit_lowio.prx", "uses": ["kermit", "syscon"], "role": { "en": "low-level I/O (power, LEDs)", "pt": "I/O de baixo nível (energia, LEDs)" } },
+    { "path": "kd/kermit_me_wrapper.prx", "uses": ["kermit", "me"], "role": { "en": "Media Engine calls to the ARM", "pt": "chamadas do Media Engine para o ARM" } },
+    { "path": "kd/kermit_me_wrapper_2.prx", "uses": ["kermit", "me"], "role": { "en": "Media Engine calls to the ARM (second variant)", "pt": "chamadas do Media Engine para o ARM (segunda variante)" } },
+    { "path": "kd/kermit_msemu.prx", "uses": ["kermit", "ms"], "role": { "en": "Memory Stick device", "pt": "dispositivo do Memory Stick" } },
+    { "path": "kd/kermit_msfs.prx", "uses": ["kermit", "ms"], "role": { "en": "Memory Stick file system", "pt": "sistema de arquivos do Memory Stick" } },
+    { "path": "kd/kermit_peripheral.prx", "uses": ["kermit", "syscon"], "role": { "en": "peripheral state", "pt": "estado dos periféricos" } },
+    { "path": "kd/kermit_power.prx", "uses": ["kermit", "syscon"], "role": { "en": "power, battery, suspend", "pt": "energia, bateria, suspensão" } },
+    { "path": "kd/kermit_rtc.prx", "uses": ["kermit", "syscon"], "role": { "en": "real-time clock", "pt": "relógio de tempo real" } },
+    { "path": "kd/kermit_usb.prx", "uses": ["kermit", "usb"], "role": { "en": "USB driver", "pt": "driver USB" } },
+    { "path": "kd/kermit_utility.prx", "uses": ["kermit", "utility"], "role": { "en": "utility requests (OSK, dialogs)", "pt": "pedidos de utilitários (OSK, diálogos)" } },
+    { "path": "kd/kermit_wlan.prx", "uses": ["kermit", "wlan"], "role": { "en": "Wi-Fi driver", "pt": "driver de Wi-Fi" } },
+    { "path": "kd/ge.prx", "uses": ["ge", "intc"], "role": { "en": "GE driver (display lists)", "pt": "driver do GE (listas de display)" } },
+    { "path": "kd/ge_2.prx", "uses": ["ge", "intc"], "role": { "en": "GE driver (second variant)", "pt": "driver do GE (segunda variante)" } },
+    { "path": "kd/audiocodec_260.prx", "uses": ["me"], "role": { "en": "audio codec interface", "pt": "interface dos codecs de áudio" } },
+    { "path": "kd/avcodec.prx", "uses": ["me"], "role": { "en": "audio/video codec core", "pt": "núcleo dos codecs de áudio/vídeo" } },
+    { "path": "kd/videocodec_260.prx", "uses": ["me"], "role": { "en": "video codec interface", "pt": "interface dos codecs de vídeo" } },
+    { "path": "kd/mpegbase_260.prx", "uses": ["me"], "role": { "en": "MPEG base (video decode)", "pt": "base MPEG (decodificação de vídeo)" } },
+    { "path": "kd/mpeg.prx", "uses": ["me"], "role": { "en": "PSMF movie player library", "pt": "biblioteca do player de filmes PSMF" } },
+    { "path": "kd/libatrac3plus.prx", "uses": ["me"], "role": { "en": "ATRAC3/ATRAC3plus decoder", "pt": "decodificador ATRAC3/ATRAC3plus" } },
+    { "path": "kd/libmp3.prx", "uses": ["me"], "role": { "en": "MP3 decoder", "pt": "decodificador MP3" } },
+    { "path": "kd/libaac.prx", "uses": ["me"], "role": { "en": "AAC decoder", "pt": "decodificador AAC" } },
+    { "path": "kd/libaudiocodec2.prx", "uses": ["me"], "role": { "en": "audio codec library (second interface)", "pt": "biblioteca de codecs de áudio (segunda interface)" } },
+    { "path": "kd/g729.prx", "uses": ["me"], "role": { "en": "G.729 voice codec", "pt": "codec de voz G.729" } },
+    { "path": "kd/sc_sascore.prx", "uses": ["me", "audio"], "role": { "en": "SAS sound synthesiser", "pt": "sintetizador de som SAS" } },
+    { "path": "kd/vaudio.prx", "uses": ["audio"], "role": { "en": "video audio output", "pt": "saída de áudio de vídeo" } },
+    { "path": "kd/libmp4.prx", "uses": ["me"], "role": { "en": "MP4 playback", "pt": "reprodução de MP4" } },
+    { "path": "kd/mp4msv.prx", "uses": ["me", "ms"], "role": { "en": "MP4 video from the Memory Stick", "pt": "vídeo MP4 do Memory Stick" } },
+    { "path": "kd/libasfparser.prx", "uses": ["cpu"], "role": { "en": "ASF (WMA) container parser", "pt": "leitor do contêiner ASF (WMA)" } },
+    { "path": "kd/mgvideo.prx", "uses": ["me"], "role": { "en": "video playback (role to confirm)", "pt": "reprodução de vídeo (papel a confirmar)" } },
+    { "path": "kd/mcctrl.prx", "uses": ["cpu"], "role": { "en": "role to confirm", "pt": "papel a confirmar" } },
+    { "path": "kd/pops_01g.prx", "uses": ["cpu", "display", "audio"], "role": { "en": "PSone emulator", "pt": "emulador de PSone" } },
+    { "path": "kd/popsman.prx", "uses": ["ms", "kirk"], "role": { "en": "PSone image manager (decryption)", "pt": "gerenciador das imagens de PSone (decifração)" } },
+    { "path": "kd/psheet.prx", "uses": ["cpu", "kirk"], "role": { "en": "DRM sheet of PSN content", "pt": "folha de DRM do conteúdo da PSN" } },
+    { "path": "kd/sircs.prx", "uses": ["syscon"], "role": { "en": "infrared remote (SIRCS)", "pt": "controle remoto infravermelho (SIRCS)" } },
+    { "path": "kd/http_storage.prx", "uses": ["wlan", "ms"], "role": { "en": "HTTP download to storage", "pt": "download HTTP para o armazenamento" } },
+    { "path": "kd/libhttp.prx", "uses": ["wlan"], "role": { "en": "HTTP client", "pt": "cliente HTTP" } },
+    { "path": "kd/libparse_http.prx", "uses": ["cpu"], "role": { "en": "HTTP header parser", "pt": "leitor de cabeçalhos HTTP" } },
+    { "path": "kd/libparse_uri.prx", "uses": ["cpu"], "role": { "en": "URI parser", "pt": "leitor de URI" } },
+    { "path": "kd/libssl.prx", "uses": ["wlan"], "role": { "en": "SSL/TLS", "pt": "SSL/TLS" } },
+    { "path": "kd/libupdown.prx", "uses": ["wlan"], "role": { "en": "upload/download library", "pt": "biblioteca de upload/download" } },
+    { "path": "kd/libgameupdate.prx", "uses": ["wlan"], "role": { "en": "game update check", "pt": "checagem de atualização de jogo" } },
+    { "path": "kd/libdnas.prx", "uses": ["wlan", "kirk"], "role": { "en": "DNAS authentication", "pt": "autenticação DNAS" } },
+    { "path": "kd/libdnas_core.prx", "uses": ["wlan", "kirk"], "role": { "en": "DNAS core", "pt": "núcleo do DNAS" } },
+    { "path": "kd/pspnet.prx", "uses": ["wlan"], "role": { "en": "network core", "pt": "núcleo de rede" } },
+    { "path": "kd/pspnet_inet.prx", "uses": ["wlan"], "role": { "en": "TCP/IP sockets", "pt": "sockets TCP/IP" } },
+    { "path": "kd/pspnet_apctl.prx", "uses": ["wlan"], "role": { "en": "access point connection", "pt": "conexão ao ponto de acesso" } },
+    { "path": "kd/pspnet_resolver.prx", "uses": ["wlan"], "role": { "en": "DNS resolver", "pt": "resolvedor de DNS" } },
+    { "path": "kd/pspnet_upnp.prx", "uses": ["wlan"], "role": { "en": "UPnP", "pt": "UPnP" } },
+    { "path": "kd/pspnet_wispr.prx", "uses": ["wlan"], "role": { "en": "WISPr hotspot login", "pt": "login de hotspot WISPr" } },
+    { "path": "kd/pspnet_adhoc.prx", "uses": ["wlan"], "role": { "en": "ad hoc PDP/PTP", "pt": "PDP/PTP ad hoc" } },
+    { "path": "kd/pspnet_adhocctl.prx", "uses": ["wlan"], "role": { "en": "ad hoc group control", "pt": "controle de grupos ad hoc" } },
+    { "path": "kd/pspnet_adhoc_auth.prx", "uses": ["wlan", "kirk"], "role": { "en": "ad hoc authentication", "pt": "autenticação ad hoc" } },
+    { "path": "kd/pspnet_adhoc_discover.prx", "uses": ["wlan"], "role": { "en": "ad hoc discovery", "pt": "descoberta ad hoc" } },
+    { "path": "kd/pspnet_adhoc_download.prx", "uses": ["wlan"], "role": { "en": "ad hoc game sharing download", "pt": "download do compartilhamento de jogo ad hoc" } },
+    { "path": "kd/pspnet_adhoc_matching.prx", "uses": ["wlan"], "role": { "en": "ad hoc matching", "pt": "matching ad hoc" } },
+    { "path": "kd/pspnet_adhoc_transfer_int.prx", "uses": ["wlan"], "role": { "en": "ad hoc transfer", "pt": "transferência ad hoc" } },
+    { "path": "kd/np.prx", "uses": ["wlan"], "role": { "en": "PSN library", "pt": "biblioteca da PSN" } },
+    { "path": "kd/np_core.prx", "uses": ["wlan"], "role": { "en": "PSN core", "pt": "núcleo da PSN" } },
+    { "path": "kd/np_auth.prx", "uses": ["wlan"], "role": { "en": "PSN authentication", "pt": "autenticação da PSN" } },
+    { "path": "kd/np_service.prx", "uses": ["wlan"], "role": { "en": "PSN services", "pt": "serviços da PSN" } },
+    { "path": "kd/np_commerce2.prx", "uses": ["wlan"], "role": { "en": "PSN store", "pt": "loja da PSN" } },
+    { "path": "kd/np_commerce2_regcam.prx", "uses": ["wlan"], "role": { "en": "PSN store (campaign codes)", "pt": "loja da PSN (códigos de campanha)" } },
+    { "path": "kd/np_commerce2_store.prx", "uses": ["wlan"], "role": { "en": "PSN store browser", "pt": "navegação da loja da PSN" } },
+    { "path": "kd/np_matching2.prx", "uses": ["wlan"], "role": { "en": "PSN matching", "pt": "matching da PSN" } },
+    { "path": "kd/np_inst.prx", "uses": ["wlan", "ms"], "role": { "en": "PSN content install", "pt": "instalação de conteúdo da PSN" } },
+    { "path": "kd/usbacc.prx", "uses": ["usb"], "role": { "en": "USB accessories", "pt": "acessórios USB" } },
+    { "path": "kd/usbcam.prx", "uses": ["usb"], "role": { "en": "USB camera", "pt": "câmera USB" } },
+    { "path": "kd/usbgps.prx", "uses": ["usb"], "role": { "en": "USB GPS", "pt": "GPS USB" } },
+    { "path": "kd/usbmic.prx", "uses": ["usb"], "role": { "en": "USB microphone", "pt": "microfone USB" } },
+    { "path": "kd/usbpspcm.prx", "uses": ["usb"], "role": { "en": "USB PSP communication (PSP-PS3)", "pt": "comunicação USB do PSP (PSP-PS3)" } },
+    { "path": "vsh/module/pafmini.prx", "uses": ["cpu", "ge", "display"], "role": { "en": "UI toolkit of the utilities", "pt": "toolkit de interface dos utilitários" } },
+    { "path": "vsh/module/common_gui.prx", "uses": ["ge", "display", "ctrl"], "role": { "en": "common UI", "pt": "interface comum" } },
+    { "path": "vsh/module/common_util.prx", "uses": ["cpu"], "role": { "en": "common utilities", "pt": "utilitários comuns" } },
+    { "path": "vsh/module/dialogmain.prx", "uses": ["ge", "display", "ctrl"], "role": { "en": "utility dialogs host", "pt": "base dos diálogos de utilitário" } },
+    { "path": "vsh/module/msgdialog_plugin.prx", "uses": ["ge", "ctrl"], "role": { "en": "message dialog", "pt": "diálogo de mensagem" } },
+    { "path": "vsh/module/savedata_utility.prx", "uses": ["ms", "ge", "ctrl"], "role": { "en": "save data utility", "pt": "utilitário de saves" } },
+    { "path": "vsh/module/savedata_auto_dialog.prx", "uses": ["ms", "ge"], "role": { "en": "automatic save dialog", "pt": "diálogo de save automático" } },
+    { "path": "vsh/module/kermit_osk_plugin.prx", "uses": ["kermit", "utility"], "role": { "en": "on-screen keyboard (shown by the Vita)", "pt": "teclado na tela (mostrado pelo Vita)" } },
+    { "path": "vsh/module/kermit_netconf_dialog.prx", "uses": ["kermit", "utility", "wlan"], "role": { "en": "network dialog (shown by the Vita)", "pt": "diálogo de rede (mostrado pelo Vita)" } },
+    { "path": "vsh/module/netconf_plugin.prx", "uses": ["wlan", "ge"], "role": { "en": "network configuration dialog", "pt": "diálogo de configuração de rede" } },
+    { "path": "vsh/module/auto_connect.prx", "uses": ["wlan"], "role": { "en": "automatic network connection", "pt": "conexão de rede automática" } },
+    { "path": "vsh/module/screenshot_plugin.prx", "uses": ["display", "ms"], "role": { "en": "screenshots", "pt": "capturas de tela" } },
+    { "path": "vsh/module/game_install_plugin.prx", "uses": ["ms", "ge"], "role": { "en": "game data install", "pt": "instalação de dados do jogo" } },
+    { "path": "vsh/module/libfont_hv.prx", "uses": ["cpu", "flash"], "role": { "en": "font library", "pt": "biblioteca de fontes" } },
+    { "path": "vsh/module/libpspvmc.prx", "uses": ["ms"], "role": { "en": "PSone virtual memory card", "pt": "memory card virtual do PSone" } },
+    { "path": "vsh/module/file_parser_base.prx", "uses": ["cpu"], "role": { "en": "file parser base", "pt": "base do leitor de arquivos" } },
+    { "path": "vsh/module/libslim.prx", "uses": ["cpu"], "role": { "en": "role to confirm", "pt": "papel a confirmar" } },
+    { "path": "vsh/module/dd_helper_utility.prx", "uses": ["wlan", "ms"], "role": { "en": "download helper", "pt": "auxiliar de download" } },
+    { "path": "vsh/module/htmlviewer_ui.prx", "uses": ["wlan", "ge"], "role": { "en": "HTML viewer UI", "pt": "interface do visualizador HTML" } },
+    { "path": "vsh/module/htmlviewer_utility.prx", "uses": ["wlan", "ge"], "role": { "en": "HTML viewer utility", "pt": "utilitário do visualizador HTML" } },
+    { "path": "vsh/module/hvauth_r.prx", "uses": ["wlan"], "role": { "en": "HTML viewer authentication", "pt": "autenticação do visualizador HTML" } },
+    { "path": "vsh/module/netfront.prx", "uses": ["wlan", "ge"], "role": { "en": "browser engine", "pt": "motor do navegador" } },
+    { "path": "vsh/module/libwww.prx", "uses": ["wlan"], "role": { "en": "web library", "pt": "biblioteca web" } },
+    { "path": "vsh/module/auth_plugin.prx", "uses": ["wlan", "kirk"], "role": { "en": "authentication dialog", "pt": "diálogo de autenticação" } },
+    { "path": "vsh/module/dnas_plugin.prx", "uses": ["wlan", "kirk"], "role": { "en": "DNAS dialog", "pt": "diálogo do DNAS" } },
+    { "path": "vsh/module/netplay_server_utility.prx", "uses": ["wlan"], "role": { "en": "game sharing server", "pt": "servidor de compartilhamento de jogo" } },
+    { "path": "vsh/module/netplay_server_plus_utility.prx", "uses": ["wlan"], "role": { "en": "game sharing server (plus)", "pt": "servidor de compartilhamento de jogo (plus)" } },
+    { "path": "vsh/module/netplay_server2_utility.prx", "uses": ["wlan"], "role": { "en": "game sharing server (2)", "pt": "servidor de compartilhamento de jogo (2)" } },
+    { "path": "vsh/module/ps3scan_plugin.prx", "uses": ["wlan"], "role": { "en": "PS3 scan (remote features)", "pt": "busca do PS3 (recursos remotos)" } },
+    { "path": "vsh/module/psn_utility.prx", "uses": ["wlan"], "role": { "en": "PSN utility", "pt": "utilitário da PSN" } },
+    { "path": "vsh/module/npinstaller_plugin.prx", "uses": ["wlan", "ms"], "role": { "en": "PSN content installer", "pt": "instalador de conteúdo da PSN" } },
+    { "path": "vsh/module/npsignin_plugin.prx", "uses": ["wlan"], "role": { "en": "PSN sign-in", "pt": "login na PSN" } },
+    { "path": "vsh/module/npsignup_plugin.prx", "uses": ["wlan"], "role": { "en": "PSN sign-up", "pt": "cadastro na PSN" } },
+    { "path": "vsh/module/store_browser_plugin.prx", "uses": ["wlan", "ge"], "role": { "en": "in-game store browser", "pt": "navegação da loja no jogo" } },
+    { "path": "vsh/module/store_checkout_plugin.prx", "uses": ["wlan"], "role": { "en": "in-game store checkout", "pt": "compra na loja no jogo" } },
+    { "path": "vsh/module/store_checkout_utility.prx", "uses": ["wlan"], "role": { "en": "store checkout utility", "pt": "utilitário de compra na loja" } }
+  ]
+}

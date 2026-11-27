@@ -8,6 +8,15 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
 
 ## Diagnóstico
 
+- [ ] [P3][M] **Modo celular no PC, o que falta** (o perfil de fases e os testes de orçamento estão em "Corrigido,
+  falta o usuário testar"; o build Native AOT do desktop já existe, `-p:VitaSharpRelease=true -p:VitaSharpAot=true`,
+  e docs/notes/cpu-phases.md diz como montar o tempo do celular no PC):
+  - `HostTuning.AvoidBusyWaits` por variável de ambiente no desktop (esperas sem giro, como no celular), com teste;
+  - um roteiro `.ps1`/`.sh` que publica o Native AOT uma vez numa pasta fixa e roda um cenário com 2 núcleos fixados,
+    333 MHz e `VITASHARP_PHASE_PROF=1`, e resume as linhas `PERF phases`/`[phase-alert]`;
+  - o código do backend ARM64 no PC: medir no sandbox ARM64 dos testes (`Arm64Runner`) os blocos quentes de uma
+    captura (ns por ciclo do guest), já que o x64 não mostra o custo do código ARM64.
+
 - [ ] [P2][G] **Gravar tudo: estados de vários processos sobem sem os programas, o que falta** (a 1ª entrega, cada
   processo com a sua seção `process<N>/boot`, está em "Corrigido, falta o usuário testar"):
   - o load confere os pids: o primeiro processo do estado precisa ter o pid que o primeiro processo do boot recebe
@@ -69,6 +78,13 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
   Fechado (triagem 15/11/2026): não reproduziu em 6 rodadas e o log agora diz `Process exit at guest frame N` em toda saída normal; se repetir, item novo com o código de saída e o WER.
 
 ## Testes de regressão
+- [ ] Opções do gerador de shaders por renderer, não globais do processo: o construtor do VulkanRenderer grava as
+  opções do `ShaderGenerator` (FarPlane, PerSampleFramebufferFetch, LowerDynamicIndexing, Vertex/FragmentStores,
+  RelaxHalfPrecision, UncheckedUniformLoads, VectorLoads, SplitUniformSlots) para o processo inteiro, e os testes de
+  shader viam as do perfil mali/adreno de outro teste (ShaderGeneratorVersionTests falhava junto com
+  RendererAttachmentSyncTests). Paliativo feito (fix/shadergen-options): o renderer devolve as opções anteriores ao
+  ser descartado e os testes de shader rodam na collection "guest" com os de renderer. Falta passar as opções como
+  instância ao gerador (Generate, UsseTranslator, GxmObjects.DataBytes, bindings do renderer)
 
 - [ ] [P1][G] Achar erros sem jogar (pedido do usuário, 21/11/2026: "não quero ter que jogar todos os jogos de Vita
   pra encontrar todos os problemas do emulador"). Prioridade máxima para os próximos dias. Regras de dados: o
@@ -1414,7 +1430,13 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   tocar" (liga/desliga) e "Intensidade da vibração" (Fraca/Média/Forte: amplitude do `VibrationEffect`; sem controle
   de amplitude no motor, o pulso padrão). Os controles na tela não têm perfil próprio (os perfis são dos controles
   físicos): a opção é global, como a opacidade. Teste: AndroidAppTests.OnScreenButtonsVibrateWhileTheStickIsHeld.
-  Falta o usuário conferir no celular
+  Corrigido de novo, falta o usuário testar (26/11/2026, ovl2): no Redmi Note 14 nada vibrava — o pulso de 18 ms com a
+  amplitude padrão (o motor diz não ter controle de amplitude, a intensidade nunca chegava) era tocado pelo sistema
+  mas não se sentia, com o uso "toque" que o ajuste de vibração ao toque do sistema silencia. Agora, do Android 10 em
+  diante, o pulso é um efeito predefinido do aparelho escolhido pela intensidade (Fraca = tick, Média = click, Forte =
+  heavy click); antes do Android 10, um one-shot de 20/30/45 ms com a amplitude quando o motor a aceita; tocado com o
+  uso de mídia/jogo (`OnScreenHaptics.PulseFor`). Teste: AndroidAppTests.OnScreenPulsesAreThePhonesPredefinedEffectsPickedByTheStrength.
+  O que testar: com "Vibrar ao tocar" ligado, tocar nos analógicos e nos botões e sentir a vibração nas três intensidades.
 
 - [ ] Desempenho no Android (meta: o fps nativo do jogo no Vita, no Redmi Note 14, Helio G99 / Mali-G57; junta os
   itens "Killzone no Android a 30 fps" e "Velocidade nativa no celular"). Medidas atuais (14/11/2026, APK NativeAOT,
@@ -1473,6 +1495,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
     384x192: 0,8 -> 0,6 MB; no modelo -0,56 ms, mais o draw de carga das amostras em tela cheia e a leitura de 4 MB da
     cópia, que o modelo não conta. Nenhuma GPU do PC tem a extensão: no PC vale o caminho atual (replay --compare
     idêntico com a chave ligada); fidelidade e tempo só no celular (bench do dump com imagem comparada)
+    Celular (v4, KZ slot 1 na escada, 2 corridas por variante): `VITASHARP_MAPPED_SCENE_START=1` sem ganho (28,5/28,3
+    fps, GPU 30,6-30,7 ms contra 24,4-28,7 fps e 30,4-33,6 ms sem). O dump da escada (presents 2400-2460) explica: lá a
+    cena 240x136 tem 1 draw e 1 rendering por quadro (o padrão de 9 leituras do próprio depth é do trecho do primeiro
+    dump); modelo 16,05 ms nos dois, 1.470 -> 1.468 renderings. Na escada os maiores são a cena principal MSAA 7,3 ms (46%)
+    e o atlas 384x512 3,2 ms (20%); celular ~30,5 ms, fator de calibração ~1,9
+    Bench no celular (v5, 4x3, imagem igual): MAPPED_SCENE_START kz_game2703 33,3 -> 30,1 ms (-9,5%), escada 27,1 ->
+    26,4 ms; ligado por padrão nos tile-based (perf/andgpu-mss-default). MSAA_RTSS ligado de fato (linha [boot]): 33,3 ->
+    33,1 ms, no ruído: a cena principal não é limitada por banda; fica desligado. Cena principal ~12,9 ms no celular
+    (metade do quadro na escada): próximo, separar vértice e fragmento dela (bench de seleção, fragment=discard)
   - [x] Feitos até 31/10/2026 (detalhes em `docs/android/README.md` e `docs/notes/native-jit.md`): threads do jogo e
     da GPU nos núcleos rápidos + sessão ADPF, logcat só com avisos, `Surface.setFrameRate` com o fps do jogo, ajuste
     do JIT nativo ARM64, AOT do código gerenciado (hoje o Release é NativeAOT, desde 09/11/2026)
@@ -1957,7 +1988,8 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 - [ ] [P1][M] Dados antigos depois de reinstalar o app: sem "Acesso a todos os arquivos" o app começa de novo na pasta do app (Android/data) e deixa para trás a pasta compartilhada /sdcard/.vitasharp com tudo o que o usuário tinha (firmware, jogos, saves, caches). O app deve ver essa pasta ao abrir e oferecer voltar a ela (pedir a permissão de novo) em vez de parecer um primeiro uso. As ferramentas build/android-*.sh/.ps1 já escolhem a pasta pelo app.log mais novo (fix/andreg1).
 - [ ] [P2][P] APK do CI com chave fixa: falta criar os secrets ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASS e ANDROID_KEY_ALIAS (docs/android/README.md, "Signing"); sem eles cada APK do CI exige desinstalar o anterior.
 - [ ] [P1][P] Controles na tela do Android: a área de toque dos analógicos é o retângulo em volta do círculo (`OnScreenControl.Contains`), e o canto do analógico direito cobre o canto inferior direito da imagem do jogo: o ícone do diário do Uncharted (≈2080,680 num 2400x1080) nunca vira toque frontal com os controles ligados. Testar o analógico pelo círculo (raio) e cobrir com teste (toque no canto do retângulo fora do círculo vira toque frontal).
-- [ ] [P2][M] Uncharted (PCSF00001) no Android, save do usuário de 25/11: ao continuar o Prólogo aparece o "Tutorial: Journal" e ele não fecha (abrir o diário pelo ícone de papel pautado e voltar não basta; toque no livro, no painel, X e ○ não fecham). Num longplay de Vita real o Prólogo vai do sobrevoo direto para a gameplay, sem esse tutorial. Reproduzir no PC com o mesmo save e ver o que o tutorial espera (toque no ícone do livro? posição/escala do toque).
+- [x] [P2][M] Uncharted (PCSF00001): o "Tutorial: Journal" no início do Prólogo não fechava. Respondido (26/11/2026, uctut1), sem defeito do emulador na lógica do jogo: o Vita de verdade mostra o mesmo tutorial no mesmo ponto quando as dicas de tutorial estão ligadas (longplay de captura direta, `youtube.com/watch?v=qdlZ07c-0vU` aos 0:44), com o jogo pausado. Ele fecha com um toque na aba da barra de ícones no canto inferior direito (o ícone abaixo do papel pautado, x≈0,93-0,99, y≈0,72-0,84 da imagem: "Touch to bring up the ICON bar..."); botões, o livro, o papel pautado e toques fora da aba não fecham. Provado por re-run da captura com toques injetados: toques em (0,93;0,72), (0,95;0,75), (0,965;0,78) e (0,98;0,80) fecham na hora; os da captura do celular (livro, papel pautado, 0,96;0,915 abaixo da aba) e X/○/△/□/L/R/direcional não. A resposta está em `docs/games/screens.json` (branch fix/uctut1-screens, sobre feat/screen1). Falta o usuário testar no celular: tocar na borda direita da aba (o analógico direito cobre o resto dela, item abaixo) ou desligar os controles na tela no menu de pausa e tocar na aba.
+- [x] [P2][P] Controles na tela do Android cobriam a borda da imagem do jogo (num 2400x1080 o analógico direito cobria o meio da aba da barra de ícones do Uncharted, x≈0,93-0,99 e y≈0,72-0,84 da imagem). Corrigido, falta o usuário testar (26/11/2026, ovl2): o layout padrão volta a ser o sobreposto de `jogo.html` em todas as telas (o das barras laterais foi desfeito), com os dois analógicos ~15% menores (106 dp em vez de 124, mesmos centros; desenho e área de toque juntos); o centro da aba, (0,96;0,78) e (0,98;0,80), chega ao jogo em 2400x1080, 2340x1080 e 1920x1080 (a borda esquerda da aba continua sob o analógico). Novo botão pequeno ao lado do fps e do botão de pausa (some e volta com o de pausa, também com o fps desligado) que esconde/mostra os controles na tela; o "Controles na tela" do menu de pausa usa a mesma lógica (`OnScreenVisibility`); a escolha fica salva para todos os jogos (`ShowOnScreenControls`). Testes: `OnScreenLayoutTests`. O que testar: no celular, conferir o tamanho dos analógicos; no Uncharted, no "Tutorial: Journal", tocar no meio da aba do canto inferior direito e ver o tutorial fechar; tocar no botão ao lado do fps, ver os controles sumirem, sair e abrir outro jogo e ver que continuam escondidos; tocar de novo e ver que voltam.
 - [x] App .NET MAUI com interface declarativa em C# (MauiReactor), seguindo os mockups em `docs/android/` (biblioteca
   e troféus, ajustes, firmware, conta PSN e rede, driver e informações da GPU, Sistema do Vita) (30/10/2026: gera o
   APK, `src/VitaSharp.Android`; ainda não rodou num aparelho nem no emulador)
@@ -3624,6 +3656,27 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Corrigido, falta o usuário testar
 
+- (26/11/2026, falta testar) [P2][M] Perfil de fases da CPU por thread e alertas de orçamento (feat/perfdiag1): cada
+  thread do guest conta ciclos por fase do despachante (interpretador, interpretador vetorial VFP, código vetorial,
+  nativo, IL, troca de bloco, HLE, ritmo) e tempo do host amostrado (1 volta em 31), ligado durante a gravação/pré-roll
+  do F8, com --debug-mode ou `VITASHARP_PHASE_PROF=1` (toda volta cronometrada); desligado fora disso (custa 1,3% em
+  código nativo e 26% em código interpretado); blocos decodificados/compilados na thread do guest e chamadas ao
+  interpretador contados. `[phase-alert]` no log quando a thread passa de 70 ns por ciclo do guest numa janela, interpreta
+  blocos quentes, compila na própria thread por mais de 1 ms ou tem uma volta de mais de 2 ms. Linhas `PERF phases`
+  no resumo periódico e no fim; seção "CPU phases" no report.txt do F8. Testes de orçamento (categoria `Budget`) e o
+  caso `mixer_round_deadline` do TestGame. O que testar: uma gravação F8 no Dead Space (som) e ver no report.txt a
+  seção "CPU phases" (as threads do mixer e dos workers, alertas se houver). Docs: docs/notes/cpu-phases.md.
+- (26/11/2026, falta testar) [P2][M] O F8 "Gravar tudo" é a única ferramenta de depuração do jogador (feat/f8only1).
+  Saíram da interface e da documentação do usuário: F9 (modo de depuração), F10 (captura de diagnóstico), Ctrl+F8
+  (dump da GPU sozinho), o "Modo de depuração" das Configurações do launcher e dos Ajustes do Android, a pasta de
+  diagnósticos e os filtros de dumps/diagnósticos da página Capturas. O log detalhado (`DebugMode`) liga sozinho
+  enquanto a captura grava ou guarda a pré-gravação (Configurações > Avançado > "Pré-gravação"); a captura já levava o
+  dump da GPU. As anomalias de imagem ficam no log da captura (a captura automática de diagnóstico só com
+  `--debug-mode`). Os comandos de terminal (`--debug-mode`, `--diag-at`, passos F10/Ctrl+F8 do `--input`, `replay-gpu`,
+  `screen-text`, `rerun`, `verify`) continuam, só nas docs de desenvolvedor; o `screen-text` não lê mais o
+  `screenshot.png` da pasta de diagnóstico. Testar: no launcher, F9/F10/Ctrl+F8 não fazem nada de depuração (Ctrl+F8
+  = F8); Configurações > Avançado sem "Modo de depuração" nem pasta de diagnósticos; gravar com F8 e ver no `log.txt`
+  da captura linhas `[dbg]`; no Android, Ajustes > Depuração sem "Modo de depuração".
 - (26/11/2026, falta testar) [P1][M] Desempenho do Android, perf/andperf2: pausas do GC no gameplay. Killzone slot 1
   (Redmi Note 14, 26/11): ~19 GCs de gen0 por segundo com ~190 KB alocados por GC e 12,1-12,8% do tempo em pausa do GC
   (o piso de 256 KB que o GC usa quando não lê o tamanho do cache da CPU; no PC ele escolhe ~4 MB). Corrigido: o GC gen0
@@ -5091,6 +5144,20 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   (z/w por vértice e interpolação do driver) dá 1-2 ulps de diferença. Próximo passo possível: descobrir no USSE/ISP
   como a profundidade sai do vértice (ex.: z e w do mesmo registro, divisão, precisão) a partir do código do shader e
   de testes; sem isso, qualquer viés de profundidade seria chute.
+  Andamento (ac3w2, 26/11/2026; não resolvido): o código USSE dos dois shaders (`--trace-draws=3637` do dump de
+  23/11) calcula a posição igual: atributo UNTYPED (f10) desempacotado pelo próprio shader (VPCK S16 normalizado para
+  xyz, o w S16 cru = ±11 como escala), xyz·w e a MVP com VMAD (fma) z, y, x; z e w saem de cadeias separadas e a
+  profundidade é z/w ≈ 1 - 0,1/w (projeção de far infinito), então cada vértice tem ~1-2 passos de D24 de ruído de
+  arredondamento. A parede guarda 32 dos 45 vértices do plano com o sinal trocado (xyz e w negativos: -11916·-11),
+  o oclusor todos positivos; com a conversão simétrica x/32767 (a nossa e a do Vita3K) os dois dão o mesmo ponto.
+  Testado no replay a conversão do GLES2/SGX (2x+1)/65535, que não é simétrica (`ac3w2/snorm-experiment.patch` no
+  scratchpad): a parede passa a perder sempre (retângulo preto estável em 33/33 quadros, contra o pisca de 17 trocas
+  na base), ao contrário do vídeo do aparelho, então o Vita não converte assim; nenhuma conversão plausível
+  (x/32767, x/32768, (2x+1)/65535) deixa a parede sempre na frente. Medido também: a MVP da parede não tem jitter
+  (a câmera anda suave de quadro a quadro), então a troca par/ímpar não vem da projeção. O que falta para decidir
+  não é dado da captura (o dump e o `--trace-draws` já trazem vértices, MVP, código e estado): é o comportamento do
+  SGX543 em z/w e no ISP (precisão da divisão e da equação de plano, regra de empate), que só se mede no aparelho
+  (homebrew que desenha duas faces coplanares de triangulações diferentes com LESS_EQUAL e lê a profundidade).
 - [ ] [P1][G] PSM em Unity não abre (relato do usuário, 22/11/2026; log de 19:33, NPOA00239): o título traz o próprio
   runtime (`ux0:psm/<título>/runtime/eboot.bin`, PCSI00010 "Unity Runtime for PlayStation Mobile", mais mono_prx e
   bridge_prx), que está cifrado com a chave do conteúdo, e o carregador o lê como SELF comum: `InvalidDataException: Not

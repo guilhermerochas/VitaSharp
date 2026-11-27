@@ -174,6 +174,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         Affinity = affinity;
         OnSystemCore = emu.RunsOnSystemCore;
         Core = new CpuCore(emu.Code, emu.Space.Base);
+        Core.Phases.ThreadName = Name;
         Hle = new HleContext { Cpu = Core.State, Thread = this, Emu = emu };
 
         StackSize = GuestMemory.AlignUp(Math.Max(stackSize, 0x4000u), 0x1000);

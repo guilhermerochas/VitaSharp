@@ -281,6 +281,7 @@ public sealed unsafe partial class GuestThread
         condCount = r.ReadInt32();
         OnSystemCore = emu.RunsOnSystemCore;
         Core = new CpuCore(emu.Code, emu.Space.Base);
+        Core.Phases.ThreadName = Name;
         Hle = new HleContext { Cpu = Core.State, Thread = this, Emu = emu };
         ReadCpu(r, Core.State);
         KernelMode = !r.AtEnd && r.ReadBool();

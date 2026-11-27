@@ -1,28 +1,33 @@
 # Keeps the phone's screen on while the Android scripts work (HyperOS refuses `svc power stayon` and `adb shell input`):
 # a background loop checks `dumpsys power` every Interval seconds and reopens the developer APK's AwakeActivity (a blank
 # screen with KeepScreenOn) only when mWakefulness is not Awake. When the phone is offline, unauthorized or its screen
-# stays off, it plays an alert sound every 90 s. The Android scripts call `start` first and `stop` when they finish.
-# Usage: build/android-awake.ps1 start|stop|check|reopen [-Serial SERIAL] [-Interval 30]   (same as build/android-awake.sh)
+# stays off, it plays an alert sound every 90 s. The Android scripts call `begin` first and `stop` at the end only when
+# their `begin` started the loop, so a watchdog that was already running stays on.
+# Usage: build/android-awake.ps1 start|begin|running|stop|check|reopen [-Serial SERIAL] [-Interval 30]
+#   (same as build/android-awake.sh; -Serial defaults to $env:ANDROID_SERIAL)
 #   start   starts the loop (nothing when one is running); reopen the AwakeActivity after every `am force-stop` of the app
+#   begin   starts the loop when none is running; exit 0 = this call started it (stop it at the end), 3 = one was running
+#   running exit 0 when a watchdog runs for this phone (or one started without a serial; no -Serial: any), else 1
 #   stop    ends the loop and closes the AwakeActivity
 #   check   one check now, printing the state (also what the loop does)
 #   reopen  opens the AwakeActivity now (after an `am force-stop` of the app, which kills it too)
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('start', 'stop', 'check', 'reopen', 'loop')][string]$Action,
-    [string]$Serial = '',
+    [Parameter(Mandatory = $true)][ValidateSet('start', 'begin', 'running', 'stop', 'check', 'reopen', 'loop')][string]$Action,
+    [string]$Serial = $env:ANDROID_SERIAL,
     [int]$Interval = 30
 )
 $ErrorActionPreference = 'Continue'
 $pkg = 'io.github.vitasharp'
 $awake = "$pkg/$pkg.AwakeActivity"
-$pidFile = Join-Path ([IO.Path]::GetTempPath()) "vitasharp-android-awake$(if ($Serial) { "-$Serial" }).pid"
+$pidDir = [IO.Path]::GetTempPath()
+$pidFile = Join-Path $pidDir "vitasharp-android-awake$(if ($Serial) { "-$Serial" }).pid"
 $adbArgs = @(); if ($Serial) { $adbArgs = @('-s', $Serial) }
 
 function Alert { try { [System.Media.SystemSounds]::Exclamation.Play(); Start-Sleep -Milliseconds 1500 } catch { [console]::Beep(800, 400) } }
 
 function Reopen {
     $out = (& adb @adbArgs shell am start -n $awake 2>&1 | Out-String)
-    if ($out -match 'Error|does not exist') { Write-Host "AwakeActivity not available (developer APK needed): $($out.Trim())" }
+    if ($out -match 'Error type|does not exist') { Write-Host "AwakeActivity not available (developer APK needed): $($out.Trim())" }
 }
 
 # adb output, or nothing when the call takes more than 20 s (adb can hang while the phone drops off the USB)
@@ -48,17 +53,62 @@ function Check {
     return 'asleep'
 }
 
+# whether a watchdog is running: this phone's (-Serial) or the one started without a serial; with no -Serial, any
+function Test-Running {
+    if ($Serial) {
+        $files = @($pidFile, (Join-Path $pidDir 'vitasharp-android-awake.pid')) | Where-Object { Test-Path $_ }
+    }
+    else {
+        $files = @(Get-ChildItem -Path $pidDir -Filter 'vitasharp-android-awake*.pid' -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    }
+    foreach ($f in $files) {
+        $id = 0
+        if ([int]::TryParse(((Get-Content $f -ErrorAction SilentlyContinue) | Select-Object -First 1), [ref]$id)) {
+            if (Get-Process -Id $id -ErrorAction SilentlyContinue) {
+                return $true
+            }
+        }
+    }
+    return $false
+}
+
+function Start-Watchdog {
+    $argv = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, 'loop', '-Interval', $Interval)
+    if ($Serial) {
+        $argv += @('-Serial', $Serial)
+    }
+    $p = Start-Process powershell -ArgumentList $argv -WindowStyle Hidden -PassThru
+    Set-Content $pidFile $p.Id
+    Write-Host "screen watchdog started (pid $($p.Id), every $Interval s)"
+    Check | Out-Null
+}
+
 switch ($Action) {
     'check' { $s = Check; Write-Host "phone: $s"; if ($s -ne 'device') { Alert } }
     'reopen' { Reopen }
     'start' {
-        if ((Test-Path $pidFile) -and (Get-Process -Id ([int](Get-Content $pidFile)) -ErrorAction SilentlyContinue)) { Write-Host 'screen watchdog already running'; break }
-        $args = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, 'loop', '-Interval', $Interval)
-        if ($Serial) { $args += @('-Serial', $Serial) }
-        $p = Start-Process powershell -ArgumentList $args -WindowStyle Hidden -PassThru
-        Set-Content $pidFile $p.Id
-        Write-Host "screen watchdog started (pid $($p.Id), every $Interval s)"
-        Check | Out-Null
+        if (Test-Running) {
+            Write-Host 'screen watchdog already running'
+            break
+        }
+        Start-Watchdog
+    }
+    'begin' {
+        if (Test-Running) {
+            Write-Host 'screen watchdog already running (left on at the end)'
+            Reopen
+            exit 3
+        }
+        Start-Watchdog
+        exit 0
+    }
+    'running' {
+        if (Test-Running) {
+            Write-Host 'screen watchdog running'
+            exit 0
+        }
+        Write-Host 'screen watchdog not running'
+        exit 1
     }
     'stop' {
         if (Test-Path $pidFile) { Stop-Process -Id ([int](Get-Content $pidFile)) -ErrorAction SilentlyContinue; Remove-Item $pidFile -ErrorAction SilentlyContinue }

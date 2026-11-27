@@ -9,7 +9,7 @@ namespace VitaSharp.Tests;
 /// translated with the predicted formats can serve a draw with other exact formats. Checked over every texture base
 /// format and swizzle, and every colour surface base format and swizzle, against the generator itself.
 /// </summary>
-[Collection("shadergen")]
+[Collection("guest")]
 public sealed class CanonicalHintsTests
 {
     private static readonly GxpProgram s_sampling = new(RendererTextureTests.SamplingFragmentGxp(), 0x81000100);

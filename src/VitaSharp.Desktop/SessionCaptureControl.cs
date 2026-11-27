@@ -10,8 +10,9 @@ namespace VitaSharp.Desktop;
 /// <summary>
 /// "Gravar tudo" on the desktop (docs/notes/session-capture.md): F8 starts and stops a session capture into
 /// &lt;data&gt;/captures/&lt;TITLEID&gt;_&lt;date&gt;_tudo/ (+ .zip). The pre-roll is armed by --capture-preroll[=SECONDS]
-/// (launcher "Pre-gravacao"), VITASHARP_CAPTURE_PREROLL, or debug mode (F9 / --debug-mode: 10 s). --capture-at=A:B
-/// records guest frames A..B (tests). The re-run side: <c>rerun DIR</c> and --capture-playback.
+/// (launcher Configuracoes > Avancado > "Pre-gravacao") or VITASHARP_CAPTURE_PREROLL; the detailed log is on while the
+/// capture records or keeps its pre-roll (<see cref="DebugMode.CaptureStarted"/>). --capture-at=A:B records guest
+/// frames A..B (tests). The re-run side: <c>rerun DIR</c> and --capture-playback.
 /// </summary>
 sealed class SessionCaptureControl : IDisposable
 {
@@ -108,11 +109,13 @@ sealed class SessionCaptureControl : IDisposable
         return null;
     }
 
-    /// <summary>The pre-roll in effect: the explicit one, or else 10 s in debug mode and none outside it.</summary>
-    internal static double PreRollFor(double? explicitPreRoll, bool debugMode) => explicitPreRoll ?? (debugMode ? DefaultPreRoll : 0);
+    /// <summary>The pre-roll in effect: the one set (the launcher's "Pre-gravacao", --capture-preroll,
+    /// VITASHARP_CAPTURE_PREROLL), none otherwise. The detailed log no longer arms it: it is itself switched on by the
+    /// capture.</summary>
+    internal static double PreRollFor(double? explicitPreRoll) => explicitPreRoll ?? 0;
 
-    /// <summary>The pre-roll follows debug mode unless it was set explicitly.</summary>
-    public void UpdatePreRoll() => Capture.SetPreRoll(PreRollFor(_explicitPreRoll, DebugMode.Enabled));
+    /// <summary>Arms the pre-roll that was set (none when it was not).</summary>
+    public void UpdatePreRoll() => Capture.SetPreRoll(PreRollFor(_explicitPreRoll));
 
     /// <summary>The longest a guest waits at the scheduled start frame for the recording to begin (a safety bound: the
     /// start normally takes milliseconds; it never decides what is recorded).</summary>

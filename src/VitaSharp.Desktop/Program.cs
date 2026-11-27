@@ -198,6 +198,10 @@ public static class Program
                 // kernel-census [--root=<repository>]: the HLE status of every FW 3.74 kernel export in
                 // docs/hle/data/kernel-exports.tsv and the per-library table of docs/hle/kernel-exports.md
                 return KernelCensus(OptValue(args, "--root") ?? Directory.GetCurrentDirectory());
+            case "compat-coverage":
+                // compat-coverage [--status=<repository>]: the Compat status (which emulated hardware the compat core's firmware
+                // modules use) from docs/compat/coverage.json: the Compat map, its badge and the docs/compat/progress pages
+                return CompatCoverage(OptValue(args, "--status") ?? Directory.GetCurrentDirectory());
             case "hle-coverage":
                 return HleCoverage(args.Skip(1).FirstOrDefault(a => a.StartsWith("--out="))?["--out=".Length..],
                     args.Skip(1).FirstOrDefault(a => a.StartsWith("--vitasdk="))?["--vitasdk=".Length..],
@@ -285,6 +289,10 @@ public static class Program
             }
             case "memdiff" when args.Length >= 3:
                 return MemDiff.Run(args[1], args[2], args.Length > 3 ? float.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture) : 10f);
+            case "screen-text":
+                return ScreenTextCommand.ScreenTextMain(args.Skip(1).ToArray());
+            case "screens":
+                return ScreenTextCommand.ScreensMain(args.Skip(1).ToArray());
             case "png-diff" when args.Length >= 3:
                 ReplayGpu.Compare(args[1], args[2], args.Length > 3 ? args[3] : "*.png");
                 return 0;
@@ -757,6 +765,49 @@ public static class Program
         return byNid;
     }
 
+    /// <summary>compat-coverage: renders the Compat status (the compatibility core) from its versioned source (docs/compat/coverage.json) into the
+    /// repository (the map and badge in docs/assets/status, docs/compat/progress.md and its pt-BR pair); refuses a source
+    /// whose modules use blocks it does not list.</summary>
+    static int CompatCoverage(string root)
+    {
+        string source = Path.Combine(root, VitaSharp.Core.Firmware.CompatCoverageReport.SourcePath.Replace('/', Path.DirectorySeparatorChar));
+        if (!File.Exists(source))
+        {
+            Console.Error.WriteLine($"compat-coverage: {source} not found (pass --status=<repository root>)");
+            return 1;
+        }
+
+        VitaSharp.Core.Firmware.CompatCoverageReport.Coverage coverage = VitaSharp.Core.Firmware.CompatCoverageReport.Parse(File.ReadAllText(source));
+        // the probes are read from the code under the repository, so a percentage cannot claim an item the code lacks
+        IReadOnlyList<string> problems = [.. VitaSharp.Core.Firmware.CompatCoverageReport.Problems(coverage),
+            .. VitaSharp.Core.Firmware.CompatCoverageReport.MissingProbes(coverage, relative =>
+            {
+                string file = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
+                return File.Exists(file) ? File.ReadAllText(file) : null;
+            })];
+        foreach (string problem in problems)
+        {
+            Console.Error.WriteLine($"compat-coverage: {problem}");
+        }
+
+        if (problems.Count > 0)
+        {
+            return 1;
+        }
+
+        IReadOnlyDictionary<string, string> files = VitaSharp.Core.Firmware.CompatCoverageReport.Render(coverage);
+        foreach ((string path, string text) in files)
+        {
+            string full = Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            File.WriteAllText(full, text);
+        }
+
+        (string label, int _, int _, int blocksDone, int blocks) = VitaSharp.Core.Firmware.CompatCoverageReport.BadgeCounts(coverage);
+        Console.WriteLine($"compat-coverage: {label}: {VitaSharp.Core.Firmware.CompatCoverageReport.BadgeValue(coverage)}, {blocksDone}/{blocks} blocks done; {coverage.Modules.Count} modules; {files.Count} files written under {root}");
+        return 0;
+    }
+
     /// <summary>hle-coverage [--out=&lt;tsv&gt;]: how much of the real system the HLE implements. Total = every function the
     /// installed firmware exports to user code (user modules, syscall libraries of the kernel modules), split into the
     /// ones the installed games import, the ones the system programs/modules import (not already counted for games) and
@@ -1028,7 +1079,8 @@ public static class Program
         Console.WriteLine("  test <scenario.txt> [options]        run an automated scenario (frames, contact sheet, report); run options given here win over the scenario's args=");
         ReplayGpu.PrintUsage();
         VerifyCapture.PrintUsage();
-        Console.WriteLine("  run options: --gpu-dump-at=F1:F2[:file]  record frames F1..F2 as a GPU dump (Ctrl+F8 in the window starts/stops one)");
+        ScreenTextCommand.PrintUsage();
+        Console.WriteLine("  run options: --gpu-dump-at=F1:F2[:file]  record frames F1..F2 as a GPU dump (an F8 capture has its own)");
         Console.WriteLine("  run options: --capture-preroll[=S] --capture-at=A:B  Gravar tudo (F8): keep the last S s / record guest frames A..B");
         Console.WriteLine("  run options: --capture-files-mb=MB --capture-savedata  Gravar tudo: keep up to MB of the bytes the game read (default 0: hashes only) / keep the save data's bytes too");
         Console.WriteLine("  run options: --capture-mic-audio     Gravar tudo: also keep what the microphone captured (default: only its format and pace)");
@@ -1040,6 +1092,7 @@ public static class Program
         Console.WriteLine("  kernel-census [--root=<repo>]       HLE status of the FW 3.74 kernel exports (docs/hle/data/kernel-exports.tsv, kernel-exports.md)");
         Console.WriteLine("  import-check [--fs=<fs folder>]     FW 3.74 import entry check over every installed user module, read only");
         Console.WriteLine("  audio-devices [--audio-device=<name>]  list the audio outputs and show the one a game opens");
+        Console.WriteLine("  compat-coverage [--status=<repo>]       Compat map: the emulated hardware the compat core's firmware modules use (docs/compat/coverage.json)");
         Console.WriteLine("  hle-coverage [--out=<tsv>] [--vitasdk=<tsv>] [--status=<repo>]  HLE coverage of every function the installed firmware exports (games/system/general)");
         Console.WriteLine("  imports <TITLEID|folder> [x.self] [--tsv=<file>]   list the system functions a title (or one of its executables) needs; --tsv: who provides each one");
         Console.WriteLine("        [--names=SceNp,SceNet]          ...and every imported function name of the libraries with these prefixes");

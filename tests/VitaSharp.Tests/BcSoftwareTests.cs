@@ -13,6 +13,9 @@ namespace VitaSharp.Tests;
 /// 6-value alpha/RGTC modes, signed RGTC with -128 read as -127, and the (R, 0, 0, 1) / (R, G, 0, 1) layout of BC4/BC5.
 /// One class: both helpers keep process-wide caches and counters, so these tests must not run in parallel.
 /// </summary>
+// AstcTranscoder is process-wide (its disk cache and counters): the tests that reset it run on their own, not beside
+// renderers that transcode (a parallel replay counted its encodes into TranscodedLevelsAreReadBackFromTheDiskCache)
+[Collection("AstcTranscoder")]
 public sealed class BcSoftwareTests
 {
     private const ushort Red565 = 0xF800;

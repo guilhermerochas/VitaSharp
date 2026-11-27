@@ -51,8 +51,10 @@ main() {
   local root
   root="$(cd "${HERE}/.." && pwd)"
 
-  "${HERE}/android-awake.sh" start # the phone's screen is kept on until the end (build/android-awake.sh)
-  trap '"${HERE}/android-awake.sh" stop' EXIT
+  # the phone's screen is kept on until the end (build/android-awake.sh); a watchdog that was already running stays on
+  if "${HERE}/android-awake.sh" begin; then
+    trap '"${HERE}/android-awake.sh" stop' EXIT
+  fi
   mkdir -p "${out}"
   if [[ -n "$(adb shell pidof "${PKG}:game" | tr -d '\r')" ]]; then
     echo "a game is running on the phone: not starting" >&2

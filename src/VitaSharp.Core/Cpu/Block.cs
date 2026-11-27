@@ -478,6 +478,23 @@ public sealed unsafe class BlockCache
             return b;
         }
 
+        PhaseProfile? onGuestThread = CpuCore.RunningProfile;
+        if (onGuestThread == null)
+        {
+            return BuildMiss(pc, thumb, key);
+        }
+
+        // decoded on the guest thread: rare and microseconds each, so always timed (the thread's phase profile)
+        long started = System.Diagnostics.Stopwatch.GetTimestamp();
+        Block built = BuildMiss(pc, thumb, key);
+        onGuestThread.BlockBuilt(System.Diagnostics.Stopwatch.GetTimestamp() - started);
+        return built;
+    }
+
+    /// <summary>The miss path of <see cref="Get"/>: decodes the block and puts it in the cache.</summary>
+    private Block BuildMiss(uint pc, bool thumb, ulong key)
+    {
+        Block? b;
         while (true)
         {
             long generation = Volatile.Read(ref _invalidations);

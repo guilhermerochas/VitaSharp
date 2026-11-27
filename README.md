@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=e4696ba4fa32cd06f9f0d08acd53efe9598007f916ad6abc95ebd1c0910a257e -->
+<!-- pair: README.pt-BR.md sha256=0196caa76645f0bc7747307c3bbfb26e3b46af30e4d91a6e78272beec33250bb -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -117,21 +117,31 @@ and the test games ([progress per library](docs/hle/progress.md)).
 [![VitaSDK functions](docs/assets/status/badge-vitasdk.svg)](docs/hle/progress.md)
 [![firmware 3.74 exports](docs/assets/status/badge-overall.svg)](docs/hle/progress.md)
 [![firmware 3.74 kernel exports](docs/assets/status/badge-kernel.svg)](docs/hle/progress.md)
-<!-- PSP badge: goes here, next to the others -->
+[![Compat 6.61](docs/assets/status/badge-compat.svg)](docs/compat/progress.md)
 
 <table>
 <tr>
-<td width="100%" valign="top" align="center">
+<td width="50%" valign="top" align="center">
 <a href="docs/hle/progress.md">
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/status/progress-map-light.svg">
-  <img src="docs/assets/status/progress-map.svg" alt="HLE progress map: one cell per firmware library, user libraries and kernel libraries in separate regions, sized by their exported functions and coloured by how many are implemented" width="760">
+  <img src="docs/assets/status/progress-map.svg" alt="HLE progress map: one cell per firmware library, user libraries and kernel libraries in separate regions, sized by their exported functions and coloured by how many are implemented" width="100%">
 </picture>
 </a>
 <br><sub><b>PS Vita:</b> one cell per firmware library (user and kernel), sized by its functions and coloured by how
 many are implemented.</sub>
 </td>
-<!-- PSP map: a second <td> here (progress-map-psp.svg + its light version, width 50% each), with one line saying what it shows -->
+<td width="50%" valign="top" align="center">
+<a href="docs/compat/progress.md">
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/status/progress-map-compat-light.svg">
+  <img src="docs/assets/status/progress-map-compat.svg" alt="Compat hardware map: one cell per emulated block of the Vita's compatibility core and one per module of its firmware 6.61, each with the measured percentage of its contract items implemented" width="100%">
+</picture>
+</a>
+<br><sub><b>Compat</b> (the Allegrex compatibility core, SceCompat): VitaSharp runs its real firmware 6.61, so this map
+measures the emulated hardware that firmware uses:
+one cell per block and per firmware module, each with its percentage of contract items implemented.</sub>
+</td>
 </tr>
 </table>
 
@@ -148,7 +158,10 @@ apart). "LLE": functions of libraries the emulator provides by loading and runni
 library the emulator loads for every importer; also counted, shown apart;
 list in [`docs/hle/progress.md`](docs/hle/progress.md)). "Kernel exports": the functions the kernel modules export to
 other kernel code (what a kernel plugin can import), from the census in
-[`docs/hle/kernel-exports.md`](docs/hle/kernel-exports.md). Refreshed with `build/hle-status.ps1`.</sub>
+[`docs/hle/kernel-exports.md`](docs/hle/kernel-exports.md). Compat: the contract items (registers, instruction
+groups, kermit request paths) the firmware 6.61 drives on each emulated block, counted as implemented only while
+their probe is in the block's code; a module's percentage is over the items of the blocks it uses
+([`docs/compat/progress.md`](docs/compat/progress.md)). Refreshed with `build/hle-status.ps1`.</sub>
 
 </details>
 
@@ -274,10 +287,7 @@ bottom button is always Cross) and the gyroscope. Everything can be remapped in 
 | `F5` / `F7` | Save / load the quick state; `Shift+F5` / `Shift+F7` save / load in the chosen slot |
 | `F6` | Save state picker over the paused game: the quick slot and slots 1-9 with their picture, date, play time and version; save (overwriting asks, showing the old and the current picture), load (with the picture large), delete (`Del` / Triangle) |
 | `F8` | Starts / stops **Record everything** (see [Report a bug](#report-a-bug)) |
-| `Shift+F8` | While recording: marks the problem (a mark and a save state of that moment go into the recording; `rerun --from=mark1` starts there) |
-| `Ctrl+F8` | Starts / stops a GPU dump (`gpudumps/*.vsgd`; `replay-gpu` redraws it draw by draw, without the game) |
-| `F9` | Turns debug mode on / off (detailed logs, 10 s pre-recording, automatic captures) |
-| `F10` | Diagnostic capture: the next frame with its draws, textures, targets, screenshot and log (`diagnostics/`) |
+| `Shift+F8` | While recording: marks the problem (a mark and a save state of that moment go into the recording) |
 | `F11` | Full screen |
 | `P` | Pauses / resumes the emulation |
 
@@ -306,21 +316,23 @@ Every option, with its command-line switch and the details: [user guide](docs/us
 
 **Record everything** makes one `.zip` with everything needed to see and reproduce the problem without the game.
 
-1. Optional, for problems that are over quickly: turn on **Pre-recording** (Settings > Advanced, or debug mode with
-   `F9`), so the recording also has the seconds before you press the key.
+1. Optional, for problems that are over quickly: turn on **Pre-recording** (Settings > Advanced; Android: pause menu
+   > **Ajustes**), so the recording also has the seconds before you press the key.
 2. While playing press **F8** (the title bar shows *"● REC | Recording everything (F8 to stop)"*). Android: pause menu
    > **Record everything**.
 3. Play until the problem shows. At that moment press **Shift+F8** (Android: pause menu > **Mark the problem**): the
    recording gets a mark and a save state of that instant.
 4. Press **F8** again (Android: **Stop recording**). The `.zip` is in the `captures/` folder of your
    [data folder](#where-your-data-lives).
-5. Open an issue on GitHub with the `.zip`, the game's name and title ID, and what happened. `logs/last.log` helps too.
+5. Open an issue on GitHub with the `.zip`, the game's name and title ID, and what happened. A screenshot of the
+   problem (just the picture) and `logs/last.log` help too.
 
-The recording carries a save state, the controls, every picture with its timing, the GPU dump, the audio and the log.
-It carries nothing personal: paths, user, computer and account names become placeholders, and no game file, license
-or key is copied. Whoever fixes the problem can analyse it, re-run it and check a fix
-(`VitaSharp.Desktop verify <zip>`) without the game or your plugins: see [`docs/captures.md`](docs/captures.md) and
-[`docs/notes/session-capture.md`](docs/notes/session-capture.md).
+**Record everything** is the only debugging tool you need: there is no debug mode, diagnostic key or separate GPU dump
+to turn on. The recording carries a save state, the controls, every picture with its timing, the GPU dump, the audio
+and the detailed log (on by itself while it records and during the pre-recording). It carries nothing personal: paths,
+user, computer and account names become placeholders, and no game file, license or key is copied. Whoever fixes the
+problem can analyse it, re-run it and check a fix without the game or your plugins (for developers:
+[`docs/captures.md`](docs/captures.md)).
 
 ## Where your data lives
 
@@ -332,8 +344,7 @@ or key is copied. Whoever fixes the problem can analyse it, re-run it and check 
 | Android | `/sdcard/.vitasharp` (with "All files access"; otherwise `Android/data/io.github.vitasharp/files`) |
 
 Inside it: `fs/` is the Vita's storage (games in `fs/ux0/app`, saves in `fs/ux0/user/00/savedata`, firmware in
-`fs/os0`, `fs/vs0`...), plus `logs/`, `savestates/`, `captures/` (Record everything), `gpudumps/`, `diagnostics/` and
-`shadercache/`. `--data=<folder>` or the `VITASHARP_DATA` variable use another folder. Updating VitaSharp never
+`fs/os0`, `fs/vs0`...), plus `logs/`, `savestates/`, `captures/` (Record everything) and `shadercache/`. `--data=<folder>` or the `VITASHARP_DATA` variable use another folder. Updating VitaSharp never
 changes this folder. Before uninstalling the Android app without "All files access", copy `fs/ux0/user/00/savedata`
 out.
 

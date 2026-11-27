@@ -45,6 +45,9 @@ public static class TouchDiagnostics
         Interlocked.Add(ref s_buffers[port], buffers);
     }
 
+    /// <summary>The reads (sceTouchPeek/Read) of panel <paramref name="port"/> so far (0 front, 1 rear).</summary>
+    public static long Reads(int port) => Interlocked.Read(ref s_reads[port]);
+
     /// <summary>A sample the driver took (<paramref name="reports"/> contacts, <paramref name="presses"/> of them new)
     /// and its part of the report hash.</summary>
     public static void Sampled(int port, int reports, int presses, ulong hash)
