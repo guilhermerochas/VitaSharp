@@ -176,6 +176,11 @@ public static class Wait
                 if (limitUs.HasValue)
                 {
                     long leftUs = limitUs.Value - ElapsedUs(start);
+                    if (leftUs <= 0 && !LagSettled(0))
+                    {
+                        leftUs = limitUs.Value - ElapsedUs(start); // a late thread stopped the clock: look again
+                    }
+
                     if (leftUs <= 0)
                     {
                         if (TakeCoreBack(sync, self))
@@ -283,7 +288,7 @@ public static class Wait
     internal static long TimeoutDeadline(long leftUs)
         => Stopwatch.GetTimestamp() + (long)Math.Ceiling(leftUs / TimeScale.Wait / GuestClock.Speed * Stopwatch.Frequency / 1_000_000);
 
-    private static long ElapsedUs(long startTicks) => (long)((GuestClock.Ticks - startTicks) * 1_000_000 / Stopwatch.Frequency * TimeScale.Wait);
+    private static long ElapsedUs(long startTicks) => (long)((GuestClock.WaitTicks - startTicks) * 1_000_000 / Stopwatch.Frequency * TimeScale.Wait);
 
     /// <summary>A wait that started at <paramref name="startTicks"/> with a limit of <paramref name="limitUs"/> has run
     /// out of guest time (the clock and scale every wait's timeout uses).</summary>
@@ -393,6 +398,24 @@ public static class Wait
     private static readonly long s_maxObservedLead = Stopwatch.Frequency / 200; // 5 ms
 
     /// <summary>Plain sleep that stays responsive to emulator shutdown.</summary>
+    /// <summary>
+    /// A timed wait that reached its deadline asks the threads holding an emulated core whether one of them is late
+    /// (<see cref="Cpu.CpuCore.SettleLagClock"/>): if the clock then stands still, the wait is not over yet, as on the
+    /// console a wait ends after the work the other cores do in its time. True = nothing changed (the wait may end).
+    /// <paramref name="end"/> (ticks, 0 = only report) is the deadline to compare the settled clock with.
+    /// </summary>
+    private static bool LagSettled(long end)
+    {
+        long leftOut = GuestClock.LagTicks;
+        Cpu.CpuCore.SettleLagClock();
+        if (GuestClock.LagTicks == leftOut)
+        {
+            return true;
+        }
+
+        return end != 0 && GuestClock.WaitTicks >= end;
+    }
+
     public static void Sleep(ulong microseconds)
     {
         GuestThread? self = GuestThread.Current;
@@ -426,7 +449,7 @@ public static class Wait
             // goes on. Jak and Daxter's vblank-callback thread sits in DelayThreadCB(0xFFFFFFFF) and counts vblanks in
             // its callback: run only on return, its callback never ran and the game's vsync counter stood still.
             bool callbacks = self != null && self.CanRunCallbacks && GuestThread.CallbackProcessor != null;
-            while (GuestClock.Ticks < end)
+            while (GuestClock.WaitTicks < end || !LagSettled(end))
             {
                 if (self != null && self.Core.StopRequested)
                 {
@@ -449,7 +472,7 @@ public static class Wait
                         continue;
                     }
                     // Callback.Notify pulses the owner's WaitLock
-                    long left = Math.Min(end, GuestClock.Ticks + slice) - GuestClock.Ticks;
+                    long left = Math.Min(end, GuestClock.WaitTicks + slice) - GuestClock.WaitTicks;
                     int ms = (int)Math.Clamp(left * 1000.0 / System.Diagnostics.Stopwatch.Frequency / GuestClock.Speed + 1, 1, 50);
                     lock (self.WaitLock)
                     {
@@ -470,7 +493,7 @@ public static class Wait
                     continue;
                 }
                 // sleep in slices so a stop request is noticed; short delays really sleep instead of spinning a host core
-                GuestClock.WaitUntil(Math.Min(end, GuestClock.Ticks + slice), spin);
+                GuestClock.WaitUntil(Math.Min(end, GuestClock.WaitTicks + slice), spin);
                 slept = true;
             }
             if (slept && self != null && Delays.TryGetValue(self.Name ?? "?", out long[]? st))
