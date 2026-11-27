@@ -1,4 +1,4 @@
-<!-- pair: captures.pt-BR.md sha256=bcf50309d62c75305ffcda4f1aac6db0871944775917dfa4d84611f30112b90f -->
+<!-- pair: captures.pt-BR.md sha256=8ce756c9c20cfce90f379a299402292e4d0025b2a018a0501c888a7b60385df5 -->
 # Analysing a Record everything capture without the game
 
 **English** | [Português](captures.pt-BR.md)
