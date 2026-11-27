@@ -555,6 +555,8 @@ public static class EnvVars
     public const string DecoderHistory = "VITASHARP_DECODER_HISTORY";
     /// <summary>=1: every guest delay (sceKernelDelayThread) spins its last half millisecond (the old behaviour), =0: none does; default: only delays of 5 ms or more (Core/Kernel/Sync.cs Wait.Sleep).</summary>
     public const string DelaySpin = "VITASHARP_DELAY_SPIN";
+    /// <summary>0 (A/B): timed waits on a sync object (WaitSema/WaitEventFlag/... timeouts, DelayThreadCB) end on the host monitor's whole-millisecond timeout again instead of at their microsecond deadline (Util/HostTimeoutTimer.cs). Default on (Windows, Linux, Android).</summary>
+    public const string PreciseTimeouts = "VITASHARP_PRECISE_TIMEOUTS";
     /// <summary>0 (A/B): an ATRAC9 superframe that fails to decode is skipped (no samples) instead of playing as a superframe of silence; its bytes count as consumed either way.</summary>
     public const string At9ErrorSilence = "VITASHARP_AT9_ERROR_SILENCE";
     /// <summary>Vulkan command-buffer slots in flight (2-8, default 3, 8 on Android; each holds a host upload ring, see UploadRingMb).</summary>

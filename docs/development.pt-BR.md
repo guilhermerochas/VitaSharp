@@ -1,4 +1,4 @@
-<!-- pair: development.md sha256=dcf5fb68433698ef2072d236198d5117c92aa4f9792042d44e69e221fd559fd3 -->
+<!-- pair: development.md sha256=b5520cf69a919fcc9eaf2feedcd4df833429226fe22327821fa04f6fb5db83fc -->
 # Desenvolvimento
 
 [English](development.md) | **Português**
@@ -82,6 +82,16 @@ Os scripts shell seguem o Google Shell Style Guide e precisam passar no ShellChe
 
 ## Opções de desenvolvedor
 
+- Tempos-limite precisos (`VITASHARP_PRECISE_TIMEOUTS=0` desliga, A/B): uma espera com tempo-limite num objeto do
+  kernel (sceKernelWaitSema, WaitEventFlag e os outros argumentos `timeout`, sceKernelDelayThreadCB) termina no prazo
+  em microssegundos, como o timer do threadmgr no Vita, e não no próximo milissegundo inteiro do `Monitor.Wait` (um
+  tempo-limite de 500 us durava 1,1-1,3 ms). Uma thread do host, "HLE timeouts", dorme num timer de alta resolução e
+  acorda quem espera: um `timerfd` no Linux e no Android, um waitable timer de alta resolução no Windows (ele dispara
+  em ticks de 0,5 ms, então lá um tempo-limite ainda pode terminar até 0,5 ms depois). Nada gira. O macOS continua
+  com o arredondamento em milissegundos: não tem `timerfd`, e o equivalente (um `EVFILT_TIMER` do kqueue com
+  `NOTE_USECONDS`, remarcado enquanto a thread espera) ainda não foi escrito. Os sleeps curtos do host
+  (`PreciseSleep`) giram só o atraso medido do timer no desktop (dezenas de microssegundos no Linux e no macOS,
+  ~0,5 ms no Windows) e nunca no celular; no Linux e no Android as threads que dormem recebem timer slack de 1 us.
 - Dump do backend IL: `VITASHARP_IL_DUMP=<pasta>` grava os blocos do jogo compilados como assemblies para ler no ILSpy
   (`dotnet tool install -g ilspycmd`, depois `ilspycmd -il <arquivo>.dll`); `DOTNET_JitDisasm=<método>` mostra o
   código de máquina que o RyuJIT gera. Veja [`docs/notes/il-jit.md`](notes/il-jit.md).

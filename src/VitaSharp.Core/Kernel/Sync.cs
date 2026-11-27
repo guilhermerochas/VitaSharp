@@ -166,6 +166,7 @@ public static class Wait
                     continue;
                 }
                 int sliceMs = 50;
+                bool armed = false;
                 if (limitUs.HasValue)
                 {
                     long leftUs = limitUs.Value - ElapsedUs(start);
@@ -190,6 +191,20 @@ public static class Wait
 
                         continue;
                     }
+                    // the timeout ends in this slice and Monitor.Wait's whole milliseconds would overshoot it: the host
+                    // timer pulses sync at its microsecond deadline (the Vita's threadmgr arms a microsecond timer;
+                    // Monitor.Wait alone made a 500 us timeout last 1.1 ms, a 1.5 ms one 2.1 ms), and the slice gets a
+                    // millisecond more as the fallback. A timeout of whole milliseconds keeps Monitor.Wait on Linux and
+                    // Android: the timer's extra hop (its thread wakes, then pulses this one) would end it later than
+                    // the monitor does. Windows always takes the timer: Monitor.Wait follows the system timer, which
+                    // Windows 11 leaves at 15.6 ms for a process without a visible window (timeBeginPeriod ignored):
+                    // a 1 ms timeout measured 15 ms there
+                    if (leftUs <= 50_000 && (s_windows || sliceMs * 1000L - leftUs / GuestClock.Speed >= MinTimerGainUs)
+                        && HostTimeoutTimer.Arm(sync, TimeoutDeadline(leftUs)))
+                    {
+                        armed = true;
+                        sliceMs++;
+                    }
                 }
                 // blocked: give the emulated core away; take one back before touching guest state again (never while
                 // holding sync, or a core-holding signaller could deadlock against us)
@@ -201,6 +216,11 @@ public static class Wait
 
                 Interlocked.Increment(ref BlockingWaits);
                 Monitor.Wait(sync, sliceMs);
+                if (armed)
+                {
+                    HostTimeoutTimer.Disarm();
+                }
+
                 waited = true;
                 // no core is taken back just to look again: on the Vita a waiting thread uses no core until it is woken
                 // or times out. Taking one after every 50 ms slice put every waiting thread of the process back in the
@@ -245,6 +265,17 @@ public static class Wait
 
         return true;
     }
+
+    /// <summary>A timeout goes to <see cref="HostTimeoutTimer"/> when Monitor.Wait's rounding up to whole milliseconds
+    /// would end it at least this much late (microseconds): about twice the timer's own hand-off.</summary>
+    private const long MinTimerGainUs = 200;
+
+    private static readonly bool s_windows = OperatingSystem.IsWindows();
+
+    /// <summary>The host moment (Stopwatch ticks) a wait with <paramref name="leftUs"/> of its limit left runs out (the
+    /// limit is in scaled guest microseconds, <see cref="ElapsedUs"/>; the guest clock runs at its speed factor).</summary>
+    internal static long TimeoutDeadline(long leftUs)
+        => Stopwatch.GetTimestamp() + (long)Math.Ceiling(leftUs / TimeScale.Wait / GuestClock.Speed * Stopwatch.Frequency / 1_000_000);
 
     private static long ElapsedUs(long startTicks) => (long)((GuestClock.Ticks - startTicks) * 1_000_000 / Stopwatch.Frequency * TimeScale.Wait);
 
@@ -418,7 +449,15 @@ public static class Wait
                     {
                         if (Volatile.Read(ref self.PendingCallbacks) == 0)
                         {
-                            Monitor.Wait(self.WaitLock, ms);
+                            // the delay's end: pulsed at its microsecond deadline by the host timer (the whole
+                            // milliseconds of Monitor.Wait made DelayThreadCB(1000) last about 2 ms)
+                            long hostEnd = System.Diagnostics.Stopwatch.GetTimestamp() + (long)(left / GuestClock.Speed);
+                            bool armed = HostTimeoutTimer.Arm(self.WaitLock, hostEnd);
+                            Monitor.Wait(self.WaitLock, armed ? ms + 1 : ms);
+                            if (armed)
+                            {
+                                HostTimeoutTimer.Disarm();
+                            }
                         }
                     }
 
