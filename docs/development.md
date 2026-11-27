@@ -1,4 +1,4 @@
-<!-- pair: development.pt-BR.md sha256=bdd84ab3bec2e07aa343d45cff91dcd6f88288ae42e7484c650e9dbbca031676 -->
+<!-- pair: development.pt-BR.md sha256=265053d7a0ce069967515fbb37313e049a5584d21583e6573fcca759b97ccecb -->
 # Development
 
 **English** | [Português](development.pt-BR.md)
@@ -202,8 +202,8 @@ again on each run (`wsl -u root -- update-binfmts --enable qemu-aarch64`). `QEMU
 (default `max`). The tests run on the portable test platform (`Microsoft.TestPlatform.Portable`, in
 `~/.vstest-portable`) started by the arm64 runtime: the SDK's `vstest.console.dll` is built for x64, and the x64 one
 finds no arm64 host on Linux. The script sets `DOTNET_EnableWriteXorExecute=0` (qemu-user runs stale code that the .NET
-JIT writes through the second mapping of its W^X code heap) and `VITASHARP_NATIVE_COUNTERS=1` (the backend tests check
-the block counts, which the ARM64 host runtime keeps only with it). `/Blame` names the test a crash stopped in.
+JIT writes through the second mapping of its W^X code heap) (the test assembly itself asks the ARM64 host runtime for the
+counting trampoline, `Arm64Runner.CountBlocksOnArm64Hosts`). `/Blame` names the test a crash stopped in.
 
 ## Releases
 

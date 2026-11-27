@@ -1,4 +1,4 @@
-<!-- pair: development.md sha256=76c40dd979d9605e804c81d2b9295a971b2541596ab924b45cb3cf2d510ad5e4 -->
+<!-- pair: development.md sha256=3a507478ffbc3d80c3840298affacd7a2c0f129293824dc71114649bc6f561fc -->
 # Desenvolvimento
 
 [English](development.md) | **Português**
@@ -214,8 +214,8 @@ a cada execução (`wsl -u root -- update-binfmts --enable qemu-aarch64`). `QEMU
 do qemu (padrão `max`). Os testes rodam na plataforma de testes portátil (`Microsoft.TestPlatform.Portable`, em
 `~/.vstest-portable`) iniciada pelo runtime arm64: o `vstest.console.dll` do SDK é compilado para x64, e o x64 não acha
 host arm64 no Linux. O script define `DOTNET_EnableWriteXorExecute=0` (o qemu-user roda código velho que o JIT do .NET
-escreve pelo segundo mapeamento da sua área de código W^X) e `VITASHARP_NATIVE_COUNTERS=1` (os testes do backend
-conferem as contagens de blocos, que o runtime ARM64 do host só mantém com ela). O `/Blame` diz em que teste um crash
+escreve pelo segundo mapeamento da sua área de código W^X) (o próprio assembly de testes pede ao runtime ARM64 do
+host o trampolim que conta blocos, `Arm64Runner.CountBlocksOnArm64Hosts`). O `/Blame` diz em que teste um crash
 parou.
 
 ## Releases

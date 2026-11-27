@@ -187,9 +187,6 @@ main() {
   # stale translation runs instead (NullReferenceException in reflection stubs, SIGSEGV). Single-mapped RWX code is
   # written and run at one address, which qemu tracks.
   export DOTNET_EnableWriteXorExecute=0
-  # the ARM64 backend's tests check the block/instruction counts, which the ARM64 host runtime only keeps with this
-  # (the Unicorn sandbox always keeps them)
-  export VITASHARP_NATIVE_COUNTERS=1
   if ((install == 1)); then
     install_requirements "${runtime}" "${vstest_dir}"
   fi
