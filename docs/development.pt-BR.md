@@ -1,4 +1,4 @@
-<!-- pair: development.md sha256=3a507478ffbc3d80c3840298affacd7a2c0f129293824dc71114649bc6f561fc -->
+<!-- pair: development.md sha256=c3bb0c7cf4e3e753ec65a6fe5176bca9f9038677ea5e8a4dffc53061700a5c58 -->
 # Desenvolvimento
 
 [English](development.md) | **Português**

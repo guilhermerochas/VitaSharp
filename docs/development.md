@@ -1,4 +1,4 @@
-<!-- pair: development.pt-BR.md sha256=265053d7a0ce069967515fbb37313e049a5584d21583e6573fcca759b97ccecb -->
+<!-- pair: development.pt-BR.md sha256=f07dfcbc75f04bc6fed3d86189b182b6ec53f3ce3a4312b333066835825d0247 -->
 # Development
 
 **English** | [Português](development.pt-BR.md)
