@@ -30,6 +30,7 @@ public sealed class KernelPluginBootOrderTests : IDisposable
     private const uint IofilemgrForDriver = 0x40FD29C7, KernelIoOpen = 0x75192972, KernelIoRead = 0xE17EFC03, KernelIoClose = 0xF99DD8A3;
     private const uint ProcessmgrForKernel = 0xEB1F8EF7, KernelCreateProcess = 0x68068618;
     private const uint PfsMgrForKernel = 0xA067B56F, PfsMount = 0xA772209C;
+    private const uint NpDrmForDriver = 0xD84DC44A, GetRifInfo = 0xDB406EAE, GetRifVitaKey = 0x723322B5;
     private static readonly byte[] s_imageKey = Encoding.ASCII.GetBytes("boot-order-key!!");
     private readonly GuestMemoryFixture _fixture;
     private HleHarness _harness = null!;
@@ -432,6 +433,154 @@ public sealed class KernelPluginBootOrderTests : IDisposable
         string log = string.Join("\n", _sink.Messages());
         Assert.True(_sink.IndexOf("plugin hook 1 called: kscePfsMount") >= 0, log);
         Assert.True(_sink.IndexOf($"{RuntimeId}: the launch stopped at app0's mount, step 4 of 4 (PFS mount") >= 0, log);
+    }
+
+    /// <summary>A synthetic SceNpDrm in os0:kd exporting ksceNpDrmGetRifInfo and ksceNpDrmGetRifVitaKey under
+    /// SceNpDrmForDriver's NIDs, and the plugins with <paramref name="hooks"/> as the third kernel module, booted; then
+    /// each (function NID, hook function, hook reference) of <paramref name="hooked"/> hooked.</summary>
+    private void BootWithNpDrmHooks(SceModuleBuilder hooks, params (uint Nid, int Function, uint HookRef)[] hooked)
+    {
+        var npdrm = new SceModuleBuilder("SceNpDrm");
+        int body = npdrm.ReturnConstant(0);
+        npdrm.Export("SceNpDrmForDriver", NpDrmForDriver, 0x0001, (GetRifInfo, body), (GetRifVitaKey, body));
+        string kd = Path.Combine(_harness.Root, "os0", "kd");
+        Directory.CreateDirectory(kd);
+        File.WriteAllBytes(Path.Combine(kd, "npdrm.skprx"), npdrm.Build());
+        FirmwareKernelImage.Forget(_harness.Root);
+        InstallPlugins(hooks);
+        Assert.Equal(3, _emu.BootKernelPlugins().Count);
+        Emulator kernel = KernelSpace.ProcessOf(_emu, KernelSpace.KernelPid)!;
+        uint segment = KernelModules(_emu).Values.Single(m => m.Name == "VsBootHook").Segments[0].Address;
+        foreach ((uint nid, int function, uint hookRef) in hooked)
+        {
+            int uid = Call(kernel.Hle.Modules.OfType<PluginFramework>().Single(), "HookFunctionExportForKernel", KernelSpace.KernelPid, hookRef,
+                KernelString("SceNpDrm"), NpDrmForDriver, nid, hooks.AddressOf(segment, function));
+            Assert.True(uid > 0, $"hook returned 0x{uid:X8}");
+            Assert.True(kernel.FirmwareKernel.IsPatched(NpDrmForDriver, nid));
+        }
+    }
+
+    /// <summary>The PFS title with <paramref name="key"/> at +0x50 of its licence, where a licence a kernel plugin made
+    /// keeps its key in the clear.</summary>
+    private string InstallPfsTitleWithKeyInLicence(byte[] key)
+    {
+        string title = InstallPfsTitle();
+        string file = Path.Combine(_harness.Root, "ux0", "license", "app", PsmTitle, "6488b73b912a753a492e2714e9b38bc7.rif");
+        byte[] license = File.ReadAllBytes(file);
+        key.CopyTo(license, 0x50);
+        File.WriteAllBytes(file, license);
+        return title;
+    }
+
+    /// <summary>A hook answering 0 without the original (a licence plugin accepting its own licence).</summary>
+    private static readonly uint[] s_acceptingHook =
+    [
+        0xE3A00000, // mov r0, #0
+        0xE12FFF1E, // bx lr
+    ];
+
+    /// <summary>A ksceNpDrmGetRifVitaKey hook that gives the licence's +0x50 field as the key (r0 the licence, r1 the
+    /// key buffer) and answers 0, as a licence plugin does for a licence it made.</summary>
+    private static readonly uint[] s_keyFromLicenceHook =
+    [
+        0xE2802050, // add r2, r0, #0x50
+        0xE5923000, // ldr r3, [r2]
+        0xE5813000, // str r3, [r1]
+        0xE5923004, // ldr r3, [r2, #4]
+        0xE5813004, // str r3, [r1, #4]
+        0xE5923008, // ldr r3, [r2, #8]
+        0xE5813008, // str r3, [r1, #8]
+        0xE592300C, // ldr r3, [r2, #0xC]
+        0xE581300C, // str r3, [r1, #0xC]
+        0xE3A00000, // mov r0, #0
+        0xE12FFF1E, // bx lr
+    ];
+
+    /// <summary>
+    /// The launch takes the title key through ksceNpDrmGetRifInfo's and ksceNpDrmGetRifVitaKey's entries, as appmgr
+    /// 3.74 does: kernel hooks on them (a licence plugin loaded at the boot) are called on a kernel thread with the
+    /// licence the launch read, and the key the GetRifVitaKey hook gives opens app0, so the title loads. Before, the
+    /// launch decided the key on the host and the hooks were never called: the launch failed with 0x80020004.
+    /// </summary>
+    [Fact]
+    public void TheLaunchTakesTheTitleKeyThroughHookedNpDrmEntries()
+    {
+        Boot();
+        string title = InstallPfsTitleWithKeyInLicence(s_imageKey);
+        uint infoRef = KernelWord();
+        uint keyRef = KernelWord();
+        SceModuleBuilder hooks = new SceModuleBuilder("VsBootHook").Start(0);
+        int accepting = hooks.Arm(s_acceptingHook);
+        int giving = hooks.Arm(s_keyFromLicenceHook);
+        BootWithNpDrmHooks(hooks, (GetRifInfo, accepting, infoRef), (GetRifVitaKey, giving, keyRef));
+
+        _emu.LoadTitle(title);
+
+        string log = string.Join("\n", _sink.Messages());
+        Assert.NotNull(_emu.MainModule);
+        Assert.Equal(s_imageKey, _emu.Klicensee);
+        Assert.Equal(SyntheticTitle.ParamSfo(RuntimeId), File.ReadAllBytes(_emu.Vfs.Resolve("app0:sce_sys/param.sfo")!));
+        int info = _sink.IndexOf("called: ksceNpDrmGetRifInfo");
+        int key = _sink.IndexOf("called: ksceNpDrmGetRifVitaKey");
+        Assert.True(info >= 0, log);
+        Assert.True(key > info, log);
+        Assert.True(key < _sink.IndexOf("Loaded module "), log);
+    }
+
+    /// <summary>
+    /// A ksceNpDrmGetRifVitaKey hook that continues to the original gets SceNpDrm's answer: without a secure processor
+    /// the key is not available, so the launch fails with 0x80020004 and the same message at the title key step; the
+    /// hook being there opens nothing by itself. The log names the licence's kind.
+    /// </summary>
+    [Fact]
+    public void AHookedRifVitaKeyThatContinuesKeepsTheSecureProcessorsAnswer()
+    {
+        Boot();
+        string title = InstallPfsTitleWithKeyInLicence(s_imageKey);
+        string expected = new TitleKeyException(RuntimeId, LicenseTitleKey.SecureProcessorUnavailable).UserMessage;
+        uint keyRef = KernelWord();
+        SceModuleBuilder hooks = new SceModuleBuilder("VsBootHook").Start(0);
+        int continuing = hooks.Arm(PluginHookContinuation(keyRef));
+        BootWithNpDrmHooks(hooks, (GetRifVitaKey, continuing, keyRef));
+
+        TitleKeyException e = Assert.Throws<TitleKeyException>(() => _emu.LoadTitle(title));
+
+        string log = string.Join("\n", _sink.Messages());
+        Assert.Equal(unchecked((int)0x80020004), e.Error);
+        Assert.Equal(expected, e.UserMessage);
+        Assert.Null(_emu.MainModule);
+        Assert.True(_sink.IndexOf("plugin hook 1 called: ksceNpDrmGetRifVitaKey") >= 0, log);
+        Assert.True(_sink.IndexOf("plugin hook 1 continued to the original: ksceNpDrmGetRifVitaKey") >= 0, log);
+        Assert.True(_sink.IndexOf("(flags 0x000D, free licence, without an account; its key is the secure processor's)") >= 0, log);
+    }
+
+    /// <summary>A ksceNpDrmGetRifInfo hook that answers an error fails the launch with that error at the title key step,
+    /// before any key is asked for: GetRifVitaKey's hook is not called.</summary>
+    [Fact]
+    public void AnErrorTheRifInfoHookAnswersFailsTheLaunchBeforeTheKey()
+    {
+        Boot();
+        string title = InstallPfsTitleWithKeyInLicence(s_imageKey);
+        uint infoRef = KernelWord();
+        uint keyRef = KernelWord();
+        SceModuleBuilder hooks = new SceModuleBuilder("VsBootHook").Start(0);
+        int refusing = hooks.Arm(
+        [
+            0xE3000004, // movw r0, #0x0004
+            0xE3480087, // movt r0, #0x8087
+            0xE12FFF1E, // bx lr
+        ]);
+        int giving = hooks.Arm(s_keyFromLicenceHook);
+        BootWithNpDrmHooks(hooks, (GetRifInfo, refusing, infoRef), (GetRifVitaKey, giving, keyRef));
+
+        TitleKeyException e = Assert.Throws<TitleKeyException>(() => _emu.LoadTitle(title));
+
+        string log = string.Join("\n", _sink.Messages());
+        Assert.Equal(unchecked((int)0x80870004), e.Error);
+        Assert.Null(_emu.MainModule);
+        Assert.True(_sink.IndexOf("called: ksceNpDrmGetRifInfo") >= 0, log);
+        Assert.Equal(-1, _sink.IndexOf("called: ksceNpDrmGetRifVitaKey"));
+        Assert.True(_sink.IndexOf($"{RuntimeId}: the launch stopped at app0's mount, step 3 of 4 (title key") >= 0, log);
     }
 
     /// <summary>With the option off, the pure firmware: no plugin at all, and the launch fails the same way.</summary>

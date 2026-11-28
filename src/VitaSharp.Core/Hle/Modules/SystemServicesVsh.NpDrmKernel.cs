@@ -199,7 +199,7 @@ public sealed partial class SystemServicesVsh
     /// case after the pointer check.
     /// </summary>
     [Hle(Nid = 0xDB406EAE, Library = "SceNpDrmForDriver")]
-    int ksceNpDrmGetRifInfo(uint license, uint size, int checkSign, uint contentId, uint accountId, uint version,
+    internal int ksceNpDrmGetRifInfo(uint license, uint size, int checkSign, uint contentId, uint accountId, uint version,
         uint kind, uint flags, uint skuFlag, uint start, uint expiration, uint flags2)
     {
         if (license == 0)
