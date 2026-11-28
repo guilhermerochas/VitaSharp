@@ -190,6 +190,7 @@ public sealed class OnScreenPad : IInputBackend
                 if (!_captured.TryGetValue(f.Id, out OnScreenControl? hit))
                 {
                     _captured[f.Id] = hit = Visible ? HitControl(f.X, f.Y) : null;
+                    CountRoute(hit, f.X, f.Y);
                 }
 
                 if (hit == null)
@@ -270,6 +271,78 @@ public sealed class OnScreenPad : IInputBackend
         }
 
         return null;
+    }
+
+    // where each new finger went (the F8 capture's context.txt, RoutingLine): taken under _lock
+    private readonly Dictionary<VitaControl, long> _routedToControl = new();
+    private long _routedFront, _routedRear, _routedOutside;
+
+    /// <summary>Counts where a finger that just went down was routed: the control it hit, or the image (front or rear
+    /// touch), or neither (outside the image, no control).</summary>
+    private void CountRoute(OnScreenControl? hit, float x, float y)
+    {
+        if (hit != null)
+        {
+            _routedToControl[hit.Control] = _routedToControl.GetValueOrDefault(hit.Control) + 1;
+            return;
+        }
+
+        (float X, float Y, float Width, float Height) im = Image;
+        if (x >= im.X && x < im.X + im.Width && y >= im.Y && y < im.Y + im.Height)
+        {
+            if (_rear)
+            {
+                _routedRear++;
+            }
+            else
+            {
+                _routedFront++;
+            }
+
+            return;
+        }
+
+        _routedOutside++;
+    }
+
+    /// <summary>One line for the F8 capture: where the fingers that went down so far were routed (each on-screen
+    /// control, the front or rear touch of the image, or nothing), so a touch the game never saw shows which control
+    /// took it.</summary>
+    public string RoutingLine()
+    {
+        lock (_lock)
+        {
+            var sb = new System.Text.StringBuilder("on-screen fingers: ");
+            sb.Append(Visible ? "controls shown" : "controls hidden");
+            sb.Append(System.FormattableString.Invariant($"; front touch {_routedFront}, rear touch {_routedRear}, outside the image {_routedOutside}"));
+            foreach (KeyValuePair<VitaControl, long> pair in _routedToControl.OrderBy(pair => pair.Key.ToString(), StringComparer.Ordinal))
+            {
+                sb.Append(System.FormattableString.Invariant($", {pair.Key} {pair.Value}"));
+            }
+
+            return sb.ToString();
+        }
+    }
+
+    /// <summary>Fingers routed to a control so far (<see cref="RoutingLine"/>).</summary>
+    public long RoutedTo(VitaControl control)
+    {
+        lock (_lock)
+        {
+            return _routedToControl.GetValueOrDefault(control);
+        }
+    }
+
+    /// <summary>Fingers routed to the image's front touch so far (<see cref="RoutingLine"/>).</summary>
+    public long RoutedToFront
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _routedFront;
+            }
+        }
     }
 
     /// <summary>Releases every finger (the activity lost focus or the overlay was hidden).</summary>

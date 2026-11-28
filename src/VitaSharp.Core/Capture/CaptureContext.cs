@@ -14,6 +14,10 @@ namespace VitaSharp.Core.Capture;
 /// </summary>
 public static class CaptureContext
 {
+    /// <summary>The front-end's routing of the player's touches (Android: which on-screen control or touch panel each
+    /// finger went to), a line of context.txt; null: no on-screen controls.</summary>
+    public static Func<string>? HostInputInfo { get; set; }
+
     /// <summary>One line: where the player is now.</summary>
     public static string Where(Emulator emu)
     {
@@ -63,6 +67,11 @@ public static class CaptureContext
         sb.AppendLine($"where: {Where(emu)}");
         // waiting for the player, loading or busy (Input/InputWaitMonitor.cs): report.txt's "Screen state"
         sb.AppendLine($"screen: {Input.InputWaitMonitor.Describe()}");
+        if (HostInputInfo?.Invoke() is { } hostInput)
+        {
+            sb.AppendLine("input: " + hostInput);
+        }
+
         // where the data is (default, portable, chosen in the settings, --data), never the path itself
         sb.AppendLine(Storage.DataFolder.CaptureLine());
         // the internal resolution (report.txt's "Where"): a picture problem may exist only at one scale
