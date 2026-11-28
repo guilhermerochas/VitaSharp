@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.md sha256=345d5b9b930c119b6f6df558fac050813fa6e30ffa756b4123ebdf6251fcaf1e -->
+<!-- pair: psp-compat.md sha256=4493542fb9e23d90be020e6507f173b2290c847854b4faeded325685fd80e137 -->
 # Núcleo de compatibilidade PSP (SceCompat, ScePspemu, Allegrex)
 
 *English: [psp-compat.md](psp-compat.md).*

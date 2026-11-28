@@ -1,4 +1,4 @@
-<!-- pair: psp-compat.pt-BR.md sha256=503e99ddf8154775ee78bacc1dae845d3e61e78f7020fdbdb7285839b8dc0f62 -->
+<!-- pair: psp-compat.pt-BR.md sha256=597ab4de4351813c9b5f4a78e8c453c2d24ff13d3f9bc73fd8e12f977d1eed33 -->
 # PSP compatibility core (SceCompat, ScePspemu, Allegrex)
 
 *Português: [psp-compat.pt-BR.md](psp-compat.pt-BR.md).*
