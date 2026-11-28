@@ -722,7 +722,8 @@ public sealed unsafe partial class VulkanRenderer
                 && RenderTargetMipmapped(rt, gxmTextureDesc, x0, y0, gamma) is { } mipped)
             {
                 _texSrc = TexSource.RtMipmapped | sceneStart;
-                _texSrcReadScale = 1f; // level 0 is copied from the target's guest-size image (VulkanRenderer.RtMips.cs)
+                // above native the chain keeps the target's scale, at or below it is guest size (VulkanRenderer.RtMips.cs)
+                _texSrcReadScale = rt.Scale > 1f ? rt.Scale : 1f;
                 return (mipped, ImageLayout.ShaderReadOnlyOptimal);
             }
             if (addr != rt.Address || w != rt.Width || h != rt.Height)

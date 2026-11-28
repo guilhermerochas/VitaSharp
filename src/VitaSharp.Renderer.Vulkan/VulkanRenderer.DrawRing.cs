@@ -522,7 +522,7 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>
     /// The internal resolution of a texture source for the draw ring and the draw trace: "" for a native source,
     /// "*2x" for a 2x target read at 2x, "*2x>1x" when a 2x target is read through its guest-size copy (the native
-    /// mirror, a mip chain), so the texture lost the internal resolution and looks like the native picture enlarged.
+    /// mirror), so the texture lost the internal resolution and looks like the native picture enlarged.
     /// </summary>
     internal static string ScaleTag(float scale, float readScale)
     {
