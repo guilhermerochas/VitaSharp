@@ -523,7 +523,9 @@ happened with `mono-aot` and in the earlier phone runs, so it is a driver issue,
   finger that starts on the image stays a touch when it slides over a control. On a 2400x1080, 2340x1080 or
   1920x1080 phone the centre of the icon tab at the image's lower-right corner (Uncharted's "Tutorial: Journal",
   (0.96, 0.78) and (0.98, 0.80) of the image) reaches the game; the tab's left edge is still under the right stick.
-  Tests: `OnScreenLayoutTests`.
+  A finger that starts on a stick keeps it wherever it moves until it lifts. The F8 capture's `context.txt` has an
+  `input: on-screen fingers:` line: how many fingers went to the front touch, the rear touch, outside the image and
+  each control (`OnScreenPad.RoutingLine`). Tests: `OnScreenLayoutTests`, `AndroidAppTests`.
 - **Vibration** (Ajustes > Controles, `OnScreenHaptics`): one pulse for every newly pressed control, also with another
   finger on a stick. From Android 10 a pulse is the phone's predefined effect picked by the strength (Fraca = tick,
   Média = click, Forte = heavy click), tuned by the maker for its motor; before Android 10 a 20/30/45 ms one-shot at

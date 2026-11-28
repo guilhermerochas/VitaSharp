@@ -439,6 +439,59 @@ public sealed class AndroidAppTests : IDisposable
     }
 
     [Fact]
+    public void TheRightStickTakesOnlyItsCircleAndKeepsAFingerThatLeavesIt()
+    {
+        // a 2400x1080 phone, the image placed as the game screen places it (GameActivity)
+        const float W = 2400, H = 1080;
+        var pad = new OnScreenPad { Aspect = W / H };
+        float scale = Math.Min(W / 960f, H / 544f);
+        float iw = 960 * scale / W, ih = 544 * scale / H;
+        pad.Image = ((1 - iw) / 2, (1 - ih) / 2, iw, ih);
+        OnScreenControl rstick = pad.Layout.Single(c => c.Control == VitaControl.RStickUp);
+        float radius = Math.Min(rstick.Width * pad.Aspect, rstick.Height) / 2;
+        float cx = rstick.X + rstick.Width / 2, cy = rstick.Y + rstick.Height / 2;
+
+        // Uncharted's journal icon at about (2080, 680) px: a front touch, never the stick
+        Update(pad, (1, 2080 / W, 680 / H));
+        Assert.Single(pad.GetTouches(false));
+        Assert.False(pad.IsPressed(rstick));
+        Update(pad);
+
+        // each corner of the stick's rectangle, outside its circle and margin: a front touch
+        foreach ((float fx, float fy) in new[] { (0.03f, 0.03f), (0.97f, 0.03f), (0.03f, 0.97f), (0.97f, 0.97f) })
+        {
+            float x = rstick.X + rstick.Width * fx, y = rstick.Y + rstick.Height * fy;
+            Assert.True(rstick.Contains(x, y));
+            Update(pad, (2, x, y));
+            Assert.False(pad.IsPressed(rstick));
+            Assert.Single(pad.GetTouches(false));
+            Update(pad);
+        }
+
+        // inside the circle: the stick, and no front touch
+        Update(pad, (3, cx + radius * 0.5f / pad.Aspect, cy));
+        Assert.True(pad.IsPressed(rstick));
+        Assert.Empty(pad.GetTouches(false));
+        // the same finger dragged out of the circle, through the rectangle's corner and onto the image: still the stick,
+        // pushed to its edge, and still no front touch
+        Update(pad, (3, rstick.X + rstick.Width * 0.97f, rstick.Y + rstick.Height * 0.03f));
+        Assert.True(pad.IsPressed(rstick));
+        Assert.Empty(pad.GetTouches(false));
+        Update(pad, (3, cx + radius * 3 / pad.Aspect, cy));
+        Assert.True(pad.IsPressed(rstick));
+        Assert.Empty(pad.GetTouches(false));
+        Assert.Equal(1f, pad.Knob(rstick).X, 3);
+        Update(pad);
+        Assert.False(pad.IsPressed(rstick));
+
+        // the F8 capture's routing line counts each finger where it went
+        Assert.Equal(5, pad.RoutedToFront);
+        Assert.Equal(1, pad.RoutedTo(VitaControl.RStickUp));
+        Assert.Contains("front touch 5", pad.RoutingLine(), StringComparison.Ordinal);
+        Assert.Contains("RStickUp 1", pad.RoutingLine(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void OnScreenButtonsVibrateWhileTheStickIsHeld()
     {
         var pad = new OnScreenPad();

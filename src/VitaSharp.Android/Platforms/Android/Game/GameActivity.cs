@@ -178,6 +178,7 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         else
             _pad.PsPressed += OnPsPressed;
         _isSystem = system;
+        Core.Capture.CaptureContext.HostInputInfo = _pad.RoutingLine;
 
         var root = _root = new FrameLayout(this);
         root.SetBackgroundColor(Color.Black);
@@ -388,6 +389,11 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
 
     protected override void OnDestroy()
     {
+        if (Core.Capture.CaptureContext.HostInputInfo == _pad.RoutingLine)
+        {
+            Core.Capture.CaptureContext.HostInputInfo = null;
+        }
+
         _fpsTimer?.Dispose();
         RemoveLoadingScreen();
         AppServices.Gamepads.DevicesChanged -= OnGamepadsChanged;
