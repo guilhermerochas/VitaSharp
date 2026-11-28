@@ -253,7 +253,8 @@ public static class EnvVars
     /// never switched on, also when a handler is registered (unmapped accesses read zeros, as before).</summary>
     public const string DataAbortGuards = "VITASHARP_DATA_ABORT_GUARDS";
     /// <summary>=0: native code checks every guest access with a guard while data aborts are delivered, also where the
-    /// host's memory protection could find them at no cost (Windows x64, <see cref="Cpu.Native.HostFaultAborts"/>).</summary>
+    /// host's memory protection finds them at no cost by default (Windows x64; Linux and Android ARM64 with 4 KB host
+    /// pages, <see cref="Cpu.Native.HostFaultAborts"/>); =1 also uses host faults on Linux x86-64.</summary>
     public const string DataAbortFaults = "VITASHARP_DATA_ABORT_FAULTS";
     /// <summary>=off: ARM64 code leaves native code for every HLE call (SVC) instead of calling the HLE dispatch from it
     /// (Cpu/Native/ArmFrontend.HleCallouts).</summary>

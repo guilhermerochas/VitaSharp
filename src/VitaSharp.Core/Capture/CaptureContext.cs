@@ -94,6 +94,9 @@ public static class CaptureContext
         // the guest clock's time left out for late threads (Util/GuestClock.Lag.cs)
         sb.AppendLine(GuestClock.LagLine());
 
+        // guards or host faults for data aborts: the guards cost generated code time on every thread
+        sb.AppendLine(Cpu.Native.HostFaultAborts.ModeLine(emu.Vita.DataAbortHandlerRegistered));
+
         // the plugin hooks and their counters (report.txt's "Plugin hooks" compares the start and the stop)
         foreach (string l in Hle.Modules.PluginFramework.HookContextLines(emu))
         {

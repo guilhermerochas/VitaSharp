@@ -2241,6 +2241,12 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   ficam com guards. Testes no sandbox ARM64 (matriz + o próprio handler em frames montados) e o handler x64 por thunk.
   Falta confirmar no aparelho: com `VITASHARP_DATA_ABORT_FAULTS=1` no env.txt, kubridge ligado, o jogo roda igual e o fps
   volta ao de sem plugins (log: "host faults through a SIGSEGV handler"); depois, ligar por padrão.
+  Ligado por padrão no ARM64 com páginas de 4 KB (perf/dsperf1, 27/11; `VITASHARP_DATA_ABORT_FAULTS=0` volta aos guards):
+  a pthread do mixer do Dead Space gasta 66-91% da CPU em código gerado, a 7,0-9,0 ns por ciclo do guest com guards
+  (seis execuções no celular, ColdGuards incluído) e 5,1 ns com falha do host (uma execução, o jogo rodou igual). A linha
+  `data aborts:` do log e do context.txt do F8 diz o modo. Falta no aparelho: A/B 3x alternado `=0` x padrão no Dead
+  Space (código gerado da pthread do mixer em ms/quadro, saídas de áudio/s, underruns) e no Killzone (fps em gameplay,
+  sem plugins: não pode mudar); build Mono do Android também (o encadeamento ao handler do Mono não foi visto no aparelho).
 - [x] [P3] GXM: aplicar no tradutor de shaders o remapeamento de coordenadas de textura de
   `sceGxmShaderPatcherCreateFragmentProgramForGles` (tabela de 10 bytes: TEXCOORDi do fragment lê o TEXCOORD[remap[i]]
   do vertex). Feito (16/11/2026, rm1, fix/gxm-texcoord-remap): a tabela fica empacotada no programa
