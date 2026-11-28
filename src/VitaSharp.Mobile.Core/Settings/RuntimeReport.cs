@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics.Arm;
 using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Cpu.Backends;
 
@@ -32,15 +33,56 @@ public static class RuntimeReport
     /// The <c>VitaSharpAndroidRuntime</c> the APK was built with (mono-jit, mono-aot, mono-aot-llvm, coreclr, nativeaot), from the
     /// app assembly's <see cref="AssemblyMetadataAttribute"/>; null outside the Android app.
     /// </summary>
-    public static string? BuildRuntime => AppDomain.CurrentDomain.GetAssemblies()
+    public static string? BuildRuntime => AppMetadata("VitaSharpAndroidRuntime");
+
+    /// <summary>
+    /// How Native AOT compiled the app ("optimization Speed, instruction set baseline"; the csproj's
+    /// OptimizationPreference and IlcInstructionSet), from the app assembly's metadata; null outside the Android app.
+    /// </summary>
+    public static string? BuildCodegen => AppMetadata("VitaSharpIlcCodegen");
+
+    /// <summary>
+    /// The arm64 instruction sets the compiled code may use (a set compiled in is reported as present; a set ILC
+    /// checks at run time reports the CPU), so a capture says which code generation ran on which CPU.
+    /// </summary>
+    public static string CpuFeatures()
+    {
+        if (!ArmBase.Arm64.IsSupported)
+        {
+            return "not arm64";
+        }
+
+        List<string> features = ["neon"];
+        AddIf(features, Crc32.IsSupported, "crc");
+        AddIf(features, System.Runtime.Intrinsics.Arm.Aes.IsSupported, "aes");
+        AddIf(features, Sha256.IsSupported, "sha2");
+        AddIf(features, Rdm.IsSupported, "rdma");
+        AddIf(features, Dp.IsSupported, "dotprod");
+        return string.Join(",", features);
+    }
+
+    /// <summary>The startup log line of the code generation (<see cref="BuildCodegen"/>, <see cref="CpuFeatures"/>).</summary>
+    public static string CodegenLine(string? buildCodegen, string cpuFeatures) =>
+        $"Native code generation: {buildCodegen ?? "?"}; CPU features usable by the compiled code: {cpuFeatures}";
+
+    private static void AddIf(List<string> features, bool supported, string name)
+    {
+        if (supported)
+        {
+            features.Add(name);
+        }
+    }
+
+    private static string? AppMetadata(string key) => AppDomain.CurrentDomain.GetAssemblies()
         .FirstOrDefault(a => a.GetName().Name == "VitaSharp.Android")?
-        .GetCustomAttributes<AssemblyMetadataAttribute>().FirstOrDefault(a => a.Key == "VitaSharpAndroidRuntime")?.Value;
+        .GetCustomAttributes<AssemblyMetadataAttribute>().FirstOrDefault(a => a.Key == key)?.Value;
 
     public static IEnumerable<string> Lines()
     {
         yield return $"Runtime: {Runtime} ({Kind}), {RuntimeInformation.ProcessArchitecture}, " +
                      $"{RuntimeInformation.RuntimeIdentifier}, build {BuildRuntime ?? "?"}";
         yield return $"Dynamic code: supported {DynamicCodeSupported}, compiled {DynamicCodeCompiled}";
+        yield return CodegenLine(BuildCodegen, CpuFeatures());
         foreach (IBlockCompiler blockCompiler in Jit.All)
         {
             yield return $"CPU backend {blockCompiler.Name} ({blockCompiler.GetType().Name}): {(blockCompiler.IsSupported ? "available" : blockCompiler.UnsupportedReason ?? "unavailable")}";
