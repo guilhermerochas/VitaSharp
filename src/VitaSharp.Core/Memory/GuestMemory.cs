@@ -16,6 +16,9 @@ public enum MemoryRegion
     Kernel,
     /// <summary>A fixed range outside the three allocator regions (<see cref="GuestMemory.MapFixed"/>: tests and tools).</summary>
     Fixed,
+    /// <summary>A mirror block (<see cref="GuestMemory.AllocMirror"/>): a second view of a CDRAM or kernel block's
+    /// memory in the alias window, shared by every address space.</summary>
+    Mirror,
 }
 
 /// <summary>
@@ -163,6 +166,8 @@ public sealed unsafe partial class GuestMemory : IDisposable
             ReadOnlySpan<HostVirtualMemory.View> v =
             [
                 new((nuint)(MappedTableOffset + KernelStart), KernelEnd - KernelStart, _kernelMemory),
+                new((nuint)(MappedTableOffset + MirrorStart), MirrorKernelStart - MirrorStart, 0),
+                new((nuint)(MappedTableOffset + MirrorKernelStart), MirrorEnd - MirrorKernelStart, 0),
                 new((nuint)(MappedTableOffset + CdramStart), CdramEnd - CdramStart, _cdramMemory),
             ];
             reservation = HostVirtualMemory.ReserveWithViews(total, v, out lazy, out parts);
@@ -187,6 +192,11 @@ public sealed unsafe partial class GuestMemory : IDisposable
         var space = new AddressSpace(@base, parts, views);
         Cpu.Native.HostFaultAborts.AddWindow(@base); // the host fault handler checks this window (Linux, Android)
         CopySharedMapping(space);
+        if (views)
+        {
+            MapMirrorsInto(space);
+        }
+
         _spaces.Add(space);
         _spaceSnapshot = _spaces.ToArray();
         return space;
@@ -410,7 +420,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
         _ => _freeUser,
     };
 
-    private static bool IsSharedRegion(MemoryRegion r) => r is MemoryRegion.Cdram or MemoryRegion.Kernel;
+    private static bool IsSharedRegion(MemoryRegion r) => r is MemoryRegion.Cdram or MemoryRegion.Kernel or MemoryRegion.Mirror;
 
     /// <summary>Allocates in <paramref name="region"/>: user memory in the calling thread's address space (a range no
     /// other space uses either), CDRAM and kernel memory in all of them.</summary>
@@ -696,10 +706,22 @@ public sealed unsafe partial class GuestMemory : IDisposable
     {
         lock (_lock)
         {
+            if (b.Region == MemoryRegion.Mirror)
+            {
+                FreeMirror(b);
+                return;
+            }
+
             bool shared = b.Space == null;
             if (shared ? !_shared.Remove(b.Address) : !b.Space!._blocks.Remove(b.Address))
             {
                 return;
+            }
+
+            if (shared)
+            {
+                UnmapMirrorsOver(b.Address, b.Size);
+                ForgetUnmapped(b.Address, b.Size);
             }
 
             CommittedBytes -= b.Size;
@@ -1081,7 +1103,8 @@ public sealed unsafe partial class GuestMemory : IDisposable
         }
     }
 
-    private static bool InSharedRegion(uint addr) => addr - KernelStart < KernelEnd - KernelStart || addr - CdramStart < CdramEnd - CdramStart;
+    private static bool InSharedRegion(uint addr) => addr - KernelStart < KernelEnd - KernelStart || addr - CdramStart < CdramEnd - CdramStart
+        || addr - MirrorStart < MirrorEnd - MirrorStart;
 
     /// <summary>True for CDRAM and kernel addresses: the same memory in every address space.</summary>
     public static bool IsSharedAddress(uint addr) => InSharedRegion(addr);
@@ -1111,6 +1134,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
 
         lock (_lock)
         {
+            UnmapAllMirrors();
             foreach (AddressSpace addressSpace in _spaces)
             {
                 HostVirtualMemory.ReleaseWithViews(addressSpace._parts);

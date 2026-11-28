@@ -65,6 +65,11 @@ public sealed partial class SysmemKernel
 
         if (BlockHolding(pid, address, 1) is { } block)
         {
+            if (block.MappingRemoved)
+            {
+                return 0; // ksceKernelUnmapMemBlock: the pages no longer translate
+            }
+
             blockType = block.Type;
             uint kernel = block.Type & 0x7;
             uint user = (block.Type >> 4) & 0x7;
@@ -100,6 +105,10 @@ public sealed partial class SysmemKernel
         return MmuPrivilegedRead | MmuPrivilegedWrite | MmuUserRead | MmuUserWrite;
     }
 
+    /// <summary>The physical address of a translating <paramref name="address"/> in process <paramref name="pid"/>'s
+    /// space: its own, or in a mirror block its source's memory (<see cref="PhysicalOf"/>).</summary>
+    uint PhysicalAt(int pid, uint address) => BlockHolding(pid, address, 1) is { } block ? PhysicalOf(block, address) : address;
+
     /// <summary>The firmware's translation (FUN_810232d4): the first asked access that translates.</summary>
     int MmuTranslate(uint mode, uint address, uint physicalOut, string function) =>
         MmuTranslate(ProcessScope.CurrentPid, mode, address, physicalOut, function);
@@ -118,7 +127,7 @@ public sealed partial class SysmemKernel
             return MmuNoTranslation;
         }
 
-        GuestMemory.W32(physicalOut, address);
+        GuestMemory.W32(physicalOut, PhysicalAt(pid, address));
         return MmuPage;
     }
 
@@ -227,7 +236,7 @@ public sealed partial class SysmemKernel
         }
 
         // the first page sets the output (its address and the whole size), the later ones must follow it
-        GuestMemory.W32(physicalRange, address);
+        GuestMemory.W32(physicalRange, PhysicalAt(ProcessScope.CurrentPid, address));
         GuestMemory.W32(physicalRange + 4, size);
         return MmuWalk(address, size);
     }
@@ -281,7 +290,7 @@ public sealed partial class SysmemKernel
 
         if (capacity != 0)
         {
-            GuestMemory.W32(pairs, size == 0 ? 0 : address);
+            GuestMemory.W32(pairs, size == 0 ? 0 : PhysicalAt(ProcessScope.CurrentPid, address));
             GuestMemory.W32(pairs + 4, size);
         }
 

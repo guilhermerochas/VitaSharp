@@ -114,10 +114,31 @@ public static unsafe class DirtyPages
                 SweepTable(space.Base - TableBytes, e);
             }
 
+            FoldMirrors(mem.MirrorPages, e);
             return e;
         }
     }
     private static readonly object s_sweepLock = new();
+
+    /// <summary>A mirror block is the same memory as its source (<see cref="GuestMemory.AllocMirror"/>): a page written
+    /// through either address in this sweep is written at both.</summary>
+    private static void FoldMirrors(ReadOnlySpan<(uint Mirror, uint Source, uint Pages)> mirrors, uint e)
+    {
+        foreach ((uint mirror, uint source, uint pages) in mirrors)
+        {
+            for (uint i = 0; i < pages; i++)
+            {
+                if (s_version[mirror + i] == e)
+                {
+                    s_version[source + i] = e;
+                }
+                else if (s_version[source + i] == e)
+                {
+                    s_version[mirror + i] = e;
+                }
+            }
+        }
+    }
 
     private static void SweepTable(byte* t, uint e)
     {
