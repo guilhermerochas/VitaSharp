@@ -118,7 +118,8 @@ game process's standard input; log lines `[code-precompile] progress ...`): the 
 the order they first ran (the code cache: `codecache/<module image hash>.vsjc` in the data folder,
 `--code-cache=<folder>|off`; one file per module image, valid at any load address, rejected after a translator
 change), or in a first session the code the static analysis reaches from the modules' entry points (module start,
-exports, direct branches and call returns). The game starts as soon as those are ready; then a few low-priority
+exports, direct branches and call returns; a module with a code cache file is not walked again: the cache already
+says what it runs, and the walk only translated code that never ran). The game starts as soon as those are ready; then a few low-priority
 threads translate the code near what the game runs (a few blocks past every block it reaches, and the rest of its
 function, found through the `.ARM.exidx` function index), at most 64 MB of the code arena. Precompiled code is
 published when the game first reaches it. The log lines `ARM code precompilation: boot step ...` and, at the end,
