@@ -184,7 +184,8 @@
   </ItemGroup>
 
   <!-- libshaderc_shared.so built from the NDK's shaderc by build/build-android-shaderc.ps1 or .sh (not committed): packaged
-       when present; without it the renderer cannot compile shaders on the device -->
+       when present. The arm64-v8a one is REQUIRED (_VitaSharpCheckShaderc below fails the build without it: an APK
+       without it opens no game, "Could not load from any of the possible library names" in ShadercLoader) -->
   <ItemGroup>
     <AndroidNativeLibrary Include="..\..\third_party\android-shaderc\libs\arm64-v8a\libshaderc_shared.so" Abi="arm64-v8a"
         Condition="Exists('..\..\third_party\android-shaderc\libs\arm64-v8a\libshaderc_shared.so')" />
@@ -212,6 +213,27 @@
   <ItemGroup>
     <AndroidNativeLibrary Include="..\..\third_party\android-adrenotools\libs\arm64-v8a\*.so" Abi="arm64-v8a" />
   </ItemGroup>
+
+  <!-- Native libraries the APK cannot work without (the packaging above is conditional so a checkout can still be edited
+       and restored without them, but a build of the app must not succeed silently without them):
+       - libshaderc_shared.so (arm64-v8a): ERROR. Built by build/build-android-shaderc.ps1 / .sh; build/build-android-apk.sh
+         (the CI) builds it first. Not checked for an android-x64-only build (-r android-x64). Opt out for a build that is
+         never installed: -p:VitaSharpAllowMissingNativeLibs=true.
+       - libadrenotools.so (arm64-v8a): WARNING only; optional by design, without it only the custom "Driver da GPU"
+         does not work (the system Vulkan driver is used). Built by build/build-android-adrenotools.ps1 / .sh. -->
+  <PropertyGroup>
+    <VitaSharpShadercArm64>$(MSBuildThisFileDirectory)..\..\third_party\android-shaderc\libs\arm64-v8a\libshaderc_shared.so</VitaSharpShadercArm64>
+    <VitaSharpAdrenotoolsArm64>$(MSBuildThisFileDirectory)..\..\third_party\android-adrenotools\libs\arm64-v8a\libadrenotools.so</VitaSharpAdrenotoolsArm64>
+    <_VitaSharpBuildsArm64 Condition="'$(RuntimeIdentifier)' == '' or '$(RuntimeIdentifier)' == 'android-arm64'">true</_VitaSharpBuildsArm64>
+  </PropertyGroup>
+  <Target Name="_VitaSharpCheckShaderc" BeforeTargets="PrepareForBuild"
+      Condition="'$(_VitaSharpBuildsArm64)' == 'true' and '$(VitaSharpAllowMissingNativeLibs)' != 'true' and !Exists('$(VitaSharpShadercArm64)')">
+    <Error Code="VITASHARP001" Text="libshaderc_shared.so (arm64-v8a) is missing: $(VitaSharpShadercArm64). An APK without it cannot compile shaders and no game opens. Build it with build/build-android-shaderc.ps1 (Windows) or build/build-android-shaderc.sh (Linux/macOS), or build the whole APK with build/build-android-apk.ps1 / .sh, which builds it first (docs/android/README.md, Native libraries)." />
+  </Target>
+  <Target Name="_VitaSharpWarnAdrenotools" BeforeTargets="PrepareForBuild"
+      Condition="'$(_VitaSharpBuildsArm64)' == 'true' and !Exists('$(VitaSharpAdrenotoolsArm64)')">
+    <Warning Code="VITASHARP002" Text="libadrenotools.so (arm64-v8a) is missing: $(VitaSharpAdrenotoolsArm64). The APK builds, but the custom GPU driver option (Driver da GPU) will not work; the system Vulkan driver is used. Build it with build/build-android-adrenotools.ps1 or build/build-android-adrenotools.sh." />
+  </Target>
 
   <ItemGroup>
     <!-- Sora (headings) and Inter (text), SIL Open Font License 1.1: Resources/Fonts/OFL-*.txt -->
