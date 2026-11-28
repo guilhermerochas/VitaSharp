@@ -173,7 +173,10 @@ public sealed class SettingsView : Screen<SettingsState>
                     Row(Loc.Get("DataFolderChange"), null, ChangeDataFolder,
                         detail: AppServices.StoragePlan.Warning.Length > 0 ? Loc.Format("DataFolderWarning", AppServices.StoragePlan.Warning) : null),
                     Divider(),
-                    Row(Loc.Get("MInstalledGames"), null, Copy(AppServices.Data.Apps), detail: Loc.Format("MInstalledGamesDetail", VitaSharp.Core.Io.FirmwareLayout.Applications.Relative(), VitaSharp.Core.Io.FirmwareLayout.SaveData.Relative()))
+                    Row(Loc.Get("MInstalledGames"), null, Copy(AppServices.Data.Apps), detail: Loc.Format("MInstalledGamesDetail", VitaSharp.Core.Io.FirmwareLayout.Applications.Relative(), VitaSharp.Core.Io.FirmwareLayout.SaveData.Relative())),
+                    Divider(),
+                    Row(Loc.Get("MCacheFolder"), null, Copy(System.IO.Path.GetDirectoryName(AppServices.Data.ShaderCache)!),
+                        detail: Loc.Format("MCacheFolderDetail", AppServices.Data.ShaderCache, AppServices.Data.CodeCache))
                 ),
                 Note(Loc.Get("MStorageNote")),
                 SectionTitle(Loc.Get("MDebugging")),

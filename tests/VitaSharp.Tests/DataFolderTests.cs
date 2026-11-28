@@ -177,6 +177,106 @@ public sealed class DataFolderTests : IDisposable
         }
     }
 
+    // ---------------------------------------------------------------- caches in the internal folder (Android)
+
+    private string CacheShared => Path.Combine(_root, "shared");
+
+    private string CacheInternalRoot => Path.Combine(_root, "internal");
+
+    private static void WriteFile(string path, string text)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, text);
+    }
+
+    [Fact]
+    public void WithTheDataFolderInSharedStorageTheCachesAreInTheInternalFolder()
+    {
+        // a new install: nothing in the old place, the caches go to the internal folder at once
+        var layout = new DataLayout(CacheShared, CacheInternalRoot);
+        Assert.True(layout.CachesInternal);
+        Assert.Equal(Path.Combine(Path.GetFullPath(CacheInternalRoot), "cache", "shadercache"), layout.ShaderCache);
+        Assert.Equal(Path.Combine(Path.GetFullPath(CacheInternalRoot), "cache", "codecache"), layout.CodeCache);
+        // games, saves, logs and settings stay in the data folder
+        Assert.StartsWith(Path.GetFullPath(CacheShared), layout.SaveData);
+        Assert.StartsWith(Path.GetFullPath(CacheShared), layout.Config);
+        Assert.StartsWith(Path.GetFullPath(CacheShared), layout.Logs);
+
+        // the data folder is the internal folder itself: the caches stay where they were
+        var single = new DataLayout(CacheInternalRoot);
+        Assert.False(single.CachesInternal);
+        Assert.Equal(Path.Combine(Path.GetFullPath(CacheInternalRoot), "shadercache"), single.ShaderCache);
+        Assert.Equal(Path.Combine(Path.GetFullPath(CacheInternalRoot), "codecache"), single.CodeCache);
+        Assert.Equal(default, CacheMigration.Run(single));
+    }
+
+    [Fact]
+    public void CachesInTheOldPlaceAreUsedUntilMovedThenMovedWhole()
+    {
+        var layout = new DataLayout(CacheShared, CacheInternalRoot);
+        string pack = Path.Combine(layout.LegacyShaderCache, "titles", "PCSA00126", "shaders.pack");
+        string astc = Path.Combine(layout.LegacyShaderCache, "titles", "PCSA00126", "astc", "00", "level.bin");
+        string code = Path.Combine(layout.LegacyCodeCache, "0123456789abcdef.vsjc");
+        WriteFile(pack, "pack");
+        WriteFile(astc, "astc");
+        WriteFile(code, "code");
+        // a session that starts before the move still finds its warm caches
+        Assert.Equal(layout.LegacyShaderCache, layout.ShaderCache);
+        Assert.Equal(layout.LegacyCodeCache, layout.CodeCache);
+        // a copy cut short by an earlier run is redone, not merged
+        WriteFile(Path.Combine(layout.InternalShaderCache + CacheMigration.PartialSuffix, "stale.bin"), "half");
+
+        CacheMigration.Result result = CacheMigration.Run(layout);
+        Assert.Equal("", result.Error);
+        Assert.Equal(2, result.Moved);
+        Assert.Equal(3, result.Files);
+        Assert.Equal(layout.InternalShaderCache, layout.ShaderCache);
+        Assert.Equal(layout.InternalCodeCache, layout.CodeCache);
+        Assert.False(Directory.Exists(layout.LegacyShaderCache)); // moved, not left twice
+        Assert.False(Directory.Exists(layout.LegacyCodeCache));
+        Assert.False(Directory.Exists(layout.InternalShaderCache + CacheMigration.PartialSuffix));
+        Assert.Equal("pack", File.ReadAllText(Path.Combine(layout.ShaderCache, "titles", "PCSA00126", "shaders.pack")));
+        Assert.Equal("astc", File.ReadAllText(Path.Combine(layout.ShaderCache, "titles", "PCSA00126", "astc", "00", "level.bin")));
+        Assert.Equal("code", File.ReadAllText(Path.Combine(layout.CodeCache, "0123456789abcdef.vsjc")));
+        Assert.False(File.Exists(Path.Combine(layout.ShaderCache, "stale.bin")));
+        Assert.Contains("2 moved (3 files", CacheMigration.Describe(result, layout));
+
+        // a session that was still writing the old place left a copy behind: the new place wins, the old copy goes
+        WriteFile(code, "older");
+        CacheMigration.Result again = CacheMigration.Run(layout);
+        Assert.Equal((0, 1), (again.Moved, again.RemovedStale));
+        Assert.False(Directory.Exists(layout.LegacyCodeCache));
+        Assert.Equal("code", File.ReadAllText(Path.Combine(layout.CodeCache, "0123456789abcdef.vsjc")));
+        Assert.Equal("", CacheMigration.Describe(CacheMigration.Run(layout), layout));
+    }
+
+    [Fact]
+    public void TheCaptureNamesWhereTheCachesAreNeverThePath()
+    {
+        DataFolderResolution? before = DataFolder.Active;
+        (string, string)? beforeCaches = DataFolder.Caches;
+        try
+        {
+            DataFolder.Active = new DataFolderResolution(CacheShared, DataFolderKind.Default);
+            DataFolder.Caches = null;
+            Assert.Equal("caches: shader cache <data>/shadercache, code cache <data>/codecache", DataFolder.CacheLine());
+
+            var layout = new DataLayout(CacheShared, CacheInternalRoot);
+            DataFolder.Caches = (layout.ShaderCache, layout.CodeCache);
+            Assert.Equal("caches: shader cache <internal>/cache/shadercache, code cache <internal>/cache/codecache", DataFolder.CacheLine());
+
+            DataFolder.Caches = (layout.LegacyShaderCache, layout.InternalCodeCache);
+            string line = DataFolder.CacheLine();
+            Assert.Equal("caches: shader cache <data>/shadercache, code cache <internal>/cache/codecache", line);
+            Assert.DoesNotContain(_root, line);
+        }
+        finally
+        {
+            DataFolder.Active = before;
+            DataFolder.Caches = beforeCaches;
+        }
+    }
+
     // ---------------------------------------------------------------- copy and move
 
     private string Old => Path.Combine(_root, "old");

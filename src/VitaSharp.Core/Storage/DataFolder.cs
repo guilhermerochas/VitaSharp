@@ -76,6 +76,42 @@ public static class DataFolder
         return Active is { } active ? "data folder: <data> (" + active.Describe() + ")" : "data folder: <data> (not reported by the front-end)";
     }
 
+    /// <summary>The shader cache and code cache folders of this process, set by a front-end that keeps them apart from
+    /// the data folder (Android: the app's internal storage); null: both in the data folder.</summary>
+    public static (string ShaderCache, string CodeCache)? Caches { get; set; }
+
+    /// <summary>The F8 capture's line on where the caches are, with the data folder as &lt;data&gt; and any other place as
+    /// &lt;internal&gt; (never a path).</summary>
+    public static string CacheLine()
+    {
+        if (Caches is not { } caches)
+        {
+            return "caches: shader cache <data>/shadercache, code cache <data>/codecache";
+        }
+
+        return $"caches: shader cache {Placeholder(caches.ShaderCache)}, code cache {Placeholder(caches.CodeCache)}";
+    }
+
+    /// <summary>A cache folder named by its place: under the data folder as &lt;data&gt;/..., else &lt;internal&gt;/... (the last
+    /// two parts of the path, which are the layout's own names).</summary>
+    private static string Placeholder(string folder)
+    {
+        string full = Path.GetFullPath(folder);
+        if (Active is { } active)
+        {
+            string root = Path.GetFullPath(active.Root);
+            string relative = Path.GetRelativePath(root, full);
+            if (!relative.StartsWith("..", StringComparison.Ordinal) && !Path.IsPathRooted(relative))
+            {
+                return "<data>/" + relative.Replace(Path.DirectorySeparatorChar, '/');
+            }
+        }
+
+        string name = Path.GetFileName(full);
+        string parent = Path.GetFileName(Path.GetDirectoryName(full) ?? "");
+        return "<internal>/" + (parent.Length > 0 ? parent + "/" : "") + name;
+    }
+
     public static DataFolderResolution Resolve(DataFolderInputs inputs)
     {
         if (inputs.Override is { Length: > 0 } forced)

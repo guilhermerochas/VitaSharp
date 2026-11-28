@@ -8,7 +8,7 @@ namespace VitaSharp.Mobile.Core.Storage;
 /// &lt;root&gt;/fs/ux0/user/00/trophy   trophy unlocks
 /// &lt;root&gt;/fs/vs0, os0, sa0, pd0      the installed firmware (FirmwareSetup)
 /// &lt;root&gt;/logs                      last.log of the current session and the previous ones
-/// &lt;root&gt;/shadercache, np, patches   as on the desktop
+/// &lt;root&gt;/np, patches                as on the desktop
 /// &lt;root&gt;/config/app.json           global settings (AppPreferences)
 /// &lt;root&gt;/config/games/TITLEID.json per-game settings and play statistics (GameSettings)
 /// &lt;root&gt;/config/input.json         controller profiles (Core InputProfileStore)
@@ -16,12 +16,24 @@ namespace VitaSharp.Mobile.Core.Storage;
 /// &lt;internal&gt;/gpu_drivers/TITLE    installed GPU driver packages, &lt;internal&gt;/gpu_driver_files the driver's redirected files
 /// &lt;internal&gt;/run/game.json         the running game process (GameProcessMarker)
 /// &lt;internal&gt;/cache/trophies/COMMID the Trofeus screen's cache: texts and extracted pictures (TrophyListCache)
+/// &lt;internal&gt;/cache/shadercache    shader pack, pipelines, driver cache and ASTC textures (&lt;root&gt;/shadercache when
+///                                  the root is the internal folder itself)
+/// &lt;internal&gt;/cache/codecache      the ARM blocks each module ran (same rule)
 /// </code>
 /// The root is chosen by <see cref="DataRoot"/>: /storage/emulated/0/.vitasharp (no root, all-files access), else the
 /// app-specific external storage (Context.GetExternalFilesDir(null), /sdcard/Android/data/&lt;package&gt;/files), else
 /// the internal files folder. All are plain POSIX paths the emulator opens and maps directly. &lt;internal&gt; is the internal
 /// files folder (Context.FilesDir): GPU driver libraries must be there, because the linker refuses to load a library from
 /// shared storage (libadrenotools: "MUST NOT be on sdcard/storage").
+/// <para>
+/// The caches the emulator rebuilds by itself (<see cref="ShaderCache"/>, <see cref="CodeCache"/>) stay in the internal
+/// folder even when the data folder is in shared storage: shared storage goes through FUSE, which costs every file
+/// open and write (Redmi Note 14, 8 KB files with their folder: ~45 ms each in /storage/emulated/0 against ~23 ms in
+/// internal storage, from the shell; God of War II wrote 207 new ASTC levels in 12.8 s on the GPU thread) and the ASTC
+/// cache alone is thousands of small files. Games, saves, states, captures, firmware and settings stay in the data
+/// folder the user chose. A cache still in the old place (&lt;root&gt;/shadercache, &lt;root&gt;/codecache) keeps being used
+/// until <see cref="CacheMigration"/> moved it (so no session starts on an empty cache meanwhile).
+/// </para>
 /// </summary>
 public sealed class DataLayout(string root, string? internalRoot = null)
 {
@@ -40,9 +52,22 @@ public sealed class DataLayout(string root, string? internalRoot = null)
     public string Logs => Path.Combine(Root, "logs");
     /// <summary>The save states, one folder per title (<see cref="VitaSharp.Core.SaveState.SaveStates.Folder"/>).</summary>
     public string SaveStates => Path.GetDirectoryName(VitaSharp.Core.SaveState.SaveStates.Folder(Root, "_"))!;
-    public string ShaderCache => Path.Combine(Root, "shadercache");
-    /// <summary>The code cache: the ARM blocks each module had translated (<see cref="VitaSharp.Core.Cpu.CodeCache"/>).</summary>
-    public string CodeCache => Path.Combine(Root, "codecache");
+    /// <summary>Whether the rebuildable caches live apart from the data folder (in the internal folder).</summary>
+    public bool CachesInternal => InternalRoot != Root;
+    /// <summary>The folder of the rebuildable caches when they are apart from the data folder.</summary>
+    public string CacheRoot => Path.Combine(InternalRoot, "cache");
+    /// <summary>The shader cache in the data folder (where it was before; still used until it is moved).</summary>
+    public string LegacyShaderCache => Path.Combine(Root, "shadercache");
+    /// <summary>The code cache in the data folder (where it was before; still used until it is moved).</summary>
+    public string LegacyCodeCache => Path.Combine(Root, "codecache");
+    /// <summary>The shader cache where it belongs: the internal folder when the data folder is elsewhere.</summary>
+    public string InternalShaderCache => CachesInternal ? Path.Combine(CacheRoot, "shadercache") : LegacyShaderCache;
+    /// <summary>The code cache where it belongs: the internal folder when the data folder is elsewhere.</summary>
+    public string InternalCodeCache => CachesInternal ? Path.Combine(CacheRoot, "codecache") : LegacyCodeCache;
+    /// <summary>The shader cache a session uses (shader pack, pipelines, driver cache, ASTC textures).</summary>
+    public string ShaderCache => InUse(LegacyShaderCache, InternalShaderCache);
+    /// <summary>The code cache a session uses: the ARM blocks each module had translated (<see cref="VitaSharp.Core.Cpu.CodeCache"/>).</summary>
+    public string CodeCache => InUse(LegacyCodeCache, InternalCodeCache);
     public string Np => Path.Combine(Root, "np");
     public string Patches => Path.Combine(Root, "patches");
     public string Config => Path.Combine(Root, "config");
@@ -62,6 +87,18 @@ public sealed class DataLayout(string root, string? internalRoot = null)
         {
             Directory.CreateDirectory(d);
         }
+    }
+
+    /// <summary>The new place once it exists or when there is nothing in the old one; else the old one, until
+    /// <see cref="CacheMigration"/> moves it.</summary>
+    private static string InUse(string legacy, string target)
+    {
+        if (legacy == target || Directory.Exists(target) || !Directory.Exists(legacy))
+        {
+            return target;
+        }
+
+        return legacy;
     }
 
     private static string Sanitize(string s)

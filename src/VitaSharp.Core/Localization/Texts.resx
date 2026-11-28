@@ -2736,6 +2736,12 @@
   <data name="MInstalledGames" xml:space="preserve">
     <value>Installed games</value>
   </data>
+  <data name="MCacheFolder" xml:space="preserve">
+    <value>Caches (shaders and ARM code)</value>
+  </data>
+  <data name="MCacheFolderDetail" xml:space="preserve">
+    <value>{0} · {1} · rebuilt by the emulator, kept in the app's internal storage (faster than shared storage)</value>
+  </data>
   <data name="MInstalledGamesDetail" xml:space="preserve">
     <value>fs/{0} · the saves are in fs/{1}</value>
   </data>

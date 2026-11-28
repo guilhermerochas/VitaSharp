@@ -103,6 +103,33 @@ public static class AppServices
         }
     }
 
+    /// <summary>
+    /// The shader and code caches of a data folder in shared storage move to the internal folder (DataLayout,
+    /// CacheMigration), in the background so the screens open at once, and not while a game runs (its session uses
+    /// the old folder until the move is complete).
+    /// </summary>
+    static void MoveCachesInBackground(DataLayout data)
+    {
+        if (!data.CachesInternal)
+        {
+            return;
+        }
+
+        Task.Run(() =>
+        {
+            if (GameProcessMarker.Read(data.GameProcessFile, GameProcessMarker.IsGameProcess) != null)
+            {
+                return;
+            }
+
+            string line = CacheMigration.Describe(CacheMigration.Run(data), data);
+            if (line.Length > 0)
+            {
+                Log.Info(line);
+            }
+        });
+    }
+
     /// <summary>The phone's offset from UTC at <paramref name="utc"/>, in minutes, summer time included.</summary>
     static int PhoneOffsetMinutes(DateTime utc)
     {
@@ -148,6 +175,8 @@ public static class AppServices
                     ? VitaSharp.Core.Storage.DataFolderKind.Custom
                     : VitaSharp.Core.Storage.DataFolderKind.Default,
                 StoragePlan.Warning);
+            // the F8 capture says where the caches are (the internal folder or still the data folder)
+            VitaSharp.Core.Storage.DataFolder.Caches = (Data.ShaderCache, Data.CodeCache);
             if (StoragePlan.Warning.Length > 0)
             {
                 Log.Warn("Storage: " + StoragePlan.Warning);
@@ -170,6 +199,10 @@ public static class AppServices
             }
             foreach (var (name, value) in env)
                 Log.Info($"{EnvironmentFile.FileName}: {name}={value}");
+            if (!gameProcess && !StoragePlan.NeedsMigration)
+            {
+                MoveCachesInBackground(Data);
+            }
             UsePhoneTimeZone();
             Prefs = AppPreferences.Load(Data.AppSettingsFile);
             // the texts' language (Ajustes > Language): set before any screen or the game reads a text
