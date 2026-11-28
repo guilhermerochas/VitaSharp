@@ -1393,6 +1393,14 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Android
 
+- [ ] [P2][M] Chave do shader pack por opção que o shader usa: `ShaderPackKey` (VulkanRenderer.Cache.cs) mistura as
+  opções globais do gerador (bits 32-41) em todo shader, então trocar uma delas refaz o pack inteiro na primeira
+  sessão (God of War II no celular: 294 shaders + 279 pipelines, 30 s antes de jogar, quando o quirk
+  `AvoidSplitUniformSlots` desligou `SplitUniformSlots`). Essa opção só muda o GLSL de programas com um slot
+  dividido (`UniformBufferSlot.Split >= 0`). Para a chave depender só dela, é preciso o layout de uniforms do programa
+  na hora de montar a chave (hoje só existem o hash do programa e o das dicas; os bytes estão no `programs.pack`).
+  Teste: trocar a opção não invalida o shader de um programa sem slot dividido e invalida o de um com slot.
+
 - [ ] [P1][M] (falta medir no celular) Desempenho do Android, perf/andperf1: travadas de texUpload e núcleos pequenos
   disputados (captura do Uncharted de 25/11: 37 s de BC para ASTC no GPU worker, quadros de 1-2 s). Feito no PC: as
   threads de fundo (pré-compilação ARM depois do boot, workers de shader reserva, prewarm, transcodificadores) baixam

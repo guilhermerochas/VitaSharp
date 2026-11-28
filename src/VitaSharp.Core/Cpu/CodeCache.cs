@@ -339,6 +339,16 @@ public sealed class CodeCache
         return result;
     }
 
+    /// <summary>Whether an earlier session recorded blocks of <paramref name="module"/> (its code cache file).</summary>
+    private bool HasRecord(LoadedModule module)
+    {
+        lock (_lock)
+        {
+            ModuleRecord? record = _modules.Find(r => r.Module == module);
+            return record != null && record.SavedCount > 0;
+        }
+    }
+
     private CodePrecompiler? Start(IReadOnlyList<(uint Pc, bool Thumb)> targets, LoadedModule[] modules, CodePrecompiler.Priority? waitFor,
         Action<int, int>? progress, CancellationToken cancel, int workers)
     {
@@ -362,8 +372,16 @@ public sealed class CodeCache
             for (int i = 0; i < modules.Length; i++)
             {
                 // the exception index only says where functions start (the frontier fills in the functions the game
-                // runs); the analysis itself starts from the module's entry points
-                seeds.AddRange(CodePrecompiler.ModuleEntryPoints(modules[i]).Where(e => e.Priority != CodePrecompiler.Priority.Index));
+                // runs); the analysis itself starts from the module's entry points, but only for a module no earlier
+                // session ran: with a record, what ran is known and the frontier fills in around it as the game runs,
+                // so walking everything reachable from the entry points only translates code that does not run
+                // (God of War II on a phone: 138k blocks with it, 53k without, the same frame rate, 1.4 s more at
+                // the load and a 1 s collection)
+                if (!HasRecord(modules[i]))
+                {
+                    seeds.AddRange(CodePrecompiler.ModuleEntryPoints(modules[i]).Where(e => e.Priority != CodePrecompiler.Priority.Index));
+                }
+
                 maps[i] = ModuleCodeMap.Build(modules[i]);
             }
 

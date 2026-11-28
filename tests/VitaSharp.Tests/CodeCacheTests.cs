@@ -233,6 +233,87 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
             Assert.Equal(2, codeCache.Runs.Count);
         });
     }
+    /// <summary>
+    /// The static analysis from a module's entry points belongs to a module no session ran yet. Once a session recorded
+    /// what the module runs, the next one translates that and the frontier around what runs, not every function the
+    /// entry points reach: an exported function the game never calls is translated in the first session only (God of
+    /// War II on a phone: 138k blocks with the walk, 53k without it, the same frame rate, 1.4 s more at the load).
+    /// </summary>
+    [Fact]
+    public void WithARecordTheEntryPointWalkIsLeftOutAndUnreachedExportsStayUntranslated()
+    {
+        if (!NativeHost)
+        {
+            return;
+        }
+
+        uint code = fixture.Memory.Alloc(0x1000, "codecache recorded walk");
+        // the module's bytes are all known (the allocation may hold an earlier test's code): bx lr everywhere else, so
+        // nothing but the export's own entry leads into it
+        for (uint at = 0; at < 0x100; at += 4)
+        {
+            GuestMemory.W32(code + at, 0xE12FFF1E);
+        }
+
+        WriteProgram(code);
+        GuestMemory.W32(code + 0x80, 0xE3500000); // export, never called: cmp r0, #0
+        GuestMemory.W32(code + 0x84, 0x1A000001); //   bne +0x10
+        GuestMemory.W32(code + 0x88, 0xE2800001); //   add r0, r0, #1
+        GuestMemory.W32(code + 0x8C, 0xE12FFF1E); //   bx lr
+        GuestMemory.W32(code + 0x90, 0xE2800002); //   add r0, r0, #2
+        GuestMemory.W32(code + 0x94, 0xE12FFF1E); //   bx lr
+        LoadedModule Loaded()
+        {
+            LoadedModule module = Module(code, 0xA11C);
+            module.ExportedFunctionEntries.Add(code + 0x80);
+            return module;
+        }
+
+        WithNative(() =>
+        {
+            // session 1, no record: the walk from the entry points translates the export too
+            var cache1 = new BlockCache();
+            var codeCache1 = new CodeCache(_directory, cache1);
+            codeCache1.ModuleLoaded(Loaded());
+            codeCache1.PrecompilePending(null, CancellationToken.None, workers: 2);
+            CodePrecompiler run1 = Assert.Single(codeCache1.Runs);
+            Assert.True(run1.WaitFinished(TimeSpan.FromSeconds(60)));
+            Assert.Contains(code + 0x80, Translated(cache1));
+            Assert.Contains(code + 0x90, Translated(cache1));
+            using (var core1 = new CpuCore(cache1))
+            {
+                Assert.Equal(300u, Run(core1, code));
+            }
+
+            Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)));
+            codeCache1.Stop();
+            codeCache1.Save();
+
+            // session 2, with the record: what ran is translated ahead, the export the game never called is not
+            var cache2 = new BlockCache();
+            var codeCache2 = new CodeCache(_directory, cache2);
+            codeCache2.ModuleLoaded(Loaded());
+            Assert.True(codeCache2.PendingCount > 0);
+            codeCache2.PrecompilePending(null, CancellationToken.None, workers: 2);
+            CodePrecompiler run2 = Assert.Single(codeCache2.Runs);
+            Assert.True(run2.WaitFinished(TimeSpan.FromSeconds(60)));
+            HashSet<uint> before = Translated(cache2);
+            Assert.Superset(new HashSet<uint> { code, code + 0x08, code + 0x0C, code + 0x14, code + 0x20 }, before);
+            Assert.DoesNotContain(code + 0x80, before);
+            Assert.DoesNotContain(code + 0x90, before);
+            using (var core2 = new CpuCore(cache2))
+            {
+                Assert.Equal(300u, Run(core2, code));
+            }
+
+            Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)));
+            Assert.True(run2.WaitFinished(TimeSpan.FromSeconds(60)));
+            Assert.Empty(Compiled(cache2)); // the game still compiles nothing while it runs
+            Assert.DoesNotContain(code + 0x80, Translated(cache2));
+            codeCache2.Stop();
+        });
+    }
+
     [Fact]
     public void RecordedBlocksPrecompileInTheNextSessionAtAnotherLoadAddress()
     {

@@ -74,6 +74,8 @@ public static class CaptureContext
 
         // where the data is (default, portable, chosen in the settings, --data), never the path itself
         sb.AppendLine(Storage.DataFolder.CaptureLine());
+        // where the shader and code caches are (Android keeps them in the app's internal storage)
+        sb.AppendLine(Storage.DataFolder.CacheLine());
         // the internal resolution (report.txt's "Where"): a picture problem may exist only at one scale
         sb.AppendLine(ResolutionLine(emu.Gpu.Backend?.InternalScale ?? 1f));
         Emulator fg = vitaSystem.Foreground ?? emu;

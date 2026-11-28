@@ -121,7 +121,8 @@ ARM dele em todos os núcleos livres, atrás de uma barra de progresso própria 
 primeira vez (o cache de código: `codecache/<hash da imagem do módulo>.vsjc` na pasta de dados,
 `--code-cache=<pasta>|off`; um arquivo por imagem de módulo, vale em qualquer endereço de carga, rejeitado depois de
 uma mudança no tradutor), ou, na primeira sessão, o código que a análise estática alcança a partir das entradas dos
-módulos (início do módulo, exportações, branches diretos e retornos de chamada). O jogo começa assim que esses ficam
+módulos (início do módulo, exportações, branches diretos e retornos de chamada; um módulo com arquivo no cache de
+código não é percorrido de novo: o cache já diz o que ele executa, e o percurso só traduzia código que não roda). O jogo começa assim que esses ficam
 prontos; depois, algumas threads de prioridade baixa traduzem o código perto do que o jogo executa (alguns blocos
 além de cada bloco que ele alcança, e o resto da função dele, achada pelo índice de funções `.ARM.exidx`), no máximo
 64 MB da arena de código. O código pré-compilado é publicado quando o jogo chega nele pela primeira vez. As linhas de
