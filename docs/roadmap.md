@@ -5196,6 +5196,15 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   seguro → PFS conferido pelos ICVs do unicv.db, `PfsApp0View`/`LicenseTitleKey`). A licença do runtime é "free"
   (kind 0xD), cuja chave só sai do SceSblAuthMgr DecBindData: sem processador seguro o lançamento para com 0x80020004
   e mensagem clara. Falta: o título abrir de fato, o que depende de decidir como a chave chega sem processador seguro.
+  Feito (fix/psm1b, 27/11/2026): a chave do lançamento passa pelo SceNpDrm como no appmgr 3.74 (ksceNpDrmGetRifInfo
+  com checagem de assinatura e depois ksceNpDrmGetRifVitaKey, pelas entradas quando um plugin de kernel as hookou), então
+  um plugin de licenças carregado no boot dá a chave como num Vita; o log diz o tipo da licença (ex.: "free licence").
+  Testes: `KernelPluginBootOrderTests` (TheLaunchTakesTheTitleKeyThroughHookedNpDrmEntries e vizinhos). O NoPsmDrm só
+  trata licenças PSM (scePsmDrmGetRifKey), não a do runtime Unity; num Vita a licença free (genuína, a 6488b73b...rif)
+  é decifrada pelo processador seguro, e o guia do NoPsmDrm pede também o NoNpDrm para títulos Unity. Para testar: pôr
+  `nonpdrm.skprx` (e o `nopsmdrm.skprx`) no `*KERNEL` do `kernel_plugins/config.txt`, ligar "Ativar Plugins do Kernel"
+  e usar em ux0:license/app/NPOA00239 a licença falsa que o NoNpDrm gera num Vita real (ux0:nonpdrm/license/app/
+  NPOA00239/6488b73b...rif, chave em claro); com a licença genuína o lançamento continua em 0x80020004 (sem F00D).
 - [ ] [P1][G] Adrenaline (PSPEMUCFW) fecha logo ao abrir (relato do usuário, 21/11/2026; log `20261121_233018_PSPEMUCFW.log`):
   feito (adr1 565d5f71): a biblioteca `taihenUnsafe` do framework de plugins (taiLoadStartKernelModuleForUser e as
   outras chamadas de carga/descarga de módulo e de cópia user/kernel), e o ksceSblACMgrIsShell do ForDriver pelo bit 1

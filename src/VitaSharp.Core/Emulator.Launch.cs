@@ -176,10 +176,10 @@ public sealed partial class Emulator
 
         string? activationFile = Vfs.Resolve("tm0:npdrm/act.dat");
         byte[] activation = activationFile != null && File.Exists(activationFile) ? File.ReadAllBytes(activationFile) : [];
-        int error = LicenseTitleKey.Get(license, activation, SecureProcessorRifKey, out byte[]? key);
+        int error = TitleKeyThroughNpDrm(license, activation, out byte[]? key);
         if (error != 0 || key == null)
         {
-            LogApp0MountFailure(2, error, $"app0 is a PFS image; the title key of its licence {LogPath(licenseFile)} is not available");
+            LogApp0MountFailure(2, error, $"app0 is a PFS image; the title key of its licence {LogPath(licenseFile)} ({LicenceSummary(license)}) is not available");
             throw new TitleKeyException(TitleId, error);
         }
 
@@ -274,6 +274,120 @@ public sealed partial class Emulator
         }, "the launch's kscePfsMount");
         Memory.Free(block);
         return result;
+    }
+
+    /// <summary>SceNpDrmForDriver's ksceNpDrmGetRifInfo and ksceNpDrmGetRifVitaKey (fixed by the firmware's export table).</summary>
+    private const uint NpDrmGetRifInfoNid = 0xDB406EAE, NpDrmGetRifVitaKeyNid = 0x723322B5;
+
+    /// <summary>The licence information appmgr 3.74 fills at a launch: the content ID (+0, 0x30 bytes), the version
+    /// (+0x30), the kind (+0x34), the flags (+0x38), the SKU flag (+0x3C), the account ID (+0x40), flags2 (+0x48), the
+    /// start and expiration times (+0x50, +0x58) and the title key (+0x60, 0x10 bytes).</summary>
+    private const uint LaunchRifInfoSize = 0x70;
+
+    /// <summary>
+    /// The launch's title key query as appmgr 3.74 makes it (decompiled SceAppMgr, study only): the licence read into
+    /// kernel memory, ksceNpDrmGetRifInfo(licence, 0x200, check the signature, the information's outputs), then, when
+    /// it passed, ksceNpDrmGetRifVitaKey(licence, the key, the flags, the SKU flag, the start and expiration times),
+    /// both of SceNpDrmForDriver through their entries. When kernel code hooked either one (a kernel plugin loaded at
+    /// the boot that works on licences), the two calls run on a kernel thread so the hooks see them as on the Vita and
+    /// what they answer is the launch's answer; the functions not hooked are SceNpDrm's own (the HLE's GetRifInfo without
+    /// the signature, which is the secure processor's, and for the key <see cref="LicenseTitleKey"/>, the same checks
+    /// the console's module makes, so the answer without hooks does not change). Without a hook the key
+    /// comes from <see cref="LicenseTitleKey"/> directly, with nothing run. Returns 0 and the key, or the error.
+    /// </summary>
+    private int TitleKeyThroughNpDrm(byte[] license, byte[] activation, out byte[]? key)
+    {
+        key = null;
+        if (IsKernelProcess || Vita.KernelProcess is not { } kernel)
+        {
+            return LicenseTitleKey.Get(license, activation, SecureProcessorRifKey, out key);
+        }
+
+        FirmwareKernelModules firmware = kernel.FirmwareKernel;
+        uint library = SystemServicesVsh.NpDrmForDriverNid;
+        if (!firmware.IsPatched(library, NpDrmGetRifInfoNid) && !firmware.IsPatched(library, NpDrmGetRifVitaKeyNid))
+        {
+            return LicenseTitleKey.Get(license, activation, SecureProcessorRifKey, out key);
+        }
+
+        SystemServicesVsh npdrm = kernel.Hle.Modules.OfType<SystemServicesVsh>().First();
+        uint block;
+        using (ProcessScope.Enter(KernelSpace.KernelPid))
+        {
+            block = Memory.Alloc((uint)LicenseTitleKey.LicenseSize + LaunchRifInfoSize, "appmgr:licence key", MemoryRegion.Kernel, 16);
+        }
+
+        uint licence = block;
+        uint info = block + (uint)LicenseTitleKey.LicenseSize;
+        uint keyAddress = info + 0x60;
+        GuestMemory.Fill(block, 0, LicenseTitleKey.LicenseSize + (int)LaunchRifInfoSize);
+        license.AsSpan(0, LicenseTitleKey.LicenseSize).CopyTo(GuestMemory.Span(licence, LicenseTitleKey.LicenseSize));
+        int result = LicenseTitleKey.BadLicense;
+        // VSHLE010: the lambda is the original behind the GetRifInfo entry, which firmware.Call already routes through
+        // when a hook took it; it differs from the entry's arguments only in the signature check (see above)
+#pragma warning disable VSHLE010
+        RunOnKernelThread(kernel, "SceAppMgrLaunch", _ =>
+        {
+            int checkedInfo = (int)firmware.Call(library, NpDrmGetRifInfoNid,
+                // not hooked: the licence's fields and checks; its signature, the secure processor's, is not checked
+                // here, so a launch whose key is not hooked fails at the key, as without any hook
+                () => (uint)npdrm.ksceNpDrmGetRifInfo(licence, (uint)LicenseTitleKey.LicenseSize, 0, info, info + 0x40, info + 0x30, info + 0x34,
+                    info + 0x38, info + 0x3C, info + 0x50, info + 0x58, info + 0x48),
+                licence, (uint)LicenseTitleKey.LicenseSize, 1, info, info + 0x40, info + 0x30, info + 0x34, info + 0x38, info + 0x3C,
+                info + 0x50, info + 0x58, info + 0x48);
+            if (checkedInfo < 0)
+            {
+                result = checkedInfo;
+                return;
+            }
+
+            result = (int)firmware.Call(library, NpDrmGetRifVitaKeyNid, () => (uint)DirectRifVitaKey(license, activation, keyAddress),
+                licence, keyAddress, info + 0x38, info + 0x3C, info + 0x50, info + 0x58);
+        }, "the launch's licence key query");
+#pragma warning restore VSHLE010
+        if (result >= 0)
+        {
+            key = GuestMemory.ReadSpan(keyAddress, 0x10).ToArray();
+        }
+
+        Memory.Free(block);
+        return result >= 0 ? 0 : result;
+    }
+
+    /// <summary>SceNpDrm's ksceNpDrmGetRifVitaKey for the launch when kernel code did not hook it: the key buffer
+    /// zeroed, then <see cref="LicenseTitleKey"/>'s checks and key. Returns 0 or the error.</summary>
+    private int DirectRifVitaKey(byte[] license, byte[] activation, uint keyAddress)
+    {
+        GuestMemory.Fill(keyAddress, 0, 0x10);
+        int error = LicenseTitleKey.Get(license, activation, SecureProcessorRifKey, out byte[]? key);
+        if (error == 0 && key != null)
+        {
+            key.AsSpan(0, 0x10).CopyTo(GuestMemory.Span(keyAddress, 0x10));
+        }
+
+        return error;
+    }
+
+    /// <summary>What the log says of a licence whose key is not available: its flags and kind (low byte of the flags at
+    /// +6: 0 an account licence, 2 the activated account's, 0xD a free one) and whether it names an account (+8; the
+    /// account ID itself is not logged).</summary>
+    private static string LicenceSummary(byte[] license)
+    {
+        if (license.Length < LicenseTitleKey.LicenseSize)
+        {
+            return $"{license.Length} bytes, shorter than a licence";
+        }
+
+        ushort flags = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(license.AsSpan(6));
+        bool hasAccount = System.Buffers.Binary.BinaryPrimitives.ReadUInt64BigEndian(license.AsSpan(8)) != 0;
+        string kind = (byte)flags switch
+        {
+            0 => "account licence",
+            2 => "activated account's licence",
+            0xD => "free licence",
+            _ => "unknown kind",
+        };
+        return $"flags 0x{flags:X4}, {kind}, {(hasAccount ? "with" : "without")} an account; its key is the secure processor's";
     }
 
     /// <summary>The log line of a launch whose app0 mount failed: which step of the launch, and its error.</summary>
