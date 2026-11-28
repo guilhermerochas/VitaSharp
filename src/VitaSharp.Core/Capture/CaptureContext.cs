@@ -82,7 +82,68 @@ public static class CaptureContext
             sb.AppendLine(l);
         }
 
+        foreach (string l in MemBlockLines(emu))
+        {
+            sb.AppendLine(l);
+        }
+
         return sb.ToString();
+    }
+
+    /// <summary>The most memory block lines context.txt holds (a game has a few dozen blocks).</summary>
+    private const int MaxMemBlockLines = 400;
+
+    /// <summary>
+    /// One line per memory block of every process (sysmem's blocks, user and kernel): its name, address, size and type,
+    /// the block it mirrors (the same memory at another address) and whether its pages are mapped (ksceKernelUnmapMemBlock,
+    /// a mirror whose source went, a block never mapped), so a capture shows a window like SceCompat's (cached, uncached
+    /// and kernel views, the unmapped hole) without the log.
+    /// </summary>
+    public static List<string> MemBlockLines(Emulator emu)
+    {
+        var lines = new List<string>();
+        var seen = new HashSet<int>();
+        var blocks = new List<Hle.Modules.MemBlock>();
+        foreach (Emulator process in emu.Vita.Processes)
+        {
+            foreach (Hle.Modules.MemBlock block in process.Kernel.Objects.All<Hle.Modules.MemBlock>())
+            {
+                if (seen.Add(block.Uid))
+                {
+                    blocks.Add(block);
+                }
+            }
+        }
+
+        blocks.Sort((a, b) => a.Address.CompareTo(b.Address));
+        var byUid = new Dictionary<int, Hle.Modules.MemBlock>();
+        foreach (Hle.Modules.MemBlock block in blocks)
+        {
+            byUid[block.Uid] = block;
+        }
+
+        foreach (Hle.Modules.MemBlock block in blocks)
+        {
+            if (lines.Count == MaxMemBlockLines)
+            {
+                lines.Add($"memblock: ... {blocks.Count - MaxMemBlockLines} more");
+                break;
+            }
+
+            string mirror = "";
+            if (block.MirrorOf != 0)
+            {
+                mirror = byUid.TryGetValue(block.MirrorOf, out Hle.Modules.MemBlock? source)
+                    ? $" mirror of '{source.Name}' (uid 0x{source.Uid:X}, 0x{source.Address:X8})"
+                    : $" mirror of uid 0x{block.MirrorOf:X} (gone)";
+            }
+
+            string mapped = block.IsUnmapped ? "never mapped" : block.MappingRemoved ? "unmapped" : "mapped";
+            lines.Add(string.Create(CultureInfo.InvariantCulture,
+                $"memblock: '{block.Name}' uid 0x{block.Uid:X} pid 0x{block.OwnerPid:X} 0x{block.Address:X8} size 0x{block.Size:X} type 0x{block.Type:X8}{mirror} {mapped}"));
+        }
+
+        return lines;
     }
 
     /// <summary>One line per audio port (open, or released while the capture ran), the BGM port and the decoders.</summary>

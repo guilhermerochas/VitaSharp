@@ -238,7 +238,7 @@ public sealed partial class SysmemKernel
         GuestMemory.W32(info + 0x28, 0xFFFFFFFF);
         GuestMemory.W32(info + 0x30, 1);
         GuestMemory.W32(info + 0x34, 1);
-        GuestMemory.W32(info + 0x38, block.Address);
+        GuestMemory.W32(info + 0x38, PhysicalOf(block, block.Address));
         GuestMemory.W32(info + 0x78, block.Size);
         return 0;
     }
@@ -276,7 +276,7 @@ public sealed partial class SysmemKernel
             return SceError.INVALID_UID;
         }
 
-        GuestMemory.W32(physicalRange, block.Address);
+        GuestMemory.W32(physicalRange, PhysicalOf(block, block.Address));
         GuestMemory.W32(physicalRange + 4, block.Size);
         return 0;
     }
@@ -316,7 +316,7 @@ public sealed partial class SysmemKernel
 
         if (capacity != 0)
         {
-            GuestMemory.W32(pairs, block.Address);
+            GuestMemory.W32(pairs, PhysicalOf(block, block.Address));
             GuestMemory.W32(pairs + 4, block.Size);
         }
 
@@ -491,9 +491,16 @@ public sealed partial class SysmemKernel
         return (flag & ~1u) == 0 ? ksceKernelMapBlockUserVisibleThroughEntry(uid) : SceError.INVALID_ARGUMENT;
     }
 
-    /// <summary>ksceKernelUnmapMemBlock (0xFFCD9B60)(uid): the block is no longer reachable from user code.</summary>
+    /// <summary>
+    /// ksceKernelUnmapMemBlock (0xFFCD9B60)(uid): the block's pages are unmapped from its address space while the block
+    /// stays allocated (FW 3.74: the address space's unmap of the block under its lock; the object, its base and its
+    /// physical memory remain until ksceKernelFreeMemBlock). An access to them is a data abort from then on, the
+    /// translation entries no longer translate them, and a mirror of the same memory keeps its own mapping (SceCompat
+    /// unmaps the middle 16 MB of its cached and uncached views, the hole of its window, and keeps the "SceCompatCdram"
+    /// one). Unmapping again is 0.
+    /// </summary>
     [Hle(Nid = 0xFFCD9B60, Library = "SceSysmemForDriver")]
-    int ksceKernelUnmapMemBlock(int uid)
+    internal int ksceKernelUnmapMemBlock(int uid)
     {
         if (K.Objects.Get<MemBlock>(uid) is not { } block)
         {
@@ -503,6 +510,12 @@ public sealed partial class SysmemKernel
         lock (_userVisibleBlocks)
         {
             _userVisibleBlocks.Remove(block.Address);
+        }
+
+        if (!block.IsUnmapped && !block.MappingRemoved)
+        {
+            block.MappingRemoved = true;
+            Mem.UnmapPages(block.Address, block.Size);
         }
 
         return 0;

@@ -15,7 +15,7 @@ namespace VitaSharp.Core.Hle.Modules;
 public sealed partial class SysmemKernel : HleModule
 {
     /// <summary>SceKernelAllocMemBlockKernelOpt attr bits (psp2kern/kernel/sysmem.h).</summary>
-    const uint AttrHasVbase = 0x1, AttrHasAlignment = 0x4, AttrHasPid = 0x80;
+    const uint AttrHasVbase = 0x1, AttrHasAlignment = 0x4, AttrHasMirror = 0x40, AttrHasPid = 0x80;
 
     /// <summary>The SceClass magic word (ksceUIDClassInitClass writes it; ksceGUIDKernelCreateWithOpt checks it).</summary>
     const uint ClassMagic = 0xABCE9DA5;
@@ -86,11 +86,14 @@ public sealed partial class SysmemKernel : HleModule
     /// ksceKernelAllocMemBlock(name, type, size, SceKernelAllocMemBlockKernelOpt *opt): a memory block of any type.
     /// Kernel types (only kernel permission bits in the low byte) are kernel memory, in the kernel region every
     /// address space maps; user types are memory of the calling process, or of opt->pid with HAS_PID. opt (0x58 bytes on
-    /// FW 3.60): +8 attr, +0xC the virtual base with HAS_VBASE, +0x14 alignment with HAS_ALIGNMENT, +0x24 pid with
-    /// HAS_PID. The block belongs to the kernel until a process opens it with kscePUIDOpenByGUID.
+    /// FW 3.60): +8 attr, +0xC the virtual base with HAS_VBASE, +0x14 alignment with HAS_ALIGNMENT, +0x20 the mirror
+    /// source block with HAS_MIRROR_BLOCKID (0x40), +0x24 pid with HAS_PID. The block belongs to the kernel until a process
+    /// opens it with kscePUIDOpenByGUID. A mirror is the source's physical memory at an address of its own (FW 3.74:
+    /// SceCompat maps its CDRAM as "SceCompatUncached" and "SceCompatCdram" this way; see
+    /// <see cref="AllocMirrorBlock"/>).
     /// </summary>
     [Hle]
-    int ksceKernelAllocMemBlock(uint namePtr, uint type, uint size, uint opt)
+    internal int ksceKernelAllocMemBlock(uint namePtr, uint type, uint size, uint opt)
     {
         if (namePtr == 0)
         {
@@ -104,7 +107,7 @@ public sealed partial class SysmemKernel : HleModule
 
         string name = GuestMemory.ReadCString(namePtr, 32);
         uint attr = 0, vbase = 0, align = GuestMemory.PageSize;
-        int pid = 0;
+        int pid = 0, mirrorOf = 0;
         if (opt != 0)
         {
             uint optSize = GuestMemory.R32(opt);
@@ -123,6 +126,11 @@ public sealed partial class SysmemKernel : HleModule
             {
                 pid = (int)GuestMemory.R32(opt + 0x24);
             }
+
+            if ((attr & AttrHasMirror) != 0 && optSize >= 0x24)
+            {
+                mirrorOf = (int)GuestMemory.R32(opt + 0x20);
+            }
         }
 
         if ((vbase & 0xFFF) != 0 || (align & (align - 1)) != 0)
@@ -137,6 +145,11 @@ public sealed partial class SysmemKernel : HleModule
         if (target == null)
         {
             return SceError.INVALID_PID;
+        }
+
+        if ((attr & AttrHasMirror) != 0)
+        {
+            return AllocMirrorBlock(name, type, pages, align, mirrorOf);
         }
 
         uint addr;
@@ -178,7 +191,7 @@ public sealed partial class SysmemKernel : HleModule
 
     /// <summary>ksceKernelFreeMemBlock(uid): the block's memory goes back (in its owner's address space).</summary>
     [Hle]
-    int ksceKernelFreeMemBlock(int uid)
+    internal int ksceKernelFreeMemBlock(int uid)
     {
         if (K.Objects.Get<MemBlock>(uid) is not { } b)
         {
@@ -191,13 +204,67 @@ public sealed partial class SysmemKernel : HleModule
             _userVisibleBlocks.Remove(b.Address);
         }
 
+        // the firmware unmaps every mirror of a block that goes ("Force sceKernelUnmapMemBlock"); their blocks stay
+        foreach (MemBlock mirror in K.Objects.All<MemBlock>())
+        {
+            if (mirror.MirrorOf == uid)
+            {
+                mirror.MappingRemoved = true;
+            }
+        }
+
         K.Objects.Remove(uid);
         return 0;
     }
 
+    /// <summary>
+    /// A mirror block of <paramref name="sourceUid"/>: <paramref name="pages"/> bytes of the source's physical memory
+    /// (from its start) at a new address of its own, with <paramref name="type"/> (its cache attributes, its access) and
+    /// at least <paramref name="align"/>. A store through either address is seen at the other. The source must exist
+    /// (0x800200CB otherwise), be mapped and hold the size (0x80020005 otherwise). The mirror lives in the alias window
+    /// every address space maps (<see cref="GuestMemory.AllocMirror"/>); a source in a process's private memory, or a
+    /// host without a second view of memory, has none to give (no memory).
+    /// </summary>
+    int AllocMirrorBlock(string name, uint type, uint pages, uint align, int sourceUid)
+    {
+        if (K.Objects.Get<MemBlock>(sourceUid) is not { } source)
+        {
+            return SceError.INVALID_UID;
+        }
+
+        if (source.IsUnmapped || source.MappingRemoved || pages > source.Size)
+        {
+            return SceError.INVALID_ARGUMENT;
+        }
+
+        uint addr = Mem.AllocMirror(source.Address, pages, $"kmemblock:{name}", align, kernel: (type & 0xF0) == 0);
+        if (addr == 0)
+        {
+            Log.Warn($"ksceKernelAllocMemBlock({name}, 0x{type:X}, 0x{pages:X}): no mirror of {source.Name} at 0x{source.Address:X8} (not CDRAM or kernel memory, or the host maps no second view)");
+            return SceError.NO_MEMORY;
+        }
+
+        using (ProcessScope.Enter(KernelSpace.KernelPid))
+        {
+            return K.Objects.Register(new MemBlock { Name = name, Address = addr, Size = pages, Type = type, MirrorOf = sourceUid });
+        }
+    }
+
+    /// <summary>The physical address behind <paramref name="address"/> of <paramref name="block"/>: a mirror's is its
+    /// source's memory, any other block's is its own address (the guest address space is the physical one).</summary>
+    internal uint PhysicalOf(MemBlock block, uint address)
+    {
+        if (block.MirrorOf != 0 && Mem.MirrorSourceOf(block.Address) is var source and not 0)
+        {
+            return source + (address - block.Address);
+        }
+
+        return address;
+    }
+
     /// <summary>ksceKernelGetMemBlockBase(uid, void **base).</summary>
     [Hle]
-    int ksceKernelGetMemBlockBase(int uid, uint basePtr)
+    internal int ksceKernelGetMemBlockBase(int uid, uint basePtr)
     {
         if (basePtr == 0)
         {
