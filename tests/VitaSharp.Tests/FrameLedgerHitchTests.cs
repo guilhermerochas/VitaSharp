@@ -106,6 +106,38 @@ public sealed class FrameLedgerHitchTests
         string? line = FrameLedger.HitchLine(7, 300, totals, last, 0, 96, 4);
 
         Assert.NotNull(line);
-        Assert.Contains("(96 levels read from the ASTC disk cache on the GPU thread, 4 from its read-ahead)", line);
+        Assert.Contains("96 levels read from the ASTC disk cache on the GPU thread, 4 from its read-ahead", line);
+    }
+
+    /// <summary>A texture-load hitch says where its texUpload time went: ASTC encodes on the GPU thread, the disk
+    /// cache's file reads there, the levels handed to the background writer (with the writer's own time, not the GPU
+    /// thread's), and the rest (decode, staging copy). God of War Collection's 12.8 s texUpload had only the level
+    /// counts, which could not tell the file writes on the GPU thread from the encodes.</summary>
+    [Fact]
+    public void TextureUploadsAreSplitByStage()
+    {
+        long[] last = new long[(int)FrameLedger.Cat.Count];
+        long[] totals = new long[(int)FrameLedger.Cat.Count];
+        totals[(int)FrameLedger.Cat.TextureUpload] = Ms(500);
+        var tex = new FrameLedger.TexUploadDetail(EncodedLevels: 200, EncodeTicks: Ms(120), DiskIoTicks: Ms(30), WritesQueued: 200, WriteTicks: Ms(9000));
+
+        string? line = FrameLedger.HitchLine(6375, 520, totals, last, 0, 3, 137, tex);
+
+        Assert.NotNull(line);
+        Assert.Contains("texUpload 500 ms (ASTC encode 120 ms for 200 levels, ASTC disk cache file reads 30 ms on the GPU thread, "
+            + "3 levels read from the ASTC disk cache on the GPU thread, 137 from its read-ahead, "
+            + "200 levels queued for the disk cache writer (its file writes 9000 ms, off the GPU thread), decode and staging copy 350 ms)", line);
+    }
+
+    [Fact]
+    public void AnUploadWithoutTranscodingHasNoStageSplit()
+    {
+        long[] last = new long[(int)FrameLedger.Cat.Count];
+        long[] totals = new long[(int)FrameLedger.Cat.Count];
+        totals[(int)FrameLedger.Cat.TextureUpload] = Ms(150);
+
+        string? line = FrameLedger.HitchLine(4, 160, totals, last, 0);
+
+        Assert.Equal("[hitch] present 4: 160 ms since the previous one; texUpload 150 ms", line);
     }
 }

@@ -20,6 +20,14 @@ public sealed class TranscodeDiskCachePreloadTests : IDisposable
         }
     }
 
+    /// <summary>A previous session's entry: written by its cache's writer thread before the next cache opens.</summary>
+    private void PutAndFlush(ulong key, ulong tag, byte[] payload)
+    {
+        var writer = new TranscodeDiskCache(_dir, 1 << 20);
+        writer.Put(key, tag, payload);
+        Assert.True(writer.Flush(TimeSpan.FromSeconds(30)));
+    }
+
     private static byte[] Payload(byte seed, int length)
     {
         byte[] b = new byte[length];
@@ -35,7 +43,7 @@ public sealed class TranscodeDiskCachePreloadTests : IDisposable
     public void AReadAheadEntryIsServedWithoutTheFile()
     {
         Directory.CreateDirectory(_dir);
-        new TranscodeDiskCache(_dir, 1 << 20).Put(0x1234, 0x77, Payload(3, 256));
+        PutAndFlush(0x1234, 0x77, Payload(3, 256));
         var cache = new TranscodeDiskCache(_dir, 1 << 20);
         cache.StartPreload(1 << 20);
         Assert.True(cache.PreloadDone.Wait(10_000));
@@ -53,7 +61,7 @@ public sealed class TranscodeDiskCachePreloadTests : IDisposable
     {
         // the in-memory transcode cache in front drops levels; asked again, the level must not cost a file read
         Directory.CreateDirectory(_dir);
-        new TranscodeDiskCache(_dir, 1 << 20).Put(0x42, 0x7, Payload(5, 96));
+        PutAndFlush(0x42, 0x7, Payload(5, 96));
         var cache = new TranscodeDiskCache(_dir, 1 << 20);
         cache.StartPreload(1 << 20);
         Assert.True(cache.PreloadDone.Wait(10_000));
@@ -68,7 +76,7 @@ public sealed class TranscodeDiskCachePreloadTests : IDisposable
     public void AReadAheadEntryKeepsTheTagAndLengthChecks()
     {
         Directory.CreateDirectory(_dir);
-        new TranscodeDiskCache(_dir, 1 << 20).Put(0x55, 0x10, Payload(9, 64));
+        PutAndFlush(0x55, 0x10, Payload(9, 64));
         var cache = new TranscodeDiskCache(_dir, 1 << 20);
         cache.StartPreload(1 << 20);
         Assert.True(cache.PreloadDone.Wait(10_000));
@@ -94,6 +102,8 @@ public sealed class TranscodeDiskCachePreloadTests : IDisposable
             writer.Put(k, 0x5, Payload((byte)k, 128));
         }
 
+        Assert.True(writer.Flush(TimeSpan.FromSeconds(30)));
+
         var cache = new TranscodeDiskCache(_dir, 1 << 20);
         cache.StartPreload(1 << 20);
         Assert.True(cache.PreloadDone.Wait(10_000));
@@ -111,7 +121,7 @@ public sealed class TranscodeDiskCachePreloadTests : IDisposable
         // the read-ahead lives in native memory and is copied straight into the caller's buffer: 110 MB of managed
         // arrays plus one array per hit made a collection during Killzone's first aim cost 810 ms
         Directory.CreateDirectory(_dir);
-        new TranscodeDiskCache(_dir, 1 << 20).Put(0x77, 0x3, Payload(2, 4096));
+        PutAndFlush(0x77, 0x3, Payload(2, 4096));
         var cache = new TranscodeDiskCache(_dir, 1 << 20);
         cache.StartPreload(1 << 20);
         Assert.True(cache.PreloadDone.Wait(10_000));
@@ -131,7 +141,7 @@ public sealed class TranscodeDiskCachePreloadTests : IDisposable
     public void ReleasedReadAheadEntriesAreGone()
     {
         Directory.CreateDirectory(_dir);
-        new TranscodeDiskCache(_dir, 1 << 20).Put(0x31, 0x2, Payload(4, 64));
+        PutAndFlush(0x31, 0x2, Payload(4, 64));
         var cache = new TranscodeDiskCache(_dir, 1 << 20);
         cache.StartPreload(1 << 20);
         Assert.True(cache.PreloadDone.Wait(10_000));
@@ -146,7 +156,7 @@ public sealed class TranscodeDiskCachePreloadTests : IDisposable
     public void NothingIsReadAheadWithoutABudget()
     {
         Directory.CreateDirectory(_dir);
-        new TranscodeDiskCache(_dir, 1 << 20).Put(0x99, 0x1, Payload(1, 32));
+        PutAndFlush(0x99, 0x1, Payload(1, 32));
         var cache = new TranscodeDiskCache(_dir, 1 << 20);
         cache.StartPreload(0);
         Assert.True(cache.PreloadDone.Wait(10_000));

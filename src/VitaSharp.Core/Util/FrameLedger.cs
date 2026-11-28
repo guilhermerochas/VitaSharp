@@ -92,7 +92,23 @@ public static class FrameLedger
     /// <summary>Texture levels served by the ASTC disk cache from a file read on the caller's (GPU) thread, and from
     /// the title-start read-ahead (TranscodeDiskCache): the [hitch] line counts them next to the texture uploads.</summary>
     public static long AstcDiskFileReads, AstcDiskReadAheadHits;
+    /// <summary>Where a texture upload's time goes (the [hitch] line splits texUpload by them): ASTC encodes run by
+    /// the caller (levels and ticks, including its wait for the transcoder threads), the ASTC disk cache's file
+    /// lookups on the caller's thread, and the levels handed to the cache's background writer (with the writer's own
+    /// file time, which is not the GPU thread's).</summary>
+    public static long AstcEncodedLevels, AstcEncodeTicks, AstcDiskIoTicks, AstcDiskWritesQueued, AstcDiskWriteTicks;
     private static long s_hitchDiskFile, s_hitchDiskAhead;
+    private static TexUploadDetail s_hitchTex;
+
+    /// <summary>The texture-upload counters at one point (<see cref="AstcEncodedLevels"/> and the others).</summary>
+    internal readonly record struct TexUploadDetail(long EncodedLevels, long EncodeTicks, long DiskIoTicks, long WritesQueued, long WriteTicks)
+    {
+        public static TexUploadDetail Now() => new(Interlocked.Read(ref AstcEncodedLevels), Interlocked.Read(ref AstcEncodeTicks),
+            Interlocked.Read(ref AstcDiskIoTicks), Interlocked.Read(ref AstcDiskWritesQueued), Interlocked.Read(ref AstcDiskWriteTicks));
+
+        public TexUploadDetail Since(TexUploadDetail earlier) => new(EncodedLevels - earlier.EncodedLevels, EncodeTicks - earlier.EncodeTicks,
+            DiskIoTicks - earlier.DiskIoTicks, WritesQueued - earlier.WritesQueued, WriteTicks - earlier.WriteTicks);
+    }
     private static int s_hitchLogged;
 
     /// <summary>
@@ -122,7 +138,8 @@ public static class FrameLedger
         s_totals[(int)Cat.PacingSleep] = Cpu.CpuCore.SleepStats[0].Actual + Cpu.CpuCore.SleepStats[1].Actual;
         int gcs = GC.CollectionCount(0) - (int)s_hitchGcCount;
         string? line = HitchLine(frame, ms, s_totals, s_hitchLast, gcs,
-            (int)(Interlocked.Read(ref AstcDiskFileReads) - s_hitchDiskFile), (int)(Interlocked.Read(ref AstcDiskReadAheadHits) - s_hitchDiskAhead));
+            (int)(Interlocked.Read(ref AstcDiskFileReads) - s_hitchDiskFile), (int)(Interlocked.Read(ref AstcDiskReadAheadHits) - s_hitchDiskAhead),
+            TexUploadDetail.Now().Since(s_hitchTex));
         SnapshotHitch();
         // a long run of them (a load) is summarised by the periodic report: the first 200 only
         if (line != null && Interlocked.Increment(ref s_hitchLogged) <= 200)
@@ -143,11 +160,13 @@ public static class FrameLedger
         s_hitchGcCount = GC.CollectionCount(0);
         s_hitchDiskFile = Interlocked.Read(ref AstcDiskFileReads);
         s_hitchDiskAhead = Interlocked.Read(ref AstcDiskReadAheadHits);
+        s_hitchTex = TexUploadDetail.Now();
     }
 
     /// <summary>The <c>[hitch]</c> line: the interval, then each cause that took at least 1 ms of it, largest first.
     /// Pure, unit-tested (FrameLedgerHitchTests).</summary>
-    internal static string? HitchLine(long frame, double intervalMs, ReadOnlySpan<long> totals, ReadOnlySpan<long> last, int gcs, int diskFileReads = 0, int diskReadAhead = 0)
+    internal static string? HitchLine(long frame, double intervalMs, ReadOnlySpan<long> totals, ReadOnlySpan<long> last, int gcs, int diskFileReads = 0, int diskReadAhead = 0,
+        TexUploadDetail tex = default)
     {
         if (totals.Length < (int)Cat.Count || last.Length < (int)Cat.Count)
         {
@@ -189,9 +208,9 @@ public static class FrameLedger
                 sb.Append(System.Globalization.CultureInfo.InvariantCulture, $" ({gcs} collections)");
             }
 
-            if (best == (int)Cat.TextureUpload && diskFileReads + diskReadAhead > 0)
+            if (best == (int)Cat.TextureUpload)
             {
-                sb.Append(System.Globalization.CultureInfo.InvariantCulture, $" ({diskFileReads} levels read from the ASTC disk cache on the GPU thread, {diskReadAhead} from its read-ahead)");
+                AppendTexUploadDetail(sb, ms[best], diskFileReads, diskReadAhead, tex);
             }
 
             sb.Append(',');
@@ -207,6 +226,29 @@ public static class FrameLedger
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>texUpload split by stage: ASTC encodes (and waits for the transcoder threads) on the uploading thread,
+    /// the ASTC disk cache's file lookups there, the levels read from the disk cache and its read-ahead, the levels
+    /// queued for the background writer (with the writer's own file time), and the rest (decode, staging copy).</summary>
+    private static void AppendTexUploadDetail(System.Text.StringBuilder sb, double uploadMs, int diskFileReads, int diskReadAhead, TexUploadDetail tex)
+    {
+        double encodeMs = tex.EncodeTicks * 1000.0 / Stopwatch.Frequency;
+        double diskMs = tex.DiskIoTicks * 1000.0 / Stopwatch.Frequency;
+        if (diskFileReads + diskReadAhead == 0 && tex.EncodedLevels == 0 && tex.WritesQueued == 0 && encodeMs < 1 && diskMs < 1)
+        {
+            return;
+        }
+
+        System.Globalization.CultureInfo inv = System.Globalization.CultureInfo.InvariantCulture;
+        sb.Append(inv, $" (ASTC encode {encodeMs:F0} ms for {tex.EncodedLevels} levels, ASTC disk cache file reads {diskMs:F0} ms on the GPU thread");
+        sb.Append(inv, $", {diskFileReads} levels read from the ASTC disk cache on the GPU thread, {diskReadAhead} from its read-ahead");
+        if (tex.WritesQueued > 0)
+        {
+            sb.Append(inv, $", {tex.WritesQueued} levels queued for the disk cache writer (its file writes {tex.WriteTicks * 1000.0 / Stopwatch.Frequency:F0} ms, off the GPU thread)");
+        }
+
+        sb.Append(inv, $", decode and staging copy {Math.Max(uploadMs - encodeMs - diskMs, 0):F0} ms)");
     }
 
     /// <summary>Called at each present (guest thread): stores the per-cause deltas of the frame that just ended.</summary>
