@@ -378,6 +378,39 @@ public sealed unsafe partial class GuestMemory : IDisposable
         return Encoding.UTF8.GetString(p, n);
     }
 
+    /// <summary>Whether the guest C string at <paramref name="addr"/> is <paramref name="value"/>: the result of
+    /// <c>ReadCString(addr) == value</c> without the managed copy (ASCII compared in place, anything else decoded).</summary>
+    public static bool CStringEquals(uint addr, string value)
+    {
+        const int max = 4096;
+        if (addr == 0)
+        {
+            return value.Length == 0;
+        }
+
+        if (value.Length >= max)
+        {
+            return ReadCString(addr, max) == value;
+        }
+
+        byte* p = Base + addr;
+        for (int i = 0; i < value.Length; i++)
+        {
+            char c = value[i];
+            if (c == 0 || c >= 0x80)
+            {
+                return ReadCString(addr, max) == value;
+            }
+
+            if (p[i] != c)
+            {
+                return false;
+            }
+        }
+
+        return p[value.Length] == 0;
+    }
+
     public static void WriteCString(uint addr, string s, int max = int.MaxValue)
     {
         int len = Encoding.UTF8.GetByteCount(s);
