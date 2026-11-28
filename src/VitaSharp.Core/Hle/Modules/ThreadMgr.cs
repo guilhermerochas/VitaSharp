@@ -66,7 +66,8 @@ public sealed partial class ThreadMgr : HleModule
         int r;
         lock (t.WaitLock)
         {
-            r = Kernel.Wait.Until(t.WaitLock, () => t.Status == ThreadStatus.Dormant, timeout, null, $"thread end {t.Name}");
+            // static predicate and a cached description: a closure, its delegate and the string per call before
+            r = Kernel.Wait.Until(t.WaitLock, t, static thread => thread.Status == ThreadStatus.Dormant, timeout, null, t.EndWaitDescription);
         }
         if (r == SceError.OK) stat.TrySet(t.ExitStatus);
         return r == SceError.OK ? t.ExitStatus : r;

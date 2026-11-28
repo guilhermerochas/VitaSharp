@@ -2785,12 +2785,27 @@ public sealed partial class Gxm : HleModule
         return index < ps.Count ? program + ps[(int)index].Offset : 0;
     }
 
+    /// <summary>The parameter named by the guest string at <paramref name="name"/>, compared in guest memory: games look
+    /// their uniforms up by name every frame, and the managed copy of each name was the largest allocation of Dead
+    /// Space's gameplay on the phone (15-36 KB per frame).</summary>
     [Hle]
-    uint sceGxmProgramFindParameterByName(uint program, string name)
+    internal uint sceGxmProgramFindParameterByName(uint program, uint name)
     {
-        if (program == 0) return 0;
-        foreach (var p in GxmProgramInfo.Get(program).Program.Parameters)
-            if (p.RawName == name) return program + p.Offset;
+        if (program == 0)
+        {
+            return 0;
+        }
+
+        IReadOnlyList<GxpParameter> parameters = GxmProgramInfo.Get(program).Program.Parameters;
+        for (int i = 0; i < parameters.Count; i++)
+        {
+            GxpParameter parameter = parameters[i];
+            if (GuestMemory.CStringEquals(name, parameter.RawName))
+            {
+                return program + parameter.Offset;
+            }
+        }
+
         return 0;
     }
 
@@ -2800,11 +2815,24 @@ public sealed partial class Gxm : HleModule
     // functions (Vita3K forwards them unchanged); Ninja Gaiden Sigma Plus and Gravity Rush import those.
     [Hle]
     [Hle(Nid = 0x7FFFDD7A, Library = "SceGxm")]
-    uint sceGxmProgramFindParameterBySemantic(uint program, uint semantic, uint index)
+    internal uint sceGxmProgramFindParameterBySemantic(uint program, uint semantic, uint index)
     {
-        if (program == 0 || semantic == 0) return 0;
-        foreach (var p in GxmProgramInfo.Get(program).Program.Parameters)
-            if (p.Category == ParamCategory.Attribute && p.Semantic == semantic && (p.SemanticIndex & 0xF) == index) return program + p.Offset;
+        if (program == 0 || semantic == 0)
+        {
+            return 0;
+        }
+
+        // indexed, not foreach: the list's enumerator through IReadOnlyList is a boxed allocation per call
+        IReadOnlyList<GxpParameter> parameters = GxmProgramInfo.Get(program).Program.Parameters;
+        for (int i = 0; i < parameters.Count; i++)
+        {
+            GxpParameter parameter = parameters[i];
+            if (parameter.Category == ParamCategory.Attribute && parameter.Semantic == semantic && (parameter.SemanticIndex & 0xF) == index)
+            {
+                return program + parameter.Offset;
+            }
+        }
+
         return 0;
     }
 

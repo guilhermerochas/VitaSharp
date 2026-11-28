@@ -83,6 +83,27 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     public int ExitStatus { get; private set; }
     public int WakeupCount;
     public readonly object WaitLock = new();
+    private string? _endWaitName, _endWaitDescription;
+
+    /// <summary>"thread end NAME": what a thread waiting for this one's end (sceKernelWaitThreadEnd) waits on, built once
+    /// per name: the interpolated string was an allocation on every call.</summary>
+    internal string EndWaitDescription
+    {
+        get
+        {
+            string name = Name;
+            string? description = _endWaitDescription;
+            if (description == null || !ReferenceEquals(_endWaitName, name))
+            {
+                description = $"thread end {name}";
+                _endWaitDescription = description;
+                _endWaitName = name;
+            }
+
+            return description;
+        }
+    }
+
     /// <summary>Thread signal (sceKernelSendSignal / sceKernelWaitSignal): one pending flag guarded by SignalLock.</summary>
     public bool SignalPending;
     public readonly object SignalLock = new();
