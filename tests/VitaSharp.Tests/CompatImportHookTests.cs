@@ -23,6 +23,9 @@ public sealed class CompatImportHookTests : IDisposable
 {
     private const uint AimgrForDriver = 0xFD00C69A, IsDex = 0xF4B98F66;
     private const uint GrabForDriver = 0x81C54BED, SetMemoryBankAddress = 0xE9C25A28;
+    private const uint SysmemForDriver = 0x6F25E18A, AllocMemBlock = 0xC94850C9, FreeMemBlock = 0x009E1C61, UnmapMemBlock = 0xFFCD9B60,
+        GetMemBlockBase = 0xA841EDDA;
+    private const int Exists = unchecked((int)0x80010078);
     private const uint Compat374ModuleNid = 0x0ED0A986, SecureHandshakeOffset = 0x2AE8;
     private const uint ThumbLdrPc = 0xF000F8DF; // ldr.w pc, [pc, #0]
     private const uint LdrPcMinus4 = 0xE51FF004;
@@ -35,7 +38,8 @@ public sealed class CompatImportHookTests : IDisposable
         _harness = new HleHarness(fixture, "compatimport", kernelPlugins: true);
         SceModuleBuilder compat = new SceModuleBuilder("SceCompat").ModuleNid(Compat374ModuleNid).SegmentSizes(0x5000, 0x1000).Start(0)
             .Import("SceSblAIMgrForDriver", AimgrForDriver, IsDex)
-            .Import("SceGrabForDriver", GrabForDriver, SetMemoryBankAddress);
+            .Import("SceGrabForDriver", GrabForDriver, SetMemoryBankAddress)
+            .Import("SceSysmemForDriver", SysmemForDriver, AllocMemBlock, FreeMemBlock, UnmapMemBlock, GetMemBlockBase);
         string kd = Path.Combine(_harness.Root, "os0", "kd");
         Directory.CreateDirectory(kd);
         File.WriteAllBytes(Path.Combine(kd, "compat.skprx"), compat.Build());
@@ -207,6 +211,157 @@ public sealed class CompatImportHookTests : IDisposable
 
             Assert.Equal(1, Call(Compat, "sceCompatGetStatus"));
             Assert.Null(Compat.Runner);
+        });
+    }
+
+    private int WindowBlocksNamed(string name) => _harness.Emu.Kernel.Objects.All<MemBlock>().Count(b => b.Name == name);
+
+    /// <summary>
+    /// The window as SceCompat 3.74 builds it (0x81001748): out[0] the cached CDRAM, out[1] its uncached mirror, one
+    /// memory at both addresses; the hole (+0x2000000..+0x3000000) unmapped in both views, the rest mapped; nine blocks,
+    /// of which InitEx frees the middle kernel view (0x810003f0).
+    /// </summary>
+    [Fact]
+    public void TheWindowIsOneMemoryAtTheCachedAndUncachedBasesWithAnUnmappedHole()
+    {
+        _harness.OnGuest(_ =>
+        {
+            _harness.Emu.IsSystemProgram = true;
+            uint bases = _harness.Alloc(8);
+            Assert.Equal(0, Call(Compat, "sceCompatAllocCdramWithHole", bases));
+            uint cached = GuestMemory.R32(bases), uncached = GuestMemory.R32(bases + 4);
+            Assert.Equal(Compat.Window, cached);
+            Assert.NotEqual(cached, uncached);
+            GuestMemory.W32(cached + 0x3D78000, 0x1234);
+            Assert.Equal(0x1234u, GuestMemory.R32(uncached + 0x3D78000));
+            GuestMemory.W32(uncached + 0x1FFFFFC, 0x5678);
+            Assert.Equal(0x5678u, GuestMemory.R32(cached + 0x1FFFFFC));
+            foreach (uint view in (ReadOnlySpan<uint>)[cached, uncached])
+            {
+                Assert.True(GuestMemory.IsPageMapped(view));
+                Assert.True(GuestMemory.IsPageMapped(view + 0x1FFF000));
+                Assert.False(GuestMemory.IsPageMapped(view + 0x2000000));
+                Assert.False(GuestMemory.IsPageMapped(view + 0x2FFF000));
+                Assert.True(GuestMemory.IsPageMapped(view + 0x3000000));
+                Assert.True(GuestMemory.IsPageMapped(view + 0x3FFF000));
+            }
+
+            Assert.Equal(3, WindowBlocksNamed("SceCompatCached"));
+            Assert.Equal(3, WindowBlocksNamed("SceCompatUncached"));
+            Assert.Equal(3, WindowBlocksNamed("SceCompatCdram"));
+            Assert.Equal(Exists, Call(Compat, "sceCompatAllocCdramWithHole", bases));
+        });
+    }
+
+    /// <summary>The cached blocks must follow each other (the third at the first + 0x3000000): with CDRAM laid out so
+    /// the middle one lands elsewhere the call fails with 0x80010078, out[1] is the third block's base and every block
+    /// is freed, as in the firmware.</summary>
+    [Fact]
+    public void ACachedWindowThatIsNotContiguousIsRefusedAndFreed()
+    {
+        GuestMemory memory = _harness.Emu.Memory;
+        var slots = new List<uint>();
+        try
+        {
+            // every free 16 MB slot of CDRAM taken, then one low slot and three adjacent higher ones given back: the
+            // 32 MB block takes two of the three, the next 16 MB one the low slot, the last the third
+            while (true)
+            {
+                slots.Add(memory.Alloc(0x1000000, "cdram filler", MemoryRegion.Cdram, 0x1000000));
+            }
+        }
+        catch (OutOfMemoryException)
+        {
+        }
+
+        slots.Sort();
+        int run = -1;
+        for (int i = 2; i + 2 < slots.Count; i++)
+        {
+            if (slots[i + 1] == slots[i] + 0x1000000 && slots[i + 2] == slots[i] + 0x2000000 && slots[i] > slots[0] + 0x1000000)
+            {
+                run = i;
+                break;
+            }
+        }
+
+        Assert.True(run > 0, $"CDRAM has no room for the layout ({slots.Count} slots)");
+        var freed = new List<uint> { slots[0], slots[run], slots[run + 1], slots[run + 2] };
+        foreach (uint slot in freed)
+        {
+            memory.Free(slot);
+        }
+
+        try
+        {
+            _harness.OnGuest(_ =>
+            {
+                _harness.Emu.IsSystemProgram = true;
+                uint bases = _harness.Alloc(8);
+                Assert.Equal(Exists, Call(Compat, "sceCompatAllocCdramWithHole", bases));
+                Assert.Equal(slots[run], GuestMemory.R32(bases));
+                Assert.Equal(slots[run + 2], GuestMemory.R32(bases + 4));
+                Assert.Equal(0, WindowBlocksNamed("SceCompatCached"));
+                Assert.Equal(0, WindowBlocksNamed("SceCompatUncached"));
+                Assert.Equal(0, WindowBlocksNamed("SceCompatCdram"));
+            });
+        }
+        finally
+        {
+            foreach (uint slot in slots)
+            {
+                if (!freed.Contains(slot))
+                {
+                    memory.Free(slot);
+                }
+            }
+        }
+    }
+
+    /// <summary>The window's sysmem calls go through SceCompat's own imports: a hook on ksceKernelUnmapMemBlock that
+    /// answers 0 without unmapping leaves the hole mapped (the whole 64 MB usable); a hook on ksceKernelAllocMemBlock
+    /// that answers a block id of 0 fails the window (no base: 0x80010078); a hook on ksceKernelFreeMemBlock keeps
+    /// InitEx's middle kernel view. Without the hooks the sysmem behaviour of the other tests.</summary>
+    [Theory]
+    [InlineData(UnmapMemBlock)]
+    [InlineData(AllocMemBlock)]
+    [InlineData(FreeMemBlock)]
+    public void ImportHooksOnTheWindowsSysmemCallsAnswer(uint hookedNid)
+    {
+        uint answerZero = LoadAnsweringModule(0);
+        _harness.OnGuest(_ =>
+        {
+            HookTheImport(answerZero, SysmemForDriver, hookedNid);
+            _harness.Emu.IsSystemProgram = true;
+            uint bases = _harness.Alloc(8);
+            int result = Call(Compat, "sceCompatAllocCdramWithHole", bases);
+            if (hookedNid == AllocMemBlock)
+            {
+                Assert.Equal(Exists, result);
+                return;
+            }
+
+            Assert.Equal(0, result);
+            uint window = GuestMemory.R32(bases);
+            Assert.Equal(hookedNid == UnmapMemBlock, GuestMemory.IsPageMapped(window + 0x2000000));
+            Assert.Equal(hookedNid == UnmapMemBlock, GuestMemory.IsPageMapped(GuestMemory.R32(bases + 4) + 0x2000000));
+            Compat.CoreFactory = _ => new HaltedCore();
+            byte[] pcbc = new byte[0x200];
+            BinaryPrimitives.WriteUInt32LittleEndian(pcbc, 0x43425350);
+            File.WriteAllBytes(HostPath("os0:kd/pcbc.bin"), pcbc);
+            File.WriteAllBytes(HostPath("vs0:app/NPXS10028/pcff.bin"), new byte[0x100]);
+            Assert.Equal(0, Call(Compat, "sceCompatInitEx", 1));
+            Assert.Equal(hookedNid == FreeMemBlock ? 3 : 2, WindowBlocksNamed("SceCompatCdram"));
+            if (hookedNid == FreeMemBlock)
+            {
+                // the kept middle view is nobody's any more (as on the console, where the hook keeps it): the test
+                // frees it so the next window finds the kernel views' range free again
+                SysmemKernel sysmem = _harness.Module<SysmemKernel>();
+                MemBlock kept = _harness.Emu.Kernel.Objects.All<MemBlock>()
+                    .Where(b => b.Name == "SceCompatCdram" && b.Size == 0x1000000)
+                    .MinBy(b => b.Address)!;
+                Assert.Equal(0, Call(sysmem, "ksceKernelFreeMemBlock", kept.Uid));
+            }
         });
     }
 

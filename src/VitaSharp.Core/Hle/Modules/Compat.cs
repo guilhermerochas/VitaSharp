@@ -44,6 +44,23 @@ public sealed partial class Compat : HleModule, IDisposable, Hle.IFirmwareIntern
 
     const uint WindowSize = 0x4000000, DatSize = 0x1038, LoaderScratchSize = 0x110;
 
+    /// <summary>SceSysmemForDriver and the memory block calls SceCompat 3.74 imports from it (ksceKernelAllocMemBlock,
+    /// ksceKernelFreeMemBlock, ksceKernelUnmapMemBlock, ksceKernelGetMemBlockBase).</summary>
+    const uint SysmemForDriverNid = 0x6F25E18A, AllocMemBlockNid = 0xC94850C9, FreeMemBlockNid = 0x009E1C61,
+        UnmapMemBlockNid = 0xFFCD9B60, GetMemBlockBaseNid = 0xA841EDDA;
+
+    /// <summary>The window's block types and option attributes (0x81001748): user CDRAM, user uncached main memory and
+    /// kernel CDRAM; the cached blocks' attr (HAS_ALIGNMENT, HAS_PID, 0x400000) and the mirrors' (HAS_MIRROR_BLOCKID,
+    /// HAS_PID, 0x1000000).</summary>
+    const uint CachedType = 0x09404060, UncachedType = 0x0C208060, CdramType = 0x40404006, CachedAttr = 0x400084,
+        MirrorAttr = 0x10000C0;
+
+    /// <summary>The window's three pieces (32, 16 and 16 MB) and the layout of the kernel scratch its calls use: the three
+    /// names, the 0x58-byte option, the bases.</summary>
+    const int WindowBlocks = 3;
+    const uint WindowOptSize = 0x58, CachedNameOffset = 0, UncachedNameOffset = 0x20, CdramNameOffset = 0x40, OptOffset = 0x60,
+        BasesOffset = 0xC0, KernelBaseOffset = 0xC8, WindowScratchSize = 0x100;
+
     /// <summary>The start path's arguments: the activation data, then the license (0x200) and the key query's outputs.</summary>
     const uint StartLicenseOffset = 0x1040, LicenseMaxSize = 0x200, StartScratchSize = StartLicenseOffset + LicenseMaxSize + 0x40;
 
@@ -91,7 +108,12 @@ public sealed partial class Compat : HleModule, IDisposable, Hle.IFirmwareIntern
     const ulong HandshakeTimeoutUs = 5_000_000, SuspendTimeoutUs = 30_000_000, VirtualSlotTimeoutUs = 1_000_000;
 
     int _owner = -1;          // the process that took the memory window
-    uint _window;             // the 64 MB window (the hole at +0x2000000..+0x3000000 is not the emulator's)
+    uint _window;             // the 64 MB window's cached base (the hole at +0x2000000..+0x3000000 is unmapped)
+    uint _kernelWindow;       // the same memory through "SceCompatCdram", which SceCompat's own accesses use
+    uint _windowScratch;      // the window calls' names, option and bases (kernel memory)
+    readonly int[] _cachedBlocks = new int[WindowBlocks];
+    readonly int[] _uncachedBlocks = new int[WindowBlocks];
+    readonly int[] _cdramBlocks = new int[WindowBlocks];
     int _status;              // 0 after InitEx, 2 running, 1 stopped
     uint _coreReady;          // the handshake's state 1 once the boot handshake passed: the core takes answers
     uint _seed;               // the random word for the core (window + 0x3FFF00)
@@ -205,6 +227,7 @@ public sealed partial class Compat : HleModule, IDisposable, Hle.IFirmwareIntern
     bool Owner => _owner == Emu.Pid;
     ThreadMgr Tm => Emu.Hle.Modules.OfType<ThreadMgr>().First();
     SystemServicesVsh Services => Emu.Hle.Modules.OfType<SystemServicesVsh>().First();
+    SysmemKernel Sysmem => Emu.Hle.Modules.OfType<SysmemKernel>().First();
 
     /// <summary>The semaphores of module_start: "SceCompatVirtualHandler" (channel 0, count 1 of 1) and
     /// "SceCompatHandler1".."15" (0 of 0x7FFFFFFF) the channels wait on, and the answer interrupts' (1 of 1).</summary>
@@ -234,8 +257,16 @@ public sealed partial class Compat : HleModule, IDisposable, Hle.IFirmwareIntern
 
     // ---- memory window
 
-    /// <summary>(SceUIntPtr out[2]): the emulator's memory window: [0] its cached base, [1] the uncached view (the same
-    /// memory here). Once per boot: 0x80010078 after. The core's random seed is drawn here.</summary>
+    /// <summary>
+    /// (SceUIntPtr out[2]): the emulator's memory window, as SceCompat 3.74 builds it (0x81001748): three CDRAM blocks
+    /// "SceCompatCached" (32, 16 and 16 MB, type 0x09404060, 16 MB aligned), each mirrored as "SceCompatUncached" (user,
+    /// uncached, 0x0C208060) and "SceCompatCdram" (kernel, 0x40404006): the same memory at three addresses. The cached
+    /// blocks must follow each other (the third at the first + 0x3000000, else 0x80010078 and every block freed); then
+    /// [0] is the cached base, [1] the uncached one, the kernel's own accesses go through the "SceCompatCdram" view, and
+    /// the middle cached and uncached blocks are unmapped: the hole (window + 0x2000000..+0x3000000) aborts on access.
+    /// Every sysmem call goes through SceCompat's own imports, so a kernel plugin's import hook on them answers. Once per
+    /// boot: 0x80010078 after. The core's random seed is drawn here.
+    /// </summary>
     [Hle]
     int sceCompatAllocCdramWithHole(uint outBases)
     {
@@ -249,17 +280,148 @@ public sealed partial class Compat : HleModule, IDisposable, Hle.IFirmwareIntern
             return ERR_EXISTS;
         }
 
-        _owner = Emu.Pid;
-        _window = Mem.Alloc(WindowSize, "SceCompat window", MemoryRegion.User, 0x100000);
         _seed = (uint)Random.Shared.NextInt64(0, 1L << 32);
+        _owner = Emu.Pid;
         CreateSemaphores();
-        if (outBases != 0)
+        if (_windowScratch == 0)
         {
-            GuestMemory.W32(outBases, _window);
-            GuestMemory.W32(outBases + 4, _window);
+            _windowScratch = Mem.Alloc(WindowScratchSize, "SceCompat window arguments", MemoryRegion.Kernel);
+            GuestMemory.WriteCString(_windowScratch + CachedNameOffset, "SceCompatCached");
+            GuestMemory.WriteCString(_windowScratch + UncachedNameOffset, "SceCompatUncached");
+            GuestMemory.WriteCString(_windowScratch + CdramNameOffset, "SceCompatCdram");
         }
 
+        uint bases = outBases != 0 ? outBases : _windowScratch + BasesOffset;
+        int result = AllocWindowBlocks(bases);
+        if (result < 0)
+        {
+            _kernelWindow = 0;
+            FreeWindowBlocks();
+            return result;
+        }
+
+        _window = GuestMemory.R32(bases);
+        SysmemUnmapMemBlock(_cachedBlocks[1]);
+        SysmemUnmapMemBlock(_uncachedBlocks[1]);
         return 0;
+    }
+
+    /// <summary>The window's nine blocks and the contiguity check (0x81001748): the sysmem error, 0x80010078 when the
+    /// cached blocks do not follow each other, else 0 with out[0] / out[1] and the kernel view set.</summary>
+    int AllocWindowBlocks(uint bases)
+    {
+        uint opt = _windowScratch + OptOffset;
+        for (int index = 0; index < WindowBlocks; index++)
+        {
+            uint size = index == 0 ? 0x2000000u : 0x1000000u;
+            WindowBlockOption(opt, CachedAttr, 0);
+            int cached = SysmemAllocMemBlock(_windowScratch + CachedNameOffset, CachedType, size, opt);
+            if (cached < 0)
+            {
+                return cached;
+            }
+
+            _cachedBlocks[index] = cached;
+            WindowBlockOption(opt, MirrorAttr, (uint)cached);
+            int uncached = SysmemAllocMemBlock(_windowScratch + UncachedNameOffset, UncachedType, size, opt);
+            if (uncached < 0)
+            {
+                return uncached;
+            }
+
+            _uncachedBlocks[index] = uncached;
+            WindowBlockOption(opt, MirrorAttr, (uint)cached);
+            int cdram = SysmemAllocMemBlock(_windowScratch + CdramNameOffset, CdramType, size, opt);
+            if (cdram < 0)
+            {
+                return cdram;
+            }
+
+            _cdramBlocks[index] = cdram;
+        }
+
+        SysmemGetMemBlockBase(_cachedBlocks[0], bases);
+        SysmemGetMemBlockBase(_cachedBlocks[2], bases + 4);
+        if (GuestMemory.R32(bases + 4) != GuestMemory.R32(bases) + PcffOffset)
+        {
+            Log.Info($"SceCompat: AllocCdramWithHole: the cached blocks do not follow each other (0x{GuestMemory.R32(bases):X8}, third at 0x{GuestMemory.R32(bases + 4):X8})");
+            return ERR_EXISTS;
+        }
+
+        SysmemGetMemBlockBase(_uncachedBlocks[0], bases + 4);
+        uint kernelBase = _windowScratch + KernelBaseOffset;
+        SysmemGetMemBlockBase(_cdramBlocks[0], kernelBase);
+        _kernelWindow = GuestMemory.R32(kernelBase);
+        return 0;
+    }
+
+    /// <summary>The 0x58-byte SceKernelAllocMemBlockKernelOpt SceCompat passes: size, attr (+8), alignment 16 MB (+0x14)
+    /// and, for a mirror, the source block (+0x20).</summary>
+    static void WindowBlockOption(uint opt, uint attr, uint mirrorSource)
+    {
+        GuestMemory.Fill(opt, 0, WindowOptSize);
+        GuestMemory.W32(opt, WindowOptSize);
+        GuestMemory.W32(opt + 8, attr);
+        GuestMemory.W32(opt + 0x14, 0x1000000);
+        GuestMemory.W32(opt + 0x20, mirrorSource);
+    }
+
+    /// <summary>Frees every window block left (the failure path of 0x81001748 and the owner's end, 0x81000488): the
+    /// cached ones, then the uncached and kernel views.</summary>
+    void FreeWindowBlocks()
+    {
+        foreach (int[] blocks in (ReadOnlySpan<int[]>)[_cachedBlocks, _uncachedBlocks, _cdramBlocks])
+        {
+            for (int index = 0; index < blocks.Length; index++)
+            {
+                if (blocks[index] > 0)
+                {
+                    SysmemFreeMemBlock(blocks[index]);
+                    blocks[index] = 0;
+                }
+            }
+        }
+    }
+
+    /// <summary>ksceKernelAllocMemBlock through SceCompat's import (a kernel plugin's import hook answers).</summary>
+    int SysmemAllocMemBlock(uint name, uint type, uint size, uint opt)
+    {
+        SysmemKernel sysmem = Sysmem;
+        return (int)SysmemImport(AllocMemBlockNid, () => (uint)sysmem.ksceKernelAllocMemBlockThroughEntry(name, type, size, opt), name, type, size, opt);
+    }
+
+    /// <summary>ksceKernelFreeMemBlock through SceCompat's import.</summary>
+    int SysmemFreeMemBlock(int uid)
+    {
+        SysmemKernel sysmem = Sysmem;
+        return (int)SysmemImport(FreeMemBlockNid, () => (uint)sysmem.ksceKernelFreeMemBlockThroughEntry(uid), (uint)uid);
+    }
+
+    /// <summary>ksceKernelUnmapMemBlock through SceCompat's import.</summary>
+    int SysmemUnmapMemBlock(int uid)
+    {
+        SysmemKernel sysmem = Sysmem;
+        return (int)SysmemImport(UnmapMemBlockNid, () => (uint)sysmem.ksceKernelUnmapMemBlockThroughEntry(uid), (uint)uid);
+    }
+
+    /// <summary>ksceKernelGetMemBlockBase through SceCompat's import.</summary>
+    int SysmemGetMemBlockBase(int uid, uint baseOut)
+    {
+        SysmemKernel sysmem = Sysmem;
+        return (int)SysmemImport(GetMemBlockBaseNid, () => (uint)sysmem.ksceKernelGetMemBlockBaseThroughEntry(uid, baseOut), (uint)uid, baseOut);
+    }
+
+    /// <summary>A SceSysmemForDriver call SceCompat makes through its import: the import's hook when guest code hooked
+    /// it, else the export (its own hook, else <paramref name="direct"/>).</summary>
+    uint SysmemImport(uint nid, Func<uint> direct, params ReadOnlySpan<uint> args)
+    {
+        Hle.FirmwareKernelModules? firmware = Emu.FirmwareKernelIfShown;
+        if (firmware == null)
+        {
+            return direct();
+        }
+
+        return firmware.CallImport(FirmwareModuleName, SysmemForDriverNid, nid, direct, args);
     }
 
     /// <summary>(int op 1 invalidate / 2 clean / 3 clean+invalidate, addr, size): a cache operation on the window
@@ -317,21 +479,29 @@ public sealed partial class Compat : HleModule, IDisposable, Hle.IFirmwareIntern
         }
 
         _status = 0;
-        if (_window == 0)
+        if (_kernelWindow == 0)
         {
             return ERR_NOT_STARTED;
         }
 
         MapBanks();
-        int loaded = LoadBlob(PcffPath, _window + PcffOffset, PcffMaxSize);
+
+        // the middle kernel view goes with the banks set (0x810003f0): nothing maps the hole any more
+        if (_cdramBlocks[1] > 0)
+        {
+            SysmemFreeMemBlock(_cdramBlocks[1]);
+            _cdramBlocks[1] = 0;
+        }
+
+        int loaded = LoadBlob(PcffPath, _kernelWindow + PcffOffset, PcffMaxSize);
         if (loaded < 0)
         {
             Log.Info($"SceCompat: InitEx({bootParam}): SceSblFwLoader did not load {PcffPath} (0x{loaded:X8}): the PSP core is not taken");
             return loaded;
         }
 
-        loaded = LoadBlob(PcbcPath, _window + PcbcOffset, PcbcMaxSize);
-        GuestMemory.W32(_window + SeedOffset, _seed);
+        loaded = LoadBlob(PcbcPath, _kernelWindow + PcbcOffset, PcbcMaxSize);
+        GuestMemory.W32(_kernelWindow + SeedOffset, _seed);
         if (loaded < 0)
         {
             Log.Info($"SceCompat: InitEx({bootParam}): SceSblFwLoader did not load {PcbcPath} (0x{loaded:X8}): the PSP core is not taken");
@@ -380,8 +550,8 @@ public sealed partial class Compat : HleModule, IDisposable, Hle.IFirmwareIntern
         ReadOnlySpan<uint> offsets = [0, PspBus.BankSize, PspBus.BankSize, PcffOffset];
         for (int bank = 0; bank < offsets.Length; bank++)
         {
-            uint physical = _window + offsets[bank];
-            if (sysmem.ksceKernelVAtoPAThroughEntry(_window + offsets[bank], _loaderScratch) >= 0)
+            uint physical = _kernelWindow + offsets[bank];
+            if (sysmem.ksceKernelVAtoPAThroughEntry(_kernelWindow + offsets[bank], _loaderScratch) >= 0)
             {
                 physical = GuestMemory.R32(_loaderScratch);
             }
@@ -602,6 +772,36 @@ public sealed partial class Compat : HleModule, IDisposable, Hle.IFirmwareIntern
     {
         StopRunner();
         _hardware.Ge?.Dispose();
+        ReleaseWindow();
+    }
+
+    /// <summary>
+    /// The owner's end (SceCompat 3.74 0x81000488, the process event of the window's owner): the nine window blocks are
+    /// freed and the window is no longer taken. A block whose memory is already gone (a re-exec freed the process's
+    /// memory and may have handed the range to another block) is only forgotten.
+    /// </summary>
+    void ReleaseWindow()
+    {
+        using (ProcessScope.Enter(Emu))
+        {
+            foreach (int[] blocks in (ReadOnlySpan<int[]>)[_cachedBlocks, _uncachedBlocks, _cdramBlocks])
+            {
+                for (int index = 0; index < blocks.Length; index++)
+                {
+                    if (blocks[index] > 0 && K.Objects.Get<MemBlock>(blocks[index]) is { } block
+                        && Mem.FindBlock(block.Address) is { } memory && memory.Address == block.Address)
+                    {
+                        SysmemFreeMemBlock(blocks[index]);
+                    }
+
+                    blocks[index] = 0;
+                }
+            }
+        }
+
+        _window = 0;
+        _kernelWindow = 0;
+        _owner = -1;
     }
 
     [Hle]
@@ -845,14 +1045,14 @@ public sealed partial class Compat : HleModule, IDisposable, Hle.IFirmwareIntern
 
     uint ReadHandshake()
     {
-        return _window == 0 ? 0 : GuestMemory.R32(_window + HandshakeOffset);
+        return _kernelWindow == 0 ? 0 : GuestMemory.R32(_kernelWindow + HandshakeOffset);
     }
 
     void WriteHandshake(uint state)
     {
-        if (_window != 0)
+        if (_kernelWindow != 0)
         {
-            GuestMemory.W32(_window + HandshakeOffset, state);
+            GuestMemory.W32(_kernelWindow + HandshakeOffset, state);
         }
     }
 

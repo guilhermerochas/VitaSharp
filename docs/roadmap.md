@@ -5226,11 +5226,22 @@ usuário. Se o teste falhar, o item volta para "Bugs em aberto".
   ksceGrabSetMemoryBankAddress pelo import do SceCompat, hook 12), e o HLE do Grab programa o banco no barramento
   do núcleo (deixou de ser default); o aperto de mão de boot chama a função interna +0x2AE8 (compat_sm.self e o
   comando 0x30006) pelo endereço dela (`FirmwareKernelModules.CallInternal`, HLE registrada para o continue do hook
-  8) e para com o que ela devolver. Falta: (8) o `pcbc.bin` do usuário; (9) os hooks 9-11 (ksceKernelAllocMemBlock/
-  FreeMemBlock/UnmapMemBlock do SceCompat): o sceCompatAllocCdramWithHole do 3.74 aloca 3x3 blocos
-  ("SceCompatCached" 32/16/16 MB, "SceCompatUncached" e "SceCompatCdram" como espelhos do Cached pelo opt +0x18),
-  confere que são contíguos (base + 0x3000000) e desmapeia o par do meio para abrir o buraco; o HLE do sysmem não
-  tem blocos espelho nem desmapeamento de verdade, então passar essas chamadas pelo import precisa antes disso.
+  8) e para com o que ela devolver. Falta: (8) o `pcbc.bin` do usuário.
+  Feito (fix/adr2, 27/11/2026): (9) os hooks 9-11. O sysmem HLE tem blocos espelho (ksceKernelAllocMemBlock com
+  HAS_MIRROR_BLOCKID 0x40, a origem no opt +0x20: a mesma memória física em outro endereço, numa janela de apelidos
+  0x50000000-0x60000000 mapeada em todo espaço de endereços como segunda vista da memória compartilhada; Windows com
+  placeholders, Linux/Android/macOS com mmap do memfd/shm; o VAtoPA do espelho dá o físico da origem; liberar a origem
+  desmapeia os espelhos, como o "Force sceKernelUnmapMemBlock" do 3.74) e o ksceKernelUnmapMemBlock de verdade (o
+  bloco fica, as páginas saem do mapa: acesso dá data abort, a tradução falha com 0x80022007). O
+  sceCompatAllocCdramWithHole faz como o 3.74 (0x81001748): 3x3 blocos pelos imports do SceCompat
+  (Alloc/GetBase/Unmap/Free), confere a contiguidade (0x80010078 e tudo liberado), devolve as bases cached/uncached e
+  desmapeia o par do meio; o kernel usa a vista "SceCompatCdram", e o InitEx libera a vista do meio (0x810003f0). O
+  F8 (context.txt) lista os blocos: nome, espelho de quem, mapeado ou não. Testes: `KernelSysmemMirrorTests`,
+  `CompatImportHookTests`. Limites: a origem de um espelho tem de estar em CDRAM ou memória do kernel (memória
+  privada de usuário não tem segunda vista no host: o alloc dá NO_MEMORY com aviso no log); sem espaços por processo
+  (`VITASHARP_SHARED_ADDRESS_SPACE=1`) não há espelho; o save state guarda onde ficam os espelhos e as faixas
+  desmapeadas da memória compartilhada (seção memory.mirrors), mas não o desmapeamento de blocos privados de usuário. Diferença achada e não feita: o 3.74 libera os 9 blocos e zera o dono
+  quando o processo dono termina (0x81000488); o HLE ainda não tem essa limpeza.
 - [ ] [P2][M] (precisa do usuário/aparelho) Assassin's Creed III Liberation (PCSE00053), ritmo: ~26 fps na mediana (21-27) contra os 30 do jogo nas
   capturas de 21/11/2026, e um engasgo de 132 ms por leitura de arquivo (fileIo 134 ms; quadro 302 do dump da
   `_232150_tudo`). Achado (perf/ac3pace): fora das gravações o jogo fica em 30 fps (linhas `FPS frame` da sessão) e
