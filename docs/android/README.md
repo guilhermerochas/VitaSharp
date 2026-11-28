@@ -109,7 +109,12 @@ the data folder out first (`adb pull /sdcard/Android/data/io.github.vitasharp/fi
 The renderer needs shaderc on the device, and `Silk.NET.Shaderc.Native` has no Android build: once per checkout,
 `build/build-android-shaderc.ps1` (or `.sh`) compiles `libshaderc_shared.so` for arm64-v8a and x86_64 from the shaderc sources
 the NDK ships (`sources/third_party/shaderc`, ndk-build, libc++ static, 16 KiB-page aligned) into
-`third_party/android-shaderc/libs/<abi>/` (not committed); the app packages them when they exist. It needs the NDK
+`third_party/android-shaderc/libs/<abi>/` (not committed); the app packages them when they exist. **The app does not
+build for arm64 without `third_party/android-shaderc/libs/arm64-v8a/libshaderc_shared.so`** (error `VITASHARP001` from
+`_VitaSharpCheckShaderc` in the csproj, naming the file and these scripts; an APK without it opens no game: "Could not
+load from any of the possible library names" in `ShadercLoader`). `build/build-android-apk.ps1` / `.sh` (and so the CI)
+build it first; `-p:VitaSharpAllowMissingNativeLibs=true` skips the check for a build that is never installed, and an
+`android-x64`-only build (`-r android-x64`) is not checked. It needs the NDK
 (`sdkmanager "ndk;30.0.16248370"`, r30 was used) and takes long (glslang + SPIRV-Tools, about 460 files per ABI;
 `-Jobs 2` by default).
 
@@ -117,7 +122,8 @@ Custom GPU drivers need libadrenotools: `build/build-android-adrenotools.ps1` (o
 pinned commit (git, once) into `third_party/android-adrenotools/src` and builds `libadrenotools.so` and its four hook
 libraries for arm64-v8a with ndk-build (no CMake needed, 2 jobs, under a minute) into
 `third_party/android-adrenotools/libs/arm64-v8a/` (not committed); the app packages them when they exist, else the
-system Vulkan driver is always used. Details: [mobile GPU notes](../notes/mobile-gpu.md#custom-drivers-android).
+system Vulkan driver is always used (optional by design: the build only warns, `VITASHARP002`, and just "Driver da GPU"
+is unavailable). Details: [mobile GPU notes](../notes/mobile-gpu.md#custom-drivers-android).
 
 ### Output and build times
 
