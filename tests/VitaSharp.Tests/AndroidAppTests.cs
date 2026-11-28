@@ -47,6 +47,19 @@ public sealed class AndroidAppTests : IDisposable
         var lines = RuntimeReport.Lines().ToList();
         Assert.EndsWith(", build ?", lines[0]);
         Assert.Equal($"Dynamic code: supported {RuntimeReport.DynamicCodeSupported}, compiled {RuntimeReport.DynamicCodeCompiled}", lines[1]);
+        Assert.Null(RuntimeReport.BuildCodegen);
+        Assert.Equal(RuntimeReport.CodegenLine(null, RuntimeReport.CpuFeatures()), lines[2]);
+    }
+
+    [Fact]
+    public void RuntimeReportSaysHowNativeAotCompiledTheApp()
+    {
+        // captures from the phone must say which code generation ran (an armv8.2-a build is not the baseline one)
+        Assert.Equal(
+            "Native code generation: optimization Speed, instruction set armv8.2-a; CPU features usable by the compiled code: neon,crc",
+            RuntimeReport.CodegenLine("optimization Speed, instruction set armv8.2-a", "neon,crc"));
+        string features = RuntimeReport.CpuFeatures();
+        Assert.Equal(System.Runtime.Intrinsics.Arm.ArmBase.Arm64.IsSupported, features.StartsWith("neon", StringComparison.Ordinal));
     }
 
     // ---------------------------------------------------------------- logcat

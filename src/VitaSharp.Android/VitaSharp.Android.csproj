@@ -119,6 +119,11 @@
       <_Parameter1>VitaSharpAndroidRuntime</_Parameter1>
       <_Parameter2>$(VitaSharpAndroidRuntime)</_Parameter2>
     </AssemblyAttribute>
+    <!-- Native AOT code generation (OptimizationPreference, IlcInstructionSet below): "Native code generation: ..." -->
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>VitaSharpIlcCodegen</_Parameter1>
+      <_Parameter2>$(_VitaSharpIlcCodegen)</_Parameter2>
+    </AssemblyAttribute>
   </ItemGroup>
   <Target Name="_VitaSharpCheckAndroidRuntime" BeforeTargets="PrepareForBuild"
       Condition="'$(VitaSharpAndroidRuntime)' != 'mono-jit' and '$(VitaSharpAndroidRuntime)' != 'mono-aot' and '$(VitaSharpAndroidRuntime)' != 'mono-aot-llvm' and '$(VitaSharpAndroidRuntime)' != 'coreclr' and '$(VitaSharpAndroidRuntime)' != 'nativeaot'">
@@ -158,6 +163,28 @@
   <ItemGroup Condition="'$(VitaSharpAndroidRuntime)' == 'nativeaot' and '$(VitaSharpGcGen0Size)' != '' and '$(VitaSharpGcGen0Size)' != '0'">
     <IlcArg Include="--runtimeopt:GCgen0size=$(VitaSharpGcGen0Size)" />
   </ItemGroup>
+  <!--
+    ILC code generation (docs/android/README.md, "Native AOT code generation"):
+    - OptimizationPreference=Speed (ILC -Ot): favours throughput over size, as the desktop Native AOT build does; no
+      hardware requirement. -p:VitaSharpIlcSpeed=false builds the blended default (A/B).
+    - Instruction set: the app supports Android 8.0 (SupportedOSPlatformVersion 26) on any arm64-v8a phone, and
+      ARMv8.0 cores (Cortex-A53) are still common there, so the default stays ILC's baseline (ARMv8.0 + AdvSimd, with
+      its opportunistic sets: code guarded by IsSupported checks the CPU at run time). ILC cannot compile the whole
+      program twice and pick at run time, so ARMv8.2 code generation (LSE atomics, RCpc, DotProd, RDM; the Redmi
+      Note 14's A76/A55 have them) is a build choice: -p:VitaSharpIlcInstructionSet=armv8.2-a (any ilc
+      instruction-set list). That library fails at startup, with the runtime's "missing instruction sets" message, on a
+      CPU without them.
+  -->
+  <PropertyGroup Condition="'$(VitaSharpAndroidRuntime)' == 'nativeaot'">
+    <OptimizationPreference Condition="'$(VitaSharpIlcSpeed)' != 'false'">Speed</OptimizationPreference>
+    <IlcInstructionSet Condition="'$(VitaSharpIlcInstructionSet)' != ''">$(VitaSharpIlcInstructionSet)</IlcInstructionSet>
+  </PropertyGroup>
+  <PropertyGroup>
+    <_VitaSharpIlcCodegen>not native AOT</_VitaSharpIlcCodegen>
+    <_VitaSharpIlcCodegen Condition="'$(VitaSharpAndroidRuntime)' == 'nativeaot'">optimization $(OptimizationPreference), instruction set $(IlcInstructionSet)</_VitaSharpIlcCodegen>
+    <_VitaSharpIlcCodegen Condition="'$(VitaSharpAndroidRuntime)' == 'nativeaot' and '$(OptimizationPreference)' == ''">optimization blended, instruction set $(IlcInstructionSet)</_VitaSharpIlcCodegen>
+    <_VitaSharpIlcCodegen Condition="'$(VitaSharpAndroidRuntime)' == 'nativeaot' and '$(IlcInstructionSet)' == ''">$(_VitaSharpIlcCodegen)baseline</_VitaSharpIlcCodegen>
+  </PropertyGroup>
   <Target Name="_VitaSharpNativeAotInputs" AfterTargets="_AndroidComputeIlcCompileInputs" Condition="'$(VitaSharpAndroidRuntime)' == 'nativeaot'">
     <ItemGroup>
       <_VsKeep Include="@(ResolvedFileToPublish)" Condition="'%(Filename)' != 'System.IO.Hashing' or '%(ResolvedFileToPublish.NuGetPackageId)' == 'System.IO.Hashing'" />

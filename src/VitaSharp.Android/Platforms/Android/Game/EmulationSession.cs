@@ -216,7 +216,7 @@ public sealed partial class EmulationSession : IDisposable
             SetPresentTap = tap => _rendererOptions.PresentTap = tap,
             DumpHeader = DumpHeader,
             LogFile = () => Path.Combine(AppServices.Data.Logs, "last.log"),
-            Info = () => $"build: android {RuntimeReport.BuildRuntime ?? "?"}, {RuntimeReport.Runtime}\naudio: {AudioSummary}\nrenderer: {_renderer?.DeviceName}\nsettings: CPU {(_settings.CpuBackend.Length > 0 ? _settings.CpuBackend : "auto")}, {_settings.ClockHz / 1_000_000} MHz, GPU profile {(_settings.GpuProfile.Length > 0 ? _settings.GpuProfile : "native")}, VSync {_settings.VSync}",
+            Info = () => $"build: android {RuntimeReport.BuildRuntime ?? "?"}, {RuntimeReport.Runtime}\n{RuntimeReport.CodegenLine(RuntimeReport.BuildCodegen, RuntimeReport.CpuFeatures())}\naudio: {AudioSummary}\nrenderer: {_renderer?.DeviceName}\nsettings: CPU {(_settings.CpuBackend.Length > 0 ? _settings.CpuBackend : "auto")}, {_settings.ClockHz / 1_000_000} MHz, GPU profile {(_settings.GpuProfile.Length > 0 ? _settings.GpuProfile : "native")}, VSync {_settings.VSync}",
             RunOptions = [$"--cpu-mhz={_settings.ClockHz / 1_000_000}"],
             // a phone has less memory and slower cores than a PC
             PreRollMaxBytes = 64L << 20,
@@ -550,6 +550,7 @@ public sealed partial class EmulationSession : IDisposable
         info.AppendLine($"kind: {_captureKind}");
         info.AppendLine($"start: {_captureStart:yyyy-MM-dd HH:mm:ss}, {secs:F1} s, {frames} frames, {frames / Math.Max(secs, 0.001):F1} fps");
         info.AppendLine($"build: {RuntimeReport.BuildRuntime ?? "?"}, {RuntimeReport.Runtime}");
+        info.AppendLine(RuntimeReport.CodegenLine(RuntimeReport.BuildCodegen, RuntimeReport.CpuFeatures()));
         info.AppendLine($"audio: {AudioSummary}");
         info.AppendLine("scene: (write a note here)");
         if (_captureTiming != null) info.AppendLine(_captureTiming).AppendLine("dump part (slowed by the recording): the rest; renderer report at the stop:");
