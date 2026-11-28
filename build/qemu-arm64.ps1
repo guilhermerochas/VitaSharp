@@ -6,8 +6,9 @@
 .DESCRIPTION
     Usage: .\build\qemu-arm64.ps1 [-Install] [-Filter <filter>] [-NoTests] [-TestGame <vpk>] [-Seconds <n>]
                                   [-Out <folder>] [-Distro <name>]
-      -Install   installs qemu-user-static, binfmt-support, the arm64 libraries (apt, as root in WSL) and the arm64
-                 .NET runtime in ~/.dotnet-arm64 and the portable test platform in ~/.vstest-portable inside WSL
+      -Install   installs qemu-user-static, binfmt-support, the arm64 libraries (apt, as root in WSL), qemu-user 10 in
+                 ~/.qemu-arm64 (qemu-arm64.sh --install-qemu: 7.2 runs stale rewritten JIT code), the arm64 .NET
+                 runtime in ~/.dotnet-arm64 and the portable test platform in ~/.vstest-portable inside WSL
       -Filter    dotnet test filter (default: the ARM64 backend tests, see qemu-arm64.sh)
       -NoTests   runs no tests
       -TestGame  also boots the test game headless (VitaSharp.Desktop run) under qemu
@@ -59,8 +60,22 @@ if ($Install)
     }
 }
 
-# WSL without systemd does not register the binfmt entries at boot
-wsl -d $Distro -u root -- bash -c "test -e /proc/sys/fs/binfmt_misc/qemu-aarch64 || update-binfmts --enable qemu-aarch64 || true"
+$script = ConvertTo-WslPath (Join-Path $PSScriptRoot "qemu-arm64.sh")
+if ($Install)
+{
+    # qemu-user 10 (Debian trixie's static qemu-aarch64) in ~/.qemu-arm64: the 7.2 of Debian bookworm runs stale code
+    # after the JIT rewrites it through its write mapping (see qemu-arm64.sh)
+    wsl -d $Distro -- bash -lc "bash '$script' --install-qemu"
+    if ($LASTEXITCODE -ne 0)
+    {
+        throw "qemu-arm64.ps1: qemu-user 10 install failed (exit code $LASTEXITCODE)"
+    }
+}
+
+# WSL without systemd does not register the binfmt entries at boot: the arm64 interpreter is qemu-user 10 of
+# ~/.qemu-arm64 when it is installed, else the distribution's qemu-user-static
+$qemuDir = (wsl -d $Distro -- bash -lc 'echo ${QEMU_ARM64_DIR:-$HOME/.qemu-arm64}').Trim()
+wsl -d $Distro -u root -- bash -c "if test -x '$qemuDir/aarch64-binfmt-P'; then QEMU_ARM64_DIR='$qemuDir' bash '$script' --register-binfmt; else test -e /proc/sys/fs/binfmt_misc/qemu-aarch64 || update-binfmts --enable qemu-aarch64 || true; fi"
 
 $arguments = @()
 if ($Install)
@@ -102,7 +117,6 @@ if ($TestGame)
 }
 $arguments += "--out '$(ConvertTo-WslPath $Out)'"
 
-$script = ConvertTo-WslPath (Join-Path $PSScriptRoot "qemu-arm64.sh")
 wsl -d $Distro -- bash -lc "bash '$script' $($arguments -join ' ')"
 $code = $LASTEXITCODE
 Write-Host "qemu-arm64.ps1: output in $Out"

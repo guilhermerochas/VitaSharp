@@ -524,6 +524,9 @@ pushed.
   that rounds up to +/-2^-126 must flush to zero. The handlers now do that (`Neon.MulFz/FmaFz`, found by the Unicorn
   test: VFMA gave 0x80800000, QEMU 0x80000000) and the native lowering checks the rounded lanes and sends the rare
   match to the handler (`VecFlags.SlowPath`: a call site for register allocation).
+  The VFP VMLA/VMLS/VNMLA/VNMLS product in the interpreter follows the same rule (`Vfp.ProductF`; the x64 and ARM64
+  code already did): found under qemu-user 10, whose AArch64 FMUL flushes before rounding like the hardware
+  (`VfpProductFlushTests`).
 - LDREXD/STREXD (ARM and Thumb): `IrOp.LdrEx/StrEx` with Imm = 1, one 64-bit read / `lock cmpxchg qword` with the same
   generation protocol as `Arm.StoreExclusive64`. Fixed in the interpreter at the same time: ARM-state LDREXD wrote the
   high word to R0 (Rt2 was taken from bits 3:0 instead of Rt + 1).

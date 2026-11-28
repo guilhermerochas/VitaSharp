@@ -104,6 +104,24 @@ internal static unsafe class Vfp
 
     // ------------------------------------------------------------ data processing
 
+    /// <summary>
+    /// a * b (inputs already flushed) under the FPSCR's FZ: ARM detects tininess before rounding (the ARM ARM's FPRound
+    /// flushes on the unrounded exponent), so a product that rounds up to +/- 2^-126 from below is a signed zero; x86 and
+    /// .NET round first. The double product of two singles is exact.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static float ProductF(CpuState* state, float a, float b)
+    {
+        float product = a * b;
+        uint bits = BitConverter.SingleToUInt32Bits(product);
+        if ((state->Fpscr & FpscrFZ) != 0 && (bits & 0x7FFFFFFF) == 0x00800000 && Math.Abs((double)a * b) < 1.1754943508222875e-38)
+        {
+            return BitConverter.UInt32BitsToSingle(bits & 0x80000000);
+        }
+
+        return product;
+    }
+
     /// <summary>VMLA/VMLS/VNMLA/VNMLS/VMUL/VNMUL/VADD/VSUB/VDIV/VFMA/VFMS/VFNMA/VFNMS</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Arith(CpuState* state, uint ins, uint pc)
@@ -114,10 +132,12 @@ internal static unsafe class Vfp
         {
             uint d = SingleD(ins), n = SingleN(ins), m = SingleM(ins);
             float a = InF(state, Sf(state, n)), b = InF(state, Sf(state, m)), acc = InF(state, Sf(state, d));
+            // VMLA/VMLS/VNMLA/VNMLS round (and flush) the product on its own, as VMUL does
+            float product = opc1 <= 1 ? FixF(state, ProductF(state, a, b)) : 0;
             float r = opc1 switch
             {
-                0 => op ? acc - FixF(state, a * b) : acc + FixF(state, a * b),
-                1 => op ? -acc - FixF(state, a * b) : -acc + FixF(state, a * b),
+                0 => op ? acc - product : acc + product,
+                1 => op ? -acc - product : -acc + product,
                 2 => a * b, // VNMUL negates below
                 3 => op ? a - b : a + b,
                 4 => a / b,
@@ -126,13 +146,21 @@ internal static unsafe class Vfp
                 _ => 0,
             };
             // ARM flushes a result that is tiny BEFORE rounding: one that rounds up to the smallest normal is zero
-            if ((state->Fpscr & FpscrFZ) != 0 && (BitConverter.SingleToUInt32Bits(r) & 0x7FFFFFFF) == 0x00800000 && opc1 >= 2)
+            if ((state->Fpscr & FpscrFZ) != 0 && (BitConverter.SingleToUInt32Bits(r) & 0x7FFFFFFF) == 0x00800000)
             {
                 // x + y with x, y exact in double: TwoSum gives the rounded sum and its exact error, so the
                 // comparison with 2^-126 is exact (a float product is exact in double)
                 double x, y;
                 switch (opc1)
                 {
+                    case 0:
+                        x = acc;
+                        y = op ? -(double)product : product;
+                        break;
+                    case 1:
+                        x = -(double)acc;
+                        y = op ? -(double)product : product;
+                        break;
                     case 2:
                         x = (double)a * b;
                         y = 0;

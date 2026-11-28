@@ -366,6 +366,10 @@ public static class EnvVars
     /// tests are skipped. The suite itself always runs on a temporary data folder of its own (TestDataIsolation).</summary>
     public const string TestInstalledData = "VITASHARP_TEST_INSTALLED_DATA";
     public const string TestTrace = "VITASHARP_TEST_TRACE";
+    /// <summary>Tests: the qemu-user version a run is emulated by (build/qemu-arm64 sets it, e.g. "10.0.2"). With it, the
+    /// ARM64 host tests are skipped when that qemu runs stale code after a rewrite through the code arena's write mapping
+    /// (qemu 7.2; HostCodeCoherence in the tests). Unset: never skipped for that, a stale run fails the suite.</summary>
+    public const string QemuUser = "VITASHARP_QEMU_USER";
     /// <summary>=1 (developer builds, Android): Perfetto/ATrace markers (Core/Util/Developer/DevTrace.cs, build/android-trace.*).</summary>
     public const string Trace = "VITASHARP_TRACE";
     /// <summary>With <see cref="Trace"/>: one HLE call in N gets a marker (default 64, rounded up to a power of two).</summary>

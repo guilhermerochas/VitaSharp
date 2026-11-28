@@ -42,8 +42,9 @@ public static class Arm64Runner
 
     /// <summary>Whether a runner's code keeps the block and instruction counts (the counting trampoline).</summary>
     public static bool CountsBlocks(IArm64Runner runner) => !(runner.Stubs.PinnedCounters && runner.Stubs.NoBlockCounts);
-    /// <summary>A native host can still be unable to write generated code (macOS on Apple silicon without Native AOT).</summary>
-    public static string? SkipReason => Native ? ExecutableMemory.UnsupportedReason : Arm64Sandbox.SkipReason;
+    /// <summary>A native host can still be unable to write generated code (macOS on Apple silicon without Native AOT) or,
+    /// under qemu-user 7.2, run it after a rewrite (<see cref="HostCodeCoherence"/>).</summary>
+    public static string? SkipReason => Native ? ExecutableMemory.UnsupportedReason ?? HostCodeCoherence.QemuSkipReason : Arm64Sandbox.SkipReason;
     public static IArm64Runner Create() => Native ? new Arm64HostRunner() : new Arm64Sandbox();
 }
 

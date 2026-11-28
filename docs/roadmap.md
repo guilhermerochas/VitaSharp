@@ -8,6 +8,17 @@ tela errada), `[P2]` lentidão que o jogador sente, `[P3]` o resto (ferramentas,
 
 ## Diagnóstico
 
+- [ ] [P2][M] **Crash no código gerado (Linux/Android ARM64) deixa registro no log e na F8:** hoje um SIGSEGV, SIGILL
+  ou SIGBUS dentro do código do JIT no celular encerra o processo sem nada nosso no log (o `NativeCrashLog` só existe
+  no Windows x64; o handler de `HostFaultSignals` só é instalado com os data aborts armados e encadeia para o runtime
+  sem registrar). O que a análise de um crash desses precisa e o log teria de mostrar: o sinal, o pc do host e se ele
+  cai na área de código (offset na área e o bloco do guest cujo código o contém), o endereço da falha, x16/x30
+  (destino de um `br` e retorno: um salto para lixo cai fora da área) e, do estado (x19), o R15 do guest e o último
+  bloco entrado. Caminho: o handler em código de máquina grava esse registro numa página de um arquivo mapeado
+  (MAP_SHARED, na pasta de logs), que sobrevive à morte do processo; o próximo início escreve a linha FATAL no log e a
+  F8 põe o registro no report.txt. Teste: processo filho que salta para lixo no código gerado (como
+  `NativeCrashLogTests`), rodado no PC sob o qemu 10 (`build/qemu-arm64`).
+
 - [ ] [P3][M] **Modo celular no PC, o que falta** (o perfil de fases, os testes de orçamento e o perfil celular do
   desktop, `--phone-profile` / `VITASHARP_PHONE_PROFILE=1` com `build/phone-profile.ps1`/`.sh`, estão em "Corrigido,
   falta o usuário testar"; docs/notes/cpu-phases.md diz o que ele liga e o que não reproduz):
