@@ -35,7 +35,7 @@ public sealed unsafe class HleHotPathAllocationTests(GuestMemoryFixture fixture)
         GuestMemory.W32(program + 0x28, 0x100 - 0x28);
         GuestMemory.W32(program + 0x2C, 0x1C0 - 0x2C);
         uint nameAt = 0x180;
-        var entries = new uint[names.Length];
+        uint[] entries = new uint[names.Length];
         for (int i = 0; i < names.Length; i++)
         {
             uint entry = program + 0x100 + (uint)i * 16;

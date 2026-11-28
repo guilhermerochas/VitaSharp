@@ -382,15 +382,15 @@ public sealed unsafe partial class GuestMemory : IDisposable
     /// <c>ReadCString(addr) == value</c> without the managed copy (ASCII compared in place, anything else decoded).</summary>
     public static bool CStringEquals(uint addr, string value)
     {
-        const int max = 4096;
+        const int MaxLength = 4096;
         if (addr == 0)
         {
             return value.Length == 0;
         }
 
-        if (value.Length >= max)
+        if (value.Length >= MaxLength)
         {
-            return ReadCString(addr, max) == value;
+            return ReadCString(addr, MaxLength) == value;
         }
 
         byte* p = Base + addr;
@@ -399,7 +399,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
             char c = value[i];
             if (c == 0 || c >= 0x80)
             {
-                return ReadCString(addr, max) == value;
+                return ReadCString(addr, MaxLength) == value;
             }
 
             if (p[i] != c)
