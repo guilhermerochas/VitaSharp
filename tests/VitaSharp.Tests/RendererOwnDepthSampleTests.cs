@@ -30,16 +30,22 @@ public sealed class RendererOwnDepthSampleTests(GuestMemoryFixture fx)
     /// tile-based GPU (renderings recorded first, begun when they end) no rendering ends for the samples. On a desktop
     /// GPU the renderings are begun directly, so the unpack still ends the rendering, once per scene (at most), and sees
     /// what the scene drew before it (the frame with no draw before the samples is still the exact one).
+    /// The path follows the device (<see cref="VulkanRenderer.DefersRenderingsByDevice"/>): the vendor turns
+    /// <see cref="GpuQuirk.TileBased"/> on by itself (the macOS CI's Apple device under MoltenVK, where the desktop case
+    /// used to run tile-based and found no break), so the desktop case asks for the desktop profile (no vendor quirks)
+    /// with the quirk off, and the profile case gets the deferred renderings from the emulated vendor instead of a
+    /// forced quirk.
     /// </summary>
     [SoftwareVulkanTheory]
-    [InlineData((ushort)2, "+TileBased", true)]
-    [InlineData((ushort)1, "+TileBased", true)]
-    [InlineData((ushort)2, null, false)]
-    public void SamplingItsOwnDepthSeesTheDepthAsTheSceneBegan(ushort multisample, string? gpuQuirks, bool hoisted)
+    [InlineData((ushort)2, "+TileBased", null, true)]
+    [InlineData((ushort)1, "+TileBased", null, true)]
+    [InlineData((ushort)2, "-TileBased", "desktop", false)]
+    [InlineData((ushort)2, null, "mali", true)]
+    public void SamplingItsOwnDepthSeesTheDepthAsTheSceneBegan(ushort multisample, string? gpuQuirks, string? gpuProfile, bool hoisted)
     {
         using IDisposable driver = SoftwareVulkan.Use();
-        (byte[] drawnOver, long breaks) = Run("owndepth-over", multisample, gpuQuirks, drawOver: true);
-        (byte[] untouched, long untouchedBreaks) = Run("owndepth-plain", multisample, gpuQuirks, drawOver: false);
+        (byte[] drawnOver, long breaks) = Run("owndepth-over", multisample, gpuQuirks, gpuProfile, hoisted, drawOver: true);
+        (byte[] untouched, long untouchedBreaks) = Run("owndepth-plain", multisample, gpuQuirks, gpuProfile, hoisted, drawOver: false);
         // scene 1's depth: z = 0.25 in clip space is 0.625 in the depth buffer (159 of 255), not the drawn-over 0.875
         Assert.True(untouched.All(value => Math.Abs(value - 159) <= 2), $"the sampling draw saw depth {untouched[0]}, not scene 1's (159)");
         if (hoisted)
@@ -62,7 +68,7 @@ public sealed class RendererOwnDepthSampleTests(GuestMemoryFixture fx)
     }
 
     /// <summary>The presented frame (R per pixel) and the mid-scene breaks of the sampling scene's kind.</summary>
-    private (byte[] Image, long Breaks) Run(string tag, ushort multisample, string? gpuQuirks, bool drawOver)
+    private (byte[] Image, long Breaks) Run(string tag, ushort multisample, string? gpuQuirks, string? gpuProfile, bool deferred, bool drawOver)
     {
         string frames = Path.Combine(Path.GetTempPath(), "vitasharp-owndepth-" + Guid.NewGuid().ToString("N"));
         try
@@ -73,10 +79,12 @@ public sealed class RendererOwnDepthSampleTests(GuestMemoryFixture fx)
                 AsyncShaders = false,
                 AsyncPipelines = false,
                 GpuQuirks = gpuQuirks,
+                GpuProfile = gpuProfile,
                 Msaa = "native",
                 DumpFramesDir = frames,
                 DumpEvery = 1,
             });
+            bool deferredByDevice = renderer.DefersRenderingsByDevice;
             long breaks;
             using (HleHarness harness = new(fx, tag))
             {
@@ -102,6 +110,7 @@ public sealed class RendererOwnDepthSampleTests(GuestMemoryFixture fx)
                     breaks = reasons.GetValueOrDefault("UnpackedDepthTexture");
                     long scenes = (long)typeof(VulkanRenderer).GetField("_statMsScenes", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(renderer)!;
                     renderer.Dispose();
+                    Assert.True(deferredByDevice == deferred, $"the case expects renderings {(deferred ? "recorded first (tile-based or render passes)" : "begun directly")}, the device {(deferredByDevice ? "records them first" : "begins them directly")}");
                     Assert.True(scenes >= 2, $"{scenes} multisampled scenes (the device must support native MSAA)");
                 }
             }
