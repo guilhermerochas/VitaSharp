@@ -538,7 +538,10 @@ public static class AstcTranscoder
             }
         }
 
-        Interlocked.Add(ref GpuThreadWaitTicks, Stopwatch.GetTimestamp() - t0);
+        long waited = Stopwatch.GetTimestamp() - t0;
+        Interlocked.Add(ref GpuThreadWaitTicks, waited);
+        Interlocked.Add(ref FrameLedger.AstcEncodeTicks, waited);
+        Interlocked.Increment(ref FrameLedger.AstcEncodedLevels);
         if (Volatile.Read(ref work.Failed))
         {
             return Copy(EncodeNow(key, tag, w, h, channels, source, texBase, twoBpp, ii, Threads));
@@ -595,6 +598,10 @@ public static class AstcTranscoder
             EncodedTexels += (long)w * h;
             EncodeTicks += dt;
         }
+
+        Interlocked.Add(ref FrameLedger.AstcEncodeTicks, dt);
+        Interlocked.Increment(ref FrameLedger.AstcEncodedLevels);
+        // queued: the file is written by the disk cache's own writer thread, not the caller (the GPU thread)
         Disk?.Put(key, tag, outBlocks);
         Remember(key, outBlocks);
         return outBlocks;

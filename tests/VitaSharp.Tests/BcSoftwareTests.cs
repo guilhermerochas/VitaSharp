@@ -372,6 +372,7 @@ public sealed class BcSoftwareTests
             byte[] bc3 = [.. ChannelBlock(255, 0, 0, 1, 2, 7), .. ColourBlock(Red565, Blue565, 0, 1, 2, 3)];
             using Texels first = AstcTranscoder.FromBc(TexBase.UBC3, bc3, 4, 4, AstcChannels.Rgba);
             Assert.Equal(1, AstcTranscoder.Encoded);
+            Assert.True(AstcTranscoder.Disk.Flush(TimeSpan.FromSeconds(30)));
             Assert.Equal(1, AstcTranscoder.Disk.Writes);
 
             // a new run (memory cleared) finds the level on disk instead of encoding it again
@@ -388,6 +389,8 @@ public sealed class BcSoftwareTests
         }
         finally
         {
+            // the cache's writer thread may still be writing the last entry into the folder deleted below
+            AstcTranscoder.Disk?.Flush(TimeSpan.FromSeconds(30));
             AstcTranscoder.Disk = disk;
             AstcTranscoder.Reset();
             BcSoftware.ClearCache();

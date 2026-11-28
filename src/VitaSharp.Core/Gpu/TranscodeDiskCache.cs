@@ -17,8 +17,21 @@ public sealed class TranscodeDiskCache
 
     private readonly string _dir;
     private readonly long _limit;
+    /// <summary>Guards the index and the entries waiting for the writer: taken by the GPU thread, never held across a
+    /// file system call.</summary>
     private readonly object _lock = new();
+    /// <summary>Guards the writer's file writes, the size accounting and the eviction (writer thread, the summary).</summary>
+    private readonly object _ioLock = new();
     private long _bytes = -1;
+    /// <summary>Entries queued by <see cref="Put"/> and not written yet (header + payload), and their write order.</summary>
+    private readonly Dictionary<ulong, byte[]> _pending = new();
+    private readonly Queue<ulong> _writeQueue = new();
+    /// <summary>Every key queued by <see cref="Put"/> in this session: <see cref="BuildIndex"/> adds them, since the
+    /// folder listing can miss an entry the writer wrote while it ran.</summary>
+    private readonly HashSet<ulong> _queuedThisSession = new();
+    private readonly SemaphoreSlim _writeSignal = new(0);
+    private readonly ManualResetEventSlim _writerIdle = new(true);
+    private Thread? _writer;
     public long Hits, Misses, Writes, Evictions;
     /// <summary>The keys on disk (null until the folder was listed once, on a background thread).</summary>
     private HashSet<ulong>? _index;
@@ -70,6 +83,11 @@ public sealed class TranscodeDiskCache
     {
         lock (_lock)
         {
+            if (_pending.ContainsKey(key))
+            {
+                return true;
+            }
+
             if (_index != null)
             {
                 return _index.Contains(key);
@@ -107,11 +125,14 @@ public sealed class TranscodeDiskCache
         }
         lock (_lock)
         {
-            // entries written while the folder was listed are in both
+            // entries written while the folder was listed are in both; the ones this session queued are added
+            // whether or not the writer had written them when the folder was listed
             if (_index != null)
             {
                 keys.UnionWith(_index);
             }
+
+            keys.UnionWith(_queuedThisSession);
 
             _index = keys;
         }
@@ -296,7 +317,9 @@ public sealed class TranscodeDiskCache
 
     /// <summary>The cached payload of <paramref name="key"/> when it exists, has the expected <paramref name="tag"/>
     /// (format and size of what was transcoded) and length; null otherwise. A read-ahead entry is copied out of native
-    /// memory (the GPU thread uses <see cref="TryCopyPreloaded"/> instead, without the array).</summary>
+    /// memory (the GPU thread uses <see cref="TryCopyPreloaded"/> instead, without the array); an entry still waiting
+    /// for the background writer (<see cref="Put"/>) is answered from memory. The file system calls of a lookup run
+    /// outside the lock the writer takes; their time is counted in <see cref="FrameLedger.AstcDiskIoTicks"/>.</summary>
     public byte[]? TryGet(ulong key, ulong tag, int expectedLength)
     {
         if (IsPreloaded(key))
@@ -308,60 +331,87 @@ public sealed class TranscodeDiskCache
             }
         }
 
-        string p = PathOf(key);
-        try
+        lock (_lock)
         {
-            byte[] data;
+            if (_pending.TryGetValue(key, out byte[]? queued))
             {
-                lock (_lock)
+                if (queued.Length != HeaderSize + expectedLength || BinaryPrimitives.ReadUInt64LittleEndian(queued.AsSpan(16)) != tag)
                 {
-                    if (!File.Exists(p))
-                    {
-                        Misses++;
-                        return null;
-                    }
-                    data = File.ReadAllBytes(p);
-                    try
-                    {
-                        File.SetLastWriteTimeUtc(p, DateTime.UtcNow);
-                    }
-                    catch (IOException) { }
+                    Interlocked.Increment(ref Misses);
+                    return null;
                 }
 
-                Interlocked.Increment(ref FrameLedger.AstcDiskFileReads);
+                Interlocked.Increment(ref Hits);
+                return queued[HeaderSize..];
             }
+        }
+
+        string p = PathOf(key);
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        try
+        {
+            if (!File.Exists(p))
+            {
+                Interlocked.Increment(ref Misses);
+                return null;
+            }
+
+            byte[] data = File.ReadAllBytes(p);
+            try
+            {
+                File.SetLastWriteTimeUtc(p, DateTime.UtcNow);
+            }
+            catch (IOException) { }
+
+            Interlocked.Increment(ref FrameLedger.AstcDiskFileReads);
             if (data.Length < HeaderSize || BinaryPrimitives.ReadUInt32LittleEndian(data) != Magic
                 || BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4)) != data.Length - HeaderSize || BinaryPrimitives.ReadUInt64LittleEndian(data.AsSpan(8)) != key)
             {
                 // torn or foreign file: drop it so the next Put can write the entry again
+                try
+                {
+                    File.Delete(p);
+                }
+                catch (IOException) { }
+
+                Interlocked.Exchange(ref _bytes, -1);
                 lock (_lock)
                 {
-                    try
-                    {
-                        File.Delete(p);
-                        _bytes = -1;
-                        _index?.Remove(key);
-                    }
-                    catch (IOException) { }
+                    _index?.Remove(key);
                 }
-                Misses++;
+
+                Interlocked.Increment(ref Misses);
                 return null;
             }
+
             if (data.Length != HeaderSize + expectedLength || BinaryPrimitives.ReadUInt64LittleEndian(data.AsSpan(16)) != tag)
             {
-                Misses++;
+                Interlocked.Increment(ref Misses);
                 return null;
             }
-            Hits++;
+
+            Interlocked.Increment(ref Hits);
             return data[HeaderSize..];
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            Misses++;
+            Interlocked.Increment(ref Misses);
             return null;
+        }
+        finally
+        {
+            Interlocked.Add(ref FrameLedger.AstcDiskIoTicks, System.Diagnostics.Stopwatch.GetTimestamp() - t0);
         }
     }
 
+    /// <summary>
+    /// Stores a transcoded level. The caller (the GPU thread, or a transcoder thread) only queues it: the file is
+    /// written by the cache's own background writer thread, since on Android's shared storage every file call goes
+    /// through FUSE (tens of ms per new entry on a Mali-G57 phone: God of War Collection's level loads, which
+    /// transcoded ~200 new levels, stood still 7-13 s in texture uploads while the GPU thread wrote them one by one).
+    /// Until it is written the entry is in the index and answered from memory by <see cref="TryGet"/>;
+    /// <see cref="Flush"/> waits for the writer.
+    /// </summary>
     public void Put(ulong key, ulong tag, ReadOnlySpan<byte> payload)
     {
         byte[] data = new byte[HeaderSize + payload.Length];
@@ -370,28 +420,89 @@ public sealed class TranscodeDiskCache
         BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(8), key);
         BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(16), tag);
         payload.CopyTo(data.AsSpan(HeaderSize));
-        string p = PathOf(key);
-        try
+        lock (_lock)
         {
+            if (_pending.ContainsKey(key))
+            {
+                return;
+            }
+
+            _pending[key] = data;
+            _queuedThisSession.Add(key);
+            _writeQueue.Enqueue(key);
+            _index?.Add(key);
+            _writerIdle.Reset();
+            if (_writer == null)
+            {
+                _writer = new Thread(WriterLoop) { Name = "ASTC cache writer", IsBackground = true, Priority = ThreadPriority.BelowNormal };
+                _writer.Start();
+            }
+        }
+
+        Interlocked.Increment(ref FrameLedger.AstcDiskWritesQueued);
+        _writeSignal.Release();
+    }
+
+    /// <summary>Waits until every entry queued by <see cref="Put"/> is on disk (or failed to be written).</summary>
+    public bool Flush(TimeSpan timeout) => _writerIdle.Wait(timeout);
+
+    /// <summary>Tests: runs on the writer thread right before each file write (a slow storage is injected here).</summary>
+    internal Action<string>? BeforeFileWrite { get; set; }
+
+    private void WriterLoop()
+    {
+        while (true)
+        {
+            _writeSignal.Wait();
+            ulong key;
+            byte[]? data;
             lock (_lock)
             {
-                System.IO.Directory.CreateDirectory(_dir);
-                if (_bytes < 0)
+                if (!_writeQueue.TryDequeue(out key) || !_pending.TryGetValue(key, out data))
                 {
-                    _bytes = Measure();
+                    continue;
+                }
+            }
+
+            WriteEntry(key, data);
+            lock (_lock)
+            {
+                _pending.Remove(key);
+                if (_writeQueue.Count == 0)
+                {
+                    _writerIdle.Set();
+                }
+            }
+        }
+    }
+
+    /// <summary>The writer thread's file write of one entry (the size accounting and the eviction go with it).</summary>
+    private void WriteEntry(ulong key, byte[] data)
+    {
+        string p = PathOf(key);
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        try
+        {
+            BeforeFileWrite?.Invoke(p);
+            lock (_ioLock)
+            {
+                System.IO.Directory.CreateDirectory(_dir);
+                if (Interlocked.Read(ref _bytes) < 0)
+                {
+                    Interlocked.Exchange(ref _bytes, Measure());
                 }
 
                 if (File.Exists(p))
                 {
                     return;
                 }
+
                 // written in place (a rename right after the write fails while a virus scanner holds the new file);
                 // a torn file fails the length/magic check on read and is deleted there
                 File.WriteAllBytes(p, data);
-                _bytes += data.Length;
-                Writes++;
-                _index?.Add(key);
-                if (_bytes > _limit)
+                Interlocked.Add(ref _bytes, data.Length);
+                Interlocked.Increment(ref Writes);
+                if (Interlocked.Read(ref _bytes) > _limit)
                 {
                     Trim();
                 }
@@ -400,6 +511,10 @@ public sealed class TranscodeDiskCache
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             Log.WarnOnce("astc-cache-write", $"[texcache] cannot write {p}: {e.Message}");
+        }
+        finally
+        {
+            Interlocked.Add(ref FrameLedger.AstcDiskWriteTicks, System.Diagnostics.Stopwatch.GetTimestamp() - t0);
         }
     }
 
@@ -435,21 +550,30 @@ public sealed class TranscodeDiskCache
                 Evictions++;
                 if (ulong.TryParse(Path.GetFileNameWithoutExtension(f.Name), System.Globalization.NumberStyles.HexNumber, null, out ulong evicted))
                 {
-                    _index?.Remove(evicted);
+                    lock (_lock)
+                    {
+                        _index?.Remove(evicted);
+                    }
                 }
             }
             catch (IOException) { }
         }
-        _bytes = total;
+
+        Interlocked.Exchange(ref _bytes, total);
     }
 
     public long Bytes
     {
         get
         {
-            lock (_lock)
+            lock (_ioLock)
             {
-                return _bytes < 0 ? (_bytes = System.IO.Directory.Exists(_dir) ? Measure() : 0) : _bytes;
+                if (Interlocked.Read(ref _bytes) < 0)
+                {
+                    Interlocked.Exchange(ref _bytes, System.IO.Directory.Exists(_dir) ? Measure() : 0);
+                }
+
+                return Interlocked.Read(ref _bytes);
             }
         }
     }

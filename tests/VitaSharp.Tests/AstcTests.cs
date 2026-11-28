@@ -281,6 +281,7 @@ public sealed class AstcTests(ITestOutputHelper output)
             byte[] a = new byte[300_000];
             new Random(2).NextBytes(a);
             cache.Put(1, 10, a);
+            Assert.True(cache.Flush(TimeSpan.FromSeconds(30)));
             Assert.Equal(a, cache.TryGet(1, 10, a.Length));
             Assert.Null(cache.TryGet(1, 11, a.Length));   // other format/size
             Assert.Null(cache.TryGet(1, 10, a.Length + 16));
@@ -289,8 +290,10 @@ public sealed class AstcTests(ITestOutputHelper output)
             File.SetLastWriteTimeUtc(Path.Combine(dir, $"{1:x16}.astc"), DateTime.UtcNow.AddHours(-1));
             cache.Put(2, 10, a);
             cache.Put(3, 10, a);
+            Assert.True(cache.Flush(TimeSpan.FromSeconds(30)));
             Assert.NotNull(cache.TryGet(2, 10, a.Length)); // touched: now the newest
             cache.Put(4, 10, a);
+            Assert.True(cache.Flush(TimeSpan.FromSeconds(30)));
             string listing = string.Join("; ", new DirectoryInfo(dir).GetFiles().Select(f => $"{f.Name} {f.Length} {f.LastWriteTimeUtc:O}")) + " / " + cache.Summary();
             Assert.True(cache.TryGet(1, 10, a.Length) == null, listing);
             Assert.True(cache.TryGet(4, 10, a.Length) != null, listing);

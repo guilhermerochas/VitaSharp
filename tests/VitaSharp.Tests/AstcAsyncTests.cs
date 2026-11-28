@@ -44,6 +44,8 @@ public sealed class AstcAsyncTests : IDisposable
         AstcTranscoder.WaitIdle(s_wait);
         AstcTranscoder.TestGate = null;
         AstcTranscoder.Mode = _mode;
+        // the cache's writer thread may still be writing into the folder deleted below
+        AstcTranscoder.Disk?.Flush(s_wait);
         AstcTranscoder.Disk = _disk;
         AstcTranscoder.Bc1Direct = _bc1Direct;
         AstcTranscoder.Help = _help;
@@ -204,6 +206,7 @@ public sealed class AstcAsyncTests : IDisposable
         byte[] blocks = Bc1Blocks(128, 128, 5);
         AstcTranscoder.Disk = new TranscodeDiskCache(_dir, 64 << 20);
         byte[] first = Upload(TexBase.UBC1, blocks, 128, 128, out _);
+        Assert.True(AstcTranscoder.Disk.Flush(TimeSpan.FromSeconds(30)));
         Assert.Equal(1, AstcTranscoder.Disk.Writes);
 
         // a new process: empty memory cache, the folder indexed at the title's start
@@ -225,6 +228,7 @@ public sealed class AstcAsyncTests : IDisposable
         byte[] blocks = Bc1Blocks(64, 64, 6);
         AstcTranscoder.Disk = new TranscodeDiskCache(_dir, 64 << 20);
         byte[] first = Upload(TexBase.UBC1, blocks, 64, 64, out _);
+        Assert.True(AstcTranscoder.Disk.Flush(TimeSpan.FromSeconds(30)));
         AstcTranscoder.Reset();
         AstcTranscoder.Disk = new TranscodeDiskCache(_dir, 64 << 20); // not indexed yet
         Assert.Equal(first, Upload(TexBase.UBC1, blocks, 64, 64, out _));

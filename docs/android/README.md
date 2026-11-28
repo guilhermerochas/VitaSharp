@@ -291,6 +291,13 @@ The game process places its hot threads itself (`Platforms/Android/Game/GamePerf
   thread-pool thread; afterwards a level that is not on disk costs no file system call (on Android's shared storage
   each one goes through FUSE). The `PERF mobile` line says the mode, what the transcoder threads encoded and how long
   the GPU worker waited for them.
+- **ASTC disk cache writer**: a newly transcoded level is queued and written by the cache's own background thread
+  ("ASTC cache writer", below normal priority), never by the GPU worker: each new file on shared storage costs tens of
+  ms through FUSE, and God of War Collection's level loads (~200 new levels) stood still 7-13 s in `texUpload` while
+  the GPU worker wrote them. A queued level is in the index and served from memory until its file is written. The
+  `[hitch]` line splits `texUpload` into ASTC encodes, the disk cache's file reads on the GPU thread, the levels read
+  from the cache and its read-ahead, the levels queued for the writer (with the writer's own file time) and the rest
+  (decode, staging copy).
 - **Timer slack**: guest threads and the GPU worker set a 1 µs timer slack (`PR_SET_TIMERSLACK`; Linux's default is
   50 µs), so their short sleeps end on time: nothing spins on a phone (`HostTuning.AvoidBusyWaits`, below).
 - **ADPF** (API 31+, `PerformanceHintManager` through the Java API): one hint session for the hot threads (main guest
