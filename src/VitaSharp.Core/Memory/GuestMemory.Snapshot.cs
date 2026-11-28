@@ -12,13 +12,12 @@ namespace VitaSharp.Core.Memory;
 /// </summary>
 public sealed unsafe partial class GuestMemory
 {
-    /// <summary>Every block of every space, by address (the caller has stopped every guest thread). Mirror blocks are not
-    /// in it: their memory is their source's, saved with it.</summary>
+    /// <summary>Every block of every space, by address (the caller has stopped every guest thread).</summary>
     internal List<Block> SnapshotBlocks()
     {
         lock (_lock)
         {
-            return AllBlocks().Where(b => b.Region != MemoryRegion.Mirror).OrderBy(b => b.Address).ToList();
+            return AllBlocks().OrderBy(b => b.Address).ToList();
         }
     }
 
@@ -210,11 +209,6 @@ public sealed unsafe partial class GuestMemory
 
             foreach (Block? b in AllBlocks().ToList())
             {
-                if (b.Region == MemoryRegion.Mirror)
-                {
-                    continue; // not in a state (SnapshotBlocks); its source decides whether it still shows memory
-                }
-
                 if (!want.TryGetValue((b.Space, b.Address), out Block? s) || s.Size != b.Size || s.Region != b.Region)
                 {
                     Free(b);

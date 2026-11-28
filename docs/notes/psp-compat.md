@@ -37,7 +37,7 @@ Evidence that the compat core is MIPS (the 10/11 roadmap note said "an ARM core"
 
 | Item | Value | Notes |
 |---|---|---|
-| Window (`sceCompatAllocCdramWithHole`) | 64 MB, seen by the PSP at `0x88000000` | three blocks of 32/16/16 MB, each allocated cached, uncached and as kernel CDRAM; the middle one is unmapped (the "hole", PSP `0x8A000000`-`0x8B000000`); the last block must sit at base + `0x3000000` (else `0x80010078`). VitaSharp builds it the same way, through SceCompat's sysmem imports: the uncached and kernel views are mirror blocks (the same memory, mapped again in sysmem's alias window `0x50000000`-`0x60000000`), and the hole's pages abort on access |
+| Window (`sceCompatAllocCdramWithHole`) | 64 MB, seen by the PSP at `0x88000000` | three blocks of 32/16/16 MB, each allocated cached, uncached and as kernel CDRAM; the middle one is unmapped (the "hole", PSP `0x8A000000`-`0x8B000000`); the last block must sit at base + `0x3000000` (else `0x80010078`) |
 | Allegrex address windows | `SceGrabForDriver_E9C25A28(i, paddr)` for i = 0..3, bit 0 of paddr set | 0: base, 1 and 2: base + `0x1000000`, 3: base + `0x3000000` (Adrenaline rewrites window 2 to give the PSP the extra 16 MB of the hole) |
 | Boot code `pcbc` | CDRAM + `0x600000` (PSP `0x88600000`), at most `0xA00000` | `os0:kd/pcbc.skprx`, `SceSblPcbcBin`, `0x5CE0` bytes |
 | flash0 package `pcff` | CDRAM + `0x3000000` (PSP `0x8B000000`), at most `0x2000000` | `vs0:app/NPXS10028/pcff.skprx`, `SceSblPcffBin`, `0x920000` bytes: a table of {name, buffer, size} with PSP pointers, then the files |

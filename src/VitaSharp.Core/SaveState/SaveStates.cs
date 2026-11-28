@@ -17,7 +17,7 @@ namespace VitaSharp.Core.SaveState;
 public static partial class SaveStates
 {
     private const string SysSection = "system", FunctionsSection = "hle.functions", ObjectsSection = "kernel.objects",
-        BlocksSection = "memory.blocks", MirrorsSection = "memory.mirrors", MemPrefix = "mem:", WordPagesMemPrefix = "memw:", ModulePrefix = "hle:", LayoutsSection = "layouts",
+        BlocksSection = "memory.blocks", MemPrefix = "mem:", WordPagesMemPrefix = "memw:", ModulePrefix = "hle:", LayoutsSection = "layouts",
         KernelModulePrefix = "kernel.hle:", ProcessesSection = "processes", SpacesSection = "memory.spaces",
         SysconSection = "syscon";
 
@@ -622,9 +622,6 @@ public static partial class SaveStates
         var bt = new SnapshotWriter();
         GuestMemory.WriteBlockTable(bt, blocks);
         list.Add((BlocksSection, bt.Data.ToArray()));
-        var mirrors = new SnapshotWriter();
-        emu.Memory.WriteMirrors(mirrors);
-        list.Add((MirrorsSection, mirrors.Data.ToArray()));
         if (incremental != null)
         {
             // the pages written since the image's state, by the dirty-page tracker (every guest, HLE and GPU write marks
@@ -1557,12 +1554,6 @@ public static partial class SaveStates
         if (blocks == null)
         {
             throw new SnapshotException("the save state has no memory");
-        }
-
-        // where the mirror blocks are mapped and which shared pages are unmapped (a state of a build before them: as now)
-        if (sections.Remove(MirrorsSection, out byte[]? mirrorData))
-        {
-            emu.Memory.RestoreMirrors(new SnapshotReader(mirrorData));
         }
 
         return sections;

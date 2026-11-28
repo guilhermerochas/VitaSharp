@@ -445,11 +445,6 @@ internal static unsafe partial class HostVirtualMemory
             byte* p = Reserve(size, out lazyCommitted);
             foreach (View v in views)
             {
-                if (v.Memory == 0)
-                {
-                    continue; // the alias window: ordinary reserved memory until MapAlias maps a view there
-                }
-
                 void* m = mmap(p + v.Offset, v.Size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, (int)v.Memory - 1, 0);
                 if (m == (void*)-1)
                 {
@@ -481,10 +476,9 @@ internal static unsafe partial class HostVirtualMemory
         bool ok = true;
         foreach (View v in views)
         {
-            // split the placeholder that holds the view's range off, and map the shared memory in its place (a view
-            // without memory stays a placeholder: the alias window, where MapAlias maps views later)
+            // split the placeholder that holds the view's range off, and map the shared memory in its place
             if (!VirtualFree(p + v.Offset, v.Size, MEM_RELEASE | MEM_PRESERVE_PLACEHOLDER)
-                || (v.Memory != 0 && MapViewOfFile3(v.Memory, proc, p + v.Offset, 0, v.Size, MEM_REPLACE_PLACEHOLDER, PAGE_READWRITE, null, 0) == null))
+                || MapViewOfFile3(v.Memory, proc, p + v.Offset, 0, v.Size, MEM_REPLACE_PLACEHOLDER, PAGE_READWRITE, null, 0) == null)
             {
                 ok = false;
                 break;
@@ -528,10 +522,9 @@ internal static unsafe partial class HostVirtualMemory
         {
             if (OperatingSystem.IsWindows())
             {
-                if (view && !UnmapViewOfFile2(GetCurrentProcess(), (void*)a, 0))
+                if (view)
                 {
-                    // the alias window's placeholder (its views were unmapped and the pieces coalesced before)
-                    VirtualFree((void*)a, 0, MEM_RELEASE);
+                    UnmapViewOfFile2(GetCurrentProcess(), (void*)a, 0);
                 }
                 else
                 {
@@ -542,70 +535,6 @@ internal static unsafe partial class HostVirtualMemory
             {
                 munmap((void*)a, len);
             }
-        }
-    }
-
-    private const uint MEM_COALESCE_PLACEHOLDERS = 0x1;
-    /// <summary>
-    /// Maps [<paramref name="offset"/>, + <paramref name="size"/>) of shared memory <paramref name="memory"/> at
-    /// <paramref name="at"/> of a reservation's alias window (a second view of the same pages: what a mirror block is on
-    /// the Vita, one physical memory at two virtual addresses). Windows: the window is a placeholder
-    /// (<see cref="ReserveWithViews"/>): the view's piece is split off the placeholder
-    /// [<paramref name="placeholder"/>, + <paramref name="placeholderSize"/>) that holds it (the part before it and the
-    /// part after it become placeholders of their own, as yuzu's and Ryujinx's placeholder managers split) and replaced
-    /// by the view, its pages committed (a SEC_RESERVE section commits per page; the source's committed pages keep their
-    /// data). Linux, Android, macOS: mmap MAP_FIXED of the memory file over the window. Offset and address 64 KB
-    /// aligned. False when the host refuses.
-    /// </summary>
-    public static bool MapAlias(byte* at, nuint size, nint memory, ulong offset, byte* placeholder, nuint placeholderSize)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            nint proc = GetCurrentProcess();
-            if (at > placeholder)
-            {
-                VirtualFree(placeholder, (nuint)(at - placeholder), MEM_RELEASE | MEM_PRESERVE_PLACEHOLDER);
-            }
-
-            byte* end = at + size, placeholderEnd = placeholder + placeholderSize;
-            if (end < placeholderEnd)
-            {
-                VirtualFree(end, (nuint)(placeholderEnd - end), MEM_RELEASE | MEM_PRESERVE_PLACEHOLDER);
-            }
-
-            if (MapViewOfFile3(memory, proc, at, offset, size, MEM_REPLACE_PLACEHOLDER, PAGE_READWRITE, null, 0) == null)
-            {
-                Log.Warn($"Alias view: MapViewOfFile3 failed ({Marshal.GetLastPInvokeError()})");
-                return false;
-            }
-
-            return VirtualAlloc(at, size, MEM_COMMIT, PAGE_READWRITE) != null;
-        }
-
-        void* m = mmap(at, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, (int)memory - 1, (nint)offset);
-        return m != (void*)-1;
-    }
-
-    /// <summary>Removes a view <see cref="MapAlias"/> mapped: Windows gives the range back to the placeholder, POSIX
-    /// maps fresh anonymous pages over it (the window's ordinary reserved memory again).</summary>
-    public static void UnmapAlias(byte* at, nuint size)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            UnmapViewOfFile2(GetCurrentProcess(), at, MEM_PRESERVE_PLACEHOLDER);
-            return;
-        }
-
-        Decommit(at, size);
-    }
-
-    /// <summary>Windows: joins the placeholders of [<paramref name="at"/>, + <paramref name="size"/>) of the alias window
-    /// into one (a free window range, or the whole window before the reservation is released).</summary>
-    public static void CoalesceAliasWindow(byte* at, nuint size)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            VirtualFree(at, size, MEM_RELEASE | MEM_COALESCE_PLACEHOLDERS);
         }
     }
 

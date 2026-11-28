@@ -40,7 +40,7 @@ errado):
 
 | Item | Valor | Observações |
 |---|---|---|
-| Janela (`sceCompatAllocCdramWithHole`) | 64 MB, vistos pelo PSP em `0x88000000` | três blocos de 32/16/16 MB, cada um alocado cached, uncached e como CDRAM do kernel; o do meio fica sem mapeamento (o "buraco", PSP `0x8A000000`-`0x8B000000`); o último tem de ficar em base + `0x3000000` (senão `0x80010078`). O VitaSharp monta igual, pelos imports de sysmem do SceCompat: as vistas uncached e do kernel são blocos espelho (a mesma memória, mapeada de novo na janela de apelidos do sysmem `0x50000000`-`0x60000000`), e as páginas do buraco dão data abort no acesso |
+| Janela (`sceCompatAllocCdramWithHole`) | 64 MB, vistos pelo PSP em `0x88000000` | três blocos de 32/16/16 MB, cada um alocado cached, uncached e como CDRAM do kernel; o do meio fica sem mapeamento (o "buraco", PSP `0x8A000000`-`0x8B000000`); o último tem de ficar em base + `0x3000000` (senão `0x80010078`) |
 | Janelas de endereço do Allegrex | `SceGrabForDriver_E9C25A28(i, paddr)` para i = 0..3, com o bit 0 de paddr ligado | 0: base, 1 e 2: base + `0x1000000`, 3: base + `0x3000000` (o Adrenaline reescreve a janela 2 para dar ao PSP os 16 MB extras do buraco) |
 | Código de boot `pcbc` | CDRAM + `0x600000` (PSP `0x88600000`), até `0xA00000` | `os0:kd/pcbc.skprx`, `SceSblPcbcBin`, `0x5CE0` bytes |
 | Pacote do flash0 `pcff` | CDRAM + `0x3000000` (PSP `0x8B000000`), até `0x2000000` | `vs0:app/NPXS10028/pcff.skprx`, `SceSblPcffBin`, `0x920000` bytes: uma tabela {nome, buffer, tamanho} com ponteiros do PSP, depois os arquivos |

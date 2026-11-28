@@ -14,16 +14,6 @@ public sealed class MemBlock : KernelObject
     /// mapped in the process (no address).</summary>
     [SnapshotMissing(false)] // states of builds before it: every block was mapped
     public bool IsUnmapped;
-
-    /// <summary>The block this one mirrors (ksceKernelAllocMemBlock with a mirror source: the same physical memory at
-    /// its own address), 0 for none.</summary>
-    [SnapshotMissing(0)] // states of builds before it: no mirrors
-    public int MirrorOf;
-
-    /// <summary>ksceKernelUnmapMemBlock took the block's mapping away (or its mirror source went): it stays allocated,
-    /// its pages are not mapped.</summary>
-    [SnapshotMissing(false)] // states of builds before it: no unmapped block
-    public bool MappingRemoved;
 }
 
 /// <summary>SceSysmem: memory blocks.</summary>
