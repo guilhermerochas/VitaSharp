@@ -1,4 +1,4 @@
-<!-- pair: user-guide.pt-BR.md sha256=7bfa332734ef83555a91017b91eea71dbf566bdbc5e953d5c0c70f6b675668d5 -->
+<!-- pair: user-guide.pt-BR.md sha256=a6f675d1a5465548744fca939effa87ce50f23d939cd4732f8ebe6cd968e8c8d -->
 # User guide
 
 **English** | [Português](user-guide.pt-BR.md)
