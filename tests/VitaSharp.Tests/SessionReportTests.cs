@@ -67,6 +67,6 @@ public sealed class SessionReportTests(GuestMemoryFixture fixture)
 
         string detail = SessionReport.GcDetail();
 
-        Assert.Matches(@"^GC pause total \d+ ms \(\d+[.,]\d\d ms per GC\), gen0 before the last young GC [1-9]\d* KB, memory load \d+% \(GC high-load threshold [1-9]\d*%\)$", detail);
+        Assert.Matches(@"^GC pause total \d+ ms \(\d+[.,]\d\d ms per GC\), gen0 before the last young GC [1-9]\d* KB, memory load \d+% \(GC high-load threshold [1-9]\d*%\); last young GC \(#[1-9]\d*, gen[01]\) paused \d+[.,]\d ms, promoted \d+ KB, \d+ pinned objects, (compacted|swept)$", detail);
     }
 }

@@ -127,6 +127,12 @@ public static class SessionReport
             yield return l;
         }
 
+        // since the previous PERF allocators line (the periodic one on Android, the steady-state mark on the desktop)
+        if (AllocatorsLine(emu) is { } allocators)
+        {
+            yield return allocators;
+        }
+
         foreach (string l in ProcessLines())
         {
             yield return l;
@@ -163,8 +169,7 @@ public static class SessionReport
         Add(() => CycleLines(emu, window: true));
         Add(() => PhaseLines(emu, window: true));
         Add(() => [HleCallsLine(emu)]);
-        Add(() => AllocLedger.Line(VitaSharp.Core.Hle.Modules.Display.FramesPresented,
-            emu.Hle.Functions.Where(f => f.AllocatedBytes > 0).Select(f => ("HLE " + f.Name, f.AllocatedBytes))) is { } allocators ? [allocators] : []);
+        Add(() => AllocatorsLine(emu) is { } allocators ? [allocators] : []);
         Add(() => HleTimeReport.Lines(emu));
         Add(() => GpuLines(emu));
         Add(AudioDiagnostics.SummaryLines);
@@ -174,6 +179,20 @@ public static class SessionReport
         Add(() => StallLines(emu));
         Add(() => ThreadStateSampler.Lines(emu));
         return lines;
+    }
+
+    /// <summary>"PERF allocators" since the previous call (null on the first one): the desktop Runner calls it once at
+    /// the steady-state mark (VITASHARP_WORKER_PROF_FROM) so the end-of-run line leaves the boot out.</summary>
+    public static string? AllocatorsLine(Emulator emu) =>
+        AllocLedger.Line(VitaSharp.Core.Hle.Modules.Display.FramesPresented,
+            emu.Hle.Functions.Where(f => f.AllocatedBytes > 0).Select(f => ("HLE " + f.Name, f.AllocatedBytes)));
+
+    /// <summary>Starts the PERF gc window and PERF allocators measurements at <paramref name="frame"/> (the desktop's
+    /// steady-state mark): their end-of-run lines then cover only the stretch after it.</summary>
+    public static void MarkAllocations(Emulator emu, long frame)
+    {
+        AllocatorsLine(emu);
+        GcWindow.Line(frame);
     }
 
     private static long s_lastPeriodicFrame = -1;
@@ -454,6 +473,11 @@ public static class SessionReport
         yield return "PERF delays (per frame: 0 / <=100us / <=1ms / <=5ms / longer; host sleeps, asked and late on average):" + string.Concat(VitaSharp.Core.Kernel.Wait.Delays.OrderByDescending(kv => kv.Value.Sum()).Take(8).Select(kv => $" {kv.Key} {kv.Value[0] / (double)frames:F1}/{kv.Value[1] / (double)frames:F1}/{kv.Value[2] / (double)frames:F1}/{kv.Value[3] / (double)frames:F1}/{kv.Value[4] / (double)frames:F1} slept {kv.Value[5] / (double)frames:F1} (asked {kv.Value[6] / Math.Max(1.0, kv.Value[5]):F0} us, late {kv.Value[7] / Math.Max(1.0, kv.Value[5]):F0} us);"));
         yield return $"PERF sched: core acquires that waited {VitaSharp.Core.Kernel.Scheduler.AcquireBlocked / (double)frames:F1}/frame, re-waits after a wake without a core {VitaSharp.Core.Kernel.Scheduler.AcquireRewaits / (double)frames:F1}/frame; blocking syscall host waits {VitaSharp.Core.Kernel.Wait.BlockingWaits / (double)frames:F1}/frame, wake-up latencies {VitaSharp.Core.Kernel.Wait.Latencies / (double)frames:F1}/frame; calls that waited for their waker {VitaSharp.Core.Kernel.GuestThread.WakerWaits / (double)frames:F1}/frame ({VitaSharp.Core.Kernel.GuestThread.WakerWaitTimeouts} hit the limit)";
         yield return GuestClock.LagLine();
+        if (GcWindow.Line(frames) is { } gcWindow)
+        {
+            yield return gcWindow;
+        }
+
         yield return $"PERF allocated {GC.GetTotalAllocatedBytes() / 1048576.0:F0} MB total ({GC.GetTotalAllocatedBytes() / 1024.0 / frames:F0} KB/frame), GC gen0 {GC.CollectionCount(0)} gen1 {GC.CollectionCount(1)} gen2 {GC.CollectionCount(2)}, pause {gcInfo.PauseTimePercentage:F1}%, heap {gcInfo.HeapSizeBytes / 1048576.0:F0} MB, working set {Environment.WorkingSet / 1048576.0:F0} MB; {GcDetail()}";
     }
 
@@ -469,6 +493,20 @@ public static class SessionReport
         long gen0Before = young.Index > 0 && young.GenerationInfo.Length > 0 ? young.GenerationInfo[0].SizeBeforeBytes : 0;
         double loadPercent = young.TotalAvailableMemoryBytes > 0 ? 100.0 * young.MemoryLoadBytes / young.TotalAvailableMemoryBytes : 0;
         double highPercent = young.TotalAvailableMemoryBytes > 0 ? 100.0 * young.HighMemoryLoadThresholdBytes / young.TotalAvailableMemoryBytes : 0;
-        return $"GC pause total {pauseMs:F0} ms ({pauseMs / Math.Max(1, collections):F2} ms per GC), gen0 before the last young GC {gen0Before / 1024.0:F0} KB, memory load {loadPercent:F0}% (GC high-load threshold {highPercent:F0}%)";
+        return $"GC pause total {pauseMs:F0} ms ({pauseMs / Math.Max(1, collections):F2} ms per GC), gen0 before the last young GC {gen0Before / 1024.0:F0} KB, memory load {loadPercent:F0}% (GC high-load threshold {highPercent:F0}%); {YoungGcDetail(young)}";
+    }
+
+    /// <summary>The last young GC: its pause, what survived it and the pinned objects. A pause long for what survived
+    /// is the older generations' card scan or the thread suspension, not the young objects (phone: 17-29 ms each).</summary>
+    private static string YoungGcDetail(GCMemoryInfo young)
+    {
+        if (young.Index == 0)
+        {
+            return "no young GC yet";
+        }
+
+        ReadOnlySpan<TimeSpan> pauses = young.PauseDurations;
+        double pauseMs = pauses.Length > 0 ? pauses[0].TotalMilliseconds : 0;
+        return $"last young GC (#{young.Index}, gen{young.Generation}) paused {pauseMs:F1} ms, promoted {young.PromotedBytes / 1024.0:F0} KB, {young.PinnedObjectsCount} pinned objects, {(young.Compacted ? "compacted" : "swept")}";
     }
 }

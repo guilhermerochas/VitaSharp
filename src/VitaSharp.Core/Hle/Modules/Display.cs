@@ -294,6 +294,7 @@ public sealed partial class Display : HleModule
         PresentTimes[FramesPresented & (PresentTimes.Length - 1)] = now;
         VitaSharp.Core.Util.FrameLedger.OnPresent(FramesPresented);
         VitaSharp.Core.Util.StartupMeter.OnPresent();
+        VitaSharp.Core.Util.GcWindow.OnPresent();
         FramesPresented++;
         Presented?.Invoke();
     }

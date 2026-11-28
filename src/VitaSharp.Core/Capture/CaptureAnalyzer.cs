@@ -1116,12 +1116,20 @@ public static class CaptureAnalyzer
         var hitches = new List<(double Ms, string Text)>();
         var stalls = new List<string>();
         string? allocators = null;
+        string? gcWindow = null;
         foreach (string l in File.ReadLines(log))
         {
             int alloc = l.IndexOf("PERF allocators: ", StringComparison.Ordinal);
             if (alloc >= 0)
             {
                 allocators = l[(alloc + "PERF allocators: ".Length)..];
+                continue;
+            }
+
+            int window = l.IndexOf("PERF gc window ", StringComparison.Ordinal);
+            if (window >= 0)
+            {
+                gcWindow = l[(window + "PERF gc window ".Length)..];
                 continue;
             }
 
@@ -1145,7 +1153,7 @@ public static class CaptureAnalyzer
             hitches.Add((ms, text));
         }
 
-        if (hitches.Count == 0 && stalls.Count == 0 && allocators == null)
+        if (hitches.Count == 0 && stalls.Count == 0 && allocators == null && gcWindow == null)
         {
             return lines;
         }
@@ -1170,6 +1178,12 @@ public static class CaptureAnalyzer
         {
             // the young collections a hitch line names come from these
             lines.Add("  who allocates managed memory (the last PERF allocators line, KB per frame): " + allocators);
+        }
+
+        if (gcWindow != null)
+        {
+            // since the previous report, boot excluded: the PERF allocated line counts from the start of the process
+            lines.Add("  GC over the last report's stretch (the last PERF gc window line): " + gcWindow);
         }
 
         return lines;

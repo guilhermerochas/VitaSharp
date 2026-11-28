@@ -1742,6 +1742,7 @@ public static class Runner
                 if (SessionReport.ThreadMarkFrame < 0 && f >= SessionReport.ThreadMarkFrom)
                 {
                     SessionReport.MarkThreadCpu(f);
+                    SessionReport.MarkAllocations(emu, f);
                 }
 
                 fpsFrames = f;
