@@ -24,7 +24,8 @@ namespace VitaSharp.Core.Cpu.Native;
 /// </list>
 /// Hosts: Windows x64 (a vectored handler: native filter + managed <see cref="OnFault"/>, and the lazy commit handler);
 /// Linux and Android on ARM64 and Linux on x86-64, with 4 KB host pages (a SIGSEGV handler in machine code,
-/// <see cref="HostFaultSignals"/>), opt-in with VITASHARP_DATA_ABORT_FAULTS=1 until confirmed on a device / Linux host.
+/// <see cref="HostFaultSignals"/>): on by default on ARM64 (VITASHARP_DATA_ABORT_FAULTS=0 keeps the guards), opt-in
+/// with VITASHARP_DATA_ABORT_FAULTS=1 on Linux x86-64 until a Linux host confirms it.
 /// Elsewhere (16 KB host pages: Apple silicon, some Android kernels; macOS x64), and in the interpreter, the IL backend and callouts, the explicit
 /// guards stay.
 /// </summary>
@@ -35,9 +36,20 @@ public static unsafe partial class HostFaultAborts
     /// <summary>Windows x64: the vectored handler (on unless VITASHARP_DATA_ABORT_FAULTS=0).</summary>
     private static bool WindowsX64 => OperatingSystem.IsWindows() && RuntimeInformation.ProcessArchitecture == Architecture.X64 && s_mode != "0";
 
-    /// <summary>Linux or Android on ARM64 with 4 KB pages: the signal handler (VITASHARP_DATA_ABORT_FAULTS=1).</summary>
-    private static bool LinuxArm64 => (OperatingSystem.IsLinux() || OperatingSystem.IsAndroid()) && RuntimeInformation.ProcessArchitecture == Architecture.Arm64
-        && Environment.SystemPageSize == (int)GuestMemory.PageSize && s_mode == "1";
+    /// <summary>Linux or Android on ARM64 with 4 KB pages: the signal handler (on unless VITASHARP_DATA_ABORT_FAULTS=0).</summary>
+    private static bool LinuxArm64 => Arm64SignalHandlerUsed(OperatingSystem.IsLinux() || OperatingSystem.IsAndroid(), RuntimeInformation.ProcessArchitecture,
+        Environment.SystemPageSize, s_mode);
+
+    /// <summary>Whether a Linux/Android host uses the signal handler on ARM64 instead of the guards: on by default with
+    /// 4 KB host pages, as fastmem is in Dynarmic (yuzu, Vita3K) and Box64 (unchecked accesses, SIGSEGV); the guards'
+    /// load and branch per access were about a third of the generated code of a load/store-heavy thread on the phone
+    /// (Dead Space's mixer, 27/11: 7.0-9.0 ns per guest cycle with guards, 5.1 with host faults).
+    /// VITASHARP_DATA_ABORT_FAULTS=0 keeps the guards; 16 KB host pages always do (a host page would cover four guest
+    /// pages with different mappings).</summary>
+    internal static bool Arm64SignalHandlerUsed(bool linuxOrAndroid, Architecture architecture, int hostPageSize, string? mode)
+    {
+        return linuxOrAndroid && architecture == Architecture.Arm64 && hostPageSize == (int)GuestMemory.PageSize && mode != "0";
+    }
 
     /// <summary>Linux on x86-64 with 4 KB pages: the signal handler (VITASHARP_DATA_ABORT_FAULTS=1).</summary>
     private static bool LinuxX64 => OperatingSystem.IsLinux() && RuntimeInformation.ProcessArchitecture == Architecture.X64
@@ -45,6 +57,24 @@ public static unsafe partial class HostFaultAborts
 
     /// <summary>Host faults replace the guards on this host (the guest windows are armed for them).</summary>
     public static bool Supported { get; } = WindowsX64 || LinuxArm64 || LinuxX64;
+
+    /// <summary>The F8 context's and log's line on how native code finds data aborts (a guard per guest access costs
+    /// generated code time on every thread once a kernel module registers a handler; host faults cost nothing).</summary>
+    public static string ModeLine(bool handlerRegistered)
+    {
+        return ModeLine(handlerRegistered, Supported, Util.EnvVars.DataAbortFaults, s_mode);
+    }
+
+    internal static string ModeLine(bool handlerRegistered, bool hostFaults, string variable, string? mode)
+    {
+        string how = hostFaults
+            ? "native code finds them through host faults (no check per access)"
+            : "native code checks every guest access (a guard per load/store)";
+        string setting = mode is null ? "" : $", {variable}={mode}";
+        return handlerRegistered
+            ? $"data aborts: a handler is registered; {how}{setting}"
+            : $"data aborts: no handler registered (no checks); with one, {how}{setting}";
+    }
 
     /// <summary>The ARM64 backend lays out fault exits instead of guards (an ARM64 host with <see cref="Supported"/>;
     /// tests set it to run the fault exits in <c>Arm64Sandbox</c>, which emulates the signal handler).</summary>

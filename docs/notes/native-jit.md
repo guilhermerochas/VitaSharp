@@ -68,9 +68,14 @@ The interpreter, the IL backend, callouts, the ARM64 backend and the other hosts
 
 ### Host faults on Linux and Android (ARM64, x86-64)
 
-The same design on Linux/Android ARM64 and Linux x86-64 hosts with 4 KB pages, opt-in with
-`VITASHARP_DATA_ABORT_FAULTS=1` until a device (Android) and a Linux host confirm it; 16 KB host pages (Apple silicon,
-some Android kernels) and macOS keep the guards.
+The same design on Linux/Android ARM64 and Linux x86-64 hosts with 4 KB pages: on by default on ARM64 since 27/11
+(`VITASHARP_DATA_ABORT_FAULTS=0` keeps the guards), opt-in with `=1` on Linux x86-64 until a Linux host confirms it;
+16 KB host pages (Apple silicon, some Android kernels) and macOS keep the guards. Why the default changed (perf/dsperf1):
+Dead Space's mixer thread (an Android port, kubridge registers a handler at boot) spends 66-91% of its CPU in generated
+code at 7.0-9.0 ns per guest cycle with the guards (six phone runs, ColdGuards included) and 5.1 ns with host faults
+(one run, the game played the same), the guards' byte load and `cbz` per access on a load/store-heavy loop. Dynarmic
+(yuzu, Vita3K) and Box64 likewise run unchecked accesses and take the rare invalid one through SIGSEGV. The F8
+context's `data aborts:` line says which way a run found them.
 
 - Memory: the guest window is mapped read/write everywhere on POSIX, so arming `mprotect`s every unmapped page
   `PROT_NONE` (private pages are also decommitted, then protected), freed blocks are protected again, a mapped block

@@ -219,7 +219,7 @@ public sealed unsafe partial class GuestThread
         emu.Vita.DataAbortHandlerRegistered = true;
         if (first)
         {
-            Log.Info("Data aborts: a data abort handler is registered; guest memory accesses now check the page mapping");
+            Log.Info(Cpu.Native.HostFaultAborts.ModeLine(true));
         }
     }
 
